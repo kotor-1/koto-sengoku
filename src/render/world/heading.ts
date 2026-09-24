@@ -27,6 +27,12 @@ export function turnStep(a: number, b: number): number {
     return diff <= 4 ? 1 : -1;
 }
 
+/** 8 方向で a と b が何歩離れているか（0〜4） */
+function stepsBetween(a: number, b: number): number {
+    const d = (((a - b) % 8) + 8) % 8;
+    return Math.min(d, 8 - d);
+}
+
 function angleDiff(a: number, b: number): number {
     let d = a - b;
     while (d > Math.PI) d -= Math.PI * 2;
@@ -49,6 +55,9 @@ export class HeadingTracker {
     private turnTimer = 0;
     private stillTime = 0;
     private lastCoreFacing: Facing;
+    /** 小さな向きの変化は、しばらく続いたときだけ反映する（キーを離す瞬間のずれで向きが変わらないように） */
+    private pending = -1;
+    private pendingTime = 0;
 
     constructor(
         initial: Facing,
@@ -73,7 +82,21 @@ export class HeadingTracker {
         if (dist > 0.01 && dt > 0) {
             const a = Math.atan2(dy, dx);
             // 今の向きから 22.5°+余裕 以内なら向きを保つ
-            if (angleDiff(a, dirAngle(this.target)) > Math.PI / 8 + 0.14) this.target = dirFromVector(dx, dy);
+            if (angleDiff(a, dirAngle(this.target)) > Math.PI / 8 + 0.14) {
+                const d = dirFromVector(dx, dy);
+                // 歩き始め・大きな方向転換はすぐ反映。45° の変化は 0.07 秒続いたら反映。
+                if (!this.moving || stepsBetween(d, this.target) >= 2) {
+                    this.target = d;
+                    this.pending = -1;
+                } else {
+                    this.pendingTime = this.pending === d ? this.pendingTime + dt : dt;
+                    this.pending = d;
+                    if (this.pendingTime >= 0.07) {
+                        this.target = d;
+                        this.pending = -1;
+                    }
+                }
+            } else this.pending = -1;
             this.phase = (this.phase + dist / this.strideLength) % 1;
             this.stillTime = 0;
             this.moving = true;
@@ -100,8 +123,7 @@ export class HeadingTracker {
             return;
         }
         const step = turnStep(this.dir, this.target);
-        const remaining = Math.min(((this.target - this.dir) % 8 + 8) % 8, ((this.dir - this.target) % 8 + 8) % 8);
-        if (remaining <= 1) {
+        if (stepsBetween(this.dir, this.target) <= 1) {
             this.dir = this.target;
             this.turnTimer = 0;
             return;

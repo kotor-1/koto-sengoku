@@ -80,6 +80,22 @@ describe('heading（8 方向の向き）', () => {
         expect(h.moving).toBe(false);
     });
 
+    it('斜めのキーを少しずれて離しても、斜めの向きのまま止まる', () => {
+        const h = new HeadingTracker('down');
+        for (let i = 0; i < 20; i++) h.update(1, -1, 1 / 60, 'up', true);
+        h.update(0, -1.2, 1 / 60, 'up', true); // 右キーだけ先に離した 1〜2 フレーム
+        h.update(0, -1.2, 1 / 60, 'up', true);
+        for (let i = 0; i < 20; i++) h.update(0, 0, 1 / 60, 'up', false);
+        expect(h.dir).toBe(3);
+    });
+
+    it('45° の曲がりでも、続けて歩けば向きが変わる', () => {
+        const h = new HeadingTracker('down');
+        for (let i = 0; i < 20; i++) h.update(1, -1, 1 / 60, 'up', true);
+        for (let i = 0; i < 10; i++) h.update(0, -1.2, 1 / 60, 'up', true);
+        expect(h.dir).toBe(4);
+    });
+
     it('大きく向きを変えると間の向きを経由する', () => {
         const h = new HeadingTracker('down');
         h.update(0, -1, 1 / 60, 'up', true); // 真後ろへ

@@ -91,6 +91,9 @@ interface Glow {
 interface CastShadow {
     img: Phaser.GameObjects.Image;
     baseScaleX: number;
+    /** 時間帯で影を伸ばす度合い（1 = castLength をそのまま、0 = 伸ばさない）。
+     *  家や天守の影は基準点の左右に広がっているので、伸ばしすぎると左へはみ出す。 */
+    stretch: number;
 }
 
 export class WorldScene extends Scene {
@@ -124,6 +127,8 @@ export class WorldScene extends Scene {
     private frame = 0;
     private fpsEl: HTMLElement | null = null;
     private fpsTimer = 0;
+    /** 起動時の計測（素材の生成時間など）。開発時の確認用。 */
+    readonly stats = { artMs: 0, createMs: 0, textureBytes: 0 };
 
     constructor(
         private readonly source: WorldSource,
@@ -139,6 +144,7 @@ export class WorldScene extends Scene {
     // ------------------------------------------------------------------
 
     create(): void {
+        const t0 = performance.now();
         const q = this.quality;
         const tex = q.objectTex;
         this.registerArt(groundArt(q.groundTex));
@@ -148,6 +154,7 @@ export class WorldScene extends Scene {
         this.registerArt(characterAtlas('hero', 'hero', tex));
         this.registerArt(characterAtlas('retainer', 'retainer', tex));
         this.makeWhite();
+        this.stats.artMs = Math.round(performance.now() - t0);
 
         this.createGround();
         this.createWater();
@@ -175,6 +182,7 @@ export class WorldScene extends Scene {
         this.applyLight(this.light);
         this.showIdleView();
 
+        this.stats.createMs = Math.round(performance.now() - t0);
         if (this.showFps) {
             this.fpsEl = document.createElement('div');
             this.fpsEl.id = 'fps-meter';
@@ -190,6 +198,7 @@ export class WorldScene extends Scene {
         for (const f of p.frames ?? []) tex.add(f.name, 0, f.x, f.y, f.w, f.h);
         tex.refresh();
         this.artSpecs.set(p.key, p);
+        this.stats.textureBytes += p.width * p.height * 4;
     }
 
     /** 素材を「基準点（地面に接する点）」に置いた Image を作る。大きさは spec のワールド px。 */
@@ -293,7 +302,7 @@ export class WorldScene extends Scene {
         const k = keepRect();
         const kx = (k.tx + k.tw / 2) * T;
         const ky = (k.ty + k.th) * T;
-        const shadow = this.castShadow('shadow-keep', kx, ky);
+        const shadow = this.castShadow('shadow-keep', kx, ky, 0.25);
         this.addStanding(this.placeArt('keep', kx, ky), ky, { attached: [shadow], fadeTo: 0.5 });
 
         const g = gateRect();
@@ -308,7 +317,7 @@ export class WorldScene extends Scene {
         houseRects().forEach((r, i) => {
             const cx = (r.tx + r.tw / 2) * T;
             const bottom = (r.ty + r.th) * T;
-            const shadow = this.castShadow(houseShadowKey(r.tw), cx, bottom);
+            const shadow = this.castShadow(houseShadowKey(r.tw), cx, bottom, 0.3);
             this.addStanding(this.placeArt(houseKey(r.tw, i), cx, bottom), bottom, { attached: [shadow] });
             // 夜の灯り：軒先の提灯と窓
             const spec = houseSpec(r.tw);
@@ -368,7 +377,7 @@ export class WorldScene extends Scene {
         const contact = this.add.image(0, 0, 'fx-shadow').setDepth(DEPTH.SHADOW + 1).setDisplaySize(16, 6);
         const cast = this.add.image(0, 0, 'fx-cast').setOrigin(0, 0.5).setDepth(DEPTH.SHADOW).setDisplaySize(24, 7);
         cast.setRotation(Math.atan2(SHADOW_DIR.y, SHADOW_DIR.x));
-        this.castShadows.push({ img: cast, baseScaleX: cast.scaleX });
+        this.castShadows.push({ img: cast, baseScaleX: cast.scaleX, stretch: 1 });
         const p = this.artSpecs.get(style)!;
         const baseScale = CHARACTER.w / p.frames![0].w;
         const sprite = this.add.sprite(0, 0, style, characterFrameName(0, null)).setOrigin(CHARACTER.ox, CHARACTER.oy).setScale(baseScale);
@@ -469,9 +478,9 @@ export class WorldScene extends Scene {
     }
 
     /** 時間帯で濃さ・長さが変わる、伸びる影 */
-    private castShadow(key: string, x: number, y: number): Phaser.GameObjects.Image {
+    private castShadow(key: string, x: number, y: number, stretch = 1): Phaser.GameObjects.Image {
         const img = this.placeArt(key, x, y).setDepth(DEPTH.SHADOW);
-        this.castShadows.push({ img, baseScaleX: img.scaleX });
+        this.castShadows.push({ img, baseScaleX: img.scaleX, stretch });
         return img;
     }
 
@@ -680,7 +689,7 @@ export class WorldScene extends Scene {
         this.vignette.setAlpha(p.vignetteAlpha);
         for (const c of this.castShadows) {
             c.img.setAlpha(p.castAlpha / 0.3);
-            c.img.scaleX = c.baseScaleX * p.castLength;
+            c.img.scaleX = c.baseScaleX * (1 + (p.castLength - 1) * c.stretch);
         }
         for (const v of [this.hero, this.retainer]) v.contact.setAlpha(p.contactAlpha);
         for (const w of this.waterLayers) w.ts.setAlpha(p.waterAlpha * w.weight);
@@ -714,7 +723,8 @@ export class WorldScene extends Scene {
         if (this.fpsTimer < 0.5) return;
         this.fpsTimer = 0;
         const visible = this.standing.filter((s) => s.obj.visible).length + this.tufts.filter((s) => s.obj.visible).length;
-        this.fpsEl.textContent = `${Math.round(this.game.loop.actualFps)} fps ・解像度 ×${this.viewport.renderScale} ・${this.quality.tier} ・表示物 ${visible}`;
+        const mb = (this.stats.textureBytes / 1048576).toFixed(1);
+        this.fpsEl.textContent = `${Math.round(this.game.loop.actualFps)} fps ・解像度 ×${this.viewport.renderScale} ・${this.quality.tier} ・表示物 ${visible} ・素材 ${mb}MB / 生成 ${this.stats.artMs}ms`;
     }
 }
 
