@@ -37,10 +37,17 @@ const SWING_TIME = 0.25;
 const RETARGET_INTERVAL = 0.5;
 /** 訓練場の内側の余白 */
 const ARENA_MARGIN = 6;
+/** 移動の命令で「着いた」とみなす距離 */
+const ARRIVE_RADIUS = 6;
+/** 人に阻まれて近づけないとき、この距離以内で STUCK_TIME 秒進めなければ着いたとみなす */
+const ARRIVE_NEAR = 18;
+const STUCK_TIME = 0.6;
 
 export class BattleSession {
     readonly state: BattleState;
     private retargetTimer = 0;
+    /** 移動の命令で、目的地へ近づけていない時間（家臣ごと） */
+    private readonly stuck = new Map<string, { best: number; time: number }>();
 
     constructor(state: BattleState = createBattle()) {
         this.state = state;
@@ -93,19 +100,24 @@ export class BattleSession {
     giveOrder(retainerId: RetainerId, order: Order): boolean {
         const u = this.unit(retainerId);
         if (!u || u.kind !== 'retainer' || u.down || this.isOver) return false;
+        let next: Order;
         if (order.kind === 'move' || order.kind === 'hold') {
             const p = this.validPoint(order.x, order.y);
             if (!p) return false;
-            u.order = { kind: order.kind, x: p.x, y: p.y };
-            return true;
-        }
-        if (order.kind === 'attack') {
+            next = { kind: order.kind, x: p.x, y: p.y };
+        } else if (order.kind === 'attack') {
             const t = this.unit(order.targetId);
             if (!t || t.side !== 'enemy' || t.down) return false;
-            u.order = { kind: 'attack', targetId: t.id };
-            return true;
+            next = { kind: 'attack', targetId: t.id };
+        } else next = { kind: 'follow' };
+        // 新しい命令はすぐに効かせる：振りかぶっていた攻撃は取りやめる（同じ相手への攻撃の命令なら続ける）
+        if (u.windup > 0 && !(next.kind === 'attack' && next.targetId === u.windupTargetId)) {
+            u.windup = 0;
+            u.windupTargetId = null;
+            u.swing = 0;
         }
-        u.order = { kind: 'follow' };
+        u.order = next;
+        this.stuck.delete(u.id);
         return true;
     }
 
@@ -271,7 +283,18 @@ export class BattleSession {
             }
             case 'move': {
                 // 移動中は寄り道しない（指示どおりの配置を優先する）
-                if (this.moveToward(u, o.x, o.y, dt, 3)) {
+                let arrived = this.moveToward(u, o.x, o.y, dt, ARRIVE_RADIUS);
+                // 目的地に人が立っていて近づけないときは、すぐ近くまで来ていれば着いたことにする
+                const d = Math.hypot(o.x - u.x, o.y - u.y);
+                const st = this.stuck.get(u.id) ?? { best: Infinity, time: 0 };
+                if (d < st.best - 0.5) {
+                    st.best = d;
+                    st.time = 0;
+                } else st.time += dt;
+                this.stuck.set(u.id, st);
+                if (!arrived && d <= ARRIVE_NEAR && st.time >= STUCK_TIME) arrived = true;
+                if (arrived) {
+                    this.stuck.delete(u.id);
                     u.order = { kind: 'hold', x: o.x, y: o.y };
                     events.push({ type: 'orderChanged', unitId: u.id, order: u.order });
                 }

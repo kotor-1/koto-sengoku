@@ -26,7 +26,9 @@
     "e2e:walk": "node e2e/walk.mjs e2e-out",
     "e2e:shots": "node e2e/screenshots.mjs e2e-out",
     "e2e:wedge": "node e2e/tree-wedge-repro.mjs e2e-out",
-    "e2e:perf": "node e2e/perf-snapshot.mjs"
+    "e2e:perf": "node e2e/perf-snapshot.mjs",
+    "e2e:battle": "node e2e/battle.mjs e2e-out",
+    "e2e:battle-video": "node e2e/battle-video.mjs e2e-out"
   },
   "dependencies": {
     "phaser": "4.0.0",

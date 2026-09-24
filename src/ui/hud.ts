@@ -3,9 +3,18 @@
  * App から渡された HudView をそのまま画面に反映する。
  */
 
+import { onPress } from './press';
+
 export interface HudView {
     objective: string;
-    dialogue: { speaker: string; text: string; isLast: boolean } | null;
+    dialogue: {
+        speaker: string;
+        text: string;
+        isLast: boolean;
+        /** 最後の行の選択肢（なければ null）と、いま選んでいる番号 */
+        choices: readonly string[] | null;
+        choice: number;
+    } | null;
     /** 近くに話しかけ／調べられるものがあるとき */
     prompt: { verb: string; name: string } | null;
 }
@@ -27,7 +36,11 @@ export interface HudHandlers {
     onSave(): void;
     onBackToTitle(): void;
     onCycleTime(): void;
+    /** 会話の選択肢を押した */
+    onChoice(index: number): void;
 }
+
+export type HudMode = 'title' | 'play' | 'menu' | 'battle' | 'command' | 'result';
 
 function $(id: string): HTMLElement {
     const el = document.getElementById(id);
@@ -43,6 +56,7 @@ export class Hud {
     private readonly menu = $('menu');
     private readonly menuSaveInfo = $('menu-save-info');
     private readonly menuStatus = $('menu-status');
+    private readonly menuBattleInfo = $('menu-battle-info');
     private readonly btnTitle = $('btn-title');
     private readonly objective = $('objective');
     private readonly areaBanner = $('area-banner');
@@ -50,12 +64,14 @@ export class Hud {
     private readonly speaker = $('dialogue-speaker');
     private readonly text = $('dialogue-text');
     private readonly next = $('dialogue-next');
+    private readonly choices = $('dialogue-choices');
     private readonly prompt = $('prompt');
     private readonly actionBtn = $('action-btn');
     private readonly toastEl = $('toast');
     private readonly timeBtn = $('time-btn');
 
     private last = { objective: '', dialogueKey: '', promptKey: '' };
+    private readonly onChoice: (index: number) => void;
     private confirmTitle = false;
     private toastTimer = 0;
 
@@ -77,6 +93,9 @@ export class Hud {
             }
             h.onBackToTitle();
         });
+        // 選択肢：押した瞬間に選ぶ（会話枠の「次へ」には伝えない）
+        this.choices.addEventListener('pointerdown', (e) => e.stopPropagation());
+        this.onChoice = (i) => h.onChoice(i);
         // 暗い背景を押したらメニューを閉じる
         this.menu.addEventListener('click', (e) => {
             if (e.target === this.menu) h.onCloseMenu();
@@ -90,15 +109,50 @@ export class Hud {
         this.timeBtn.setAttribute('aria-label', `時間帯：${label}（押すと切り替え）`);
     }
 
-    setMode(mode: 'title' | 'play' | 'menu'): void {
+    setMode(mode: HudMode): void {
         const b = document.body.classList;
-        b.toggle('mode-title', mode === 'title');
-        b.toggle('mode-play', mode === 'play');
-        b.toggle('mode-menu', mode === 'menu');
+        for (const m of ['title', 'play', 'menu', 'battle', 'command', 'result'] as const) b.toggle(`mode-${m}`, mode === m);
+        // 模擬戦の画面（戦闘中・指揮中・結果）に共通の印
+        b.toggle('in-battle', mode === 'battle' || mode === 'command' || mode === 'result');
         this.title.hidden = mode !== 'title';
         this.menu.hidden = mode !== 'menu';
         // キーボード操作が、前に押したボタンへ流れないようにフォーカスを外す
         (document.activeElement as HTMLElement | null)?.blur?.();
+    }
+
+    private renderChoices(list: readonly string[] | null, selected: number): void {
+        document.body.classList.toggle('has-choices', list !== null);
+        this.choices.hidden = list === null;
+        if (!list) {
+            this.choices.textContent = '';
+            return;
+        }
+        const buttons = [...this.choices.querySelectorAll<HTMLButtonElement>('button')];
+        if (buttons.length !== list.length || buttons.some((b, i) => b.textContent !== list[i])) {
+            this.choices.textContent = '';
+            list.forEach((label, i) => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.dataset.index = String(i);
+                b.textContent = label;
+                onPress(b, () => this.onChoice(i));
+                this.choices.appendChild(b);
+            });
+        }
+        this.choices.querySelectorAll<HTMLButtonElement>('button').forEach((b, i) => {
+            b.classList.toggle('selected', i === selected);
+            b.setAttribute('aria-pressed', String(i === selected));
+        });
+    }
+
+    /** 模擬戦中の攻撃ボタン（アクションボタンを「攻撃」として使う） */
+    setBattleAction(on: boolean): void {
+        // 戻すときは次の render で必ず書き直されるよう、どの表示とも一致しない値にしておく
+        this.last.promptKey = on ? 'battle' : '\u0000reset';
+        if (on) {
+            this.actionBtn.textContent = '攻撃';
+            this.actionBtn.classList.remove('idle');
+        }
     }
 
     showTitle(info: TitleInfo): void {
@@ -109,8 +163,9 @@ export class Hud {
         this.setMode('title');
     }
 
-    showMenu(lastSavedText: string): void {
+    showMenu(lastSavedText: string, battleText = ''): void {
         this.menuSaveInfo.textContent = lastSavedText;
+        this.menuBattleInfo.textContent = battleText;
         this.menuStatus.textContent = '';
         this.menuStatus.className = '';
         this.confirmTitle = false;
@@ -149,7 +204,7 @@ export class Hud {
             this.objective.textContent = v.objective;
         }
 
-        const dKey = v.dialogue ? `${v.dialogue.speaker}\u0000${v.dialogue.text}` : '';
+        const dKey = v.dialogue ? `${v.dialogue.speaker}\u0000${v.dialogue.text}\u0000${v.dialogue.choices?.join('\u0001') ?? ''}\u0000${v.dialogue.choice}` : '';
         if (dKey !== this.last.dialogueKey) {
             this.last.dialogueKey = dKey;
             document.body.classList.toggle('in-dialogue', v.dialogue !== null);
@@ -160,9 +215,10 @@ export class Hud {
                 this.next.textContent = v.dialogue.isLast ? '■' : '▼';
                 this.next.classList.toggle('last', v.dialogue.isLast);
             }
+            this.renderChoices(v.dialogue?.choices ?? null, v.dialogue?.choice ?? 0);
         }
 
-        const pKey = v.dialogue ? 'dialogue' : v.prompt ? `${v.prompt.verb}:${v.prompt.name}` : '';
+        const pKey = v.dialogue ? (v.dialogue.choices ? 'choice' : 'dialogue') : v.prompt ? `${v.prompt.verb}:${v.prompt.name}` : '';
         if (pKey !== this.last.promptKey) {
             this.last.promptKey = pKey;
             this.prompt.hidden = !v.prompt || v.dialogue !== null;
@@ -170,7 +226,7 @@ export class Hud {
                 const particle = v.prompt.verb === '話す' ? 'と' : 'を';
                 this.prompt.querySelector('.prompt-label')!.textContent = `${v.prompt.name}${particle}${v.prompt.verb}`;
             }
-            const label = v.dialogue ? '次へ' : v.prompt ? v.prompt.verb : '話す';
+            const label = v.dialogue ? (v.dialogue.choices ? '決定' : '次へ') : v.prompt ? v.prompt.verb : '話す';
             this.actionBtn.textContent = label;
             this.actionBtn.classList.toggle('idle', !v.dialogue && !v.prompt);
         }

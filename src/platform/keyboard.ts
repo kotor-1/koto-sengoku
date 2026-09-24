@@ -18,11 +18,20 @@ export interface KeyboardHooks {
     onMenuKey(): void;
     /** 時間帯の切り替え（見た目の確認用） */
     onTimeKey?(): void;
+    /**
+     * 画面ごとの追加のキー（模擬戦の指揮・会話の選択肢など）。押した瞬間に 1 回だけ呼ぶ。
+     * true を返したら、そのキーはここで使い切る（移動や決定には回さない）。
+     */
+    onKey?(code: string): boolean;
 }
 
 export function bindKeyboard(input: InputState, hooks: KeyboardHooks): () => void {
     const onDown = (e: KeyboardEvent) => {
         if (e.isComposing || e.metaKey || e.ctrlKey || e.altKey) return;
+        if (!e.repeat && hooks.onKey?.(e.code)) {
+            e.preventDefault();
+            return;
+        }
         if (e.code === 'Escape') {
             e.preventDefault();
             if (!e.repeat) hooks.onMenuKey();

@@ -61,7 +61,8 @@ const dl = await page.locator('#dialogue').boundingBox();
 await touch('touchStart', [[dl.x + 50, dl.y + 30, 5]]); await touch('touchEnd', []);
 await page.waitForTimeout(100);
 console.log('dialogue index after box tap', (await st()).dlg);
-for (let i = 0; i < 3; i++) { await touch('touchStart', [[bx, by, 6]]); await touch('touchEnd', []); await page.waitForTimeout(60); }
+// 最初の会話は 5 行（最後の行は模擬戦の誘い。ボタン（決定）で既定の「今はやめておく」になり会話が終わる）
+for (let i = 0; i < 4; i++) { await touch('touchStart', [[bx, by, 6]]); await touch('touchEnd', []); await page.waitForTimeout(60); }
 console.log('dialogue after taps', (await st()).dlg);
 // ページがスクロールしていないか
 await touch('touchStart', [[600, 200, 7]]);

@@ -655,9 +655,9 @@ body.in-dialogue #stick-zone {
     visibility: hidden;
 }
 
-/* タイトル・メニュー中は探索用の表示を隠す */
+/* タイトル・メニュー中は探索用の表示を隠す（模擬戦中はスティックと攻撃ボタンだけ使う） */
 body:not(.mode-play) #hud-top,
-body:not(.mode-play) #touch-controls,
+body:not(.mode-play):not(.mode-battle) #touch-controls,
 body:not(.mode-play) #prompt,
 body:not(.mode-play) #dialogue {
     display: none !important;
@@ -1056,4 +1056,584 @@ body.is-portrait #rotate-hint {
 
 #fps-meter {
     white-space: pre;
+}
+
+/* ------------------------------------------------------------
+   会話の選択肢（会話枠の右上に縦に並ぶ）
+   ------------------------------------------------------------ */
+#dialogue-choices {
+    position: absolute;
+    right: 12px;
+    bottom: calc(100% + 10px);
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    cursor: default;
+    animation: dlg-in 0.2s var(--ease);
+}
+
+#dialogue-choices[hidden] {
+    display: none;
+}
+
+#dialogue-choices button {
+    position: relative;
+    min-width: 196px;
+    height: 46px;
+    padding: 0 22px 0 34px;
+    border-radius: 999px;
+    border: 1px solid var(--hairline-strong);
+    background: var(--panel-strong);
+    box-shadow: var(--shadow);
+    font-size: 15px;
+    letter-spacing: 0.06em;
+    text-align: left;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: border-color 0.15s, background-color 0.15s, transform 0.1s;
+}
+
+#dialogue-choices button::before {
+    content: "";
+    position: absolute;
+    left: 15px;
+    top: 50%;
+    width: 6px;
+    height: 6px;
+    margin-top: -3px;
+    border-radius: 1.5px;
+    transform: rotate(45deg);
+    background: var(--ink-faint);
+    opacity: 0.5;
+}
+
+#dialogue-choices button.selected {
+    border-color: var(--gold);
+    background: linear-gradient(180deg, rgba(64, 50, 30, 0.94), rgba(40, 31, 20, 0.95));
+    color: #fff6e0;
+}
+
+#dialogue-choices button.selected::before {
+    background: var(--gold);
+    opacity: 1;
+}
+
+#dialogue-choices button:active {
+    transform: scale(0.97);
+}
+
+body.has-choices #dialogue-next {
+    display: none;
+}
+
+/* ------------------------------------------------------------
+   模擬戦：上部の表示
+   ------------------------------------------------------------ */
+.key-hint {
+    margin-left: 2px;
+    font-size: 10px;
+    padding: 3px 5px 2px;
+    opacity: 0.7;
+}
+
+body.touch-ui .key-hint {
+    display: none;
+}
+
+#battle-hud {
+    position: absolute;
+    top: calc(var(--safe-t) + 10px);
+    left: calc(var(--safe-l) + 12px);
+    right: calc(var(--safe-r) + 12px);
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    pointer-events: none;
+}
+
+#battle-hud[hidden],
+body:not(.in-battle) #battle-hud {
+    display: none;
+}
+
+#battle-party {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.chip {
+    min-width: 78px;
+    box-sizing: border-box;
+    padding: 5px 10px 7px;
+    border-radius: 10px;
+    background: var(--panel);
+    border: 1px solid var(--hairline);
+    box-shadow: var(--shadow);
+    font-size: 12px;
+    line-height: 1.3;
+    white-space: nowrap;
+}
+
+.chip-name {
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--c);
+}
+
+.chip-sub {
+    margin-left: 7px;
+    font-size: 11px;
+    color: var(--ink-soft);
+}
+
+.hp {
+    display: block;
+    height: 3px;
+    margin-top: 4px;
+    border-radius: 2px;
+    background: rgba(255, 246, 225, 0.12);
+    overflow: hidden;
+}
+
+.hp i {
+    display: block;
+    height: 100%;
+    width: 100%;
+    border-radius: 2px;
+    background: var(--c);
+    transition: width 0.2s var(--ease);
+}
+
+.chip.down {
+    opacity: 0.6;
+}
+
+.chip.down .chip-sub {
+    color: var(--err);
+}
+
+.battle-side {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    pointer-events: auto;
+}
+
+#battle-foes {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    height: 44px;
+    box-sizing: border-box;
+    padding: 12px 14px 0;
+    border-radius: 999px;
+    background: var(--panel);
+    border: 1px solid var(--hairline);
+    box-shadow: var(--shadow);
+    font-size: 11px;
+    color: var(--ink-soft);
+    white-space: nowrap;
+}
+
+#battle-foes b {
+    font-size: 17px;
+    line-height: 1;
+    color: #f0a290;
+}
+
+#command-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 48px;
+    padding: 0 20px 0 16px;
+    border-radius: 999px;
+    border: 1px solid rgba(222, 190, 128, 0.75);
+    background: radial-gradient(circle at 40% 30%, rgba(78, 66, 44, 0.95), rgba(40, 33, 22, 0.95) 80%);
+    box-shadow: 0 0 0 3px rgba(20, 18, 15, 0.25), var(--shadow);
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    color: #f6eedc;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: transform 0.1s, background-color 0.15s;
+}
+
+#command-btn:active {
+    transform: scale(0.95);
+}
+
+/* 一時停止の印（2 本の縦棒） */
+.cmd-icon {
+    width: 10px;
+    height: 12px;
+    border-left: 3px solid var(--gold);
+    border-right: 3px solid var(--gold);
+    box-sizing: border-box;
+}
+
+body.mode-command .battle-side,
+body.mode-result .battle-side {
+    visibility: hidden;
+}
+
+/* ------------------------------------------------------------
+   模擬戦：指揮（時間停止中）。左に命令のパネル、右上に再開・撤退。
+   地図の右側（訓練場）は空けておき、押して場所・相手を選ぶ。
+   ------------------------------------------------------------ */
+#command-panel {
+    position: absolute;
+    left: calc(var(--safe-l) + 12px);
+    top: calc(var(--safe-t) + 66px);
+    max-height: calc(100% - var(--safe-t) - var(--safe-b) - 78px);
+    width: 240px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 12px 10px;
+    border-radius: 14px;
+    border: 1px solid var(--hairline);
+    background: linear-gradient(180deg, rgba(24, 21, 17, 0.86), rgba(16, 14, 11, 0.9));
+    box-shadow: 0 12px 34px rgba(8, 6, 4, 0.4);
+    animation: panel-in 0.2s var(--ease);
+    overflow: hidden;
+}
+
+#command-panel[hidden],
+#command-actions[hidden] {
+    display: none;
+}
+
+@keyframes panel-in {
+    from { opacity: 0; transform: translateX(-8px); }
+    to { opacity: 1; transform: none; }
+}
+
+.cmd-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.cmd-title {
+    font-family: var(--font-title);
+    font-size: 16px;
+    letter-spacing: 0.4em;
+    color: var(--gold);
+}
+
+.cmd-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: #a9cbe6;
+}
+
+.cmd-state i {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #a9cbe6;
+    animation: blink 1.4s ease-in-out infinite;
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 0.35; }
+    50% { opacity: 1; }
+}
+
+#cmd-retainers {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+}
+
+.cmd-ret {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    min-height: 54px;
+    padding: 7px 9px 8px;
+    box-sizing: border-box;
+    border-radius: 10px;
+    border: 1px solid var(--hairline);
+    background: rgba(255, 246, 225, 0.04);
+    text-align: left;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: border-color 0.15s, background-color 0.15s;
+}
+
+.cmd-ret .ret-name {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--c);
+}
+
+.cmd-ret .ret-order {
+    font-size: 11px;
+    color: var(--ink-soft);
+    white-space: nowrap;
+}
+
+.cmd-ret .hp {
+    width: 100%;
+}
+
+.cmd-ret.selected {
+    border-color: var(--c);
+    background: rgba(255, 246, 225, 0.1);
+    box-shadow: inset 0 0 0 1px var(--c);
+}
+
+.cmd-ret.down {
+    opacity: 0.45;
+}
+
+#cmd-orders {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+}
+
+#cmd-orders button {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    min-height: 52px;
+    padding: 6px 10px;
+    box-sizing: border-box;
+    border-radius: 10px;
+    border: 1px solid var(--hairline-strong);
+    background: rgba(255, 246, 225, 0.06);
+    text-align: left;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: border-color 0.15s, background-color 0.15s, transform 0.1s;
+}
+
+#cmd-orders b {
+    font-size: 15px;
+    letter-spacing: 0.12em;
+}
+
+#cmd-orders small {
+    font-size: 10px;
+    color: var(--ink-faint);
+    white-space: nowrap;
+}
+
+#cmd-orders .key-hint {
+    position: absolute;
+    right: 6px;
+    top: 6px;
+}
+
+#cmd-orders button.current {
+    border-color: var(--gold-soft);
+    background: rgba(200, 168, 106, 0.14);
+}
+
+#cmd-orders button.armed {
+    border-color: var(--gold);
+    background: rgba(200, 168, 106, 0.3);
+    animation: armed 1.1s ease-in-out infinite;
+}
+
+@keyframes armed {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(200, 168, 106, 0.0); }
+    50% { box-shadow: 0 0 0 3px rgba(200, 168, 106, 0.28); }
+}
+
+#cmd-orders button:active:not(:disabled) {
+    transform: scale(0.96);
+}
+
+#cmd-orders button:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+#cmd-hint {
+    margin: 0;
+    min-height: 2.9em;
+    font-size: 12px;
+    line-height: 1.45;
+    letter-spacing: 0.03em;
+    color: var(--ink);
+}
+
+#command-actions {
+    position: absolute;
+    top: calc(var(--safe-t) + 10px);
+    right: calc(var(--safe-r) + 12px);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+}
+
+#cmd-resume {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    height: 52px;
+    padding: 0 24px 0 20px;
+    border-radius: 999px;
+    border: 1px solid rgba(222, 190, 128, 0.8);
+    background: radial-gradient(circle at 40% 32%, rgba(186, 82, 66, 0.95), rgba(128, 48, 38, 0.95) 78%);
+    box-shadow: 0 0 0 3px rgba(20, 18, 15, 0.28), var(--shadow);
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    color: #f6eedc;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+/* 再生の印（右向きの三角） */
+.play-icon {
+    width: 0;
+    height: 0;
+    border-left: 10px solid #f6eedc;
+    border-top: 6px solid transparent;
+    border-bottom: 6px solid transparent;
+}
+
+#cmd-retreat {
+    height: 40px;
+    padding: 0 16px;
+    border-radius: 999px;
+    border: 1px solid var(--hairline-strong);
+    background: var(--panel);
+    box-shadow: var(--shadow);
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+#cmd-retreat.confirm {
+    border-color: var(--err);
+    color: #ffd8cf;
+    background: rgba(70, 30, 24, 0.85);
+}
+
+#cmd-resume:active,
+#cmd-retreat:active {
+    transform: scale(0.96);
+}
+
+/* 低い画面（スマホ横向き）では詰める */
+@media (max-height: 430px) {
+    #command-panel {
+        top: calc(var(--safe-t) + 60px);
+        width: 226px;
+        gap: 7px;
+        padding: 9px 10px 8px;
+    }
+    .cmd-ret {
+        min-height: 48px;
+        padding: 5px 8px 6px;
+    }
+    #cmd-orders button {
+        min-height: 46px;
+        padding: 4px 9px;
+    }
+    #cmd-orders small {
+        font-size: 9.5px;
+    }
+    #cmd-hint {
+        font-size: 11px;
+    }
+    .chip {
+        min-width: 70px;
+        padding: 4px 8px 6px;
+    }
+}
+
+/* ------------------------------------------------------------
+   模擬戦の結果
+   ------------------------------------------------------------ */
+.result-card {
+    max-width: 440px;
+}
+
+.result-card h2 {
+    font-family: var(--font-title);
+    font-size: 34px;
+    font-weight: 500;
+    letter-spacing: 0.5em;
+    text-indent: 0.5em;
+    margin: 4px 0 2px;
+}
+
+#battle-result[data-outcome="victory"] h2 { color: #e9cf8e; }
+#battle-result[data-outcome="defeat"] h2 { color: #e39a88; }
+#battle-result[data-outcome="retreat"] h2 { color: #cfc6b0; }
+
+#result-lead {
+    margin: 0 0 10px;
+    font-size: 13px;
+    color: var(--ink-soft);
+}
+
+#result-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px 18px;
+    max-width: 380px;
+    margin: 0 auto 10px;
+    text-align: left;
+}
+
+#result-list div {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 5px 0;
+    border-bottom: 1px solid var(--hairline);
+    font-size: 13px;
+}
+
+#result-list dt {
+    color: var(--ink-soft);
+}
+
+#result-list dd {
+    margin: 0;
+    white-space: nowrap;
+}
+
+#result-list dd.down {
+    color: var(--err);
+}
+
+.result-note {
+    margin: 0 0 12px;
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--ink-faint);
+}
+
+#menu-battle-info {
+    margin: -4px 0 12px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--ink-soft);
+}
+
+#menu-battle-info:empty {
+    display: none;
 }

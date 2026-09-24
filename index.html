@@ -35,6 +35,33 @@
                 <div id="dialogue-speaker"></div>
                 <div id="dialogue-text"></div>
                 <div id="dialogue-next">▼</div>
+                <div id="dialogue-choices" role="group" aria-label="選択肢" hidden></div>
+            </div>
+
+            <!-- 模擬戦：上部（味方の体力と命令・残りの訓練相手・指揮） -->
+            <div id="battle-hud" hidden>
+                <div id="battle-party"></div>
+                <div class="battle-side">
+                    <div id="battle-foes"></div>
+                    <button id="command-btn" type="button" aria-label="指揮（戦闘の時間を止めて家臣に命令する）"><span class="cmd-icon" aria-hidden="true"></span><span>指揮</span><kbd class="key-hint">C</kbd></button>
+                </div>
+            </div>
+
+            <!-- 模擬戦：指揮（時間停止中） -->
+            <div id="command-panel" hidden>
+                <div class="cmd-head"><span class="cmd-title">指揮</span><span class="cmd-state"><i aria-hidden="true"></i>時間停止中</span></div>
+                <div id="cmd-retainers" role="radiogroup" aria-label="命令する家臣"></div>
+                <div id="cmd-orders" role="group" aria-label="命令">
+                    <button type="button" data-order="follow"><b>追従</b><small>若殿について戦う</small><kbd class="key-hint">1</kbd></button>
+                    <button type="button" data-order="hold"><b>待機</b><small>その場を守る</small><kbd class="key-hint">2</kbd></button>
+                    <button type="button" data-order="move"><b>移動</b><small>地図で場所を選ぶ</small><kbd class="key-hint">3</kbd></button>
+                    <button type="button" data-order="attack"><b>攻撃</b><small>地図で相手を選ぶ</small><kbd class="key-hint">4</kbd></button>
+                </div>
+                <p id="cmd-hint" aria-live="polite"></p>
+            </div>
+            <div id="command-actions" hidden>
+                <button id="cmd-resume" type="button" class="primary"><span class="play-icon" aria-hidden="true"></span>再開<kbd class="key-hint">C</kbd></button>
+                <button id="cmd-retreat" type="button">撤退</button>
             </div>
 
             <!-- スマホ用操作 -->
@@ -63,6 +90,7 @@
                 <div class="help">
                     <p class="help-touch"><span class="help-item"><b>移動</b>画面の左側をなぞる</span><span class="help-item"><b>話す・次へ</b>右下のボタン</span></p>
                     <p class="help-keys"><span class="help-item"><b>移動</b><kbd>←↑↓→</kbd><kbd>WASD</kbd></span><span class="help-item"><b>話す・次へ</b><kbd>Space</kbd><kbd>Enter</kbd><kbd>Z</kbd></span><span class="help-item"><b>メニュー</b><kbd>Esc</kbd></span><span class="help-item"><b>時間帯</b><kbd>T</kbd></span></p>
+                    <p class="help-keys help-battle"><span class="help-item"><b>模擬戦</b>攻撃<kbd>Space</kbd></span><span class="help-item"><b>指揮</b><kbd>C</kbd></span></p>
                 </div>
                 <p id="build-info" class="build-info"></p>
             </div>
@@ -73,6 +101,7 @@
             <div class="card menu-card allow-scroll" role="dialog" aria-label="メニュー">
                 <h2>メニュー</h2>
                 <p id="menu-save-info"></p>
+                <p id="menu-battle-info"></p>
                 <button id="btn-save" type="button" class="primary">端末に保存する</button>
                 <p id="menu-status" role="status" aria-live="polite"></p>
                 <div class="check-row">
@@ -84,6 +113,20 @@
                     <button id="btn-title" type="button" class="secondary">タイトルへ戻る</button>
                 </div>
                 <p id="menu-build-info" class="build-info"></p>
+            </div>
+        </section>
+
+        <!-- 模擬戦の結果 -->
+        <section id="battle-result" class="overlay" hidden>
+            <div class="card result-card allow-scroll" role="dialog" aria-label="模擬戦の結果">
+                <p class="eyebrow" aria-hidden="true"><span class="rule"></span>模擬戦<span class="rule"></span></p>
+                <h2 id="result-title"></h2>
+                <p id="result-lead"></p>
+                <dl id="result-list"></dl>
+                <p class="result-note">模擬戦なので、戦闘不能になった者も城で手当てを受けて回復します。</p>
+                <div class="buttons">
+                    <button id="btn-return" type="button" class="primary">城へ戻る</button>
+                </div>
             </div>
         </section>
 

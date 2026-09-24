@@ -23,6 +23,9 @@ import { TREE_KEYS, treeArt, tuftArt } from './art/nature';
 import { CHARACTER, FLOWER_VARIANTS, GATE, HOUSE_FRONT_H, SHADOW_DIR, TUFT_VARIANTS, WALK_FRAMES, WALL_H, houseSpec } from './art/spec';
 import type { Viewport } from './viewport';
 import { buildLabel } from '../buildInfo';
+import { ARENA } from '../core/battle/model';
+import { battleArt } from './battle/battleArt';
+import { BattleLayer, type BattleView } from './battle/BattleLayer';
 import { CameraFollower } from './world/camera';
 import { HeadingTracker } from './world/heading';
 import { bridges, gateRect, grassTuftSpots, houseRects, keepRect, tilesOf, trees, wallTiles, waterRects } from './world/layout';
@@ -32,9 +35,13 @@ import { ResolutionGovernor, type QualityProfile } from './world/quality';
 /** 描画側が必要とするものだけを受け取る */
 export interface WorldSource {
     getSession(): GameSession | null;
+    /** 模擬戦中ならその表示用の状態 */
+    getBattle(): BattleView | null;
     /** 1 フレーム分ゲームを進める（入力の読み取りと状態更新） */
     tick(dtSec: number): void;
     getTimeOfDay(): TimeOfDay;
+    /** 画面の座標 → ワールド座標の変換を受け取る（指揮で地図の場所を選ぶため） */
+    setScreenToWorld?(fn: (clientX: number, clientY: number) => { x: number; y: number } | null): void;
 }
 
 const T = 16;
@@ -114,6 +121,8 @@ export class WorldScene extends Scene {
     private hero!: ActorView;
     private retainer!: ActorView;
     private bound: GameSession | null = null;
+    private battle!: BattleLayer;
+    private boundBattle: BattleView['session'] | null = null;
 
     private readonly artSpecs = new Map<string, ArtPiece>();
     private readonly standing: Standing[] = [];
@@ -175,7 +184,7 @@ export class WorldScene extends Scene {
         const q = this.quality;
         const tex = q.objectTex;
         this.registerArt(groundArt(q.groundTex));
-        for (const list of [houseArt(tex), wallArt(tex), gateArt(tex), keepArt(tex), bridgeArt(tex), propArt(tex), treeArt(tex), tuftArt(tex), fxArt()]) {
+        for (const list of [houseArt(tex), wallArt(tex), gateArt(tex), keepArt(tex), bridgeArt(tex), propArt(tex), treeArt(tex), tuftArt(tex), fxArt(), battleArt()]) {
             for (const p of list) this.registerArt(p);
         }
         this.registerArt(characterAtlas('hero', 'hero', tex));
@@ -196,6 +205,12 @@ export class WorldScene extends Scene {
         this.createGrass();
         this.hero = this.createActor('hero');
         this.retainer = this.createActor('retainer');
+        this.battle = new BattleLayer({
+            scene: this,
+            makeActor: (style) => this.createActor(style),
+            overlayDepth: DEPTH.UI - 10,
+            dimDepth: DEPTH.LIGHT + 50,
+        });
         this.createSmoke();
         this.createAmbient();
         this.createLighting();
@@ -210,6 +225,8 @@ export class WorldScene extends Scene {
         this.light = this.lightFrom = PRESETS[this.tod];
         this.applyLight(this.light);
         this.showIdleView();
+
+        this.source.setScreenToWorld?.((cx, cy) => this.screenToWorld(cx, cy));
 
         this.stats.createMs = Math.round(performance.now() - t0);
         this.stats.readyMs = Math.round(performance.now());
@@ -576,9 +593,13 @@ export class WorldScene extends Scene {
         this.frame++;
         this.source.tick(dt);
         const session = this.source.getSession();
+        const battle = this.source.getBattle();
         if (session !== this.bound) this.bind(session);
+        if ((battle?.session ?? null) !== this.boundBattle) this.bindBattle(battle);
 
-        if (session) {
+        if (battle) {
+            this.updateBattleCamera(battle, dt);
+        } else if (session) {
             this.syncActor(this.hero, session.state.player, dt);
             this.syncActor(this.retainer, session.state.retainer, dt);
             const c = this.follow.update(this.hero.sprite.x, this.hero.sprite.y - 12, this.hero.velX, this.hero.velY, dt);
@@ -589,12 +610,99 @@ export class WorldScene extends Scene {
         this.updateLight(dt);
         this.cull();
         this.animate(dt);
+        // カメラを動かした後に合わせる（印や暗さが 1 フレーム遅れないように）
+        this.battle.sync(battle, dt, this.cameras.main.worldView);
         this.fadeOccluders(dt, session !== null);
         this.fitScreenLayers();
 
         const next = this.governor.sample(delta / 1000, this.viewport.renderScale);
         if (next !== null && next >= this.quality.minRenderScale) this.viewport.setRenderScale(next);
         this.updateFps(dt);
+    }
+
+    /**
+     * 模擬戦の開始・終了：探索の人物を隠す／戻し、カメラを合わせてから短く暗転明けする。
+     * （訓練場は同じ地図の城の東の原。遠くへ流れるように動かさず、その場で切り替える）
+     */
+    private bindBattle(view: BattleView | null): void {
+        this.boundBattle = view?.session ?? null;
+        const cam = this.cameras.main;
+        if (view) {
+            this.setActorVisible(this.hero, false);
+            this.setActorVisible(this.retainer, false);
+            this.bubble.setVisible(false);
+            const h = view.session.hero;
+            this.follow.snap(h.x, h.y - 12);
+        } else if (this.bound) {
+            const p = this.bound.state.player;
+            for (const [v, a] of [[this.hero, p], [this.retainer, this.bound.state.retainer]] as const) {
+                v.heading.reset(a.facing);
+                v.prevX = a.x;
+                v.prevY = a.y;
+                v.velX = v.velY = 0;
+                this.setActorVisible(v, true);
+                this.syncActor(v, a, 0);
+            }
+            this.follow.snap(this.hero.sprite.x, this.hero.sprite.y - 12);
+        } else {
+            return;
+        }
+        cam.centerOn(this.follow.x, this.follow.y);
+        cam.fadeIn(360, 18, 16, 13);
+        this.lastCull.frame = -999;
+    }
+
+    /**
+     * 模擬戦のカメラ：ふだんは若殿を追う。指揮中は訓練場の全体が見える位置へゆっくり寄せる
+     * （左の指揮パネルに隠れないよう、画面の右寄りに訓練場が来る。地図の端で自然にそうなる）。
+     */
+    private updateBattleCamera(view: BattleView, dt: number): void {
+        const h = view.session.hero;
+        const heroX = h.x;
+        const heroY = h.y + ACTOR_HALF_H - 12;
+        const cam = this.cameras.main;
+        let c: { x: number; y: number };
+        if (view.commanding) {
+            // 立っている全員が入るよう、その範囲の中心へ寄せる（訓練場の外へは寄せない）
+            let x0 = Infinity;
+            let y0 = Infinity;
+            let x1 = -Infinity;
+            let y1 = -Infinity;
+            for (const u of view.session.state.units) {
+                if (u.down) continue;
+                x0 = Math.min(x0, u.x);
+                x1 = Math.max(x1, u.x);
+                y0 = Math.min(y0, u.y - 30);
+                y1 = Math.max(y1, u.y + 6);
+            }
+            if (!Number.isFinite(x0)) {
+                x0 = x1 = (ARENA.x0 + ARENA.x1) / 2;
+                y0 = y1 = (ARENA.y0 + ARENA.y1) / 2;
+            }
+            const cx = Math.max(ARENA.x0, Math.min(ARENA.x1, (x0 + x1) / 2));
+            const cy = Math.max(ARENA.y0, Math.min(ARENA.y1, (y0 + y1) / 2));
+            c = this.follow.update(cx, cy, 0, 0, dt);
+        } else {
+            const vx = (heroX - this.battlePrev.x) / Math.max(dt, 1e-3);
+            const vy = (heroY - this.battlePrev.y) / Math.max(dt, 1e-3);
+            c = this.follow.update(heroX, heroY, dt > 0 ? vx : 0, dt > 0 ? vy : 0, dt);
+        }
+        this.battlePrev = { x: heroX, y: heroY };
+        cam.centerOn(c.x, c.y);
+    }
+
+    private battlePrev = { x: 0, y: 0 };
+
+    /** 画面（CSS px）→ ワールド座標。キャンバスの外なら null */
+    private screenToWorld(clientX: number, clientY: number): { x: number; y: number } | null {
+        const canvas = this.game.canvas;
+        const r = canvas.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0) return null;
+        const px = ((clientX - r.left) / r.width) * canvas.width;
+        const py = ((clientY - r.top) / r.height) * canvas.height;
+        if (px < 0 || py < 0 || px > canvas.width || py > canvas.height) return null;
+        const p = this.cameras.main.getWorldPoint(px, py);
+        return { x: p.x, y: p.y };
     }
 
     private bind(session: GameSession | null): void {
@@ -750,9 +858,8 @@ export class WorldScene extends Scene {
     private fadeOccluders(dt: number, active: boolean): void {
         const k = 1 - Math.exp(-10 * dt);
         // 人物の体（頭〜膝）の範囲
-        const bodies = active
-            ? [this.hero.sprite, this.retainer.sprite].map((sp) => ({ x: sp.x, y: sp.y, l: sp.x - 7, r: sp.x + 7, t: sp.y - 30, b: sp.y - 4 }))
-            : [];
+        const feet = this.battle.active ? this.battle.allyBodies() : active ? [this.hero.sprite, this.retainer.sprite] : [];
+        const bodies = feet.map((sp) => ({ x: sp.x, y: sp.y, l: sp.x - 7, r: sp.x + 7, t: sp.y - 30, b: sp.y - 4 }));
         for (const s of this.standing) {
             if (!s.occluder) continue;
             if (!s.obj.visible) {
@@ -798,7 +905,7 @@ export class WorldScene extends Scene {
             c.img.setAlpha(p.castAlpha / 0.3);
             c.img.scaleX = c.baseScaleX * (1 + (p.castLength - 1) * c.stretch);
         }
-        for (const v of [this.hero, this.retainer]) v.contact.setAlpha(p.contactAlpha);
+        for (const v of [this.hero, this.retainer, ...(this.battle?.actors() ?? [])]) v.contact.setAlpha(p.contactAlpha);
         for (const w of this.waterLayers) w.ts.setAlpha(p.waterAlpha * w.weight);
         if (p.lanternAlpha <= 0.01) for (const g of this.glows) g.img.setAlpha(0);
         if (this.ambient) {

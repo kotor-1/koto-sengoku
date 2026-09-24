@@ -121,6 +121,22 @@ describe('指揮（時間の停止と再開）', () => {
         expect(moved).toEqual(expect.arrayContaining(['genzo', 'shinpachi', 'trainee1', 'trainee2', 'trainee3', 'trainee4']));
     });
 
+    it('新しい命令を出すと、振りかぶっていた攻撃は取りやめる（命令がすぐ効く）', () => {
+        const s = new BattleSession();
+        const g = s.unit('genzo')!;
+        const t = s.unit('trainee1')!;
+        g.windup = 0.2;
+        g.windupTargetId = t.id;
+        const hp = t.hp;
+        s.pause();
+        s.giveOrder('genzo', { kind: 'move', x: 53 * 16, y: 12 * 16 });
+        s.resume();
+        const ev = run(s, 0.5);
+        expect(g.windup).toBe(0);
+        expect(ev.some((e) => e.type === 'hit' && e.attackerId === 'genzo')).toBe(false);
+        expect(t.hp).toBe(hp);
+    });
+
     it('戦闘不能の家臣・倒れた相手・訓練場の外には命令できない', () => {
         const s = new BattleSession();
         s.enemies()[0].down = true;
@@ -177,6 +193,26 @@ describe('2 人の家臣に別々の命令を出すと、配置と行動が変�
         expect(Math.hypot(s1.x - s2.x, s1.y - s2.y)).toBeGreaterThan(20);
         // 待機を命じた新八は、その場から大きく離れない
         expect(near(s2, { x: 53 * 16 + 8, y: 12 * 16 + 8 }, 16)).toBe(true);
+    });
+
+    it('移動先に人が立っていて近づけなくても、すぐ近くまで来れば着いたことにして待機に切り替わる', () => {
+        const s = new BattleSession();
+        const t = s.unit('trainee1')!;
+        // 訓練相手を移動先に立たせ、動かないようにする（振りかぶりを止める）
+        const dest = { x: t.x, y: t.y };
+        s.giveOrder('genzo', { kind: 'move', ...dest });
+        const ev: BattleEvent[] = [];
+        for (let i = 0; i < 60 * 6; i++) {
+            t.x = dest.x;
+            t.y = dest.y;
+            t.cooldown = 99;
+            ev.push(...s.step(idle, DT));
+            if (s.unit('genzo')!.order!.kind === 'hold') break;
+        }
+        const g = s.unit('genzo')!;
+        expect(g.order!.kind).toBe('hold');
+        expect(Math.hypot(g.x - dest.x, g.y - dest.y)).toBeLessThanOrEqual(18);
+        expect(ev.some((e) => e.type === 'orderChanged' && e.unitId === 'genzo')).toBe(true);
     });
 
     it('攻撃目標が倒れると、その場で待機に切り替わる', () => {

@@ -30,7 +30,8 @@ await page.keyboard.press('Space');
 await page.waitForTimeout(200);
 console.log('dialogue:', await page.locator('#dialogue').isVisible(), JSON.stringify(await page.locator('#dialogue').innerText()));
 await page.screenshot({ path: `${S}/d3-talk.png` });
-for (let i = 0; i < 4; i++) { await page.keyboard.press('Enter'); await page.waitForTimeout(80); }
+// 最初の会話は 5 行（最後の行は模擬戦の誘い。決定で既定の「今はやめておく」になり会話が終わる）
+for (let i = 0; i < 5; i++) { await page.keyboard.press('Enter'); await page.waitForTimeout(80); }
 console.log('dialogue closed:', !(await page.locator('#dialogue').isVisible()), 'objective:', await page.locator('#objective').innerText());
 // 城下へ歩く
 await page.evaluate(() => { const s = window.__koto.app.getSession(); s.state.player.x = 27*16+8; s.state.player.y = 12*16+8; });
