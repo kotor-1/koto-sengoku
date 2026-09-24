@@ -644,22 +644,29 @@ export class WorldScene extends Scene {
         }
     }
 
-    /** 主人公が建物や木の後ろに入ったら、その物を半透明にする */
+    /**
+     * 主人公（と話しかける相手の家臣）が建物や木の後ろに入ったら、その物を半透明にする。
+     * 家臣は城門の内側に立つので、門の屋根に隠れないようにする。
+     */
     private fadeOccluders(dt: number, active: boolean): void {
         const k = 1 - Math.exp(-10 * dt);
-        const h = this.hero.sprite;
-        // 主人公の体（頭〜膝）の範囲
-        const hl = h.x - 7;
-        const hr = h.x + 7;
-        const ht = h.y - 30;
-        const hb = h.y - 4;
+        // 人物の体（頭〜膝）の範囲
+        const bodies = active
+            ? [this.hero.sprite, this.retainer.sprite].map((sp) => ({ x: sp.x, y: sp.y, l: sp.x - 7, r: sp.x + 7, t: sp.y - 30, b: sp.y - 4 }))
+            : [];
         for (const s of this.standing) {
             if (!s.occluder) continue;
             if (!s.obj.visible) {
                 if (s.obj.alpha !== 1) s.obj.setAlpha(1);
                 continue;
             }
-            const behind = active && h.y < s.baseY && hr > s.left && hl < s.right && hb > s.top && ht < s.bottom;
+            let behind = false;
+            for (const h of bodies) {
+                if (h.y < s.baseY && h.r > s.left && h.l < s.right && h.b > s.top && h.t < s.bottom) {
+                    behind = true;
+                    break;
+                }
+            }
             const target = behind ? s.fadeTo : 1;
             const a = s.obj.alpha;
             if (Math.abs(a - target) > 0.004) s.obj.setAlpha(a + (target - a) * k);
