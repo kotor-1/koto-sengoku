@@ -41,7 +41,7 @@ export function createGame(parentId: string, source: WorldSource): GameHandle {
         input: { keyboard: false, mouse: false, touch: false, gamepad: false },
         disableContextMenu: true,
         banner: false,
-        render: { powerPreference: 'default' },
+        render: { powerPreference: 'default', ...(params.has('maxtex') ? { maxTextures: Number(params.get('maxtex')) } : {}) },
         scene: [new WorldScene(source, viewport, quality, params.has('fps'))],
     });
     viewport.attach(game);

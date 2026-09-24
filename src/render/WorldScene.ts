@@ -20,7 +20,7 @@ import { characterAtlas, characterFrameName, type CharacterStyle } from './art/c
 import { fxArt } from './art/fx';
 import { groundArt } from './art/ground';
 import { TREE_KEYS, treeArt, tuftArt } from './art/nature';
-import { CHARACTER, FLOWER_VARIANTS, GATE, HOUSE_FRONT_H, SHADOW_DIR, WALK_FRAMES, WALL_H, houseSpec } from './art/spec';
+import { CHARACTER, FLOWER_VARIANTS, GATE, HOUSE_FRONT_H, SHADOW_DIR, TUFT_VARIANTS, WALK_FRAMES, WALL_H, houseSpec } from './art/spec';
 import type { Viewport } from './viewport';
 import { CameraFollower } from './world/camera';
 import { HeadingTracker } from './world/heading';
@@ -37,6 +37,13 @@ export interface WorldSource {
 }
 
 const T = 16;
+/** 草むらの揺れのコマ数と最大の傾き（上端のずれ ÷ 高さ） */
+const TUFT_SWAY_FRAMES = 7;
+const TUFT_MAX_SHEAR = 0.1;
+const tuftFrame = (f: number) => `s${f}`;
+/** 人物の伸びる影の大きさ（ワールド px） */
+const CAST_W = 24;
+const CAST_H = 7;
 const DEPTH = {
     GROUND: -100000,
     DETAIL: -99990,
@@ -62,8 +69,14 @@ interface Standing {
     occluder: boolean;
     /** 半透明にするときの濃さ */
     fadeTo: number;
-    /** 揺れ（0 なら揺れない） */
+    /**
+     * 揺れの強さ（0 なら揺れない）。回転は使わない：
+     * Phaser 4 の複数テクスチャ一括描画で、回転した画像の三角形が別のテクスチャで描かれる不具合を確認したため。
+     * 木は根元を基準に横幅をわずかに伸び縮み、草むらは傾けた絵のコマを切り替えて揺らす。
+     */
     sway: number;
+    baseX: number;
+    baseScaleX: number;
     swaySpeed: number;
     phase: number;
     /** この物に付属して一緒に表示・非表示にする物（影など） */
@@ -154,6 +167,8 @@ export class WorldScene extends Scene {
         this.registerArt(characterAtlas('hero', 'hero', tex));
         this.registerArt(characterAtlas('retainer', 'retainer', tex));
         this.makeWhite();
+        this.makeTuftSwayFrames();
+        this.makeRotatedCast();
         this.stats.artMs = Math.round(performance.now() - t0);
 
         this.createGround();
@@ -234,6 +249,8 @@ export class WorldScene extends Scene {
             occluder: opts.occluder ?? true,
             fadeTo: opts.fadeTo ?? 0.42,
             sway: opts.sway ?? 0,
+            baseX: obj.x,
+            baseScaleX: obj.scaleX,
             swaySpeed: opts.swaySpeed ?? 1,
             phase: opts.phase ?? 0,
             attached: opts.attached ?? [],
@@ -340,7 +357,7 @@ export class WorldScene extends Scene {
             const shadow = this.castShadow('shadow-tree', x, y);
             const img = this.placeArt(key, x, y);
             if (h > 0.5) img.setFlipX(true);
-            this.addStanding(img, y, { attached: [shadow], fadeTo: 0.5, sway: 0.012, swaySpeed: 0.7 + h * 0.5, phase: h * 10 });
+            this.addStanding(img, y, { attached: [shadow], fadeTo: 0.5, sway: 0.014, swaySpeed: 0.7 + h * 0.5, phase: h * 10 });
         }
     }
 
@@ -369,18 +386,63 @@ export class WorldScene extends Scene {
         }
     }
 
+    /** 草むらの「傾けたコマ」を作る（根元を固定して上だけをずらす）。回転を使わずに揺らすため。 */
+    private makeTuftSwayFrames(): void {
+        for (let v = 0; v < TUFT_VARIANTS; v++) {
+            const key = `tuft-${v}`;
+            const src = this.textures.get(key).getSourceImage() as HTMLCanvasElement;
+            const w = src.width;
+            const h = src.height;
+            const pad = Math.ceil(h * TUFT_MAX_SHEAR) + 1;
+            const fw = w + pad * 2;
+            const tex = this.textures.createCanvas(`${key}-sway`, fw * TUFT_SWAY_FRAMES, h)!;
+            const ctx = tex.context;
+            for (let f = 0; f < TUFT_SWAY_FRAMES; f++) {
+                const k = TUFT_MAX_SHEAR * (f / (TUFT_SWAY_FRAMES - 1) * 2 - 1);
+                // x' = x + k (h - y)：下端は動かず、上ほど横へずれる
+                ctx.setTransform(1, 0, -k, 1, f * fw + pad + k * h, 0);
+                ctx.drawImage(src, 0, 0);
+                tex.add(tuftFrame(f), 0, f * fw, 0, fw, h);
+            }
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            tex.refresh();
+        }
+    }
+
+    /** 人物の伸びる影を、光の向きに回した絵として作っておく（表示時に回転しない） */
+    private makeRotatedCast(): void {
+        const src = this.textures.get('fx-cast').getSourceImage() as HTMLCanvasElement;
+        const S = 4; // ワールド 1px あたりの Canvas px
+        const len = CAST_W * S;
+        const thick = CAST_H * S;
+        const a = Math.atan2(SHADOW_DIR.y, SHADOW_DIR.x);
+        const W = Math.ceil(Math.abs(Math.cos(a)) * len + Math.abs(Math.sin(a)) * thick) + 4;
+        const H = Math.ceil(Math.abs(Math.sin(a)) * len + Math.abs(Math.cos(a)) * thick) + 4;
+        const rootX = 2 + Math.abs(Math.sin(a)) * thick / 2;
+        const rootY = a < 0 ? H - 2 - Math.abs(Math.cos(a)) * thick / 2 : 2 + Math.abs(Math.cos(a)) * thick / 2;
+        const tex = this.textures.createCanvas('fx-cast-rot', W, H)!;
+        const ctx = tex.context;
+        ctx.translate(rootX, rootY);
+        ctx.rotate(a);
+        ctx.drawImage(src, 0, -thick / 2, len, thick);
+        tex.refresh();
+        this.castRoot = { ox: rootX / W, oy: rootY / H, scale: 1 / S };
+    }
+
+    private castRoot = { ox: 0, oy: 0.5, scale: 0.25 };
+
     private createGrass(): void {
         for (const s of grassTuftSpots(this.quality.grassTufts)) {
             const img = this.placeArt(`tuft-${s.variant}`, s.x, s.y);
+            img.setTexture(`tuft-${s.variant}-sway`, tuftFrame(TUFT_SWAY_FRAMES >> 1));
             if (hash(Math.round(s.x), Math.round(s.y)) > 0.5) img.setFlipX(true);
-            this.addStanding(img, s.y, { occluder: false, sway: 0.09, swaySpeed: 1.8, phase: s.x * 0.06 }, this.tufts);
+            this.addStanding(img, s.y, { occluder: false, sway: 1, swaySpeed: 1.8, phase: s.x * 0.06 }, this.tufts);
         }
     }
 
     private createActor(style: CharacterStyle): ActorView {
         const contact = this.add.image(0, 0, 'fx-shadow').setDepth(DEPTH.SHADOW + 1).setDisplaySize(16, 6);
-        const cast = this.add.image(0, 0, 'fx-cast').setOrigin(0, 0.5).setDepth(DEPTH.SHADOW).setDisplaySize(24, 7);
-        cast.setRotation(Math.atan2(SHADOW_DIR.y, SHADOW_DIR.x));
+        const cast = this.add.image(0, 0, 'fx-cast-rot').setOrigin(this.castRoot.ox, this.castRoot.oy).setDepth(DEPTH.SHADOW).setScale(this.castRoot.scale);
         this.castShadows.push({ img: cast, baseScaleX: cast.scaleX, stretch: 1 });
         const p = this.artSpecs.get(style)!;
         const baseScale = CHARACTER.w / p.frames![0].w;
@@ -403,7 +465,6 @@ export class WorldScene extends Scene {
                 speedX: { min: 1.5, max: 4.5 },
                 scale: { start: 0.06, end: 0.3 },
                 alpha: { start: 0.34, end: 0 },
-                rotate: { min: 0, max: 360 },
                 maxAliveParticles: 9,
             });
             emitter.setDepth(DEPTH.SMOKE);
@@ -442,7 +503,8 @@ export class WorldScene extends Scene {
             frequency: 520,
             speedX: { min: 5, max: 12 },
             speedY: { min: 3, max: 8 },
-            rotate: { start: 0, end: 540 },
+            // 回転は使わない（上の sway の説明を参照）。ひらひら感は横の伸縮で出す
+            scaleX: { start: 0.3, end: -0.3 },
             scale: { min: 0.22, max: 0.32 },
             alpha: { start: 0.85, end: 0 },
             maxAliveParticles: Math.ceil(max * 0.6),
@@ -627,11 +689,20 @@ export class WorldScene extends Scene {
         }
         // 風：ゆっくり強弱がつく
         const gust = 0.75 + 0.25 * Math.sin(t * 0.37) + 0.15 * Math.sin(t * 1.13);
+        const last = TUFT_SWAY_FRAMES - 1;
         for (const s of this.tufts) {
-            if (s.obj.visible) s.obj.rotation = Math.sin(t * s.swaySpeed + s.phase) * s.sway * gust;
+            if (!s.obj.visible) continue;
+            const v = Math.sin(t * s.swaySpeed + s.phase) * gust; // -1.4〜1.4 程度
+            const f = Math.max(0, Math.min(last, Math.round((v * 0.5 + 0.5) * last)));
+            const name = tuftFrame(f);
+            if (s.obj.frame.name !== name) s.obj.setFrame(name);
         }
         for (const s of this.standing) {
-            if (s.sway !== 0 && s.obj.visible) s.obj.rotation = Math.sin(t * s.swaySpeed + s.phase) * s.sway * gust;
+            if (s.sway === 0 || !s.obj.visible) continue;
+            // 木：根元を基準に横幅をわずかに伸び縮み ＋ ごくわずかな横ずれ（葉がそよぐ見え方）
+            const v = Math.sin(t * s.swaySpeed + s.phase) * gust;
+            s.obj.scaleX = s.baseScaleX * (1 + v * s.sway);
+            s.obj.x = s.baseX + v * 0.25;
         }
         const la = this.light.lanternAlpha;
         if (la > 0.01) {
