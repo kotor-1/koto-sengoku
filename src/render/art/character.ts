@@ -91,7 +91,7 @@ export function drawCharacterFrame(ctx: Ctx, style: CharacterStyle, dir: number,
     // 全体の明暗：頭の方はわずかに明るく、足元へ向かって暗く（接地感）
     lctx.globalCompositeOperation = 'source-atop';
     const ao = lctx.createLinearGradient(0, foot - 36 * s, 0, foot);
-    ao.addColorStop(0, css(WARM, 0.07));
+    ao.addColorStop(0, css(WARM, 0.03));
     ao.addColorStop(0.42, css(WARM, 0));
     ao.addColorStop(0.72, css(SHADE, 0.04));
     ao.addColorStop(1, css(SHADE, 0.3));
@@ -100,10 +100,9 @@ export function drawCharacterFrame(ctx: Ctx, style: CharacterStyle, dir: number,
     lctx.globalCompositeOperation = 'source-over';
     lctx.setTransform(1, 0, 0, 1, 0, 0);
 
-    // 縁の光：光の来る側（左上）の縁に暖かい光、反対側の縁にごく弱い空の照り返し
+    // 縁の光：光の来る側（左上）の縁に暖かい光
     const tctx = context(tint);
     edgeLight(lctx, tctx, layer, fw, fh, -LIGHT2[0] * 0.3 * s, -LIGHT2[1] * 0.3 * s, css(WARM), 0.34);
-    edgeLight(lctx, tctx, layer, fw, fh, LIGHT2[0] * 0.25 * s, LIGHT2[1] * 0.25 * s, css([150, 170, 200]), 0.16);
 
     // シルエットの輪郭：塗った形を暗い色に染め、少しずらして 8 回重ねた上に本体を置く
     tctx.globalCompositeOperation = 'copy';
@@ -247,7 +246,7 @@ const WARM: RGB = [255, 238, 208];
 const COOL: RGB = [40, 42, 66];
 const INK: RGB = [30, 26, 36];
 const SHADE: RGB = [30, 30, 52];
-// 輪郭：建物の墨・木部の暗色と揃えた、わずかに暖かい焦げ茶寄りの墨色（真っ黒にしない）
+// 輪郭：建物の墨・木部の暗色と揃えた、わずかに暖かい墨色（真っ黒にしない）
 const OUTLINE = 'rgb(44,36,38)';
 const GLOSS: RGB = [246, 244, 236];
 
@@ -292,7 +291,7 @@ const STOPS = 6;
 // 材質一覧
 const SKIN = mat(PALETTE.skin, { lit: 0.22, shd: 0.34, line: 0.48 });
 const SKIN_OLD = mat('#d6aa84', { lit: 0.2, shd: 0.36, line: 0.5 });
-const HAIR = mat(PALETTE.hair, { lit: 0.1, shd: 0.2, gloss: 0.34, sharp: 14, line: 0.3 });
+const HAIR = mat(PALETTE.hair, { lit: 0.1, shd: 0.18, gloss: 0.08, sharp: 24, line: 0.3 });
 const KOSODE = mat(PALETTE.indigo, { lit: 0.27, shd: 0.36 });
 const KOSODE_IN = mat(PALETTE.indigoDark, { lit: 0.05, shd: 0.3 });
 const COLLAR = mat(PALETTE.indigoDark, { lit: 0.2, shd: 0.3 });
@@ -380,11 +379,6 @@ class Rig {
     /** 奥行き（大きいほど手前） */
     depth(w: V3): number {
         return w[1] + w[2] * K;
-    }
-
-    /** 人形の点の奥行き */
-    depthM(p: V3): number {
-        return this.depth(this.w(p));
     }
 
     track(pts: P2[]): void {
@@ -879,7 +873,7 @@ class EllGeo {
         const hx = ((LIGHT2[0] * c - LIGHT2[1] * s) * 0.32 * this.ext) / this.ra;
         const hy = ((LIGHT2[0] * s + LIGHT2[1] * c) * 0.32 * this.ext) / this.rb;
         const g = ctx.createRadialGradient(hx, hy, 0, 0, 0, 1.02);
-        g.addColorStop(0, css(WARM, 0.1 * strength));
+        g.addColorStop(0, css(WARM, 0.05 * strength));
         g.addColorStop(0.6, css(SHADE, 0));
         g.addColorStop(1, css(SHADE, 0.28 * strength));
         ctx.fillStyle = g;
@@ -1000,6 +994,12 @@ function patch(ctx: Ctx, g: EllGeo, poly: [number, number][], m: Mat, o: { line?
         ctx.lineWidth = 0.16 * g.rig.s;
         ctx.stroke();
     }
+}
+
+/** 楕円体の表面の点と法線だけ（軽い版） */
+function surfPN(g: EllGeo, lon: number, lat: number): SP {
+    const u = sph(lon, lat);
+    return { p: g.at(u), n: g.normal(u) };
 }
 
 /** 楕円体の表面の点（経度・緯度）と、横（経度方向）・縦（緯度方向）の接線、法線 */
@@ -1267,10 +1267,7 @@ function drawHead(rig: Rig, C: V3, yaw: number, pitch: number, o: HeadOpt): EllG
             }
             // 生え際に落ちる髪の影
             if (!o.helmet) {
-                const hlLine = [-66, -48, -30, -12, 0, 12, 30, 48, 66].map((lon) => {
-                    const q = surfEll(eg, lon, hl - 3 - (Math.abs(lon) > 50 ? 8 : 0));
-                    return { p: q.p, n: q.n };
-                });
+                const hlLine = [-66, -48, -30, -12, 0, 12, 30, 48, 66].map((lon) => surfPN(eg, lon, hl - 3 - (Math.abs(lon) > 50 ? 8 : 0)));
                 surfLine(ctx, rig, hlLine, css(o.skin.shd, 0.4), 0.45 * s, 0.05);
             }
             drawFace(ctx, rig, eg, o);
@@ -1300,17 +1297,6 @@ function drawFace(ctx: Ctx, rig: Rig, g: EllGeo, o: HeadOpt): void {
     const front = surfEll(g, 0, -5);
     if (front.vis < -0.3) return;
     const eyeCol = css([46, 36, 34]);
-    // 頬の血色
-    for (const side of [-1, 1]) {
-        const q = surfEll(g, side * 42, -24);
-        if (q.vis < 0.1) continue;
-        const c = rig.p(q.p);
-        const rg = ctx.createRadialGradient(c[0], c[1], 0, c[0], c[1], 0.95 * s);
-        rg.addColorStop(0, css([212, 124, 104], 0.14 * smooth(0.1, 0.5, q.vis)));
-        rg.addColorStop(1, css([212, 124, 104], 0));
-        ctx.fillStyle = rg;
-        ctx.fillRect(c[0] - s, c[1] - s, 2 * s, 2 * s);
-    }
     // 鼻：光の反対側の影と、鼻筋のわずかな明るさ
     {
         const q = surfEll(g, 0, -15);
@@ -1409,15 +1395,38 @@ function drawFace(ctx: Ctx, rig: Rig, g: EllGeo, o: HeadOpt): void {
 function drawHairDetail(ctx: Ctx, rig: Rig, g: EllGeo): void {
     const s = rig.s;
     const lines: SP[][] = [];
-    for (const lon of [-160, -132, -104, -78, -54, -30, 30, 54, 78, 104, 132, 160, 180]) {
+    for (const lon of [-150, -110, -72, -38, 38, 72, 110, 150]) {
         const pts: SP[] = [];
         for (let lat = 16; lat <= 72; lat += 8) {
-            const q = surfEll(g, lon * (1 - (lat - 16) / 150) + (lon > 0 ? 8 : -8) * ((lat - 16) / 56), lat);
-            pts.push({ p: q.p, n: q.n });
+            pts.push(surfPN(g, lon * (1 - (lat - 16) / 150) + (lon > 0 ? 8 : -8) * ((lat - 16) / 56), lat));
         }
         lines.push(pts);
     }
-    surfLines(ctx, rig, lines, css([74, 70, 78], 0.3), 0.15 * s, 0.1);
+    surfLines(ctx, rig, lines, css([64, 60, 66], 0.35), 0.13 * s, 0.15);
+    // つや：光の映り込む点（法線が HALF になる点。楕円体なら u ∝ Mᵀ·HALF）に、横に長い柔らかい光。
+    // 顔にかからないよう、髪の範囲（緯度 30° 以上）へ寄せる
+    const u = nrm([dot(g.a[0], HALF), dot(g.a[1], HALF), dot(g.a[2], HALF)]);
+    const lat = Math.max(30, (Math.asin(u[2]) * 180) / Math.PI);
+    const lon = (Math.atan2(u[0], u[1]) * 180) / Math.PI;
+    const v = dot(surfPN(g, lon, lat).n, HALF);
+    if (v > 0) {
+        const q = surfEll(g, lon, lat);
+        const c = rig.p(q.p);
+        const w = rig.pv(scl(q.tl, 1.35));
+        const h = rig.pv(scl(q.tt, 0.55));
+        const cr = Math.hypot(w[0], w[1]);
+        const hr = Math.max(0.2 * s, Math.hypot(h[0], h[1]));
+        ctx.setTransform(w[0] / cr, w[1] / cr, -w[1] / cr, w[0] / cr, c[0], c[1] - rig.lift);
+        ctx.scale(1, hr / cr);
+        const rg = ctx.createRadialGradient(0, 0, 0, 0, 0, cr);
+        rg.addColorStop(0, css([170, 176, 190], 0.34 * v));
+        rg.addColorStop(1, css([170, 176, 190], 0));
+        ctx.fillStyle = rg;
+        ctx.beginPath();
+        ctx.arc(0, 0, cr, 0, TAU);
+        ctx.fill();
+        ctx.setTransform(1, 0, 0, 1, 0, -rig.lift);
+    }
 }
 
 /** 腕の袖（小袖）：肩→肘→手首と袂を 1 枚の布としてまとめ、袖口の暗がりと手を足す */
@@ -1646,7 +1655,7 @@ function buildHero(rig: Rig, walk: number | null): void {
     drawSwords(rig, Pv, HERO_SWORDS);
 
     // ---- 首・頭 ----
-    tube(rig, U([0, 0.05, 26.6]), U([0, 0.25, 28.9]), 1.02, 0.94, SKIN, { line: 0.5, tone: [-0.35, -0.12], cast: 0 });
+    tube(rig, U([0, 0.05, 26.6]), U([0, 0.25, 28.7]), 1.02, 0.94, SKIN, { line: 0.5, tone: [-0.38, -0.16], cast: 0 });
     // 後ろ襟（首の後ろに立つ襟）
     band(
         rig,
@@ -1657,12 +1666,12 @@ function buildHero(rig: Rig, walk: number | null): void {
         COLLAR,
         { depth: torsoDepth + 0.05 + (rig.fy < 0 ? 3 : 0), line: 0.7, cast: 0 },
     );
-    drawHead(rig, U([0, 0.32, 31.25]), walking ? twist * 0.3 : 0.07, walking ? -0.05 : -0.03, { skin: SKIN, hairline: 24, brows: 11, browTilt: 0.25 });
+    drawHead(rig, U([0, 0.34, 31.0]), walking ? twist * 0.3 : 0.07, walking ? -0.05 : -0.03, { skin: SKIN, hairline: 24, brows: 11, browTilt: 0.25 });
     // 髷（茶筅髷）：頭頂のやや後ろで結い、毛先を後ろへ流す
-    const knot0 = U([0, -1.0, 33.55]);
-    const knot1 = U([0, -1.5, 34.9]);
-    const tail = U([0, -2.75, 35.3]);
-    const tip = U([0, -3.7, 34.55]);
+    const knot0 = U([0, -1.05, 33.3]);
+    const knot1 = U([0, -1.75, 34.55]);
+    const tail = U([0, -3.0, 34.85]);
+    const tip = U([0, -3.85, 34.05]);
     const knot = tubeShape(rig, knot0, knot1, 0.95, 0.82, HAIR, {
         line: 0.6,
         cast: 0.26,
