@@ -5,15 +5,20 @@
  * - 書き込み後に読み戻して一致を確かめ、確かめられたときだけ ok: true を返す。
  * - 失敗は理由つきで返し、呼び出し側が「保存しました」と誤表示しないようにする。
  * - 読み込み時は中身を検査し、壊れたデータで始めない。
+ * - 形式の版：1 = 位置・フラグ、2 = 1 に模擬戦の記録を追加。版 1 のデータは「模擬戦の記録なし」として読む。
+ *   描画のためのもの（画像・Phaser のオブジェクト）は保存データに入れない。
  */
 import { ACTOR_HALF_H, ACTOR_HALF_W } from './constants';
 import { actorBox, rectsOverlap } from './collision';
+import { RETAINER_IDS, copyBattleRecord, emptyBattleRecord, type BattleOutcome, type BattleRecord, type BattleResult } from './battle/model';
 import { MAP_PIXEL_HEIGHT, MAP_PIXEL_WIDTH, PLAYER_START, areaAtPixel, rectHitsSolidTile, tileCenter } from './map';
 import { createActor, createRetainer, type Flags, type GameState } from './state';
 import { isFacing, type Facing } from './types';
 
 export const SAVE_KEY = 'koto-sengoku/save';
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
+/** 読み込める古い版 */
+const LEGACY_VERSIONS = [1];
 
 /** localStorage と同じ形の最小インターフェース（テストで差し替える） */
 export interface StorageLike {
@@ -28,6 +33,8 @@ export interface SaveData {
     playTimeSec: number;
     player: { x: number; y: number; facing: Facing };
     flags: Flags;
+    /** 模擬戦の記録（版 2 から） */
+    battle: BattleRecord;
 }
 
 export type SaveFailureReason = 'unavailable' | 'quota' | 'verify' | 'unknown';
@@ -60,6 +67,7 @@ export function toSaveData(state: GameState, now: Date): SaveData {
         playTimeSec: Math.floor(state.playTimeSec),
         player: { x: state.player.x, y: state.player.y, facing: state.player.facing },
         flags: { ...state.flags },
+        battle: copyBattleRecord(state.battle),
     };
 }
 
@@ -78,6 +86,7 @@ export function fromSaveData(data: SaveData): GameState {
         area: areaAtPixel(x, y),
         playTimeSec: data.playTimeSec,
         dialogue: null,
+        battle: copyBattleRecord(data.battle),
     };
 }
 
@@ -90,7 +99,7 @@ export function parseSaveData(json: string): SaveData | null {
         return null;
     }
     if (!isObject(v)) return null;
-    if (v.version !== SAVE_VERSION) return null;
+    if (v.version !== SAVE_VERSION && !LEGACY_VERSIONS.includes(v.version as number)) return null;
     if (typeof v.savedAt !== 'string' || Number.isNaN(Date.parse(v.savedAt))) return null;
     if (!isFiniteNumber(v.playTimeSec) || v.playTimeSec < 0) return null;
     const p = v.player;
@@ -100,6 +109,9 @@ export function parseSaveData(json: string): SaveData | null {
     if (!isObject(f)) return null;
     const keys: (keyof Flags)[] = ['metRetainer', 'visitedTown', 'visitedRoad', 'reported'];
     if (!keys.every((k) => typeof f[k] === 'boolean')) return null;
+    // 版 1 には模擬戦の記録がない → 記録なしとして読む
+    const battle = v.version === 1 ? emptyBattleRecord() : parseBattleRecord(v.battle);
+    if (!battle) return null;
     return {
         version: SAVE_VERSION,
         savedAt: v.savedAt,
@@ -111,7 +123,45 @@ export function parseSaveData(json: string): SaveData | null {
             visitedRoad: f.visitedRoad as boolean,
             reported: f.reported as boolean,
         },
+        battle,
     };
+}
+
+const OUTCOMES: readonly BattleOutcome[] = ['victory', 'defeat', 'retreat'];
+
+function parseBattleRecord(b: unknown): BattleRecord | null {
+    if (!isObject(b)) return null;
+    const counts = [b.victories, b.defeats, b.retreats];
+    if (!counts.every(isCount)) return null;
+    if (typeof b.debriefPending !== 'boolean') return null;
+    let last: BattleResult | null = null;
+    if (b.last !== null) {
+        const l = b.last;
+        if (!isObject(l)) return null;
+        if (!OUTCOMES.includes(l.outcome as BattleOutcome)) return null;
+        const rd = l.retainersDown;
+        if (!isObject(rd) || !RETAINER_IDS.every((id) => typeof rd[id] === 'boolean')) return null;
+        if (!isCount(l.defeated) || (l.defeated as number) > 4 || !isCount(l.seconds)) return null;
+        last = {
+            outcome: l.outcome as BattleOutcome,
+            retainersDown: { genzo: rd.genzo as boolean, shinpachi: rd.shinpachi as boolean },
+            defeated: l.defeated as number,
+            seconds: l.seconds as number,
+        };
+    }
+    // 報告待ちなのに結果がない、は不整合
+    if (b.debriefPending && !last) return null;
+    return {
+        last,
+        victories: b.victories as number,
+        defeats: b.defeats as number,
+        retreats: b.retreats as number,
+        debriefPending: b.debriefPending,
+    };
+}
+
+function isCount(v: unknown): boolean {
+    return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < 1e9;
 }
 
 export class SaveStore {

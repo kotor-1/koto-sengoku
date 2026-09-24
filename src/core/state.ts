@@ -1,6 +1,7 @@
 /**
  * ゲームの状態（データだけ）。描画や DOM のことは知らない。
  */
+import { emptyBattleRecord, type BattleRecord } from './battle/model';
 import type { DialogueScript, TalkTarget } from './dialogue';
 import { PLAYER_START, RETAINER_POS, areaAtPixel, tileCenter, type AreaId } from './map';
 import type { Facing } from './types';
@@ -28,6 +29,10 @@ export interface DialogueState {
     target: TalkTarget;
     script: DialogueScript;
     index: number;
+    /** 最後の行に選択肢があるとき、いま選んでいる番号 */
+    choice: number;
+    /** 上下の入力で選択肢を 1 つずつ動かすための押しっぱなし判定 */
+    navLatch: boolean;
 }
 
 export interface GameState {
@@ -37,6 +42,8 @@ export interface GameState {
     area: AreaId;
     playTimeSec: number;
     dialogue: DialogueState | null;
+    /** 模擬戦の記録（結果・家臣の戦闘不能・回数） */
+    battle: BattleRecord;
 }
 
 export function initialFlags(): Flags {
@@ -61,5 +68,6 @@ export function createNewGameState(): GameState {
         area: areaAtPixel(p.x, p.y),
         playTimeSec: 0,
         dialogue: null,
+        battle: emptyBattleRecord(),
     };
 }

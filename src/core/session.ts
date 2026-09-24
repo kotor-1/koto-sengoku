@@ -4,7 +4,8 @@
  */
 import { ACTOR_HALF_H, ACTOR_HALF_W, INTERACT_REACH, MAX_STEP_SEC, WALK_SPEED } from './constants';
 import { actorBox, moveWithCollision, rectGap, rectsOverlap } from './collision';
-import { scriptFor, type DialogueLine, type TalkTarget } from './dialogue';
+import { recordBattleResult, type BattleResult } from './battle/model';
+import { scriptFor, type ChoiceId, type DialogueChoice, type DialogueLine, type TalkTarget } from './dialogue';
 import type { InputFrame } from './input';
 import { TILE_SPOTS, areaAtPixel, rectHitsSolidTile, tileCenter, tileRect, type AreaId } from './map';
 import { createNewGameState, type ActorState, type GameState } from './state';
@@ -13,7 +14,12 @@ import { FACING_VECTORS, type Facing, type Rect, type Vec2 } from './types';
 export type GameEvent =
     | { type: 'areaChanged'; area: AreaId }
     | { type: 'dialogueStarted'; target: TalkTarget }
-    | { type: 'dialogueEnded'; target: TalkTarget };
+    | { type: 'dialogueEnded'; target: TalkTarget }
+    /** 会話の選択肢を選んだ（会話はそこで終わる） */
+    | { type: 'choiceSelected'; choice: ChoiceId };
+
+/** 模擬戦から戻ったときに立つ場所（城門の内側、源蔵の左隣） */
+export const BATTLE_RETURN_TILE = { tx: 31, ty: 10 } as const;
 
 export interface Interactable {
     target: TalkTarget;
@@ -40,7 +46,16 @@ export class GameSession {
 
         if (s.dialogue) {
             s.player.moving = false;
-            if (input.action) this.advanceDialogue(events);
+            const d = s.dialogue;
+            // 上下で選び、決定で選ぶ（押しっぱなしで次々動かないよう、いったん離すまで 1 つだけ）
+            const ny = input.moveY;
+            const nav = Math.abs(ny) > 0.5;
+            if (this.currentChoices()) {
+                if (nav && !d.navLatch) this.moveChoice(ny > 0 ? 1 : -1);
+                if (input.action) events.push(...this.selectChoice(d.choice));
+            } else if (input.action) this.advanceDialogue(events);
+            if (nav) d.navLatch = true;
+            else if (Math.abs(ny) < 0.3) d.navLatch = false;
             return events;
         }
 
@@ -57,6 +72,59 @@ export class GameSession {
     currentLine(): DialogueLine | null {
         const d = this.state.dialogue;
         return d ? d.script.lines[d.index] ?? null : null;
+    }
+
+    /** いま選択肢を出しているなら、その一覧（最後の行のときだけ） */
+    currentChoices(): readonly DialogueChoice[] | null {
+        const d = this.state.dialogue;
+        if (!d || !d.script.choices?.length || d.index < d.script.lines.length - 1) return null;
+        return d.script.choices;
+    }
+
+    /** 選択肢の選択を上下に動かす（端で止まる） */
+    moveChoice(delta: number): void {
+        const d = this.state.dialogue;
+        const cs = this.currentChoices();
+        if (!d || !cs) return;
+        d.choice = Math.max(0, Math.min(cs.length - 1, d.choice + delta));
+    }
+
+    /** 選択肢を選んで会話を終える。選択肢が出ていなければ何もしない。 */
+    selectChoice(index: number): GameEvent[] {
+        const d = this.state.dialogue;
+        const cs = this.currentChoices();
+        if (!d || !cs || index < 0 || index >= cs.length) return [];
+        const events: GameEvent[] = [];
+        this.endDialogue(events);
+        events.push({ type: 'choiceSelected', choice: cs[index].id });
+        return events;
+    }
+
+    /** 近さに関係なく、指定した相手との会話を始める（模擬戦から戻ったときなど） */
+    talkTo(target: TalkTarget): GameEvent[] {
+        const it = this.interactables().find((i) => i.target === target);
+        if (!it || this.state.dialogue) return [];
+        const events: GameEvent[] = [];
+        this.startDialogue(it, events);
+        return events;
+    }
+
+    /**
+     * 模擬戦から城へ戻る：結果を記録し（報告待ちにする）、源蔵の隣へ立たせる。
+     * 模擬戦なので、結果に関係なく全員回復している（探索側に体力はない）。
+     */
+    returnFromBattle(result: BattleResult): GameEvent[] {
+        const s = this.state;
+        recordBattleResult(s.battle, result);
+        const p = tileCenter(BATTLE_RETURN_TILE.tx, BATTLE_RETURN_TILE.ty);
+        s.player.x = p.x;
+        s.player.y = p.y;
+        s.player.facing = 'right';
+        s.player.moving = false;
+        s.dialogue = null;
+        const events: GameEvent[] = [];
+        this.updateArea(events);
+        return events;
     }
 
     /** 主人公の正面近くにある、話しかけ／調べられるもの */
@@ -148,9 +216,10 @@ export class GameSession {
 
     private startDialogue(it: Interactable, events: GameEvent[]): void {
         const s = this.state;
-        const script = scriptFor(it.target, s.flags);
+        const script = scriptFor(it.target, s.flags, s.battle);
         if (script.setFlags) Object.assign(s.flags, script.setFlags);
-        s.dialogue = { target: it.target, script, index: 0 };
+        if (script.clearsDebrief) s.battle.debriefPending = false;
+        s.dialogue = { target: it.target, script, index: 0, choice: script.defaultChoice ?? 0, navLatch: true };
         s.player.moving = false;
         if (it.target === 'retainer') faceToward(s.retainer, s.player);
         events.push({ type: 'dialogueStarted', target: it.target });
@@ -161,11 +230,16 @@ export class GameSession {
         const d = s.dialogue;
         if (!d) return;
         d.index++;
-        if (d.index >= d.script.lines.length) {
-            s.dialogue = null;
-            if (d.target === 'retainer') s.retainer.facing = 'left';
-            events.push({ type: 'dialogueEnded', target: d.target });
-        }
+        if (d.index >= d.script.lines.length) this.endDialogue(events);
+    }
+
+    private endDialogue(events: GameEvent[]): void {
+        const s = this.state;
+        const d = s.dialogue;
+        if (!d) return;
+        s.dialogue = null;
+        if (d.target === 'retainer') s.retainer.facing = 'left';
+        events.push({ type: 'dialogueEnded', target: d.target });
     }
 }
 
