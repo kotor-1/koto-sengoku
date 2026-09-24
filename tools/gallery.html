@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>素材一覧（開発用）</title>
+    <style>
+        body { margin: 0; font: 13px/1.5 system-ui, sans-serif; background: #2a2d27; color: #eee; }
+        header { padding: 10px 16px; background: #1b1d19; position: sticky; top: 0; z-index: 2; }
+        main { display: flex; flex-wrap: wrap; gap: 16px; padding: 16px; align-items: flex-end; }
+        figure { margin: 0; padding: 8px; background: #6d8a4c; border-radius: 6px; text-align: center; }
+        figure.dark { background: #3a3f35; }
+        figcaption { font-size: 11px; color: #111; background: rgba(255,255,255,.75); border-radius: 3px; margin-top: 4px; padding: 0 4px; }
+        canvas { display: block; margin: 0 auto; }
+        a { color: #9cf; }
+    </style>
+</head>
+<body>
+    <header>素材一覧（開発用）：<span id="info"></span>　?zoom=4（ワールド px あたりの表示倍率）　?tex=4（描画解像度）　?only=hero</header>
+    <main id="list"></main>
+    <script type="module" src="./gallery.ts"></script>
+</body>
+</html>

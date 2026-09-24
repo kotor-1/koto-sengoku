@@ -24,6 +24,7 @@
         "noUncheckedSideEffectImports": true
     },
     "include": [
+        "tools",
         "src",
         "tests"
     ]
