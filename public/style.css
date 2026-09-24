@@ -1026,3 +1026,34 @@ body.is-portrait #rotate-hint {
     border-radius: 6px;
     pointer-events: none;
 }
+
+/* 実機確認用：ビルド情報と画質の切り替え（控えめに） */
+.build-info {
+    margin: 10px 0 0;
+    font-size: 11px;
+    line-height: 1.5;
+    color: rgba(236, 228, 210, 0.55);
+    letter-spacing: 0.02em;
+}
+
+.check-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 4px 12px;
+    margin: 4px 0 12px;
+}
+
+.check-row .build-info {
+    margin: 0;
+}
+
+#btn-quality {
+    min-height: 38px;
+    font-size: 14px;
+}
+
+#fps-meter {
+    white-space: pre;
+}

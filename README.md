@@ -5,6 +5,9 @@
 
 - 基本方針・設計の決まりごと → [docs/design-policy.md](docs/design-policy.md)
 - 採用バージョンとテンプレートからの変更点 → このファイル末尾
+- **実機確認の手順と記録表** → [docs/device-check.md](docs/device-check.md)
+- テストと確認の一覧 → [docs/testing.md](docs/testing.md)
+- 既知の問題 → [docs/known-issues.md](docs/known-issues.md)
 
 ## 必要なもの
 
@@ -27,18 +30,18 @@ npm run dev        # 開発サーバー → http://localhost:8080 をブラウ�
 | `npm run typecheck` | 型検査（`tsc`） |
 | `npm test` | 単体テスト（Vitest） |
 | `npm run check` | 型検査 → テスト → ビルドをまとめて実行 |
+| `npm run e2e:*` | ブラウザでの確認（一覧は [docs/testing.md](docs/testing.md)） |
 
 ## スマホで確認する方法
 
-1. Mac とスマホを同じ Wi-Fi につなぐ。
-2. Mac で `npm run dev:lan` を実行する。表示される `Network: http://192.168.x.x:8080/` を控える。
-3. iPhone の Safari / Android の Chrome でその URL を開き、端末を横向きにする。
-   - 開けない場合：macOS の「システム設定 → ネットワーク → ファイアウォール」で Node の受信接続を許可する。
-4. 不具合の調べ方
-   - iPhone：iPhone の「設定 → Safari → 詳細 → Web インスペクタ」をオンにし、ケーブルで Mac につないで Mac の Safari「開発」メニューから調べる。
-   - Android：「開発者向けオプション → USB デバッグ」をオンにし、Mac の Chrome で `chrome://inspect` を開く。
+詳しい手順と記録表は [docs/device-check.md](docs/device-check.md)。要点：
 
-本番に近い状態で確かめるときは `npm run build && npm run preview:lan` を使います。
+1. Mac とスマホを同じ Wi-Fi につなぐ。
+2. Mac で `npm ci && npm run build && npm run preview:lan` を実行し、表示される `Network: http://192.168.x.x:8080/` を控える。
+3. スマホでその URL に `?fps` を付けて開き（例 `http://192.168.x.x:8080/?fps`）、横向きにする。
+4. タイトル下部に出る「コミット・Phaser の版」を記録表に書く。
+
+クラウドの検証コンテナで起動したサーバー（`localhost`・`192.0.2.x`）はスマホからは開けません。公開済みの確認 URL はありません。
 
 ## 操作
 
@@ -55,8 +58,9 @@ npm run dev        # 開発サーバー → http://localhost:8080 をブラウ�
 
 | URL の末尾 | 内容 |
 |---|---|
-| `?fps` | 左下に fps・描画解像度・品質・表示中の物の数・素材のメモリ量・素材の生成時間を表示 |
-| `?q=low` / `?q=high` | 品質を強制（既定は端末のメモリ・コア数から自動判定） |
+| `?fps` | 左下に fps・画質とその理由・実際の描画画素数・表示中の物の数・素材の容量・操作できるまでの時間・コミット ID を表示 |
+| `?q=low` / `?q=high` | 画質を強制（メニューの「画質」より優先。既定は端末のメモリ・コア数から自動判定） |
+| `?rotsway` / `?maxtex=N` | 既知の描画問題の切り分け用（[docs/known-issues.md](docs/known-issues.md)） |
 | `/tools/gallery.html` | 開発用の素材一覧（人物の 8 方向の歩行を再生）。`?only=hero` などで絞り込み |
 
 例：スマホで `http://192.168.x.x:8080/?fps` を開くと、実機の fps を画面で確かめられます。

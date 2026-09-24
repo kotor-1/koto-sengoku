@@ -22,6 +22,7 @@ import { groundArt } from './art/ground';
 import { TREE_KEYS, treeArt, tuftArt } from './art/nature';
 import { CHARACTER, FLOWER_VARIANTS, GATE, HOUSE_FRONT_H, SHADOW_DIR, TUFT_VARIANTS, WALK_FRAMES, WALL_H, houseSpec } from './art/spec';
 import type { Viewport } from './viewport';
+import { buildLabel } from '../buildInfo';
 import { CameraFollower } from './world/camera';
 import { HeadingTracker } from './world/heading';
 import { bridges, gateRect, grassTuftSpots, houseRects, keepRect, tilesOf, trees, wallTiles, waterRects } from './world/layout';
@@ -138,10 +139,23 @@ export class WorldScene extends Scene {
     private lightT = 1;
     private lastCull = { x: -1e9, y: -1e9, zoom: 0, frame: 0 };
     private frame = 0;
+    /**
+     * 確認用（?rotsway）：木・草を以前の「回転」で揺らす。木が三角に欠ける現象を実機で再現・判定するため。
+     * 既定は無効（docs/known-issues.md）。
+     */
+    private readonly rotSway = new URLSearchParams(location.search).has('rotsway');
     private fpsEl: HTMLElement | null = null;
     private fpsTimer = 0;
     /** 起動時の計測（素材の生成時間など）。開発時の確認用。 */
-    readonly stats = { artMs: 0, createMs: 0, textureBytes: 0 };
+    readonly stats = {
+        artMs: 0,
+        createMs: 0,
+        textureBytes: 0,
+        /** ページを開いてから探索画面の準備が終わるまで（ms）。これ以降「はじめから」で操作できる */
+        readyMs: 0,
+        /** ページを開いてから最初の 1 フレームを描くまで（ms） */
+        firstFrameMs: 0,
+    };
 
     constructor(
         private readonly source: WorldSource,
@@ -198,6 +212,7 @@ export class WorldScene extends Scene {
         this.showIdleView();
 
         this.stats.createMs = Math.round(performance.now() - t0);
+        this.stats.readyMs = Math.round(performance.now());
         if (this.showFps) {
             this.fpsEl = document.createElement('div');
             this.fpsEl.id = 'fps-meter';
@@ -555,6 +570,7 @@ export class WorldScene extends Scene {
     // ------------------------------------------------------------------
 
     update(_time: number, delta: number): void {
+        if (this.stats.firstFrameMs === 0) this.stats.firstFrameMs = Math.round(performance.now());
         const dt = Math.min(delta / 1000, 0.1);
         this.elapsed += dt;
         this.frame++;
@@ -693,6 +709,10 @@ export class WorldScene extends Scene {
         for (const s of this.tufts) {
             if (!s.obj.visible) continue;
             const v = Math.sin(t * s.swaySpeed + s.phase) * gust; // -1.4〜1.4 程度
+            if (this.rotSway) {
+                s.obj.rotation = v * 0.09;
+                continue;
+            }
             const f = Math.max(0, Math.min(last, Math.round((v * 0.5 + 0.5) * last)));
             const name = tuftFrame(f);
             if (s.obj.frame.name !== name) s.obj.setFrame(name);
@@ -701,6 +721,10 @@ export class WorldScene extends Scene {
             if (s.sway === 0 || !s.obj.visible) continue;
             // 木：根元を基準に横幅をわずかに伸び縮み ＋ ごくわずかな横ずれ（葉がそよぐ見え方）
             const v = Math.sin(t * s.swaySpeed + s.phase) * gust;
+            if (this.rotSway) {
+                s.obj.rotation = v * 0.012;
+                continue;
+            }
             s.obj.scaleX = s.baseScaleX * (1 + v * s.sway);
             s.obj.x = s.baseX + v * 0.25;
         }
@@ -807,7 +831,16 @@ export class WorldScene extends Scene {
         this.fpsTimer = 0;
         const visible = this.standing.filter((s) => s.obj.visible).length + this.tufts.filter((s) => s.obj.visible).length;
         const mb = (this.stats.textureBytes / 1048576).toFixed(1);
-        this.fpsEl.textContent = `${Math.round(this.game.loop.actualFps)} fps ・解像度 ×${this.viewport.renderScale} ・${this.quality.tier} ・表示物 ${visible} ・素材 ${mb}MB / 生成 ${this.stats.artMs}ms`;
+        const q = this.quality;
+        const c = this.game.canvas;
+        this.fpsEl.textContent = [
+            `${Math.round(this.game.loop.actualFps)} fps（平均 ${Math.round(this.governor.averageFps)}）`,
+            `画質 ${q.tier === 'high' ? '高' : '低'}：${q.reason}`,
+            `描画 ${c.width}×${c.height}px（×${this.viewport.renderScale}）`,
+            `表示物 ${visible}・素材 ${mb}MB`,
+            `準備完了 ${this.stats.readyMs}ms（素材生成 ${this.stats.artMs}ms）`,
+            buildLabel(),
+        ].join('\n');
     }
 }
 

@@ -1,7 +1,7 @@
 import { AUTO, Game, Scale } from 'phaser';
 import { Viewport } from './viewport';
 import { WorldScene, type WorldSource } from './WorldScene';
-import { chooseQuality, initialRenderScale, type QualityProfile } from './world/quality';
+import { chooseQuality, initialRenderScale, loadQualityChoice, type QualityProfile } from './world/quality';
 
 export interface GameHandle {
     game: Game;
@@ -25,6 +25,7 @@ export function createGame(parentId: string, source: WorldSource): GameHandle {
         hardwareConcurrency: nav.hardwareConcurrency,
         touch: (navigator.maxTouchPoints ?? 0) > 0,
         forced: params.get('q'),
+        manual: loadQualityChoice(),
     });
     const viewport = new Viewport(parent, initialRenderScale(quality, window.devicePixelRatio || 1));
 
@@ -40,6 +41,10 @@ export function createGame(parentId: string, source: WorldSource): GameHandle {
         scale: { mode: Scale.NONE, autoRound: true },
         input: { keyboard: false, mouse: false, touch: false, gamepad: false },
         disableContextMenu: true,
+        // Phaser は起動直後とタブ復帰直後の panicMax フレーム（既定 120）の間、1 フレームの時間を 60fps 相当に切り詰める。
+        // 30fps の端末では約 4 秒、低 fps ではさらに長くスローモーションになるため無効にする。
+        // 大きすぎる経過時間は core 側で 1 フレーム 0.1 秒に抑えている（MAX_STEP_SEC）。
+        fps: { panicMax: 0 },
         banner: false,
         render: { powerPreference: 'default', ...(params.has('maxtex') ? { maxTextures: Number(params.get('maxtex')) } : {}) },
         scene: [new WorldScene(source, viewport, quality, params.has('fps'))],

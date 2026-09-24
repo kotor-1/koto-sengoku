@@ -24,6 +24,16 @@ export interface QualityProfile {
     smokeSources: number;
     /** 地面の細かい質感を重ねるか（全画面 1 枚分の描画が増える） */
     groundDetail: boolean;
+    /** どう決まったか：url（?q=）、manual（メニューで選択）、auto（自動判定） */
+    source: 'url' | 'manual' | 'auto';
+    /** 決まった理由（画面表示用） */
+    reason: string;
+}
+
+export type QualityChoice = 'auto' | QualityTier;
+
+export function isQualityChoice(v: unknown): v is QualityChoice {
+    return v === 'auto' || v === 'high' || v === 'low';
 }
 
 export interface QualityEnv {
@@ -31,17 +41,44 @@ export interface QualityEnv {
     deviceMemory?: number;
     hardwareConcurrency?: number;
     touch: boolean;
-    /** URL の ?q=low / ?q=high で強制できる */
+    /** URL の ?q=low / ?q=high で強制できる（最優先） */
     forced?: string | null;
+    /** メニューで選んだ画質（端末に保存。URL の次に優先） */
+    manual?: QualityChoice | null;
 }
 
+/**
+ * 画質を決める。優先順：URL（?q=）→ メニューの選択 → 自動判定。
+ * 自動判定：メモリ 3GB 以下、またはコア数 2 以下なら low。
+ * 端末情報が取れない場合（iOS Safari は deviceMemory を返さない等）は high とし、
+ * 実際に遅ければ ResolutionGovernor が描画解像度を下げる。
+ */
 export function chooseQuality(env: QualityEnv): QualityProfile {
     let tier: QualityTier = 'high';
-    if (env.forced === 'low' || env.forced === 'high') tier = env.forced;
-    else if ((env.deviceMemory !== undefined && env.deviceMemory <= 3) || (env.hardwareConcurrency !== undefined && env.hardwareConcurrency <= 4)) tier = 'low';
+    let source: QualityProfile['source'] = 'auto';
+    let reason: string;
+    if (env.forced === 'low' || env.forced === 'high') {
+        tier = env.forced;
+        source = 'url';
+        reason = `URL で指定（?q=${env.forced}）`;
+    } else if (env.manual === 'low' || env.manual === 'high') {
+        tier = env.manual;
+        source = 'manual';
+        reason = 'メニューで選択';
+    } else {
+        const mem = env.deviceMemory;
+        const cores = env.hardwareConcurrency;
+        const lowMem = mem !== undefined && mem <= 3;
+        const lowCpu = cores !== undefined && cores <= 2;
+        tier = lowMem || lowCpu ? 'low' : 'high';
+        const known = [mem !== undefined ? `メモリ ${mem}GB` : null, cores !== undefined ? `コア ${cores}` : null].filter(Boolean);
+        reason = known.length === 0 ? '自動（端末情報なし→高）' : `自動（${known.join('・')}）`;
+    }
     const high = tier === 'high';
     return {
         tier,
+        source,
+        reason,
         maxRenderScale: high ? 2 : 1.5,
         minRenderScale: 1,
         groundTex: high ? GROUND_TEX_HIGH : GROUND_TEX_LOW,
@@ -100,3 +137,27 @@ export class ResolutionGovernor {
         return next;
     }
 }
+
+/** メニューで選んだ画質の保存先（ゲームの保存データとは別。端末の好みとして覚えるだけ） */
+export const QUALITY_PREF_KEY = 'koto-sengoku/quality';
+
+export function loadQualityChoice(): QualityChoice {
+    try {
+        const v = globalThis.localStorage?.getItem(QUALITY_PREF_KEY);
+        return isQualityChoice(v) ? v : 'auto';
+    } catch {
+        return 'auto';
+    }
+}
+
+/** 保存できたら true */
+export function saveQualityChoice(c: QualityChoice): boolean {
+    try {
+        globalThis.localStorage?.setItem(QUALITY_PREF_KEY, c);
+        return globalThis.localStorage?.getItem(QUALITY_PREF_KEY) === c;
+    } catch {
+        return false;
+    }
+}
+
+export const QUALITY_LABELS: Record<QualityChoice, string> = { auto: '自動', high: '高', low: '低' };

@@ -17,13 +17,23 @@
     "preview:lan": "vite preview --config vite/config.prod.mjs --port 8080 --host",
     "typecheck": "tsc",
     "test": "vitest run",
-    "check": "npm run typecheck && npm run test && npm run build"
+    "check": "npm run typecheck && npm run test && npm run build",
+    "e2e:desktop": "node e2e/regression-desktop.mjs e2e-out",
+    "e2e:touch": "node e2e/regression-touch.mjs e2e-out",
+    "e2e:multitouch": "node e2e/multitouch.mjs",
+    "e2e:interrupt": "node e2e/interrupt.mjs",
+    "e2e:visual": "node e2e/visual.mjs e2e-out",
+    "e2e:walk": "node e2e/walk.mjs e2e-out",
+    "e2e:shots": "node e2e/screenshots.mjs e2e-out",
+    "e2e:wedge": "node e2e/tree-wedge-repro.mjs e2e-out",
+    "e2e:perf": "node e2e/perf-snapshot.mjs"
   },
   "dependencies": {
     "phaser": "4.0.0",
     "terser": "^5.39.0"
   },
   "devDependencies": {
+    "playwright-core": "^1.56.1",
     "typescript": "~5.7.2",
     "vite": "^6.3.1",
     "vitest": "^5.0.1"

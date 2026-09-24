@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { buildInfoDefine } from './buildInfo.mjs';
 
 const phasermsg = () => {
     return {
@@ -18,6 +19,7 @@ const phasermsg = () => {
 
 export default defineConfig({
     base: './',
+    define: buildInfoDefine(),
     logLevel: 'warning',
     build: {
         rollupOptions: {

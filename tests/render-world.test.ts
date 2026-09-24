@@ -167,8 +167,24 @@ describe('camera（追従）', () => {
 describe('quality（品質と解像度）', () => {
     it('メモリやコアが少ない端末は low', () => {
         expect(chooseQuality({ devicePixelRatio: 3, deviceMemory: 2, touch: true }).tier).toBe('low');
+        expect(chooseQuality({ devicePixelRatio: 3, hardwareConcurrency: 2, touch: true }).tier).toBe('low');
         expect(chooseQuality({ devicePixelRatio: 2, deviceMemory: 8, hardwareConcurrency: 8, touch: false }).tier).toBe('high');
-        expect(chooseQuality({ devicePixelRatio: 2, deviceMemory: 2, touch: true, forced: 'high' }).tier).toBe('high');
+        // 4 コアでもメモリが十分なら high（以前は 4 コアで low になり、検証用コンテナも low になっていた）
+        expect(chooseQuality({ devicePixelRatio: 2, deviceMemory: 4, hardwareConcurrency: 4, touch: true }).tier).toBe('high');
+    });
+
+    it('端末情報が取れない場合（iOS Safari など）は high、理由にその旨を出す', () => {
+        const q = chooseQuality({ devicePixelRatio: 3, touch: true });
+        expect(q.tier).toBe('high');
+        expect(q.source).toBe('auto');
+        expect(q.reason).toContain('端末情報なし');
+    });
+
+    it('優先順は URL → メニューの選択 → 自動', () => {
+        expect(chooseQuality({ devicePixelRatio: 2, deviceMemory: 2, touch: true, forced: 'high' })).toMatchObject({ tier: 'high', source: 'url' });
+        expect(chooseQuality({ devicePixelRatio: 2, deviceMemory: 8, touch: true, manual: 'low' })).toMatchObject({ tier: 'low', source: 'manual' });
+        expect(chooseQuality({ devicePixelRatio: 2, deviceMemory: 8, touch: true, forced: 'high', manual: 'low' })).toMatchObject({ tier: 'high', source: 'url' });
+        expect(chooseQuality({ devicePixelRatio: 2, deviceMemory: 2, touch: true, manual: 'auto' })).toMatchObject({ tier: 'low', source: 'auto' });
     });
 
     it('解像度は端末の倍率を上限 2 までに抑える', () => {

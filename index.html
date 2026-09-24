@@ -64,6 +64,7 @@
                     <p class="help-touch"><span class="help-item"><b>移動</b>画面の左側をなぞる</span><span class="help-item"><b>話す・次へ</b>右下のボタン</span></p>
                     <p class="help-keys"><span class="help-item"><b>移動</b><kbd>←↑↓→</kbd><kbd>WASD</kbd></span><span class="help-item"><b>話す・次へ</b><kbd>Space</kbd><kbd>Enter</kbd><kbd>Z</kbd></span><span class="help-item"><b>メニュー</b><kbd>Esc</kbd></span><span class="help-item"><b>時間帯</b><kbd>T</kbd></span></p>
                 </div>
+                <p id="build-info" class="build-info"></p>
             </div>
         </section>
 
@@ -74,10 +75,15 @@
                 <p id="menu-save-info"></p>
                 <button id="btn-save" type="button" class="primary">端末に保存する</button>
                 <p id="menu-status" role="status" aria-live="polite"></p>
+                <div class="check-row">
+                    <button id="btn-quality" type="button" class="secondary">画質：自動</button>
+                    <p id="quality-note" class="build-info"></p>
+                </div>
                 <div class="buttons">
                     <button id="btn-close" type="button">閉じる</button>
                     <button id="btn-title" type="button" class="secondary">タイトルへ戻る</button>
                 </div>
+                <p id="menu-build-info" class="build-info"></p>
             </div>
         </section>
 
