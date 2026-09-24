@@ -102,7 +102,7 @@ export class ResolutionGovernor {
     private acc = 0;
     private frames = 0;
     private warmup: number;
-    private lastAvgFps = 60;
+    private lastAvgFps: number | null = null;
 
     constructor(
         private readonly steps: number[] = [2, 1.5, 1.25, 1],
@@ -113,7 +113,8 @@ export class ResolutionGovernor {
         this.warmup = warmupSec;
     }
 
-    get averageFps(): number {
+    /** 直近 2 秒の平均 fps。起動直後でまだ測っていなければ null */
+    get averageFps(): number | null {
         return this.lastAvgFps;
     }
 

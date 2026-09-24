@@ -834,7 +834,7 @@ export class WorldScene extends Scene {
         const q = this.quality;
         const c = this.game.canvas;
         this.fpsEl.textContent = [
-            `${Math.round(this.game.loop.actualFps)} fps（平均 ${Math.round(this.governor.averageFps)}）`,
+            `${Math.round(this.game.loop.actualFps)} fps（2 秒平均 ${this.governor.averageFps === null ? '計測中' : Math.round(this.governor.averageFps)}）`,
             `画質 ${q.tier === 'high' ? '高' : '低'}：${q.reason}`,
             `描画 ${c.width}×${c.height}px（×${this.viewport.renderScale}）`,
             `表示物 ${visible}・素材 ${mb}MB`,
