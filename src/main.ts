@@ -4,9 +4,9 @@ import { createGame } from './render/createGame';
 function start(): void {
     try {
         const app = new App();
-        const game = createGame('game-container', app);
+        const { game, viewport, quality } = createGame('game-container', app);
         // 開発時のみ：ブラウザのコンソールや自動テストから状態を見られるようにする
-        if (import.meta.env.DEV) Object.assign(window, { __koto: { app, game } });
+        if (import.meta.env.DEV) Object.assign(window, { __koto: { app, game, viewport, quality } });
     } catch (e) {
         const el = document.getElementById('boot-error');
         if (el) {

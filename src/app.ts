@@ -9,6 +9,7 @@ import { AREA_NAMES, areaAtPixel } from './core/map';
 import { SaveStore, fromSaveData, getBrowserStorage } from './core/save';
 import { GameSession } from './core/session';
 import type { WorldSource } from './render/WorldScene';
+import { TIME_LABELS, isTimeOfDay, nextTime, type TimeOfDay } from './render/world/lighting';
 import { bindKeyboard } from './platform/keyboard';
 import { isTouchDevice, onInputInterrupt, preventPageGestures, watchOrientation } from './platform/page';
 import { TouchControls } from './platform/touchControls';
@@ -27,6 +28,8 @@ export class App implements WorldSource {
     private isPortraitBlocked: () => boolean = () => false;
     /** このプレイ中に最後に保存できた時刻 */
     private lastSavedAt: Date | null = null;
+    /** 見た目の設定（時間帯）。ゲームの保存データとは別に、端末に覚えておくだけ。 */
+    private timeOfDay: TimeOfDay = loadVisualPref();
 
     constructor() {
         this.hud = new Hud({
@@ -36,7 +39,9 @@ export class App implements WorldSource {
             onCloseMenu: () => this.closeMenu(),
             onSave: () => this.save(),
             onBackToTitle: () => this.backToTitle(),
+            onCycleTime: () => this.cycleTime(),
         });
+        this.hud.setTimeLabel(TIME_LABELS[this.timeOfDay]);
 
         const el = (id: string) => document.getElementById(id)!;
         this.touch = new TouchControls(
@@ -58,6 +63,7 @@ export class App implements WorldSource {
                 if (this.mode === 'menu') this.closeMenu();
                 else if (this.mode === 'play') this.openMenu();
             },
+            onTimeKey: () => this.cycleTime(),
         });
 
         preventPageGestures();
@@ -84,6 +90,17 @@ export class App implements WorldSource {
 
     getSession(): GameSession | null {
         return this.session;
+    }
+
+    getTimeOfDay(): TimeOfDay {
+        return this.timeOfDay;
+    }
+
+    /** 時間帯（昼→夕→夜）を切り替える。見た目だけで、ゲームの進行には影響しない。 */
+    private cycleTime(): void {
+        this.timeOfDay = nextTime(this.timeOfDay);
+        this.hud.setTimeLabel(TIME_LABELS[this.timeOfDay]);
+        saveVisualPref(this.timeOfDay);
     }
 
     tick(dtSec: number): void {
@@ -224,6 +241,26 @@ export class App implements WorldSource {
             dialogue: line && d ? { ...line, isLast: d.index >= d.script.lines.length - 1 } : null,
             prompt: near ? { verb: near.verb, name: near.name } : null,
         };
+    }
+}
+
+const VISUAL_KEY = 'koto-sengoku/visual';
+
+function loadVisualPref(): TimeOfDay {
+    try {
+        const v = JSON.parse(localStorage.getItem(VISUAL_KEY) ?? 'null') as { timeOfDay?: unknown } | null;
+        if (v && isTimeOfDay(v.timeOfDay)) return v.timeOfDay;
+    } catch {
+        /* 読めなければ既定値 */
+    }
+    return 'evening';
+}
+
+function saveVisualPref(t: TimeOfDay): void {
+    try {
+        localStorage.setItem(VISUAL_KEY, JSON.stringify({ timeOfDay: t }));
+    } catch {
+        /* 見た目の好みなので、覚えられなくても支障はない */
     }
 }
 

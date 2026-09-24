@@ -1,6 +1,6 @@
 /**
  * Mac などのキーボード操作。
- *   移動：矢印キー / WASD　　話す・次へ：Space / Enter / Z　　メニュー：Esc
+ *   移動：矢印キー / WASD　　話す・次へ：Space / Enter / Z　　メニュー：Esc　　時間帯：T
  */
 import type { Direction, InputState } from '../core/input';
 
@@ -16,6 +16,8 @@ export interface KeyboardHooks {
     /** 探索中（メニューやタイトルが開いていない）か */
     isGameplayActive(): boolean;
     onMenuKey(): void;
+    /** 時間帯の切り替え（見た目の確認用） */
+    onTimeKey?(): void;
 }
 
 export function bindKeyboard(input: InputState, hooks: KeyboardHooks): () => void {
@@ -27,6 +29,10 @@ export function bindKeyboard(input: InputState, hooks: KeyboardHooks): () => voi
             return;
         }
         if (!hooks.isGameplayActive()) return;
+        if (e.code === 'KeyT') {
+            if (!e.repeat) hooks.onTimeKey?.();
+            return;
+        }
         const dir = DIR_KEYS[e.code];
         if (dir) {
             e.preventDefault(); // 矢印キーでページが動かないように

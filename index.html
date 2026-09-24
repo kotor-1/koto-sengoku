@@ -19,7 +19,10 @@
             <!-- 上部：目的とメニュー -->
             <div id="hud-top">
                 <div id="objective" aria-live="polite"></div>
-                <button id="menu-btn" type="button" aria-label="メニュー">メニュー</button>
+                <div class="hud-actions">
+                    <button id="time-btn" type="button" aria-label="時間帯"><span class="time-label">夕</span></button>
+                    <button id="menu-btn" type="button" aria-label="メニュー">メニュー</button>
+                </div>
             </div>
 
             <div id="area-banner" aria-live="polite"></div>
@@ -58,7 +61,7 @@
                 <p id="save-warning" class="warning" hidden></p>
                 <div class="help">
                     <p class="help-touch">左側をなぞって移動　右下のボタンで話す・次へ</p>
-                    <p class="help-keys">移動：矢印キー / WASD　話す・次へ：Space / Enter / Z　メニュー：Esc</p>
+                    <p class="help-keys">移動：矢印キー / WASD　話す・次へ：Space / Enter / Z　メニュー：Esc　時間帯：T</p>
                 </div>
             </div>
         </section>

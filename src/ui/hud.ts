@@ -26,6 +26,7 @@ export interface HudHandlers {
     onCloseMenu(): void;
     onSave(): void;
     onBackToTitle(): void;
+    onCycleTime(): void;
 }
 
 function $(id: string): HTMLElement {
@@ -52,6 +53,7 @@ export class Hud {
     private readonly prompt = $('prompt');
     private readonly actionBtn = $('action-btn');
     private readonly toastEl = $('toast');
+    private readonly timeBtn = $('time-btn');
 
     private last = { objective: '', dialogueKey: '', promptKey: '' };
     private confirmTitle = false;
@@ -61,6 +63,10 @@ export class Hud {
         $('btn-new').addEventListener('click', () => h.onNewGame());
         this.btnContinue.addEventListener('click', () => h.onContinue());
         $('menu-btn').addEventListener('click', () => h.onOpenMenu());
+        this.timeBtn.addEventListener('click', () => {
+            h.onCycleTime();
+            this.timeBtn.blur();
+        });
         $('btn-close').addEventListener('click', () => h.onCloseMenu());
         $('btn-save').addEventListener('click', () => h.onSave());
         this.btnTitle.addEventListener('click', () => {
@@ -75,6 +81,11 @@ export class Hud {
         this.menu.addEventListener('click', (e) => {
             if (e.target === this.menu) h.onCloseMenu();
         });
+    }
+
+    setTimeLabel(label: string): void {
+        this.timeBtn.querySelector('.time-label')!.textContent = label;
+        this.timeBtn.setAttribute('aria-label', `時間帯：${label}（押すと切り替え）`);
     }
 
     setMode(mode: 'title' | 'play' | 'menu'): void {
