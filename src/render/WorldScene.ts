@@ -662,7 +662,8 @@ export class WorldScene extends Scene {
             }
             let behind = false;
             for (const h of bodies) {
-                if (h.y < s.baseY && h.r > s.left && h.l < s.right && h.b > s.top && h.t < s.bottom) {
+                // 数 px かすめる程度では反応しない（通りの端を歩くたびにちらつかないように）
+                if (h.y < s.baseY && h.r > s.left + 3 && h.l < s.right - 3 && h.b > s.top + 6 && h.t < s.bottom) {
                     behind = true;
                     break;
                 }

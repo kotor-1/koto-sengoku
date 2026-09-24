@@ -96,8 +96,8 @@ export const DIRECTIONS = 8;
 /** 歩行 1 周期のコマ数（待機 1 コマは別） */
 export const WALK_FRAMES = 8;
 
-/** 民家：幅タイル数 × 奥行き 3 タイルの敷地。前面の壁の高さ 30、軒の出 4。基準点は敷地下端の中央。 */
-export const HOUSE_FRONT_H = 30;
+/** 民家：幅タイル数 × 奥行き 3 タイルの敷地。前面の壁の高さ 36（戸口 ≈ 29 = 人物がくぐれる高さ）、軒の出 4。基準点は敷地下端の中央。 */
+export const HOUSE_FRONT_H = 36;
 export const HOUSE_EAVE = 4;
 export function houseSpec(widthTiles: number): SpriteSpec {
     const w = widthTiles * 16 + HOUSE_EAVE * 2;
@@ -108,9 +108,9 @@ export function houseSpec(widthTiles: number): SpriteSpec {
 /** 木：幹の根元が基準点。 */
 export const TREE: SpriteSpec = { w: 44, h: 66, ox: 0.5, oy: 62 / 66 };
 
-/** 城壁 1 タイル分。上面（瓦）16×16 と、南向きの前面（高さ 20）。 */
-export const WALL_H = 20;
-/** 前面つき：上面 16 + 前面 20 = 36。基準点は下端。 */
+/** 城壁 1 タイル分。上面（瓦）16×16 と、南向きの前面（高さ 28 ≒ 1.75 m。人物より少し高い）。 */
+export const WALL_H = 28;
+/** 前面つき：上面 16 + 前面 WALL_H。基準点は下端。 */
 export const WALL_WITH_FRONT: SpriteSpec = { w: 16, h: 16 + WALL_H, ox: 0, oy: 1 };
 /** 上面のみ（縦に続く壁の途中）。 */
 export const WALL_TOP_ONLY: SpriteSpec = { w: 16, h: 16, ox: 0, oy: 1 };

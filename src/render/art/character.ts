@@ -247,7 +247,8 @@ const WARM: RGB = [255, 238, 208];
 const COOL: RGB = [40, 42, 66];
 const INK: RGB = [30, 26, 36];
 const SHADE: RGB = [30, 30, 52];
-const OUTLINE = 'rgb(38,33,44)';
+// 輪郭：建物の墨・木部の暗色と揃えた、わずかに暖かい焦げ茶寄りの墨色（真っ黒にしない）
+const OUTLINE = 'rgb(44,36,38)';
 const GLOSS: RGB = [246, 244, 236];
 
 /** 材質：基本色と、光の当たる側（暖）・影側（寒）の色 */

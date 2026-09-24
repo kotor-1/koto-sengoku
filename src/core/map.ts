@@ -163,8 +163,11 @@ export function areaAtPixel(x: number, y: number): AreaId {
 
 /** 主人公の初期位置（城内、天守の前） */
 export const PLAYER_START = { tx: 27, ty: 9 } as const;
-/** 家臣の立ち位置（城門の内側） */
-export const RETAINER_POS = { tx: 30, ty: 11 } as const;
+/**
+ * 家臣の立ち位置（城門の内側、門の脇）。
+ * 2.5D 表示では城門の櫓（高さ約 4 m）が真後ろ 2 マスを覆うため、門の真後ろから東へずらしている。
+ */
+export const RETAINER_POS = { tx: 32, ty: 10 } as const;
 
 /** 調べられるタイル（高札・道標・井戸） */
 export interface TileSpot {
