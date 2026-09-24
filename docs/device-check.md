@@ -4,7 +4,11 @@
 
 - 確認は **Mac で起動したサーバーを、同じ Wi-Fi のスマホから開く** 方法で行う。
 - 開発作業をしたクラウドの検証コンテナの `localhost` や `192.0.2.x` のアドレスは、Mac やスマホからは開けない（コンテナの中だけのアドレス）。
-- **確認用 URL（非公開）**：https://claude.ai/artifact/KrDCjHSFkNVEHYbNXFxEik
+- **模擬戦の確認用 URL（非公開）**：https://claude.ai/artifact/EttxM33mffgCfi3WzoH9SL
+  - 対応するビルド：コミット `0bca735` ・ Phaser 4.0.0 ・ 本番ビルド（2026-09-24 設置。置いたファイルの SHA-256 が、このコミットの `npm run build` の出力と一致することを確認済み）
+  - 承認された見た目の URL（下）とは別のページ。承認版のページは変えていない。
+  - この置き場所で模擬戦が正しく動くかは、設置時点では未確認（同じファイルを手元の簡易サーバーで開き、会話 → 模擬戦 → 指揮まで動くことだけを確認）。
+- **確認用 URL（非公開・承認された見た目の版）**：https://claude.ai/artifact/KrDCjHSFkNVEHYbNXFxEik
   - 対応するビルド：コミット `8c4b50a` ・ Phaser 4.0.0 ・ 本番ビルド（2026-09-24、利用者の依頼で claude.ai の非公開ページとして設置）
   - 開けるのは所有者（と、所有者が共有した人）だけ。インターネットに一般公開はしていない。
   - この置き場所では URL の `?` 以降がページに届かないので、性能表示は `#fps`、木の欠けの確認は `#rotsway` を末尾に付ける。画質はメニューの「画質」で切り替える。
@@ -20,7 +24,7 @@
 | 実機確認準備（この工程） | このファイルを含むコミット | 4.0.0 | ブランチ `claude/friendly-hopper-7hijta` |
 | Phaser 4.2.1 の検証 | `981bc58` | 4.2.1 | ブランチ `claude/friendly-hopper-7hijta-phaser421`（今回の変更は混ぜていない） |
 | 承認された見た目（利用者が確認した非公開 URL の版） | `8c4b50a` | 4.0.0 | ブランチ `claude/friendly-hopper-7hijta` の履歴（手元の印 `approved-visual-8c4b50a`。リモートへの印の送信は権限がなく未送信）。戻すときは `git checkout 8c4b50a` |
-| 模擬戦（小さな戦闘と指揮）の試作 | このファイルを含むコミット | 4.0.0 | ブランチ `claude/friendly-hopper-7hijta` |
+| 模擬戦（小さな戦闘と指揮）の試作 | `0bca735`（確認用 URL の版。以降は文書だけの変更） | 4.0.0 | ブランチ `claude/friendly-hopper-7hijta` |
 
 ## Mac で起動する手順
 
