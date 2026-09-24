@@ -36,44 +36,50 @@ export interface LightPreset {
     ambient: AmbientKind;
 }
 
+/**
+ * 昼：ほぼ無色の自然光、弱い周辺減光。影は短め。
+ * 夕（既定）：金色の西日（乗算で暖色 + 左上から加算の日差し）、長く柔らかい影、灯りがともり始める。
+ * 夜：月明かりの青（乗算で青く暗く + 左上から弱い青白い光）、柔らかい月影、温かい灯りと蛍。
+ *     道と人物が読める明るさを保つ（乗算の係数はおよそ R0.41 G0.50 B0.78）。
+ */
 export const PRESETS: Record<TimeOfDay, LightPreset> = {
     day: {
-        tint: 0xfff8ec,
-        tintAlpha: 0.15,
+        tint: 0xfff6e6,
+        tintAlpha: 0.12,
         sunColor: 0xfff1d0,
-        sunAlpha: 0.1,
-        vignetteAlpha: 0.14,
-        contactAlpha: 0.34,
+        sunAlpha: 0.12,
+        vignetteAlpha: 0.2,
+        contactAlpha: 0.42,
         castAlpha: 0.26,
         castLength: 0.7,
         lanternAlpha: 0,
-        waterAlpha: 0.42,
+        waterAlpha: 0.4,
         ambient: 'motes',
     },
     evening: {
-        tint: 0xf0b48a,
-        tintAlpha: 0.58,
-        sunColor: 0xffb070,
-        sunAlpha: 0.3,
-        vignetteAlpha: 0.3,
-        contactAlpha: 0.38,
+        tint: 0xf2c29a,
+        tintAlpha: 0.55,
+        sunColor: 0xffb877,
+        sunAlpha: 0.32,
+        vignetteAlpha: 0.28,
+        contactAlpha: 0.44,
         castAlpha: 0.3,
         castLength: 1.6,
-        lanternAlpha: 0.35,
-        waterAlpha: 0.5,
+        lanternAlpha: 0.4,
+        waterAlpha: 0.45,
         ambient: 'leaves',
     },
     night: {
-        tint: 0x4a5a8c,
-        tintAlpha: 0.82,
-        sunColor: 0x8fa6d8,
+        tint: 0x4260b8,
+        tintAlpha: 0.8,
+        sunColor: 0x9fb6ea,
         sunAlpha: 0.1,
-        vignetteAlpha: 0.45,
-        contactAlpha: 0.42,
-        castAlpha: 0.1,
-        castLength: 0.5,
+        vignetteAlpha: 0.42,
+        contactAlpha: 0.5,
+        castAlpha: 0.2,
+        castLength: 0.8,
         lanternAlpha: 1,
-        waterAlpha: 0.3,
+        waterAlpha: 0.28,
         ambient: 'fireflies',
     },
 };
