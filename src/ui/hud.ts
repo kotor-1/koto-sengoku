@@ -85,6 +85,8 @@ export class Hud {
 
     setTimeLabel(label: string): void {
         this.timeBtn.querySelector('.time-label')!.textContent = label;
+        // 小さな絵柄（CSS で描く日・夕日・月）の切り替え用
+        this.timeBtn.dataset.time = label;
         this.timeBtn.setAttribute('aria-label', `時間帯：${label}（押すと切り替え）`);
     }
 
@@ -156,6 +158,7 @@ export class Hud {
                 this.speaker.textContent = v.dialogue.speaker;
                 this.text.textContent = v.dialogue.text;
                 this.next.textContent = v.dialogue.isLast ? '■' : '▼';
+                this.next.classList.toggle('last', v.dialogue.isLast);
             }
         }
 

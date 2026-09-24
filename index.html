@@ -5,7 +5,7 @@
     <link rel="icon" type="image/png" href="/favicon.png" />
     <!-- viewport-fit=cover：切り欠きのある端末で全面表示し、操作部品は safe-area で内側へ寄せる -->
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#1b1f16" />
+    <meta name="theme-color" content="#15130f" />
     <meta name="format-detection" content="telephone=no" />
     <link rel="stylesheet" href="/style.css">
     <title>戦国探索記 試作第一号</title>
@@ -20,8 +20,8 @@
             <div id="hud-top">
                 <div id="objective" aria-live="polite"></div>
                 <div class="hud-actions">
-                    <button id="time-btn" type="button" aria-label="時間帯"><span class="time-label">夕</span></button>
-                    <button id="menu-btn" type="button" aria-label="メニュー">メニュー</button>
+                    <button id="time-btn" type="button" aria-label="時間帯" data-time="夕"><span class="time-icon" aria-hidden="true"></span><span class="time-label">夕</span></button>
+                    <button id="menu-btn" type="button" aria-label="メニュー"><span class="menu-icon" aria-hidden="true"><i></i><i></i><i></i></span><span class="menu-label">メニュー</span></button>
                 </div>
             </div>
 
@@ -50,28 +50,29 @@
 
         <!-- タイトル -->
         <section id="title" class="overlay">
-            <div class="card allow-scroll">
+            <div class="card title-card allow-scroll">
+                <p class="eyebrow" aria-hidden="true"><span class="rule"></span>城下を歩く<span class="rule"></span></p>
                 <h1>戦国探索記</h1>
                 <p class="sub">試作第一号</p>
                 <div class="buttons">
-                    <button id="btn-new" type="button">はじめから</button>
+                    <button id="btn-new" type="button" class="primary">はじめから</button>
                     <button id="btn-continue" type="button" disabled>つづきから</button>
                 </div>
                 <p id="save-info"></p>
                 <p id="save-warning" class="warning" hidden></p>
                 <div class="help">
-                    <p class="help-touch">左側をなぞって移動　右下のボタンで話す・次へ</p>
-                    <p class="help-keys">移動：矢印キー / WASD　話す・次へ：Space / Enter / Z　メニュー：Esc　時間帯：T</p>
+                    <p class="help-touch"><span class="help-item"><b>移動</b>画面の左側をなぞる</span><span class="help-item"><b>話す・次へ</b>右下のボタン</span></p>
+                    <p class="help-keys"><span class="help-item"><b>移動</b><kbd>←↑↓→</kbd><kbd>WASD</kbd></span><span class="help-item"><b>話す・次へ</b><kbd>Space</kbd><kbd>Enter</kbd><kbd>Z</kbd></span><span class="help-item"><b>メニュー</b><kbd>Esc</kbd></span><span class="help-item"><b>時間帯</b><kbd>T</kbd></span></p>
                 </div>
             </div>
         </section>
 
         <!-- メニュー -->
         <section id="menu" class="overlay" hidden>
-            <div class="card allow-scroll" role="dialog" aria-label="メニュー">
+            <div class="card menu-card allow-scroll" role="dialog" aria-label="メニュー">
                 <h2>メニュー</h2>
                 <p id="menu-save-info"></p>
-                <button id="btn-save" type="button">端末に保存する</button>
+                <button id="btn-save" type="button" class="primary">端末に保存する</button>
                 <p id="menu-status" role="status" aria-live="polite"></p>
                 <div class="buttons">
                     <button id="btn-close" type="button">閉じる</button>
@@ -82,7 +83,7 @@
 
         <!-- 縦画面の案内（タッチ端末のみ） -->
         <div id="rotate-hint">
-            <div class="rotate-icon" aria-hidden="true">⟳</div>
+            <div class="rotate-icon" aria-hidden="true"><span class="phone"></span></div>
             <p>端末を横向きにしてお遊びください</p>
         </div>
 
