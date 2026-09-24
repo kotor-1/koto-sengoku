@@ -1,0 +1,510 @@
+/* ------------------------------------------------------------
+   基本：ページを動かさない・拡大しない・選択しない
+   ------------------------------------------------------------ */
+:root {
+    --safe-t: env(safe-area-inset-top, 0px);
+    --safe-r: env(safe-area-inset-right, 0px);
+    --safe-b: env(safe-area-inset-bottom, 0px);
+    --safe-l: env(safe-area-inset-left, 0px);
+    --ink: #f3ecd9;
+    --panel: rgba(20, 16, 12, 0.86);
+    --panel-edge: #b8924a;
+    --accent: #c9423a;
+    --font: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", "Meiryo", sans-serif;
+    --font-title: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif;
+}
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    background: #0f0f0f;
+    color: var(--ink);
+    font-family: var(--font);
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+body {
+    position: fixed;
+    inset: 0;
+    touch-action: none;
+}
+
+#app {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+}
+
+#game-container {
+    position: absolute;
+    inset: 0;
+}
+
+#game-container canvas {
+    display: block;
+    image-rendering: pixelated;
+    touch-action: none;
+}
+
+#safe-probe {
+    position: fixed;
+    visibility: hidden;
+    pointer-events: none;
+    padding: var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l);
+}
+
+button {
+    font: inherit;
+    color: inherit;
+    touch-action: manipulation;
+}
+
+/* ------------------------------------------------------------
+   HUD
+   ------------------------------------------------------------ */
+#ui {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+#ui > * {
+    pointer-events: auto;
+}
+
+#hud-top {
+    position: absolute;
+    top: calc(var(--safe-t) + 8px);
+    left: calc(var(--safe-l) + 10px);
+    right: calc(var(--safe-r) + 10px);
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    pointer-events: none;
+}
+
+#objective {
+    background: var(--panel);
+    border: 1px solid rgba(184, 146, 74, 0.6);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 13px;
+    line-height: 1.4;
+    max-width: 60%;
+}
+
+#menu-btn {
+    pointer-events: auto;
+    min-width: 72px;
+    min-height: 40px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--panel-edge);
+    background: var(--panel);
+    font-size: 14px;
+}
+
+#area-banner {
+    position: absolute;
+    top: calc(var(--safe-t) + 22%);
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--font-title);
+    font-size: 28px;
+    letter-spacing: 0.3em;
+    padding: 6px 24px 6px 30px;
+    background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.6) 20%, rgba(0, 0, 0, 0.6) 80%, transparent);
+    opacity: 0;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+#area-banner.show {
+    animation: banner 2.4s ease forwards;
+}
+
+@keyframes banner {
+    0% { opacity: 0; }
+    15% { opacity: 1; }
+    75% { opacity: 1; }
+    100% { opacity: 0; }
+}
+
+#prompt {
+    position: absolute;
+    left: 50%;
+    bottom: calc(var(--safe-b) + 24px);
+    transform: translateX(-50%);
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 14px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    pointer-events: none;
+}
+
+#prompt[hidden] {
+    display: none;
+}
+
+kbd {
+    font-family: inherit;
+    font-size: 12px;
+    border: 1px solid var(--ink);
+    border-radius: 4px;
+    padding: 1px 6px;
+}
+
+#dialogue {
+    position: absolute;
+    left: calc(var(--safe-l) + 16px);
+    right: calc(var(--safe-r) + 16px);
+    bottom: calc(var(--safe-b) + 14px);
+    max-width: 760px;
+    margin: 0 auto;
+    min-height: 84px;
+    box-sizing: border-box;
+    padding: 12px 18px 14px;
+    background: var(--panel);
+    border: 2px solid var(--panel-edge);
+    border-radius: 8px;
+    font-size: 17px;
+    line-height: 1.6;
+    touch-action: none;
+}
+
+#dialogue[hidden] {
+    display: none;
+}
+
+#dialogue-speaker {
+    font-weight: bold;
+    color: #f0c46a;
+    font-size: 14px;
+    margin-bottom: 2px;
+}
+
+#dialogue-next {
+    position: absolute;
+    right: 12px;
+    bottom: 6px;
+    font-size: 12px;
+    animation: blink 1s steps(2) infinite;
+}
+
+@keyframes blink {
+    50% { opacity: 0; }
+}
+
+#toast {
+    position: absolute;
+    top: calc(var(--safe-t) + 58px);
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 15px;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+    max-width: calc(100% - 32px - var(--safe-l) - var(--safe-r));
+    box-sizing: border-box;
+}
+
+#toast.show { opacity: 1; }
+.toast-ok { background: #2f6b3a; }
+.toast-error { background: #8e2b25; }
+.toast-info { background: #3b4150; }
+
+/* ------------------------------------------------------------
+   スマホ用操作（touch-ui のときだけ表示）
+   ------------------------------------------------------------ */
+#touch-controls {
+    display: none;
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+body.touch-ui #touch-controls {
+    display: block;
+}
+
+#stick-zone {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 50%;
+    top: calc(var(--safe-t) + 56px);
+    pointer-events: auto;
+    touch-action: none;
+}
+
+#stick-base {
+    position: absolute;
+    left: calc(var(--safe-l) + 28px);
+    bottom: calc(var(--safe-b) + 24px);
+    width: 112px;
+    height: 112px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.10);
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+#stick-zone.active #stick-base {
+    opacity: 1;
+}
+
+#stick-knob {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: rgba(243, 236, 217, 0.85);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+#action-btn {
+    position: absolute;
+    right: calc(var(--safe-r) + 28px);
+    bottom: calc(var(--safe-b) + 30px);
+    width: 84px;
+    height: 84px;
+    border-radius: 50%;
+    border: 3px solid #f0c46a;
+    background: rgba(201, 66, 58, 0.88);
+    font-size: 18px;
+    font-weight: bold;
+    pointer-events: auto;
+    touch-action: none;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45);
+}
+
+#action-btn.idle {
+    opacity: 0.5;
+}
+
+#action-btn.pressed {
+    transform: scale(0.92);
+    background: rgba(160, 45, 40, 0.95);
+}
+
+/* スマホでは会話枠を「話す」ボタンと重ならない幅にする */
+body.touch-ui #dialogue {
+    right: calc(var(--safe-r) + 128px);
+}
+
+body.touch-ui #prompt,
+body.touch-ui .help-keys {
+    display: none;
+}
+
+body:not(.touch-ui) .help-touch {
+    display: none;
+}
+
+/* 会話中はスティックを隠す */
+body.in-dialogue #stick-zone {
+    visibility: hidden;
+}
+
+/* タイトル・メニュー中は探索用の表示を隠す */
+body:not(.mode-play) #hud-top,
+body:not(.mode-play) #touch-controls,
+body:not(.mode-play) #prompt,
+body:not(.mode-play) #dialogue {
+    display: none !important;
+}
+
+body.in-dialogue #menu-btn {
+    visibility: hidden;
+}
+
+/* ------------------------------------------------------------
+   タイトル・メニュー
+   ------------------------------------------------------------ */
+.overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: calc(var(--safe-t) + 12px) calc(var(--safe-r) + 12px) calc(var(--safe-b) + 12px) calc(var(--safe-l) + 12px);
+    box-sizing: border-box;
+    background: rgba(0, 0, 0, 0.45);
+}
+
+.overlay[hidden] {
+    display: none;
+}
+
+.card {
+    background: var(--panel);
+    border: 2px solid var(--panel-edge);
+    border-radius: 10px;
+    padding: 18px 26px;
+    text-align: center;
+    max-width: 560px;
+    max-height: 100%;
+    box-sizing: border-box;
+    overflow-y: auto;
+    touch-action: pan-y;
+}
+
+.card h1 {
+    font-family: var(--font-title);
+    font-size: 40px;
+    letter-spacing: 0.25em;
+    margin: 0 0 0 0.25em;
+}
+
+.card h2 {
+    font-family: var(--font-title);
+    margin: 0 0 8px;
+    letter-spacing: 0.2em;
+}
+
+.card .sub {
+    margin: 2px 0 14px;
+    color: #d8c9a4;
+    letter-spacing: 0.3em;
+}
+
+.card .buttons {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.card button {
+    min-width: 150px;
+    min-height: 46px;
+    padding: 8px 18px;
+    border-radius: 8px;
+    border: 2px solid var(--panel-edge);
+    background: #5a2a22;
+    font-size: 17px;
+    cursor: pointer;
+}
+
+.card button.secondary {
+    background: #33302b;
+}
+
+.card button:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.card button:focus-visible {
+    outline: 3px solid #f0c46a;
+    outline-offset: 2px;
+}
+
+#save-info,
+#menu-save-info {
+    font-size: 13px;
+    color: #d8c9a4;
+    margin: 12px 0 4px;
+}
+
+.warning {
+    font-size: 13px;
+    color: #ffb4a8;
+    margin: 4px 0;
+}
+
+#menu-status {
+    min-height: 1.4em;
+    font-size: 14px;
+    margin: 8px 0 12px;
+}
+
+.status-ok { color: #9fe0a6; }
+.status-error { color: #ffb4a8; }
+
+.help {
+    margin-top: 10px;
+    font-size: 12px;
+    color: #cfc4aa;
+}
+
+.help p {
+    margin: 2px 0;
+}
+
+/* 低い画面（スマホ横向き）ではタイトルを詰める */
+@media (max-height: 430px) {
+    .card { padding: 12px 20px; }
+    .card h1 { font-size: 30px; }
+    .card .sub { margin-bottom: 8px; }
+    #dialogue { font-size: 15px; min-height: 72px; padding: 8px 14px 10px; }
+    #area-banner { font-size: 22px; }
+}
+
+/* ------------------------------------------------------------
+   縦画面の案内
+   ------------------------------------------------------------ */
+#rotate-hint {
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: 50;
+    background: #14110d;
+    color: var(--ink);
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 24px;
+    box-sizing: border-box;
+}
+
+body.is-portrait #rotate-hint {
+    display: flex;
+}
+
+.rotate-icon {
+    font-size: 64px;
+    animation: rotate-hint 2s ease-in-out infinite;
+}
+
+@keyframes rotate-hint {
+    0%, 30% { transform: rotate(0deg); }
+    60%, 100% { transform: rotate(90deg); }
+}
+
+#boot-error {
+    position: absolute;
+    left: 16px;
+    right: 16px;
+    top: 16px;
+    z-index: 60;
+    padding: 12px;
+    background: #8e2b25;
+    border-radius: 6px;
+}
+
+#boot-error[hidden] {
+    display: none;
+}

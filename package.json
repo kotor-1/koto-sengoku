@@ -1,0 +1,35 @@
+{
+  "name": "koto-sengoku",
+  "private": true,
+  "version": "0.1.0",
+  "description": "戦国時代を舞台にした 2D 探索型 RPG の試作第一号（Phaser + TypeScript + Vite）",
+  "type": "module",
+  "template": {
+    "source": "https://github.com/phaserjs/template-vite-ts",
+    "version": "1.4.0",
+    "commit": "d1d7d58acfcf47f97642bcb8b4967071b85f8db9"
+  },
+  "scripts": {
+    "dev": "vite --config vite/config.dev.mjs",
+    "dev:lan": "vite --config vite/config.dev.mjs --host",
+    "build": "vite build --config vite/config.prod.mjs",
+    "preview": "vite preview --config vite/config.prod.mjs --port 8080",
+    "preview:lan": "vite preview --config vite/config.prod.mjs --port 8080 --host",
+    "typecheck": "tsc",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm run test && npm run build"
+  },
+  "dependencies": {
+    "phaser": "4.0.0",
+    "terser": "^5.39.0"
+  },
+  "devDependencies": {
+    "typescript": "~5.7.2",
+    "vite": "^6.3.1",
+    "vitest": "^5.0.1"
+  },
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}
