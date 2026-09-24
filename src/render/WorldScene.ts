@@ -11,7 +11,7 @@
  */
 import { BlendModes, Geom, Scene } from 'phaser';
 import { ACTOR_HALF_H } from '../core/constants';
-import { MAP_PIXEL_HEIGHT, MAP_PIXEL_WIDTH, tileCenter } from '../core/map';
+import { MAP_PIXEL_HEIGHT, MAP_PIXEL_WIDTH, tileAt, tileCenter } from '../core/map';
 import type { GameSession } from '../core/session';
 import type { ActorState } from '../core/state';
 import { bridgeArt, gateArt, houseArt, houseKey, houseShadowKey, keepArt, propArt, wallArt } from './art/buildings';
@@ -292,8 +292,10 @@ export class WorldScene extends Scene {
             const key = `wall-${w.horizontal ? 'h' : 'v'}${w.front ? '-front' : ''}`;
             const baseY = w.ty * T + T;
             const img = this.placeArt(key, w.tx * T, w.front ? baseY : baseY - WALL_H);
-            // 壁の根元の柔らかい陰り
-            const attached = w.front ? [this.shadowBlob(w.tx * T + 8, baseY + 1, 22, 6, 0.3)] : [];
+            // 壁の根元の柔らかい陰り。南北に続く壁は、東側の地面に影を落として高さを感じさせる。
+            const attached: Phaser.GameObjects.Image[] = [];
+            if (w.front) attached.push(this.shadowBlob(w.tx * T + 8, baseY + 1, 22, 6, 0.3));
+            if (!w.horizontal && !w.front && tileAt(w.tx + 1, w.ty) !== '#') attached.push(this.shadowBlob(w.tx * T + T + 4, w.ty * T + 8, 14, 20, 0.28));
             this.addStanding(img, baseY, { attached, fadeTo: 0.5 });
         }
     }
@@ -318,7 +320,9 @@ export class WorldScene extends Scene {
             const cx = (r.tx + r.tw / 2) * T;
             const bottom = (r.ty + r.th) * T;
             const shadow = this.castShadow(houseShadowKey(r.tw), cx, bottom, 0.3);
-            this.addStanding(this.placeArt(houseKey(r.tw, i), cx, bottom), bottom, { attached: [shadow] });
+            // 前面の壁の根元の接地影（地面と建物をなじませる）
+            const contact = this.shadowBlob(cx, bottom + 1, r.tw * T + 6, 7, 0.32);
+            this.addStanding(this.placeArt(houseKey(r.tw, i), cx, bottom), bottom, { attached: [shadow, contact] });
             // 夜の灯り：軒先の提灯と窓
             const spec = houseSpec(r.tw);
             this.addGlow(cx - spec.w / 2 + 12, bottom - HOUSE_FRONT_H + 8, 30);
