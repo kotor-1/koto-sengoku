@@ -143,7 +143,7 @@ export class WorldScene extends Scene {
      * 確認用（?rotsway）：木・草を以前の「回転」で揺らす。木が三角に欠ける現象を実機で再現・判定するため。
      * 既定は無効（docs/known-issues.md）。
      */
-    private readonly rotSway = new URLSearchParams(location.search).has('rotsway');
+    private readonly rotSway = new URLSearchParams(location.search).has('rotsway') || location.hash === '#rotsway';
     private fpsEl: HTMLElement | null = null;
     private fpsTimer = 0;
     /** 起動時の計測（素材の生成時間など）。開発時の確認用。 */

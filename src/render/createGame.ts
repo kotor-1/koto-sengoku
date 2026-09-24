@@ -47,7 +47,8 @@ export function createGame(parentId: string, source: WorldSource): GameHandle {
         fps: { panicMax: 0 },
         banner: false,
         render: { powerPreference: 'default', ...(params.has('maxtex') ? { maxTextures: Number(params.get('maxtex')) } : {}) },
-        scene: [new WorldScene(source, viewport, quality, params.has('fps'))],
+        // `#fps` でも表示できるようにする（URL の ? 以降を渡せない置き場所でも性能を見られるように）
+        scene: [new WorldScene(source, viewport, quality, params.has('fps') || location.hash === '#fps')],
     });
     viewport.attach(game);
     return { game, viewport, quality };
