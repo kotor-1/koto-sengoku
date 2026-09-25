@@ -15,7 +15,7 @@ const H = Number(process.env.H || 720);
 const FPS = 24;
 const FFMPEG = ['/opt/pw-browsers/ffmpeg-1011/ffmpeg-linux', 'ffmpeg'].find((p) => p === 'ffmpeg' || existsSync(p));
 
-const yaw = (28 * Math.PI) / 180;
+const yaw = 0; // カメラの向き（proto3d/src/game/motion.ts の CAMERA_YAW と同じ値にする）
 /** 地面の方向 → スティックの入力 */
 const ground = (gx, gz) => [Math.cos(yaw) * gx - Math.sin(yaw) * gz, Math.sin(yaw) * gx + Math.cos(yaw) * gz];
 // 台本：[秒数, 地面の方向（なしは止まる）, 見出し]

@@ -1,6 +1,6 @@
 // 3D 比較版のブラウザ確認と録画。本物のキー入力・タッチで動かす。
 //   - 読み込み（GLB 6 つ）・WebGL の描画・エラーなし
-//   - 歩く（歩きの動きに切り替わる）・止まる（待機に戻る）・向きを変える（その場で振り向いてから歩く）
+//   - 歩く（歩きの動きに切り替わる）・止まる（待機に戻る）・向きを変える（待たずに進みながら向き直る）
 //   - 家の横の路地を通り抜ける（家の壁に沿って滑る）
 //   - タッチのスティックで歩き、指を離すと止まる／フォーカスが外れると止まる
 // 録画は e2e/proto3d-video.mjs（1 コマずつ描いてつなぐ）。
@@ -67,18 +67,19 @@ async function open(opts) {
   check('キーを離すと止まり、待機の動きに戻る（その場から動かない）', stopped && s2.walkBlend < 0.1 && s2.x === s3.x && s2.z === s3.z, `歩きの重み ${s2.walkBlend.toFixed(2)}`);
   check('歩いている間、歩きの動きが再生されていた（再生位置が進んだ）', Math.abs(s1.walkTime - w0) > 0.05, `${w0.toFixed(2)} → ${s1.walkTime.toFixed(2)} 秒`);
 
-  // 振り向いて戻る（↓）
+  // 切り返して戻る（↓）：向き直るのを待たずに手前へ進み、進みながら向き直る
   const h0 = s3.heading;
   await page.keyboard.down('ArrowDown');
-  // 向きが 45° ほど変わった時点では、まだほとんど進んでいない（その場で振り向く）
-  await waitFor(page, (h0) => Math.abs(Math.atan2(Math.sin(window.__p3.hero.heading - h0), Math.cos(window.__p3.hero.heading - h0))) > 0.8, h0);
+  await waitFor(page, (z) => window.__p3.hero.z > z + 0.02, s3.z);
   const t1 = await state(page);
   await waitFor(page, (h0) => Math.abs(Math.atan2(Math.sin(window.__p3.hero.heading - h0), Math.cos(window.__p3.hero.heading - h0))) > 2.8, h0);
   await waitFor(page, (z) => window.__p3.hero.z > z + 0.8, s3.z);
   const t2 = await state(page);
   await page.screenshot({ path: `${S}/p3-pc-turn.png` });
   await page.keyboard.up('ArrowDown');
-  check('↓ で、その場で振り向いてから手前へ歩く', angleDiff(t2.heading, h0) > 2.8 && t2.z > s3.z + 0.5 && Math.hypot(t1.x - s3.x, t1.z - s3.z) < 0.35, `向き ${(angleDiff(t2.heading, h0) * 180 / Math.PI).toFixed(0)}° 変化・振り向き中の移動 ${Math.hypot(t1.x - s3.x, t1.z - s3.z).toFixed(2)}m`);
+  // 「向き直るのを待たずに進む」ことは、ここでは確かめられない（検証コンテナは数 fps で、1 コマに最大 0.1 秒進むため、
+  // 1〜2 コマで体の向きがほぼ変わり終わる）。1/30 秒ずつ進める e2e/proto3d-directions.mjs で確かめる
+  check('↓ で手前へ歩き、体も手前へ向き直る', angleDiff(t2.heading, h0) > 2.8 && t2.z > s3.z + 0.5, `進み出した時の体の向き ${(angleDiff(t1.heading, h0) * 180 / Math.PI).toFixed(0)}°・最後 ${(angleDiff(t2.heading, h0) * 180 / Math.PI).toFixed(0)}°`);
   await waitFor(page, () => window.__p3.hero.speed === 0);
 
   // 家の横を通る：家の北東の角の外から、←（西寄り）で歩く。家の北の壁に沿って滑り、裏まで抜ける

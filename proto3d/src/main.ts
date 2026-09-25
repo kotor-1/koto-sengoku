@@ -8,11 +8,15 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { WALK_SPEED } from './assets/hero';
-import { MAX_SPEED, createHero, stepHero, type HeroState } from './game/motion';
+import { CAMERA_YAW, MAX_SPEED, createHero, stepHero, type HeroState } from './game/motion';
 import { PINE, START, TREE2 } from './layout';
 
-/** カメラ：南東の斜め上から北西を見下ろす（向きは固定） */
-const CAMERA = { yaw: THREE.MathUtils.degToRad(28), pitch: THREE.MathUtils.degToRad(44), distance: 21, fov: 30 };
+/**
+ * カメラ：南の斜め上から北を見下ろす「正面寄りの見下ろし」（向きは固定。回転しない）。
+ * 城門へ向かう南北の道が画面の上下に通る。真上にはせず、屋根や壁の高さが見える角度にする。
+ * 向き（CAMERA_YAW）は入力の向きの変換（motion.ts の screenToGround）と共用する（変換はそこで 1 回だけ）。
+ */
+const CAMERA = { yaw: CAMERA_YAW, pitch: THREE.MathUtils.degToRad(42), distance: 21, fov: 30 };
 // 確認用（?zoom=0.35 など）：同じ向きのまま近づけて、人物や建物の作りを見る。ふだんの操作では使わない
 {
     const z = Number(new URLSearchParams(location.search).get('zoom'));
@@ -388,6 +392,8 @@ if (import.meta.env.DEV) {
             /** 録画用：自動の更新を止め、step で 1 コマずつ進める */
             manual() { renderer.setAnimationLoop(null); },
             step(dt: number, ix: number, iy: number) { advance(dt, dt, ix, iy); },
+            /** 確認用：実際のキー・スティックの入力のまま、決まった時間だけ進める */
+            stepInput(dt: number) { advance(dt, dt, ...readInput()); },
         },
     });
 }
