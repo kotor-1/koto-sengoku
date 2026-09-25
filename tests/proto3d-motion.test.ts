@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { GATE, HOUSE, START, colliders } from '../proto3d/src/layout';
-import { CAMERA_YAW, HERO_RADIUS, MAX_SPEED, createHero, isFree, screenToGround, stepHero } from '../proto3d/src/game/motion';
+import { CAMERA_YAW, HERO_RADIUS, MAX_SPEED, SPEED, createHero, isFree, screenToGround, stepHero } from '../proto3d/src/game/motion';
+import { PINE } from '../proto3d/src/layout';
 
 /** 実際のゲームと同じカメラの向き */
 const YAW = CAMERA_YAW;
@@ -11,8 +12,8 @@ function groundInput(gx: number, gz: number): [number, number] {
     return [Math.cos(YAW) * gx - Math.sin(YAW) * gz, Math.sin(YAW) * gx + Math.cos(YAW) * gz];
 }
 
-function run(h: ReturnType<typeof createHero>, ix: number, iy: number, sec: number) {
-    for (let t = 0; t < sec; t += DT) stepHero(h, ix, iy, YAW, DT);
+function run(h: ReturnType<typeof createHero>, ix: number, iy: number, sec: number, running = false, dt = DT) {
+    for (let t = 0; t < sec - 1e-9; t += dt) stepHero(h, ix, iy, YAW, dt, running);
 }
 
 describe('3D 比較版：主人公の動き', () => {
@@ -130,5 +131,82 @@ describe('3D 比較版：主人公の動き', () => {
             expect(r.x1).toBeGreaterThan(r.x0);
             expect(r.z1).toBeGreaterThan(r.z0);
         }
+    });
+});
+
+describe('3D 比較版：歩く／走る', () => {
+    it('速さは一か所（SPEED）で決まり、歩きはこれまでと同じ 1.55m/秒、走りは歩きの 2.2 倍', () => {
+        expect(SPEED.walk).toBe(1.55);
+        expect(MAX_SPEED).toBe(SPEED.walk);
+        expect(SPEED.run / SPEED.walk).toBeCloseTo(2.2, 6);
+        const w = createHero(7, 0, Math.PI);
+        run(w, 1, 0, 1.5);
+        expect(w.speed).toBeCloseTo(SPEED.walk, 6);
+        const r = createHero(7, 0, Math.PI);
+        run(r, 1, 0, 1.5, true);
+        expect(r.speed).toBeCloseTo(SPEED.run, 6);
+    });
+
+    it('走りで 1 秒に進む距離は、斜めでもまっすぐと同じ（斜めだけ速くならない）', () => {
+        const d = (ix: number, iy: number) => {
+            const h = createHero(7, 0, Math.PI);
+            run(h, ix, iy, 1, true); // 速さを上げきる
+            const x = h.x;
+            const z = h.z;
+            run(h, ix, iy, 1, true);
+            return Math.hypot(h.x - x, h.z - z);
+        };
+        const straight = d(1, 0);
+        // キーボードの斜め（2 つ押し）は長さ 1 にそろえて渡る（main.ts の readInput）。長さ √2 のまま来ても 1 に切る
+        expect(d(Math.SQRT1_2, -Math.SQRT1_2)).toBeCloseTo(straight, 3);
+        expect(d(1, -1)).toBeCloseTo(straight, 3);
+        expect(straight).toBeCloseTo(SPEED.run, 2);
+    });
+
+    it('走っていても、入力を離すと 0.3 秒で止まり、止まるまでに進むのは 0.6m 未満', () => {
+        const h = createHero(7, 0, Math.PI);
+        run(h, 0, -1, 1.5, true);
+        const z = h.z;
+        run(h, 0, 0, 0.3, true);
+        expect(h.speed).toBe(0);
+        expect(z - h.z).toBeLessThan(0.6);
+    });
+
+    it('走るのをやめると、歩きの速さまでなめらかに落ちる（一瞬で変わらない）', () => {
+        const h = createHero(7, 0, Math.PI);
+        run(h, 1, 0, 1.5, true);
+        stepHero(h, 1, 0, YAW, DT, false);
+        expect(h.speed).toBeLessThan(SPEED.run);
+        expect(h.speed).toBeGreaterThan(SPEED.walk + 0.5);
+        run(h, 1, 0, 0.3, false);
+        expect(h.speed).toBeCloseTo(SPEED.walk, 6);
+    });
+
+    it('走っても、画面が重くて 1 コマが長い（0.1 秒）ときでも、家・土塀・門の柱・控柱・木の幹をすり抜けない', () => {
+        for (const dt of [DT, 0.1]) {
+            // 家の表へ（西へ）
+            const house = createHero(HOUSE.x1 + 2, (HOUSE.z0 + HOUSE.z1) / 2, -Math.PI / 2);
+            run(house, -1, 0, 3, true, dt);
+            expect(house.x).toBeGreaterThanOrEqual(HOUSE.x1 + 0.25 + HERO_RADIUS - 1e-6);
+            // 土塀へ（北へ）
+            const wall = createHero(6, GATE.z + 3, Math.PI);
+            run(wall, 0, -1, 3, true, dt);
+            expect(wall.z).toBeGreaterThan(GATE.z);
+            // 門の内側の控柱（0.4m 角）へ、門の中から北へ
+            const post = createHero(GATE.pillarX, GATE.z - 0.8, Math.PI);
+            run(post, 0, -1, 2, true, dt);
+            expect(post.z).toBeGreaterThan(GATE.z - 1.6);
+            // 松の幹へ（東へ）
+            const pine = createHero(PINE.x - 2, PINE.z, Math.PI / 2);
+            run(pine, 1, 0, 2, true, dt);
+            expect(pine.x).toBeLessThan(PINE.x);
+            for (const h of [house, wall, post, pine]) expect(isFree(h.x, h.z)).toBe(true);
+        }
+    });
+
+    it('走って城門を通り抜けられる', () => {
+        const h = createHero(0, GATE.z + 4, Math.PI);
+        run(h, 0, -1, 4, true, 0.1);
+        expect(h.z).toBeLessThan(GATE.z - 4);
     });
 });

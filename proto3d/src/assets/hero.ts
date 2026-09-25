@@ -4,7 +4,9 @@
  * - 服：藍の小袖（襟と白い半襟）、縞の袴（上の腰まわり＋幅の広い脚。前後に襞）、腰紐、腰板。
  * - 頭：あごの細い頭に顔を描き、鼻・耳を形で付ける。髪は生え際のある殻、茶筅髷。
  * - 足：白い足袋と草履（鼻緒）。左の腰に大小（刀・脇差）。
- * - 動き：待機（呼吸・体重移動）と歩き（1 周期 1 秒・約 1.32m）を式から作る。
+ * - 動き：待機（呼吸・体重移動）・歩き（1 周期 1 秒）・走り（1 周期 0.68 秒）を式から作る。
+ *   どの動きも、低い方の足の裏が地面に着くよう腰の高さを合わせ（走りは両足が浮く一瞬がある）、
+ *   接地した足が後ろへ送られる速さを骨組みから測り、再生の速さを移動の速さに合わせる（足が滑らない）。
  * 体の各部は、近くの骨 1〜2 本に重みを付けて一緒に曲がる（スキニング）。
  */
 import * as THREE from 'three';
@@ -12,9 +14,8 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { normalize, taperTube, type Geo } from './geo';
 import { materials } from './materials';
 
-/** 歩きの設計速度（m/秒）：この速さで歩くとき足が滑らない */
-export const WALK_SPEED = 1.32;
 export const WALK_PERIOD = 1.0;
+export const RUN_PERIOD = 0.68;
 
 const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
@@ -450,7 +451,8 @@ export function buildHero(): HeroAsset {
         root.add(mesh);
         mesh.bind(skeleton);
     }
-    return { root, clips: [idleClip(), walkClip()] };
+    const g = gaits();
+    return { root, clips: [idleClip(), g.walk.clip, g.run.clip] };
 }
 
 /** 材質ごとにまとめる（skinIndex / skinWeight を含めて属性をそろえてある） */
@@ -508,41 +510,372 @@ function clipFrom(name: string, duration: number, pose: (t: number) => Pose): TH
 
 const HIPS_Y = 0.93;
 
-function walkClip(): THREE.AnimationClip {
-    const T = WALK_PERIOD;
-    return clipFrom('walk', T, (t) => {
-        const ph = (t / T) * Math.PI * 2;
-        const leg = (p: number) => {
-            const th = 0.4 * Math.sin(p);
-            const k = 0.07 + 0.85 * Math.pow(pos(Math.cos(p + 0.35)), 2) + 0.12 * Math.pow(pos(Math.sin(p - 2.2)), 3);
-            const foot = th - k + 0.38 * Math.pow(pos(-Math.sin(p)), 3) - 0.16 * Math.pow(pos(Math.sin(p)), 4);
-            return { thigh: -th, shin: k, foot };
-        };
-        const L = leg(ph);
-        const R = leg(ph + Math.PI);
-        const arm = (p: number) => -0.26 * Math.sin(p);
-        const aL = arm(ph);
-        const aR = arm(ph + Math.PI);
-        return {
-            hips: { pos: [-0.014 * Math.cos(ph), HIPS_Y - 0.004 + 0.015 * Math.cos(2 * ph), 0], rot: [0.02, -0.07 * Math.sin(ph), 0.02 * Math.cos(ph)] },
-            spine: { rot: [0.03, 0.03 * Math.sin(ph), 0] },
-            chest: { rot: [0.03 + 0.01 * Math.cos(2 * ph), 0.09 * Math.sin(ph), -0.015 * Math.cos(ph)] },
-            neck: { rot: [-0.02, -0.05 * Math.sin(ph), 0] },
-            head: { rot: [0.02, -0.02 * Math.sin(ph), 0.01 * Math.cos(ph)] },
-            thighL: { rot: [L.thigh, 0, 0] },
-            shinL: { rot: [L.shin, 0, 0] },
-            footL: { rot: [L.foot, 0, 0] },
-            thighR: { rot: [R.thigh, 0, 0] },
-            shinR: { rot: [R.shin, 0, 0] },
-            footR: { rot: [R.foot, 0, 0] },
-            upperArmL: { rot: [-aL, 0, 0.07] },
-            foreArmL: { rot: [-(0.22 + 0.25 * pos(aL)), 0, 0] },
-            handL: { rot: [-0.1, 0, 0] },
-            upperArmR: { rot: [-aR, 0, -0.07] },
-            foreArmR: { rot: [-(0.22 + 0.25 * pos(aR)), 0, 0] },
-            handR: { rot: [-0.1, 0, 0] },
-        };
+// ---- 足の接地（形を作らず、骨組みだけで計算する） ----
+
+/** 足の骨から見た、足の裏（草履の底）のかかととつま先 */
+const SOLE = [V(0, -0.084, -0.08), V(0, -0.084, 0.19)];
+
+function rig(): { root: THREE.Bone; bones: Map<string, THREE.Bone> } {
+    const bones = new Map<string, THREE.Bone>();
+    for (const d of BONES) bones.set(d.name, new THREE.Bone());
+    for (const d of BONES) {
+        const b = bones.get(d.name)!;
+        if (d.parent) {
+            bones.get(d.parent)!.add(b);
+            b.position.copy(d.pos).sub(BONES[bi(d.parent)].pos);
+        } else b.position.copy(d.pos);
+    }
+    return { root: bones.get('root')!, bones };
+}
+
+function applyPose(r: ReturnType<typeof rig>, p: Pose): void {
+    const e = new THREE.Euler();
+    for (const d of BONES) {
+        const b = r.bones.get(d.name)!;
+        const k = p[d.name];
+        const rr = k?.rot ?? [0, 0, 0];
+        b.quaternion.setFromEuler(e.set(rr[0], rr[1], rr[2], 'YXZ'));
+        if (k?.pos) b.position.set(...k.pos);
+        else if (d.parent) b.position.copy(d.pos).sub(BONES[bi(d.parent)].pos);
+        else b.position.copy(d.pos);
+    }
+    r.root.updateMatrixWorld(true);
+}
+
+/** 左右の足の裏：かかととつま先の高さ・前後（z） */
+function soles(r: ReturnType<typeof rig>): { heel: THREE.Vector3; toe: THREE.Vector3; low: number }[] {
+    return ['footL', 'footR'].map((n) => {
+        const m = r.bones.get(n)!.matrixWorld;
+        const [heel, toe] = SOLE.map((p) => p.clone().applyMatrix4(m));
+        return { heel, toe, low: Math.min(heel.y, toe.y) };
     });
+}
+
+export interface Gait {
+    clip: THREE.AnimationClip;
+    period: number;
+    /** 設計速度（m/秒）：接地した足が後ろへ送られる速さの平均。この速さで進むと足が滑らない */
+    speed: number;
+    /** 接地している間の、足の送りの速さと設計速度の差の最大（m/秒）。確認用 */
+    slip: number;
+    /** 1 周期のうち、どちらの足も接地していない割合（走りの浮く一瞬）。確認用 */
+    flight: number;
+    /** 振り出す足と地面のすき間の最小（m）。確認用 */
+    clearance: number;
+}
+
+interface GaitSpec {
+    period: number;
+    pose: (ph: number) => Pose;
+    /** 位相 ph で、足（0 左・1 右）が接地しているか。接地の間の進み具合 0〜1 も返す（接地していなければ null） */
+    stance: (ph: number, leg: 0 | 1) => number | null;
+    /** 振り出す足が地面から離れていてほしい高さ（振り出しの進み具合 0〜1 → m） */
+    clearance: (s: number) => number;
+    /** どちらの足も接地していない間の、足の裏の高さ（走りの浮く一瞬）。進み具合 0〜1 → m */
+    air?: (s: number) => number;
+    /**
+     * 接地している足の足首を置く所（根元から見た前後 z と高さ y）。決めると、そこへ届くよう太もも・膝を求め、足の裏は水平にする。
+     * 足首を一定の速さで後ろへ送れば、足は滑らない（走りで使う）
+     */
+    plant?: (ph: number, leg: 0 | 1) => { z: number; y: number } | null;
+}
+
+/** 足首（足の骨の付け根）を、前後 z・高さ y に置くよう太もも・膝を曲げる（前後の面の 2 本の骨。数値で解く） */
+function reach(r: ReturnType<typeof rig>, p: Pose, S: 'L' | 'R', z: number, y: number): void {
+    const th = p[`thigh${S}`].rot!;
+    const kn = p[`shin${S}`].rot!;
+    const foot = r.bones.get(`foot${S}`)!;
+    const at = () => {
+        applyPose(r, p);
+        const w = new THREE.Vector3().setFromMatrixPosition(foot.matrixWorld);
+        return [w.z, w.y];
+    };
+    const h = 1e-3;
+    for (let i = 0; i < 16; i++) {
+        const [az, ay] = at();
+        const ez = z - az;
+        const ey = y - ay;
+        if (Math.hypot(ez, ey) < 1e-5) break;
+        th[0] += h;
+        const [tz, ty] = at();
+        th[0] -= h;
+        kn[0] += h;
+        const [kz, ky] = at();
+        kn[0] -= h;
+        const a = (tz - az) / h;
+        const b = (kz - az) / h;
+        const c = (ty - ay) / h;
+        const d = (ky - ay) / h;
+        const det = a * d - b * c;
+        if (Math.abs(det) < 1e-6) break;
+        th[0] += (d * ez - b * ey) / det;
+        kn[0] = Math.max(0.02, kn[0] + (-c * ez + a * ey) / det); // 膝は後ろへは曲がらない
+    }
+}
+
+/** 足の裏を水平にする（足首を回す） */
+function flatFoot(r: ReturnType<typeof rig>, p: Pose, k: 0 | 1): void {
+    const S = k === 0 ? 'L' : 'R';
+    for (let i = 0; i < 4; i++) {
+        applyPose(r, p);
+        const s = soles(r)[k];
+        p[`foot${S}`].rot![0] += Math.atan2(s.toe.y - s.heel.y, s.toe.z - s.heel.z);
+    }
+}
+
+/**
+ * 地面に合わせた動きを作る。
+ * - 接地している足（位相で決める）の裏が地面（高さ 0）に着くよう、腰を上下させる。
+ * - 振り出す足が地面に擦らないよう、足りない分だけ膝を曲げる（足首で足の裏の向きは保つ）。
+ * - どちらも接地していない間（走り）は、前後の接地の腰の高さをつなぎ、air の分だけ持ち上げる。
+ * - 接地している足の、地面に着いている点（かかと／つま先の低い方）が後ろへ送られる速さを測る。
+ */
+function groundedGait(name: string, spec: GaitSpec): Gait {
+    const r = rig();
+    const frames = Math.round(spec.period * FPS) * 2;
+    const phase = (f: number) => (f / frames) * Math.PI * 2;
+    // 1 回目：接地している足を置き、その足の裏が地面に着く腰の上下（dy）を決める。浮いている間は未定（null）
+    const poses: Pose[] = [];
+    const stances: (number | null)[][] = [];
+    const dys: (number | null)[] = [];
+    for (let f = 0; f <= frames; f++) {
+        const ph = phase(f);
+        const p = spec.pose(ph);
+        const st = [spec.stance(ph, 0), spec.stance(ph, 1)];
+        for (const k of [0, 1] as const) {
+            const t = st[k] !== null ? spec.plant?.(ph, k) : null;
+            if (!t) continue;
+            reach(r, p, k === 0 ? 'L' : 'R', t.z, t.y);
+            flatFoot(r, p, k);
+        }
+        applyPose(r, p);
+        const s = soles(r);
+        const standing = [0, 1].filter((k) => st[k] !== null);
+        // 接地している足（両方なら低い方）を地面に。どちらも浮いているのに air の決まりがなければ、低い方の足を地面に
+        dys.push(standing.length ? -Math.min(...standing.map((k) => s[k].low)) : spec.air ? null : -Math.min(s[0].low, s[1].low));
+        poses.push(p);
+        stances.push(st);
+    }
+    // 浮いている間の腰：前後の接地の切れ目の腰の高さをつなぎ、air の分だけ持ち上げる
+    let air = 0;
+    const airH: number[] = dys.map(() => 0);
+    const grounded = dys.slice();
+    for (let f = 0; f <= frames; f++) {
+        if (grounded[f] !== null) continue;
+        let a = f;
+        while (grounded[(a - 1 + frames) % frames] === null && f - a < frames) a--;
+        let b = f;
+        while (grounded[(b + 1) % frames] === null && b - f < frames) b++;
+        const before = grounded[(a - 1 + frames) % frames]!;
+        const after = grounded[(b + 1) % frames]!;
+        const t = (f - a + 1) / (b - a + 2);
+        airH[f] = spec.air!(t);
+        dys[f] = before + (after - before) * t + airH[f];
+        air++;
+    }
+    // 2 回目：腰を動かし、振り出す足が地面に擦らないよう、足りない分だけ膝を曲げる（足首で足の裏の向きは保つ）
+    let clearance = Infinity;
+    const contact: ({ z: number; which: number } | null)[][] = [];
+    for (let f = 0; f <= frames; f++) {
+        const ph = phase(f);
+        const p = poses[f];
+        const st = stances[f];
+        const hp = p.hips.pos!;
+        p.hips.pos = [hp[0], hp[1] + dys[f]!, hp[2]];
+        let s = soles(r);
+        for (const k of [0, 1] as const) {
+            if (st[k] !== null) continue;
+            const S = k === 0 ? 'L' : 'R';
+            const want = spec.clearance(swingProgress(spec, ph, k)) + airH[f];
+            for (let i = 0; i < 80; i++) {
+                applyPose(r, p);
+                s = soles(r);
+                if (s[k].low >= want - 1e-4) break;
+                p[`thigh${S}`].rot![0] -= 0.012;
+                p[`shin${S}`].rot![0] += 0.024;
+                p[`foot${S}`].rot![0] -= 0.012;
+            }
+        }
+        applyPose(r, p);
+        s = soles(r);
+        for (const k of [0, 1] as const) if (st[k] === null) clearance = Math.min(clearance, s[k].low - airH[f]);
+        contact.push([0, 1].map((k) => (st[k] === null ? null : s[k].heel.y <= s[k].toe.y ? { z: s[k].heel.z, which: 0 } : { z: s[k].toe.z, which: 1 })));
+    }
+    // 接地している点が後ろへ送られる速さ（同じ点が 2 コマ続けて接地している所だけ）
+    const dt = spec.period / frames;
+    const v: number[] = [];
+    for (let f = 0; f < frames; f++) {
+        for (const k of [0, 1]) {
+            const a = contact[f][k];
+            const b = contact[f + 1][k];
+            if (a && b && a.which === b.which) v.push(-(b.z - a.z) / dt);
+        }
+    }
+    const speed = v.reduce((x, y) => x + y, 0) / Math.max(1, v.length);
+    const slip = v.reduce((m, x) => Math.max(m, Math.abs(x - speed)), 0);
+    const clip = clipFrom(name, spec.period, (t) => poses[Math.round((t / spec.period) * frames)]);
+    return { clip, period: spec.period, speed, slip, flight: air / frames, clearance };
+}
+
+/** 振り出しの進み具合（0 蹴り出し → 1 着地） */
+function swingProgress(spec: GaitSpec, ph: number, leg: 0 | 1): number {
+    let a = 0;
+    let b = 0;
+    const N = 400;
+    for (let k = 1; k < N && spec.stance(ph - (k / N) * 2 * Math.PI, leg) === null; k++) a = k;
+    for (let k = 1; k < N && spec.stance(ph + (k / N) * 2 * Math.PI, leg) === null; k++) b = k;
+    return (a + 0.5) / (a + b + 1);
+}
+
+let gaitCache: { walk: Gait; run: Gait } | null = null;
+/**
+ * 歩きと走り。位相をそろえてある（左足は位相 π で接地の真ん中）ので、混ぜても脚が乱れない。
+ */
+export function gaits(): { walk: Gait; run: Gait } {
+    gaitCache ??= {
+        // 歩き：左足は位相 π/2（前へ出しきった所）で着地し、3π/2 で離れる。いつもどちらかの足が接地
+        walk: groundedGait('walk', {
+            period: WALK_PERIOD,
+            pose: walkPose,
+            stance: (ph, leg) => {
+                const d = wrap(ph + (leg ? Math.PI : 0) - Math.PI);
+                return Math.abs(d) <= Math.PI / 2 ? (d + Math.PI / 2) / Math.PI : null;
+            },
+            clearance: (s) => 0.035 * Math.sin(Math.PI * s),
+        }),
+        // 走り：接地は 1 足あたり 1 周期の約 27%。接地の間は足首を一定の速さで後ろへ送り、左右を入れ替える間は両足が浮く（最大 2.5cm）
+        run: groundedGait('run', {
+            period: RUN_PERIOD,
+            pose: runPose,
+            stance: runStance,
+            plant: (ph, leg) => {
+                const u = runStance(ph, leg);
+                return u === null ? null : { z: RUN_REACH[0] - (RUN_REACH[0] + RUN_REACH[1]) * u, y: -SOLE[0].y };
+            },
+            clearance: (s) => 0.07 * Math.sin(Math.PI * s),
+            air: (s) => 0.025 * Math.sin(Math.PI * s),
+        }),
+    };
+    return gaitCache;
+}
+
+const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+
+function walkPose(ph: number): Pose {
+    const leg = (p: number) => {
+        // 太もも：接地の間（左足は位相 π/2〜3π/2）は一定の速さで後ろへ送り、振り出しはなめらかに前へ
+        const d = wrap(p - Math.PI);
+        const th = Math.abs(d) <= Math.PI / 2 ? -0.4 * (d / (Math.PI / 2)) : -0.4 + 0.8 * (0.5 - 0.5 * Math.cos(Math.PI * (wrap(p) + Math.PI / 2) / Math.PI));
+        const k = 0.07 + 0.85 * Math.pow(pos(Math.cos(p + 0.35)), 2) + 0.12 * Math.pow(pos(Math.sin(p - 2.2)), 3);
+        const foot = th - k + 0.38 * Math.pow(pos(-Math.sin(p)), 3) - 0.16 * Math.pow(pos(Math.sin(p)), 4);
+        return { thigh: -th, shin: k, foot };
+    };
+    const L = leg(ph);
+    const R = leg(ph + Math.PI);
+    const arm = (p: number) => -0.26 * Math.sin(p);
+    const aL = arm(ph);
+    const aR = arm(ph + Math.PI);
+    return {
+        hips: { pos: [-0.014 * Math.cos(ph), HIPS_Y - 0.004 + 0.015 * Math.cos(2 * ph), 0], rot: [0.02, -0.07 * Math.sin(ph), 0.02 * Math.cos(ph)] },
+        spine: { rot: [0.03, 0.03 * Math.sin(ph), 0] },
+        chest: { rot: [0.03 + 0.01 * Math.cos(2 * ph), 0.09 * Math.sin(ph), -0.015 * Math.cos(ph)] },
+        neck: { rot: [-0.02, -0.05 * Math.sin(ph), 0] },
+        head: { rot: [0.02, -0.02 * Math.sin(ph), 0.01 * Math.cos(ph)] },
+        thighL: { rot: [L.thigh, 0, 0] },
+        shinL: { rot: [L.shin, 0, 0] },
+        footL: { rot: [L.foot, 0, 0] },
+        thighR: { rot: [R.thigh, 0, 0] },
+        shinR: { rot: [R.shin, 0, 0] },
+        footR: { rot: [R.foot, 0, 0] },
+        upperArmL: { rot: [-aL, 0, 0.07] },
+        foreArmL: { rot: [-(0.22 + 0.25 * pos(aL)), 0, 0] },
+        handL: { rot: [-0.1, 0, 0] },
+        upperArmR: { rot: [-aR, 0, -0.07] },
+        foreArmR: { rot: [-(0.22 + 0.25 * pos(aR)), 0, 0] },
+        handR: { rot: [-0.1, 0, 0] },
+    };
+}
+
+/**
+ * 走り。左足は位相 RUN_MID（π）で接地の真ん中（歩きで左足が体の真下を通る所とそろえる）。
+ * 接地の間の脚は、足首の置き場所（plant）から太もも・膝を求める（groundedGait）。ここでは振り出しの脚と上体を決める。
+ * 振り出しは膝を畳んで前へ振り戻し、着地・蹴り出しの角度へなめらかにつなぐ。上体は少し前傾、腕は肘を曲げて大きく振る。
+ */
+const RUN_STANCE = Math.PI * 0.27; // 接地の半分の長さ（位相）
+const RUN_MID = Math.PI;
+/** 接地の間に足首を送る範囲：着地で体の前 0.22m、蹴り出しで後ろ 0.32m（前傾しているので、脚が届くのは後ろの方が長い） */
+const RUN_REACH: [number, number] = [0.22, 0.32];
+function runStance(ph: number, leg: 0 | 1): number | null {
+    const d = wrap(ph + (leg ? Math.PI : 0) - RUN_MID);
+    return Math.abs(d) <= RUN_STANCE ? (d + RUN_STANCE) / (2 * RUN_STANCE) : null;
+}
+
+type LegAngles = { thigh: number; shin: number; foot: number };
+let runEnds: { land: LegAngles; off: LegAngles } | null = null;
+/** 着地・蹴り出しの脚の角度（足首の置き場所から求める）。振り出しの脚をここへつなぐ */
+function runLegEnds(): { land: LegAngles; off: LegAngles } {
+    if (runEnds) return runEnds;
+    const r = rig();
+    const at = (u: number): LegAngles => {
+        const p = runBody(RUN_MID - RUN_STANCE + 2 * RUN_STANCE * u, { thigh: 0, shin: 0.3, foot: -0.3 }, { thigh: 0, shin: 0.3, foot: -0.3 });
+        reach(r, p, 'L', RUN_REACH[0] - (RUN_REACH[0] + RUN_REACH[1]) * u, -SOLE[0].y);
+        flatFoot(r, p, 0);
+        return { thigh: p.thighL.rot![0], shin: p.shinL.rot![0], foot: p.footL.rot![0] };
+    };
+    runEnds = { land: at(0), off: at(1) };
+    return runEnds;
+}
+
+function runPose(ph: number): Pose {
+    const { land, off } = runLegEnds();
+    const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+    const leg = (p: number): LegAngles => {
+        const d = wrap(p - RUN_MID);
+        if (Math.abs(d) <= RUN_STANCE) {
+            // 接地：あとで足首の置き場所から求めるので、始めの値だけ（着地と蹴り出しの間）
+            const u = (d + RUN_STANCE) / (2 * RUN_STANCE);
+            return { thigh: lerp(land.thigh, off.thigh, u), shin: lerp(land.shin, off.shin, u), foot: lerp(land.foot, off.foot, u) };
+        }
+        const s = (d > 0 ? d - RUN_STANCE : d + 2 * Math.PI - RUN_STANCE) / (2 * Math.PI - 2 * RUN_STANCE); // 0 蹴り出し → 1 着地
+        const e = 0.5 - 0.5 * Math.cos(Math.PI * s);
+        const bump = Math.sin(Math.PI * s);
+        return {
+            // 太ももは前へ振り戻し、途中で膝を前へ引き上げる
+            thigh: lerp(off.thigh, land.thigh, e) - 0.25 * bump * bump * (1 - 0.4 * s),
+            // 膝はかかとをお尻へ寄せるように畳み、着地の前に伸ばす
+            shin: lerp(off.shin, land.shin, e) + 1.3 * Math.pow(Math.sin(Math.PI * Math.pow(s, 0.75)), 1.3) * (1 - 0.6 * s * s),
+            // 蹴り出しの直後はつま先が下を向き、着地の前に戻す
+            foot: lerp(off.foot, land.foot, e) + 0.2 * bump * (1 - s),
+        };
+    };
+    return runBody(ph, leg(ph), leg(ph + Math.PI));
+}
+
+function runBody(ph: number, L: LegAngles, R: LegAngles): Pose {
+    // 腕は反対の脚と一緒に振る（左脚が前へ振り出すとき、左腕は後ろ）
+    const sw = Math.cos(ph - RUN_MID + Math.PI / 2);
+    // 腰：接地の真ん中で少し沈む（浮く一瞬の持ち上がりは groundedGait の air で付ける）
+    const u = runStance(ph, 0) ?? runStance(ph, 1);
+    const sink = u === null ? 0 : 0.012 * Math.sin(Math.PI * u);
+    return {
+        hips: { pos: [-0.01 * Math.cos(ph), HIPS_Y - 0.06 - sink, 0], rot: [0.13, -0.1 * sw, 0.025 * Math.cos(ph)] },
+        spine: { rot: [0.06, 0.04 * sw, 0] },
+        chest: { rot: [0.05, 0.16 * sw, -0.02 * Math.cos(ph)] },
+        neck: { rot: [-0.12, -0.08 * sw, 0] },
+        head: { rot: [-0.08, -0.04 * sw, 0] },
+        thighL: { rot: [L.thigh, 0, 0] },
+        shinL: { rot: [L.shin, 0, 0] },
+        footL: { rot: [L.foot, 0, 0] },
+        thighR: { rot: [R.thigh, 0, 0] },
+        shinR: { rot: [R.shin, 0, 0] },
+        footR: { rot: [R.foot, 0, 0] },
+        upperArmL: { rot: [0.55 * sw, 0, 0.16] },
+        foreArmL: { rot: [-(1.25 + 0.25 * Math.max(0, -sw)), 0, 0] },
+        handL: { rot: [-0.15, 0, 0] },
+        upperArmR: { rot: [-0.55 * sw, 0, -0.16] },
+        foreArmR: { rot: [-(1.25 + 0.25 * Math.max(0, sw)), 0, 0] },
+        handR: { rot: [-0.15, 0, 0] },
+    };
 }
 
 function idleClip(): THREE.AnimationClip {

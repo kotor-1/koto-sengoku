@@ -7,8 +7,8 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { WALK_SPEED } from './assets/hero';
-import { CAMERA_YAW, MAX_SPEED, createHero, stepHero, type HeroState } from './game/motion';
+import { gaits } from './assets/hero';
+import { CAMERA_YAW, SPEED, createHero, stepHero, type HeroState } from './game/motion';
 import { PINE, START, TREE2 } from './layout';
 
 /**
@@ -86,26 +86,62 @@ function resize(): void {
 window.addEventListener('resize', resize);
 resize();
 
-// ---- 入力（キーボード・タッチのスティック） ----
+// ---- 入力（キーボード・タッチのスティック・歩く／走るの切り替え） ----
 const keys = new Set<string>();
+/** 歩く／走る：ボタンで選んでいる方（押し続けなくてよい）と、PC の Shift（押している間だけ走る） */
+let runMode = false;
+let shiftHeld = false;
+const running = () => runMode || shiftHeld;
 const stick = { x: 0, y: 0, id: -1, ox: 0, oy: 0 };
 const KEY_DIR: Record<string, [number, number]> = {
     ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0],
     ArrowUp: [0, -1], KeyW: [0, -1], ArrowDown: [0, 1], KeyS: [0, 1],
 };
 window.addEventListener('keydown', (e) => {
+    // Shift の離しを取りこぼしても、次のキー入力で今の状態に合わせる
+    shiftHeld = e.shiftKey || e.key === 'Shift';
     if (KEY_DIR[e.code]) {
         keys.add(e.code);
         e.preventDefault();
     }
+    updateRunUi();
 });
-window.addEventListener('keyup', (e) => keys.delete(e.code));
+window.addEventListener('keyup', (e) => {
+    keys.delete(e.code);
+    shiftHeld = e.shiftKey && e.key !== 'Shift';
+    updateRunUi();
+});
+// 歩く／走るのボタン：タップ（クリック）で切り替え。スティックとは別の指で押せる（スティックは画面の左半分、ボタンは右下）
+const runBtn = document.getElementById('run-btn')!;
+runBtn.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    runMode = !runMode;
+    updateRunUi();
+});
+// キーボード（Tab で選んで Enter／Space）で押したとき。指やマウスは pointerdown で切り替え済み
+runBtn.addEventListener('click', (e) => {
+    if (e.detail !== 0) return;
+    runMode = !runMode;
+    updateRunUi();
+});
+let shownRun: boolean | null = null;
+function updateRunUi(): void {
+    const on = running();
+    runBtn.setAttribute('aria-pressed', String(runMode));
+    if (on === shownRun) return;
+    shownRun = on;
+    runBtn.classList.toggle('on', on);
+}
 const zone = document.getElementById('stick-zone')!;
 const base = document.getElementById('stick-base')!;
 const knob = document.getElementById('stick-knob')!;
 const R = 52;
+/** 移動の入力と Shift を離した扱いにする（指を離した・画面を離れた・アプリを切り替えた）。ボタンで選んだ歩く／走るはそのまま */
 function releaseAll(): void {
     keys.clear();
+    shiftHeld = false;
+    updateRunUi();
     stick.x = stick.y = 0;
     stick.id = -1;
     zone.classList.remove('active');
@@ -205,7 +241,10 @@ interface HeroView {
     mixer: THREE.AnimationMixer;
     idle: THREE.AnimationAction;
     walk: THREE.AnimationAction;
+    run: THREE.AnimationAction;
 }
+/** 歩き・走りの 1 周期の長さと、足が滑らない設計速度（骨組みから計算。素材の動きと同じ式） */
+const GAIT = gaits();
 
 function prepare(obj: THREE.Object3D): void {
     obj.traverse((o) => {
@@ -304,10 +343,15 @@ async function start(): Promise<void> {
     };
     const idle = mixer.clipAction(clip('idle'));
     const walk = mixer.clipAction(clip('walk'));
+    const run = mixer.clipAction(clip('run'));
     idle.play();
-    walk.play();
-    walk.setEffectiveWeight(0);
-    heroView = { root: heroGltf.scene, mixer, idle, walk };
+    // 歩き・走りは、同じ位相（stride）から再生位置を決める（自分では進めない）
+    for (const a of [walk, run]) {
+        a.play();
+        a.timeScale = 0;
+        a.setEffectiveWeight(0);
+    }
+    heroView = { root: heroGltf.scene, mixer, idle, walk, run };
     stats.readyMs = Math.round(performance.now());
     stats.loadMs = Math.round(performance.now() - t0);
     loading.hidden = true;
@@ -333,7 +377,11 @@ function placeCamera(k: number): void {
 
 const clock = new THREE.Clock();
 const stats = { readyMs: 0, loadMs: 0, frames: 0 };
+/** 動いている重み（0 待機 → 1 歩き・走り） */
 let walkBlend = 0;
+/** 歩き・走りの位相（0〜1、1 周期で 1）。進んだ距離から決めるので、足が地面の上で滑らない */
+let stride = 0;
+let runBlend = 0;
 const fpsEl = document.getElementById('fps')!;
 fpsEl.hidden = !showFps;
 let fpsTime = 0;
@@ -348,16 +396,22 @@ function frame(): void {
 /** 1 フレーム進めて描く（録画用に、決まった時間と入力で進めることもできる） */
 function advance(dt: number, raw: number, ix: number, iy: number): void {
     stats.frames++;
-    stepHero(hero, ix, iy, CAMERA.yaw, dt);
+    stepHero(hero, ix, iy, CAMERA.yaw, dt, running());
     const v = heroView!;
     v.root.position.set(hero.x, 0, hero.z);
     v.root.rotation.y = hero.heading;
-    // 歩きと待機を速さで混ぜる。歩きの再生速度は実際の速さに合わせる（足が滑らないように）
+    // 待機と動きを速さで混ぜ、動きの中では歩きと走りを速さで混ぜる
     const want = THREE.MathUtils.smoothstep(hero.speed, 0.05, 0.5);
     walkBlend += (want - walkBlend) * (1 - Math.exp(-10 * dt));
-    v.walk.setEffectiveWeight(walkBlend);
+    runBlend = THREE.MathUtils.smoothstep(hero.speed, SPEED.walk * 1.02, SPEED.walk + (SPEED.run - SPEED.walk) * 0.7);
+    // 位相は実際に進んだ速さで進める（1 周期の距離は歩きと走りを混ぜた長さ）。止まれば脚も止まり、滑らない
+    const cycle = THREE.MathUtils.lerp(GAIT.walk.speed * GAIT.walk.period, GAIT.run.speed * GAIT.run.period, runBlend);
+    stride = (stride + (hero.speed * dt) / cycle) % 1;
+    v.walk.time = stride * GAIT.walk.period;
+    v.run.time = stride * GAIT.run.period;
+    v.walk.setEffectiveWeight(walkBlend * (1 - runBlend));
+    v.run.setEffectiveWeight(walkBlend * runBlend);
     v.idle.setEffectiveWeight(1 - walkBlend);
-    v.walk.timeScale = THREE.MathUtils.clamp(hero.speed / WALK_SPEED, 0.6, MAX_SPEED / WALK_SPEED);
     v.mixer.update(dt);
     placeCamera(1 - Math.exp(-6 * dt));
     fadeOccluders(dt);
@@ -387,7 +441,7 @@ if (import.meta.env.DEV) {
     Object.assign(window, {
         __p3: {
             hero, stats, camera, renderer, scene, releaseAll,
-            get anim() { return { walkBlend, walkTime: heroView?.walk.time ?? 0 }; },
+            get anim() { return { walkBlend, runBlend, stride, walkTime: heroView?.walk.time ?? 0, running: running(), runMode }; },
             get fade() { return occluders.map((o) => Math.round(o.alpha * 100) / 100); },
             /** 録画用：自動の更新を止め、step で 1 コマずつ進める */
             manual() { renderer.setAnimationLoop(null); },

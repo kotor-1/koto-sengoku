@@ -1,7 +1,8 @@
 /**
  * 主人公の動き（3D 比較版）。描画に依存しない（テストで直接動かせる）。
  * - 入力は画面の向き（右・上）で受け取り、固定カメラの向きに合わせて地面の方向へ直す。
- * - 速さはなめらかに上がり、指を離すと素早く止まる。
+ * - 歩く／走る：上限の速さだけが変わる（ゲームの時間は変えない）。速さは SPEED の一か所で調整する。
+ * - 速さはなめらかに上がり、指を離すと素早く止まる。走るのをやめると、歩きの速さまでなめらかに落とす。
  * - 入力した方向へすぐ進み、体の向きは進みながらなめらかに向き直る（向き終わるのを待たない）。
  * - 当たり判定は、上から見た円（主人公）と四角形（壁・柱・家）。壁に沿って滑る。
  */
@@ -10,9 +11,18 @@ import { BOUNDS, colliders, type Rect } from '../layout';
 /** 固定カメラの向き（真南から北を見る＝0）。カメラの置き方（main.ts）と入力の変換で共用する */
 export const CAMERA_YAW = 0;
 export const HERO_RADIUS = 0.28;
-export const MAX_SPEED = 1.55;
+/**
+ * 移動の速さ（m/秒）。調整はここだけで行う。
+ *   walk：歩き（これまでの値）、run：走り（初期値は歩きの 2.2 倍）
+ */
+export const SPEED = { walk: 1.55, run: 1.55 * 2.2 } as const;
+/** 歩きの上限（これまでの名前） */
+export const MAX_SPEED = SPEED.walk;
 const ACCEL = 5.5;
-const DECEL = 9;
+/** 入力を離したとき・走るのをやめたときの減速。走りからでも約 0.3 秒で止まる */
+const DECEL = 12;
+/** 1 回に動かす距離の上限（m）。走っても壁や柱をすり抜けないように、これより長い移動は分けて判定する */
+const SUBSTEP = 0.1;
 /** 向きを変える速さ（1/秒、指数的に近づく）。180° の切り返しで約 0.3 秒 */
 const TURN_RATE = 14;
 /** 進む方向が逆向き寄り（90° より大きく）に切り替わったとき、残す速さの割合（勢いを殺して切り返す） */
@@ -51,10 +61,12 @@ function wrapAngle(a: number): number {
 
 const RECTS = colliders();
 
-export function stepHero(h: HeroState, ix: number, iy: number, cameraYaw: number, dt: number, rects: Rect[] = RECTS): void {
-    const mag = Math.min(1, Math.hypot(ix, iy));
+export function stepHero(h: HeroState, ix: number, iy: number, cameraYaw: number, dt: number, run = false, rects: Rect[] = RECTS): void {
+    const len = Math.hypot(ix, iy);
+    const mag = Math.min(1, len);
     if (mag > 0.05) {
-        const d = screenToGround(ix / mag, iy / mag, cameraYaw);
+        // 向きは長さ 1 にし、強さは 1 までに切る（斜めでも速くならない）
+        const d = screenToGround(ix / len, iy / len, cameraYaw);
         // 向き直るのを待たずに進む。逆向き寄りに切り返したときだけ、一度だけ速さを落とす
         if (d.x * h.dirX + d.z * h.dirZ < 0) h.speed *= REVERSE_KEEP;
         h.dirX = d.x;
@@ -62,7 +74,9 @@ export function stepHero(h: HeroState, ix: number, iy: number, cameraYaw: number
         const target = Math.atan2(d.x, d.z);
         const diff = wrapAngle(target - h.heading);
         h.heading = wrapAngle(h.heading + diff * (1 - Math.exp(-TURN_RATE * dt)));
-        h.speed = Math.min(MAX_SPEED * mag, h.speed + ACCEL * dt);
+        // 上限の速さへ近づける（上げるときは ACCEL、走りから歩きに戻すときは DECEL）。斜めでも入力の長さは 1 まで
+        const want = (run ? SPEED.run : SPEED.walk) * mag;
+        h.speed = h.speed < want ? Math.min(want, h.speed + ACCEL * dt) : Math.max(want, h.speed - DECEL * dt);
     } else {
         h.speed = Math.max(0, h.speed - DECEL * dt);
     }
@@ -74,10 +88,13 @@ export function stepHero(h: HeroState, ix: number, iy: number, cameraYaw: number
     const vx = h.dirX * h.speed * dt;
     const vz = h.dirZ * h.speed * dt;
     const before = { x: h.x, z: h.z };
-    h.x += vx;
-    resolve(h, rects);
-    h.z += vz;
-    resolve(h, rects);
+    const n = Math.max(1, Math.ceil(Math.hypot(vx, vz) / SUBSTEP));
+    for (let i = 0; i < n; i++) {
+        h.x += vx / n;
+        resolve(h, rects);
+        h.z += vz / n;
+        resolve(h, rects);
+    }
     // 壁に当たって進めなかった分は速度も落とす
     const moved = Math.hypot(h.x - before.x, h.z - before.z);
     const wanted = Math.hypot(vx, vz);
