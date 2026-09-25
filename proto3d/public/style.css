@@ -200,3 +200,9 @@ body.touch #run-btn span { min-width: 60px; padding: 14px 14px; }
 #hero-btn.busy { opacity: 0.6; }
 #hero-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 body.touch #hero-btn .v1, body.touch #hero-btn .old { padding: 11px 12px; }
+/* 見回し（肩越しのカメラのとき）：PC は画面のどこでも、スマホは右半分をドラッグ。ボタンや表示はこれより手前 */
+#look-zone { position: absolute; inset: 0; display: none; touch-action: none; cursor: grab; }
+body.tps #look-zone { display: block; }
+body.tps.touch #look-zone { left: 50%; }
+#look-zone.active { cursor: grabbing; }
+body:not(.tps) #help .look, body:not(.tps) .cam-tps, body.tps .cam-top { display: none; }

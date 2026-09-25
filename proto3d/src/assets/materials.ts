@@ -23,24 +23,35 @@ export function materials(): ReturnType<typeof build> {
 }
 
 function build() {
-    // ---- 漆喰：わずかなむら、下の方ほど少し汚れる ----
-    const plaster = textured('plaster', [512, 512], (u, v) => {
+    // ---- 漆喰：わずかなむら、雨だれの薄い縦の筋、細かなひび（近くで見ても平らな白にならない） ----
+    const plaster = textured('plaster', [1024, 1024], (u, v) => {
         const n = fbm(u, v, 6, 5, 1);
-        const fine = noise(u, v, 128, 3);
-        const base = mixRgb(hex('#e7e0d0'), hex('#d6ccb6'), n * 0.8 + fine * 0.15);
-        return [...rgbOut(base), 255, n * 0.6 + fine * 0.4];
-    }, 1.2);
+        const fine = noise(u, v, 256, 3);
+        // 雨だれ：横には細かく、縦には長くつながる筋
+        const streak = Math.pow(fbm(u, v * 0.08, 48, 3, 7), 3) * 1.6;
+        const crack = Math.abs(noise(u, v, 24, 9) - 0.5) < 0.012 ? 1 : 0;
+        let base = mixRgb(hex('#e9e2d2'), hex('#d4c9b2'), n * 0.8 + fine * 0.15);
+        base = mixRgb(base, hex('#b9ad96'), Math.min(0.45, streak * 0.5));
+        base = mixRgb(base, hex('#9d917c'), crack * 0.5);
+        return [...rgbOut(base), 255, n * 0.6 + fine * 0.4 - crack * 0.6];
+    }, 1.4);
 
     // ---- 古びた木（縦の木目）：柱・梁・門扉 ----
+    // 古びた木：細い木目（1 枚の絵に 140 本ほど）、年月で開いた細い割れ、ところどころの節。むらは控えめに
     const woodTex = (name: string, dark: string, light: string, seed: number) =>
-        textured(name, [256, 512], (u, v) => {
-            const warp = fbm(u, v, 4, 3, seed) * 0.12;
-            const grain = Math.sin((u + warp) * 90 + noise(u, v, 8, seed + 5) * 6) * 0.5 + 0.5;
-            const rings = Math.pow(grain, 3);
+        textured(name, [512, 1024], (u, v) => {
+            const warp = fbm(u, v, 4, 3, seed) * 0.08 + fbm(u, v * 0.3, 16, 2, seed + 3) * 0.01;
+            const grain = Math.sin((u + warp) * 140 * Math.PI + noise(u, v, 8, seed + 5) * 5) * 0.5 + 0.5;
+            const rings = Math.pow(grain, 4);
             const blot = fbm(u, v, 3, 4, seed + 9);
-            const c = mixRgb(hex(dark), hex(light), 0.25 + blot * 0.45 - rings * 0.25);
-            return [...rgbOut(c), 255, grain * 0.7 + blot * 0.3];
-        }, 2.2);
+            // 割れ：縦に長い細い線（u 方向に狭く、v 方向に長い）
+            const crack = Math.abs(noise(u, v * 0.12, 22, seed + 11) - 0.5) < 0.008 ? 1 : 0;
+            const knotC = noise(u, v, 3, seed + 13);
+            const knot = knotC > 0.93 ? (knotC - 0.93) / 0.07 : 0;
+            let c = mixRgb(hex(dark), hex(light), 0.35 + blot * 0.3 - rings * 0.22);
+            c = mixRgb(c, hex(dark), crack * 0.7 + knot * 0.6);
+            return [...rgbOut(c), 255, grain * 0.5 + blot * 0.3 - crack * 1.2 - knot * 0.4];
+        }, 2.6);
     const wood = woodTex('wood', '#3b2b20', '#6c5140', 11);
     const bengara = woodTex('bengara', '#3e2019', '#6d3a2b', 23);
     const timber = woodTex('timber', '#5d4633', '#8d6f52', 31);
@@ -91,19 +102,29 @@ function build() {
         const dry = mixRgb(c, hex('#9a915f'), Math.max(0, m - 0.55) * 1.6);
         return [...rgbOut(dry), 255, n * 0.5 + blade * 0.5];
     }, 2);
+    // 土の道：締まった土（暖かい灰茶）、細かな砂利と小石、踏み固められた所と乾いて白っぽい所のむら。凹凸は小石と土のでこぼこ
     const road = textured('road', [1024, 1024], (u, v) => {
         const n = fbm(u, v, 8, 5, 81);
-        const pebble = noise(u, v, 200, 82);
-        const rut = fbm(u, v, 2, 2, 83);
-        let c = mixRgb(hex('#9c8667'), hex('#c3ad88'), n * 0.8);
-        let hh = n * 0.4;
-        if (pebble > 0.78) {
-            c = mixRgb(c, hex('#8e877a'), 0.6);
-            hh += (pebble - 0.78) * 4;
+        const big = fbm(u, v, 3, 3, 84);
+        const grit = noise(u, v, 512, 85);
+        const pebble = noise(u, v, 160, 82);
+        const pebble2 = noise(u, v, 90, 86);
+        let c = mixRgb(hex('#8f7a5e'), hex('#b79f7d'), n * 0.7 + (big - 0.5) * 0.4);
+        let hh = n * 0.35 + grit * 0.12;
+        // 細かな砂（明るい・暗い粒）
+        c = mixRgb(c, grit > 0.5 ? hex('#c9b595') : hex('#77654f'), Math.abs(grit - 0.5) * 0.5);
+        // 小石（色の違う石が混ざる）
+        if (pebble > 0.8) {
+            const t = (pebble - 0.8) / 0.2;
+            c = mixRgb(c, pebble2 > 0.5 ? hex('#9a948a') : hex('#7d7163'), 0.45 + t * 0.35);
+            hh += t * 1.3;
         }
-        c = mixRgb(c, hex('#7f6b52'), Math.max(0, rut - 0.6) * 1.4);
+        if (pebble2 > 0.88) {
+            c = mixRgb(c, hex('#a7a095'), 0.5);
+            hh += (pebble2 - 0.88) * 7;
+        }
         return [...rgbOut(c), 255, hh];
-    }, 2.5);
+    }, 3.2);
 
     // ---- 布：小袖（藍の細かな織り）・袴（細い縞）・暖簾（藍に白い家紋） ----
     const kosode = textured('kosode', [256, 256], (u, v) => {
@@ -139,11 +160,13 @@ function build() {
         stone: std('石', { ...stone, roughness: 0.9 }),
         iron: std('鉄金具', { color: 0x2b2a28, roughness: 0.45, metalness: 0.6 }),
         dark: std('奥の暗がり', { color: 0x16130f, roughness: 1 }),
+        doma: std('土間', { color: 0x54473a, roughness: 1 }),
+        dimWall: std('土間の壁', { color: 0x2e271f, roughness: 1 }),
         bark: std('樹皮', { ...bark, roughness: 0.95 }),
         pineNeedles: std('松葉', { map: needles, alphaTest: 0.45, side: THREE.FrontSide, roughness: 0.85 }),
-        pineCore: std('松葉の奥', { color: 0x2c3d25, roughness: 1 }),
+        pineCore: std('松葉の奥', { color: 0x3a5030, roughness: 1 }),
         leaves: std('葉', { map: leaves, alphaTest: 0.45, side: THREE.FrontSide, roughness: 0.8 }),
-        leafCore: std('葉の奥', { color: 0x3a4a28, roughness: 1 }),
+        leafCore: std('葉の奥', { color: 0x46592f, roughness: 1 }),
         grassCard: std('草', { map: grassCard, alphaTest: 0.4, side: THREE.FrontSide, roughness: 0.9 }),
         ground: std('草地', { ...ground, roughness: 0.97 }),
         road: std('土の道', { ...road, roughness: 0.96 }),
@@ -179,7 +202,7 @@ function needleTexture(): THREE.CanvasTexture {
             const a = r() * Math.PI * 2;
             const len = 14 + r() * 22;
             const t = r();
-            ctx.strokeStyle = `rgb(${30 + t * 38},${52 + t * 40},${32 + t * 22})`;
+            ctx.strokeStyle = `rgb(${44 + t * 42},${70 + t * 46},${38 + t * 26})`;
             ctx.lineWidth = 0.9 + r() * 0.6;
             ctx.beginPath();
             ctx.moveTo(cx, cy);

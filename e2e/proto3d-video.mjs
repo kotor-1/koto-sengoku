@@ -33,7 +33,7 @@ const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: W, height: H } });
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
-await page.goto(BASE + '/');
+await page.goto(BASE + '/?view=top');
 await page.waitForFunction(() => window.__p3?.stats.readyMs > 0, null, { timeout: 90000 });
 await page.evaluate(() => {
   window.__p3.manual();

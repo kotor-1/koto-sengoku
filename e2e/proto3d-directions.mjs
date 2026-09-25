@@ -27,7 +27,7 @@ async function open(opts) {
   page.setDefaultTimeout(300000);
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto(BASE + '/?q=low');
+  await page.goto(BASE + '/?q=low&view=top');
   await page.waitForFunction(() => window.__p3?.stats.readyMs > 0, null, { timeout: 180000 });
   await page.evaluate(() => window.__p3.manual());
   return { ctx, page };
@@ -94,8 +94,8 @@ const DIRS = [
   { name: '右下', keys: ['KeyS', 'KeyD'], v: [1, 1] },
   { name: '左下', keys: ['ArrowDown', 'ArrowLeft'], v: [-1, 1] },
 ];
-// 開けた所（道の東の草地）。どの向きへ 1 秒歩いても何にも当たらない
-const OPEN = { x: 7, z: 0 };
+// 開けた所（東の町家のさらに東の草地）。どの向きへ 1 秒歩いても何にも当たらない
+const OPEN = { x: 12, z: 5 };
 const kbResult = {};
 
 // ---------------- キーボード ----------------

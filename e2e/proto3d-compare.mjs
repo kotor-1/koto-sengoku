@@ -30,7 +30,7 @@ for (const [name, vp] of Object.entries(sizes)) {
   {
     const ctx = await browser.newContext(opts);
     const page = await ctx.newPage();
-    await page.goto(B3 + '/');
+    await page.goto(B3 + '/?view=top');
     await page.waitForFunction(() => window.__p3?.stats.readyMs > 0, null, { timeout: 120000 });
     page.setDefaultTimeout(300000);
     await page.evaluate(() => {

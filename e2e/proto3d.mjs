@@ -31,7 +31,7 @@ async function open(opts) {
   const page = await ctx.newPage();
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto(BASE + '/?fps&q=low');
+  await page.goto(BASE + '/?fps&q=low&view=top');
   const ok = await waitFor(page, () => window.__p3?.stats.readyMs > 0, null, 90000);
   return { ctx, page, ok };
 }

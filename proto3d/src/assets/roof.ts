@@ -56,6 +56,22 @@ export function roof(b: Builder, s: RoofSpec, at: [number, number, number], rotY
             return [(u - 0.5) * s.len, p.y - thick, p.z * side];
         }, (u, _t, arc) => [(u - 0.5) * s.len * 2, arc * 2], side > 0);
         b.add(m.wood, out(shade(under, () => 0.55)));
+        // 軒裏の垂木：軒先から屋根の奥へ、一定の間隔で並ぶ細い角材（下から見える所）
+        const rafterGap = s.run > 1 ? 0.33 : 0.3;
+        const nr = Math.floor(s.len / rafterGap);
+        const ta = 0.25;
+        const pa = profile(s, ta);
+        const pb = profile(s, 1);
+        const ya = pa.y - thick - 0.035;
+        const yb = pb.y - thick - 0.035;
+        const za = pa.z;
+        const zb = pb.z + 0.02;
+        const rl = Math.hypot(zb - za, yb - ya);
+        const slope = Math.atan2(ya - yb, zb - za);
+        for (let i = 0; i < nr; i++) {
+            const x = -((nr - 1) * rafterGap) / 2 + i * rafterGap;
+            b.add(m.wood, out(shade(place(box(0.055, 0.065, rl, 3), [x, (ya + yb) / 2, ((za + zb) / 2) * side], [slope * side, 0, 0]), () => 0.62)));
+        }
         // 軒先の厚み（茅負）と軒平瓦の並び
         const e = profile(s, 1);
         b.add(m.wood, out(place(box(s.len, thick, 0.06, 2), [0, e.y - thick / 2, (e.z + 0.02) * side])));

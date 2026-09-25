@@ -1,5 +1,5 @@
 /**
- * 3D 比較版：自作の主人公モデル 第 1 版（proto3d/public/models/hero_v1.glb）を、ブラウザなしで骨組みから確かめる。
+ * 3D 比較版：自作の主人公モデル 第 2 版（proto3d/public/models/hero_v2.glb。第 1 版と同じ骨組み・動き）を、ブラウザなしで骨組みから確かめる。
  * - 動き Idle / Walk / Run と 20 ジョイントがある。+Z が正面、身長約 1.76m
  * - ゲームが使う「1 周期で進む距離」（main.ts：Walk 1.4m/秒・Run 3.0m/秒 × 周期）が、接地した足の送りの速さと合う（足が滑らない）
  * - Walk と Run で左右の足の順番（位相）がそろう（速さで混ぜても脚が乱れない）
@@ -20,7 +20,7 @@ interface Gltf {
 
 // テストは Node で動く。Node の型定義は入れていないので、ファイルの読み込みだけ型なしで使う
 const fs = (await import(/* @vite-ignore */ 'node:' + 'fs')) as { readFileSync: (p: URL) => Uint8Array };
-const glb = new Uint8Array(fs.readFileSync(new URL('../proto3d/public/models/hero_v1.glb', import.meta.url)));
+const glb = new Uint8Array(fs.readFileSync(new URL('../proto3d/public/models/hero_v2.glb', import.meta.url)));
 const jsonLen = new DataView(glb.buffer).getUint32(12, true);
 const gltf = JSON.parse(new TextDecoder().decode(glb.subarray(20, 20 + jsonLen))) as Gltf;
 const bin = glb.subarray(20 + jsonLen + 8);
@@ -121,7 +121,7 @@ function gait(name: string): { speed: number; leftLand: number; ground: number }
     return { speed: v[Math.floor(v.length / 2)], leftLand: land / N, ground };
 }
 
-describe('3D 比較版：自作の主人公モデル 第 1 版', () => {
+describe('3D 比較版：自作の主人公モデル 第 2 版', () => {
     it('動き Idle / Walk / Run と 20 ジョイント', () => {
         expect(clips.map((c) => c.name).sort()).toEqual(['Idle', 'Run', 'Walk']);
         expect(skin.joints.length).toBe(20);

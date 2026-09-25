@@ -26,7 +26,7 @@ async function open(opts, query = '?q=low') {
   page.setDefaultTimeout(300000);
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto(BASE + '/' + query);
+  await page.goto(BASE + '/' + query + '&view=top');
   await page.waitForFunction(() => window.__p3?.stats.readyMs > 0, null, { timeout: 180000 });
   await page.evaluate(() => window.__p3.manual());
   return { ctx, page };
@@ -53,7 +53,7 @@ const RUN = 1.55 * 2.2;
   const s0 = await st(page);
   check('ボタンが右下に出ていて、初めは「歩く」', box && box.x > 960 / 2 && box.y > 540 / 2 && !s0.runMode && !s0.btnOn, `位置 (${Math.round(box.x)}, ${Math.round(box.y)}) 大きさ ${Math.round(box.width)}×${Math.round(box.height)}`);
 
-  await put(page, 7, 0);
+  await put(page, 12, 5);
   await page.keyboard.down('ArrowRight');
   await stepN(page, 45);
   const w = await st(page);
@@ -77,7 +77,7 @@ const RUN = 1.55 * 2.2;
   // ボタンをクリック：押し続けなくても走る
   await page.click('#run-btn');
   const c1 = await st(page);
-  await put(page, 7, 0);
+  await put(page, 12, 5);
   await page.keyboard.down('ArrowRight');
   await stepN(page, 45);
   const c2 = await st(page);
@@ -101,7 +101,7 @@ const RUN = 1.55 * 2.2;
 
   // 斜めだけ速くならない（走り）
   const dist = async (keys) => {
-    await put(page, 7, 0);
+    await put(page, 12, 5);
     for (const k of keys) await page.keyboard.down(k);
     await stepN(page, 30);
     const a = await st(page);
@@ -138,7 +138,7 @@ const RUN = 1.55 * 2.2;
 
   // 画面を離れると解除（Shift とキーを押したまま）
   await page.click('#run-btn'); // 「歩く」に戻す
-  await put(page, 7, 0);
+  await put(page, 12, 5);
   await page.keyboard.down('Shift');
   await page.keyboard.down('ArrowRight');
   await stepN(page, 30);
@@ -152,7 +152,7 @@ const RUN = 1.55 * 2.2;
   await page.keyboard.up('ArrowRight');
   await page.keyboard.up('Shift');
   // アプリの切り替え（ページが隠れる → 戻る）
-  await put(page, 7, 0);
+  await put(page, 12, 5);
   await page.keyboard.down('Shift');
   await page.keyboard.down('ArrowRight');
   await stepN(page, 20);
@@ -183,7 +183,7 @@ const RUN = 1.55 * 2.2;
   check('スマホ：ボタンは指で押しやすい大きさで、スティックの範囲（左半分）と重ならない', box.height >= 44 && box.x > zone.x + zone.width, `ボタン ${Math.round(box.width)}×${Math.round(box.height)}px`);
   await page.screenshot({ path: `${S}/p3run-phone.png`, timeout: 300000 });
 
-  await put(page, 7, 0);
+  await put(page, 12, 5);
   const A = [150, 300];
   const A2 = [150 + 70, 300]; // 右へいっぱい
   await touch('touchStart', [[...A, 1]]);
@@ -219,7 +219,7 @@ const RUN = 1.55 * 2.2;
     shots.push([file, label]);
   };
   // 横から見るため、東へ（画面の右へ）動かす
-  await put(page, 5, 0, Math.PI / 2);
+  await put(page, 12, 5, Math.PI / 2);
   await snap('p3run-pose-idle.png', '止まっている');
   await page.keyboard.down('ArrowRight');
   await stepN(page, 45);

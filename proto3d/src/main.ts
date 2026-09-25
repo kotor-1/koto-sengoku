@@ -1,15 +1,20 @@
 /**
  * 3D 比較版（独立した試作）。
- * 城門 1 つ・町家 1 軒・木・道・主人公 1 人。主人公が歩き・止まり・向きを変え・建物の横を通れる。
- * - カメラは斜め見下ろしの固定（回転しない）。主人公をなめらかに追う。
- * - 素材は GLB（public/models/）を GLTFLoader で読み込む。今の GLB はこの試作のコードで作ったもの（tools/export.ts）。
+ * 城門 1 つ・道の両側の町家・木・道・主人公 1 人。主人公が歩き・走り・止まり・向きを変え・建物の横を通れる。
+ * - カメラ：主人公の背後・肩越しの三人称（既定）。画面の右側（PC は画面のどこでも）のドラッグで周りを見る。
+ *   移動はカメラの向きに合わせる。壁・屋根を突き抜けない（game/follow.ts）。
+ *   確認用に、これまでの斜め見下ろしの固定カメラも残す（?view=top）。
+ * - 空と山並みは、このコードで作る形（scenery.ts）。
+ * - 素材は GLB（public/models/）を GLTFLoader で読み込む。今の GLB はこの試作のコードで作ったもの（tools/export.ts）と、
+ *   利用者が用意した主人公モデルを改良したもの（hero_v2）。
  */
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { gaits } from './assets/hero';
+import { FOLLOW, createOrbit, look, placeFollow } from './game/follow';
 import { CAMERA_YAW, SPEED, createHero, stepHero, type HeroState } from './game/motion';
-import { PINE, START, TREE2 } from './layout';
+import { HOUSES, PINE, START, TREE2, cameraBlockers, housePose } from './layout';
+import { SKY, makeHills, makeSky } from './scenery';
 
 /**
  * カメラ：南の斜め上から北を見下ろす「正面寄りの見下ろし」（向きは固定。回転しない）。
@@ -24,6 +29,10 @@ const CAMERA = { yaw: CAMERA_YAW, pitch: THREE.MathUtils.degToRad(42), distance:
 }
 
 const params = new URLSearchParams(location.search);
+const hashParams = new URLSearchParams(location.hash.slice(1));
+/** カメラ：肩越しの三人称（既定）か、これまでの斜め見下ろし（?view=top、#view=top） */
+const tps = (params.get('view') ?? hashParams.get('view')) !== 'top';
+document.body.classList.toggle('tps', tps);
 const low = params.get('q') === 'low';
 const showFps = params.has('fps') || location.hash === '#fps';
 const touch = matchMedia('(any-pointer: coarse)').matches || (navigator.maxTouchPoints ?? 0) > 0;
@@ -40,39 +49,49 @@ const maxDpr = low ? 1 : 2;
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxDpr));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 1.1;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 view.appendChild(renderer.domElement);
 
 let hemiBoost = 0;
 const scene = new THREE.Scene();
-scene.background = new THREE.Color('#b7bfbd');
-scene.fog = new THREE.Fog('#bcc3bf', 32, 70);
+scene.background = new THREE.Color(SKY.horizon);
+// 霧：遠い所を空の地平の色に溶かす（肩越しでは遠くまで見えるので、遠くから効かせる）
+scene.fog = tps ? new THREE.Fog(SKY.horizon, 45, 480) : new THREE.Fog(SKY.horizon, 32, 70);
+// 日差し：西南西の低めの所から（晴れた午後。長めの影が道に落ちる）。見下ろしのときはこれまでの高さ
+const SUN_OFFSET = tps ? new THREE.Vector3(-17, 12, 9) : new THREE.Vector3(-14, 18, 7);
+const sky = makeSky(SUN_OFFSET);
+scene.add(sky, makeHills());
 const pmrem = new THREE.PMREMGenerator(renderer);
-// 周囲の映り込み（やわらかい環境光）。画質「低」では省く（ソフトウェア描画の検証環境では描画時間が約 2 倍になった）
+// 周囲の映り込み（空の色のやわらかい光）。画質「低」では省く（ソフトウェア描画の検証環境では描画時間が約 2 倍になった）
 if (!low) {
-    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    scene.environmentIntensity = 0.35;
+    const env = new THREE.Scene();
+    env.add(makeSky(SUN_OFFSET));
+    scene.environment = pmrem.fromScene(env, 0.04, 1, 2000).texture;
+    scene.environmentIntensity = 0.45;
 } else {
     hemiBoost = 0.25;
 }
 
-// 日差し：西南西の少し高い所から（2D 版の影の向き＝右やや上 にそろえる）
-const sun = new THREE.DirectionalLight('#fff0d8', 2.7);
+const sun = new THREE.DirectionalLight(tps ? '#ffe2bd' : '#fff0d8', tps ? 3.4 : 2.7);
 sun.castShadow = true;
 sun.shadow.mapSize.set(low ? 1024 : 2048, low ? 1024 : 2048);
-const S = 15;
-Object.assign(sun.shadow.camera, { left: -S, right: S, top: S, bottom: -S, near: 1, far: 60 });
+// 影の範囲：肩越しでは前方に広く（主人公の少し先を中心に）
+const S = tps ? 20 : 15;
+Object.assign(sun.shadow.camera, { left: -S, right: S, top: S, bottom: -S, near: 1, far: 80 });
 sun.shadow.bias = -0.0004;
 sun.shadow.normalBias = 0.03;
 sun.shadow.radius = 3;
 scene.add(sun, sun.target);
-const SUN_OFFSET = new THREE.Vector3(-14, 18, 7);
-const hemi = new THREE.HemisphereLight('#d8e0e8', '#6d5c47', 1.0 + hemiBoost);
+// 空と地面の照り返し：肩越しでは地面の照り返しを暖かく（土の道の色）
+const hemi = tps ? new THREE.HemisphereLight('#d6dde2', '#8c7153', 0.8 + hemiBoost) : new THREE.HemisphereLight('#cfdcea', '#7a6750', 1.0 + hemiBoost);
 scene.add(hemi);
 
-const camera = new THREE.PerspectiveCamera(CAMERA.fov, 1, 0.5, 120);
+const TPS_FOV = 50;
+const camera = new THREE.PerspectiveCamera(tps ? TPS_FOV : CAMERA.fov, 1, tps ? 0.1 : 0.5, 2000);
+/** 肩越しのカメラの向き（ドラッグで変わる）。初めは城門の方（北）を見る */
+const orbit = createOrbit(0);
 
 function resize(): void {
     const w = view.clientWidth || window.innerWidth;
@@ -80,7 +99,7 @@ function resize(): void {
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     // 縦に狭い画面（スマホ横向き）でも、上下の見える範囲が狭くなりすぎないよう少し引く
-    camera.fov = CAMERA.fov * (w / h < 1.6 ? 1.12 : 1);
+    camera.fov = (tps ? TPS_FOV : CAMERA.fov) * (w / h < 1.6 ? 1.12 : 1);
     camera.updateProjectionMatrix();
 }
 window.addEventListener('resize', resize);
@@ -137,9 +156,10 @@ const zone = document.getElementById('stick-zone')!;
 const base = document.getElementById('stick-base')!;
 const knob = document.getElementById('stick-knob')!;
 const R = 52;
-/** 移動の入力と Shift を離した扱いにする（指を離した・画面を離れた・アプリを切り替えた）。ボタンで選んだ歩く／走るはそのまま */
+/** 移動の入力と Shift と見回しを離した扱いにする（指を離した・画面を離れた・アプリを切り替えた）。ボタンで選んだ歩く／走るはそのまま */
 function releaseAll(): void {
     keys.clear();
+    releaseLook();
     shiftHeld = false;
     updateRunUi();
     stick.x = stick.y = 0;
@@ -179,6 +199,37 @@ zone.addEventListener('pointermove', (e) => {
 for (const t of ['pointerup', 'pointercancel', 'lostpointercapture']) {
     zone.addEventListener(t, (e) => {
         if ((e as PointerEvent).pointerId === stick.id) releaseAll();
+    });
+}
+/**
+ * 見回し（肩越しのカメラ）：スマホは画面の右半分、PC は画面のどこでもドラッグ。
+ * ボタンは見回しの面より手前にあり、押しても見回しは始まらない。スティック（左半分）とは別の指で同時に使える。
+ */
+const lookZone = document.getElementById('look-zone')!;
+const lookPtr = { id: -1, x: 0, y: 0 };
+function releaseLook(): void {
+    lookPtr.id = -1;
+    lookZone.classList.remove('active');
+}
+lookZone.addEventListener('pointerdown', (e) => {
+    if (!tps || lookPtr.id !== -1) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault();
+    lookPtr.id = e.pointerId;
+    lookPtr.x = e.clientX;
+    lookPtr.y = e.clientY;
+    lookZone.setPointerCapture(e.pointerId);
+    lookZone.classList.add('active');
+});
+lookZone.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== lookPtr.id) return;
+    look(orbit, e.clientX - lookPtr.x, e.clientY - lookPtr.y, FOLLOW.sensitivity * (e.pointerType === 'touch' ? 1.1 : 1));
+    lookPtr.x = e.clientX;
+    lookPtr.y = e.clientY;
+});
+for (const t of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+    lookZone.addEventListener(t, (e) => {
+        if ((e as PointerEvent).pointerId === lookPtr.id) releaseLook();
     });
 }
 window.addEventListener('blur', releaseAll);
@@ -248,13 +299,14 @@ interface HeroView {
 
 /**
  * 主人公の見た目（比較用に切り替えられる）。移動・当たり判定・カメラ・歩く／走るは共通で、表示と動きの素材だけを替える。
- * - v1：自作の主人公モデル 第 1 版（利用者が用意。20 ジョイント、動きは Idle / Walk / Run、proto3d/assets-src/hero_v1/）
+ * - v2：自作の主人公モデル 第 2 版（利用者が用意した第 1 版 proto3d/assets-src/hero_v1/ を、背中の襟・袴の腰板・縞・袖の形で改良。
+ *   proto3d/assets-src/hero_v2/。20 ジョイント、動きは Idle / Walk / Run）
  * - old：これまでの主人公（このコードで作った 18 本の骨の人形、proto3d/src/assets/hero.ts）
  */
-type HeroKey = 'v1' | 'old';
+type HeroKey = 'v2' | 'old';
 const HERO_MODELS: Record<HeroKey, { file: string; clips: [string, string, string]; cycle: (walk: THREE.AnimationClip, run: THREE.AnimationClip) => { walk: number; run: number } }> = {
     // 素材の説明の基準速度（Walk 1.4m/秒・Run 3.0m/秒。接地した足の送りの速さを骨組みから測って一致を確認）× 1 周期の長さ
-    v1: { file: 'hero_v1', clips: ['Idle', 'Walk', 'Run'], cycle: (w, r) => ({ walk: 1.4 * w.duration, run: 3.0 * r.duration }) },
+    v2: { file: 'hero_v2', clips: ['Idle', 'Walk', 'Run'], cycle: (w, r) => ({ walk: 1.4 * w.duration, run: 3.0 * r.duration }) },
     // 足の接地を骨組みから計算した値（素材の動きと同じ式）
     old: {
         file: 'hero',
@@ -266,7 +318,7 @@ const HERO_MODELS: Record<HeroKey, { file: string; clips: [string, string, strin
     },
 };
 const heroParam = params.get('hero') ?? new URLSearchParams(location.hash.slice(1)).get('hero');
-let heroKey: HeroKey = heroParam === 'old' ? 'old' : 'v1';
+let heroKey: HeroKey = heroParam === 'old' ? 'old' : 'v2';
 const heroViews = new Map<HeroKey, HeroView>();
 
 async function loadHeroView(key: HeroKey): Promise<HeroView> {
@@ -327,10 +379,10 @@ async function switchHero(key: HeroKey): Promise<void> {
 heroBtn.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     e.stopPropagation();
-    void switchHero(heroKey === 'old' ? 'v1' : 'old');
+    void switchHero(heroKey === 'old' ? 'v2' : 'old');
 });
 heroBtn.addEventListener('click', (e) => {
-    if (e.detail === 0) void switchHero(heroKey === 'old' ? 'v1' : 'old');
+    if (e.detail === 0) void switchHero(heroKey === 'old' ? 'v2' : 'old');
 });
 
 function prepare(obj: THREE.Object3D): void {
@@ -401,12 +453,25 @@ const hero: HeroState = createHero(START.x, START.z, Math.PI);
 async function start(): Promise<void> {
     const t0 = performance.now();
     const [[ground, gate, house, pine, broadleaf], firstHero] = await Promise.all([Promise.all(['ground', 'gate', 'house', 'pine', 'broadleaf'].map(load)), loadHeroView(heroKey)]);
-    for (const g of [ground, gate, house]) {
+    for (const g of [ground, gate]) {
         prepare(g.scene);
         scene.add(g.scene);
     }
-    addOccluder(gate.scene);
-    addOccluder(house.scene);
+    // 町家：同じ形を道の両側に置く（形と質感は共有）
+    prepare(house.scene);
+    const houses = HOUSES.map((p, i) => {
+        const h = i === 0 ? house.scene : house.scene.clone();
+        const pose = housePose(p);
+        h.position.set(pose.x, 0, pose.z);
+        h.rotation.y = pose.rotY;
+        scene.add(h);
+        return h;
+    });
+    // 隠れたら半透明にするのは見下ろしのときだけ（肩越しではカメラが壁の手前に来るので、建物は薄くしない）
+    if (!tps) {
+        addOccluder(gate.scene);
+        for (const h of houses) addOccluder(h);
+    }
     prepare(pine.scene);
     pine.scene.position.set(PINE.x, 0, PINE.z);
     scene.add(pine.scene);
@@ -416,6 +481,14 @@ async function start(): Promise<void> {
     scene.add(broadleaf.scene);
     addOccluder(pine.scene);
     addOccluder(broadleaf.scene);
+    // 町の外側の木立（歩ける範囲の外。奥行きを出す）
+    for (const [x, z, r, kind] of BACK_TREES) {
+        const t = (kind === 0 ? pine.scene : broadleaf.scene).clone();
+        t.position.set(x, 0, z);
+        t.rotation.y = r;
+        t.scale.setScalar(kind === 0 ? 1.15 : 1.3);
+        scene.add(t);
+    }
     // 草むらは影を落とさない（地面の書き出しで指定済み）
     showHero(heroKey, firstHero);
     stats.readyMs = Math.round(performance.now());
@@ -425,9 +498,29 @@ async function start(): Promise<void> {
     renderer.setAnimationLoop(frame);
 }
 
+/** 町の外側の木立：[x, z, 向き, 0 松・1 広葉樹]（歩ける範囲 BOUNDS の外） */
+const BACK_TREES: [number, number, number, 0 | 1][] = [
+    [-25, -18, 0.3, 1], [-27, -6, 1.2, 0], [-26, 6, 2.1, 1], [-29, 16, 0.7, 0],
+    [25, -20, 1.7, 0], [27, -7, 0.4, 1], [24, 5, 2.6, 0], [28, 15, 1.1, 1],
+    [-12, -35, 0.9, 1], [-4, -38, 2.2, 0], [9, -36, 0.2, 1], [17, -34, 1.6, 0],
+];
+
 // ---- 毎フレーム ----
 const camTarget = new THREE.Vector3(hero.x, 1.0, hero.z);
-function placeCamera(k: number): void {
+const sunCenter = new THREE.Vector3();
+function placeCamera(k: number, dt = 0): void {
+    if (tps) {
+        const pose = placeFollow(orbit, hero.x, hero.z, dt);
+        camera.position.copy(pose.position);
+        camera.lookAt(pose.target);
+        // 壁ぎわでカメラが頭のすぐ後ろまで寄ったときは、主人公を描かない
+        if (heroView) heroView.root.visible = orbit.dist > FOLLOW.hideHeroDistance;
+        // 影は主人公の少し先を中心に（見える範囲の手前側）
+        sunCenter.set(hero.x - Math.sin(orbit.yaw) * 8, 0, hero.z - Math.cos(orbit.yaw) * 8);
+        sun.position.copy(sunCenter).add(SUN_OFFSET);
+        sun.target.position.copy(sunCenter);
+        return;
+    }
     const want = new THREE.Vector3(hero.x, CAMERA.distance < 12 ? 0.95 : 1.0, hero.z);
     camTarget.lerp(want, k);
     const h = Math.cos(CAMERA.pitch) * CAMERA.distance;
@@ -464,7 +557,7 @@ function frame(): void {
 /** 1 フレーム進めて描く（録画用に、決まった時間と入力で進めることもできる） */
 function advance(dt: number, raw: number, ix: number, iy: number): void {
     stats.frames++;
-    stepHero(hero, ix, iy, CAMERA.yaw, dt, running());
+    stepHero(hero, ix, iy, tps ? orbit.yaw : CAMERA.yaw, dt, running());
     const v = heroView!;
     v.root.position.set(hero.x, 0, hero.z);
     v.root.rotation.y = hero.heading;
@@ -482,7 +575,7 @@ function advance(dt: number, raw: number, ix: number, iy: number): void {
     v.run.setEffectiveWeight(walkBlend * runBlend);
     v.idle.setEffectiveWeight(1 - walkBlend);
     v.mixer.update(dt);
-    placeCamera(1 - Math.exp(-6 * dt));
+    placeCamera(1 - Math.exp(-6 * dt), dt);
     fadeOccluders(dt);
     renderer.render(scene, camera);
     if (showFps) {
@@ -512,6 +605,14 @@ if (import.meta.env.DEV) {
             hero, stats, camera, renderer, scene, releaseAll,
             get anim() { return { walkBlend, runBlend, stride, strideTotal, walkTime: heroView?.walk.time ?? 0, running: running(), runMode }; },
             get heroModel() { return heroKey; },
+            orbit, tps,
+            get lookActive() { return lookPtr.id !== -1; },
+            look(dx: number, dy: number) { look(orbit, dx, dy); },
+            /** 確認用：カメラが壁・屋根・柱などの箱（広げていない形）の中にあるか */
+            cameraInside() {
+                const p = camera.position;
+                return cameraBlockers().some((b) => p.x > b.x0 && p.x < b.x1 && p.y > b.y0 && p.y < b.y1 && p.z > b.z0 && p.z < b.z1);
+            },
             switchHero,
             get fade() { return occluders.map((o) => Math.round(o.alpha * 100) / 100); },
             /** 録画用：自動の更新を止め、step で 1 コマずつ進める */

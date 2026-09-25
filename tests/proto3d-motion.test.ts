@@ -139,17 +139,17 @@ describe('3D 比較版：歩く／走る', () => {
         expect(SPEED.walk).toBe(1.55);
         expect(MAX_SPEED).toBe(SPEED.walk);
         expect(SPEED.run / SPEED.walk).toBeCloseTo(2.2, 6);
-        const w = createHero(7, 0, Math.PI);
+        const w = createHero(12, 5, Math.PI);
         run(w, 1, 0, 1.5);
         expect(w.speed).toBeCloseTo(SPEED.walk, 6);
-        const r = createHero(7, 0, Math.PI);
+        const r = createHero(12, 5, Math.PI);
         run(r, 1, 0, 1.5, true);
         expect(r.speed).toBeCloseTo(SPEED.run, 6);
     });
 
     it('走りで 1 秒に進む距離は、斜めでもまっすぐと同じ（斜めだけ速くならない）', () => {
         const d = (ix: number, iy: number) => {
-            const h = createHero(7, 0, Math.PI);
+            const h = createHero(12, 5, Math.PI);
             run(h, ix, iy, 1, true); // 速さを上げきる
             const x = h.x;
             const z = h.z;
@@ -164,7 +164,7 @@ describe('3D 比較版：歩く／走る', () => {
     });
 
     it('走っていても、入力を離すと 0.3 秒で止まり、止まるまでに進むのは 0.6m 未満', () => {
-        const h = createHero(7, 0, Math.PI);
+        const h = createHero(12, 5, Math.PI);
         run(h, 0, -1, 1.5, true);
         const z = h.z;
         run(h, 0, 0, 0.3, true);
@@ -173,7 +173,7 @@ describe('3D 比較版：歩く／走る', () => {
     });
 
     it('走るのをやめると、歩きの速さまでなめらかに落ちる（一瞬で変わらない）', () => {
-        const h = createHero(7, 0, Math.PI);
+        const h = createHero(12, 5, Math.PI);
         run(h, 1, 0, 1.5, true);
         stepHero(h, 1, 0, YAW, DT, false);
         expect(h.speed).toBeLessThan(SPEED.run);

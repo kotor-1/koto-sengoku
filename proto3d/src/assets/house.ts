@@ -53,8 +53,12 @@ export function buildHouse(): THREE.Group {
         const bw = zb - za;
         const bz = (za + zb) / 2;
         if (i === 1) {
-            // 入口：奥は暗く、上に暖簾
-            b.add(m.dark, place(quad(bw, FLOOR1 - SILL - 0.1), [x1 - 0.45, SILL + (FLOOR1 - SILL) / 2, bz], [0, Math.PI / 2, 0]));
+            // 入口：奥は暗く、上に暖簾。足元は土間と敷居（真っ黒な穴に見えないように）
+            b.add(m.dimWall, shade(place(quad(bw, FLOOR1 - SILL - 0.1), [x1 - 1.2, SILL + (FLOOR1 - SILL) / 2, bz], [0, Math.PI / 2, 0]), (_x, y) => 0.5 + 0.5 * Math.max(0, 1 - y / 2)));
+            b.add(m.doma, shade(place(box(1.2, 0.04, bw - 0.04), [x1 - 0.6, 0.02, bz]), (x) => 0.45 + 0.55 * Math.min(1, Math.max(0, (x - (x1 - 1.2)) / 1.2))));
+            b.add(m.timber, place(box(0.14, 0.08, bw), [x1 - 0.02, 0.06, bz]));
+            // 奥の土間の両脇の壁（暗い）
+            for (const s of [-1, 1]) b.add(m.dimWall, shade(place(quad(1.2, FLOOR1 - SILL), [x1 - 0.6, SILL + (FLOOR1 - SILL) / 2, bz + s * (bw / 2 - 0.03)]), (x) => 0.4 + 0.6 * Math.min(1, Math.max(0, (x - (x1 - 1.2)) / 1.2))));
             for (const s of [-1, 1]) b.add(m.wood, place(box(0.5, FLOOR1 - SILL, 0.05), [x1 - 0.22, SILL + (FLOOR1 - SILL) / 2, bz + s * (bw / 2 - 0.02)]));
             b.add(m.stone, shade(place(roundBox(0.7, 0.14, bw * 0.8, 0.04), [x1 + 0.4, 0.07, bz]), () => 0.8));
             // 暖簾：3 枚、少し揺れた形
