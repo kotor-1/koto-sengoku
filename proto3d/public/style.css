@@ -32,8 +32,27 @@ body { position: fixed; inset: 0; touch-action: none; }
     position: absolute;
     top: calc(var(--safe-t) + 12px);
     left: calc(var(--safe-l) + 14px);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
     pointer-events: none;
 }
+.toggles { display: flex; gap: 6px; pointer-events: auto; }
+.toggles button {
+    height: 34px;
+    padding: 0 12px;
+    border-radius: 999px;
+    border: 1px solid var(--hairline);
+    background: var(--panel);
+    color: var(--ink);
+    font: inherit;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+.toggles button b { color: var(--gold); font-weight: 600; }
 .chip {
     display: inline-flex;
     align-items: baseline;

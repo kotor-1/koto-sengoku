@@ -78,18 +78,25 @@ export function makeCanvas(w: number, h: number): { canvas: HTMLCanvasElement; c
     return { canvas, ctx: canvas.getContext('2d')! };
 }
 
-/** 画素ごとに色（と高さ）を決める。fn は u,v（0〜1）から [r,g,b,a,height] を返す。 */
+export type PixelFn = (u: number, v: number, x: number, y: number) => [number, number, number, number?, number?, number?];
+
+/** 画素ごとに色・高さ・粗さを決める。fn は u,v（0〜1）から [r,g,b,a,height,roughness] を返す。 */
 export function paint(
     w: number,
     h: number,
-    fn: (u: number, v: number, x: number, y: number) => [number, number, number, number?, number?],
-): { color: HTMLCanvasElement; height: Float32Array } {
+    fn: PixelFn,
+): { color: HTMLCanvasElement; height: Float32Array; rough: Float32Array | null } {
     const { canvas, ctx } = makeCanvas(w, h);
     const img = ctx.createImageData(w, h);
     const height = new Float32Array(w * h);
+    let rough: Float32Array | null = null;
     for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
-            const [r, g, b, a = 255, hh = 0] = fn((x + 0.5) / w, (y + 0.5) / h, x, y);
+            const [r, g, b, a = 255, hh = 0, ro] = fn((x + 0.5) / w, (y + 0.5) / h, x, y);
+            if (ro !== undefined) {
+                rough ??= new Float32Array(w * h);
+                rough[y * w + x] = ro;
+            }
             const i = (y * w + x) * 4;
             img.data[i] = r;
             img.data[i + 1] = g;
@@ -99,7 +106,21 @@ export function paint(
         }
     }
     ctx.putImageData(img, 0, 0);
-    return { color: canvas, height };
+    return { color: canvas, height, rough };
+}
+
+/** 粗さの配列 → 粗さの絵（glTF の決まりどおり G に粗さ、B に金属度 0） */
+export function roughnessMap(rough: Float32Array, w: number, h: number): HTMLCanvasElement {
+    const { canvas, ctx } = makeCanvas(w, h);
+    const img = ctx.createImageData(w, h);
+    for (let i = 0; i < w * h; i++) {
+        img.data[i * 4] = 255;
+        img.data[i * 4 + 1] = Math.max(0, Math.min(255, rough[i] * 255));
+        img.data[i * 4 + 2] = 0;
+        img.data[i * 4 + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    return canvas;
 }
 
 /** 高さの配列から法線マップ（OpenGL 形式・つながる）を作る */
@@ -146,15 +167,18 @@ export function tex(canvas: HTMLCanvasElement, name: string, opts: { srgb?: bool
 export function textured(
     name: string,
     size: [number, number],
-    fn: (u: number, v: number, x: number, y: number) => [number, number, number, number?, number?],
+    fn: PixelFn,
     bump: number,
     repeat = true,
-): { map: THREE.CanvasTexture; normalMap?: THREE.CanvasTexture } {
+): { map: THREE.CanvasTexture; normalMap?: THREE.CanvasTexture; roughnessMap?: THREE.CanvasTexture } {
     const [w, h] = size;
     const p = paint(w, h, fn);
-    const map = tex(p.color, `${name}-color`, { repeat });
-    if (bump <= 0) return { map };
-    return { map, normalMap: tex(normalMap(p.height, w, h, bump), `${name}-normal`, { srgb: false, repeat }) };
+    const out: { map: THREE.CanvasTexture; normalMap?: THREE.CanvasTexture; roughnessMap?: THREE.CanvasTexture } = {
+        map: tex(p.color, `${name}-color`, { repeat }),
+    };
+    if (bump > 0) out.normalMap = tex(normalMap(p.height, w, h, bump), `${name}-normal`, { srgb: false, repeat });
+    if (p.rough) out.roughnessMap = tex(roughnessMap(p.rough, w, h), `${name}-rough`, { srgb: false, repeat });
+    return out;
 }
 
 const clamp255 = (v: number) => Math.max(0, Math.min(255, v));

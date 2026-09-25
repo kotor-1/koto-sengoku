@@ -223,8 +223,10 @@ function coverRow(s: RoofSpec, x: number, r: number, side: number, T: number): G
     g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     g.setIndex(idx);
     g.computeVertexNormals();
-    // 瓦の継ぎ目の陰（一定の間隔で少し暗く）
-    return shade(normalize(g), (_x, y) => 0.88 + 0.12 * Math.abs(Math.sin(y * 18)));
+    // 瓦の継ぎ目の陰（一定の間隔で少し暗く）と、列ごとのわずかな色の違い（焼きむら）
+    const h = Math.sin(x * 127.1 + side * 311.7) * 43758.5453;
+    const tint = 0.9 + (h - Math.floor(h)) * 0.16;
+    return shade(normalize(g), (_x, y) => tint * (0.88 + 0.12 * Math.abs(Math.sin(y * 18))));
 }
 
 /** 鬼瓦：棟の端に立つ厚い板（上が丸く張り出す） */

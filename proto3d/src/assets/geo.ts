@@ -73,6 +73,57 @@ export function box(w: number, h: number, d: number, uv = 1): Geo {
 }
 
 /**
+ * 面の向きで決める平面の UV（箱の中の座標、メートル）。x 向きの面は (z, y)、y 向きは (x, z)、z 向きは (x, y)。
+ * swapLong が指す軸（0=x,1=y,2=z）が u になる面では u と v を入れ替える（木目＝絵の v を長い方向へ）。
+ */
+function planarUv(g: Geo, su: number, sv: number, long = -1): void {
+    const p = g.getAttribute('position');
+    const n = g.getAttribute('normal');
+    const uv = new Float32Array(p.count * 2);
+    for (let i = 0; i < p.count; i++) {
+        const nx = Math.abs(n.getX(i));
+        const ny = Math.abs(n.getY(i));
+        const c = [p.getX(i), p.getY(i), p.getZ(i)];
+        let ua: number;
+        let va: number;
+        if (nx > 0.5) [ua, va] = [2, 1];
+        else if (ny > 0.5) [ua, va] = [0, 2];
+        else [ua, va] = [0, 1];
+        if (ua === long) [ua, va] = [va, ua];
+        uv[i * 2] = c[ua] * su;
+        uv[i * 2 + 1] = c[va] * sv;
+    }
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+}
+
+/**
+ * 木の部材（柱・梁・板）。木目（絵の v）が部材の長い方向に走るように UV を付ける。
+ * across：木目と直角の方向に 1m あたり何回、along：木目の方向に 1m あたり何回。
+ */
+export function woodBox(w: number, h: number, d: number, across = 2, along = 0.5, step = 0): Geo {
+    const dims = [w, h, d];
+    const long = dims.indexOf(Math.max(...dims));
+    // step > 0：長い方向に step m ごとに頂点を置く（根元の汚れなどを頂点色で付けるため）
+    const seg = dims.map((v, i) => (step > 0 && i === long ? Math.max(1, Math.ceil(v / step)) : 1));
+    const g = new THREE.BoxGeometry(w, h, d, seg[0], seg[1], seg[2]);
+    // 木目の方向が v になるよう、長い軸が u に来る面では入れ替える
+    planarUv(g, across, along, long === 1 ? -1 : long);
+    // 長い軸が y（柱）のときは、どの側面でも v = y なのでそのまま
+    return normalize(g);
+}
+
+/**
+ * 細かく分けた板（漆喰の壁など）。場所に理由のある汚れを頂点色で描けるよう、約 step m ごとに頂点を置く。
+ */
+export function panel(w: number, h: number, d: number, uv = 1, step = 0.12): Geo {
+    // 雨筋は横方向に細かく変わるので横だけ細かく分ける。縦の変化はなだらかなので粗く、薄い向き（厚み）は分けない
+    const seg = (len: number, st: number) => (len < 0.2 ? 1 : Math.max(1, Math.ceil(len / st)));
+    const g = new THREE.BoxGeometry(w, h, d, seg(w, step), Math.max(1, Math.ceil(h / 0.3)), seg(d, step));
+    planarUv(g, uv, uv);
+    return normalize(g);
+}
+
+/**
  * 角を面取りした箱（石・瓦の塊など）。角を 3 点に分けた凸包で作るので軽い（約 130 頂点）。
  * jitter を付けると角の位置が少しずつずれ、手で割った石らしくなる。
  */

@@ -18,7 +18,7 @@ function useJpegForOpaque(root: THREE.Object3D): void {
         const mesh = o as THREE.Mesh;
         if (!mesh.isMesh) return;
         const mat = mesh.material as THREE.MeshStandardMaterial;
-        for (const key of ['map', 'normalMap'] as const) {
+        for (const key of ['map', 'normalMap', 'roughnessMap'] as const) {
             const t = mat[key];
             if (t && mat.alphaTest === 0) t.userData.mimeType = 'image/jpeg';
         }
@@ -38,18 +38,25 @@ function b64(buf: ArrayBuffer): string {
     return btoa(s);
 }
 
-async function exportAll(): Promise<Record<string, string>> {
-    const hero = buildHero();
-    const list: [string, THREE.Object3D, THREE.AnimationClip[]][] = [
-        ['ground', buildGround(), []],
-        ['gate', buildGate(), []],
-        ['house', buildHouse(), []],
-        ['pine', buildPine(), []],
-        ['broadleaf', buildBroadleaf(), []],
-        ['hero', hero.root, hero.clips],
-    ];
+/** only を渡すと、その名前の素材だけを書き出す（今回改修しない素材を変えないため） */
+async function exportAll(only?: string[]): Promise<Record<string, string>> {
+    const builders: Record<string, () => [THREE.Object3D, THREE.AnimationClip[]]> = {
+        ground: () => [buildGround(), []],
+        gate: () => [buildGate(), []],
+        house: () => [buildHouse(), []],
+        pine: () => [buildPine(), []],
+        broadleaf: () => [buildBroadleaf(), []],
+        hero: () => {
+            const hero = buildHero();
+            return [hero.root, hero.clips];
+        },
+    };
     const out: Record<string, string> = {};
-    for (const [name, obj, clips] of list) out[name] = b64(await toGlb(obj, clips));
+    for (const [name, build] of Object.entries(builders)) {
+        if (only && !only.includes(name)) continue;
+        const [obj, clips] = build();
+        out[name] = b64(await toGlb(obj, clips));
+    }
     return out;
 }
 

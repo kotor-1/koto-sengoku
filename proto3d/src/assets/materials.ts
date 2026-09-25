@@ -5,7 +5,7 @@
  * 質感は tex.ts で描いた絵（色＋法線）と、粗さ（roughness）で出す。
  */
 import * as THREE from 'three';
-import { fbm, hex, makeCanvas, mixRgb, noise, rgbOut, rng, tex, textured } from './tex';
+import { fbm, hex, makeCanvas, mixRgb, noise, normalMap as normalMapFrom, rgbOut, rng, roughnessMap, tex, textured } from './tex';
 
 type Mat = THREE.MeshStandardMaterial;
 
@@ -23,47 +23,63 @@ export function materials(): ReturnType<typeof build> {
 }
 
 function build() {
-    // ---- 漆喰：わずかなむら、下の方ほど少し汚れる ----
+    // ---- 漆喰：温かみのある白。こて跡の大きなうねりはごく弱く、砂の細かな凹凸を法線で出す ----
+    //   汚れ（雨だれ・足元の泥はね）は場所に理由があるので、絵には入れず、壁の形の頂点色で付ける（house.ts）
     const plaster = textured('plaster', [512, 512], (u, v) => {
-        const n = fbm(u, v, 6, 5, 1);
-        const fine = noise(u, v, 128, 3);
-        const base = mixRgb(hex('#e7e0d0'), hex('#d6ccb6'), n * 0.8 + fine * 0.15);
-        return [...rgbOut(base), 255, n * 0.6 + fine * 0.4];
-    }, 1.2);
+        const trowel = fbm(u + 0.15 * Math.sin(v * 6.283 * 2), v, 3, 3, 1); // 横に流れるこて跡
+        const sand = noise(u, v, 256, 3) * 0.6 + noise(u, v, 128, 4) * 0.4;
+        const c = mixRgb(hex('#e4ddcc'), hex('#d8cfbb'), trowel * 0.55 + sand * 0.12);
+        return [...rgbOut(c), 255, trowel * 0.35 + sand * 0.65, 0.9 + sand * 0.07];
+    }, 1.6);
 
-    // ---- 古びた木（縦の木目）：柱・梁・門扉 ----
-    const woodTex = (name: string, dark: string, light: string, seed: number) =>
-        textured(name, [256, 512], (u, v) => {
-            const warp = fbm(u, v, 4, 3, seed) * 0.12;
-            const grain = Math.sin((u + warp) * 90 + noise(u, v, 8, seed + 5) * 6) * 0.5 + 0.5;
-            const rings = Math.pow(grain, 3);
-            const blot = fbm(u, v, 3, 4, seed + 9);
-            const c = mixRgb(hex(dark), hex(light), 0.25 + blot * 0.45 - rings * 0.25);
-            return [...rgbOut(c), 255, grain * 0.7 + blot * 0.3];
-        }, 2.2);
-    const wood = woodTex('wood', '#3b2b20', '#6c5140', 11);
-    const bengara = woodTex('bengara', '#3e2019', '#6d3a2b', 23);
-    const timber = woodTex('timber', '#5d4633', '#8d6f52', 31);
+    // ---- 木：木目は v（絵の縦）に沿って走る。細い筋・ゆるいうねり・ごくまれな節 ----
+    //   木の部材は geo.ts の木目用の箱（grain）で、長い方向に木目がそろう
+    const woodTex = (name: string, dark: string, light: string, seed: number, paint = 0) =>
+        textured(name, [256, 1024], (u, v) => {
+            const warp = fbm(u * 0.5, v, 2, 3, seed) * 0.9 + Math.sin(v * 6.283 * 2 + u * 3) * 0.08;
+            const w = u * 34 + warp;
+            const f = w - Math.floor(w);
+            const line = Math.max(0, 1 - Math.abs(f - 0.5) / 0.09); // 細い濃い筋
+            const late = Math.pow(Math.abs(Math.sin(w * Math.PI)), 6); // 年輪の晩材
+            const streak = fbm(u * 2, v * 0.5, 4, 3, seed + 5);
+            const knotD = Math.hypot((u - 0.62) * 4, (v - 0.37) * 1.4);
+            const knot = knotD < 0.18 ? 1 - knotD / 0.18 : 0;
+            let c = mixRgb(hex(dark), hex(light), 0.35 + streak * 0.45 - late * 0.18 - line * 0.25 - knot * 0.35);
+            // 塗り（弁柄）は角や筋でわずかに剝げ、下地の木色がのぞく
+            if (paint > 0) c = mixRgb(c, hex('#7a5a44'), Math.max(0, streak - 0.72) * paint);
+            const h = 0.55 - line * 0.35 - late * 0.1 + knot * 0.2; // 風化して柔らかい部分がやせ、筋が残る
+            return [...rgbOut(c), 255, h, 0.72 + line * 0.12 + (1 - streak) * 0.08];
+        }, 2.4);
+    const wood = woodTex('wood', '#2f231b', '#5a4434', 11);
+    const bengara = woodTex('bengara', '#4a2219', '#743a28', 23, 1.2);
+    const timber = woodTex('timber', '#6b563f', '#9a8264', 31);
 
-    // ---- いぶし瓦（平瓦の重なりの段）：屋根の面に貼る ----
-    const roofTile = textured('rooftile', [256, 256], (u, v) => {
-        // v 方向に 4 段（1 段の下端が影になる）、u 方向に 2 列
-        const row = (v * 4) % 1;
-        const edge = row < 0.12 ? row / 0.12 : 1;
-        const col = (u * 2) % 1;
-        const trough = Math.abs(col - 0.5) * 2; // 谷は暗く
-        const n = fbm(u, v, 8, 3, 41);
-        const c = mixRgb(hex('#3a3f47'), hex('#6d747e'), 0.35 + n * 0.35 - (1 - edge) * 0.35 - trough * 0.1);
-        return [...rgbOut(c), 255, edge * 0.8 + (1 - trough) * 0.4 + n * 0.2];
+    // ---- いぶし瓦：銀鼠。1 枚ごとにわずかに色が違い、棟から軒へ雨の筋がごく薄く流れる ----
+    const roofTile = textured('rooftile', [256, 512], (u, v) => {
+        // v 方向に 8 段（1 段の下端が影）、u 方向に 2 列。v は屋根の上から下
+        const rowF = v * 8;
+        const row = rowF - Math.floor(rowF);
+        const col = u * 2;
+        const cell = Math.floor(rowF) * 7 + Math.floor(col) * 13;
+        const tint = (noise(cell * 0.137, 0.5, 64, 42) - 0.5) * 0.16; // 1 枚ごとの色の違い
+        const edge = row < 0.1 ? row / 0.1 : 1;
+        const trough = Math.abs((col - Math.floor(col)) - 0.5) * 2;
+        const rain = fbm(u * 3, v * 0.25, 6, 3, 44);
+        const n = noise(u, v, 128, 41);
+        const c = mixRgb(hex('#3f4349'), hex('#6f7379'), 0.45 + tint - (1 - edge) * 0.4 - trough * 0.12 - Math.max(0, rain - 0.6) * 0.25 + n * 0.06);
+        return [...rgbOut(c), 255, edge * 0.8 + (1 - trough) * 0.4 + n * 0.1, 0.38 + (1 - edge) * 0.2 + Math.max(0, rain - 0.55) * 0.3 + n * 0.08];
     }, 3);
 
-    // ---- 石（花崗岩のまだら） ----
+    // ---- 石（花崗岩：細かな黒と白の粒） ----
     const stone = textured('stone', [512, 512], (u, v) => {
-        const n = fbm(u, v, 5, 5, 51);
+        const n = fbm(u, v, 5, 4, 51);
         const speck = noise(u, v, 256, 52);
-        const c = mixRgb(hex('#7f7a70'), hex('#b5afa2'), n * 0.9 + (speck > 0.8 ? 0.2 : 0) - (speck < 0.12 ? 0.25 : 0));
-        return [...rgbOut(c), 255, n + speck * 0.3];
-    }, 2.5);
+        const speck2 = noise(u, v, 512, 53);
+        let c = mixRgb(hex('#8b867c'), hex('#b3ad9f'), n * 0.8);
+        if (speck > 0.78) c = mixRgb(c, hex('#3c3a36'), (speck - 0.78) * 3);
+        if (speck2 > 0.85) c = mixRgb(c, hex('#d9d4c8'), (speck2 - 0.85) * 4);
+        return [...rgbOut(c), 255, n * 0.7 + speck * 0.3, 0.8 + (1 - n) * 0.12];
+    }, 2.2);
 
     // ---- 樹皮（松のうろこ状の皮） ----
     const bark = textured('bark', [256, 512], (u, v) => {
@@ -82,41 +98,55 @@ function build() {
     // ---- 草（透けるカード用） ----
     const grassCard = grassCardTexture();
 
-    // ---- 地面：草地と土の道 ----
-    const ground = textured('ground', [1024, 1024], (u, v) => {
-        const n = fbm(u, v, 8, 5, 71);
-        const m = fbm(u, v, 3, 3, 72);
-        const blade = noise(u, v, 512, 73);
-        const c = mixRgb(hex('#55703f'), hex('#8d9a5e'), n * 0.7 + blade * 0.25);
-        const dry = mixRgb(c, hex('#9a915f'), Math.max(0, m - 0.55) * 1.6);
-        return [...rgbOut(dry), 255, n * 0.5 + blade * 0.5];
-    }, 2);
+    // ---- 地面：草地（短い葉を描き重ねた絵。3.5m で 1 回）と、踏み固めた土の道（6m で 1 回） ----
+    //   繰り返しの目立ちは、地面の形の頂点色（大きなむら・轍・縁）で崩す（ground.ts）
+    const ground = grassGroundTexture();
     const road = textured('road', [1024, 1024], (u, v) => {
-        const n = fbm(u, v, 8, 5, 81);
-        const pebble = noise(u, v, 200, 82);
-        const rut = fbm(u, v, 2, 2, 83);
-        let c = mixRgb(hex('#9c8667'), hex('#c3ad88'), n * 0.8);
-        let hh = n * 0.4;
-        if (pebble > 0.78) {
-            c = mixRgb(c, hex('#8e877a'), 0.6);
-            hh += (pebble - 0.78) * 4;
+        const n = fbm(u, v, 6, 5, 81);
+        const fine = noise(u, v, 512, 84);
+        // 小石：丸い粒に上からの光の陰を付ける
+        const gx = u * 90;
+        const gy = v * 90;
+        const cx = Math.floor(gx);
+        const cy = Math.floor(gy);
+        const has = noise(cx / 90 + 0.003, cy / 90 + 0.003, 90, 82) > 0.8;
+        let c = mixRgb(hex('#8f7a5e'), hex('#b09a78'), n * 0.8 + fine * 0.12);
+        let hh = n * 0.3 + fine * 0.15;
+        let ro = 0.9;
+        if (has) {
+            // 粒の中心と大きさを格子ごとにずらす（規則的な並びに見えないように）
+            const jx = noise(cx / 90 + 0.5, cy / 90 + 0.2, 90, 85) - 0.5;
+            const jy = noise(cx / 90 + 0.2, cy / 90 + 0.5, 90, 86) - 0.5;
+            const rad = 0.18 + 0.16 * noise(cx / 90 + 0.7, cy / 90 + 0.7, 90, 87);
+            const dx = gx - cx - 0.5 - jx * 0.5;
+            const dy = gy - cy - 0.5 - jy * 0.5;
+            const d = Math.hypot(dx, dy);
+            if (d < rad) {
+                const k = 1 - d / rad;
+                c = mixRgb(c, hex('#8a847a'), 0.45 * k + 0.15);
+                c = mixRgb(c, hex('#b8b2a4'), Math.max(0, -dy / rad) * k * 0.35);
+                hh += k * 0.6;
+                ro = 0.75;
+            }
         }
-        c = mixRgb(c, hex('#7f6b52'), Math.max(0, rut - 0.6) * 1.4);
-        return [...rgbOut(c), 255, hh];
-    }, 2.5);
+        return [...rgbOut(c), 255, hh, ro];
+    }, 2.2);
 
-    // ---- 布：小袖（藍の細かな織り）・袴（細い縞）・暖簾（藍に白い家紋） ----
+    // ---- 布：小袖（藍木綿の綾織り。細かな斜めの畝）・袴（細い縞の仙台平ふう） ----
     const kosode = textured('kosode', [256, 256], (u, v) => {
-        const weave = (noise(u, v, 128, 91) + noise(u, v, 64, 92)) * 0.5;
-        const c = mixRgb(hex('#27324a'), hex('#3f4c66'), 0.35 + weave * 0.4);
-        return [...rgbOut(c), 255, weave];
-    }, 1);
+        const twill = Math.sin((u * 64 + v * 64) * Math.PI * 2) * 0.5 + 0.5; // 斜めの畝
+        const slub = noise(u, v, 32, 91);
+        const fade = fbm(u, v, 4, 3, 92);
+        const c = mixRgb(hex('#1f2a40'), hex('#34425d'), 0.3 + twill * 0.12 + slub * 0.15 + fade * 0.25);
+        return [...rgbOut(c), 255, twill * 0.6 + slub * 0.4, 0.88 + twill * 0.06];
+    }, 1.3);
     const hakama = textured('hakama', [256, 256], (u, v) => {
-        const stripe = Math.abs(((u * 24) % 1) - 0.5) < 0.12 ? 1 : 0;
-        const weave = noise(u, v, 128, 95);
-        const c = mixRgb(hex('#433e39'), hex('#5c5650'), 0.3 + weave * 0.3 + stripe * 0.25);
-        return [...rgbOut(c), 255, weave * 0.6 + stripe * 0.4];
-    }, 1);
+        const s1 = Math.abs(((u * 32) % 1) - 0.5) < 0.1 ? 1 : 0;
+        const s2 = Math.abs(((u * 32 + 0.5) % 1) - 0.5) < 0.04 ? 1 : 0;
+        const weave = Math.sin((u * 96 - v * 96) * Math.PI * 2) * 0.5 + 0.5;
+        const c = mixRgb(hex('#39342f'), hex('#4c4640'), 0.35 + s1 * 0.25 - s2 * 0.12 + weave * 0.08);
+        return [...rgbOut(c), 255, weave * 0.5 + s1 * 0.3, 0.9];
+    }, 1.2);
     const noren = norenTexture();
 
     // ---- 髪（筋とつや） ----
@@ -129,14 +159,14 @@ function build() {
     const face = faceTexture();
 
     return {
-        plaster: std('漆喰', { ...plaster, roughness: 0.92 }),
+        plaster: std('漆喰', { ...plaster, roughness: 1 }),
         plasterWall: std('土塀の漆喰', { ...plaster, roughness: 0.95 }),
-        wood: std('古材', { ...wood, roughness: 0.82 }),
-        bengara: std('弁柄格子', { ...bengara, roughness: 0.75 }),
-        timber: std('白木', { ...timber, roughness: 0.8 }),
-        roof: std('いぶし瓦', { ...roofTile, roughness: 0.55, metalness: 0.15 }),
-        roofTileRound: std('丸瓦', { color: 0x80858d, roughness: 0.5, metalness: 0.18, normalMap: roofTile.normalMap }),
-        stone: std('石', { ...stone, roughness: 0.9 }),
+        wood: std('古材', { ...wood, roughness: 1 }),
+        bengara: std('弁柄格子', { ...bengara, roughness: 1 }),
+        timber: std('白木', { ...timber, roughness: 1 }),
+        roof: std('いぶし瓦', { ...roofTile, roughness: 1, metalness: 0.12 }),
+        roofTileRound: std('丸瓦', { color: 0x6c7076, roughness: 0.42, metalness: 0.12 }),
+        stone: std('石', { ...stone, roughness: 1 }),
         iron: std('鉄金具', { color: 0x2b2a28, roughness: 0.45, metalness: 0.6 }),
         dark: std('奥の暗がり', { color: 0x16130f, roughness: 1 }),
         bark: std('樹皮', { ...bark, roughness: 0.95 }),
@@ -146,17 +176,17 @@ function build() {
         leafCore: std('葉の奥', { color: 0x3a4a28, roughness: 1 }),
         grassCard: std('草', { map: grassCard, alphaTest: 0.4, side: THREE.FrontSide, roughness: 0.9 }),
         ground: std('草地', { ...ground, roughness: 0.97 }),
-        road: std('土の道', { ...road, roughness: 0.96 }),
-        kosode: std('小袖', { ...kosode, roughness: 0.88 }),
-        kosodeDark: std('襟', { color: 0x1f2940, roughness: 0.85 }),
-        hakama: std('袴', { ...hakama, roughness: 0.9 }),
-        himo: std('腰紐', { color: 0x8a7852, roughness: 0.8 }),
+        road: std('土の道', { ...road, roughness: 1 }),
+        kosode: std('小袖', { ...kosode, roughness: 1 }),
+        kosodeDark: std('襟', { color: 0x1a2236, roughness: 0.9 }),
+        hakama: std('袴', { ...hakama, roughness: 1 }),
+        himo: std('腰紐', { color: 0x7d6a48, roughness: 0.85 }),
         noren: std('暖簾', { map: noren, side: THREE.DoubleSide, roughness: 0.9 }),
-        skin: std('肌', { color: 0xe3bf9c, roughness: 0.62 }),
+        skin: std('肌', { color: 0xd9b18d, roughness: 0.6 }),
         face: std('顔', { map: face, roughness: 0.6 }),
         hair: std('髪', { ...hair, roughness: 0.45 }),
         cord: std('元結', { color: 0xe6e0d2, roughness: 0.7 }),
-        tabi: std('足袋', { color: 0xe4ded0, roughness: 0.9 }),
+        tabi: std('足袋', { color: 0xdcd5c5, roughness: 0.92 }),
         zori: std('草履', { color: 0xa88f62, roughness: 0.95 }),
         strap: std('鼻緒', { color: 0x5c2a24, roughness: 0.7 }),
         lacquer: std('黒漆の鞘', { color: 0x141211, roughness: 0.28, metalness: 0.1 }),
@@ -166,6 +196,73 @@ function build() {
 }
 
 // ---------------------------------------------------------------------------
+
+/**
+ * 草地：土の色の地に、短い葉（線）を多数描き重ねる。端を越えた葉は反対側にも描いてつなげる。
+ * 明るさから高さを取り、法線にする（葉の重なりの陰）。
+ */
+function grassGroundTexture(): { map: THREE.CanvasTexture; normalMap: THREE.CanvasTexture; roughnessMap: THREE.CanvasTexture } {
+    const W = 1024;
+    const { canvas, ctx } = makeCanvas(W, W);
+    // 地：土と枯れ草が少し見える暗い緑
+    const img = ctx.createImageData(W, W);
+    for (let y = 0; y < W; y++) {
+        for (let x = 0; x < W; x++) {
+            const u = x / W;
+            const v = y / W;
+            // 1 枚の中に大きなむらを入れない（3.5m ごとに同じむらが並んで見えるため）。大きなむらは地面の頂点色で付ける
+            const n = fbm(u, v, 32, 3, 71);
+            const c = mixRgb(hex('#4a5634'), hex('#665f42'), n);
+            const i = (y * W + x) * 4;
+            img.data[i] = c.r;
+            img.data[i + 1] = c.g;
+            img.data[i + 2] = c.b;
+            img.data[i + 3] = 255;
+        }
+    }
+    ctx.putImageData(img, 0, 0);
+    const r = rng(77);
+    const blade = (x: number, y: number, len: number, ang: number, col: string, wdt: number) => {
+        for (const ox of [-W, 0, W]) {
+            for (const oy of [-W, 0, W]) {
+                const x0 = x + ox;
+                const y0 = y + oy;
+                if (x0 < -40 || x0 > W + 40 || y0 < -40 || y0 > W + 40) continue;
+                ctx.strokeStyle = col;
+                ctx.lineWidth = wdt;
+                ctx.beginPath();
+                ctx.moveTo(x0, y0);
+                ctx.quadraticCurveTo(x0 + Math.cos(ang) * len * 0.5 + 2, y0 + Math.sin(ang) * len * 0.5, x0 + Math.cos(ang) * len, y0 + Math.sin(ang) * len);
+                ctx.stroke();
+            }
+        }
+    };
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 26000; i++) {
+        const x = r() * W;
+        const y = r() * W;
+        const t = r();
+        const dry = r() < 0.12; // 枯れた葉は一様に少しだけ
+        const g = dry
+            ? `rgb(${128 + t * 36},${122 + t * 28},${80 + t * 20})`
+            : `rgb(${70 + t * 48},${92 + t * 46},${52 + t * 26})`;
+        blade(x, y, 7 + r() * 11, -Math.PI / 2 + (r() - 0.5) * 1.4, g, 1.2 + r() * 1.3);
+    }
+    // 明るさ → 高さ → 法線
+    const data = ctx.getImageData(0, 0, W, W).data;
+    const height = new Float32Array(W * W);
+    const rough = new Float32Array(W * W);
+    for (let i = 0; i < W * W; i++) {
+        const l = (data[i * 4] * 0.3 + data[i * 4 + 1] * 0.59 + data[i * 4 + 2] * 0.11) / 255;
+        height[i] = l;
+        rough[i] = 0.92 - l * 0.1;
+    }
+    return {
+        map: tex(canvas, 'grassground-color'),
+        normalMap: tex(normalMapFrom(height, W, W, 2.4), 'grassground-normal', { srgb: false }),
+        roughnessMap: tex(roughnessMap(rough, W, W), 'grassground-rough', { srgb: false }),
+    };
+}
 
 /** 松葉：細い線が放射状に集まった房をいくつも描く（透明の背景） */
 function needleTexture(): THREE.CanvasTexture {

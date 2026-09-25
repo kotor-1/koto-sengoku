@@ -12,7 +12,16 @@ import { MAX_SPEED, createHero, stepHero, type HeroState } from './game/motion';
 import { PINE, START, TREE2 } from './layout';
 
 /** カメラ：南東の斜め上から北西を見下ろす（向きは固定） */
-const CAMERA = { yaw: THREE.MathUtils.degToRad(28), pitch: THREE.MathUtils.degToRad(44), distance: 21, fov: 30 };
+// 比較の切り替え（URL の ?models=before・?cam=near、または #before・#near・#before-near）
+//   素材：改修前（models/before/ の人物・民家・地面）と改修後。光・配置・縮尺は同じ。
+//   画角：標準（全体を見渡す）と近め（探索用。人物の服装や動きが分かる距離）。合戦用の俯瞰は別に考える。
+const hashTokens = location.hash.replace(/^#/, '').split('-');
+const qs = new URLSearchParams(location.search);
+const BEFORE = qs.get('models') === 'before' || hashTokens.includes('before');
+const NEAR = qs.get('cam') === 'near' || hashTokens.includes('near');
+const CAMERA = NEAR
+    ? { yaw: THREE.MathUtils.degToRad(28), pitch: THREE.MathUtils.degToRad(36), distance: 12.5, fov: 32 }
+    : { yaw: THREE.MathUtils.degToRad(28), pitch: THREE.MathUtils.degToRad(44), distance: 21, fov: 30 };
 // 確認用（?zoom=0.35 など）：同じ向きのまま近づけて、人物や建物の作りを見る。ふだんの操作では使わない
 {
     const z = Number(new URLSearchParams(location.search).get('zoom'));
@@ -21,13 +30,28 @@ const CAMERA = { yaw: THREE.MathUtils.degToRad(28), pitch: THREE.MathUtils.degTo
 
 const params = new URLSearchParams(location.search);
 const low = params.get('q') === 'low';
-const showFps = params.has('fps') || location.hash === '#fps';
+const showFps = params.has('fps') || location.hash.replace(/^#/, '').split('-').includes('fps');
 const touch = matchMedia('(any-pointer: coarse)').matches || (navigator.maxTouchPoints ?? 0) > 0;
 document.body.classList.toggle('touch', touch);
 
 const buildEl = document.getElementById('build')!;
 const commit = typeof __BUILD_COMMIT__ === 'string' ? __BUILD_COMMIT__ : 'unknown';
 buildEl.textContent = `コミット ${commit} ・ three.js r${THREE.REVISION} ・ ${import.meta.env.DEV ? '開発' : '本番'}ビルド`;
+
+// 比較の切り替えボタン（押すと # を変えて読み込み直す。URL の ? が渡らない置き場所でも使える）
+{
+    const setHash = (before: boolean, near: boolean) => {
+        const t = [before ? 'before' : '', near ? 'near' : '', hashTokens.includes('fps') ? 'fps' : ''].filter(Boolean);
+        location.hash = t.join('-');
+        location.reload();
+    };
+    const tm = document.getElementById('t-models')!;
+    const tc = document.getElementById('t-cam')!;
+    tm.innerHTML = `素材 <b>${BEFORE ? '改修前' : '改修後'}</b>`;
+    tc.innerHTML = `画角 <b>${NEAR ? '近め' : '標準'}</b>`;
+    tm.addEventListener('click', () => setHash(!BEFORE, NEAR));
+    tc.addEventListener('click', () => setHash(BEFORE, !NEAR));
+}
 
 // ---- 描画の準備 ----
 const view = document.getElementById('view')!;
@@ -163,13 +187,41 @@ const loading = document.getElementById('loading')!;
 const loader = new GLTFLoader();
 // 置き場所によっては .glb を配れないので、同じ中身の glTF（JSON 形式、データ埋め込み）を .json で置けるようにする
 const MODEL_EXT = (import.meta.env.VITE_MODEL_EXT as string | undefined) || '.glb';
-const load = (name: string) => loader.loadAsync(`./models/${name}${MODEL_EXT}`);
+/** 改修の対象（人物・民家・地面）だけ、改修前の素材に差し替えられる */
+const REVISED = new Set(['hero', 'house', 'ground']);
+const load = (name: string) => loader.loadAsync(`./models/${BEFORE && REVISED.has(name) ? 'before/' : ''}${name}${MODEL_EXT}`);
 
 interface HeroView {
     root: THREE.Object3D;
     mixer: THREE.AnimationMixer;
     idle: THREE.AnimationAction;
     walk: THREE.AnimationAction;
+}
+
+/**
+ * 足もとの接地の影（改修後だけ）。日差しの影とは別に、足の周りの地面をごく薄く暗くする。
+ * 空からの光が体でさえぎられる分で、人物が地面から浮いて見えないようにする。
+ */
+function contactShadow(): THREE.Mesh {
+    const size = 128;
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const ctx = c.getContext('2d')!;
+    const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    g.addColorStop(0, 'rgba(0,0,0,0.5)');
+    g.addColorStop(0.45, 'rgba(0,0,0,0.3)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+    const t = new THREE.CanvasTexture(c);
+    const mesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.62, 0.78).rotateX(-Math.PI / 2),
+        new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, toneMapped: false }),
+    );
+    mesh.name = '接地の影';
+    mesh.position.set(0, 0.006, 0.03);
+    mesh.renderOrder = 1;
+    return mesh;
 }
 
 function prepare(obj: THREE.Object3D): void {
@@ -261,6 +313,7 @@ async function start(): Promise<void> {
         if ((o as THREE.SkinnedMesh).isSkinnedMesh) o.frustumCulled = false;
     });
     scene.add(heroGltf.scene);
+    if (!BEFORE) heroGltf.scene.add(contactShadow());
     const mixer = new THREE.AnimationMixer(heroGltf.scene);
     const clip = (n: string) => {
         const c = THREE.AnimationClip.findByName(heroGltf.animations, n);
@@ -283,7 +336,7 @@ async function start(): Promise<void> {
 // ---- 毎フレーム ----
 const camTarget = new THREE.Vector3(hero.x, 1.0, hero.z);
 function placeCamera(k: number): void {
-    const want = new THREE.Vector3(hero.x, CAMERA.distance < 12 ? 0.95 : 1.0, hero.z);
+    const want = new THREE.Vector3(hero.x, CAMERA.distance < 14 ? 0.95 : 1.0, hero.z);
     camTarget.lerp(want, k);
     const h = Math.cos(CAMERA.pitch) * CAMERA.distance;
     camera.position.set(

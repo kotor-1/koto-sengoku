@@ -5,7 +5,7 @@
  *   板の法線は塊の中心から外向きにそろえ、塊全体がやわらかく陰るようにする。
  */
 import * as THREE from 'three';
-import { Builder, normalize, place, taperTube, twoSided, type Geo } from './geo';
+import { Builder, normalize, place, shade, taperTube, twoSided, type Geo } from './geo';
 import { materials } from './materials';
 import { fbm, rng } from './tex';
 
@@ -113,6 +113,7 @@ export function grassTuft(b: Builder, x: number, z: number, s: number, rot: numb
         const ng = place(normalize(g), [x, 0, z], [0, rot + (i * Math.PI) / 3, 0]);
         const n = ng.getAttribute('normal');
         for (let k = 0; k < n.count; k++) n.setXYZ(k, 0, 1, 0);
-        b.add(m.grassCard, twoSided(ng));
+        // 根もとは葉が重なって暗く、先へ行くほど明るい（周りの草地の明るさに合わせて全体も少し抑える）
+        b.add(m.grassCard, twoSided(shade(ng, (_x, y) => 0.5 + 0.32 * Math.min(1, y / (0.3 * s)))));
     }
 }

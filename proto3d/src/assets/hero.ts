@@ -4,7 +4,7 @@
  * - 服：藍の小袖（襟と白い半襟）、縞の袴（上の腰まわり＋幅の広い脚。前後に襞）、腰紐、腰板。
  * - 頭：あごの細い頭に顔を描き、鼻・耳を形で付ける。髪は生え際のある殻、茶筅髷。
  * - 足：白い足袋と草履（鼻緒）。左の腰に大小（刀・脇差）。
- * - 動き：待機（呼吸・体重移動）と歩き（1 周期 1 秒・約 1.32m）を式から作る。
+ * - 動き：待機（呼吸・体重移動）と歩き（1 周期 1 秒・約 1.32m）を式から作る。左手は刀の柄に添える。
  * 体の各部は、近くの骨 1〜2 本に重みを付けて一緒に曲がる（スキニング）。
  */
 import * as THREE from 'three';
@@ -256,11 +256,19 @@ export function buildHero(): HeroAsset {
         parts.set(mat, list);
     };
 
-    // ---- 袴：腰まわり（前後に襞） ----
-    const pleatFront = (ang: number) => {
-        const s = Math.sin(ang); // + が前
-        return Math.abs(s) > 0.35 ? 0.035 * Math.pow(Math.abs(Math.sin(ang * 7)), 2) * Math.sign(s) * 0.8 + 0.01 : 0;
+    // ---- 袴：腰まわり（前に 5 本・後ろに 2 本の襞） ----
+    // 襞は「折り山が外へ出て、次の折り山の下へ斜めに入り込む」片流れの段。
+    // 折り山は鋭く、谷はなめらかにして、布の厚みと折り目が光で見えるようにする。
+    const knife = (ang: number, center: number, half: number, count: number, depth: number) => {
+        let d = ang - center;
+        d = Math.atan2(Math.sin(d), Math.cos(d));
+        if (Math.abs(d) > half) return 0;
+        const f = ((d + half) / (2 * half)) * count;
+        const k = f - Math.floor(f);
+        const edge = Math.min(1, (half - Math.abs(d)) / 0.08); // 襞のある範囲の端はなだらかに
+        return depth * edge * (Math.pow(1 - k, 1.6) - 0.35);
     };
+    const pleatFront = (ang: number) => knife(ang, Math.PI / 2, 1.05, 5, 0.075) + knife(ang, -Math.PI / 2, 0.55, 2, 0.06);
     add(
         m.hakama,
         loft(V(0, 1.0, -0.005), V(0, 0.6, -0.005), [
@@ -269,7 +277,7 @@ export function buildHero(): HeroAsset {
             { t: 0.5, rx: 0.232, rz: 0.158 },
             { t: 0.75, rx: 0.238, rz: 0.162 },
             { t: 1, rx: 0.242, rz: 0.165 },
-        ], 28, 3, { pleat: pleatFront }),
+        ], 72, 3, { pleat: pleatFront }),
         (p) => {
             const down = smooth(0.86, 0.62, p.y);
             const side = Math.min(1, Math.abs(p.x) / 0.14);
@@ -277,7 +285,9 @@ export function buildHero(): HeroAsset {
             return [[bi('hips'), 1 - down * side * 0.75], [bi(leg), down * side * 0.75]];
         },
     );
-    // 袴の脚（幅広。裾が足首の上）
+    // 袴の脚（幅広。裾が足首の上）。前の襞は腰から脚へ続き、下へ行くほど開く
+    const legPleat = (s: number) => (ang: number, t: number) =>
+        knife(ang, Math.PI / 2 - s * 0.25, 0.8, 3, 0.05 + 0.03 * t) + knife(ang, -Math.PI / 2, 0.45, 1, 0.035 * t);
     for (const sd of ['L', 'R'] as const) {
         const s = sd === 'L' ? 1 : -1;
         add(
@@ -287,9 +297,11 @@ export function buildHero(): HeroAsset {
                 { t: 0.35, rx: 0.135, rz: 0.145 },
                 { t: 0.7, rx: 0.148, rz: 0.155 },
                 { t: 1, rx: 0.168, rz: 0.172, oz: 0.01 },
-            ], 20, 3, { pleat: (ang, t) => pleatFront(ang) * (0.6 + t) }),
+            ], 48, 3, { pleat: legPleat(s) }),
             byHeight(`thigh${sd}`, `shin${sd}`, 0.36, 0.56),
         );
+        // 裾の布の厚み（外の面から内側へ折り返す縁）
+        add(m.hakama, loft(V(s * 0.118, 0.07, 0.0), V(s * 0.118, 0.072, 0.0), [{ t: 0, rx: 0.168, rz: 0.172, oz: 0.01 }, { t: 1, rx: 0.152, rz: 0.156, oz: 0.01 }], 48, 1, { pleat: (ang) => legPleat(s)(ang, 1) }), rigid(`shin${sd}`));
         // 裾の裏（暗く）
         add(m.dark, loft(V(s * 0.118, 0.13, 0.0), V(s * 0.118, 0.075, 0.0), [{ t: 0, rx: 0.135, rz: 0.14 }, { t: 1, rx: 0.162, rz: 0.166, oz: 0.01 }], 16, 1), rigid(`shin${sd}`));
     }
@@ -357,10 +369,19 @@ export function buildHero(): HeroAsset {
             { t: 0, rx: 0.072, rz: 0.084 },
             { t: 0.45, rx: 0.07, rz: 0.105, oz: -0.018 },
             { t: 1, rx: 0.064, rz: 0.115, oz: -0.03 },
-        ], 16, 3, { capEnd: false }), (p) => {
+        ], 32, 3, {
+            capEnd: false,
+            // 袂のたるみ：下側（後ろ下へ垂れる側）に縦のしわ、肘から袖口へ深くなる
+            pleat: (ang, t) => {
+                const under = Math.max(0, -Math.sin(ang));
+                return t * under * 0.07 * Math.pow(Math.abs(Math.sin(ang * 5 + t * 1.5)), 2.5) + 0.02 * t * Math.pow(Math.abs(Math.sin(ang * 3)), 4);
+            },
+        }), (p) => {
             const t = smooth(1.14, 1.06, p.y);
             return [[bi(`upperArm${sd}`), 1 - t], [bi(`foreArm${sd}`), t]];
         });
+        // 袖口の布の厚み（縁）
+        add(m.kosode, loft(wr.clone().add(V(0, 0.03, 0)), wr.clone().add(V(0, 0.034, 0)), [{ t: 0, rx: 0.066, rz: 0.117, oz: -0.03 }, { t: 1, rx: 0.056, rz: 0.104, oz: -0.03 }], 20, 1), rigid(`foreArm${sd}`));
         // 袖口の奥（暗く）
         add(m.kosodeDark, loft(wr.clone().add(V(0, 0.045, 0)), wr.clone().add(V(0, 0.03, 0)), [{ t: 0, rx: 0.06, rz: 0.1, oz: -0.03 }, { t: 1, rx: 0.068, rz: 0.125, oz: -0.035 }], 14, 1, { capStart: true }), rigid(`foreArm${sd}`));
         // 手首と手（手のひらは体の側を向く）
@@ -401,8 +422,8 @@ export function buildHero(): HeroAsset {
             { t: 0.7, rx: 0.044, rz: 0.03 },
             { t: 1, rx: 0.03, rz: 0.016 },
         ], 12, 2, { capStart: true, capEnd: true }), rigid(`foot${sd}`));
-        const sole = new THREE.BoxGeometry(0.11, 0.02, 0.27);
-        sole.translate(x, 0.011, 0.055);
+        const sole = new THREE.BoxGeometry(0.11, 0.028, 0.27, 1, 1, 2);
+        sole.translate(x, 0.014, 0.055);
         add(m.zori, normalize(sole), rigid(`foot${sd}`));
         for (const k of [1, -1]) add(m.strap, taperTube([V(x + 0.004, 0.06, 0.145), V(x + k * 0.03, 0.058, 0.09), V(x + k * 0.046, 0.03, 0.045)], [0.007, 0.007, 0.006], 5), rigid(`foot${sd}`));
     }
@@ -498,9 +519,10 @@ function clipFrom(name: string, duration: number, pose: (t: number) => Pose): TH
     }
     const tracks: THREE.KeyframeTrack[] = [];
     for (const [n, v] of rot) {
-        // 動かない骨は省く
+        // 動かず、組み立て時の姿勢のままの骨だけを省く（一定の角度で曲げた骨は残す）
         const still = v.every((x, i) => Math.abs(x - v[i % 4]) < 1e-6);
-        if (!still) tracks.push(new THREE.QuaternionKeyframeTrack(`${n}.quaternion`, times, v));
+        const rest = Math.abs(Math.abs(v[3]) - 1) < 1e-6;
+        if (!(still && rest)) tracks.push(new THREE.QuaternionKeyframeTrack(`${n}.quaternion`, times, v));
     }
     for (const [n, v] of trans) tracks.push(new THREE.VectorKeyframeTrack(`${n}.position`, times, v));
     return new THREE.AnimationClip(name, duration, tracks);
@@ -520,13 +542,12 @@ function walkClip(): THREE.AnimationClip {
         };
         const L = leg(ph);
         const R = leg(ph + Math.PI);
-        const arm = (p: number) => -0.26 * Math.sin(p);
-        const aL = arm(ph);
-        const aR = arm(ph + Math.PI);
+        // 左手は刀の柄に添えたまま（腰と一緒に動く）。右腕だけを小さく振る
+        const aR = 0.2 * Math.sin(ph);
         return {
-            hips: { pos: [-0.014 * Math.cos(ph), HIPS_Y - 0.004 + 0.015 * Math.cos(2 * ph), 0], rot: [0.02, -0.07 * Math.sin(ph), 0.02 * Math.cos(ph)] },
-            spine: { rot: [0.03, 0.03 * Math.sin(ph), 0] },
-            chest: { rot: [0.03 + 0.01 * Math.cos(2 * ph), 0.09 * Math.sin(ph), -0.015 * Math.cos(ph)] },
+            hips: { pos: [-0.014 * Math.cos(ph), HIPS_Y - 0.004 + 0.015 * Math.cos(2 * ph), 0], rot: [0.02, -0.05 * Math.sin(ph), 0.02 * Math.cos(ph)] },
+            spine: { rot: [0.03, 0.02 * Math.sin(ph), 0] },
+            chest: { rot: [0.03 + 0.01 * Math.cos(2 * ph), 0.03 * Math.sin(ph), -0.015 * Math.cos(ph)] },
             neck: { rot: [-0.02, -0.05 * Math.sin(ph), 0] },
             head: { rot: [0.02, -0.02 * Math.sin(ph), 0.01 * Math.cos(ph)] },
             thighL: { rot: [L.thigh, 0, 0] },
@@ -535,11 +556,11 @@ function walkClip(): THREE.AnimationClip {
             thighR: { rot: [R.thigh, 0, 0] },
             shinR: { rot: [R.shin, 0, 0] },
             footR: { rot: [R.foot, 0, 0] },
-            upperArmL: { rot: [-aL, 0, 0.07] },
-            foreArmL: { rot: [-(0.22 + 0.25 * pos(aL)), 0, 0] },
-            handL: { rot: [-0.1, 0, 0] },
-            upperArmR: { rot: [-aR, 0, -0.07] },
-            foreArmR: { rot: [-(0.22 + 0.25 * pos(aR)), 0, 0] },
+            upperArmL: { rot: [0.18 + 0.01 * Math.sin(ph), -0.4, 0.14] },
+            foreArmL: { rot: [-1.34, 0, 0] },
+            handL: { rot: [1.08, 0, -0.48] },
+            upperArmR: { rot: [aR, 0, -0.07] },
+            foreArmR: { rot: [-(0.2 + 0.2 * pos(-aR)), 0, 0] },
             handR: { rot: [-0.1, 0, 0] },
         };
     });
@@ -562,9 +583,9 @@ function idleClip(): THREE.AnimationClip {
             thighR: { rot: [0.04, 0, -0.03] },
             shinR: { rot: [0.03, 0, 0] },
             footR: { rot: [-0.07, 0, 0] },
-            upperArmL: { rot: [0.04 - 0.01 * breathe, 0, 0.1] },
-            foreArmL: { rot: [-0.3, 0, 0] },
-            handL: { rot: [-0.1, 0, 0] },
+            upperArmL: { rot: [0.18 - 0.005 * breathe, -0.4, 0.14] },
+            foreArmL: { rot: [-1.34, 0, 0] },
+            handL: { rot: [1.08, 0, -0.48] },
             upperArmR: { rot: [0.05 - 0.01 * breathe, 0, -0.1] },
             foreArmR: { rot: [-0.26, 0, 0] },
             handR: { rot: [-0.08, 0, 0] },
