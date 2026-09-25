@@ -5,15 +5,16 @@
  *   移動はカメラの向きに合わせる。壁・屋根を突き抜けない（game/follow.ts）。
  *   確認用に、これまでの斜め見下ろしの固定カメラも残す（?view=top）。
  * - 空と山並みは、このコードで作る形（scenery.ts）。
- * - 素材は GLB（public/models/）を GLTFLoader で読み込む。今の GLB はこの試作のコードで作ったもの（tools/export.ts）と、
- *   利用者が用意した主人公モデルを改良したもの（hero_v2）。
+ * - 素材は GLB（public/models/）を GLTFLoader で読み込む。城門前の場面の素材（主人公 hero_v3・町家 3 棟・城門・土塀・木・地面・天守）は
+ *   Blender で作ったもの（proto3d/blender/。配置の約束は blender/scene.json、当たり判定は素材ごとの *.meta.json）。
+ *   前の主人公（利用者が用意したモデルを改良した hero_v2）へは画面のボタン・?hero=old で切り替えられる。
+ *   コードで作った前の素材（tools/export.ts）は残してあるが、この場面では読み込まない。
  */
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { gaits } from './assets/hero';
 import { FOLLOW, createOrbit, look, placeFollow } from './game/follow';
 import { CAMERA_YAW, SPEED, createHero, stepHero, type HeroState } from './game/motion';
-import { HOUSES, PINE, START, TREE2, cameraBlockers, housePose } from './layout';
+import { START, TREES, cameraBlockers } from './layout';
 import { SKY, makeHills, makeSky } from './scenery';
 
 /**
@@ -299,26 +300,19 @@ interface HeroView {
 
 /**
  * 主人公の見た目（比較用に切り替えられる）。移動・当たり判定・カメラ・歩く／走るは共通で、表示と動きの素材だけを替える。
- * - v2：自作の主人公モデル 第 2 版（利用者が用意した第 1 版 proto3d/assets-src/hero_v1/ を、背中の襟・袴の腰板・縞・袖の形で改良。
- *   proto3d/assets-src/hero_v2/。20 ジョイント、動きは Idle / Walk / Run）
- * - old：これまでの主人公（このコードで作った 18 本の骨の人形、proto3d/src/assets/hero.ts）
+ * - v3：Blender で作り直した主人公（proto3d/blender/hero/。体・髪・衣服を別の形で作り、布の厚み・重なり・折り目を持つ）。
+ *   骨組みと動き（Idle / Walk / Run）は第 2 版と同じ
+ * - v2：自作の主人公モデル 第 2 版（利用者が用意した第 1 版 proto3d/assets-src/hero_v1/ を改良。proto3d/assets-src/hero_v2/）
  */
-type HeroKey = 'v2' | 'old';
+type HeroKey = 'v3' | 'v2';
+// 基準速度（Walk 1.4m/秒・Run 3.0m/秒。接地した足の送りの速さを骨組みから測って一致を確認）× 1 周期の長さ。v3 は v2 と同じ動き
+const cycleOf = (w: THREE.AnimationClip, r: THREE.AnimationClip) => ({ walk: 1.4 * w.duration, run: 3.0 * r.duration });
 const HERO_MODELS: Record<HeroKey, { file: string; clips: [string, string, string]; cycle: (walk: THREE.AnimationClip, run: THREE.AnimationClip) => { walk: number; run: number } }> = {
-    // 素材の説明の基準速度（Walk 1.4m/秒・Run 3.0m/秒。接地した足の送りの速さを骨組みから測って一致を確認）× 1 周期の長さ
-    v2: { file: 'hero_v2', clips: ['Idle', 'Walk', 'Run'], cycle: (w, r) => ({ walk: 1.4 * w.duration, run: 3.0 * r.duration }) },
-    // 足の接地を骨組みから計算した値（素材の動きと同じ式）
-    old: {
-        file: 'hero',
-        clips: ['idle', 'walk', 'run'],
-        cycle: () => {
-            const g = gaits();
-            return { walk: g.walk.speed * g.walk.period, run: g.run.speed * g.run.period };
-        },
-    },
+    v3: { file: 'hero_v3', clips: ['Idle', 'Walk', 'Run'], cycle: cycleOf },
+    v2: { file: 'hero_v2', clips: ['Idle', 'Walk', 'Run'], cycle: cycleOf },
 };
 const heroParam = params.get('hero') ?? new URLSearchParams(location.hash.slice(1)).get('hero');
-let heroKey: HeroKey = heroParam === 'old' ? 'old' : 'v2';
+let heroKey: HeroKey = heroParam === 'old' || heroParam === 'v2' ? 'v2' : 'v3';
 const heroViews = new Map<HeroKey, HeroView>();
 
 async function loadHeroView(key: HeroKey): Promise<HeroView> {
@@ -358,8 +352,8 @@ function showHero(key: HeroKey, view: HeroView): void {
     heroKey = key;
     heroView = view;
     scene.add(view.root);
-    heroBtn.classList.toggle('old', key === 'old');
-    heroBtn.setAttribute('aria-label', `主人公の見た目：${key === 'old' ? '旧' : '新'}（押すと切り替え）`);
+    heroBtn.classList.toggle('old', key === 'v2');
+    heroBtn.setAttribute('aria-label', `主人公の見た目：${key === 'v2' ? '旧' : '新'}（押すと切り替え）`);
 }
 const heroBtn = document.getElementById('hero-btn')!;
 let heroSwitching = false;
@@ -379,10 +373,10 @@ async function switchHero(key: HeroKey): Promise<void> {
 heroBtn.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     e.stopPropagation();
-    void switchHero(heroKey === 'old' ? 'v2' : 'old');
+    void switchHero(heroKey === 'v2' ? 'v3' : 'v2');
 });
 heroBtn.addEventListener('click', (e) => {
-    if (e.detail === 0) void switchHero(heroKey === 'old' ? 'v2' : 'old');
+    if (e.detail === 0) void switchHero(heroKey === 'v2' ? 'v3' : 'v2');
 });
 
 function prepare(obj: THREE.Object3D): void {
@@ -452,41 +446,41 @@ const hero: HeroState = createHero(START.x, START.z, Math.PI);
 
 async function start(): Promise<void> {
     const t0 = performance.now();
-    const [[ground, gate, house, pine, broadleaf], firstHero] = await Promise.all([Promise.all(['ground', 'gate', 'house', 'pine', 'broadleaf'].map(load)), loadHeroView(heroKey)]);
-    for (const g of [ground, gate]) {
+    // 城門前の一場面（Blender で作った素材）。地面・城門・土塀・遠景の天守・町家は配置どおりの位置で作ってあるので、そのまま置く
+    const [placed, [pine, sakura], firstHero] = await Promise.all([
+        Promise.all(SCENE_MODELS.map(load)),
+        Promise.all(['tree_pine', 'tree_sakura'].map(load)),
+        loadHeroView(heroKey),
+    ]);
+    placed.forEach((g, i) => {
         prepare(g.scene);
         scene.add(g.scene);
-    }
-    // 町家：同じ形を道の両側に置く（形と質感は共有）
-    prepare(house.scene);
-    const houses = HOUSES.map((p, i) => {
-        const h = i === 0 ? house.scene : house.scene.clone();
-        const pose = housePose(p);
-        h.position.set(pose.x, 0, pose.z);
-        h.rotation.y = pose.rotY;
-        scene.add(h);
-        return h;
+        // 隠れたら半透明にするのは見下ろしのときだけ（肩越しではカメラが壁の手前に来るので、建物は薄くしない）
+        if (!tps && SCENE_MODELS[i] !== 'ground_v2' && SCENE_MODELS[i] !== 'keep') addOccluder(g.scene);
     });
-    // 隠れたら半透明にするのは見下ろしのときだけ（肩越しではカメラが壁の手前に来るので、建物は薄くしない）
-    if (!tps) {
-        addOccluder(gate.scene);
-        for (const h of houses) addOccluder(h);
-    }
+    // 木：配置（scene.json の trees）の幹の位置へ。松は 2 本（向きと大きさを変える）
     prepare(pine.scene);
-    pine.scene.position.set(PINE.x, 0, PINE.z);
-    scene.add(pine.scene);
-    prepare(broadleaf.scene);
-    broadleaf.scene.position.set(TREE2.x, 0, TREE2.z);
-    broadleaf.scene.rotation.y = 0.8;
-    scene.add(broadleaf.scene);
-    addOccluder(pine.scene);
-    addOccluder(broadleaf.scene);
+    prepare(sakura.scene);
+    let pineUsed = false;
+    for (const t of TREES) {
+        const isPine = t.name.startsWith('pine');
+        const src = isPine ? pine.scene : sakura.scene;
+        const obj = isPine && pineUsed ? src.clone() : src;
+        if (isPine) pineUsed = true;
+        obj.position.set(t.x, 0, t.z);
+        if (t.name === 'pine_back') {
+            obj.rotation.y = 2.2;
+            obj.scale.setScalar(0.9);
+        }
+        scene.add(obj);
+        addOccluder(obj);
+    }
     // 町の外側の木立（歩ける範囲の外。奥行きを出す）
-    for (const [x, z, r, kind] of BACK_TREES) {
-        const t = (kind === 0 ? pine.scene : broadleaf.scene).clone();
+    for (const [x, z, r, sc] of BACK_TREES) {
+        const t = pine.scene.clone();
         t.position.set(x, 0, z);
         t.rotation.y = r;
-        t.scale.setScalar(kind === 0 ? 1.15 : 1.3);
+        t.scale.setScalar(sc);
         scene.add(t);
     }
     // 草むらは影を落とさない（地面の書き出しで指定済み）
@@ -498,11 +492,11 @@ async function start(): Promise<void> {
     renderer.setAnimationLoop(frame);
 }
 
-/** 町の外側の木立：[x, z, 向き, 0 松・1 広葉樹]（歩ける範囲 BOUNDS の外） */
-const BACK_TREES: [number, number, number, 0 | 1][] = [
-    [-25, -18, 0.3, 1], [-27, -6, 1.2, 0], [-26, 6, 2.1, 1], [-29, 16, 0.7, 0],
-    [25, -20, 1.7, 0], [27, -7, 0.4, 1], [24, 5, 2.6, 0], [28, 15, 1.1, 1],
-    [-12, -35, 0.9, 1], [-4, -38, 2.2, 0], [9, -36, 0.2, 1], [17, -34, 1.6, 0],
+/** 場面の素材（配置どおりの位置で作ってある） */
+const SCENE_MODELS = ['ground_v2', 'gate_v2', 'walls_v2', 'keep', 'machiya_a', 'machiya_b', 'machiya_d'];
+/** 町の外側の木立：[x, z, 向き, 大きさ]（歩ける範囲 BOUNDS の外。松を使い回す） */
+const BACK_TREES: [number, number, number, number][] = [
+    [-27, -16, 0.3, 1.1], [26, -22, 1.7, 1.2], [-26, 12, 2.6, 1.0], [27, 9, 1.1, 0.95],
 ];
 
 // ---- 毎フレーム ----

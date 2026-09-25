@@ -31,3 +31,7 @@ e2e-out/
 
 # 3D 比較版のビルド出力
 dist-proto3d
+
+# Blender の作業用（焼き込みの途中の画像など）
+proto3d/blender/build/
+__pycache__/

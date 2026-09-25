@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { FOLLOW, blockersForTest, createOrbit, look, placeFollow } from '../proto3d/src/game/follow';
 import { createHero, isFree, screenToGround, stepHero } from '../proto3d/src/game/motion';
-import { GATE, HOUSE, START, cameraBlockers } from '../proto3d/src/layout';
+import { GATE, HOUSE, START, WALL, cameraBlockers } from '../proto3d/src/layout';
 
 const raw = cameraBlockers().map((b) => new THREE.Box3(new THREE.Vector3(b.x0, b.y0, b.z0), new THREE.Vector3(b.x1, b.y1, b.z1)));
 
@@ -78,9 +78,9 @@ describe('3D 比較版：肩越しのカメラ', () => {
 
     it('土塀のすぐ内側に立ち、カメラが塀の向こう側に回っても、カメラは塀を越えず主人公の側に残る', () => {
         const o = createOrbit(0, 0.1); // 北を見る＝カメラは南（塀の外側）へ行こうとする
-        const z = GATE.z - 0.35 - 0.3;
+        const z = GATE.z - WALL.thick / 2 - 0.3;
         const pose = settle(o, -8, z);
-        expect(pose.position.z).toBeLessThan(GATE.z - 0.35);
+        expect(pose.position.z).toBeLessThan(GATE.z - WALL.thick / 2);
         expect(o.dist).toBeLessThan(FOLLOW.hideHeroDistance);
     });
 

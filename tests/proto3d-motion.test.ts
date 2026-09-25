@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { GATE, HOUSE, START, colliders } from '../proto3d/src/layout';
 import { CAMERA_YAW, HERO_RADIUS, MAX_SPEED, SPEED, createHero, isFree, screenToGround, stepHero } from '../proto3d/src/game/motion';
-import { PINE } from '../proto3d/src/layout';
+import { GATE_POSTS, PINE } from '../proto3d/src/layout';
 
 /** 実際のゲームと同じカメラの向き */
 const YAW = CAMERA_YAW;
@@ -192,10 +192,10 @@ describe('3D 比較版：歩く／走る', () => {
             const wall = createHero(6, GATE.z + 3, Math.PI);
             run(wall, 0, -1, 3, true, dt);
             expect(wall.z).toBeGreaterThan(GATE.z);
-            // 門の内側の控柱（0.4m 角）へ、門の中から北へ
+            // 門の内側の控柱へ、門の中から北へ
             const post = createHero(GATE.pillarX, GATE.z - 0.8, Math.PI);
             run(post, 0, -1, 2, true, dt);
-            expect(post.z).toBeGreaterThan(GATE.z - 1.6);
+            expect(post.z).toBeGreaterThan(GATE_POSTS.z + GATE_POSTS.size / 2);
             // 松の幹へ（東へ）
             const pine = createHero(PINE.x - 2, PINE.z, Math.PI / 2);
             run(pine, 1, 0, 2, true, dt);
