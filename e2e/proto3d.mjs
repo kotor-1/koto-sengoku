@@ -88,13 +88,14 @@ async function open(opts) {
   // 路地の途中（家の裏にいてカメラから隠れる所）では、家が半透明になる
   await waitFor(page, () => window.__p3.hero.x < -6.5, null, 180000);
   const faded = await waitFor(page, () => window.__p3.fade[1] < 0.5);
+  const mid = await state(page); // 家の横（x が家の範囲の中ほど）での位置
   await page.screenshot({ path: `${S}/p3-pc-behind-house.png` });
   check('家の裏（カメラから隠れる所）では家が半透明になり、主人公が見える', faded, `透明度 ${JSON.stringify(await page.evaluate(() => window.__p3.fade))}（城門・町家・松・広葉樹）`);
   const passed = await waitFor(page, () => window.__p3.hero.x < -10.6, null, 180000);
   const along = await state(page);
   await page.screenshot({ path: `${S}/p3-pc-beside-house.png` });
   await page.keyboard.up('ArrowLeft');
-  check('家の横（北側の路地）を通って裏まで抜けられ、家には入り込まない', passed && along.z < -5.6 - 0.2, `(${along.x.toFixed(1)}, ${along.z.toFixed(1)})`);
+  check('家の横（北側の路地）を通って裏まで抜けられ、家には入り込まない', passed && mid.z < -5.6 - 0.2 && along.x < -10.6, `家の横 (${mid.x.toFixed(1)}, ${mid.z.toFixed(2)}) → 抜けた所 (${along.x.toFixed(1)}, ${along.z.toFixed(1)})`);
   await waitFor(page, () => window.__p3.hero.speed === 0);
 
   // 家の表へ向かって歩いても、めり込まない
