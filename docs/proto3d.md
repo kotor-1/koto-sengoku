@@ -8,6 +8,7 @@
 | 技術 | TypeScript ＋ Three.js r186（0.186.1、MIT ライセンス）＋ Vite（既存と共用、設定は別ファイル） |
 | 既存版への影響 | なし。既存の `npm run dev` / `build` / `test` は 2D 版のまま。3D 版は別のコマンド・別の出力先（`dist-proto3d/`） |
 | 起動 | `npm run proto3d:dev` → http://localhost:8090/ （`?fps` で速さ、`?q=low` で画質「低」） |
+| 確認用 URL（非公開） | https://claude.ai/artifact/SnZ83D396bACUB728hCpp8 （コミット `6cb6371` の本番ビルド。2D 版の URL とは別のページ）。この置き場所は `.glb` を配れないため、同じ中身の glTF（JSON 形式）に変換して置いた（`proto3d/tools/glb-to-gltf.mjs`、`VITE_MODEL_EXT=.json` でビルド）。置いたファイルの SHA-256 が手元と一致することは確認。**開いて描画されるかは未確認** |
 
 ## 方針の更新（2026-09-25）
 
@@ -28,7 +29,7 @@
 | 表示先 | 3D の描画 | GLB モデルの読み込み | 確かめ方 |
 |---|---|---|---|
 | 検証コンテナの Chromium（ソフトウェア描画 SwiftShader） | できた（WebGL2） | できた（6 ファイル） | `e2e/proto3d.mjs` |
-| claude.ai の非公開ページ（Artifact） | **未確認** | **未確認** | ページを置き、ファイルが置いた内容と一致することまでは確認。実際に開いて描画されるかは確かめられない（このコンテナからは開けない） |
+| claude.ai の非公開ページ（Artifact） | **未確認** | **未確認** | `.glb` は配れない（置こうとして拒否された）ので glTF（JSON）で置いた。同じファイルを手元の簡易サーバーで開くと、読み込み・描画・歩行まで動いた。claude.ai の上で開いて描画されるかは、このコンテナからは確かめられない |
 | iPhone Safari・Android Chrome・Mac の Safari / Chrome | **未確認** | **未確認** | 実機では確認していない |
 
 ### 3. 人物と建物の 3D 素材を何から用意するか
