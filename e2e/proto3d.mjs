@@ -85,6 +85,11 @@ async function open(opts) {
   await page.evaluate(() => { const h = window.__p3.hero; h.x = -3.0; h.z = -7.2; h.heading = -1.2; });
   await page.waitForTimeout(500);
   await page.keyboard.down('ArrowLeft');
+  // 路地の途中（家の裏にいてカメラから隠れる所）では、家が半透明になる
+  await waitFor(page, () => window.__p3.hero.x < -6.5, null, 180000);
+  const faded = await waitFor(page, () => window.__p3.fade[1] < 0.5);
+  await page.screenshot({ path: `${S}/p3-pc-behind-house.png` });
+  check('家の裏（カメラから隠れる所）では家が半透明になり、主人公が見える', faded, `透明度 ${JSON.stringify(await page.evaluate(() => window.__p3.fade))}（城門・町家・松・広葉樹）`);
   const passed = await waitFor(page, () => window.__p3.hero.x < -10.6, null, 180000);
   const along = await state(page);
   await page.screenshot({ path: `${S}/p3-pc-beside-house.png` });

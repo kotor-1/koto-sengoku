@@ -183,6 +183,56 @@ function prepare(obj: THREE.Object3D): void {
 }
 
 let heroView: HeroView | null = null;
+
+/**
+ * 主人公を隠す物（建物・木）を半透明にする（2D 版の「家や木の裏に入ると半透明」と同じ考え）。
+ * カメラから主人公の胸と頭へ引いた線が、物の範囲（箱）を通るときに薄くする。
+ */
+interface Occluder {
+    root: THREE.Object3D;
+    box: THREE.Box3;
+    mats: THREE.MeshStandardMaterial[];
+    alpha: number;
+}
+const occluders: Occluder[] = [];
+function addOccluder(root: THREE.Object3D, fade = true): void {
+    root.updateMatrixWorld(true);
+    const mats = new Set<THREE.MeshStandardMaterial>();
+    root.traverse((o) => {
+        const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+        if (m) mats.add(m);
+    });
+    if (fade) occluders.push({ root, box: new THREE.Box3().setFromObject(root), mats: [...mats], alpha: 1 });
+}
+const ray = new THREE.Ray();
+const hit = new THREE.Vector3();
+function fadeOccluders(dt: number): void {
+    const k = 1 - Math.exp(-10 * dt);
+    for (const o of occluders) {
+        let covered = false;
+        for (const y of [1.0, 1.6]) {
+            const target = new THREE.Vector3(hero.x, y, hero.z);
+            ray.origin.copy(camera.position);
+            ray.direction.copy(target).sub(camera.position).normalize();
+            if (ray.intersectBox(o.box, hit) && hit.distanceTo(camera.position) < target.distanceTo(camera.position) - 0.3) {
+                // 箱は大まかなので、主人公が物の「向こう側」にいるときだけ（物の中心より奥＝カメラから遠い）
+                const center = o.box.getCenter(new THREE.Vector3());
+                if (center.distanceTo(camera.position) < target.distanceTo(camera.position) + 1.5) covered = true;
+            }
+        }
+        const want = covered ? 0.28 : 1;
+        o.alpha += (want - o.alpha) * k;
+        if (Math.abs(o.alpha - want) < 0.005) o.alpha = want;
+        for (const m of o.mats) {
+            const t = o.alpha < 0.999;
+            if (m.transparent !== t) {
+                m.transparent = t;
+                m.needsUpdate = true;
+            }
+            m.opacity = o.alpha;
+        }
+    }
+}
 const hero: HeroState = createHero(START.x, START.z, Math.PI);
 
 async function start(): Promise<void> {
@@ -192,6 +242,8 @@ async function start(): Promise<void> {
         prepare(g.scene);
         scene.add(g.scene);
     }
+    addOccluder(gate.scene);
+    addOccluder(house.scene);
     prepare(pine.scene);
     pine.scene.position.set(PINE.x, 0, PINE.z);
     scene.add(pine.scene);
@@ -199,6 +251,8 @@ async function start(): Promise<void> {
     broadleaf.scene.position.set(TREE2.x, 0, TREE2.z);
     broadleaf.scene.rotation.y = 0.8;
     scene.add(broadleaf.scene);
+    addOccluder(pine.scene);
+    addOccluder(broadleaf.scene);
     // 草むらは影を落とさない（地面の書き出しで指定済み）
     prepare(heroGltf.scene);
     heroGltf.scene.traverse((o) => {
@@ -269,6 +323,7 @@ function advance(dt: number, raw: number, ix: number, iy: number): void {
     v.walk.timeScale = THREE.MathUtils.clamp(hero.speed / WALK_SPEED, 0.6, MAX_SPEED / WALK_SPEED);
     v.mixer.update(dt);
     placeCamera(1 - Math.exp(-6 * dt));
+    fadeOccluders(dt);
     renderer.render(scene, camera);
     if (showFps) {
         // 表示する fps は実際の時間で数える（1 フレームの上限 0.1 秒で切り詰めた時間ではなく）
@@ -296,6 +351,7 @@ if (import.meta.env.DEV) {
         __p3: {
             hero, stats, camera, renderer, scene, releaseAll,
             get anim() { return { walkBlend, walkTime: heroView?.walk.time ?? 0 }; },
+            get fade() { return occluders.map((o) => Math.round(o.alpha * 100) / 100); },
             /** 録画用：自動の更新を止め、step で 1 コマずつ進める */
             manual() { renderer.setAnimationLoop(null); },
             step(dt: number, ix: number, iy: number) { advance(dt, dt, ix, iy); },
