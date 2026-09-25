@@ -1,0 +1,102 @@
+{
+  "OPUSへの取り込み指示.txt": {
+    "bytes": 2260,
+    "sha256": "85218c0f9df2fdf22be2e4762b5922bb621f2b62abe6455adfef1ffd93ee8c38"
+  },
+  "README.md": {
+    "bytes": 5201,
+    "sha256": "3a89f852b0d2135462f36b77a8e9c5a23edeec7747c65ed77da23bb5a911efa8"
+  },
+  "asset-info.json": {
+    "bytes": 547,
+    "sha256": "6a7daeb7a650e05eea0c0644269c56a6a8951c2b0e8df628e28902d1484cfe20"
+  },
+  "assets/sengoku_hero.bin": {
+    "bytes": 2331348,
+    "sha256": "5b396e0ca19ba97849edd72e4785900903f4fdacda602459c63a1d6234fec681"
+  },
+  "assets/sengoku_hero.glb": {
+    "bytes": 4382880,
+    "sha256": "618687ffd34c77ae0225839075b633ee435a99a28794cbf1e92d76c4012d8c88"
+  },
+  "assets/sengoku_hero.gltf": {
+    "bytes": 29647,
+    "sha256": "823c1cec4172435146a967d90f860d19a59d675332c016ed7f617d58f49dec2d"
+  },
+  "assets/sengoku_hero.web.json": {
+    "bytes": 3148054,
+    "sha256": "6778b5b021879d17c389ebdc071a53b0fb7bf86f60a2c629854ef7afcbd161ad"
+  },
+  "assets/textures/hakama_basecolor.png": {
+    "bytes": 160185,
+    "sha256": "790e68823c6601e9711b24bffb846a53f72d60b5cd73c36abad67aec5b68bae2"
+  },
+  "assets/textures/hakama_normal.png": {
+    "bytes": 466140,
+    "sha256": "3ee3c9cb4f3f31da9ccf254122f474d78ed699f5bbc269e03a8d9b5858b9f4d8"
+  },
+  "assets/textures/indigo_basecolor.png": {
+    "bytes": 219388,
+    "sha256": "eb914413fe821411f5ee795bb645015e7760a32724b3334a50d5150cc7cd610a"
+  },
+  "assets/textures/indigo_normal.png": {
+    "bytes": 498224,
+    "sha256": "2157399173a0e6b35218eb47e7840ae9c93b4ad7769cb3e9588c69357e48e06c"
+  },
+  "assets/textures/linen_basecolor.png": {
+    "bytes": 293381,
+    "sha256": "09e55d67c0a2e3ce02d857616263daab308f27327989b571c244e68104a32104"
+  },
+  "assets/textures/linen_normal.png": {
+    "bytes": 384184,
+    "sha256": "a0e5c9c1b51784dc34bda154c46eea23c97bdca65edeb5cbc971b5fa3e24632a"
+  },
+  "integration/heroAsset.ts": {
+    "bytes": 4209,
+    "sha256": "993a13335d6e66775e4e75f1525e9c2764cc3d910b79a49fdf8e174588b7dd1c"
+  },
+  "previews/back.png": {
+    "bytes": 289840,
+    "sha256": "aad0ab16ea2af7080266f3403358eae8ab6242ad94153c5d3515d4d43d82a9d7"
+  },
+  "previews/detail.png": {
+    "bytes": 602078,
+    "sha256": "c0abc3aa37ef04e32d0373e8bca792abd78f64dee5a163c86caf885360a52db3"
+  },
+  "previews/front.png": {
+    "bytes": 354486,
+    "sha256": "2191a260a0ee204dc6a97740a932a45fef8d6da137764224f3fcde7ef8e9398a"
+  },
+  "previews/motion_check.gif": {
+    "bytes": 798322,
+    "sha256": "c7ef4561e01ba9a7237fd87b934859e3700cdcdfa7bdbb4c512e297e5de4d8d1"
+  },
+  "previews/run.png": {
+    "bytes": 350545,
+    "sha256": "1f18c502a2b10b46076baa6e4651d678ad348115d121cd76d5f2f32740b73ed3"
+  },
+  "source/build_hero.py": {
+    "bytes": 31570,
+    "sha256": "5d4b143f30c651dd3742c442598468be03425dfa603809fa652ff97ac1a49317"
+  },
+  "source/render_motion.py": {
+    "bytes": 1028,
+    "sha256": "4a2d54217ae5ee288ee932fab253ca2390522764139e47f746b6a58529275a35"
+  },
+  "source/render_preview.py": {
+    "bytes": 7591,
+    "sha256": "210e59ba77f19bb895fc83623c93bae946312ce07d572c2c9867723faa3bd171"
+  },
+  "source/validate_asset.py": {
+    "bytes": 4645,
+    "sha256": "c5fb5123501d9d09f007d7c803e324236b1cd72216c35c2a499a78f209ae9b69"
+  },
+  "validation-report.json": {
+    "bytes": 2459,
+    "sha256": "2e5339b8259b8ed6a11b83cf314cbfff29f95cf10197d80482f21d6b046fc103"
+  },
+  "素材について.txt": {
+    "bytes": 801,
+    "sha256": "3cf7bf1bf220ed055140edda19250a1998d07b08d86e1348a601ad8ec74e8126"
+  }
+}

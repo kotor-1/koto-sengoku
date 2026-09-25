@@ -242,9 +242,96 @@ interface HeroView {
     idle: THREE.AnimationAction;
     walk: THREE.AnimationAction;
     run: THREE.AnimationAction;
+    /** 歩き・走りの 1 周期で進む距離（m）。進んだ距離から再生位置を決める（足が滑らない） */
+    cycle: { walk: number; run: number };
 }
-/** 歩き・走りの 1 周期の長さと、足が滑らない設計速度（骨組みから計算。素材の動きと同じ式） */
-const GAIT = gaits();
+
+/**
+ * 主人公の見た目（比較用に切り替えられる）。移動・当たり判定・カメラ・歩く／走るは共通で、表示と動きの素材だけを替える。
+ * - v1：自作の主人公モデル 第 1 版（利用者が用意。20 ジョイント、動きは Idle / Walk / Run、proto3d/assets-src/hero_v1/）
+ * - old：これまでの主人公（このコードで作った 18 本の骨の人形、proto3d/src/assets/hero.ts）
+ */
+type HeroKey = 'v1' | 'old';
+const HERO_MODELS: Record<HeroKey, { file: string; clips: [string, string, string]; cycle: (walk: THREE.AnimationClip, run: THREE.AnimationClip) => { walk: number; run: number } }> = {
+    // 素材の説明の基準速度（Walk 1.4m/秒・Run 3.0m/秒。接地した足の送りの速さを骨組みから測って一致を確認）× 1 周期の長さ
+    v1: { file: 'hero_v1', clips: ['Idle', 'Walk', 'Run'], cycle: (w, r) => ({ walk: 1.4 * w.duration, run: 3.0 * r.duration }) },
+    // 足の接地を骨組みから計算した値（素材の動きと同じ式）
+    old: {
+        file: 'hero',
+        clips: ['idle', 'walk', 'run'],
+        cycle: () => {
+            const g = gaits();
+            return { walk: g.walk.speed * g.walk.period, run: g.run.speed * g.run.period };
+        },
+    },
+};
+const heroParam = params.get('hero') ?? new URLSearchParams(location.hash.slice(1)).get('hero');
+let heroKey: HeroKey = heroParam === 'old' ? 'old' : 'v1';
+const heroViews = new Map<HeroKey, HeroView>();
+
+async function loadHeroView(key: HeroKey): Promise<HeroView> {
+    const cached = heroViews.get(key);
+    if (cached) return cached;
+    const def = HERO_MODELS[key];
+    const gltf = await load(def.file);
+    prepare(gltf.scene);
+    gltf.scene.traverse((o) => {
+        if ((o as THREE.SkinnedMesh).isSkinnedMesh) o.frustumCulled = false;
+    });
+    const mixer = new THREE.AnimationMixer(gltf.scene);
+    const clip = (n: string) => {
+        const c = THREE.AnimationClip.findByName(gltf.animations, n);
+        if (!c) throw new Error(`動き「${n}」がありません`);
+        return c;
+    };
+    const [idleClip, walkClip, runClip] = def.clips.map(clip);
+    const idle = mixer.clipAction(idleClip);
+    const walk = mixer.clipAction(walkClip);
+    const run = mixer.clipAction(runClip);
+    idle.play();
+    // 歩き・走りは、同じ位相（stride）から再生位置を決める（自分では進めない）
+    for (const a of [walk, run]) {
+        a.play();
+        a.timeScale = 0;
+        a.setEffectiveWeight(0);
+    }
+    const view = { root: gltf.scene, mixer, idle, walk, run, cycle: def.cycle(walkClip, runClip) };
+    heroViews.set(key, view);
+    return view;
+}
+
+/** 表示する主人公を替える（位置・向き・歩きの位相はそのまま） */
+function showHero(key: HeroKey, view: HeroView): void {
+    if (heroView) scene.remove(heroView.root);
+    heroKey = key;
+    heroView = view;
+    scene.add(view.root);
+    heroBtn.classList.toggle('old', key === 'old');
+    heroBtn.setAttribute('aria-label', `主人公の見た目：${key === 'old' ? '旧' : '新'}（押すと切り替え）`);
+}
+const heroBtn = document.getElementById('hero-btn')!;
+let heroSwitching = false;
+async function switchHero(key: HeroKey): Promise<void> {
+    if (heroSwitching || key === heroKey) return;
+    heroSwitching = true;
+    heroBtn.classList.add('busy');
+    try {
+        showHero(key, await loadHeroView(key));
+    } catch (e) {
+        console.error(e);
+    } finally {
+        heroSwitching = false;
+        heroBtn.classList.remove('busy');
+    }
+}
+heroBtn.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    void switchHero(heroKey === 'old' ? 'v1' : 'old');
+});
+heroBtn.addEventListener('click', (e) => {
+    if (e.detail === 0) void switchHero(heroKey === 'old' ? 'v1' : 'old');
+});
 
 function prepare(obj: THREE.Object3D): void {
     obj.traverse((o) => {
@@ -313,7 +400,7 @@ const hero: HeroState = createHero(START.x, START.z, Math.PI);
 
 async function start(): Promise<void> {
     const t0 = performance.now();
-    const [ground, gate, house, pine, broadleaf, heroGltf] = await Promise.all(['ground', 'gate', 'house', 'pine', 'broadleaf', 'hero'].map(load));
+    const [[ground, gate, house, pine, broadleaf], firstHero] = await Promise.all([Promise.all(['ground', 'gate', 'house', 'pine', 'broadleaf'].map(load)), loadHeroView(heroKey)]);
     for (const g of [ground, gate, house]) {
         prepare(g.scene);
         scene.add(g.scene);
@@ -330,28 +417,7 @@ async function start(): Promise<void> {
     addOccluder(pine.scene);
     addOccluder(broadleaf.scene);
     // 草むらは影を落とさない（地面の書き出しで指定済み）
-    prepare(heroGltf.scene);
-    heroGltf.scene.traverse((o) => {
-        if ((o as THREE.SkinnedMesh).isSkinnedMesh) o.frustumCulled = false;
-    });
-    scene.add(heroGltf.scene);
-    const mixer = new THREE.AnimationMixer(heroGltf.scene);
-    const clip = (n: string) => {
-        const c = THREE.AnimationClip.findByName(heroGltf.animations, n);
-        if (!c) throw new Error(`動き「${n}」がありません`);
-        return c;
-    };
-    const idle = mixer.clipAction(clip('idle'));
-    const walk = mixer.clipAction(clip('walk'));
-    const run = mixer.clipAction(clip('run'));
-    idle.play();
-    // 歩き・走りは、同じ位相（stride）から再生位置を決める（自分では進めない）
-    for (const a of [walk, run]) {
-        a.play();
-        a.timeScale = 0;
-        a.setEffectiveWeight(0);
-    }
-    heroView = { root: heroGltf.scene, mixer, idle, walk, run };
+    showHero(heroKey, firstHero);
     stats.readyMs = Math.round(performance.now());
     stats.loadMs = Math.round(performance.now() - t0);
     loading.hidden = true;
@@ -381,6 +447,8 @@ const stats = { readyMs: 0, loadMs: 0, frames: 0 };
 let walkBlend = 0;
 /** 歩き・走りの位相（0〜1、1 周期で 1）。進んだ距離から決めるので、足が地面の上で滑らない */
 let stride = 0;
+/** 確認用：これまでに進めた周期の合計（1 周するごとに 0 に戻らない） */
+let strideTotal = 0;
 let runBlend = 0;
 const fpsEl = document.getElementById('fps')!;
 fpsEl.hidden = !showFps;
@@ -405,10 +473,11 @@ function advance(dt: number, raw: number, ix: number, iy: number): void {
     walkBlend += (want - walkBlend) * (1 - Math.exp(-10 * dt));
     runBlend = THREE.MathUtils.smoothstep(hero.speed, SPEED.walk * 1.02, SPEED.walk + (SPEED.run - SPEED.walk) * 0.7);
     // 位相は実際に進んだ速さで進める（1 周期の距離は歩きと走りを混ぜた長さ）。止まれば脚も止まり、滑らない
-    const cycle = THREE.MathUtils.lerp(GAIT.walk.speed * GAIT.walk.period, GAIT.run.speed * GAIT.run.period, runBlend);
+    const cycle = THREE.MathUtils.lerp(v.cycle.walk, v.cycle.run, runBlend);
+    strideTotal += (hero.speed * dt) / cycle;
     stride = (stride + (hero.speed * dt) / cycle) % 1;
-    v.walk.time = stride * GAIT.walk.period;
-    v.run.time = stride * GAIT.run.period;
+    v.walk.time = stride * v.walk.getClip().duration;
+    v.run.time = stride * v.run.getClip().duration;
     v.walk.setEffectiveWeight(walkBlend * (1 - runBlend));
     v.run.setEffectiveWeight(walkBlend * runBlend);
     v.idle.setEffectiveWeight(1 - walkBlend);
@@ -441,7 +510,9 @@ if (import.meta.env.DEV) {
     Object.assign(window, {
         __p3: {
             hero, stats, camera, renderer, scene, releaseAll,
-            get anim() { return { walkBlend, runBlend, stride, walkTime: heroView?.walk.time ?? 0, running: running(), runMode }; },
+            get anim() { return { walkBlend, runBlend, stride, strideTotal, walkTime: heroView?.walk.time ?? 0, running: running(), runMode }; },
+            get heroModel() { return heroKey; },
+            switchHero,
             get fade() { return occluders.map((o) => Math.round(o.alpha * 100) / 100); },
             /** 録画用：自動の更新を止め、step で 1 コマずつ進める */
             manual() { renderer.setAnimationLoop(null); },

@@ -52,7 +52,7 @@ async function open(opts) {
   // 城門へ歩く（↑）
   await page.keyboard.down('ArrowUp');
   const walking = await waitFor(page, () => window.__p3.hero.speed > 1.2 && window.__p3.anim.walkBlend > 0.8);
-  const w0 = (await state(page)).walkTime;
+  const w0 = (await state(page)).strideTotal;
   await waitFor(page, (z0) => window.__p3.hero.z < z0 - 1.5, s0.z);
   const s1 = await state(page);
   await page.screenshot({ path: `${S}/p3-pc-walk.png` });
@@ -65,7 +65,8 @@ async function open(opts) {
   await page.waitForTimeout(1500);
   const s3 = await state(page);
   check('キーを離すと止まり、待機の動きに戻る（その場から動かない）', stopped && s2.walkBlend < 0.1 && s2.x === s3.x && s2.z === s3.z, `歩きの重み ${s2.walkBlend.toFixed(2)}`);
-  check('歩いている間、歩きの動きが再生されていた（再生位置が進んだ）', Math.abs(s1.walkTime - w0) > 0.05, `${w0.toFixed(2)} → ${s1.walkTime.toFixed(2)} 秒`);
+  // 再生位置は 1 周ごとに戻るので、進めた周期の合計で見る
+  check('歩いている間、歩きの動きが再生されていた（再生位置が進んだ）', s1.strideTotal - w0 > 0.3, `${(s1.strideTotal - w0).toFixed(2)} 周期`);
 
   // 切り返して戻る（↓）：向き直るのを待たずに手前へ進み、進みながら向き直る
   const h0 = s3.heading;

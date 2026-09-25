@@ -1,0 +1,110 @@
+{
+  "checks": [
+    {
+      "name": "glTF version",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "buffer length",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "buffer views aligned and bounded",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "finite accessor data",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "triangle indices in range",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "skin joints in range",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "skin weights nonnegative and normalized",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "unit normals",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "required clips",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "animation time arrays and loop endpoints",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "unit animation quaternions",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "no horizontal root motion",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "external texture files present",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "PNG textures decode",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "GLB header and length",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "GLB chunks",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "GLB contains the same animation names",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "web variant has external images and no data URIs",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "independent trimesh geometry import",
+      "passed": true,
+      "detail": ""
+    }
+  ],
+  "passed": 19,
+  "failed": 0,
+  "scope": "Structural, skin data, animation data and independent geometry import. Not a full glTF conformance test. Preview images are offline CPU renders of the exported glTF.",
+  "unverified": [
+    "Existing game integration",
+    "Three.js animation playback in the user project",
+    "iPhone / Android / Mac runtime performance",
+    "Cloth intersections during arbitrary transitions",
+    "Historical costume accuracy"
+  ],
+  "preview_browser_note": "The working container did not provide a WebGL2 context. No successful browser playback claim is made."
+}
