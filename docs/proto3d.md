@@ -8,7 +8,7 @@
 | 技術 | TypeScript ＋ Three.js r186（0.186.1、MIT ライセンス）＋ Vite（既存と共用、設定は別ファイル） |
 | 既存版への影響 | なし。既存の `npm run dev` / `build` / `test` は 2D 版のまま。3D 版は別のコマンド・別の出力先（`dist-proto3d/`） |
 | 起動 | `npm run proto3d:dev` → http://localhost:8090/ （`?fps` で速さ、`?q=low` で画質「低」） |
-| 確認用 URL（非公開） | https://claude.ai/artifact/SnZ83D396bACUB728hCpp8 （コミット `6cb6371` の本番ビルド。2D 版の URL とは別のページ）。この置き場所は `.glb` を配れないため、同じ中身の glTF（JSON 形式）に変換して置いた（`proto3d/tools/glb-to-gltf.mjs`、`VITE_MODEL_EXT=.json` でビルド）。置いたファイルの SHA-256 が手元と一致することは確認。**開いて描画されるかは未確認** |
+| 確認用 URL（非公開） | https://claude.ai/artifact/SnZ83D396bACUB728hCpp8 （いまはコミット `b8401e6` の本番ビルド。画面上のボタンで素材の改修前／改修後・画角を切り替えられる。最初の版はコミット `6cb6371`。2D 版の URL とは別のページ）。この置き場所は `.glb` を配れないため、同じ中身の glTF（JSON 形式）に変換して置いた（`proto3d/tools/glb-to-gltf.mjs`、`VITE_MODEL_EXT=.json` でビルド）。置いたファイルの SHA-256 が手元と一致することは確認。**開いて描画されるかは未確認** |
 
 ## 方針の更新（2026-09-25）
 
