@@ -15,6 +15,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { FOLLOW, createOrbit, look, placeFollow } from './game/follow';
 import { CAMERA_YAW, SPEED, createHero, stepHero, type HeroState } from './game/motion';
 import { START, TREES, cameraBlockers } from './layout';
+import treesMeta from '../blender/trees/trees.meta.json';
 import { SKY, makeHills, makeSky } from './scenery';
 
 /**
@@ -92,7 +93,7 @@ scene.add(hemi);
 const TPS_FOV = 50;
 const camera = new THREE.PerspectiveCamera(tps ? TPS_FOV : CAMERA.fov, 1, tps ? 0.1 : 0.5, 2000);
 /** 肩越しのカメラの向き（ドラッグで変わる）。初めは城門の方（北）を見る */
-const orbit = createOrbit(0);
+const orbit = createOrbit(START.yaw, START.pitch);
 
 function resize(): void {
     const w = view.clientWidth || window.innerWidth;
@@ -442,14 +443,14 @@ function fadeOccluders(dt: number): void {
         }
     }
 }
-const hero: HeroState = createHero(START.x, START.z, Math.PI);
+const hero: HeroState = createHero(START.x, START.z, START.heading);
 
 async function start(): Promise<void> {
     const t0 = performance.now();
     // 城門前の一場面（Blender で作った素材）。地面・城門・土塀・遠景の天守・町家は配置どおりの位置で作ってあるので、そのまま置く
-    const [placed, [pine, sakura], firstHero] = await Promise.all([
+    const [placed, [pine, sakura, pineFar], firstHero] = await Promise.all([
         Promise.all(SCENE_MODELS.map(load)),
-        Promise.all(['tree_pine', 'tree_sakura'].map(load)),
+        Promise.all(['tree_pine', 'tree_sakura', 'tree_pine_far'].map(load)),
         loadHeroView(heroKey),
     ]);
     placed.forEach((g, i) => {
@@ -474,6 +475,15 @@ async function start(): Promise<void> {
         }
         scene.add(obj);
         addOccluder(obj);
+    }
+    // 城内・空き地の奥の松（軽い遠景用。置き場所は trees.meta.json）
+    prepare(pineFar.scene);
+    for (const f of treesMeta.tree_pine_far.placements) {
+        const t = pineFar.scene.clone();
+        t.position.set(f.x, 0, f.z);
+        t.rotation.y = f.rotation_y;
+        t.scale.setScalar(f.scale);
+        scene.add(t);
     }
     // 町の外側の木立（歩ける範囲の外。奥行きを出す）
     for (const [x, z, r, sc] of BACK_TREES) {

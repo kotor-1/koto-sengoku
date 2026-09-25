@@ -192,10 +192,10 @@ describe('3D 比較版：歩く／走る', () => {
             const wall = createHero(6, GATE.z + 3, Math.PI);
             run(wall, 0, -1, 3, true, dt);
             expect(wall.z).toBeGreaterThan(GATE.z);
-            // 門の内側の控柱へ、門の中から北へ
-            const post = createHero(GATE.pillarX, GATE.z - 0.8, Math.PI);
-            run(post, 0, -1, 2, true, dt);
-            expect(post.z).toBeGreaterThan(GATE_POSTS.z + GATE_POSTS.size / 2);
+            // 門の内側の控柱へ、城内から南へ（門の中は開いた扉とその枠があるので、北側から当てる）
+            const post = createHero(GATE.pillarX, GATE_POSTS.z - 2, 0);
+            run(post, 0, 1, 2, true, dt);
+            expect(post.z).toBeLessThan(GATE_POSTS.z - GATE_POSTS.size / 2);
             // 松の幹へ（東へ）
             const pine = createHero(PINE.x - 2, PINE.z, Math.PI / 2);
             run(pine, 1, 0, 2, true, dt);

@@ -22,8 +22,8 @@ import math
 import os
 import pathlib
 
+import bpy  # bpy を先に（bmesh は bpy の読み込み後でないと使えない）
 import bmesh
-import bpy
 import mathutils
 import numpy as np
 
@@ -223,7 +223,7 @@ def _gen_plaster_white(n, seed, tile, streaks=False):
     ws = np.stack(ws) * 2.2
     ws = np.exp(ws - ws.max(0))
     ws /= ws.sum(0)
-    trowel = sum(ws[k] * snoise(sh, seed + 20 + k, fmin=6, fmax=55, beta=1.3, aniso=(2.5, 1.0), angle=a)
+    trowel = sum(ws[k] * snoise(sh, seed + 20 + k, fmin=3, fmax=28, beta=1.4, aniso=(2.5, 1.0), angle=a)
                  for k, a in enumerate((0.25, -0.6, 1.2)))
     fine = snoise(sh, seed + 30, fmin=150, fmax=1200, beta=0.3)
     low = snoise(sh, seed + 31, fmin=0.5, fmax=6, beta=1.0)
@@ -234,7 +234,7 @@ def _gen_plaster_white(n, seed, tile, streaks=False):
     pits = (rng.random(sh) < 0.0009).astype(np.float32)
     pits = blur(pits, 1) * 9
     col *= (1 - 0.06 * np.clip(pits, 0, 1))[..., None]
-    h = 0.0009 * trowel + 0.00004 * fine - 0.0002 * np.clip(pits, 0, 1)
+    h = 0.0007 * trowel + 0.00003 * fine - 0.00015 * np.clip(pits, 0, 1)
     rough = np.clip(0.86 - 0.05 * trowel + 0.02 * fine, 0.7, 0.95)
     if streaks:
         # 上端（v=1）のすぐ下だけ、雨だれのかすかな筋
@@ -573,7 +573,7 @@ CATALOG: dict[str, dict] = {
     'plaster_earth': dict(tile=(2.0, 2.0), size=1024, uv='box', nstr=1.0, seed=111, gen=_gen_plaster_earth,
                           doc='土壁（茶色の荒壁・中塗り、苆入り）。'),
     'wood_weathered': dict(tile=(2.0, 0.5), size=1024, uv='along', nstr=1.0, seed=121,
-                           gen=_wood_spec(rgb(118, 104, 90), rgb(74, 62, 52), rings=30, warp=2.0, gray=rgb(124, 119, 111),
+                           gen=_wood_spec(rgb(114, 101, 88), rgb(82, 70, 59), rings=30, warp=1.7, gray=rgb(122, 117, 109),
                                           weather=0.55, checks=70, relief=0.0009, rough=(0.72, 0.9)),
                            doc='風雨にさらされた杉（灰色がかった茶、浮造りの木目、小さな干割れ）。板壁・外の柱・軒の垂木。'),
     'wood_dark': dict(tile=(2.0, 0.5), size=1024, uv='along', nstr=1.0, seed=131,
@@ -1133,12 +1133,12 @@ def _select_only(objs):
     bpy.context.view_layer.objects.active = objs[0]
 
 
-def bake_ao_to_color(objects, ground_plane=True, samples=48, *, distance=1.5, strength=0.7, gamma=1.0,
+def bake_ao_to_color(objects, ground_plane=True, samples=48, *, distance=1.5, strength=0.6, gamma=1.0,
                      multiply_existing=True, apply_modifiers=True, switch_materials=True, ground_z=None):
     """
     環境光の遮蔽（AO）を Cycles で頂点色 'Col'（有効な色属性 → glTF の COLOR_0）に焼く。
     細かい形（瓦・格子・垂木・石・小物）向け。頂点が粗い大きな平面にはしみが出ないので bake_ao_to_texture を使う。
-    値 = 1 - strength * (1 - ao**gamma)（strength=0.7 なら最も暗くて 0.3）。
+    値 = 1 - strength * (1 - ao**gamma)（strength=0.6 なら最も暗くて 0.4）。頂点色は three.js で基本色に掛かる＝日なたも暗くなるので強くしすぎない。
     multiply_existing: 既にある 'Col'（tint_islands の色むら）に掛ける。
     ground_plane: 物体の一番低いところ（または ground_z）に一時的な地面を置いて接地の陰を作る。
     場面にある他の物体（選んでいないもの）も遮蔽に入る。モディファイアは先に適用する。
@@ -1211,29 +1211,101 @@ def _gltf_group():
     return g
 
 
-def ensure_lightmap_uv(obj, uv_name='lightmap', margin=0.01):
-    """第 2 UV（重ならない展開）を作る。最初の UV 'UVMap' は描画用のまま"""
+def ensure_lightmap_uv(obj, uv_name='lightmap', margin_px=4, size=1024):
+    """
+    第 2 UV（重ならない展開）を bmesh で作る（編集モードの演算子は使わない：背景実行で Cycles が落ちることがあるため）。
+    面を向き（箱投影の 6 方向）ごとにつながった「島」にまとめ、平らに投影して棚詰めで [0,1] に並べる。
+    大きな平面・箱・なだらかな地面向け（同じ向きで重なり合う曲面には向かない）。最初の UV 'UVMap' は描画用のまま。
+    """
     me = obj.data
     if len(me.uv_layers) == 0:
         uv_box(obj)
     if me.uv_layers.get(uv_name) is not None:
         return
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bm.faces.ensure_lookup_table()
+    bm.faces.index_update()
+    lay = bm.loops.layers.uv.new(uv_name)
+    M = obj.matrix_world
+    NM = M.inverted_safe().transposed().to_3x3()
+    key = []
+    for f in bm.faces:
+        n = NM @ f.normal
+        k = max(range(3), key=lambda i: abs(n[i]))
+        key.append(k * 2 + (1 if n[k] < 0 else 0))
+    parent = list(range(len(bm.faces)))
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+    for e in bm.edges:
+        lf = e.link_faces
+        for i in range(len(lf) - 1):
+            fa, fb = lf[i].index, lf[i + 1].index
+            if key[fa] == key[fb]:
+                ra, rb = find(fa), find(fb)
+                if ra != rb:
+                    parent[ra] = rb
+    charts = {}
+    for f in bm.faces:
+        charts.setdefault(find(f.index), []).append(f)
+
+    def proj(p, k):
+        ax = k // 2
+        neg = k % 2
+        if ax == 2:
+            return (p.x, -p.y if neg else p.y)
+        if ax == 0:
+            return (-p.y if neg else p.y, p.z)
+        return (p.x if neg else -p.x, p.z)
+    items = []
+    for faces in charts.values():
+        k = key[faces[0].index]
+        pts = {}
+        for f in faces:
+            for l in f.loops:
+                pts[l] = proj(M @ l.vert.co, k)
+        xs = [q[0] for q in pts.values()]
+        ys = [q[1] for q in pts.values()]
+        x0, y0 = min(xs), min(ys)
+        items.append([max(xs) - x0, max(ys) - y0, x0, y0, pts])
+    area = sum(max(w, 1e-4) * max(h, 1e-4) for w, h, *_ in items)
+    gap = math.sqrt(area) * 1.2 * margin_px / size * 2
+    items.sort(key=lambda it: -it[1])
+
+    def shelf(width):
+        x = y = rowh = used = 0.0
+        pl = []
+        for it in items:
+            w, h = it[0] + gap, it[1] + gap
+            if x + w > width and x > 0:
+                y += rowh
+                x = rowh = 0.0
+            pl.append((x, y))
+            x += w
+            used = max(used, x)
+            rowh = max(rowh, h)
+        return max(used, y + rowh), used, y + rowh, pl
+    wmin = max(it[0] for it in items) + gap
+    _, tx, ty, place = min((shelf(max(wmin, math.sqrt(area) * f)) for f in (0.7, 0.85, 1.0, 1.15, 1.3, 1.5, 1.8, 2.2, 3.0)),
+                           key=lambda r: r[0])
+    for it, (px, py) in zip(items, place):
+        w, h, x0, y0, pts = it
+        for l, q in pts.items():
+            # 縦横別々に [0,1] に広げる（AO は低い周波数なので伸びても困らない）
+            l[lay].uv = ((q[0] - x0 + px + gap / 2) / tx, (q[1] - y0 + py + gap / 2) / ty)
+    bm.to_mesh(me)
+    bm.free()
     main = me.uv_layers[0]
-    lay = me.uv_layers.new(name=uv_name)
-    me.uv_layers.active = lay
-    _ensure_object_mode()
-    _select_only([obj])
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_all(action='SELECT')
-    bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=margin, area_weight=0.0,
-                             correct_aspect=True, scale_to_bounds=False)
-    bpy.ops.object.mode_set(mode='OBJECT')
     main.active_render = True
     me.uv_layers.active = main
 
 
 def bake_ao_to_texture(obj, size=1024, uv_name='lightmap', *, samples=48, distance=2.0, strength=0.75, gamma=1.0,
-                       ground_plane=True, margin=8, ground_z=None, path=None):
+                       ground_plane=True, margin=8, ground_z=None, path=None, blur_px=1):
     """
     AO を画像に焼き、glTF の occlusionTexture（R、TEXCOORD_1 = 第 2 UV 'lightmap'）としてつなぐ。
     大きな平面（地面・壁・屋根の広い面）向け。three.js では環境光（空・半球光・環境反射）にだけ効く。
@@ -1244,7 +1316,7 @@ def bake_ao_to_texture(obj, size=1024, uv_name='lightmap', *, samples=48, distan
     _ensure_object_mode()
     _make_single_user(obj)
     _apply_modifiers(obj)
-    ensure_lightmap_uv(obj, uv_name)
+    ensure_lightmap_uv(obj, uv_name, margin_px=max(2, margin // 2), size=size)
     s = _bake_setup(samples, distance)
     img_name = f'ao_{obj.name}'
     old = bpy.data.images.get(img_name)
@@ -1281,17 +1353,23 @@ def bake_ao_to_texture(obj, size=1024, uv_name='lightmap', *, samples=48, distan
         nodes_for.append((m, tn))
     g = _ground([obj], ground_z) if ground_plane else None
     _select_only([obj])
+    uvs = obj.data.uv_layers
+    uvs.active = uvs[uv_name]          # Cycles は「選択中の UV」に焼く
     s.render.bake.target = 'IMAGE_TEXTURES'
     s.render.bake.margin = margin
     bpy.context.view_layer.update()
     bpy.ops.object.bake(type='AO')
     if g is not None:
         _remove_temp(g)
+    uvs.active = uvs[0]
+    uvs[0].active_render = True
     bpy.context.view_layer.update()
     px = np.empty(size * size * 4, np.float32)
     img.pixels.foreach_get(px)
     px = px.reshape(-1, 4)
     ao = np.clip(px[:, 0], 0, 1)
+    if blur_px:
+        ao = blur(ao.reshape(size, size), blur_px).ravel()
     val = 1 - strength * (1 - ao ** gamma)
     px[:, 0] = px[:, 1] = px[:, 2] = val
     px[:, 3] = 1
@@ -1314,6 +1392,33 @@ def bake_ao_to_texture(obj, size=1024, uv_name='lightmap', *, samples=48, distan
         nt.links.new(tn.outputs['Color'], sp.inputs['Color'])
         nt.links.new(sp.outputs['Red'], gn.inputs['Occlusion'])
     return img
+
+
+def game_lights(exposure=0.55, sky_strength=0.6):
+    """
+    確認用の光をゲームの描画に近づける（common.add_preview_lights は Nishita の空が明るすぎて白飛びする）。
+    日差し 3.4・#ffe2bd・ゲームと同じ向き、空は弱い一様な青灰、Filmic（ACES に近い）。render_preview の前に呼ぶ。
+    """
+    from common import sun_direction_blender
+    s = bpy.context.scene
+    w = bpy.data.worlds.new('game-sky')
+    s.world = w
+    w.use_nodes = True
+    bg = w.node_tree.nodes['Background']
+    bg.inputs['Color'].default_value = (0.56, 0.63, 0.72, 1)
+    bg.inputs['Strength'].default_value = sky_strength
+    for o in [o for o in s.objects if o.type == 'LIGHT' and o.name.startswith(('game-sun', 'preview-sun'))]:
+        bpy.data.objects.remove(o, do_unlink=True)
+    L = bpy.data.lights.new('game-sun', 'SUN')
+    L.energy = 3.4
+    L.color = (1.0, 0.886, 0.741)
+    L.angle = math.radians(1.2)
+    o = bpy.data.objects.new('game-sun', L)
+    s.collection.objects.link(o)
+    o.rotation_euler = sun_direction_blender().to_track_quat('Z', 'Y').to_euler()
+    s.view_settings.view_transform = 'Filmic'
+    s.view_settings.look = 'None'
+    s.view_settings.exposure = exposure
 
 
 # ---------------------------------------------------------------------------

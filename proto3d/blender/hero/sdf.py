@@ -4,6 +4,8 @@
 """
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
 F = np.float32
@@ -269,3 +271,38 @@ def orient_outward(fn, V, Q):
     if (n * g).sum() < 0:
         return Q[:, ::-1]
     return Q
+
+
+def poly_extrude(P, origin, ex, ey, poly, half_t, round_in=0.0, round_edge=0.0):
+    """凸な多角形（面の 2D 座標、反時計回り）を面に垂直な向きへ ±half_t 押し出した形。
+    round_in は面内の角の丸み（多角形を外へ太らせる）、round_edge は縁の丸み（全体を太らせる）"""
+    o = np.asarray(origin, F)
+    ex = np.asarray(ex, float)
+    ey = np.asarray(ey, float)
+    ex /= np.linalg.norm(ex)
+    ey = ey - ex * (ey @ ex)
+    ey /= np.linalg.norm(ey)
+    ez = np.cross(ex, ey)
+    q = P - o
+    u = q @ ex.astype(F)
+    v = q @ ey.astype(F)
+    w = q @ ez.astype(F)
+    poly = np.asarray(poly, float)
+    hp = np.full(len(P), -1e9, F)
+    seg = np.full(len(P), 1e9, F)
+    n = len(poly)
+    for i in range(n):
+        a = poly[i]
+        b = poly[(i + 1) % n]
+        e = b - a
+        L2 = float(e @ e)
+        nrm = np.array([e[1], -e[0]]) / math.sqrt(L2)
+        pu = u - F(a[0])
+        pv = v - F(a[1])
+        hp = np.maximum(hp, pu * F(nrm[0]) + pv * F(nrm[1]))
+        t = np.clip((pu * F(e[0]) + pv * F(e[1])) / F(L2), 0, 1)
+        seg = np.minimum(seg, np.sqrt((pu - t * F(e[0])) ** 2 + (pv - t * F(e[1])) ** 2))
+    d2 = np.where(hp < 0, hp, seg) - F(round_in)
+    dz = np.abs(w) - F(half_t)
+    out = np.sqrt(np.maximum(d2, 0) ** 2 + np.maximum(dz, 0) ** 2) + np.minimum(np.maximum(d2, dz), 0)
+    return out - F(round_edge)

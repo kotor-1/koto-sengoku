@@ -21,7 +21,8 @@ const tree = (name: string) => TREES.find((t) => t.name === name)!;
 export const PINE = tree('pine_big');
 /** 門の手前、西の空き地の桜 */
 export const TREE2 = tree('sakura');
-export const START = { x: scene.hero_start[0], z: scene.hero_start[1] } as const;
+/** 開始の位置・主人公の向き（heading）・肩越しのカメラの初めの向き（yaw・pitch） */
+export const START = { x: scene.hero_start[0], z: scene.hero_start[1], heading: scene.hero_start_heading, yaw: scene.hero_start_yaw, pitch: scene.hero_start_pitch } as const;
 /** 動ける範囲 */
 export const BOUNDS = { x0: -22, x1: 20, z0: -30, z1: 18 } as const;
 
@@ -43,7 +44,7 @@ interface AssetMeta {
     colliders?: Rect[];
     camera_blockers?: Box[];
 }
-const METAS = Object.values(import.meta.glob('../blender/**/*.meta.json', { eager: true, import: 'default' }) as Record<string, unknown>);
+const METAS = Object.values(import.meta.glob(['../blender/**/*.meta.json', '!../blender/build/**'], { eager: true, import: 'default' }) as Record<string, unknown>);
 const isRect = (r: unknown): r is Rect => !!r && ['x0', 'x1', 'z0', 'z1'].every((k) => typeof (r as Record<string, unknown>)[k] === 'number');
 const isBox = (b: unknown): b is Box => isRect(b) && typeof (b as Box).y0 === 'number' && typeof (b as Box).y1 === 'number';
 const metaColliders = METAS.flatMap((m) => ((m as AssetMeta).colliders ?? []).filter(isRect));

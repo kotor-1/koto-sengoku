@@ -1,7 +1,11 @@
 {
   "_about": "城門前の一場面の配置（Blender の制作スクリプトとゲームの共通の約束）。数値はすべてゲームの座標（メートル）：x 東、y 上、z 南（北は -z）。Blender では (x, y, z)_game = (X, Z, -Y)_blender（lib/common.py の g2b / b2g）。",
   "sun_offset_game": [-17, 12, 9],
-  "hero_start": [0.6, 1.5],
+  "hero_start": [-0.8, -4.2],
+  "hero_start_yaw": 0.33,
+  "hero_start_pitch": -0.06,
+  "hero_start_heading": 3.039,
+  "_hero_start_note": "開始の位置と向き。肩越しのカメラの初めの向きは yaw 0.33（北北西）・pitch -0.06（わずかに見上げる）＝ follow.ts の createOrbit(yaw, pitch) にそのまま渡す値（範囲 pitchMin -0.35〜pitchMax 0.8 の中）。門が画面の右 3 分の 1 に屋根まで大きく入り、桜と塀が中央左、町家 A が左の端。主人公は門の方（北北東）を向く：ゲームの rotation.y = hero_start_heading。",
   "road": {
     "center_x": 0,
     "half_width": 3.4,

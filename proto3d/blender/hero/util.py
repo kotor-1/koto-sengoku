@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import math
 
+import bpy  # bmesh より先に
 import bmesh
-import bpy
 import numpy as np
 
 
@@ -154,7 +154,11 @@ def principled(name, color=(0.5, 0.5, 0.5), rough=0.8, metal=0.0, *, base_tex=No
             nt.links.new(uvnode.outputs['UV'], tn.inputs['Vector'])
         col_out = tn.outputs['Color']
         if alpha_clip:
-            nt.links.new(tn.outputs['Alpha'], bsdf.inputs['Alpha'])
+            # glTF の MASK（切り抜き）は、アルファを「丸め」の計算ノードに通すと書き出される
+            rnd = nt.nodes.new('ShaderNodeMath')
+            rnd.operation = 'ROUND'
+            nt.links.new(tn.outputs['Alpha'], rnd.inputs[0])
+            nt.links.new(rnd.outputs['Value'], bsdf.inputs['Alpha'])
     if vcol is not None:
         vc = nt.nodes.new('ShaderNodeVertexColor')
         vc.layer_name = vcol
