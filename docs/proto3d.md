@@ -80,6 +80,7 @@
 | 読み込み | 通常は GLB（`hero_v1.glb`）。非公開ページ向けの JSON 配信は、ほかの素材と同じ変換（`proto3d/tools/glb-to-gltf.mjs`：形のデータは JSON に base64、質感の画像は別ファイル。今回、画像の分を形のデータから外すようにした。以前は同じ画像が JSON の中にも残っていた。新の主人公は 3.0MB＋画像 2.0MB、ほかの素材も小さくなった）で作り、ページ側で戻して読む（data: の URL は使わない）。素材に付いていた `sengoku_hero.web.json` と接続例 `integration/heroAsset.ts` は、同じことを既存の仕組みで行えるため使っていない（`proto3d/assets-src/hero_v1/` に保存） |
 | 動きの再生 | 素材の Idle / Walk / Run を使う（旧の骨へ角度を書き込む処理は使わない）。歩き・走りは、進んだ距離から再生位置を決める既存の仕組みにつなぐ。1 周期の距離は素材の基準速度（Walk 1.4m/秒・Run 3.0m/秒）× 周期。骨組みから接地した足の送りの速さを測り、基準速度と 5% 以内で合うこと、Walk と Run で左足の着く位相がそろうことを確かめた（`tests/proto3d-hero-v1.test.ts`） |
 | 規模 | 頂点 約 3.0 万・三角形 約 5.2 万・材質 16・GLB 4.4MB（旧の人形は GLB 0.66MB） |
+| 受け取った素材 | ZIP（`sengoku_hero_original_v1.zip`）の `manifest.json` の SHA-256 と全 25 ファイルが一致することを確認。リポジトリには GLB（`sengoku_hero.glb` を `hero_v1.glb` として）と、説明・ソース・確認結果・プレビュー 2 枚だけを置いた（`manifest.json` は ZIP 全体の一覧のまま。同じ内容の glTF・bin・web.json と、残りのプレビューは置いていない） |
 | 比較の画面 | `e2e/proto3d-hero-compare.mjs`：同じ町・同じカメラ・同じ昼の光で、いつものカメラ（PC・スマホ横）と近づけたカメラ（待機・歩き・走り・切り返し・止まった後）を新旧で並べる |
 
 ## 未完成の部分（今回の範囲で足りないもの）
