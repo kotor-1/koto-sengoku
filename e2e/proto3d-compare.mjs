@@ -32,13 +32,14 @@ for (const [name, vp] of Object.entries(sizes)) {
     const page = await ctx.newPage();
     await page.goto(B3 + '/');
     await page.waitForFunction(() => window.__p3?.stats.readyMs > 0, null, { timeout: 120000 });
+    page.setDefaultTimeout(300000);
     await page.evaluate(() => {
       window.__p3.manual();
       const h = window.__p3.hero;
       h.x = 0.6; h.z = -5.2; h.heading = Math.PI;
-      for (let i = 0; i < 90; i++) window.__p3.step(1 / 30, 0, 0);
+      for (let i = 0; i < 40; i++) window.__p3.step(1 / 30, 0, 0);
     });
-    await page.screenshot({ path: `${S}/compare-${name}-3d.png` });
+    await page.screenshot({ path: `${S}/compare-${name}-3d.png`, timeout: 300000 });
     await ctx.close();
   }
   console.log('saved', name);
