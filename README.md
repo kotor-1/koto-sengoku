@@ -3,12 +3,14 @@
 戦国時代を舞台にした、見下ろし型 2D 探索 RPG の最初の試作です。
 城門・城下町・街道の小さなマップを歩き、家臣と話し、端末内に保存して続きから再開できます。
 家臣の源蔵に話しかけると、城の東の訓練場で **模擬戦（小さな戦闘と指揮）** ができます。
+（2026-09-25 の方針更新：小人数のアクション戦闘は完成版の方式として採用せず、調整・拡張は止めています。合戦は別の地図で部隊単位の指揮にする予定です。）
 
 - 基本方針・設計の決まりごと → [docs/design-policy.md](docs/design-policy.md)
 - 採用バージョンとテンプレートからの変更点 → このファイル末尾
 - **実機確認の手順と記録表** → [docs/device-check.md](docs/device-check.md)
 - テストと確認の一覧 → [docs/testing.md](docs/testing.md)
 - 既知の問題 → [docs/known-issues.md](docs/known-issues.md)
+- **3D 比較版（独立した試作・固定視点の 3D で街並みと人物を比べる）** → [docs/proto3d.md](docs/proto3d.md)。`npm run proto3d:dev` → http://localhost:8090/
 
 ## 必要なもの
 

@@ -28,13 +28,23 @@
     "e2e:wedge": "node e2e/tree-wedge-repro.mjs e2e-out",
     "e2e:perf": "node e2e/perf-snapshot.mjs",
     "e2e:battle": "node e2e/battle.mjs e2e-out",
-    "e2e:battle-video": "node e2e/battle-video.mjs e2e-out"
+    "e2e:battle-video": "node e2e/battle-video.mjs e2e-out",
+    "proto3d:dev": "vite --config proto3d/vite.config.mjs",
+    "proto3d:build": "vite build --config proto3d/vite.config.mjs",
+    "proto3d:preview": "vite preview --config proto3d/vite.config.mjs",
+    "proto3d:models": "node proto3d/tools/export-models.mjs",
+    "proto3d:typecheck": "tsc -p proto3d",
+    "e2e:proto3d": "node e2e/proto3d.mjs e2e-out",
+    "e2e:proto3d-video": "node e2e/proto3d-video.mjs e2e-out",
+    "e2e:proto3d-compare": "node e2e/proto3d-compare.mjs e2e-out"
   },
   "dependencies": {
     "phaser": "4.0.0",
-    "terser": "^5.39.0"
+    "terser": "^5.39.0",
+    "three": "0.186.1"
   },
   "devDependencies": {
+    "@types/three": "0.186.0",
     "playwright-core": "^1.56.1",
     "typescript": "~5.7.2",
     "vite": "^6.3.1",

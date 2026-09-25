@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#15130f" />
+    <title>戦国探索記 3D比較版</title>
+    <link rel="icon" type="image/png" href="./favicon.png" />
+    <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+    <div id="app">
+        <div id="view"></div>
+        <div id="hud">
+            <div class="chip"><b>3D 比較版</b><span>試作・固定カメラ</span></div>
+        </div>
+        <div id="stick-zone"><div id="stick-base"><div id="stick-knob"></div></div></div>
+        <p id="help"><span class="keys">移動 <kbd>←↑↓→</kbd> <kbd>WASD</kbd></span><span class="touch">画面の左側をなぞって移動</span></p>
+        <p id="build"></p>
+        <div id="loading">読み込み中…</div>
+        <div id="fps" hidden></div>
+    </div>
+    <script type="module" src="./src/main.ts"></script>
+</body>
+</html>
