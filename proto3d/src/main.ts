@@ -161,7 +161,9 @@ function readInput(): [number, number] {
 // ---- 読み込み ----
 const loading = document.getElementById('loading')!;
 const loader = new GLTFLoader();
-const load = (name: string) => loader.loadAsync(`./models/${name}.glb`);
+// 置き場所によっては .glb を配れないので、同じ中身の glTF（JSON 形式、データ埋め込み）を .json で置けるようにする
+const MODEL_EXT = (import.meta.env.VITE_MODEL_EXT as string | undefined) || '.glb';
+const load = (name: string) => loader.loadAsync(`./models/${name}${MODEL_EXT}`);
 
 interface HeroView {
     root: THREE.Object3D;
