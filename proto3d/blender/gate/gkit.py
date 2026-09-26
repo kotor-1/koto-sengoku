@@ -1015,9 +1015,48 @@ def stud(g, key, p, n, r=0.018, h=0.012, seg=6):
 # ---------------------------------------------------------------------------
 
 def _gen_timber(n, seed, tile):
-    """門の太い材（欅・栗の古材）：2〜4 cm の粗い年輪の縞、ゆるい波、浮造りの凹凸、細かい干割れ。色は頂点色で暖かく暗くする前提の中間の茶灰"""
-    return mats._gen_wood(n, seed, tile, mats.rgb(136, 120, 103), mats.rgb(90, 78, 66), rings=20, warp=1.4,
-                          gray=mats.rgb(124, 118, 110), weather=0.18, checks=40, relief=0.0012, rough=(0.68, 0.88), mott=0.08)
+    """
+    門の太い材（欅・栗の古材、板目）。3〜8 m から読めるように、細かい模様ではなく大きな明暗で木を見せる：
+    年輪は 0.6 m に 11 本（5.5 cm）で、低い周波数のゆがみで板目の山形になる。晩材は濃い茶で少し浮き（浮造り）、
+    早材は風化して灰色がかる。長手に伸びた 2〜8 cm の筋と 0.3〜1 m の明暗のむら、木目に沿った細い干割れ。
+    色はこの画像で決める（sRGB の平均 ≈ 113/84/62：日なたで中くらいの暗い茶）。頂点色は AO と部材ごとの差だけ。
+    粗さは 0.74（晩材）〜0.93（早材・割れ）で、つやは出さない。
+    """
+    sh = (n, n)
+    U, Vv = mats._uv(n, n)
+    sn = mats.snoise
+    w1 = sn(sh, seed + 1, fmin=0.5, fmax=3, beta=1.6, aniso=(2.5, 1.0))                     # 板目の山形（大きなゆがみ）
+    w2 = sn(sh, seed + 2, fmin=4, fmax=30, beta=1.2, aniso=(4.0, 1.0))      # 年輪の小さな揺れ
+    r = 11 * Vv + 1.6 * w1 + 0.12 * w2
+    p = r - np.floor(r)
+    ring_id = np.floor(r).astype(np.int64)
+    rr = np.random.default_rng(seed + 3).random(4096).astype(np.float32)
+    late = mats.smoothstep(0.5, 0.8, p) * (1 - mats.smoothstep(0.94, 1.0, p))
+    late = late * (0.6 + 0.5 * rr[ring_id % 4096])
+    streak = sn(sh, seed + 4, fmin=6, fmax=60, beta=1.0, aniso=(6.0, 1.0))  # 長手の筋（幅 2〜8 cm）
+    big = sn(sh, seed + 5, fmin=0.5, fmax=4, beta=1.0)                      # 0.3〜1 m の明暗
+    fib = sn(sh, seed + 6, fmin=60, fmax=600, beta=0.6, aniso=(9.0, 1.0))   # 細かい繊維
+    early, dark = mats.rgb(138, 104, 77), mats.rgb(70, 49, 35)
+    col = mats.mix(early, dark, np.clip(late * 0.95, 0, 1))
+    # 早材の風化（灰色がかる）：場所によって強さが変わる
+    gm = np.clip(0.5 + 0.35 * sn(sh, seed + 7, fmin=1, fmax=10, beta=1.0, aniso=(3.0, 1.0)), 0, 1) * (1 - late)
+    col = mats.mix(col, mats.rgb(122, 112, 100), gm * 0.3)
+    col = col * (1 + 0.075 * streak + 0.065 * big + 0.03 * fib)[..., None]
+    # 木目に沿った細い干割れ（数は少なく、長く）
+    rng = np.random.default_rng(seed + 8)
+    su, sv = n / tile[0], n / tile[1]
+    segs = []
+    for _ in range(26):
+        u0, v0 = rng.random() * n, rng.random() * n
+        L = (0.06 + 0.3 * rng.random() ** 2) * su
+        segs.append((u0, v0, u0 + L, v0 + (rng.random() - 0.5) * 0.004 * sv))
+    crack = mats._lines(sh, segs, width=0.8)
+    crack = np.maximum(crack, 0.5 * mats.blur(crack, 1))
+    col = mats.mix(col, col * 0.4, crack * 0.85)
+    h = 0.0012 * late + 0.0003 * streak + 0.0001 * fib - 0.0015 * crack
+    rough = np.clip(0.9 - 0.14 * late + 0.02 * fib - 0.015 * streak, 0.72, 0.94)
+    rough = np.maximum(rough, crack * 0.95)
+    return dict(albedo=np.clip(col, 0, 1), height=h, rough=rough)
 
 
 def _gen_ishigaki(n, seed, tile):
@@ -1040,13 +1079,13 @@ def _gen_ishigaki(n, seed, tile):
 
 EXTRA_MATS = {
     'wood_timber': dict(tile=(2.4, 0.6), size=1024, uv='along', nstr=1.0, seed=611, gen=_gen_timber,
-                        doc='門の太い柱・梁（粗い年輪、2.4 m で繰り返し）。頂点色で暗い焦げ茶にする。'),
+                        doc='門の太い柱・梁（板目の古材、2.4 m で繰り返し）。色は画像で決め、頂点色は AO と部材ごとの差だけ。'),
     'stone_ishigaki': dict(tile=(2.0, 2.0), size=1024, uv='box', nstr=1.0, seed=621, gen=_gen_ishigaki,
                            doc='打込接ぎの石垣の面（粒の対比をおさえた温かい灰色、10〜30 cm のむら）。'),
 }
 
 
-EXTRA_VERSION = 'g3'   # 画像の合成の手順を変えたら上げる（作り置きの画像を作り直す）
+EXTRA_VERSION = 'g4b'   # 画像の合成の手順を変えたら上げる（作り置きの画像を作り直す）
 
 
 def register_materials():
