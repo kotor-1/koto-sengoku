@@ -4,8 +4,11 @@
  */
 import * as THREE from 'three';
 
-/** 空の色（sRGB）。霧の色は地平の色にそろえる */
-export const SKY = { zenith: '#4f7fb8', horizon: '#c9d6db', sunGlow: '#ffdcae' } as const;
+/**
+ * 空の色（sRGB）。晴れた午後遅くの濃い青の空。地平に近いほど淡い。
+ * haze は空気の遠近（霧）の色：遠い物が寄っていく、わずかに青い地平の色。
+ */
+export const SKY = { zenith: '#1d4f9e', mid: '#4f86c6', horizon: '#b4cde3', haze: '#a8c0d8', sunGlow: '#ffd09a' } as const;
 
 export function makeSky(sunDir: THREE.Vector3): THREE.Mesh {
     const g = new THREE.SphereGeometry(900, 48, 24);
@@ -13,6 +16,7 @@ export function makeSky(sunDir: THREE.Vector3): THREE.Mesh {
         uniforms: {
             sunDir: { value: sunDir.clone().normalize() },
             zenith: { value: new THREE.Color(SKY.zenith) },
+            mid: { value: new THREE.Color(SKY.mid) },
             horizon: { value: new THREE.Color(SKY.horizon) },
             glow: { value: new THREE.Color(SKY.sunGlow) },
         },
@@ -26,6 +30,7 @@ export function makeSky(sunDir: THREE.Vector3): THREE.Mesh {
         fragmentShader: /* glsl */ `
             uniform vec3 sunDir;
             uniform vec3 zenith;
+            uniform vec3 mid;
             uniform vec3 horizon;
             uniform vec3 glow;
             varying vec3 vDir;
@@ -45,16 +50,29 @@ export function makeSky(sunDir: THREE.Vector3): THREE.Mesh {
             void main() {
                 vec3 d = normalize(vDir);
                 float h = max(d.y, 0.0);
-                vec3 col = mix(horizon, zenith, pow(h, 0.5));
-                // 日の周りを少し明るく、暖かく
-                float s = max(dot(d, normalize(sunDir)), 0.0);
-                col += glow * (pow(s, 6.0) * 0.18 + pow(s, 64.0) * 0.35);
-                // 薄い雲（空の高い所ほど小さく、地平の近くは薄く）
-                vec2 uv = d.xz / (d.y + 0.18) * 1.6;
-                float n = fbm(uv + vec2(3.1, 7.7));
-                float c = smoothstep(0.52, 0.78, n) * smoothstep(0.02, 0.3, h) * 0.75;
-                vec3 cloud = mix(vec3(0.92, 0.93, 0.95), vec3(1.0, 0.95, 0.88), s);
-                col = mix(col, cloud, c);
+                vec3 sd = normalize(sunDir);
+                // 地平（淡い）→ 中ほど（青）→ 天頂（濃い青）
+                vec3 col = mix(horizon, mid, smoothstep(0.0, 0.22, pow(h, 0.8)));
+                col = mix(col, zenith, smoothstep(0.12, 0.85, h));
+                // 日の側の地平を明るく暖かく（午後遅くの光のかすみ）
+                float s = max(dot(d, sd), 0.0);
+                col += glow * (pow(s, 5.0) * 0.35 * (1.0 - h) + pow(s, 48.0) * 0.6);
+                // 積雲：形のはっきりした白い雲（日の側が明るく、下側と日の反対側は青灰色）。地平に近い所に多く、天頂には少ない
+                vec2 uv = d.xz / (d.y + 0.12) * 0.9;
+                vec2 w = vec2(fbm(uv * 0.7 + vec2(1.7, 9.2)), fbm(uv * 0.7 + vec2(8.3, 2.8)));
+                vec2 p = uv + (w - 0.5) * 1.1 + vec2(3.1, 7.7);
+                float n = fbm(p);
+                float cover = 0.56 - 0.1 * smoothstep(0.05, 0.5, h);
+                float dens = smoothstep(cover, cover + 0.16, n) * smoothstep(0.015, 0.12, h) * (1.0 - smoothstep(0.55, 0.9, h));
+                // 日の方へ少しずらした所の濃さで、雲の中の陰を決める（簡単な自己陰）
+                vec2 toSun = normalize(sd.xz + 1e-4) * 0.08;
+                float n2 = fbm(p + toSun);
+                float lit = clamp(0.5 + (n - n2) * 6.0, 0.0, 1.0);
+                lit = mix(lit, 1.0, 0.25) * (0.75 + 0.25 * smoothstep(0.0, 0.3, h));
+                vec3 cloudShade = vec3(0.50, 0.58, 0.72);
+                vec3 cloudLit = mix(vec3(1.25, 1.24, 1.22), vec3(1.45, 1.3, 1.1), pow(s, 3.0));
+                vec3 cloud = mix(cloudShade, cloudLit, lit);
+                col = mix(col, cloud, dens * 0.95);
                 // 地平より下は地平の色（山並みの向こう）
                 if (d.y < 0.0) col = horizon;
                 gl_FragColor = vec4(col, 1.0);
@@ -96,8 +114,8 @@ export function makeHills(): THREE.Group {
     const group = new THREE.Group();
     group.name = '山並み';
     const rings = [
-        { r: 175, depth: 25, h0: 6, h1: 26, color: '#56684a', seed: 1 },
-        { r: 290, depth: 40, h0: 20, h1: 75, color: '#6a7a86', seed: 5 },
+        { r: 175, depth: 25, h0: 6, h1: 26, color: '#3f5a45', seed: 1 },
+        { r: 290, depth: 40, h0: 20, h1: 75, color: '#5f7892', seed: 5 },
     ];
     for (const k of rings) {
         const N = 160;

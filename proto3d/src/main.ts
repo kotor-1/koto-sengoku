@@ -17,6 +17,7 @@ import { CAMERA_YAW, SPEED, createHero, stepHero, type HeroState } from './game/
 import { START, TREES, cameraBlockers, groundY } from './layout';
 import treesMeta from '../blender/trees/trees.meta.json';
 import { SKY, makeHills, makeSky } from './scenery';
+import { createPost, type Post } from './post';
 
 /**
  * カメラ：南の斜め上から北を見下ろす「正面寄りの見下ろし」（向きは固定。回転しない）。
@@ -51,7 +52,7 @@ const maxDpr = low ? 1 : 2;
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxDpr));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.1;
+renderer.toneMappingExposure = 1.0;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 view.appendChild(renderer.domElement);
@@ -59,10 +60,11 @@ view.appendChild(renderer.domElement);
 let hemiBoost = 0;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(SKY.horizon);
-// 霧：遠い所を空の地平の色に溶かす（肩越しでは遠くまで見えるので、遠くから効かせる）
-scene.fog = tps ? new THREE.Fog(SKY.horizon, 45, 480) : new THREE.Fog(SKY.horizon, 32, 70);
-// 日差し：西南西の低めの所から（晴れた午後。長めの影が道に落ちる）。見下ろしのときはこれまでの高さ
-const SUN_OFFSET = tps ? new THREE.Vector3(-17, 12, 9) : new THREE.Vector3(-14, 18, 7);
+// 霧（空気の遠近）：遠いほど青みがかった地平の色に近づく。肩越しでは門越しの天守（約 60m 先）に薄くかかる程度から
+scene.fog = tps ? new THREE.Fog(SKY.haze, 25, 420) : new THREE.Fog(SKY.horizon, 32, 70);
+// 日差し：カメラ（開始時は北を向く）の左うしろ＝西南の低い所から（晴れた午後遅く。長い影が道の奥へ斜めに落ちる）。
+// 見下ろしのときはこれまでの高さ
+const SUN_OFFSET = tps ? new THREE.Vector3(-13, 11, 14) : new THREE.Vector3(-14, 18, 7);
 const sky = makeSky(SUN_OFFSET);
 scene.add(sky, makeHills());
 const pmrem = new THREE.PMREMGenerator(renderer);
@@ -71,12 +73,14 @@ if (!low) {
     const env = new THREE.Scene();
     env.add(makeSky(SUN_OFFSET));
     scene.environment = pmrem.fromScene(env, 0.04, 1, 2000).texture;
-    scene.environmentIntensity = 0.45;
+    // 映り込みは弱く（陰を明るく灰色にしない。陰の明るさは主に青い空の光で決める）
+    scene.environmentIntensity = 0.3;
 } else {
     hemiBoost = 0.25;
 }
 
-const sun = new THREE.DirectionalLight(tps ? '#ffe2bd' : '#fff0d8', tps ? 3.4 : 2.7);
+// 肩越し：低い日の暖かい色で強く（日なたをはっきり明るく）
+const sun = new THREE.DirectionalLight(tps ? '#ffd29e' : '#fff0d8', tps ? 4.6 : 2.7);
 sun.castShadow = true;
 sun.shadow.mapSize.set(low ? 1024 : 2048, low ? 1024 : 2048);
 // 影の範囲：肩越しでは前方に広く（主人公の少し先を中心に）
@@ -84,21 +88,25 @@ const S = tps ? 20 : 15;
 Object.assign(sun.shadow.camera, { left: -S, right: S, top: S, bottom: -S, near: 1, far: 80 });
 sun.shadow.bias = -0.0004;
 sun.shadow.normalBias = 0.03;
-sun.shadow.radius = 3;
+sun.shadow.radius = tps ? 2 : 3;
 scene.add(sun, sun.target);
 // 空と地面の照り返し：肩越しでは地面の照り返しを暖かく（土の道の色）
-const hemi = tps ? new THREE.HemisphereLight('#d6dde2', '#8c7153', 0.8 + hemiBoost) : new THREE.HemisphereLight('#cfdcea', '#7a6750', 1.0 + hemiBoost);
+// 肩越し：空の光は青く弱く（陰は深いが青みがあり形が読める）、地面の照り返しは土の色
+const hemi = tps ? new THREE.HemisphereLight('#9ab8e0', '#7a5e42', 0.55 + hemiBoost) : new THREE.HemisphereLight('#cfdcea', '#7a6750', 1.0 + hemiBoost);
 scene.add(hemi);
 
 const TPS_FOV = 50;
 const camera = new THREE.PerspectiveCamera(tps ? TPS_FOV : CAMERA.fov, 1, tps ? 0.1 : 0.5, 2000);
 /** 肩越しのカメラの向き（ドラッグで変わる）。初めは城門の方（北）を見る */
 const orbit = createOrbit(START.yaw, START.pitch);
+/** 画面の仕上げ（物の陰・色の整え）。画質「低」では使わない */
+const post: Post | null = low ? null : createPost(renderer, scene, camera);
 
 function resize(): void {
     const w = view.clientWidth || window.innerWidth;
     const h = view.clientHeight || window.innerHeight;
     renderer.setSize(w, h, false);
+    post?.setSize(w, h);
     camera.aspect = w / h;
     // 縦に狭い画面（スマホ横向き）でも、上下の見える範囲が狭くなりすぎないよう少し引く
     camera.fov = (tps ? TPS_FOV : CAMERA.fov) * (w / h < 1.6 ? 1.12 : 1);
@@ -582,7 +590,7 @@ function advance(dt: number, raw: number, ix: number, iy: number): void {
     v.mixer.update(dt);
     placeCamera(1 - Math.exp(-6 * dt), dt);
     fadeOccluders(dt);
-    renderer.render(scene, camera);
+    renderNow();
     if (showFps) {
         // 表示する fps は実際の時間で数える（1 フレームの上限 0.1 秒で切り詰めた時間ではなく）
         fpsTime += raw;
@@ -594,6 +602,12 @@ function advance(dt: number, raw: number, ix: number, iy: number): void {
             fpsFrames = 0;
         }
     }
+}
+
+/** 今のカメラで 1 コマ描く（画質「高」は仕上げを通す） */
+function renderNow(): void {
+    if (post) post.render();
+    else renderer.render(scene, camera);
 }
 
 start().catch((e: unknown) => {
@@ -625,6 +639,8 @@ if (import.meta.env.DEV) {
             step(dt: number, ix: number, iy: number) { advance(dt, dt, ix, iy); },
             /** 確認用：実際のキー・スティックの入力のまま、決まった時間だけ進める */
             stepInput(dt: number) { advance(dt, dt, ...readInput()); },
+            /** 確認用：今のカメラで 1 コマ描く（決まったカメラで撮るとき。仕上げも通す） */
+            renderNow,
         },
     });
 }
