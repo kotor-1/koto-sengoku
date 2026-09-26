@@ -9,6 +9,7 @@
 | 既存版への影響 | なし。既存の `npm run dev` / `build` / `test` は 2D 版のまま。3D 版は別のコマンド・別の出力先（`dist-proto3d/`） |
 | 起動 | `npm run proto3d:dev` → http://localhost:8090/ （`?fps` で速さ、`?q=low` で画質「低」、`?view=top` でこれまでの斜め見下ろしの固定カメラ、`?hero=old` で旧の主人公） |
 | 確認用 URL（非公開） | https://claude.ai/artifact/VeuwbhdPeu1oVmXh3TAFJC （本番ビルド。2D 版の URL とは別のページ。以前の https://claude.ai/artifact/SnZ83D396bACUB728hCpp8 は、モデルを読み込めず表示できなかった）。この置き場所は `.glb` を配れず、`data:` の URL も読み込めないため、glTF（JSON 形式）に変換し、質感の画像は別ファイルにして置く（`proto3d/tools/glb-to-gltf.mjs`、`VITE_MODEL_EXT=.json` でビルド。埋め込んだ形のデータはページ側で戻す） |
+| 確認用 URL の版 | Version 7（版 ID 1790399155-950e）＝コミット f280ee4 の本番ビルド（Blender で作った城門前の素材）。前の版（肩越しの探索・コードで作った素材、コミット 85c1099）は版 ID 1790349356-2552 で、公開先の版の履歴から戻せる。置き場所の容量（1 版 64MB）のため、今の画面で読み込む素材だけを置き、中身が同じ画像は変換で 1 つにまとめる（`glb-to-gltf.mjs <入力> <出力> 素材名…`） |
 
 ## 方針の更新（2026-09-25）
 

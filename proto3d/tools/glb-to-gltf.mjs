@@ -2,12 +2,16 @@
 // .glb を配れない置き場所向け（claude.ai の非公開ページなど）。
 // 質感の画像は別のファイル（.jpg / .png）に出し、形のデータからは外す（同じ画像を 2 回配らない）。その置き場所では data: の URL を読み込めないため、
 // 形のデータ（base64）はページ側（main.ts）で自分で戻し、画像は同じ場所のファイルとして読む。
-// 使い方: node proto3d/tools/glb-to-gltf.mjs <入力フォルダ> <出力フォルダ>
+// 中身がまったく同じ画像（町家どうしで共通の材質など）は 1 つのファイルにまとめ、同じファイルを指す（置き場所の容量のため）。
+// 使い方: node proto3d/tools/glb-to-gltf.mjs <入力フォルダ> <出力フォルダ> [変換する素材の名前 ...（省略するとすべて）]
+import { createHash } from 'node:crypto';
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 
-const [src, dst] = process.argv.slice(2);
+const [src, dst, ...only] = process.argv.slice(2);
 mkdirSync(dst, { recursive: true });
-for (const f of readdirSync(src).filter((n) => n.endsWith('.glb'))) {
+/** 画像の中身（ハッシュ）→ 書き出したファイル名 */
+const written = new Map();
+for (const f of readdirSync(src).filter((n) => n.endsWith('.glb') && (only.length === 0 || only.includes(n.replace(/\.glb$/, ''))))) {
   const b = readFileSync(`${src}/${f}`);
   if (b.toString('ascii', 0, 4) !== 'glTF') throw new Error(`${f} は GLB ではありません`);
   const jsonLen = b.readUInt32LE(12);
@@ -20,8 +24,14 @@ for (const f of readdirSync(src).filter((n) => n.endsWith('.glb'))) {
     if (img.bufferView === undefined) return;
     const v = json.bufferViews[img.bufferView];
     const ext = img.mimeType === 'image/png' ? 'png' : 'jpg';
-    const file = `${name}-${i}.${ext}`;
-    writeFileSync(`${dst}/${file}`, bin.subarray(v.byteOffset ?? 0, (v.byteOffset ?? 0) + v.byteLength));
+    const bytes = bin.subarray(v.byteOffset ?? 0, (v.byteOffset ?? 0) + v.byteLength);
+    const hash = createHash('sha256').update(bytes).digest('hex');
+    let file = written.get(hash);
+    if (!file) {
+      file = `${name}-${i}.${ext}`;
+      writeFileSync(`${dst}/${file}`, bytes);
+      written.set(hash, file);
+    }
     delete img.bufferView;
     delete img.mimeType;
     img.uri = file;
