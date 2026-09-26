@@ -2,10 +2,21 @@ import { launchBrowser } from '../../../e2e/lib.mjs';
 const BASE = process.env.BASE3D || 'http://localhost:8095';
 const browser = await launchBrowser();
 const page = await (await browser.newContext({ viewport: { width: 1280, height: 720 } })).newPage();
+page.setDefaultTimeout(900000);
 page.on('pageerror', (e) => console.log('pageerror', e.message));
-page.on('console', (m) => console.log('console', m.type(), m.text().slice(0, 300)));
-page.on('requestfailed', (r) => console.log('reqfail', r.url()));
 await page.goto(BASE + '/' + (process.env.QS || ''));
-try { await page.waitForFunction(() => window.__p3?.stats.readyMs > 0, null, { timeout: 180000 }); console.log('ready'); } catch (e) { console.log('timeout'); }
-console.log(await page.evaluate(() => document.getElementById('loading')?.textContent));
+await page.waitForFunction(() => window.__p3?.stats.readyMs > 0, null, { timeout: 600000 });
+const r = await page.evaluate(async () => {
+  const p = window.__p3; p.manual();
+  const gl = p.renderer.getContext();
+  const t = (f) => { const t0 = performance.now(); f(); gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array(4)); return Math.round(performance.now() - t0); };
+  const post = (await import('/src/post.ts')).lastPost.post;
+  const out = {};
+  out.plain1 = t(() => p.renderer.render(p.scene, p.camera));
+  out.plain2 = t(() => p.renderer.render(p.scene, p.camera));
+  out.post1 = t(() => p.renderNow());
+  out.post2 = t(() => p.renderNow());
+  return out;
+});
+console.log(JSON.stringify(r));
 await browser.close();

@@ -95,7 +95,7 @@ scene.add(sun, sun.target);
 const hemi = tps ? new THREE.HemisphereLight('#9ab8e0', '#7a5e42', 0.55 + hemiBoost) : new THREE.HemisphereLight('#cfdcea', '#7a6750', 1.0 + hemiBoost);
 scene.add(hemi);
 
-const TPS_FOV = 46;
+const TPS_FOV = 48;
 const camera = new THREE.PerspectiveCamera(tps ? TPS_FOV : CAMERA.fov, 1, tps ? 0.1 : 0.5, 2000);
 /** 肩越しのカメラの向き（ドラッグで変わる）。初めは城門の方（北）を見る */
 const orbit = createOrbit(START.yaw, START.pitch);

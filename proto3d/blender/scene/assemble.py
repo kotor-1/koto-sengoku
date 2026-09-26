@@ -36,7 +36,7 @@ SCENE_MODELS = ['ground_v2', 'gate_v2', 'walls_v2', 'keep', 'machiya_a', 'machiy
 BACK_TREES = [(-27, -16, 0.3, 1.1), (26, -22, 1.7, 1.2), (-26, 12, 2.6, 1.0), (27, 9, 1.1, 0.95)]
 SKY = dict(zenith='#4f7fb8', horizon='#c9d6db', glow='#ffdcae')
 FOG = (45.0, 480.0)
-FOLLOW = dict(height=1.58, shoulder=0.45, distance=3.3, pitch0=0.1)
+FOLLOW = dict(height=1.55, shoulder=0.4, distance=2.3, pitch0=0.06)
 
 
 def lin(hexs: str) -> tuple[float, float, float]:

@@ -1,10 +1,10 @@
 {
   "_about": "城門前の一場面の配置（Blender の制作スクリプトとゲームの共通の約束）。数値はすべてゲームの座標（メートル）：x 東、y 上、z 南（北は -z）。Blender では (x, y, z)_game = (X, Z, -Y)_blender（lib/common.py の g2b / b2g）。",
   "sun_offset_game": [-17, 12, 9],
-  "hero_start": [-1.3, -4.6],
-  "hero_start_yaw": 0.30,
+  "hero_start": [1.8, -4.4],
+  "hero_start_yaw": 0.68,
   "hero_start_pitch": -0.03,
-  "hero_start_heading": 2.97,
+  "hero_start_heading": 3.3,
   "_hero_start_note": "開始の位置と向き。肩越しのカメラの初めの向きは yaw 0.33（北北西）・pitch -0.06（わずかに見上げる）＝ follow.ts の createOrbit(yaw, pitch) にそのまま渡す値（範囲 pitchMin -0.35〜pitchMax 0.8 の中）。門が画面の右 3 分の 1 に屋根まで大きく入り、桜と塀が中央左、町家 A が左の端。主人公は門の方（北北東）を向く：ゲームの rotation.y = hero_start_heading。",
   "road": {
     "center_x": 0,
@@ -70,7 +70,7 @@
     { "name": "pine_big", "pos": [10.8, -7.5], "note": "東の土塀の内側（城内）の大きな黒松。塀の上に見える。" },
     { "name": "pine_back", "pos": [-4.8, -18.5], "note": "門の北（城内）の黒松。門越しに見える。" }
   ],
-  "keep": { "pos": [9, -115], "note": "遠景の天守（歩けない。形だけ）。門越しに見える。" },
+  "keep": { "pos": [-22, -88], "note": "遠景の天守（歩けない。形だけ）。開始の画面（道の東寄りから北西を見る）で、門の内側の右寄りに見える位置。手前 26 m の本丸の石垣・土塀が門越しの中景になる。" },
   "ditches": [
     { "name": "west", "x": [-4.1, -3.72], "z": [-9.6, 7.8], "note": "西の町家の前の石組みの側溝。入口の前は板石で渡す。" },
     { "name": "east", "x": [3.72, 4.1], "z": [-11.4, 11.0], "note": "東の側溝。" }
