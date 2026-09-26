@@ -56,8 +56,11 @@ DRIP = 0.81             # 塀の笠の雨落ち（中心から）
 EW_Z = -12.0
 NS_X = 7.6
 NS_Z = (-12.0, 3.0)
-FENCE_Z = -7.35         # 空き地の南の垣（路地 z -7.2〜-5.6 は空ける）
+# 西の町家（A・B）の置き場所は scene.json の houses。下の西側の決め打ちの z は、もとの配置（A の北の妻 z -5.6）からのずれ DZW だけずらす
+DZW = next(h for h in L['houses'] if h['name'] == 'machiya_a')['footprint']['z0'] - (-5.6)
+FENCE_Z = -7.35 + DZW   # 空き地の南の垣（路地 A の北の妻の手前 1.6 m は空ける）
 FENCE_X = -4.45         # 空き地の道側の垣
+ALLEY = (-7.2 + DZW, -5.6 + DZW)   # 町家 A の北の路地
 TURF_WS = -10.75        # 塀ぎわの草の南の端
 TURF_WN = -13.25        # 城内側の塀ぎわの草の北の端
 TURF_NSW = 6.3          # 東の塀（南北）の西側の草の西の端
@@ -90,15 +93,15 @@ for _d in L['ditches']:
         chan = (hole[0] + CURB_W['road'], hole[1] - CURB_W['house'])
     DITCH[_d['name']] = dict(side=side, x=tuple(_d['x']), hole=hole, chan=chan, z=(_d['z'][0], _d['z'][1]))
 # 入口の前の渡り石（z の範囲）
-BRIDGES = {'west': [(-3.55, -1.5), (3.49, 5.31)], 'east': [(6.1, 8.5)]}
+BRIDGES = {'west': [(-3.55 + DZW, -1.5 + DZW), (3.49 + DZW, 5.31 + DZW)], 'east': [(6.1, 8.5)]}
 # 雨落ちの砂利の帯（ゲームの (x, z) の 2 点。幅 0.2 m）：塀の笠の下（町側・城内側）と町家の妻・裏の軒の下
 DRIP_LINES = [
     ((-17.9, EW_Z + DRIP), (-2.95, EW_Z + DRIP)), ((2.95, EW_Z + DRIP), (NS_X - DRIP - 0.1, EW_Z + DRIP)),
     ((NS_X - DRIP, EW_Z + DRIP - 0.1), (NS_X - DRIP, NS_Z[1] - 0.1)), ((NS_X + DRIP, EW_Z + DRIP - 0.1), (NS_X + DRIP, NS_Z[1] - 0.1)),
     ((-17.9, EW_Z - DRIP), (-2.95, EW_Z - DRIP)), ((2.95, EW_Z - DRIP), (17.9, EW_Z - DRIP)),
-    ((-10.7, -6.02), (-5.25, -6.02)),                        # 町家 A の北の妻
+    ((-10.7, -6.02 + DZW), (-5.25, -6.02 + DZW)),            # 町家 A の北の妻
     ((4.9, 3.43), (6.92, 3.43)), ((8.28, 3.43), (10.0, 3.43)),   # 町家 D の北（板塀の所は空ける）
-    ((-11.3, 11.87), (-5.6, 11.87)), ((4.9, 11.2), (10.0, 11.2)),
+    ((-11.3, 11.87 + DZW), (-5.6, 11.87 + DZW)), ((4.9, 11.2), (10.0, 11.2)),
 ]
 
 
@@ -242,7 +245,7 @@ def height(x, z):
     bump = 0.012 * F_BUMP(x, z) + 0.009 * F_BUMP2(x, z)
     y = y + bump * bump_fade(x, z)
     # 空き地の小さな起伏
-    lot = sstep(-4.6, -5.4, x) * sstep(-11.4, -10.9, z) * sstep(-7.35, -7.9, z) * sstep(-18.2, -17.5, x)
+    lot = sstep(-4.6, -5.4, x) * sstep(-11.4, -10.9, z) * sstep(FENCE_Z, FENCE_Z - 0.55, z) * sstep(-18.2, -17.5, x)
     y = y + lot * 0.03 * (F_LOT(x, z) + 0.4)
     y = y + 0.008 * is_turf(x, z)
     # 建物の足元：塀・門の石は 0 から、町家の三和土は 0.03 なので、その辺りは平らに
@@ -295,9 +298,9 @@ def grid_lines():
         xk += [b[0], b[1], a[0], a[1]]
     for s in (-1, 1):
         xk += [s * RUT_X + o for o in (-0.26, -0.13, 0.0, 0.13, 0.26)]
-    zk = [AREA['z0'], AREA['z1'], EW_Z - WALL_HALF, EW_Z, EW_Z + WALL_HALF, TURF_WS, TURF_WN, FENCE_Z, -5.6, NS_Z[1], 12.0,
+    zk = [AREA['z0'], AREA['z1'], EW_Z - WALL_HALF, EW_Z, EW_Z + WALL_HALF, TURF_WS, TURF_WN, FENCE_Z, -5.6 + DZW, NS_Z[1], 12.0,
           EW_Z + WALL_HALF + 0.2, EW_Z + WALL_HALF + 0.4, EW_Z - WALL_HALF - 0.2, EW_Z - WALL_HALF - 0.4,
-          -5.8, -6.0, 3.6, 3.4, 11.6, 11.8, 11.0, 11.2]
+          -5.8 + DZW, -6.0 + DZW, 3.6 + DZW, 3.4 + DZW, 11.6 + DZW, 11.8 + DZW, 11.0, 11.2]
     for d in DITCH.values():
         zk += list(d['z'])
     for b in HOUSE_BODY:
@@ -745,6 +748,9 @@ ROCKS = [  # ゲームの (x, z, 半径, 高さの比, 細かさ)
     (-12.6, -10.55, 0.5, 0.45, 1), (-9.9, -8.05, 0.34, 0.5, 1), (-15.2, -8.3, 0.4, 0.45, 1),
     (6.72, -4.2, 0.34, 0.5, 1), (6.75, 0.9, 0.3, 0.5, 1), (-6.4, -14.3, 0.46, 0.5, 1), (5.4, -14.6, 0.42, 0.5, 1),
 ]
+# 町家・路地に掛かる石は置かない（町家の置き場所を動かしたとき）
+ROCKS = [r for r in ROCKS if not any(in_rect(r[0], r[1], h, r[2] + 0.2) for h in HOUSE_BODY + HOUSE_APRON)
+         and not (ALLEY[0] - 0.3 < r[1] < ALLEY[1] + 0.3 and -11.0 < r[0] < -3.0)]
 
 
 def rocks(bm, col_layer):
@@ -1061,7 +1067,7 @@ def pebble_spots(rng):
     for z in np.arange(-10.8, 2.6, 2.2):
         centres.append((NS_X - WALL_HALF - rng.uniform(0.06, 0.32), z + rng.uniform(-0.4, 0.4)))
     for x in np.arange(-10.0, -5.3, 1.6):
-        centres.append((x + rng.uniform(-0.3, 0.3), -5.6 - rng.uniform(0.05, 0.3)))
+        centres.append((x + rng.uniform(-0.3, 0.3), -5.6 + DZW - rng.uniform(0.05, 0.3)))
     for s in (-1, 1):
         centres.append((s * rng.uniform(2.95, 3.1), -11.2))
     for cx, cz in centres[::2]:
@@ -1217,7 +1223,8 @@ def cyl(bm, p0, p1, r, seg=6, cap_top=True):
     return r0, r1
 
 
-FENCE_RUNS = [((FENCE_X, -11.3), (FENCE_X, FENCE_Z)), ((FENCE_X, FENCE_Z), (-15.6, FENCE_Z))]
+# 空き地が狭い（町家 A が塀に近い）ときは垣を作らない（路地をふさがない）
+FENCE_RUNS = [((FENCE_X, -11.3), (FENCE_X, FENCE_Z)), ((FENCE_X, FENCE_Z), (-15.6, FENCE_Z))] if FENCE_Z > -10.0 else []
 
 
 def build_fence():
@@ -1309,7 +1316,7 @@ def _plant_ok(x, z, avoid_road=True):
         return False
     if any(in_rect(x, z, r, 0.02) for r in FOOTINGS):
         return False
-    if -7.2 <= z <= -5.6 and x < -3.0 and not (z > -5.95):
+    if ALLEY[0] <= z <= ALLEY[1] and x < -3.0 and not (z > ALLEY[1] - 0.35):
         return False
     if abs(z - FENCE_Z) < 0.12 and x < FENCE_X + 0.1 or abs(x - FENCE_X) < 0.12 and z < FENCE_Z + 0.1:
         return False
@@ -1324,7 +1331,7 @@ def plant_spots(joints):
     rng = np.random.default_rng(81)
     spots = [('shrub_azalea', -13.6, -10.85, 1.0), ('shrub_azalea', -10.3, -10.95, 0.85), ('shrub_azalea', 5.3, -11.0, 0.8),
              ('shrub_azalea', 6.62, -1.9, 0.85),
-             ('shrub_fern', -5.2, -10.8, 0.9), ('shrub_fern', 6.62, -10.95, 0.85), ('shrub_fern', -8.8, -7.75, 0.8)]
+             ('shrub_fern', -5.2, -10.8, 0.9), ('shrub_fern', 6.62, -10.95, 0.85), ('shrub_fern', -8.8, -7.75 + DZW, 0.8)]
     grass = ('grass_a', 'grass_b', 'grass_c')
 
     def cluster(cx, cz, n, rad=0.28, smin=0.55, smax=1.05, avoid_road=True):
@@ -1350,8 +1357,11 @@ def plant_spots(joints):
     for x in (-9.5, -5.2, 4.4):
         cluster(x, EW_Z - WALL_HALF - rng.uniform(0.08, 0.3), 3)
     for x in (-9.4, -7.1):
-        cluster(x, -5.75, 3, rad=0.2)
-    clusters(4, -17.5, -5.0, -11.0, -7.7, nmin=3, nmax=6, smin=0.7, smax=1.2)        # 空き地
+        cluster(x, -5.75 + DZW, 3, rad=0.2)
+    if FENCE_Z > -10.0:
+        clusters(4, -17.5, -5.0, -11.0, FENCE_Z - 0.35, nmin=3, nmax=6, smin=0.7, smax=1.2)        # 空き地
+    else:
+        clusters(4, -17.5, -11.4, -11.0, -4.0, nmin=3, nmax=6, smin=0.7, smax=1.2)        # 町家 A の裏
     # 縁石の目地（約 2 割。見える所だけ）から小さな草
     for x, z, kind, s in joints:
         if -16.0 < z < 8.0 and rng.random() < 0.2:
@@ -1427,7 +1437,7 @@ def main(argv=None):
     far = build_far()
     stone, joints = build_stones()
     bed, fill_rng = build_ditch_beds()
-    fence = build_fence()
+    fence = build_fence() if FENCE_RUNS else []
     plants = build_plants(joints)
     overlay, pts, ov_cols, ov_V = build_overlay()
     ground = [terrain, far, stone, bed, *fence, *plants]

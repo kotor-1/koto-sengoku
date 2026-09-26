@@ -17,7 +17,7 @@ describe('3D 比較版：肩越しのカメラ', () => {
     it('初めは主人公の後ろ（南）から、城門の方（北）を見る。少し見下ろし、肩の上から', () => {
         const o = createOrbit(0);
         const pose = settle(o, START.x, START.z);
-        expect(pose.position.z).toBeGreaterThan(START.z + 2.5);
+        expect(pose.position.z).toBeGreaterThan(START.z + FOLLOW.distance * 0.9);
         expect(pose.target.z).toBeLessThan(START.z - 5);
         expect(pose.position.y).toBeGreaterThan(FOLLOW.height);
         expect(pose.position.y).toBeLessThan(FOLLOW.height + 1.2);

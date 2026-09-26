@@ -46,7 +46,10 @@ export function createPost(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ca
     const composer = new EffectComposer(renderer, target);
     composer.addPass(new RenderPass(scene, camera));
     const depth = (composer.readBuffer as THREE.WebGLRenderTarget).depthTexture!;
-    const gtao = new GTAOPass(scene, camera, size.x, size.y, { depthTexture: depth });
+    // 深さは場面を描いたときのものを使い、向き（法線）は深さから求める（場面をもう 1 回描かない）。
+    // コンストラクタに深さを渡すと r186 では内部の描き先が作られず失敗するので、作った後で差し替える
+    const gtao = new GTAOPass(scene, camera, size.x, size.y);
+    gtao.setGBuffer(depth, undefined);
     gtao.updateGtaoMaterial({ radius: 0.9, distanceExponent: 1.6, thickness: 1.2, scale: 1.25, samples: 12, distanceFallOff: 1.0, screenSpaceRadius: false });
     gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, radiusExponent: 1, rings: 2, samples: 12 });
     // 陰だけを求め、画面への重ね合わせは仕上げの 1 回（下）でまとめて行う
