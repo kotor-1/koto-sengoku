@@ -96,6 +96,85 @@ def build_turf(force=False) -> dict:
     return paths
 
 
+ROAD_TILE = (4.0, 4.0)
+
+
+def gen_road(n=2048, seed=811, tile=ROAD_TILE):
+    """
+    踏み固めた道の土（地面だけの画像。共有の earth_road は城門・町家も使うので変えない）。
+    点々の小石は描かない：大きさ 5〜10 cm の締まった土の板（ところどころ細いひびと段差）、
+    道の向き（v）に伸びた擦れ跡、細かい砂の粒。乾き・湿りの色は頂点色、粗さは地面の ORM（lightmap）で。
+    """
+    sh = (n, n)
+    rng = np.random.default_rng(seed)
+    low = snoise(sh, seed + 1, fmin=1, fmax=6, beta=1.4)          # 0.7〜4 m
+    mid = snoise(sh, seed + 2, fmin=6, fmax=40, beta=1.1)         # 10〜70 cm
+    small = snoise(sh, seed + 3, fmin=40, fmax=220, beta=0.8)     # 2〜10 cm
+    fine = snoise(sh, seed + 4, fmin=250, fmax=1600, beta=0.3)    # 砂の粒
+    scuff = snoise(sh, seed + 5, fmin=6, fmax=160, beta=1.0, aniso=(1.0, 5.0))   # v に長い擦れ跡
+    # 土の地の色：低い彩度の灰みの黄土。明暗は大きいもの主体（点にしない）
+    t = np.clip(0.5 + 0.08 * low + 0.06 * mid, 0, 1)   # 大きなむらは弱く（日陰でしみに見えないように）
+    col = mix(rgb(132, 118, 101), rgb(178, 164, 143), t)
+    h = 0.0016 * low + 0.0035 * mid + 0.0004 * small
+    # 締まった土の段：乾いた表面が割れて少し浮いた、輪郭の不揃いな板（10〜40 cm）。縁は段差、下の側に陰
+    crust = smoothstep(-0.6, 0.35, 0.75 * low + 0.55 * snoise(sh, seed + 6, fmin=3, fmax=12, beta=1.2))
+    warpn = snoise(sh, seed + 8, fmin=60, fmax=400, beta=0.8)
+    n1 = 0.85 * snoise(sh, seed + 7, fmin=5, fmax=40, beta=1.0) + 0.22 * small + 0.10 * warpn
+    terr = smoothstep(0.15, 0.24, n1) * 0.0022 + smoothstep(0.85, 0.93, n1) * 0.0016
+    terr *= crust
+    h += terr
+    # 段の縁：下の側（段の外）に細い陰、上の角は少し明るい（乾いて白っぽい）
+    tb = blur(terr, 4)
+    under = np.clip((tb - terr) / 0.0012, 0, 1)
+    over = np.clip((terr - tb) / 0.0012, 0, 1)
+    col *= (1 - 0.12 * under + 0.05 * over)[..., None]
+    col *= (1 + 0.012 * (terr / 0.0038))[..., None]
+    # 小さな土のふくらみ（2〜10 cm、明暗 ±3%）
+    h += 0.0012 * small
+    col *= (1 + 0.03 * small)[..., None]
+    # 砂ぼこりのたまり（20 cm〜1 m、輪郭のはっきりした淡い所）と、踏み締められて少し暗い所（点ではなく面）
+    dn = 0.85 * snoise(sh, seed + 11, fmin=2, fmax=12, beta=1.2) + 0.12 * small + 0.1 * warpn
+    dust = smoothstep(0.35, 1.0, dn)
+    col = mix(col, col * 0.55 + rgb(196, 184, 164) * 0.5, dust * 0.25)
+    h += 0.0007 * dust
+    cn = 0.85 * snoise(sh, seed + 12, fmin=2, fmax=12, beta=1.2) + 0.12 * small
+    comp = smoothstep(0.4, 1.0, cn) * (1 - dust)
+    col *= (1 - 0.04 * comp)[..., None]
+    h -= 0.0006 * comp
+    # 擦れ跡：踏まれて磨かれた筋は少し明るく低い
+    sc = np.clip(scuff - 0.6, 0, None)
+    h -= 0.0009 * sc
+    col *= (1 + 0.045 * np.clip(sc, 0, 1.5))[..., None]
+    # 砂の粒：2〜4 mm の明るい粒と暗い粒（遠目には平均されて点に見えない）と、細かなむら ±3%
+    gr = blur(rng.random(sh).astype(np.float32), 1)
+    gd = smoothstep(0.33, 0.27, gr)
+    gl = smoothstep(0.69, 0.75, gr)
+    col *= (1 - 0.16 * gd + 0.14 * gl)[..., None]
+    h += 0.0003 * gd + 0.0004 * gl
+    col *= (1 + 0.03 * fine)[..., None]
+    h += 0.00015 * fine
+    # ごくまばらな半ば埋まった小石（1〜2 cm、土をかぶってコントラストは低い）
+    pal = [rgb(150, 142, 130), rgb(126, 118, 108), rgb(160, 150, 134)]
+    pc, cov, dome = mats._pebbles(sh, seed + 10, int(tile[0] / 0.05), 0.035, 0.22, 0.36, pal, flat=1.6)
+    col = mix(col, mix(pc, col, 0.45), cov * 0.8)
+    h += 0.003 * dome
+    rough = np.clip(0.9 + 0.03 * fine + 0.05 * dust - 0.05 * comp - 0.05 * np.clip(sc, 0, 1) - 0.06 * cov, 0.7, 1.0)
+    return dict(albedo=np.clip(col, 0, 1), height=h, rough=rough)
+
+
+def build_road(force=False) -> dict:
+    paths = {k: TEX / f'road_{k}.png' for k in ('albedo', 'normal', 'orm')}
+    if not force and all(p.exists() for p in paths.values()):
+        return paths
+    d = gen_road()
+    _save_png(paths['albedo'], d['albedo'])
+    _save_png(paths['normal'], _height_to_normal(d['height'], ROAD_TILE, 1.0))
+    r = d['rough']
+    orm = np.stack([np.ones_like(r), r, np.zeros_like(r)], -1)
+    _save_png(paths['orm'], mats._downsample2(orm))
+    return paths
+
+
 def to_jpeg(img: bpy.types.Image, quality=80) -> bpy.types.Image:
     """画像を JPEG のファイルに直して差し替える（GLB の書き出しを AUTO にしても JPEG で入る）"""
     if img.file_format == 'JPEG':
@@ -186,3 +265,4 @@ if __name__ == '__main__':
     reset()
     p = build_turf(force='--force' in sys.argv)
     print(p)
+    print(build_road(force='--force' in sys.argv or '--road' in sys.argv))

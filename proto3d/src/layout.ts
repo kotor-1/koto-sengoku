@@ -5,6 +5,7 @@
  * 素材と一緒に書き出した proto3d/blender/**\/*.meta.json から読む（無ければ scene.json の大まかな形だけ）。
  */
 import scene from '../blender/scene.json';
+import groundHeight from '../blender/scene/ground_height.json';
 
 /** 城門：中心、通れる幅の半分、鏡柱の中心の x、塀の端 */
 export const GATE = { x: scene.gate.center[0], z: scene.gate.center[1], halfOpening: scene.gate.opening_half, pillarX: scene.gate.pillar_x, wallEnd: 18 } as const;
@@ -160,3 +161,23 @@ export function houseRect(p: HousePlace, r: Rect): Rect {
 }
 /** 旧：土の道 */
 export const ROAD = { halfWidth: 3.95, z0: -40, z1: 30 } as const;
+
+// ---------------------------------------------------------------------------
+// 地面の高さ（Blender の地面から書き出した格子。proto3d/blender/scene/ground_height.py）
+// ---------------------------------------------------------------------------
+
+/** 地面の高さ（m）。主人公の足をここに置く（道の起伏は数 cm。格子の外は 0） */
+export function groundY(x: number, z: number): number {
+    const g = groundHeight;
+    const fx = (x - g.x0) / g.step;
+    const fz = (z - g.z0) / g.step;
+    if (fx < 0 || fz < 0 || fx > g.nx - 1 || fz > g.nz - 1) return 0;
+    const i = Math.min(Math.floor(fx), g.nx - 2);
+    const k = Math.min(Math.floor(fz), g.nz - 2);
+    const tx = fx - i;
+    const tz = fz - k;
+    const at = (ii: number, kk: number) => g.h[kk * g.nx + ii];
+    const a = at(i, k) * (1 - tx) + at(i + 1, k) * tx;
+    const b = at(i, k + 1) * (1 - tx) + at(i + 1, k + 1) * tx;
+    return (a * (1 - tz) + b * tz) / 1000;
+}

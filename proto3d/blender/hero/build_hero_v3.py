@@ -252,7 +252,8 @@ def build_parts():
     return P
 
 
-BUDGET = {'head': 5600, 'armL': 1850, 'armR': 1850, 'footL': 500, 'footR': 500, 'hair': 2100, 'bun': 1100, 'kosode': 5450, 'knotB': 360}
+# 小袖は厚み（solidify）を付けず両面の材質にし、その分の三角形をしわの形へ回す
+BUDGET = {'head': 5600, 'armL': 1850, 'armR': 1850, 'footL': 500, 'footR': 500, 'hair': 2100, 'bun': 1100, 'kosode': 10500, 'knotB': 360}
 
 
 def decimate(P):
@@ -281,7 +282,7 @@ def materials(P):
         'hair': tmat('Hair', 'hair', 0.5),
         'wisp': U.principled('Hair_wisps', (1, 1, 1), 0.55, base_tex=wisp, uv_scale=1, alpha_clip=True, double=True),
         'cord': U.principled('Motoyui_paper', (0.50, 0.46, 0.39), 0.6),
-        'kosode': tmat('Kosode_indigo_hemp', 'indigo', 0.85),
+        'kosode': tmat('Kosode_indigo_hemp', 'indigo', 0.85, double=True),   # 厚みなしの 1 枚の布（袖口の中も見える）
         'juban': tmat('Juban_linen', 'linen', 0.85),
         'tabi': tmat('Tabi_cotton', 'linen', 0.9, nstr=0.6),
         'hakama': tmat('Hakama_check', 'hakama', 0.8),
@@ -388,6 +389,34 @@ def bake_ao(P, samples=48, distance=0.12):
     return res
 
 
+def fold_shade(ob, depth=0.30):
+    """しわの谷を暗く・山をそのまま（面のくぼみ：近くの頂点の平均との差を法線へ。約 3cm の広さでならす）。
+    日なたでも日陰でも、布の寄りが形として読めるように。値は 1-depth .. 1"""
+    V = U.verts_game(ob)
+    n = len(V)
+    e = np.array([ed.vertices[:] for ed in ob.data.edges])
+    Nb = np.zeros(n * 3, np.float32)
+    ob.data.vertices.foreach_get('normal', Nb)
+    N = U.b2g_arr(Nb.reshape(-1, 3))
+    N /= np.maximum(np.linalg.norm(N, axis=1, keepdims=True), 1e-9)
+    deg = np.bincount(e.ravel(), minlength=n).astype(float)
+
+    def avg(X):
+        acc = np.zeros_like(X)
+        np.add.at(acc, e[:, 0], X[e[:, 1]])
+        np.add.at(acc, e[:, 1], X[e[:, 0]])
+        return acc / np.maximum(deg, 1)[:, None]
+    M = V.copy()
+    for _ in range(6):              # 周りの平均（数 cm の広さ）
+        M = avg(M) * 0.8 + M * 0.2
+    c = ((M - V) * N).sum(1)        # + は谷（面が周りより奥）
+    for _ in range(2):
+        c = avg(c[:, None])[:, 0] * 0.6 + c * 0.4
+    s = np.percentile(np.abs(c), 95) + 1e-9
+    t = np.clip(c / s, -1, 1)
+    return 1.0 - depth * np.clip(t, 0, 1) ** 0.8 + 0.04 * np.clip(-t, 0, 1) - 0.04
+
+
 def write_colors(P, tint, ao):
     """最終の頂点の色 COLOR_0 = 色味 × AO（弱め）。three.js は線形の値として掛ける"""
     strength = {'hakama': 0.65, 'kosode': 0.8, 'head': 0.55, 'armL': 0.5, 'armR': 0.5, 'hair': 0.6, 'clumps': 0.5, 'obi': 0.55}
@@ -402,6 +431,8 @@ def write_colors(P, tint, ao):
             a = np.clip(ao[k], 0, 1)
             a = 0.30 + 0.70 * a        # 真っ黒にはしない
             col *= (1 - s + s * a)[:, None]
+        if k == 'kosode':
+            col *= fold_shade(ob, 0.42)[:, None]
         if 'vcol' in ob.keys():
             col = np.array(ob['vcol'], float).reshape(-1, 3)
         ca = me.color_attributes.new('Col', 'FLOAT_COLOR', 'POINT')
@@ -714,7 +745,7 @@ def main():
     tint = skin_tint(P)
     ao = bake_ao(P)
     write_colors(P, tint, ao)
-    for k, th in (('kosode', 0.0025), ('eri', 0.004), ('juban', 0.002), ('hakama', 0.004)):
+    for k, th in (('eri', 0.004), ('juban', 0.002), ('hakama', 0.004)):
         sm = P[k].modifiers.new('solid', 'SOLIDIFY')
         sm.thickness = th
         sm.offset = -1

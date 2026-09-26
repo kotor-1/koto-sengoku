@@ -100,11 +100,16 @@ def _check_clearance():
     return worst
 
 
-def pillar(g, key, cx, cy, w, d, z0, z1, rng, *, ch=0.014, nchk=(3, 0, 2, 4), dz=0.6, top_cap=True):
+def pillar(g, key, cx, cy, w, d, z0, z1, rng, *, ch=0.014, nchk=(3, 0, 2, 4), dz=0.6, top_cap=True, edge_key=None, irr=0.0, col_step=None,
+           face_keys=None):
     """
     太い角柱。面（南・東・北・西の順）ごとに別の格子を作り、干割れのところだけ縦・横に細かく割る。面どうしは面取りの帯で
     n 角形としてつなぐ（T 字の継ぎ目を作らない）。干割れ：深さ 25〜40 mm、幅 8〜15 mm、長さ 1〜3 m、両端は浅く。
-    nchk は面ごとの割れの数（見えない面は 0）。面取り ch は摩耗した角（12〜15 mm）
+    nchk は面ごとの割れの数（見えない面は 0）。面取り ch は摩耗した角（12〜25 mm）。
+    edge_key を渡すと面取りの帯を別のキーにする（角の摩耗で少し明るい＝面の境目が読める）。
+    irr は手斧（ちょうな）で仕上げた面のゆるいうねりの振幅（m）。col_step（m）ごとに縦の分割を足し、面の中ほどだけ
+    法線方向へ動かす（角と面取りは動かさない）。平らな表示なので、日なたでは面がわずかな面の集まりとして読める。
+    face_keys は面（南・東・北・西）ごとのキー（None なら key）：雨と日に当たる面は風化して明るく灰色がかる
     """
     hx, hy = w / 2, d / 2
     panels = [((-hx + ch, -hy), (hx - ch, -hy), V((0, -1, 0))),
@@ -135,7 +140,16 @@ def pillar(g, key, cx, cy, w, d, z0, z1, rng, *, ch=0.014, nchk=(3, 0, 2, 4), dz
         for ci, (t, hw, za, zb, dep) in enumerate(cracks):
             cols += [(t - hw, None), (t, ci), (t + hw, None)]
         cols.append((L, None))
-        info.append(dict(a=a, b=b, n=n, L=L, cracks=cracks, rows=sorted(rows), cols=cols))
+        if col_step:
+            busy = [(c[0] - c[1] - 0.02, c[0] + c[1] + 0.02) for c in cracks]
+            for u in np.arange(col_step, L - 0.03, col_step):
+                if not any(lo < u < hi for lo, hi in busy):
+                    cols.append((float(u), None))
+            cols.sort(key=lambda c: c[0])
+        r2 = np.random.default_rng(int(abs(cx) * 1000 + abs(cy) * 10) * 7 + pi)   # 主の rng の並びは変えない
+        ph = r2.uniform(0, 2 * math.pi, 3)
+        lam = (r2.uniform(0.8, 1.2),)
+        info.append(dict(a=a, b=b, n=n, L=L, cracks=cracks, rows=sorted(rows), cols=cols, ph=ph, lam=lam))
     np_ = len(panels)
     vidx = {}
     verts = []
@@ -146,7 +160,7 @@ def pillar(g, key, cx, cy, w, d, z0, z1, rng, *, ch=0.014, nchk=(3, 0, 2, 4), dz
             vidx[k] = len(verts)
             verts.append(V((cx + x, cy + y, z)) + off)
         return vidx[k]
-    faces, want = [], []
+    faces, want, fkey = [], [], []
     for pi, P in enumerate(info):
         prev_rows = info[(pi - 1) % np_]['rows']
         next_rows = info[(pi + 1) % np_]['rows']
@@ -165,10 +179,18 @@ def pillar(g, key, cx, cy, w, d, z0, z1, rng, *, ch=0.014, nchk=(3, 0, 2, 4), dz
             x = a[0] + (b[0] - a[0]) * u / L
             y = a[1] + (b[1] - a[1]) * u / L
             off = V((0, 0, 0))
+            if irr and 0 < j < ncol - 1:
+                # 手斧のうねり：長手の波（0.8〜1.2 m と 1.6〜2.4 m）と、幅の方向のわずかな傾き。両端（角）で 0
+                su = math.sin(math.pi * u / L)
+                ph, lam = P['ph'], P['lam']
+                f = 0.6 * math.sin(2 * math.pi * z / lam[0] + ph[0]) * su + \
+                    0.4 * math.sin(2 * math.pi * z / (2 * lam[0]) + ph[1] + 1.4 * math.pi * u / L) * su + \
+                    0.35 * math.sin(math.pi * u / L * 2 + ph[2]) * su
+                off = n * (irr * f)
             if ci is not None:
                 t, hw, za, zb, dep = P['cracks'][ci]
                 if za < z < zb:
-                    off = -n * dep * math.sin(math.pi * (z - za) / (zb - za)) ** 0.5
+                    off = off - n * dep * math.sin(math.pi * (z - za) / (zb - za)) ** 0.5
             key2 = ('s', pi) if j == 0 else (('e', pi) if j == ncol - 1 else ('p', pi, j))
             return vert(key2, x, y, z, off)
         R = P['rows']
@@ -179,7 +201,9 @@ def pillar(g, key, cx, cy, w, d, z0, z1, rng, *, ch=0.014, nchk=(3, 0, 2, 4), dz
                 poly = [cv(j, r0)] + [cv(j, z) for z in RA if r0 < z < r1] + [cv(j, r1), cv(j + 1, r1)] +                        [cv(j + 1, z) for z in reversed(RB) if r0 < z < r1] + [cv(j + 1, r0)]
                 faces.append(tuple(poly))
                 want.append(n)
+                fkey.append(face_keys[pi] if face_keys else key)
     # 面取りの帯（面 i の終わり → 面 i+1 の始まり）
+    efaces, ewant = [], []
     for pi in range(np_):
         qi = (pi + 1) % np_
         rows = sorted(set(info[pi]['rows']) | set(info[qi]['rows']))
@@ -187,9 +211,14 @@ def pillar(g, key, cx, cy, w, d, z0, z1, rng, *, ch=0.014, nchk=(3, 0, 2, 4), dz
         nrm = (info[pi]['n'] + info[qi]['n']).normalized()
         for k in range(len(rows) - 1):
             r0, r1 = rows[k], rows[k + 1]
-            faces.append((vert(('e', pi), bi[0], bi[1], r0), vert(('s', qi), aq[0], aq[1], r0),
-                          vert(('s', qi), aq[0], aq[1], r1), vert(('e', pi), bi[0], bi[1], r1)))
-            want.append(nrm)
+            efaces.append((vert(('e', pi), bi[0], bi[1], r0), vert(('s', qi), aq[0], aq[1], r0),
+                           vert(('s', qi), aq[0], aq[1], r1), vert(('e', pi), bi[0], bi[1], r1)))
+            ewant.append(nrm)
+    if edge_key is None:
+        faces += efaces
+        want += ewant
+        fkey += [key] * len(efaces)
+        efaces = []
     if top_cap:
         ring = []
         for pi, P in enumerate(info):
@@ -199,7 +228,19 @@ def pillar(g, key, cx, cy, w, d, z0, z1, rng, *, ch=0.014, nchk=(3, 0, 2, 4), dz
                 ring.append(vidx[(key2, round(z1, 4))])
         faces.append(tuple(ring))
         want.append(EZ)
-    g.oriented(key, verts, faces, want)
+        fkey.append(key)
+    for k in dict.fromkeys(fkey):
+        sel = [i for i, kk in enumerate(fkey) if kk == k]
+        _emit(g, k, verts, [faces[i] for i in sel], [want[i] for i in sel])
+    if efaces:
+        _emit(g, edge_key, verts, efaces, ewant)
+
+
+def _emit(g, key, verts, faces, want):
+    """使う頂点だけを詰めて g.oriented に渡す"""
+    used = sorted({i for f in faces for i in f})
+    m = {o: k for k, o in enumerate(used)}
+    g.oriented(key, [verts[i] for i in used], [tuple(m[i] for i in f) for f in faces], want)
 
 
 def subdiv_outline(pts, max_len=0.4):
@@ -224,6 +265,8 @@ def build_gate(seed=11):
     WS = 'wood_timber#soffit'      # 化粧裏板（軒の裏の板）
     WE = 'wood_timber#end'         # 垂木の木口（少し明るく：1 本ずつ読めるように）
     WD = 'wood_timber#door'        # 扉の縦板（柱より 1 割暗く）
+    WK = 'wood_timber#edge'        # 鏡柱の面取りの帯（角の摩耗で少し明るい）
+    WW = 'wood_timber#weather'     # 鏡柱の町の側の面（雨と日で風化：明るく灰色がかる）
     FE = 'iron_black'
     ST = 'stone_granite'
     TL = 'tile_ibushi'
@@ -239,7 +282,11 @@ def build_gate(seed=11):
                     rng=np.random.default_rng(seed + 3 + s))
         # 通り道の側の面（西の柱は東の面、東の柱は西の面）に多く、壁に接する外の面は無し
         nchk = (3, 0, 2, 4) if s > 0 else (3, 4, 2, 0)
-        pillar(g, W, x, GY, PW, PD, FOOT_TOP, PTOP, rng, ch=0.014, nchk=nchk)
+        # 面取り 2.5 cm（帯は別のキー：摩耗で少し明るい）、手斧のうねり ±4 mm、横 15 cm・縦 25 cm ごとの分割（三角形の予算内）
+        # 面ごとの風化：町の側（南）は雨と日で明るく灰色がかる、通り道の側はふつう、城内の側（北）と塀に接する面は元の茶
+        fk = (WW, W, W, W)
+        pillar(g, W, x, GY, PW, PD, FOOT_TOP, PTOP, rng, ch=0.025, nchk=nchk, dz=0.25, edge_key=WK, irr=0.004, col_step=0.15,
+               face_keys=fk)
         # 根巻（鉄の覆い 0.35 m）と上の縁・鋲
         nb = 0.35
         obox(g, FE, V((x, GY, FOOT_TOP + nb / 2)), EZ, EX, EY, nb / 2, PW / 2 + 0.012, PD / 2 + 0.012, ch=0.02)

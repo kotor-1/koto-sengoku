@@ -14,7 +14,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { FOLLOW, createOrbit, look, placeFollow } from './game/follow';
 import { CAMERA_YAW, SPEED, createHero, stepHero, type HeroState } from './game/motion';
-import { START, TREES, cameraBlockers } from './layout';
+import { START, TREES, cameraBlockers, groundY } from './layout';
 import treesMeta from '../blender/trees/trees.meta.json';
 import { SKY, makeHills, makeSky } from './scenery';
 
@@ -564,7 +564,7 @@ function advance(dt: number, raw: number, ix: number, iy: number): void {
     stats.frames++;
     stepHero(hero, ix, iy, tps ? orbit.yaw : CAMERA.yaw, dt, running());
     const v = heroView!;
-    v.root.position.set(hero.x, 0, hero.z);
+    v.root.position.set(hero.x, groundY(hero.x, hero.z), hero.z); // 足を地面の起伏に合わせる（動き・当たり判定は平面のまま）
     v.root.rotation.y = hero.heading;
     // 待機と動きを速さで混ぜ、動きの中では歩きと走りを速さで混ぜる
     const want = THREE.MathUtils.smoothstep(hero.speed, 0.05, 0.5);

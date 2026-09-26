@@ -1017,7 +1017,7 @@ def stud(g, key, p, n, r=0.018, h=0.012, seg=6):
 def _gen_timber(n, seed, tile):
     """
     門の太い材（欅・栗の古材、板目）。3〜8 m から読めるように、細かい模様ではなく大きな明暗で木を見せる：
-    年輪は 0.6 m に 11 本（5.5 cm）で、低い周波数のゆがみで板目の山形になる。晩材は濃い茶で少し浮き（浮造り）、
+    年輪は 0.6 m に 10 本（6 cm）で、低い周波数のゆがみで板目の山形になる。晩材は濃い茶で少し浮き（浮造り）、
     早材は風化して灰色がかる。長手に伸びた 2〜8 cm の筋と 0.3〜1 m の明暗のむら、木目に沿った細い干割れ。
     色はこの画像で決める（sRGB の平均 ≈ 113/84/62：日なたで中くらいの暗い茶）。頂点色は AO と部材ごとの差だけ。
     粗さは 0.74（晩材）〜0.93（早材・割れ）で、つやは出さない。
@@ -1027,21 +1027,22 @@ def _gen_timber(n, seed, tile):
     sn = mats.snoise
     w1 = sn(sh, seed + 1, fmin=0.5, fmax=3, beta=1.6, aniso=(2.5, 1.0))                     # 板目の山形（大きなゆがみ）
     w2 = sn(sh, seed + 2, fmin=4, fmax=30, beta=1.2, aniso=(4.0, 1.0))      # 年輪の小さな揺れ
-    r = 11 * Vv + 1.6 * w1 + 0.12 * w2
+    r = 10 * Vv + 1.5 * w1 + 0.1 * w2
     p = r - np.floor(r)
     ring_id = np.floor(r).astype(np.int64)
     rr = np.random.default_rng(seed + 3).random(4096).astype(np.float32)
-    late = mats.smoothstep(0.5, 0.8, p) * (1 - mats.smoothstep(0.94, 1.0, p))
+    late = mats.smoothstep(0.48, 0.82, p) * (1 - mats.smoothstep(0.95, 1.0, p))
     late = late * (0.6 + 0.5 * rr[ring_id % 4096])
+    edge = mats.smoothstep(0.86, 0.95, p) * (1 - mats.smoothstep(0.96, 1.0, p))   # 晩材の終わりのくっきりした線
     streak = sn(sh, seed + 4, fmin=6, fmax=60, beta=1.0, aniso=(6.0, 1.0))  # 長手の筋（幅 2〜8 cm）
     big = sn(sh, seed + 5, fmin=0.5, fmax=4, beta=1.0)                      # 0.3〜1 m の明暗
     fib = sn(sh, seed + 6, fmin=60, fmax=600, beta=0.6, aniso=(9.0, 1.0))   # 細かい繊維
-    early, dark = mats.rgb(138, 104, 77), mats.rgb(70, 49, 35)
-    col = mats.mix(early, dark, np.clip(late * 0.95, 0, 1))
+    early, dark = mats.rgb(136, 106, 82), mats.rgb(66, 49, 37)
+    col = mats.mix(early, dark, np.clip(late * 0.85 + 0.3 * edge, 0, 1))
     # 早材の風化（灰色がかる）：場所によって強さが変わる
     gm = np.clip(0.5 + 0.35 * sn(sh, seed + 7, fmin=1, fmax=10, beta=1.0, aniso=(3.0, 1.0)), 0, 1) * (1 - late)
-    col = mats.mix(col, mats.rgb(122, 112, 100), gm * 0.3)
-    col = col * (1 + 0.075 * streak + 0.065 * big + 0.03 * fib)[..., None]
+    col = mats.mix(col, mats.rgb(124, 115, 104), gm * 0.38)
+    col = col * (1 + 0.075 * streak + 0.07 * big + 0.02 * fib)[..., None]
     # 木目に沿った細い干割れ（数は少なく、長く）
     rng = np.random.default_rng(seed + 8)
     su, sv = n / tile[0], n / tile[1]
@@ -1085,7 +1086,7 @@ EXTRA_MATS = {
 }
 
 
-EXTRA_VERSION = 'g4b'   # 画像の合成の手順を変えたら上げる（作り置きの画像を作り直す）
+EXTRA_VERSION = 'g4d'   # 画像の合成の手順を変えたら上げる（作り置きの画像を作り直す）
 
 
 def register_materials():

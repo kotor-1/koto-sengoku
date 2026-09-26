@@ -6,11 +6,13 @@
 中身（すべてゲームの絶対座標のまま書き出す。原点に置けばよい）:
 - ground_terrain: 細かい範囲（x -20〜20、z -26〜20）の地面。踏み固めた暖かい土の道（中央のわずかな盛り上がり、深さ 2〜3 cm の 2 本の轍、
   真ん中の踏み跡）、町の土、塀ぎわ・空き地・城内の草地（自作の turf）。高さの格子は道・側溝・塀・町家の線に合わせた不等間隔。
-  色（3〜8 m の大きな明暗・0.5〜1.5 m の細かな明暗・轍・踏み跡・湿り・塀と町家の根元の締まった土）は頂点色 COLOR_0。
-  周りの建物と木を置いたまま焼いた AO は occlusionTexture（TEXCOORD_1、2048 px）。
+  土の画像は地面だけの 'road'（ground_tex.gen_road：点々の小石なし、締まった土の段・砂ぼこり・擦れ跡）。
+  道の面は 1〜6 m のゆるい起伏（±2〜3 cm。家の前・側溝・塀・門の敷居の近くでは 0）。
+  色（大きな明暗・乾き／湿り（wetness）・塀と町家の根元の締まった土）は頂点色 COLOR_0。
+  周りの建物と木を置いたまま焼いた AO と、乾き・湿りの粗さ（0.64〜0.95）は 1 枚の ORM（R 遮蔽・G 粗さ、TEXCOORD_1、2048 px）。
   同じメッシュに、あとから重ねる物も入れる（同じ AO の画像を使うので、日陰で浮かない）:
-    ・道に埋まった平たい石（10〜12 角、上は平ら、土から 0.5〜1.2 cm 出る。まわりの土が縁にかぶさる）。7 割は 4〜9 個のまとまり。
-    ・塀と町家の根元の小石、軒・笠の雨落ちの砂利の帯（幅約 0.24 m）。
+    ・道の縁と門の敷居の前だけに埋まった平たい石（44 個。10〜12 角、上は平ら、土から 0.5〜1.2 cm 出る。まわりの土が縁にかぶさる）。
+    ・塀と町家の根元のわずかな小石、軒・笠の雨落ちの砂利の帯（幅約 0.24 m）。
 - ground_far: その外の 200 m までの簡単な地面。細かい範囲の下に 1 m もぐらせてある。
 - ground_stone: 側溝の割り石の縁石（長さ・高さ・傾きがそろわない、面取りと角の欠け）、端の石、入口の前の渡り石、大きな石。
 - ground_ditch_bed: 側溝の暗く湿った底と、縁石の目地を埋める土。
@@ -60,7 +62,7 @@ TURF_WS = -10.75        # 塀ぎわの草の南の端
 TURF_WN = -13.25        # 城内側の塀ぎわの草の北の端
 TURF_NSW = 6.3          # 東の塀（南北）の西側の草の西の端
 FOOTINGS = [(2.02, 2.86, -12.33, -11.40), (-2.86, -2.02, -12.33, -11.40)]   # 門の礎石（gate_v2）
-EARTH_TINT = np.array([0.99, 0.86, 0.70])     # 暖かい土の色（線形の掛け算）
+EARTH_TINT = np.array([1.0, 0.87, 0.70])     # 暖かい土の色（線形の掛け算）
 CURB_W = dict(house=0.17, road=0.18)          # 縁石の幅。溝は 0.27 m
 
 
@@ -132,6 +134,10 @@ F_MAC2 = Field(24, fmin=4, fmax=10)                 # 6〜16 m
 F_FINE = Field(25, period=16.0, fmin=10, fmax=32)   # 0.5〜1.6 m
 F_HUE = Field(26, fmin=4, fmax=14)
 F_BAND = Field(27, fmin=6, fmax=24)
+F_BUMP = Field(31, n=512, fmin=22, fmax=56)         # 1.1〜3 m のゆるい起伏（道の面）
+F_BUMP2 = Field(32, n=512, fmin=10, fmax=24)        # 2.7〜6 m
+F_WET = Field(33, fmin=4, fmax=14)                  # 4.5〜16 m の乾き・湿りのむら
+F_WET2 = Field(34, fmin=10, fmax=28)                # 2.3〜6 m
 
 
 def sstep(e0, e1, x):
@@ -192,23 +198,49 @@ def is_turf(x, z):
     return t & ~band
 
 
+def ditch_dist(x, z):
+    """側溝の穴（石組み）からの水平の距離"""
+    d = np.full(np.shape(x), 99.0)
+    for dd in DITCH.values():
+        d = np.minimum(d, rect_dist(x, z, (dd['hole'][0], dd['hole'][1], dd['z'][0], dd['z'][1])))
+    return d
+
+
+def bump_fade(x, z):
+    """ゆるい起伏を効かせる割合（0..1）：家の前・側溝・塀・門の敷居・渡り石・草地では 0"""
+    x = np.asarray(x, np.float64)
+    z = np.asarray(z, np.float64)
+    f = sstep(0.35, 1.2, ditch_dist(x, z))
+    f *= sstep(0.3, 1.1, base_dist(x, z))
+    dh = np.full(x.shape, 99.0)
+    for r in HOUSE_APRON:
+        dh = np.minimum(dh, rect_dist(x, z, r))
+    f *= sstep(0.3, 1.2, dh)
+    f *= 1 - (1 - sstep(0.9, 2.2, np.abs(z - EW_Z))) * (np.abs(x) < 3.6)
+    return f
+
+
 def height(x, z):
     """地面の高さ（ゲームの y）"""
     x = np.asarray(x, np.float64)
     z = np.asarray(z, np.float64)
     ax = np.abs(x)
     y = 0.004 * F_LOW(x, z)
-    # 道：中央のわずかな盛り上がり、轍（2〜3 cm）、小さな凹凸
+    # 道：中央のわずかな盛り上がり、轍（幅広く浅い 1.5〜2.5 cm）、真ん中の踏み跡（広く 1 cm 低い）、1〜3 m のゆるい起伏
     w_road = sstep(ROAD_HW + 0.2, ROAD_HW - 0.3, ax)
-    crown = 0.014 * np.clip(1 - (x / ROAD_HW) ** 2, 0, 1)
+    crown = 0.015 * np.clip(1 - (x / ROAD_HW) ** 2, 0, 1)
     rut = np.zeros_like(x)
     for s, F in ((-1, F_RUT), (1, F_RUT2)):
-        xc = s * RUT_X + 0.05 * F(0 * x + s * 9.0, z)
-        d = (x - xc) / 0.13
-        rut -= 0.024 * np.exp(-d * d) * np.clip(0.75 + 0.3 * F(x * 0 + s * 3.0 + 20, z * 1.7), 0.35, 1.2)
+        xc = s * RUT_X + 0.08 * F(0 * x + s * 9.0, z)
+        d = (x - xc) / 0.2
+        rut -= 0.02 * np.exp(-d * d) * np.clip(0.75 + 0.35 * F(x * 0 + s * 3.0 + 20, z * 1.7), 0.3, 1.25)
+    path = -0.008 * np.exp(-((x - 0.15 - 0.25 * F_RUT(x * 0 + 5.0, z * 0.6)) / 0.55) ** 2)
     gate = np.exp(-((z - EW_Z) / 1.4) ** 2)
-    road = (crown + rut) * (1 - 0.6 * gate) + 0.004 * F_MID(x, z)
+    road = (crown + rut + path) * (1 - 0.6 * gate) + 0.004 * F_MID(x, z)
     y = y + w_road * road
+    # ゆるい起伏（道と町の土。家の前・側溝・塀の根元・門の敷居の近くでは消す）
+    bump = 0.012 * F_BUMP(x, z) + 0.009 * F_BUMP2(x, z)
+    y = y + bump * bump_fade(x, z)
     # 空き地の小さな起伏
     lot = sstep(-4.6, -5.4, x) * sstep(-11.4, -10.9, z) * sstep(-7.35, -7.9, z) * sstep(-18.2, -17.5, x)
     y = y + lot * 0.03 * (F_LOT(x, z) + 0.4)
@@ -433,7 +465,7 @@ def build_terrain():
     tris = remap[tris]
     Xf, Zf, Yf, X0f, Z0f, SBf = (A.ravel()[used] for A in (X, Z, Y, X0, Z0, sb))
     verts_b = np.stack([Xf, -Zf, Yf], -1)
-    m_earth = mats.get('earth_road', vcol=True)
+    m_earth = gtx.material('road', gtx.build_road(), gtx.ROAD_TILE)
     m_turf = gtx.material('turf', gtx.build_turf(), gtx.TURF_TILE)
     o = mesh_object('ground_terrain', verts_b, tris, mat_slots=[m_earth, m_turf], face_mats=tmat)
     smooth(o)
@@ -462,31 +494,65 @@ def build_terrain():
     return o
 
 
+def seg_dist(x, z, p0, p1):
+    """線分 p0-p1 からの水平の距離"""
+    (xa, za), (xb, zb) = p0, p1
+    ux, uz = xb - xa, zb - za
+    t = np.clip(((x - xa) * ux + (z - za) * uz) / (ux * ux + uz * uz), 0, 1)
+    return np.hypot(x - (xa + t * ux), z - (za + t * uz))
+
+
+def wetness(x, z):
+    """
+    土の湿り（0 乾き〜1 湿り）。人の歩く真ん中の筋は乾いて白っぽく、側溝の縁・雨落ち・塀の根元・低い所・
+    門の下と城内側の塀の陰は湿って暗い。移り変わりは数 m の広さで（点やしみにしない）
+    """
+    x = np.asarray(x, np.float64)
+    z = np.asarray(z, np.float64)
+    ax = np.abs(x)
+    road = sstep(ROAD_HW + 0.2, ROAD_HW - 0.4, ax)
+    w = 0.45 * sstep(-0.4, 1.3, 0.8 * F_WET(x, z) + 0.5 * F_WET2(x, z))   # 道の中のむらは控えめ（しみに見せない）
+    lane = np.exp(-((x - 0.15 - 0.35 * F_RUT(x * 0 + 5.0, z * 0.6)) / 1.45) ** 2) * road
+    w = w * (1 - 0.55 * lane)
+    rut = np.zeros_like(x)
+    for sg in (-1, 1):
+        rut = np.maximum(rut, np.exp(-((x - sg * RUT_X) / 0.22) ** 2))
+    ks = [0.2 * rut * road,
+          0.82 * np.exp(-(ditch_dist(x, z) / 0.85) ** 2),
+          0.38 * np.exp(-(base_dist(x, z) / 0.9) ** 2)]
+    for p0, p1 in DRIP_LINES:
+        ks.append(0.5 * np.exp(-(seg_dist(x, z, p0, p1) / 0.6) ** 2))
+    low = -(0.004 * F_BUMP(x, z) + 0.009 * F_BUMP2(x, z)) * bump_fade(x, z)       # 大きい窪みだけ（小さな点にしない）
+    ks.append(0.45 * sstep(-0.003, 0.018, low))
+    ks.append(0.45 * np.exp(-((z - EW_Z) / 1.7) ** 2) * sstep(3.6, 2.6, ax))            # 門の下
+    ks.append(0.4 * sstep(EW_Z - 0.3, EW_Z - 1.0, z) * sstep(EW_Z - 5.0, EW_Z - 2.6, z))  # 城内側の塀の陰
+    for k in ks:
+        w = 1 - (1 - w) * (1 - np.clip(k, 0, 1))
+    return np.clip(w, 0, 1)
+
+
+def road_roughness(x, z):
+    """土の粗さ（乾き 0.9〜0.95、湿り 0.62〜0.72。鏡のようにはしない：0.6 未満にしない）"""
+    w = wetness(x, z)
+    return np.clip(0.93 - 0.3 * w + 0.02 * F_FINE(x, z), 0.6, 0.97)
+
+
 def terrain_colors(x, z, y):
     x = np.asarray(x, np.float64)
     z = np.asarray(z, np.float64)
     ax = np.abs(x)
     road = sstep(ROAD_HW + 0.2, ROAD_HW - 0.4, ax)
-    # 大きな明暗（3〜8 m と 6〜16 m、±15% 前後）と細かな明暗（0.5〜1.5 m、±6%）
-    mac = np.clip(0.075 * F_MAC(x, z) + 0.05 * F_MAC2(x, z), -0.18, 0.17)
-    fine = np.clip(0.035 * F_FINE(x, z), -0.07, 0.07)
-    v = 0.95 * (1 + mac) * (1 + fine)
+    # 大きな明暗（3〜8 m と 6〜16 m、±10% 前後）と細かな明暗（0.5〜1.5 m、±5%）
+    mac = np.clip(0.05 * F_MAC(x, z) + 0.035 * F_MAC2(x, z), -0.12, 0.12)
+    fine = np.clip(0.03 * F_FINE(x, z), -0.06, 0.06)
+    v = (1 + mac) * (1 + fine)
     hue = F_HUE(x, z)
     col = v[:, None] * EARTH_TINT[None] * np.stack([1 + 0.025 * hue, np.ones_like(hue), 1 - 0.045 * hue], -1)
-    # 轍：踏み固められて暗い（-15%）
-    rut = np.zeros_like(x)
-    for s in (-1, 1):
-        rut = np.maximum(rut, np.exp(-((x - s * RUT_X) / 0.16) ** 2))
-    gate = np.exp(-((z - EW_Z) / 1.4) ** 2)
-    col *= (1 - 0.15 * rut * road * (1 - 0.5 * gate))[:, None]
-    # 真ん中の踏み跡：明るく（+8%）、少し暖かく
-    worn = np.exp(-((x - 0.15) / 0.6) ** 2) * road
-    col *= ((1 + 0.08 * worn)[:, None] * np.stack([1 + 0.02 * worn, np.ones_like(worn), 1 - 0.03 * worn], -1))
-    # 側溝の縁：湿って暗い
-    for d in DITCH.values():
-        dx = np.minimum(np.abs(x - d['hole'][0]), np.abs(x - d['hole'][1]))
-        inz = (z > d['z'][0] - 0.3) & (z < d['z'][1] + 0.3)
-        col *= (1 - 0.10 * np.exp(-(dx / 0.3) ** 2) * inz)[:, None]
+    # 乾き・湿り：乾いた所は明るく少し白っぽい（砂ぼこり）、湿った所は暗く少し冷たい
+    w = wetness(x, z)[:, None]
+    dry = col * np.array([1.0, 1.0, 1.0]) + 0.06 * (1 - w) * np.array([1.0, 0.97, 0.92])
+    damp = col * np.array([0.74, 0.72, 0.74])
+    col = dry * (1 - w) + damp * w
     # 城内：少し灰色がかった土
     castle = sstep(EW_Z - 0.6, EW_Z - 2.0, z)
     col *= (1 - 0.04 * castle)[:, None]
@@ -505,7 +571,7 @@ def terrain_colors(x, z, y):
     col = np.where(t[:, None], tint, col)
     # 塀・礎石・町家の根元：締まった土（-15%）
     band = sstep(0.48, 0.18, base_dist(x, z) - 0.06 * F_BAND(x, z))
-    col *= (1 - 0.15 * band * ~t)[:, None]
+    col *= (1 - 0.08 * band * ~t)[:, None]
     return np.clip(col, 0.25, 1.0)
 
 
@@ -533,7 +599,7 @@ def build_far():
             faces.append((idx[i, j], idx[i, j + 1], idx[i + 1, j + 1], idx[i + 1, j]))
             fm.append(0 if earth else 1)
     verts_b = np.stack([X.ravel(), -Z.ravel(), Y.ravel()], -1)
-    m_earth = mats.get('earth_road', vcol=True)
+    m_earth = gtx.material('road', gtx.build_road(), gtx.ROAD_TILE)
     m_turf = gtx.material('turf', gtx.build_turf(), gtx.TURF_TILE)
     o = mesh_object('ground_far', verts_b, faces, mat_slots=[m_earth, m_turf], face_mats=fm)
     me = o.data
@@ -823,11 +889,12 @@ def _ok_ground(x, z, r):
     return True
 
 
-STONE_CLUSTERS = [  # ゲームの (x, z, 半径, 個数)：道の端、門の前、渡り石のそば
-    (-2.75, -9.5, 0.95, 7), (2.8, -8.1, 1.0, 6), (-2.85, -4.0, 0.8, 5), (2.7, -1.2, 0.9, 6), (-2.6, 1.9, 0.7, 4),
-    (2.95, 7.3, 0.8, 5), (-2.85, 5.6, 0.8, 5), (2.6, -14.6, 1.0, 6), (-2.5, -17.0, 1.1, 6),
-    (-1.25, -10.3, 1.1, 8), (1.45, -10.7, 0.9, 6), (0.2, -13.5, 1.0, 6), (-2.9, 10.2, 0.9, 5), (3.0, 13.6, 0.9, 5),
+STONE_CLUSTERS = [  # ゲームの (x, z, 半径, 個数)：道の端と門の敷居の前だけ（道の真ん中には置かない。点々に見えるので少なく）
+    (-2.85, -9.4, 0.8, 4), (2.9, -8.1, 0.8, 3), (-2.95, -4.0, 0.6, 2), (2.85, -1.2, 0.7, 3),
+    (3.0, 7.3, 0.7, 3), (-2.95, 5.6, 0.7, 3), (2.7, -14.6, 0.8, 3), (-2.6, -17.0, 0.9, 3),
+    (-1.5, -10.6, 0.8, 4), (1.6, -10.8, 0.7, 3), (-2.95, 10.2, 0.7, 2), (3.0, 13.6, 0.7, 2),
 ]
+STONES_TOTAL = 44          # まとまり以外は道の縁（|x| 2.4 m より外）と東の塀ぎわの土だけ
 
 
 def stone_layout():
@@ -849,14 +916,12 @@ def stone_layout():
                 k += 1
     nclu = len(pts)
     tries = 0
-    while len(pts) < 110 and tries < 20000:
+    while len(pts) < STONES_TOTAL and tries < 20000:
         tries += 1
-        x, z = rng.uniform(-3.3, 3.3), rng.uniform(-24.0, 18.0)
+        x, z = rng.choice((-1, 1)) * rng.uniform(2.4, 3.3), rng.uniform(-24.0, 18.0)
         if rng.random() < 0.25:
             x, z = rng.uniform(4.3, 6.2), rng.uniform(-10.4, 2.6)
         r = 0.08 + 0.12 * rng.random() ** 1.5
-        if abs(x - 0.15) < 0.5 and rng.random() < 0.7:       # 真ん中の踏み跡には少なく
-            continue
         if free(x, z, r):
             pts.append((x, z, r))
     print(f'embedded stones: {len(pts)} ({nclu} in clusters)')
@@ -900,7 +965,7 @@ def add_flat_stone(ov, rng, x, z, r):
         return x + lx * math.cos(rot) - lz * math.sin(rot), z + lx * math.sin(rot) + lz * math.cos(rot)
     k = rng.uniform(0.88, 1.12)
     w = rng.normal(0, 0.025)
-    sc = np.array([1.0 * (1 + w), 0.88, 0.73 * (1 - w)]) * 0.72 * k        # 土の明るさの ±12%、土に近い暖かい灰色
+    sc = np.array([1.0 * (1 + w), 0.9, 0.78 * (1 - w)]) * 0.86 * k        # 土の明るさの ±12%、土に近い暖かい灰色（暗い点に見えないように）
     rx, rz = ring(1.0)
     g_rim = terrain_height_at(rx, rz)
     top = float(g_rim.max()) + rng.uniform(0.005, 0.012)
@@ -918,7 +983,7 @@ def add_flat_stone(ov, rng, x, z, r):
         ov.tri(vm[i], vr[i], vr[i1], 1)
         ov.tri(vm[i], vr[i1], vm[i1], 1)
     # かぶさる土：内の端は石の縁より内（0.8〜0.95、ところどころ深く。石の面より 1.2 mm 上）、外の端は地面の少し下
-    fin = np.clip(rng.uniform(0.84, 0.96, seg) - 0.1 * (rng.random(seg) < 0.2), 0.7, 0.96)
+    fin = np.clip(rng.uniform(0.78, 0.93, seg) - 0.12 * (rng.random(seg) < 0.3), 0.62, 0.93)
     sx, sz = ring(fin)
     ox, oz = ring(1.0, 0.035 + 0.3 * r)
     go = terrain_height_at(ox, oz)
@@ -975,7 +1040,7 @@ def add_drip_strip(ov, rng, p0, p1, width=0.24, step=0.25):
             ov.tri(A[i], B[i + 1], A[i + 1], 2)
     # 帯の縁からこぼれた小石（見える所の帯だけ）
     if ln < 16:
-        for _ in range(int(ln / 0.9)):
+        for _ in range(int(ln / 3.0)):
             t_ = rng.uniform(0, ln)
             side = rng.choice((-1, 1))
             off = side * (width / 2 + rng.uniform(0.0, 0.1))
@@ -999,8 +1064,8 @@ def pebble_spots(rng):
         centres.append((x + rng.uniform(-0.3, 0.3), -5.6 - rng.uniform(0.05, 0.3)))
     for s in (-1, 1):
         centres.append((s * rng.uniform(2.95, 3.1), -11.2))
-    for cx, cz in centres:
-        for _ in range(int(rng.integers(3, 6))):
+    for cx, cz in centres[::2]:
+        for _ in range(int(rng.integers(1, 3))):
             x, z = cx + rng.normal(0, 0.12), cz + rng.normal(0, 0.08)
             if base_dist(np.array([x]), np.array([z]))[0] < 0.03:
                 continue
@@ -1024,7 +1089,7 @@ def build_overlay():
         add_pebble(ov, rng, x, z, r, (0.74 * k * (1 + w), 0.71 * k, 0.66 * k * (1 - w)))
     V = np.array(ov.v)
     verts_b = np.stack([V[:, 0], -V[:, 2], V[:, 1]], -1)
-    m_earth = mats.get('earth_road', vcol=True)
+    m_earth = gtx.material('road', gtx.build_road(), gtx.ROAD_TILE)
     m_stone = mats.get('stone_granite', vcol=True)
     m_grav = mats.get('gravel', vcol=True)
     o = mesh_object('ground_overlay', verts_b, ov.f, mat_slots=[m_earth, m_stone, m_grav], face_mats=ov.fm)
@@ -1083,6 +1148,38 @@ def merge_overlay(terrain, overlay, cols, V, img=None):
     me.uv_layers.active = me.uv_layers['UVMap']
     me.uv_layers['UVMap'].active_render = True
     mats._set_active_color(me, mats.COLOR_ATTR)
+
+
+def add_roughness_to_lightmap(terrain, img):
+    """
+    焼いた AO の画像（lightmap UV、R=G=B=AO）の G に土の粗さ（乾き・湿りの地図）を書き、
+    地面の土の材質の粗さをそこから取る（glTF の ORM：R 遮蔽・G 粗さ・B 金属 0、どれも TEXCOORD_1）。
+    繰り返しの画像では場所ごとの湿りを出せないので、繰り返さない 2048 px（約 2 cm）の地図にする。
+    """
+    n = img.size[0]
+    px = np.empty(n * n * 4, np.float32)
+    img.pixels.foreach_get(px)
+    px = px.reshape(n, n, 4)
+    u = (np.arange(n) + 0.5) / n
+    U, V = np.meshgrid(u, u)                    # 行 = v（下から）、列 = u
+    X = AREA['x0'] + U * (AREA['x1'] - AREA['x0'])
+    Z = AREA['z1'] - V * (AREA['z1'] - AREA['z0'])
+    r = np.empty_like(X)
+    for i0 in range(0, n, 256):                 # 行ごとに分けて（メモリ）
+        r[i0:i0 + 256] = road_roughness(X[i0:i0 + 256].ravel(), Z[i0:i0 + 256].ravel()).reshape(-1, n)
+    px[..., 1] = r
+    px[..., 2] = 0.0
+    img.pixels.foreach_set(px.ravel())
+    img.save()
+    m = terrain.material_slots[0].material
+    nt = m.node_tree
+    bsdf = next(nd for nd in nt.nodes if nd.type == 'BSDF_PRINCIPLED')
+    sep = nt.nodes['ao_sep']
+    for nd in [nd for nd in nt.nodes if nd.type == 'TEX_IMAGE' and nd.image is not None and nd.image.name.startswith('road_orm')]:
+        nt.nodes.remove(nd)
+    nt.links.new(sep.outputs['Green'], bsdf.inputs['Roughness'])
+    nt.links.new(sep.outputs['Blue'], bsdf.inputs['Metallic'])
+    print('roughness map: p1/p50/p99', np.percentile(r, [1, 50, 99]).round(3))
 
 
 def capture_terrain_ao(terrain):
@@ -1356,6 +1453,7 @@ def main(argv=None):
             o.hide_render = True
         img = mats.bake_ao_to_texture(terrain, 1024 if a.quick else 2048, 'lightmap', samples=12 if a.quick else 32, distance=6.0,
                                       strength=0.85, ground_plane=False, margin=4, blur_px=1)
+        add_roughness_to_lightmap(terrain, img)
         for o in plants:
             o.hide_render = False
         overlay.hide_render = False

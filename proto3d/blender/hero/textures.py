@@ -181,14 +181,15 @@ def _blur(a, r=1):
 
 
 def indigo(size=1024, seed=21):
-    """小袖：黒に近い藍の麻。色の差は小さく（節の筋 ±8%、明るい糸も +12% まで。白っぽい糸は無い）。
-    基の色 sRGB (38,44,68)（彩度 44%）。織りの凹凸は法線に"""
-    height, tone, over = _weave(size, 4, seed, slub_amount=2.4, slub_len=(30, 220))
+    """小袖：藍の麻（灰みの藍）。ゲームの日陰でもしわと布目が読めるよう、基の色は少し明るく彩度を抑える
+    sRGB (62,66,86)（ゲームの ACES の暗部で青が強く出すぎないよう灰みに）。節の筋 ±12%（主に縦糸、明るい糸は +17% まで）と、大きな濃淡のむら ±3.5%。織りの凹凸は法線に"""
+    height, tone, over = _weave(size, 4, seed, slub_amount=2.6, slub_len=(30, 220))
     low = periodic_noise((size, size), 400, seed + 3, 3)
     mid = periodic_noise((size, size), 60, seed + 4, 2)
-    base = srgb((38, 44, 68))
-    v = 1.0 + 0.08 * np.clip(tone / 1.2, -1, 1) + 0.025 * low + 0.02 * mid + 0.035 * (height - 0.5)
-    v = np.clip(v, 0.86, 1.12)
+    base = srgb((62, 66, 86))
+    tone = np.where(over, tone, tone * 0.45)       # 節の筋は主に縦糸（格子に見えないように）
+    v = 1.0 + 0.12 * np.clip(tone / 1.2, -1, 1.4) + 0.035 * low + 0.015 * mid + 0.04 * (height - 0.5)
+    v = np.clip(v, 0.80, 1.22)
     col = base[None, None, :] * v[..., None]
     nrm = normal_from_height(height * 1.0 + 0.15 * tone, 1.2)
     return np.clip(col, 0, 1), nrm
