@@ -1,0 +1,88 @@
+{
+  "_about": "城門前の一場面の配置（Blender の制作スクリプトとゲームの共通の約束）。数値はすべてゲームの座標（メートル）：x 東、y 上、z 南（北は -z）。Blender では (x, y, z)_game = (X, Z, -Y)_blender（lib/common.py の g2b / b2g）。",
+  "sun_offset_game": [-17, 12, 9],
+  "hero_start": [-0.8, -4.2],
+  "hero_start_yaw": 0.33,
+  "hero_start_pitch": -0.06,
+  "hero_start_heading": 3.039,
+  "_hero_start_note": "開始の位置と向き。肩越しのカメラの初めの向きは yaw 0.33（北北西）・pitch -0.06（わずかに見上げる）＝ follow.ts の createOrbit(yaw, pitch) にそのまま渡す値（範囲 pitchMin -0.35〜pitchMax 0.8 の中）。門が画面の右 3 分の 1 に屋根まで大きく入り、桜と塀が中央左、町家 A が左の端。主人公は門の方（北北東）を向く：ゲームの rotation.y = hero_start_heading。",
+  "road": {
+    "center_x": 0,
+    "half_width": 3.4,
+    "z0": -40,
+    "z1": 30,
+    "note": "土の道。門をくぐって北へ続く。"
+  },
+  "gate": {
+    "center": [0, -12],
+    "opening_half": 2.0,
+    "pillar_x": 2.3,
+    "pillar_size_xz": [0.5, 0.62],
+    "pillar_top_y": 5.4,
+    "kabuki_y": [4.6, 5.15],
+    "kabuki_x_half": 3.1,
+    "roof": { "ridge_y": 7.3, "eave_y": 5.6, "x_half": 3.9, "z_half": 1.9 },
+    "doors": { "leaf_width": 2.0, "leaf_height": 4.3, "open_inward_deg": 78, "note": "扉は北（城内）側へ開く。蝶番は鏡柱の内側。" },
+    "control_pillars": { "z_offset": -2.3, "size": 0.38, "top_y": 3.6, "note": "控柱は門の北側（城内）。小さな切妻屋根を載せる。" },
+    "note": "大きな高麗門。通れる幅は x -2.0〜2.0。"
+  },
+  "walls": [
+    { "name": "west_ew", "from": [-2.75, -12], "to": [-18, -12] },
+    { "name": "east_ew", "from": [2.75, -12], "to": [18, -12] },
+    { "name": "east_ns", "from": [7.6, -12.5], "to": [7.6, 3.0] }
+  ],
+  "wall_section": {
+    "thickness_base": 1.0,
+    "thickness_top": 0.8,
+    "stone_base_height": 1.3,
+    "plaster_top_y": 3.7,
+    "cap_top_y": 4.3,
+    "cap_overhang": 0.75,
+    "note": "下は大きな花崗岩の石積み（少し傾けた面）、上は漆喰、上端に木の帯と瓦の笠。"
+  },
+  "houses": [
+    {
+      "name": "machiya_a",
+      "footprint": { "x0": -10.2, "x1": -4.2, "z0": -5.6, "z1": 2.6 },
+      "front": "+x",
+      "brief": "つし二階（低い二階）の商家。表 1 階は弁柄格子と、暖簾の下がる入口。深い庇。2 階は虫籠窓。軒の高さ 4.6 前後。"
+    },
+    {
+      "name": "machiya_b",
+      "footprint": { "x0": -10.8, "x1": -4.2, "z0": 3.4, "z1": 11.4 },
+      "front": "+x",
+      "brief": "本二階の大きな店。2 階に格子窓と手すりの縁、1 階は広く開いた店先（縁台・樽・籠・看板）、大きな暖簾。軒の高さ 6.0 前後、庇は深い。"
+    },
+    {
+      "name": "machiya_d",
+      "footprint": { "x0": 4.2, "x1": 9.6, "z0": 3.8, "z1": 10.8 },
+      "front": "-x",
+      "brief": "道の東、低めの平屋に近い一階半。蔀戸（上げ戸）や板戸の店先、短い軒。軒の高さ 3.6 前後。"
+    }
+  ],
+  "lot_west_of_gate": {
+    "area": { "x0": -18, "x1": -4.0, "z0": -11.4, "z1": -7.2 },
+    "alley": { "z0": -7.2, "z1": -5.6, "note": "町家 A の北の東西の通り道。何も置かない（x -3〜-12 を歩いて抜けられる）。" },
+    "note": "町家 A と土塀の間の空き地。桜の木と低い竹垣（垣は z -7.2 より北に置く）。"
+  },
+  "trees": [
+    { "name": "sakura", "pos": [-7.4, -9.2], "note": "桜。午後の日差しで、門の手前の道に木陰を落とす。" },
+    { "name": "pine_big", "pos": [10.8, -7.5], "note": "東の土塀の内側（城内）の大きな黒松。塀の上に見える。" },
+    { "name": "pine_back", "pos": [-4.8, -18.5], "note": "門の北（城内）の黒松。門越しに見える。" }
+  ],
+  "keep": { "pos": [9, -115], "note": "遠景の天守（歩けない。形だけ）。門越しに見える。" },
+  "ditches": [
+    { "name": "west", "x": [-4.1, -3.72], "z": [-5.8, 11.6], "note": "西の町家の前の石組みの側溝。入口の前は板石で渡す。" },
+    { "name": "east", "x": [3.72, 4.1], "z": [-11.4, 11.0], "note": "東の側溝。" }
+  ],
+  "blocked_lanes": "町家どうし・町家と塀の間の細い隙間は通れない（当たり判定で閉じる）。",
+  "budgets": {
+    "hero_triangles": 45000,
+    "house_triangles_each": 70000,
+    "gate_and_walls_triangles": 90000,
+    "tree_triangles_each": 30000,
+    "ground_triangles": 60000,
+    "texture_max_px": 2048,
+    "note": "スマホで動かすための目安。影の描画を含めると画面全体でこの約 2 倍になる。"
+  }
+}

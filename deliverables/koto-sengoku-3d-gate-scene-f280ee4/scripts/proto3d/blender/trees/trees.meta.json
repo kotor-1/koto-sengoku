@@ -1,0 +1,181 @@
+{
+  "_about": "木の素材の情報（ゲームの座標・メートル、幹の根元が原点）。scene.json の木（桜・松 2 本）の当たり判定は layout.ts が 別に作っているので、各木の項目は参考値。上の colliders・camera_blockers は scene.json に無い遠景の松（tree_pine_far の placements）の幹だけ（layout.ts がそのまま読む。二重にならない）。",
+  "tree_pine": {
+    "glb": "models/tree_pine.glb",
+    "trunk_collider_radius": 0.42,
+    "trunk_radius_at_1m": 0.326,
+    "root_flare_radius": 2.04,
+    "height": 10.72,
+    "canopy_y": [
+      4.67,
+      10.72
+    ],
+    "canopy_extent_xz": {
+      "x": [
+        -7.04,
+        2.97
+      ],
+      "z": [
+        -4.03,
+        4.93
+      ]
+    },
+    "lean_toward_game_xz": [
+      -0.93,
+      0.36
+    ],
+    "triangles": 28866
+  },
+  "tree_sakura": {
+    "glb": "models/tree_sakura.glb",
+    "trunk_collider_radius": 0.4,
+    "trunk_radius_at_1m": 0.298,
+    "root_flare_radius": 1.73,
+    "height": 8.35,
+    "canopy_y": [
+      2.39,
+      8.35
+    ],
+    "canopy_extent_xz": {
+      "x": [
+        -3.62,
+        5.09
+      ],
+      "z": [
+        -4.63,
+        2.41
+      ]
+    },
+    "note": "北（塀の上）へ広く、東（道の側）は門の左の柱の手前まで、南（町家 A の側）は狭い。回転させずに置く前提の形。",
+    "triangles": 25920
+  },
+  "plants": {
+    "glb": "models/plants.glb",
+    "meshes": {
+      "grass_a": {
+        "triangles": 128,
+        "height": 0.36,
+        "radius": 0.27
+      },
+      "grass_b": {
+        "triangles": 96,
+        "height": 0.65,
+        "radius": 0.37
+      },
+      "grass_c": {
+        "triangles": 112,
+        "height": 0.41,
+        "radius": 0.36
+      },
+      "shrub_azalea": {
+        "triangles": 920,
+        "height": 0.97,
+        "radius": 0.83
+      },
+      "shrub_fern": {
+        "triangles": 680,
+        "height": 0.52,
+        "radius": 0.78
+      }
+    },
+    "note": "名前（grass_a など）で取り出して複製する。どれも原点が根元。草は影を落とさない（userData.cast=false）、低木は落とす。"
+  },
+  "tree_pine_far": {
+    "glb": "models/tree_pine_far.glb",
+    "trunk_radius_at_1m": 0.292,
+    "height": 11.2,
+    "canopy_y": [
+      4.36,
+      11.2
+    ],
+    "canopy_radius": 5.29,
+    "triangles": 5074,
+    "placements": [
+      {
+        "x": -9.2,
+        "z": -16.8,
+        "rotation_y": 0.4,
+        "scale": 0.95
+      },
+      {
+        "x": -14.0,
+        "z": -17.0,
+        "rotation_y": 2.9,
+        "scale": 1.02
+      },
+      {
+        "x": -5.8,
+        "z": -21.5,
+        "rotation_y": 4.4,
+        "scale": 0.9
+      },
+      {
+        "x": -16.4,
+        "z": -3.0,
+        "rotation_y": 1.3,
+        "scale": 0.97
+      }
+    ],
+    "note": "遠景用の軽い黒松。placements の位置に、幹の根元を原点として置く（rotation.y・scale）。当たり判定（上の colliders・camera_blockers）はこの 4 か所の幹だけ。"
+  },
+  "colliders": [
+    {
+      "x0": -9.48,
+      "x1": -8.92,
+      "z0": -17.08,
+      "z1": -16.52
+    },
+    {
+      "x0": -14.31,
+      "x1": -13.69,
+      "z0": -17.31,
+      "z1": -16.69
+    },
+    {
+      "x0": -6.07,
+      "x1": -5.53,
+      "z0": -21.77,
+      "z1": -21.23
+    },
+    {
+      "x0": -16.69,
+      "x1": -16.11,
+      "z0": -3.29,
+      "z1": -2.71
+    }
+  ],
+  "camera_blockers": [
+    {
+      "x0": -9.54,
+      "x1": -8.86,
+      "y0": 0.0,
+      "y1": 3.0,
+      "z0": -17.14,
+      "z1": -16.46
+    },
+    {
+      "x0": -14.37,
+      "x1": -13.63,
+      "y0": 0.0,
+      "y1": 3.0,
+      "z0": -17.37,
+      "z1": -16.63
+    },
+    {
+      "x0": -6.12,
+      "x1": -5.48,
+      "y0": 0.0,
+      "y1": 3.0,
+      "z0": -21.82,
+      "z1": -21.18
+    },
+    {
+      "x0": -16.75,
+      "x1": -16.05,
+      "y0": 0.0,
+      "y1": 3.0,
+      "z0": -3.35,
+      "z1": -2.65
+    }
+  ]
+}

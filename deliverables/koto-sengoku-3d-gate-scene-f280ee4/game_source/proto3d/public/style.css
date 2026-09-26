@@ -1,0 +1,208 @@
+/* 3D 比較版の画面。2D 版の UI（暗い半透明の板・細い縁・丸いボタン）にそろえる。 */
+:root {
+    --safe-t: env(safe-area-inset-top, 0px);
+    --safe-r: env(safe-area-inset-right, 0px);
+    --safe-b: env(safe-area-inset-bottom, 0px);
+    --safe-l: env(safe-area-inset-left, 0px);
+    --ink: #eee7d6;
+    --ink-soft: rgba(238, 231, 214, 0.72);
+    --panel: rgba(20, 18, 15, 0.62);
+    --hairline: rgba(255, 246, 225, 0.14);
+    --gold: #c8a86a;
+    --font: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", "Meiryo", sans-serif;
+}
+html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    background: #15130f;
+    color: var(--ink);
+    font-family: var(--font);
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+}
+body { position: fixed; inset: 0; touch-action: none; }
+#app, #view { position: absolute; inset: 0; }
+#view canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+#hud {
+    position: absolute;
+    top: calc(var(--safe-t) + 12px);
+    left: calc(var(--safe-l) + 14px);
+    pointer-events: none;
+}
+.chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 8px 14px;
+    border-radius: 12px;
+    background: var(--panel);
+    border: 1px solid var(--hairline);
+    font-size: 13px;
+    letter-spacing: 0.06em;
+}
+.chip b { color: var(--gold); font-weight: 600; letter-spacing: 0.12em; }
+.chip span { color: var(--ink-soft); font-size: 12px; }
+#help {
+    position: absolute;
+    left: 50%;
+    bottom: calc(var(--safe-b) + 14px);
+    transform: translateX(-50%);
+    margin: 0;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: var(--panel);
+    border: 1px solid var(--hairline);
+    font-size: 12px;
+    color: var(--ink-soft);
+    white-space: nowrap;
+    pointer-events: none;
+}
+kbd {
+    font: inherit;
+    font-size: 11px;
+    padding: 2px 5px;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 246, 225, 0.25);
+}
+body.touch #help .keys, body:not(.touch) #help .touch { display: none; }
+#build {
+    position: absolute;
+    right: calc(var(--safe-r) + 12px);
+    bottom: calc(var(--safe-b) + 8px);
+    margin: 0;
+    font-size: 10px;
+    color: rgba(238, 231, 214, 0.55);
+    pointer-events: none;
+}
+#loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    letter-spacing: 0.2em;
+    background: #15130f;
+}
+#loading[hidden] { display: none; }
+#loading.error { letter-spacing: 0.02em; padding: 24px; text-align: center; color: #e0907f; }
+#fps {
+    position: absolute;
+    left: calc(var(--safe-l) + 12px);
+    bottom: calc(var(--safe-b) + 44px);
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.55);
+    font: 11px/1.5 ui-monospace, Menlo, monospace;
+    white-space: pre;
+    pointer-events: none;
+}
+#fps[hidden] { display: none; }
+/* タッチのスティック（左半分のどこからでも） */
+#stick-zone {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 50%;
+    top: calc(var(--safe-t) + 60px);
+    display: none;
+    touch-action: none;
+}
+body.touch #stick-zone { display: block; }
+#stick-base {
+    position: absolute;
+    left: calc(var(--safe-l) + 28px);
+    bottom: calc(var(--safe-b) + 24px);
+    width: 112px;
+    height: 112px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 246, 225, 0.3);
+    background: radial-gradient(circle, rgba(20, 18, 15, 0) 52%, rgba(20, 18, 15, 0.22) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.5;
+    pointer-events: none;
+}
+#stick-zone.active #stick-base { opacity: 1; }
+#stick-knob {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 42% 38%, rgba(250, 244, 230, 0.7), rgba(226, 216, 194, 0.45) 70%);
+    border: 1px solid rgba(255, 250, 238, 0.55);
+}
+#stick-zone:not(.active) #stick-knob { width: 14px; height: 14px; border: none; background: rgba(250, 244, 230, 0.55); }
+/* 歩く／走るの切り替え（右下）。押し続けなくてよい。今の動き方の側が明るくなる */
+#run-btn {
+    position: absolute;
+    right: calc(var(--safe-r) + 16px);
+    bottom: calc(var(--safe-b) + 28px);
+    display: flex;
+    padding: 4px;
+    gap: 2px;
+    border-radius: 999px;
+    background: var(--panel);
+    border: 1px solid var(--hairline);
+    color: var(--ink-soft);
+    font: inherit;
+    font-size: 14px;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    touch-action: none;
+}
+#run-btn span {
+    min-width: 52px;
+    padding: 9px 12px;
+    border-radius: 999px;
+    text-align: center;
+}
+#run-btn:not(.on) .walk, #run-btn.on .run {
+    background: rgba(200, 168, 106, 0.28);
+    color: var(--ink);
+    box-shadow: inset 0 0 0 1px rgba(200, 168, 106, 0.55);
+}
+#run-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+/* スマホは親指で押しやすい大きさに */
+body.touch #run-btn { bottom: calc(var(--safe-b) + 36px); font-size: 15px; }
+body.touch #run-btn span { min-width: 60px; padding: 14px 14px; }
+/* 主人公の見た目の切り替え（比較用、右上）。表示している方が明るくなる */
+#hero-btn {
+    position: absolute;
+    top: calc(var(--safe-t) + 12px);
+    right: calc(var(--safe-r) + 14px);
+    display: flex;
+    align-items: center;
+    padding: 3px 3px 3px 12px;
+    gap: 2px;
+    border-radius: 999px;
+    background: var(--panel);
+    border: 1px solid var(--hairline);
+    color: var(--ink-soft);
+    font: inherit;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    touch-action: none;
+}
+#hero-btn .cap { margin-right: 6px; font-size: 12px; }
+#hero-btn .v1, #hero-btn .old { min-width: 34px; padding: 7px 10px; border-radius: 999px; text-align: center; }
+#hero-btn:not(.old) .v1, #hero-btn.old .old {
+    background: rgba(200, 168, 106, 0.28);
+    color: var(--ink);
+    box-shadow: inset 0 0 0 1px rgba(200, 168, 106, 0.55);
+}
+#hero-btn.busy { opacity: 0.6; }
+#hero-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+body.touch #hero-btn .v1, body.touch #hero-btn .old { padding: 11px 12px; }
+/* 見回し（肩越しのカメラのとき）：PC は画面のどこでも、スマホは右半分をドラッグ。ボタンや表示はこれより手前 */
+#look-zone { position: absolute; inset: 0; display: none; touch-action: none; cursor: grab; }
+body.tps #look-zone { display: block; }
+body.tps.touch #look-zone { left: 50%; }
+#look-zone.active { cursor: grabbing; }
+body:not(.tps) #help .look, body:not(.tps) .cam-tps, body.tps .cam-top { display: none; }

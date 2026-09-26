@@ -1,0 +1,86 @@
+{
+ "joints": 20,
+ "same_joint_names": true,
+ "rest_translation_max_diff": 1.263618468749783e-07,
+ "rest_rotations_non_identity": [],
+ "animations": {
+  "Idle": 3.2,
+  "Run": 0.64,
+  "Walk": 0.84
+ },
+ "v2_animations": {
+  "Idle": 3.2,
+  "Walk": 0.84,
+  "Run": 0.64
+ },
+ "triangles": 43759,
+ "bytes": 3296324,
+ "meshes": 36,
+ "materials": 19,
+ "images": [
+  [
+   "tex_brow",
+   "image/png"
+  ],
+  [
+   "nrm_indigo",
+   "image/jpeg"
+  ],
+  [
+   "tex_indigo",
+   "image/jpeg"
+  ],
+  [
+   "nrm_hair",
+   "image/jpeg"
+  ],
+  [
+   "tex_hair",
+   "image/jpeg"
+  ],
+  [
+   "nrm_hakama",
+   "image/jpeg"
+  ],
+  [
+   "tex_hakama",
+   "image/jpeg"
+  ],
+  [
+   "nrm_linen",
+   "image/jpeg"
+  ],
+  [
+   "tex_linen",
+   "image/jpeg"
+  ],
+  [
+   "tex_wisp",
+   "image/png"
+  ],
+  [
+   "nrm_obi",
+   "image/jpeg"
+  ],
+  [
+   "tex_obi",
+   "image/jpeg"
+  ],
+  [
+   "nrm_tsuka",
+   "image/jpeg"
+  ],
+  [
+   "tex_tsuka",
+   "image/jpeg"
+  ],
+  [
+   "nrm_straw",
+   "image/jpeg"
+  ],
+  [
+   "tex_straw",
+   "image/jpeg"
+  ]
+ ]
+}
