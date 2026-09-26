@@ -116,7 +116,7 @@ const RUN = 1.55 * 2.2;
   check('走り：斜め（2 つのキー）でも、1 秒に進む距離はまっすぐと同じ', Math.abs(dDiag - dStraight) < 0.01, `まっすぐ ${f2(dStraight)}m・斜め ${f2(dDiag)}m`);
 
   // 壁・門
-  await put(page, -2.2, -1.5);
+  await put(page, -2.2, -5.0);
   await page.keyboard.down('ArrowLeft');
   await stepN(page, 60);
   const hw = await st(page);

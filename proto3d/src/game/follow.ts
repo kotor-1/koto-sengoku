@@ -11,11 +11,11 @@ import { cameraBlockers, type Box } from '../layout';
 
 export const FOLLOW = {
     /** 見る中心の高さ（主人公の首〜頭のあたり） */
-    height: 1.55,
+    height: 1.5,
     /** 見る中心を右へずらす量（肩越し。主人公は画面の少し左に来る） */
-    shoulder: 0.4,
+    shoulder: 0.38,
     /** ふだんのカメラまでの距離 */
-    distance: 2.3,
+    distance: 2.1,
     /** 上下の角度（正で見下ろす）。初めは少しだけ見下ろし、空と建物の正面が入る */
     pitch0: 0.06,
     pitchMin: -0.35,

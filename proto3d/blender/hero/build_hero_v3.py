@@ -62,6 +62,35 @@ def import_rig():
     return arm
 
 
+# ================= 腕を下ろす（A 姿勢を直す） =================
+ARM_DROP = math.radians(float(__import__('os').environ.get('HERO_ARM_DROP', '13')))
+ELBOW_BEND = math.radians(8)
+
+
+def relax_arms(arm):
+    """全ての動きで上腕を体の側へ回し（世界の前後軸まわり）、肘を少し曲げる。時間と足は変えない"""
+    for side, sg in (('Left', 1), ('Right', -1)):
+        for bn, W in ((side + 'UpperArm', mathutils.Quaternion((0, 1, 0), sg * ARM_DROP)),
+                      (side + 'ForeArm', mathutils.Quaternion((1, 0, 0), -ELBOW_BEND))):
+            R = arm.data.bones[bn].matrix_local.to_quaternion()
+            off = R.inverted() @ W @ R
+            for act in bpy.data.actions:
+                fcs = [act.fcurves.find(f'pose.bones["{bn}"].rotation_quaternion', index=i) for i in range(4)]
+                if any(f is None for f in fcs):
+                    continue
+                n = len(fcs[0].keyframe_points)
+                for k in range(n):
+                    q = mathutils.Quaternion([fcs[i].keyframe_points[k].co[1] for i in range(4)])
+                    q2 = off @ q
+                    for i in range(4):
+                        kp = fcs[i].keyframe_points[k]
+                        d = q2[i] - kp.co[1]
+                        kp.co[1] += d
+                        kp.handle_left[1] += d
+                        kp.handle_right[1] += d
+    log('arms relaxed', round(math.degrees(ARM_DROP), 1), 'deg')
+
+
 # ================= 形 =================
 def uv_from_vertex(ob, uv_vert):
     lay = ob.data.uv_layers.new(name='UVMap')
@@ -275,7 +304,7 @@ def materials(P):
         return U.principled(name, color, rough, base_tex=tex[nm][0], normal_tex=tex[nm][1], uv_scale=1, double=double, normal_strength=nstr)
 
     M = {
-        'skin': U.principled('Skin', (0.50, 0.335, 0.235), 0.5),
+        'skin': U.principled('Skin', (0.44, 0.245, 0.145), 0.55),
         'eye': U.principled('Eye', (1, 1, 1), 0.12),
         'brow': U.principled('Brow', (1, 1, 1), 0.7, base_tex=brow, uv_scale=1, alpha_clip=True, double=True),
         'lash': U.principled('Lash', (0.012, 0.010, 0.009), 0.6),
@@ -738,6 +767,7 @@ def feet_check(arm, P):
 
 def main():
     arm = import_rig()
+    relax_arms(arm)
     P = build_parts()
     decimate(P)
     uvs(P)

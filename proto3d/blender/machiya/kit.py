@@ -41,6 +41,12 @@ def _register_extra_materials():
             gen=mats._wood_spec(mats.rgb(146, 116, 88), mats.rgb(104, 80, 60), rings=30, warp=1.7, gray=mats.rgb(128, 116, 100),
                                 weather=0.3, checks=45, relief=0.0007, rough=(0.7, 0.88), wear=mats.rgb(92, 72, 55)),
             doc='使い込んだ木（縁台・樽の側板）。温かい中間の茶（明るいところで sRGB 約 #7a6048）、少し灰色の風化、干割れ。')
+    if 'wood_street' not in C:
+        C['wood_street'] = dict(
+            tile=(2.0, 0.5), size=1024, uv='along', nstr=1.0, seed=131,
+            gen=mats._wood_spec(mats.rgb(128, 98, 74), mats.rgb(82, 60, 44), rings=34, warp=1.5, relief=0.00012,
+                                rough=(0.62, 0.82), checks=18),
+            doc='町家の表の濃い木（wood_dark より明るい中くらいの茶 ≒ #4a3526 を日陰でも読める明るさに）。')
     if 'tile_manju' not in C:
         def gen(n, s, t):
             d = mats._gen_tile(n, s, t)
@@ -56,7 +62,7 @@ _register_extra_materials()
 
 # 材質の鍵（'lib#名前'）ごとの色の掛け算（頂点色 COLOR_0 に入る。three.js でも基本色に掛かる）。線形の RGB
 COLOR_GAIN = {
-    'wood_dark#bengara': (0.9, 0.68, 0.8),       # 格子：濃い木に赤みを足した落ち着いた弁柄（sRGB 平均 ≒ #4e3228、彩度 32%）
+    'wood_dark#bengara': (1.05, 0.8, 0.9),       # 格子：濃い木に赤みを足した落ち着いた弁柄（sRGB 平均 ≒ #4e3228、彩度 32%）
     'wood_dark#koshi': (0.9, 0.9, 0.9),          # 2 階の格子窓（AO を弱めるため別の物体。色は wood_dark と同じ）
     'earth_floor#tataki': (0.73, 0.83, 0.95),    # 三和土：温かい土色（sRGB 平均 ≒ #6e6052）
     'stone_granite#curb': (0.5, 0.46, 0.4),      # 割石・根石：明るい灰色をやめ、温かい灰
@@ -1216,8 +1222,9 @@ def noren(g, key, P, U, n_out, width, length, panels, *, seed=0, sway=0.03, pole
 DENSIFY = {'plaster_white': 0.42, 'plaster_white_streaks': 0.42, 'plaster_earth': 0.42, 'earth_floor': 0.5,
            'wood_weathered': 0.7}
 # 材質ごとの基本の明るさ（頂点色に掛ける。three.js でも基本色に掛かる）
-BASE = {'wood_dark': 0.9, 'wood_bengara': 0.9, 'plaster_white': 0.96, 'tile_manju': 0.85}
-TINT = {'tile_ibushi': (0.07, 0.02), 'wood_weathered': (0.07, 0.03), 'wood_dark': (0.06, 0.03), 'wood_fresh': (0.07, 0.04),
+LIB_REMAP = {'wood_dark': 'wood_street'}   # 町家の濃い木は明るめの専用の材質へ
+BASE = {'wood_dark': 1.0, 'wood_street': 1.0, 'wood_bengara': 1.0, 'plaster_white': 0.96, 'tile_manju': 0.85}
+TINT = {'wood_street': (0.06, 0.03), 'tile_ibushi': (0.07, 0.02), 'wood_weathered': (0.07, 0.03), 'wood_dark': (0.06, 0.03), 'wood_fresh': (0.07, 0.04),
         'wood_aged': (0.08, 0.04), 'tile_manju': (0.06, 0.02),
         'wood_bengara': (0.05, 0.02), 'stone_granite': (0.07, 0.03), 'straw': (0.08, 0.04), 'bamboo': (0.06, 0.03)}
 
@@ -1237,6 +1244,7 @@ def to_objects(g: Geo, M: Matrix, prefix: str, custom: dict | None = None) -> li
         ob = bpy.data.objects.new(me.name, me)
         bpy.context.scene.collection.objects.link(ob)
         lib = key.split('#')[0]
+        lib = LIB_REMAP.get(lib, lib)
         if key in custom:
             me.materials.append(custom[key])
         else:

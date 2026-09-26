@@ -99,6 +99,22 @@ def main():
             if o.get('koto_lightmap'):
                 log('AO bake (lightmap)', o.name)
                 mats.bake_ao_to_texture(o, 1024, samples=24 if QUICK else 48, distance=2.0, strength=0.7, ground_z=0.0)
+        # 門の木の足元の汚れ：地面から 0.8 m は暗く（×0.6 → 1.0 へ滑らかに）。泥はね・雨の跳ね返り
+        for o in ([o for o in groups.get('gate_v2', []) if o.get('koto_lib') == 'wood_timber'] if 'gate_v2' in out else []):
+            a = o.data.color_attributes.get(mats.COLOR_ATTR)
+            if a is None or a.domain != 'POINT':
+                continue
+            import numpy as np
+            co = np.empty(len(o.data.vertices) * 3)
+            o.data.vertices.foreach_get('co', co)
+            z = co.reshape(-1, 3)[:, 2]
+            c = np.empty(len(a.data) * 4, np.float32)
+            a.data.foreach_get('color', c)
+            c = c.reshape(-1, 4)
+            t = np.clip(z / 0.8, 0, 1)
+            k = 0.6 + 0.4 * t * t * (3 - 2 * t)
+            c[:, :3] *= k[:, None] * np.array([1.0, 0.97, 0.93])[None, :] ** (1 - t)[:, None]
+            a.data.foreach_set('color', c.ravel())
         if 'keep' in out:
             import model_keep
             model_keep.bake(groups['keep'], quick=QUICK)

@@ -114,24 +114,24 @@ def gen_road(n=2048, seed=811, tile=ROAD_TILE):
     scuff = snoise(sh, seed + 5, fmin=6, fmax=160, beta=1.0, aniso=(1.0, 5.0))   # v に長い擦れ跡
     # 土の地の色：低い彩度の灰みの黄土。明暗は大きいもの主体（点にしない）
     t = np.clip(0.5 + 0.08 * low + 0.06 * mid, 0, 1)   # 大きなむらは弱く（日陰でしみに見えないように）
-    col = mix(rgb(132, 118, 101), rgb(178, 164, 143), t)
+    col = mix(rgb(128, 120, 108), rgb(184, 174, 156), t)
     h = 0.0016 * low + 0.0035 * mid + 0.0004 * small
     # 締まった土の段：乾いた表面が割れて少し浮いた、輪郭の不揃いな板（10〜40 cm）。縁は段差、下の側に陰
     crust = smoothstep(-0.6, 0.35, 0.75 * low + 0.55 * snoise(sh, seed + 6, fmin=3, fmax=12, beta=1.2))
     warpn = snoise(sh, seed + 8, fmin=60, fmax=400, beta=0.8)
     n1 = 0.85 * snoise(sh, seed + 7, fmin=5, fmax=40, beta=1.0) + 0.22 * small + 0.10 * warpn
-    terr = smoothstep(0.15, 0.24, n1) * 0.0022 + smoothstep(0.85, 0.93, n1) * 0.0016
+    terr = smoothstep(0.15, 0.24, n1) * 0.0045 + smoothstep(0.85, 0.93, n1) * 0.0032
     terr *= crust
     h += terr
     # 段の縁：下の側（段の外）に細い陰、上の角は少し明るい（乾いて白っぽい）
     tb = blur(terr, 4)
     under = np.clip((tb - terr) / 0.0012, 0, 1)
     over = np.clip((terr - tb) / 0.0012, 0, 1)
-    col *= (1 - 0.12 * under + 0.05 * over)[..., None]
+    col *= (1 - 0.22 * under + 0.08 * over)[..., None]
     col *= (1 + 0.012 * (terr / 0.0038))[..., None]
     # 小さな土のふくらみ（2〜10 cm、明暗 ±3%）
-    h += 0.0012 * small
-    col *= (1 + 0.03 * small)[..., None]
+    h += 0.0028 * small
+    col *= (1 + 0.06 * small)[..., None]
     # 砂ぼこりのたまり（20 cm〜1 m、輪郭のはっきりした淡い所）と、踏み締められて少し暗い所（点ではなく面）
     dn = 0.85 * snoise(sh, seed + 11, fmin=2, fmax=12, beta=1.2) + 0.12 * small + 0.1 * warpn
     dust = smoothstep(0.35, 1.0, dn)
@@ -158,6 +158,14 @@ def gen_road(n=2048, seed=811, tile=ROAD_TILE):
     pc, cov, dome = mats._pebbles(sh, seed + 10, int(tile[0] / 0.05), 0.035, 0.22, 0.36, pal, flat=1.6)
     col = mix(col, mix(pc, col, 0.45), cov * 0.8)
     h += 0.003 * dome
+    # 半ば埋まった石（4〜9 cm、低い日を受けて光る頭と陰）
+    pal2 = [rgb(168, 162, 150), rgb(120, 116, 110), rgb(150, 140, 124), rgb(182, 174, 160)]
+    pc2, cov2, dome2 = mats._pebbles(sh, seed + 21, int(tile[0] / 0.16), 0.09, 0.3, 0.55, pal2, flat=1.2)
+    ring = np.clip(blur(cov2, 6) - cov2, 0, 1)
+    col *= (1 - 0.35 * ring)[..., None]
+    col = mix(col, pc2, cov2 * 0.9)
+    h += 0.012 * dome2 - 0.002 * ring
+    cov = np.maximum(cov, cov2)
     rough = np.clip(0.9 + 0.03 * fine + 0.05 * dust - 0.05 * comp - 0.05 * np.clip(sc, 0, 1) - 0.06 * cov, 0.7, 1.0)
     return dict(albedo=np.clip(col, 0, 1), height=h, rough=rough)
 
@@ -168,7 +176,7 @@ def build_road(force=False) -> dict:
         return paths
     d = gen_road()
     _save_png(paths['albedo'], d['albedo'])
-    _save_png(paths['normal'], _height_to_normal(d['height'], ROAD_TILE, 1.0))
+    _save_png(paths['normal'], _height_to_normal(d['height'], ROAD_TILE, 1.6))
     r = d['rough']
     orm = np.stack([np.ones_like(r), r, np.zeros_like(r)], -1)
     _save_png(paths['orm'], mats._downsample2(orm))

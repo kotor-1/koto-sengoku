@@ -65,7 +65,7 @@ TURF_WS = -10.75        # 塀ぎわの草の南の端
 TURF_WN = -13.25        # 城内側の塀ぎわの草の北の端
 TURF_NSW = 6.3          # 東の塀（南北）の西側の草の西の端
 FOOTINGS = [(2.02, 2.86, -12.33, -11.40), (-2.86, -2.02, -12.33, -11.40)]   # 門の礎石（gate_v2）
-EARTH_TINT = np.array([1.0, 0.87, 0.70])     # 暖かい土の色（線形の掛け算）
+EARTH_TINT = np.array([1.0, 0.92, 0.80])     # 暖かい土の色（線形の掛け算）
 CURB_W = dict(house=0.17, road=0.18)          # 縁石の幅。溝は 0.27 m
 
 
@@ -235,8 +235,8 @@ def height(x, z):
     rut = np.zeros_like(x)
     for s, F in ((-1, F_RUT), (1, F_RUT2)):
         xc = s * RUT_X + 0.08 * F(0 * x + s * 9.0, z)
-        d = (x - xc) / 0.2
-        rut -= 0.02 * np.exp(-d * d) * np.clip(0.75 + 0.35 * F(x * 0 + s * 3.0 + 20, z * 1.7), 0.3, 1.25)
+        d = (x - xc) / 0.26
+        rut -= 0.06 * np.exp(-d * d) * np.clip(0.75 + 0.35 * F(x * 0 + s * 3.0 + 20, z * 1.7), 0.3, 1.25)
     path = -0.008 * np.exp(-((x - 0.15 - 0.25 * F_RUT(x * 0 + 5.0, z * 0.6)) / 0.55) ** 2)
     gate = np.exp(-((z - EW_Z) / 1.4) ** 2)
     road = (crown + rut + path) * (1 - 0.6 * gate) + 0.004 * F_MID(x, z)
@@ -519,8 +519,8 @@ def wetness(x, z):
     w = w * (1 - 0.55 * lane)
     rut = np.zeros_like(x)
     for sg in (-1, 1):
-        rut = np.maximum(rut, np.exp(-((x - sg * RUT_X) / 0.22) ** 2))
-    ks = [0.2 * rut * road,
+        rut = np.maximum(rut, np.exp(-((x - sg * RUT_X) / 0.26) ** 2))
+    ks = [0.45 * rut * road,
           0.82 * np.exp(-(ditch_dist(x, z) / 0.85) ** 2),
           0.38 * np.exp(-(base_dist(x, z) / 0.9) ** 2)]
     for p0, p1 in DRIP_LINES:
@@ -529,15 +529,39 @@ def wetness(x, z):
     ks.append(0.45 * sstep(-0.003, 0.018, low))
     ks.append(0.45 * np.exp(-((z - EW_Z) / 1.7) ** 2) * sstep(3.6, 2.6, ax))            # 門の下
     ks.append(0.4 * sstep(EW_Z - 0.3, EW_Z - 1.0, z) * sstep(EW_Z - 5.0, EW_Z - 2.6, z))  # 城内側の塀の陰
+    ks.append(sstep(0.0, 0.9, np.clip(puddle(x, z) * 3.0, 0, 1)))   # 水たまりの周り
     for k in ks:
         w = 1 - (1 - w) * (1 - np.clip(k, 0, 1))
     return np.clip(w, 0, 1)
 
 
+PUDDLES = [  # (x, z, 半径 x, 半径 z, 回転) 門の下の踏み窪みと側溝の縁の浅い水たまり
+    (0.6, -10.2, 1.5, 0.8, 0.3), (-1.4, -9.0, 0.9, 0.5, -0.4), (1.9, -8.4, 0.7, 0.4, 0.8),
+    (-3.2, -6.5, 0.8, 0.35, 0.1), (-3.3, -1.0, 0.6, 0.3, -0.2), (3.1, -3.2, 0.55, 0.3, 0.5),
+    (2.5, -5.5, 1.6, 0.75, 0.25), (0.5, -7.0, 1.4, 0.6, -0.35),   # 開始の足元の手前の大きな水たまり（日差しを映す）
+]
+
+
+def puddle(x, z):
+    """水たまりの度合い（0〜1）。輪郭はむらで崩す"""
+    x = np.asarray(x, np.float64)
+    z = np.asarray(z, np.float64)
+    p = np.zeros_like(x)
+    edge = 0.25 * F_FINE(x, z) + 0.2 * F_WET2(x, z)
+    for cx, cz, rx, rz, a in PUDDLES:
+        dx, dz = x - cx, z - cz
+        u = (dx * np.cos(a) + dz * np.sin(a)) / rx
+        v = (-dx * np.sin(a) + dz * np.cos(a)) / rz
+        p = np.maximum(p, sstep(1.05, 0.7, np.hypot(u, v) + edge))
+    return p
+
+
 def road_roughness(x, z):
-    """土の粗さ（乾き 0.9〜0.95、湿り 0.62〜0.72。鏡のようにはしない：0.6 未満にしない）"""
+    """土の粗さ（乾き 0.9〜0.95、湿り 0.62〜0.72。水たまりだけ 0.18〜0.3）"""
     w = wetness(x, z)
-    return np.clip(0.93 - 0.3 * w + 0.02 * F_FINE(x, z), 0.6, 0.97)
+    r = np.clip(0.93 - 0.3 * w + 0.02 * F_FINE(x, z), 0.6, 0.97)
+    p = puddle(x, z)
+    return r * (1 - p) + 0.2 * p
 
 
 def terrain_colors(x, z, y):
@@ -546,8 +570,8 @@ def terrain_colors(x, z, y):
     ax = np.abs(x)
     road = sstep(ROAD_HW + 0.2, ROAD_HW - 0.4, ax)
     # 大きな明暗（3〜8 m と 6〜16 m、±10% 前後）と細かな明暗（0.5〜1.5 m、±5%）
-    mac = np.clip(0.05 * F_MAC(x, z) + 0.035 * F_MAC2(x, z), -0.12, 0.12)
-    fine = np.clip(0.03 * F_FINE(x, z), -0.06, 0.06)
+    mac = np.clip(0.08 * F_MAC(x, z) + 0.06 * F_MAC2(x, z), -0.18, 0.16)
+    fine = np.clip(0.06 * F_FINE(x, z), -0.1, 0.1)
     v = (1 + mac) * (1 + fine)
     hue = F_HUE(x, z)
     col = v[:, None] * EARTH_TINT[None] * np.stack([1 + 0.025 * hue, np.ones_like(hue), 1 - 0.045 * hue], -1)
@@ -556,6 +580,8 @@ def terrain_colors(x, z, y):
     dry = col * np.array([1.0, 1.0, 1.0]) + 0.06 * (1 - w) * np.array([1.0, 0.97, 0.92])
     damp = col * np.array([0.74, 0.72, 0.74])
     col = dry * (1 - w) + damp * w
+    pd = puddle(x, z)[:, None]
+    col = col * (1 - 0.35 * pd) + 0.35 * pd * col * np.array([0.8, 0.85, 1.0])
     # 城内：少し灰色がかった土
     castle = sstep(EW_Z - 0.6, EW_Z - 2.0, z)
     col *= (1 - 0.04 * castle)[:, None]
@@ -1332,6 +1358,14 @@ def plant_spots(joints):
     spots = [('shrub_azalea', -13.6, -10.85, 1.0), ('shrub_azalea', -10.3, -10.95, 0.85), ('shrub_azalea', 5.3, -11.0, 0.8),
              ('shrub_azalea', 6.62, -1.9, 0.85),
              ('shrub_fern', -5.2, -10.8, 0.9), ('shrub_fern', 6.62, -10.95, 0.85), ('shrub_fern', -8.8, -7.75 + DZW, 0.8)]
+    # 塀の根元・家の前の低木の中景（つつじ・羊歯のかたまり）
+    extra = [('shrub_azalea', -7.0, -10.95, 1.15), ('shrub_fern', -6.3, -10.8, 1.0), ('shrub_azalea', -12.0, -10.9, 1.1),
+             ('shrub_azalea', 8.0, -10.95, 1.1), ('shrub_fern', 9.2, -10.85, 1.0), ('shrub_azalea', 10.4, -10.95, 1.2),
+             ('shrub_fern', 4.55, -10.85, 0.9), ('shrub_azalea', NS_X - WALL_HALF - 0.55, -7.6, 1.0),
+             ('shrub_fern', NS_X - WALL_HALF - 0.5, -5.0, 0.95), ('shrub_azalea', NS_X - WALL_HALF - 0.55, 0.4, 0.9),
+             ('shrub_fern', -4.6, -10.85, 0.8), ('shrub_azalea', -9.0, -10.95, 0.95)]
+    spots += [sp for sp in extra if _plant_ok(sp[1], sp[2], avoid_road=False)]
+    print('extra shrubs placed:', sum(_plant_ok(sp[1], sp[2], avoid_road=False) for sp in extra), '/', len(extra))
     grass = ('grass_a', 'grass_b', 'grass_c')
 
     def cluster(cx, cz, n, rad=0.28, smin=0.55, smax=1.05, avoid_road=True):

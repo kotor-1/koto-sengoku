@@ -155,7 +155,7 @@ const kbResult = {};
   check('↑ で城門を通り抜けられる', g.hz < -12 - 2, `z ${g.hz.toFixed(2)}（門は z=-12）`);
 
   // 家の横の路地（家の北東の角から ← で西へ）
-  await put(page, -3.0, -6.5);
+  await put(page, -3.0, -10.45);
   await page.keyboard.down('ArrowLeft');
   await stepN(page, 75);
   const mid = await heroOnScreen(page);
@@ -164,7 +164,7 @@ const kbResult = {};
   await stepN(page, 120);
   const out = await heroOnScreen(page);
   await page.keyboard.up('ArrowLeft');
-  check('← で家の横（北側の路地）を通って裏まで抜けられ、家には入り込まない', mid.hz < -5.6 - 0.2 && out.hx < -10.6, `家の横 (${mid.hx.toFixed(1)}, ${mid.hz.toFixed(2)}) → (${out.hx.toFixed(1)}, ${out.hz.toFixed(2)})`);
+  check('← で家の横（北側の路地）を通って裏まで抜けられ、家には入り込まない', mid.hz < -9.4 - 0.2 && out.hx < -10.6, `家の横 (${mid.hx.toFixed(1)}, ${mid.hz.toFixed(2)}) → (${out.hx.toFixed(1)}, ${out.hz.toFixed(2)})`);
   check('路地で家に隠れる所では、家が半透明になる', fade[1] < 0.5, `透明度 ${JSON.stringify(fade)}（城門・町家・松・広葉樹）`);
   await ctx.close();
 }

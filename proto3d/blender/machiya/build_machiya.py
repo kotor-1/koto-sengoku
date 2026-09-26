@@ -290,8 +290,8 @@ def build_a():
     kit.sag(g, -ov[0], W + ov[1], kz0, 0.035)
 
     # 軒下の陰（頂点色の AO を壁ぎわ 0.5 → 軒先 0.85 に抑える）：庇と大屋根の表の軒
-    g.eave_zones = [dict(xw=xf, xe=6.25, y0=-0.25, y1=W + 0.25, zb=Hs['zb'], t0=0.5, t1=0.85, soffit=0.22, fade=0.6),
-                    dict(xw=xf, xe=xf + of, y0=-ov[0], y1=W + ov[1], zb=zb, t0=0.5, t1=0.85, soffit=0.22, fade=0.6)]
+    g.eave_zones = [dict(xw=xf, xe=6.25, y0=-0.25, y1=W + 0.25, zb=Hs['zb'], t0=0.68, t1=0.92, soffit=0.22, fade=0.6),
+                    dict(xw=xf, xe=xf + of, y0=-ov[0], y1=W + ov[1], zb=zb, t0=0.68, t1=0.92, soffit=0.22, fade=0.6)]
 
     # --- 当たり判定・カメラ ---
     col = [(-0.12, xf + 0.12, -0.12, W + 0.12), (xf, xf + 0.4, 0.08, 1.97), (5.3, 5.82, 6.15, 7.75),
@@ -631,6 +631,10 @@ def build_one(key, preview=True, samples=48):
     reset()
     g, M, col, cam, custom = fn()
     custom.update(common_custom())
+    # 家の下の地面の穴をふさぐ土の塊（地面の穴の縁から空が見えないように）。家の足元の範囲（高さ 0.35 m 以下の頂点）より少し広く、上面は -0.01 m
+    lo = np.array([tuple(v) for p in g.parts.values() for v in p['v'] if v.z < 0.35])
+    if len(lo):
+        box(g, 'earth_floor', lo[:, 0].min() - 0.1, lo[:, 0].max() + 0.1, lo[:, 1].min() - 0.1, lo[:, 1].max() + 0.1, -0.9, -0.01)
     print(name, 'local tris', g.tris(), flush=True)
     objs = kit.to_objects(g, M, name, custom)
     kit.finish_objects(objs, seed=hash(name) % 1000)

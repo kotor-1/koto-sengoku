@@ -27,7 +27,7 @@ BARK_TILE = (0.6, 0.6)
 # 樹冠の外形：中心と、向きごとの半径（+X, -X, +Y, -Y, +Z, -Z）
 ENV_C = np.array([0.8, 0.4, 5.0])
 ENV_R = np.array([4.3, 4.2, 4.1, 3.0, 2.9, 2.6])
-PLACE = [((-7.4, -9.2), 0.0, 1.0)]   # scene.json の sakura（回さずに置く）
+PLACE = [((-8.0, -16.2), 0.0, 1.0)]   # scene.json の sakura（回さずに置く）
 # 大枝：幹の高さ、方位（+X から左回り、度）、鉛直からの傾き（度）、長さ、根元の半径
 LIMBS = [
     (1.70, 6, 64, 4.7, 0.17),       # 東（道の側）へ
@@ -38,6 +38,20 @@ LIMBS = [
     (2.00, 238, 42, 4.0, 0.13),     # 南西へ立ち上がる
     (2.10, 150, 10, 3.8, 0.12, 0.1),      # 中央の立ち枝（樹冠の上を埋める）
 ]
+
+
+# 樹冠を 7 つの大きな花の塊に分ける（塊の間は暗い枝の隙間）。中心（外形の中心からの位置）と半径
+LOBES = [((2.6, 0.6, 0.6), 1.9), ((-2.4, 0.8, 0.3), 1.9), ((0.4, 2.6, 0.9), 1.9), ((0.3, -1.6, 0.4), 1.6),
+         ((1.0, 0.6, 2.0), 1.8), ((-1.2, 2.0, 1.6), 1.6), ((-0.6, -0.3, -1.1), 1.5)]
+LOBE_C = np.array([ENV_C + np.array(c) for c, _ in LOBES])
+LOBE_R = np.array([r for _, r in LOBES])
+
+
+def lobe_w(p):
+    """塊の中心への近さ（0 隙間〜1 塊の芯）と、いちばん近い塊の番号"""
+    p = np.asarray(p, np.float64)
+    d = np.linalg.norm(p[..., None, :] - LOBE_C, axis=-1) / LOBE_R
+    return np.exp(-d.min(-1) ** 2 * 1.1), d.argmin(-1)
 
 
 ENV_P = 2.6   # 超楕円体の指数（2 より大きいと肩が張った傘の形）
@@ -260,7 +274,7 @@ def build(preview=True):
         pos = rng.uniform(0, step)
         while pos < s[-1]:
             p, tan = point_at(path, pos / s[-1])
-            if not blocked(p) and rng.random() < prob_fn(p, pos / s[-1]):
+            if not blocked(p) and rng.random() < prob_fn(p, pos / s[-1]) * smoothstep(0.22, 0.55, lobe_w(p)[0]) * 1.5:
                 clump(p, tan, size_rng, pair)
             pos += step * rng.uniform(0.7, 1.3)
 
@@ -283,7 +297,8 @@ def build(preview=True):
     nfc = len(card_info)
     nvc = len(Vf) // nfc
     Cf = np.repeat(np.array(clump_c), nvc, 0)
-    Nf = unit(0.2 * Mf + 0.35 * unit(Vf - Cf) + 0.6 * env_normal(Vf) + 0.25 * UP)
+    lw, li = lobe_w(Vf)
+    Nf = unit(0.15 * Mf + 0.2 * unit(Vf - Cf) + 0.75 * unit(Vf - LOBE_C[li]) + 0.2 * env_normal(Vf) + 0.2 * UP)
     Nb = smooth_normals(Vb, Fb, bark.seams)
     ao_f = volume_ao(Vf, Nf, dens, k=24, max_d=4.0, t0=0.08, up_bias=0.5)
     ao_b = volume_ao(Vb, Nb, dens, k=24, max_d=4.0, t0=0.04, up_bias=0.3, ground_dist=1.2)
@@ -291,7 +306,8 @@ def build(preview=True):
     lum = np.clip(rng.normal(1.0, 0.05, (nfc, 1)), 0.88, 1.1)
     hue = rng.normal(0, 0.02, (nfc, 1)) * np.array([[0.0, -1.0, -0.5]])
     tint = np.repeat(np.clip(lum * (1 + hue), 0, 1.1), nvc, 0)
-    col_f = tint * (0.58 + 0.42 * ao_f[:, None] ** 0.8)
+    face = np.clip(unit(Vf - LOBE_C[li]) @ unit(np.array([0.3, -0.4, 0.87])) * 0.5 + 0.5, 0, 1)   # 塊の上・日向側ほど明るい
+    col_f = tint * (0.5 + 0.5 * ao_f[:, None] ** 0.8) * (0.5 + 0.5 * face)[:, None]
     col_b = np.repeat((0.34 + 0.66 * ao_b)[:, None], 3, 1)
 
     m_bark = mat_bark('sakura_bark', tex('sakura_bark', '_albedo'), tex('sakura_bark', '_normal'), rough=0.72, nstrength=0.9)

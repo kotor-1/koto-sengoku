@@ -22,13 +22,18 @@ from treelib import (UP, Density, Geo, MODELS_DIR, PREVIEW_DIR, card, catmull, c
 SEED = 23
 BARK_TILE = (0.8, 0.8)
 LEAN = unit(np.array([0.35, 0.2, 0.0]))
-# 置き場所（ゲームの座標 x, z、向き rotation.y、大きさ）：西の土塀の向こう（城内）に 3 本、町家 A の裏に 1 本、門越しの奥（歩ける範囲の外）に 1 本
+# 置き場所（ゲームの座標 x, z、向き rotation.y、大きさ）：西の土塀の向こう（城内）に 4 本、町家 A の裏に 1 本、門越し（開始の画面で門の内側の左、天守の手前）に 1 本、本丸の石垣の前に 1 本
 FAR_PLACES = [
+    (-19.5, -9.0, 2.2, 1.2),     # 町家 A の裏の高い松（屋根の線の上）
+    (7.5, -17.5, 0.9, 1.15),     # 門の右の塀の奥（天守の右）
+    (-4.0, -19.5, 5.1, 1.05),    # 門の左の塀の奥（桜の後ろ）
     (-12.5, -15.0, 0.4, 1.0),
     (-15.5, -19.5, 2.9, 1.05),
-    (-9.5, -23.0, 4.4, 0.9),
+    (-13.5, -26.0, 4.4, 0.9),
     (-16.4, -3.0, 1.3, 0.97),
-    (-1.5, -40.0, 1.9, 1.0),
+    (-18.0, -31.0, 1.9, 0.95),
+    (-2.5, -55.0, 0.7, 0.9),
+    (-7.5, -28.8, 3.3, 1.0),
 ]
 # 主な枝：幹の高さ z、方位（度）、長さ、出だしの仰角（度）
 LIMBS = [
@@ -213,7 +218,7 @@ def build(preview=True):
             'triangles': tris,
             'placements': [{'x': x, 'z': z, 'rotation_y': rot, 'scale': sc} for x, z, rot, sc in FAR_PLACES],
             'note': '遠景用の軽い黒松。placements の位置に、幹の根元を原点として置く（rotation.y・scale）。'
-                    '当たり判定（上の colliders・camera_blockers）はこの 4 か所の幹だけ。',
+                    '当たり判定（上の colliders・camera_blockers）は placements の各位置の幹だけ。',
         },
         'colliders': colliders,
         'camera_blockers': blockers,

@@ -186,7 +186,7 @@ def indigo(size=1024, seed=21):
     height, tone, over = _weave(size, 4, seed, slub_amount=2.6, slub_len=(30, 220))
     low = periodic_noise((size, size), 400, seed + 3, 3)
     mid = periodic_noise((size, size), 60, seed + 4, 2)
-    base = srgb((62, 66, 86))
+    base = srgb((40, 46, 62))
     tone = np.where(over, tone, tone * 0.45)       # 節の筋は主に縦糸（格子に見えないように）
     v = 1.0 + 0.12 * np.clip(tone / 1.2, -1, 1.4) + 0.035 * low + 0.015 * mid + 0.04 * (height - 0.5)
     v = np.clip(v, 0.80, 1.22)

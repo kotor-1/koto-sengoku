@@ -52,7 +52,7 @@ const maxDpr = low ? 1 : 2;
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxDpr));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = tps ? 0.95 : 1.0;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 view.appendChild(renderer.domElement);
@@ -61,10 +61,10 @@ let hemiBoost = 0;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(SKY.horizon);
 // 霧（空気の遠近）：遠いほど青みがかった地平の色に近づく。肩越しでは門越しの天守（約 60m 先）に薄くかかる程度から
-scene.fog = tps ? new THREE.Fog(SKY.haze, 25, 420) : new THREE.Fog(SKY.horizon, 32, 70);
-// 日差し：カメラ（開始時は北を向く）の左うしろ＝西南の低い所から（晴れた午後遅く。長い影が道の奥へ斜めに落ちる）。
-// 見下ろしのときはこれまでの高さ
-const SUN_OFFSET = tps ? new THREE.Vector3(-13, 11, 14) : new THREE.Vector3(-14, 18, 7);
+scene.fog = tps ? new THREE.Fog(SKY.haze, 14, 170) : new THREE.Fog(SKY.horizon, 32, 70);
+// 日差し：カメラ（開始時は北北西を向く）の左うしろ＝南南西の低め（高さ約 34°）から（晴れた午後遅く）。
+// 西の町家の影が道の左側に落ち、主人公・門・塀の正面は日なたになる。見下ろしのときはこれまでの高さ
+const SUN_OFFSET = tps ? new THREE.Vector3(-5, 12, 16) : new THREE.Vector3(-14, 18, 7);
 const sky = makeSky(SUN_OFFSET);
 scene.add(sky, makeHills());
 const pmrem = new THREE.PMREMGenerator(renderer);
@@ -74,13 +74,13 @@ if (!low) {
     env.add(makeSky(SUN_OFFSET));
     scene.environment = pmrem.fromScene(env, 0.04, 1, 2000).texture;
     // 映り込みは弱く（陰を明るく灰色にしない。陰の明るさは主に青い空の光で決める）
-    scene.environmentIntensity = 0.3;
+    scene.environmentIntensity = tps ? 0.3 : 0.45;
 } else {
     hemiBoost = 0.25;
 }
 
 // 肩越し：低い日の暖かい色で強く（日なたをはっきり明るく）
-const sun = new THREE.DirectionalLight(tps ? '#ffd29e' : '#fff0d8', tps ? 4.6 : 2.7);
+const sun = new THREE.DirectionalLight(tps ? '#ffd6a8' : '#fff0d8', tps ? 5.2 : 2.7);
 sun.castShadow = true;
 sun.shadow.mapSize.set(low ? 1024 : 2048, low ? 1024 : 2048);
 // 影の範囲：肩越しでは前方に広く（主人公の少し先を中心に）
@@ -92,7 +92,7 @@ sun.shadow.radius = tps ? 2 : 3;
 scene.add(sun, sun.target);
 // 空と地面の照り返し：肩越しでは地面の照り返しを暖かく（土の道の色）
 // 肩越し：空の光は青く弱く（陰は深いが青みがあり形が読める）、地面の照り返しは土の色
-const hemi = tps ? new THREE.HemisphereLight('#9ab8e0', '#7a5e42', 0.55 + hemiBoost) : new THREE.HemisphereLight('#cfdcea', '#7a6750', 1.0 + hemiBoost);
+const hemi = tps ? new THREE.HemisphereLight('#9dbcec', '#8a7358', 1.0 + hemiBoost) : new THREE.HemisphereLight('#cfdcea', '#7a6750', 1.0 + hemiBoost);
 scene.add(hemi);
 
 const TPS_FOV = 48;
@@ -466,7 +466,7 @@ async function start(): Promise<void> {
         prepare(g.scene);
         scene.add(g.scene);
         // 隠れたら半透明にするのは見下ろしのときだけ（肩越しではカメラが壁の手前に来るので、建物は薄くしない）
-        if (!tps && SCENE_MODELS[i] !== 'ground_v2' && SCENE_MODELS[i] !== 'keep') addOccluder(g.scene);
+        if (!tps && SCENE_MODELS[i] !== 'ground_v2' && SCENE_MODELS[i] !== 'keep' && SCENE_MODELS[i] !== 'inner') addOccluder(g.scene);
     });
     // 木：配置（scene.json の trees）の幹の位置へ。松は 2 本（向きと大きさを変える）
     prepare(pine.scene);
@@ -479,7 +479,8 @@ async function start(): Promise<void> {
         if (isPine) pineUsed = true;
         obj.position.set(t.x, 0, t.z);
         if (t.name === 'pine_back') {
-            obj.rotation.y = 2.2;
+            // 枝の張り出しを西（左）へ：開始の画面で、門越しの天守を隠さない
+            obj.rotation.y = 0;
             obj.scale.setScalar(0.9);
         }
         scene.add(obj);
@@ -512,7 +513,7 @@ async function start(): Promise<void> {
 }
 
 /** 場面の素材（配置どおりの位置で作ってある） */
-const SCENE_MODELS = ['ground_v2', 'gate_v2', 'walls_v2', 'keep', 'machiya_a', 'machiya_b', 'machiya_d'];
+const SCENE_MODELS = ['ground_v2', 'gate_v2', 'walls_v2', 'keep', 'inner', 'machiya_a', 'machiya_b', 'machiya_d'];
 /** 町の外側の木立：[x, z, 向き, 大きさ]（歩ける範囲 BOUNDS の外。松を使い回す） */
 const BACK_TREES: [number, number, number, number][] = [
     [-27, -16, 0.3, 1.1], [26, -22, 1.7, 1.2], [-26, 12, 2.6, 1.0], [27, 9, 1.1, 0.95],

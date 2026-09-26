@@ -126,8 +126,8 @@ def section(y, thetas):
     b_up = np.interp(y, [0.80, 0.90, 1.00], [0.178, 0.160, 0.142])
     tt = np.clip((0.80 - y) / (0.80 - Y_HEM), 0, 1)
     e = 1 - (1 - tt) ** 1.7
-    a = np.where(y < 0.80, 0.232 + (0.42 - 0.232) * e, a_up)
-    b = np.where(y < 0.80, 0.178 + (0.30 - 0.178) * e, b_up)
+    a = np.where(y < 0.80, 0.232 + (0.50 - 0.232) * e, a_up)
+    b = np.where(y < 0.80, 0.178 + (0.37 - 0.178) * e, b_up)
     r = a * b / np.sqrt((b * np.sin(t)) ** 2 + (a * np.cos(t)) ** 2)
     hi = y > 0.86
     if hi.any():

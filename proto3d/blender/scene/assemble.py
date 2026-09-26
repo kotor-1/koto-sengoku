@@ -4,7 +4,7 @@
     /root/blender-venv/bin/python proto3d/blender/scene/assemble.py [--samples 32] [--views main,left] [--res 1280x720] [--ground GLB]
 
 - 町家・門・塀・天守・地面は GLB の中でゲームの絶対座標になっているので、原点にそのまま置く（main.ts の SCENE_MODELS と同じ）。
-- 木は scene.json の trees の位置（幹の根元が原点）。pine_back は向き 2.2・大きさ 0.9。外側の木立 BACK_TREES も main.ts と同じ。
+- 木は scene.json の trees の位置（幹の根元が原点）。pine_back は向き 0（枝を西へ）・大きさ 0.9。外側の木立 BACK_TREES も main.ts と同じ。
   遠景の松 tree_pine_far は trees/trees.meta.json の placements に置く（main.ts にはまだ無い。far_pines=False で外せる）。
 - 主人公 hero_v3 は hero_start に、hero_start_heading の向き（ゲームの rotation.y ＝ Blender の Z 回り。無ければ π ＝北）。
 - 開始の画面のカメラは hero_start_yaw・hero_start_pitch（follow.ts の createOrbit(yaw, pitch) の値。無ければ 0 ＝北・0.1）。
@@ -36,7 +36,7 @@ SCENE_MODELS = ['ground_v2', 'gate_v2', 'walls_v2', 'keep', 'machiya_a', 'machiy
 BACK_TREES = [(-27, -16, 0.3, 1.1), (26, -22, 1.7, 1.2), (-26, 12, 2.6, 1.0), (27, 9, 1.1, 0.95)]
 SKY = dict(zenith='#4f7fb8', horizon='#c9d6db', glow='#ffdcae')
 FOG = (45.0, 480.0)
-FOLLOW = dict(height=1.55, shoulder=0.4, distance=2.3, pitch0=0.06)
+FOLLOW = dict(height=1.5, shoulder=0.38, distance=2.1, pitch0=0.06)
 
 
 def lin(hexs: str) -> tuple[float, float, float]:
@@ -108,7 +108,7 @@ def assemble(*, ground=True, hero=True, trees=True, buildings=True, back_trees=T
         pine = load_glb('tree_pine')
         pine[0].location = g2b(tpos['pine_big'][0], 0, tpos['pine_big'][1])
         out['pine_big'] = pine
-        r = place_copy('pine_back', pine[1], (tpos['pine_back'][0], 0, tpos['pine_back'][1]), 2.2, 0.9)
+        r = place_copy('pine_back', pine[1], (tpos['pine_back'][0], 0, tpos['pine_back'][1]), 0.0, 0.9)
         out['pine_back'] = (r, list(r.children))
         if back_trees:
             for i, (x, z, rot, sc) in enumerate(BACK_TREES):

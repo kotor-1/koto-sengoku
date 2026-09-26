@@ -84,7 +84,7 @@ async function open(opts) {
   await waitFor(page, () => window.__p3.hero.speed === 0);
 
   // 家の横を通る：家の北東の角の外から、←（西寄り）で歩く。家の北の壁に沿って滑り、裏まで抜ける
-  await page.evaluate(() => { const h = window.__p3.hero; h.x = -3.0; h.z = -7.2; h.heading = -1.2; });
+  await page.evaluate(() => { const h = window.__p3.hero; h.x = -3.0; h.z = -10.45; h.heading = -1.2; });
   await page.waitForTimeout(500);
   await page.keyboard.down('ArrowLeft');
   // 路地の途中（家の裏にいてカメラから隠れる所）では、家が半透明になる
@@ -97,11 +97,11 @@ async function open(opts) {
   const along = await state(page);
   await page.screenshot({ path: `${S}/p3-pc-beside-house.png` });
   await page.keyboard.up('ArrowLeft');
-  check('家の横（北側の路地）を通って裏まで抜けられ、家には入り込まない', passed && mid.z < -5.6 - 0.2 && along.x < -10.6, `家の横 (${mid.x.toFixed(1)}, ${mid.z.toFixed(2)}) → 抜けた所 (${along.x.toFixed(1)}, ${along.z.toFixed(1)})`);
+  check('家の横（北側の路地）を通って裏まで抜けられ、家には入り込まない', passed && mid.z < -9.4 - 0.2 && along.x < -10.6, `家の横 (${mid.x.toFixed(1)}, ${mid.z.toFixed(2)}) → 抜けた所 (${along.x.toFixed(1)}, ${along.z.toFixed(1)})`);
   await waitFor(page, () => window.__p3.hero.speed === 0);
 
   // 家の表へ向かって歩いても、めり込まない
-  await page.evaluate(() => { const h = window.__p3.hero; h.x = -2.6; h.z = -1.5; h.heading = -1.57; });
+  await page.evaluate(() => { const h = window.__p3.hero; h.x = -2.6; h.z = -5.0; h.heading = -1.57; });
   await page.keyboard.down('ArrowLeft');
   // 壁に着くまで（x がほぼ変わらなくなるまで）待つ
   await waitFor(page, () => window.__p3.hero.x < -3.5);

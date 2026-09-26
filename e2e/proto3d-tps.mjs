@@ -42,7 +42,9 @@ const ang = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
   const { ctx, page } = await open({});
   const s0 = await st(page);
   await page.screenshot({ path: `${S}/p3tps-pc-start.png`, timeout: 300000 });
-  check('肩越しのカメラ：初めは主人公の背後（南）から城門の方（北）を見る', s0.cam[2] > s0.z + 2 && s0.yaw === 0 && s0.cam[1] > 1.5, `カメラ (${s0.cam.map(f2)})・主人公 (${f2(s0.x)}, ${f2(s0.z)})`);
+  // 初めの向きは scene.json の hero_start_yaw（北西寄り）。カメラは見る向きの反対側（主人公の背後）で、胸〜肩の高さ
+  const back0 = (s0.cam[0] - s0.x) * Math.sin(s0.yaw) + (s0.cam[2] - s0.z) * Math.cos(s0.yaw);
+  check('肩越しのカメラ：初めは主人公の背後から城門の方（北寄り）を見る', back0 > 1.5 && Math.cos(s0.yaw) > 0 && s0.cam[1] > 1.2, `カメラ (${s0.cam.map(f2)})・主人公 (${f2(s0.x)}, ${f2(s0.z)})・向き ${f2(s0.yaw)}`);
 
   // マウスのドラッグで見回す（右へ 200px）
   await page.mouse.move(480, 270);
@@ -52,7 +54,7 @@ const ang = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
   const mid = await st(page);
   await page.mouse.up();
   const s1 = await st(page);
-  check('PC：画面を右へドラッグすると右を向く（主人公は動かない）', s1.yaw < -0.8 && mid.look && !s1.look && s1.x === s0.x && s1.z === s0.z, `向き ${f2(s0.yaw)} → ${f2(s1.yaw)}`);
+  check('PC：画面を右へドラッグすると右を向く（主人公は動かない）', s1.yaw < s0.yaw - 0.8 && mid.look && !s1.look && s1.x === s0.x && s1.z === s0.z, `向き ${f2(s0.yaw)} → ${f2(s1.yaw)}`);
 
   // 上へドラッグで上を向く
   await page.mouse.move(480, 300);

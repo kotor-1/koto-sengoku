@@ -27,9 +27,10 @@ def _lin(c):
 
 
 COL = {
-    'plaster': _lin((212, 208, 198)),
-    'soffit': _lin((186, 183, 176)),
-    'stone': _lin((128, 123, 114)),
+    # 遠景：漆喰は白く飛ばさない（アルベド約 0.58、空気遠近でわずかに青）
+    'plaster': _lin((128, 134, 146)),
+    'soffit': _lin((84, 90, 104)),
+    'stone': _lin((104, 104, 106)),
     'tile': _lin((78, 81, 88)),
     'ridge': _lin((62, 64, 70)),
     'window': _lin((48, 44, 40)),
@@ -453,8 +454,17 @@ def build_keep():
     rz, ends = irimoya(g, 0.0, 0.0, hx3, hy3, z3 + h3 + 0.3, rise=2.0, top=4.4, ov=1.7, soffit_z=z3 + h3)
     for p, sy in zip(ends, (-1, 1)):
         shachi(g, p, sy)
+    # 天守は 0.7 倍（門の開口から見て高さが開口の 4 割ほど。遠く小さく見せる）。天守台の根元を中心に縮める
+    KS = 0.7
+    for p in g.parts.values():
+        p['v'] = [V((K.x + (v.x - K.x) * KS, K.y + (v.y - K.y) * KS, v.z * KS)) for v in p['v']]
     # 手前の本丸の石垣と土塀（天守台の足元を隠す）
-    honmaru_wall(g, K.x - 46.0, K.x + 34.0, K.y - 26.0, 6.0, 2.2)
+    # 置き場所は scene.json の keep.honmaru（ゲームの x の範囲と z）。無ければ天守の南 26 m
+    hm = SCENE['keep'].get('honmaru')
+    if hm:
+        honmaru_wall(g, hm['x'][0], hm['x'][1], -hm['z'], 6.0, 2.2)
+    else:
+        honmaru_wall(g, K.x - 46.0, K.x + 34.0, K.y - 26.0, 6.0, 2.2)
 
     objs = []
     mmat = {'matte': _material('keep_matte', 0.88), 'tile': _material('keep_tile_edge', 0.5), 'gold': _material('keep_gold', 0.35, 0.85),

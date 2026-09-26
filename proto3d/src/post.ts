@@ -13,16 +13,16 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 /** 色の整え（表示の色＝sRGB の値に対して）。値は実際のゲーム画面を参考画像と並べて決めた */
 export const GRADE = {
     /** 陰の色（暗い所に寄せる色）と強さ */
-    shadowTint: new THREE.Color(0.86, 0.95, 1.12),
+    shadowTint: new THREE.Color(0.86, 0.95, 1.14),
     /** 日なたの色（明るい所に寄せる色） */
-    highlightTint: new THREE.Color(1.06, 1.0, 0.9),
-    saturation: 1.18,
+    highlightTint: new THREE.Color(1.04, 1.0, 0.94),
+    saturation: 0.92,
     /** 明暗の強さ（中間の明るさを軸に S 字） */
-    contrast: 0.22,
+    contrast: 0.12,
     /** 画面の隅を暗くする強さ */
-    vignette: 0.28,
+    vignette: 0.22,
     /** 物の陰（AO）の強さ */
-    ao: 0.85,
+    ao: 0.7,
 };
 
 export interface Post {
@@ -101,6 +101,11 @@ export function createPost(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ca
                 c = clamp( c, 0.0, 1.0 );
                 vec3 s = c * c * ( 3.0 - 2.0 * c );
                 c = mix( c, s, contrast );
+                // 明るい所をなだらかに（白飛びを抑える：0.7 から上を 0.88 に寄せる）
+                vec3 hi = max( c - 0.7, 0.0 );
+                c = c - hi + hi / ( 1.0 + hi * 3.4 );
+                // 陰の底を少し持ち上げる（真っ黒にしない）
+                c = c * 0.955 + 0.02 * vec3( 0.85, 0.95, 1.15 );
                 // 画面の隅を少し暗く
                 vec2 q = vUv - 0.5;
                 c *= 1.0 - vignette * smoothstep( 0.25, 0.85, dot( q, q ) * 2.2 );
