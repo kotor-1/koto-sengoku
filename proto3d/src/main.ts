@@ -387,8 +387,9 @@ function prepare(obj: THREE.Object3D): void {
         const ud = mesh.userData as { cast?: boolean; receive?: boolean };
         mesh.castShadow = ud.cast ?? true;
         mesh.receiveShadow = ud.receive ?? true;
+        // 斜めから見る地面・壁でぼやけないように、色だけでなく凹凸・粗さ・陰の画像にも異方性フィルタを掛ける
         const mat = mesh.material as THREE.MeshStandardMaterial;
-        if (mat.map) mat.map.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        for (const t of [mat.map, mat.normalMap, mat.roughnessMap, mat.metalnessMap, mat.aoMap]) if (t) t.anisotropy = renderer.capabilities.getMaxAnisotropy();
     });
 }
 
