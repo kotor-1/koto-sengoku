@@ -19,7 +19,7 @@ CACHE.mkdir(parents=True, exist_ok=True)
 
 def _src_hash(extra=''):
     h = hashlib.sha1()
-    for f in ('anatomy.py', 'head_form.py', 'sdf.py', 'skin.py'):
+    for f in ('anatomy.py', 'sdf.py', 'skin.py'):
         h.update((HERE / f).read_bytes())
     h.update(extra.encode())
     return h.hexdigest()[:12]
@@ -47,43 +47,12 @@ def keep_faces(V, Q, keep_vert):
     return V[used], remap[Q]
 
 
-def subdivide_project(V, Q, fn, region):
-    """四角の面を 4 つに分け（辺の中点・面の中心）、新しい点を SDF の面へ寄せる。region(V) が真の点だけ寄せる。
-    格子（1.3mm）より細かい形（口の合わせ目・まぶたの縁・鼻の穴）を面に写すため。"""
-    from sdf import project
-    nV = len(V)
-    E = np.sort(np.stack([Q, np.roll(Q, -1, axis=1)], -1).reshape(-1, 2), axis=1)
-    Eu, inv = np.unique(E, axis=0, return_inverse=True)
-    inv = inv.reshape(len(Q), 4)
-    Vm = (V[Eu[:, 0]] + V[Eu[:, 1]]) / 2
-    Vc = V[Q].mean(1)
-    Vall = np.concatenate([V, Vm, Vc])
-    em = nV + inv                      # 面の角 k と k+1 の間の辺の中点
-    fc = nV + len(Eu) + np.arange(len(Q))
-    Qn = []
-    for k in range(4):
-        Qn.append(np.stack([Q[:, k], em[:, k], fc, em[:, (k - 1) % 4]], 1))
-    Qn = np.concatenate(Qn)
-    sel = np.nonzero(region(Vall))[0]
-    Vall[sel] = project(fn, Vall[sel].astype(F), iters=3, max_step=.0008).astype(np.float64)
-    return Vall, Qn
-
-
 def head_piece():
-    """頭と首と胸の上（襟の V から見える所まで）。下は斜めの面で切る（前は低く、後ろは高く）。
-    顔と耳のあたり（首より上）は面を細かくして SDF の面へ寄せる（減らすのは後で）"""
+    """頭と首と胸の上（襟の V から見える所まで）。下は斜めの面で切る（前は低く、後ろは高く）"""
     V, Q = cached_mesh('head', ['torso', 'neck', 'head'], (-.12, 1.30, -.135), (.12, 1.775, .135), .0013)
     y_cut = 1.335 + (0.07 - V[:, 2]) * 0.55     # 前 z=.07 で 1.335、後ろ z=-.07 で 1.41
     keep = (V[:, 1] > y_cut) & (np.abs(V[:, 0]) < .115)
-    V, Q = keep_faces(V, Q, keep)
-    path = CACHE / f'headsub-{_src_hash("sub1")}.npz'
-    if path.exists():
-        z = np.load(path)
-        return z['V'], z['Q']
-    fn = lambda P: A.body(P, ['torso', 'neck', 'head'])
-    V, Q = subdivide_project(V, Q, fn, lambda X: X[:, 1] > 1.50)
-    np.savez(path, V=V, Q=Q)
-    return V, Q
+    return keep_faces(V, Q, keep)
 
 
 def arm_piece(s):

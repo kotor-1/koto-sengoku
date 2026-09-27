@@ -83,24 +83,21 @@ def brow_card(w=256, h=64, seed=5):
     img[..., :3] = col
     yy, xx = np.mgrid[0:h, 0:w]
     a = np.zeros((h, w))
-    for _ in range(1100):                     # 濃く太い眉（2026-09：頭の作り直しで密度を上げた）
+    for _ in range(420):
         x0 = rng.uniform(0, w)
-        y0 = rng.uniform(h * 0.22, h * 0.88)
-        L = rng.uniform(9, 22)
+        y0 = rng.uniform(h * 0.25, h * 0.85)
+        L = rng.uniform(8, 20)
         ang = math.radians(rng.uniform(-35, -15)) if x0 > w * 0.25 else math.radians(rng.uniform(-80, -50))
         for tt in np.linspace(0, 1, 12):
             px = int(x0 + math.cos(ang) * L * tt)
             py = int(y0 + math.sin(ang) * L * tt)
-            for qy in (py, py + 1):
-                if 0 <= px < w and 0 <= qy < h:
-                    a[qy, px] = max(a[qy, px], 0.9 - 0.3 * tt)
+            if 0 <= px < w and 0 <= py < h:
+                a[py, px] = max(a[py, px], 0.9 - 0.3 * tt)
     # 帯の形（内側が太く、外へ細く）
     u = xx / w
     band = np.exp(-(((yy / h) - 0.55) / (0.30 - 0.12 * u)) ** 4)
     fade = np.clip(u / 0.08, 0, 1) * np.clip((1 - u) / 0.15, 0, 1)
-    # 切り抜き（0.5 で丸める）でも帯の芯が埋まり、縁だけ毛の向きでぎざぎざになるように
-    core = np.exp(-(((yy / h) - 0.55) / (0.20 - 0.09 * u)) ** 2)
-    a = np.clip(np.maximum(a * 1.3, 0.62 * core * (0.75 + 0.25 * a)), 0, 1) * band * fade
+    a = np.clip(a * 1.3, 0, 1) * band * fade
     k = np.array([0.25, 0.5, 0.25])
     for axis in (0, 1):
         a = np.apply_along_axis(lambda r: np.convolve(r, k, 'same'), axis, a)

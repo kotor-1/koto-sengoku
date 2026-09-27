@@ -1,8 +1,5 @@
 """
-髪（第 2 版の頭に合わせて 2026-09 に作り直し。旧は archive/head_v1_5761a83/hair.py）：
-頭の形に沿った厚みのある髪の塊（頭頂で 1.5cm ほど、生え際で 0 まで細る）。塊の表面には、結び目へ向かう束の山と谷
-（角度ごとの厚みの増減）を付けて、流れのある束に見せる ＋ 顔の横へ垂れる数本のほつれ毛（平たい束）
-＋ 髷（まげ）と元結 ＋ うなじの短い毛。生え際は こめかみ → もみあげ（耳の前へ下がる）→ 耳の上 → うなじ とつながる。
+髪：頭の形に沿った薄い髪の層（生え際で厚み 0 まで細る）＋ なでつけた束（盛り上がった帯）＋ 髷（まげ）と元結 ＋ うなじの短い毛。
 髪はすべて後頭部の上（頭頂の約 5cm 後ろ）の結び目へ引き上げる。UV もその点を中心にした角度で作るので、
 画像の縦の筋がそのまま「結び目へ向かう毛の流れ」になる（うなじの毛も上へ流れる）。
 髷は 2 つのねじれた玉（下の大きい玉と上の小さい玉）、その間を元結（4 巻き、幅 2cm）で締める。
@@ -24,8 +21,8 @@ E1 = np.array([1.0, 0.0, 0.0])
 E2 = np.cross(TIE_DIR, E1)
 
 # 生え際：頭の周りの角度（前 0°、横 90°、後ろ 180°）ごとの高さ
-_HL_T = np.array([0, 12, 22, 32, 40, 47, 53, 58, 63, 68, 72, 76, 79, 82, 86, 92, 100, 108, 116, 126, 140, 155, 168, 180])
-_HL_Y = np.array([1.707, 1.708, 1.706, 1.700, 1.692, 1.682, 1.668, 1.652, 1.636, 1.620, 1.608, 1.603, 1.610, 1.640, 1.660, 1.664, 1.660, 1.640, 1.606, 1.578, 1.558, 1.550, 1.547, 1.545])
+_HL_T = np.array([0, 18, 30, 42, 52, 60, 67, 73, 78, 82, 87, 100, 110, 118, 124, 132, 145, 155, 165, 173, 180])
+_HL_Y = np.array([1.706, 1.708, 1.703, 1.693, 1.678, 1.656, 1.632, 1.620, 1.622, 1.646, 1.655, 1.657, 1.648, 1.615, 1.590, 1.570, 1.560, 1.557, 1.561, 1.550, 1.545])
 
 
 def hairline_y(P):
@@ -36,9 +33,9 @@ def hairline_y(P):
 def mask(P):
     """髪のある所 1、無い所 0（生え際で 5mm ほどでなめらかに）"""
     th = np.degrees(np.arctan2(np.abs(P[:, 0]), P[:, 2] - C[2]))
-    soft = np.interp(th, [0, 50, 70, 100, 140, 180], [0.018, 0.016, 0.009, 0.010, 0.014, 0.014]).astype(F)
+    soft = np.interp(th, [0, 60, 100, 140, 180], [0.006, 0.007, 0.010, 0.014, 0.014]).astype(F)
     m = np.clip((P[:, 1] - hairline_y(P)) / soft, 0, 1)
-    return (m * m * m * (10 - 15 * m + 6 * m * m)).astype(F)     # 生え際で薄く（縁が立たない）
+    return (m * m * (3 - 2 * m)).astype(F)
 
 
 def _psi(P):
@@ -47,62 +44,21 @@ def _psi(P):
     return np.arccos(np.clip(v @ TIE_DIR.astype(F), -1, 1))
 
 
-def flow_angle(P):
-    """結び目の軸のまわりの角度（束の並ぶ向き）"""
-    v = P - C.astype(F)
-    return np.arctan2(v @ E2.astype(F), v @ E1.astype(F))
-
-
-N_CLUMP = 30
-
-
-def clump_profile(P):
-    """束の山と谷（1 が山の頂、0 が谷）。結び目へ向かう線に沿って続き、少しずつねじれる。束の幅は少しずつ違う"""
-    a = flow_angle(P)
-    psi = _psi(P)
-    ph = (a * N_CLUMP + 1.7 * np.sin(3 * a + 0.8) + 1.1 * np.sin(5 * a + 2.0) + 0.8 * np.sin(11 * a + 0.3)
-          + 2.2 * psi + 0.9 * np.sin(4 * psi + 3 * a))
-    main = 0.5 + 0.5 * np.cos(ph)
-    # 束ごとの深さのむら（隣り合う束で山の高さが違う）
-    idx = np.floor(ph / (2 * math.pi) + 0.5)
-    amp = 0.55 + 0.45 * (0.5 + 0.5 * np.sin(idx * 12.9898 + 4.1))
-    main = 1 - (1 - main) * amp
-    fine = 0.5 + 0.5 * np.cos(ph * 2.6 + 1.3 * np.sin(7 * a + psi * 3))
-    return main.astype(F), fine.astype(F)
-
-
-def base_thickness(P):
-    """山と谷を付ける前の厚み：頭頂と前（額の上）は厚く、横は 7mm ほど、生え際で 0"""
+def thickness(P):
+    """髪の層の厚み：頭頂から結び目のまわりは厚く、横とうなじは 6mm 以下、生え際で 0"""
     m = mask(P)
     psi = _psi(P)
-    top = np.clip(1 - psi / math.radians(100), 0, 1)
-    th = np.degrees(np.arctan2(np.abs(P[:, 0]), P[:, 2] - C[2]))
-    front = np.exp(-(th / 48) ** 2) * np.clip((P[:, 1] - 1.675) / 0.03, 0, 1)
-    t = 0.0042 + 0.0078 * top + 0.0035 * np.exp(-(psi / math.radians(24)) ** 2) + 0.0035 * front
-    # 耳のまわりは薄く、なでつける（耳の上に塊が乗らない）
-    ear = np.exp(-((th - 90) / 22) ** 2) * np.clip((1.675 - P[:, 1]) / 0.03, 0, 1)
-    t = t * (1 - 0.55 * ear)
+    top = np.clip(1 - psi / math.radians(95), 0, 1)
+    t = 0.0034 + 0.0034 * top + 0.0040 * np.exp(-(psi / math.radians(26)) ** 2)
     return (t * m).astype(F)
-
-
-def thickness(P):
-    """髪の層の厚み（束の山と谷つき）。結び目の近くは束が詰まるので谷を浅く"""
-    t = base_thickness(P)
-    main, fine = clump_profile(P)
-    psi = _psi(P)
-    fade = np.clip((psi - math.radians(14)) / math.radians(16), 0, 1)
-    th = np.degrees(np.arctan2(np.abs(P[:, 0]), P[:, 2] - C[2]))
-    fade = fade * (1 - 0.6 * np.exp(-((th - 90) / 22) ** 2) * np.clip((1.67 - P[:, 1]) / 0.03, 0, 1))
-    k = 1 - fade * (0.30 * (1 - main) ** 1.6 + 0.07 * (1 - fine))
-    return (t * k).astype(F)
 
 
 def cap_sdf(P):
     return A.body(P, ['neck', 'head']) - thickness(P)
 
 
-def cap_mesh(h=0.0017):
-    V, Q = mesh_sdf(cap_sdf, (-.108, 1.53, -.14), (.108, 1.79, .125), h)
+def cap_mesh(h=0.0021):
+    V, Q = mesh_sdf(cap_sdf, (-.1, 1.53, -.13), (.1, 1.775, .12), h)
     Q = orient_outward(cap_sdf, V, Q)
     Vf = V.astype(F)
     keep = thickness(Vf) > 0.0006
@@ -112,29 +68,7 @@ def cap_mesh(h=0.0017):
     used = np.unique(Q)
     remap = -np.ones(len(V), int)
     remap[used] = np.arange(len(used))
-    V, Q = V[used], remap[Q]
-    return smooth_border(V, Q), Q
-
-
-def smooth_border(V, Q, iters=6):
-    """切り取った縁（格子の段々）を、縁に沿ってならし、髪の面へ戻す"""
-    E = np.sort(np.stack([Q, np.roll(Q, -1, axis=1)], -1).reshape(-1, 2), axis=1)
-    Eu, cnt = np.unique(E, axis=0, return_counts=True)
-    B = Eu[cnt == 1]
-    nb = {}
-    for a, b in B:
-        nb.setdefault(a, []).append(b)
-        nb.setdefault(b, []).append(a)
-    idx = np.array([i for i in nb if len(nb[i]) == 2])
-    if len(idx) == 0:
-        return V
-    n1 = np.array([nb[i][0] for i in idx])
-    n2 = np.array([nb[i][1] for i in idx])
-    V = V.copy()
-    for _ in range(iters):
-        V[idx] = 0.5 * V[idx] + 0.25 * (V[n1] + V[n2])
-    V[idx] = project(cap_sdf, V[idx].astype(F), iters=3, max_step=0.002).astype(np.float64)
-    return V
+    return V[used], remap[Q]
 
 
 def flow_uv(V, u_repeat=3.0):
@@ -276,13 +210,13 @@ def bun_sdf(P):
     # 根元（引き上げた髪の束）
     root = capsule(P, T - ax * 0.014, T + ax * 0.012, 0.024, 0.021)
     # 下の玉：幅 0.094、ねじれた 2 つの房（溝が斜めに回る）
-    low = ellipsoid(P, T + ax * H_LOW, (0.034, 0.023, 0.032), BUN_R)
-    low = low + (0.0030 * np.sin(2 * ang + h * 70)).astype(F)
+    low = ellipsoid(P, T + ax * H_LOW, (0.048, 0.023, 0.045), BUN_R)
+    low = low + (0.0042 * np.sin(2 * ang + h * 70)).astype(F)
     # くびれ（元結の下）
     waist = capsule(P, T + ax * (H_WAIST - 0.011), T + ax * (H_WAIST + 0.011), 0.0195)
     # 上の玉：少し小さく、ねじれは逆向き
-    up = ellipsoid(P, T + ax * H_UP + BUN_B2 * -0.003, (0.029, 0.021, 0.027), BUN_R)
-    up = up + (0.0026 * np.sin(2 * ang - h * 70 + 1.0)).astype(F)
+    up = ellipsoid(P, T + ax * H_UP + BUN_B2 * -0.003, (0.034, 0.020, 0.032), BUN_R)
+    up = up + (0.0034 * np.sin(2 * ang - h * 70 + 1.0)).astype(F)
     d = smin(root, low, 0.012)
     d = smin(d, waist, 0.008)
     d = smin(d, up, 0.008)
@@ -335,7 +269,7 @@ def bun_strands(seed=3):
     for k in range(4):
         a0 = rng.uniform(0, 2 * math.pi)
         hc = H_LOW + rng.uniform(-0.004, 0.012) if k < 3 else H_UP
-        rad = (0.033, 0.031) if k < 3 else (0.029, 0.027)
+        rad = (0.047, 0.044) if k < 3 else (0.034, 0.032)
         span = rng.uniform(1.2, 1.9)
         n = 9
         base = len(V)
@@ -401,91 +335,3 @@ def nape_wisps(n=22, seed=13):
             a = base + 2 * j
             Fc.append((a, a + 1, a + 3, a + 2))
     return np.array(V), np.array(Fc), np.array(UV)
-
-
-# ---- 顔の横へ垂れるほつれ毛 ----
-# 生え際の少し後ろ（髪の塊の中）から出て、額の横で前へふくらみ、こめかみ → 頬骨の横へ落ちる平たい束。
-# 目にはかからない（目じりより外を通る）。左右で本数・長さを変えて、そろいすぎないようにする
-STRANDS = [
-    # (制御点（左 s=+1 の形。x は s を掛ける）, 根元の幅, 根元の厚み, s)
-    # こめかみの生え際から、もみあげの前を通って頬骨の横へ（長い）
-    ([(.046, 1.700, .058), (.056, 1.690, .066), (.064, 1.662, .064), (.068, 1.628, .054), (.069, 1.596, .044)], .0100, .0026, 1),
-    # 額の横の生え際から、眉の外の端の上で止まる（短い）
-    ([(.030, 1.712, .072), (.040, 1.706, .084), (.050, 1.690, .084), (.056, 1.672, .078)], .0080, .0022, 1),
-    ([(.044, 1.702, .060), (.055, 1.692, .068), (.063, 1.664, .066), (.067, 1.632, .057), (.068, 1.606, .048)], .0095, .0025, -1),
-    ([(.034, 1.711, .070), (.044, 1.704, .082), (.052, 1.686, .082)], .0070, .0020, -1),
-]
-
-
-def _catmull(pts, n):
-    pts = np.asarray(pts, float)
-    P = np.vstack([2 * pts[0] - pts[1], pts, 2 * pts[-1] - pts[-2]])
-    out = []
-    for i in range(1, len(P) - 2):
-        p0, p1, p2, p3 = P[i - 1], P[i], P[i + 1], P[i + 2]
-        for t in np.linspace(0, 1, n, endpoint=False):
-            t2, t3 = t * t, t * t * t
-            out.append(0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3))
-    out.append(P[-2])
-    return np.array(out)
-
-
-def face_strands(ring=6, seed=23):
-    """返り値：頂点・面（四角）・頂点ごとの UV（V：根元 0 → 先 0.6）"""
-    rng = np.random.default_rng(seed)
-    V, Fc, UV = [], [], []
-    for ctrl, w0, t0, s in STRANDS:
-        c = np.array(ctrl, float)
-        c[:, 0] *= s
-        c[1:] += rng.normal(0, 0.0015, (len(c) - 1, 3)) * np.array([1, 0.5, 1])
-        sp = _catmull(c, 6)
-        n = len(sp)
-        # 根元以外は髪の塊・肌から離す（髪の面から 2.5mm 以上）
-        for _ in range(10):
-            d = cap_sdf(sp.astype(F)).astype(float)
-            g = np.zeros_like(sp)
-            for k in range(3):
-                e = np.zeros(3)
-                e[k] = 2e-4
-                g[:, k] = (cap_sdf((sp + e).astype(F)) - cap_sdf((sp - e).astype(F))) / 4e-4
-            g /= np.linalg.norm(g, axis=1, keepdims=True) + 1e-12
-            tt = np.linspace(0, 1, n)
-            want = 0.0030 * np.clip(tt / 0.15, 0, 1) + 0.0015 * tt
-            push = np.clip(want - d, -0.004, 0.004) * np.clip((tt - 0.04) / 0.1, 0, 1)   # 髪・顔の面に沿わせる（離れすぎも近すぎも直す）
-            sp += g * push[:, None]
-        base = len(V)
-        for j in range(n):
-            t = j / (n - 1)
-            T = sp[min(j + 1, n - 1)] - sp[max(j - 1, 0)]
-            T /= np.linalg.norm(T)
-            g = np.zeros(3)
-            for k in range(3):
-                e = np.zeros(3)
-                e[k] = 2e-4
-                g[k] = float(cap_sdf((sp[j] + e)[None].astype(F))[0] - cap_sdf((sp[j] - e)[None].astype(F))[0]) / 4e-4
-            nrm = g - T * (g @ T)
-            nrm /= np.linalg.norm(nrm) + 1e-12
-            b = np.cross(T, nrm)
-            w = w0 * (1 - 0.70 * t ** 1.3)
-            th = t0 * (1 - 0.50 * t)
-            tw = 0.5 * math.sin(t * math.pi * 1.3)     # 少しねじれる
-            bb = b * math.cos(tw) + nrm * math.sin(tw)
-            nn = nrm * math.cos(tw) - b * math.sin(tw)
-            for k in range(ring):
-                a = 2 * math.pi * k / ring
-                V.append(sp[j] + bb * (w / 2) * math.cos(a) + nn * (th / 2) * math.sin(a))
-                UV.append((0.02 + 0.10 * k / ring, t * 0.6))
-        for j in range(n - 1):
-            for k in range(ring):
-                a = base + j * ring + k
-                b2 = base + j * ring + (k + 1) % ring
-                Fc.append((a, b2, b2 + ring, a + ring))
-        # 先を閉じる
-        tip = len(V)
-        V.append(sp[-1] + (sp[-1] - sp[-2]) * 0.4)
-        UV.append((0.07, 0.62))
-        last = base + (n - 1) * ring
-        for k in range(ring):
-            Fc.append((last + k, last + (k + 1) % ring, tip, tip))
-    Fc = [f if f[2] != f[3] else f[:3] for f in Fc]
-    return np.array(V), Fc, np.array(UV)

@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import numpy as np
 
-import head_form as HF
 from sdf import (F, axis_angle, box, capsule, ecapsule, ellipsoid, plane, smax, smin, sphere, sub, union)
 
 # ---- 骨の位置（ゲームの座標、休みの姿勢） ----
@@ -24,8 +23,8 @@ for _side, _s in (('Left', 1), ('Right', -1)):
 J = {k: np.array(v, float) for k, v in J.items()}
 
 SOLE_Y = 0.017          # 足袋の底（草履の上面）の高さ
-EYE_C = HF.EYE_C
-EYE_R = HF.EYE_R
+EYE_C = np.array([0.0315, 1.631, 0.0655])
+EYE_R = 0.0121
 
 
 def mirror(p, s):
@@ -84,9 +83,76 @@ def neck(P):
 
 
 # ================= 頭 =================
-# 頭（顔・耳・まぶた）は head_form.py（第 2 版の頭）。旧の頭は archive/head_v1_5761a83/anatomy.py
+def _eye_aperture(P, s):
+    """まぶたの開き（アーモンド形）。目の局所座標で上下の弧の交わり"""
+    c = mirror(EYE_C, s)
+    q = P - c.astype(F)
+    x = q[:, 0] * s
+    y = q[:, 1] - 0.0012 * (x / 0.0145)   # 外の角を少し上げる
+    du = np.sqrt(x * x + (y + 0.0196) ** 2) - 0.0251   # 上まぶたの弧
+    dl = np.sqrt(x * x + (y - 0.0330) ** 2) - 0.0364   # 下まぶたの弧
+    d2 = np.maximum(du, dl)
+    return np.maximum(d2, -(q[:, 2] - 0.0015))
+
+
 def head(P):
-    return HF.head(P)
+    # 頭蓋（横を少し平らに）
+    d = ellipsoid(P, (0, 1.652, -.013), (.0755, .090, .096))
+    d = smax(d, np.abs(P[:, 0]) - F(.0705), .03)
+    d = smin(d, ellipsoid(P, (0, 1.676, .031), (.063, .056, .060)), .03)   # 額
+    d = smin(d, ellipsoid(P, (0, 1.604, .036), (.054, .050, .054)), .03)   # 顔の中央
+    for s in (1, -1):
+        d = smin(d, ellipsoid(P, (s * .050, 1.617, .049), (.020, .013, .021)), .02)  # 頬骨
+        d = smin(d, ellipsoid(P, (s * .031, 1.588, .052), (.022, .026, .019)), .03)    # 頬
+        d = smin(d, ellipsoid(P, (s * .046, 1.580, .012), (.022, .040, .042)), .03)    # 咬筋（顔の横）
+        d = smin(d, capsule(P, (s * .013, 1.526, .069), (s * .048, 1.549, .004), .0108, .0122), .014)  # 下あごの線
+        d = smin(d, capsule(P, (s * .048, 1.549, .004), (s * .055, 1.600, -.006), .0125, .011), .016)  # 下あごの枝
+        d = smin(d, capsule(P, (s * .006, 1.6495, .0855), (s * .046, 1.6545, .0725), .0082, .007), .012)  # 眉の骨
+    d = smin(d, ellipsoid(P, (0, 1.567, .058), (.031, .029, .027)), .018)  # 口のまわり
+    d = smin(d, ellipsoid(P, (0, 1.527, .072), (.020, .013, .0145)), .012)  # あご先
+    d = smin(d, ellipsoid(P, (0, 1.536, .036), (.030, .010, .030)), .016)    # あごの下
+    # 鼻
+    nose = capsule(P, (0, 1.637, .083), (0, 1.601, .106), .0060, .0080)
+    nose = smin(nose, sphere(P, (0, 1.5965, .1045), .0098), .006)
+    for s in (1, -1):
+        nose = smin(nose, ellipsoid(P, (s * .0125, 1.5905, .0955), (.0076, .0066, .0080)), .005)
+    nose = smin(nose, capsule(P, (0, 1.589, .101), (0, 1.586, .092), .0046), .004)
+    d = smin(d, nose, .008)
+    for s in (1, -1):
+        d = smax(d, -ellipsoid(P, (s * .0070, 1.5865, .0975), (.0034, .0020, .0040)), .0015)  # 鼻の穴
+    # 唇
+    lips = union([
+        capsule(P, (0, 1.5685, .0915), (.0225, 1.5635, .0790), .0050, .0034),
+        capsule(P, (0, 1.5685, .0915), (-.0225, 1.5635, .0790), .0050, .0034),
+        capsule(P, (0, 1.5578, .0893), (.0205, 1.5612, .0785), .0058, .0034),
+        capsule(P, (0, 1.5578, .0893), (-.0205, 1.5612, .0785), .0058, .0034),
+    ], .004)
+    d = smin(d, lips, .005)
+    d = smax(d, -ellipsoid(P, (0, 1.5628, .091), (.0232, .0010, .016)), .0012)   # 口の合わせ目
+    d = smax(d, -capsule(P, (0, 1.5715, .0960), (0, 1.5825, .0985), .0017), .003)  # 人中
+    d = smax(d, -capsule(P, (-.012, 1.5475, .0835), (.012, 1.5475, .0835), .0022), .004)  # あごの上のくぼみ
+    # 目のくぼみ（眼球が入る）と、まぶた
+    for s in (1, -1):
+        c = mirror(EYE_C, s)
+        d = smax(d, -ellipsoid(P, c + np.array([0, .001, .002]), (.0172, .0122, .0138)), .005)
+        lid = sphere(P, c, EYE_R + .0021)
+        lid = smax(lid, -_eye_aperture(P, s), .0012)
+        lid = smax(lid, -(P[:, 2] - F(c[2] - .004)), .002)
+        d = smin(d, lid, .004)
+        crease = capsule(P, c + np.array([-s * .011, .0088, .0105]), c + np.array([s * .012, .0094, .0082]), .0008)
+        d = smax(d, -crease, .0014)
+    # 耳
+    for s in (1, -1):
+        R = axis_angle((0, 1, 0), s * 0.13) @ axis_angle((1, 0, 0), -0.22)
+        ear = ellipsoid(P, (s * .078, 1.613, -.013), (.0100, .029, .0175), R)
+        ear = smin(ear, ellipsoid(P, (s * .079, 1.590, -.007), (.0072, .0100, .0082)), .005)  # 耳たぶ
+        pts = [(s * (.0815 + .003 * np.sin(a)), 1.614 + .0275 * np.cos(a), -.013 - .0165 * np.sin(a)) for a in np.linspace(-.3, 3.3, 17)]
+        for a, b in zip(pts[:-1], pts[1:]):
+            ear = smin(ear, capsule(P, a, b, .003), .004)
+        ear = smax(ear, -ellipsoid(P, (s * .088, 1.608, -.009), (.0062, .012, .0082)), .003)
+        ear = smax(ear, -ellipsoid(P, (s * .087, 1.625, -.016), (.0038, .0082, .0058)), .002)
+        d = smin(d, ear, .006)
+    return d
 
 
 # ================= 腕と手 =================

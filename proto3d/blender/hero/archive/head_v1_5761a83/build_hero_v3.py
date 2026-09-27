@@ -30,7 +30,6 @@ import cloth as CL
 import gear as G
 import hair as H
 import hakama as HK
-import head_form as HF
 import skin as SK
 import textures as TX
 import util as U
@@ -122,10 +121,9 @@ def weld(ob, dist=0.0004, z_band=None):
 
 
 def eyeball(c, r):
-    """眼球：視線の向きが極の球。瞳・虹彩・白目の境は輪にそろえる（色は頂点の色）。
-    左右とも同じ向き（head_form.EYE_LOOK：正面、わずかに下）を見る。白目はまぶたの際へ向かって暗く"""
-    rings = [0, 5, 9, 14, 19, 23, 26, 28.5, 33, 42, 55, 70, 90, 115, 145, 180]
-    seg = 24
+    """眼球：正面が極の球。瞳・虹彩・白目の境は輪にそろえる（色は頂点の色）"""
+    rings = [0, 7, 13, 19, 25, 29, 36, 50, 70, 95, 125, 155, 180]
+    seg = 20
     V = [(0, 0, 1)]
     for a in rings[1:-1]:
         th = math.radians(a)
@@ -135,17 +133,8 @@ def eyeball(c, r):
     V.append((0, 0, -1))
     V = np.array(V)
     ang = np.degrees(np.arccos(np.clip(V[:, 2], -1, 1)))
-    V[:, 2] += 0.09 * np.clip(1 - ang / 28.5, 0, 1) ** 1.5       # 角膜のふくらみ
-    pupil = np.array([0.008, 0.007, 0.006])
-    iris_in = np.array([0.105, 0.062, 0.034])
-    iris_out = np.array([0.060, 0.034, 0.020])
-    limbus = np.array([0.028, 0.020, 0.015])
-    sclera = np.array([0.60, 0.555, 0.505])
-    t = np.clip((ang - 9) / 15, 0, 1)[:, None]
-    col = np.where(ang[:, None] < 9, pupil, iris_in * (1 - t) + iris_out * t)
-    col = np.where(ang[:, None] >= 25, limbus, col)
-    sc = sclera * (1 - 0.30 * np.clip((ang - 33) / 30, 0, 1))[:, None]   # まぶたの際へ暗く
-    col = np.where(ang[:, None] >= 28.5, sc, col)
+    V[:, 2] += 0.10 * np.clip(1 - ang / 29, 0, 1) ** 1.5       # 角膜のふくらみ
+    col = np.where(ang[:, None] < 10, [0.012, 0.010, 0.009], np.where(ang[:, None] < 27.5, [0.10, 0.058, 0.035], [0.78, 0.75, 0.70]))
     nr = len(rings) - 2
     Fc = [(0, 1 + k, 1 + (k + 1) % seg) for k in range(seg)]
     for i in range(nr - 1):
@@ -158,51 +147,55 @@ def eyeball(c, r):
         a = 1 + (nr - 1) * seg + k
         b = 1 + (nr - 1) * seg + (k + 1) % seg
         Fc.append((a, last, b))
-    from sdf import rot_between
-    R = rot_between((0, 0, 1), HF.EYE_LOOK)
-    return (V @ R.T) * r + c, Fc, col
+    # 目は少し内・下を見る（ぼんやり正面）
+    return V * r + c, Fc, col
 
 
 def brow_strip(s):
-    """眉：眉の骨の上に沿った帯（透ける画像）。まっすぐで太め、外の端は少し下がって細い"""
+    """眉：眉の骨の上に沿った帯（透ける画像）"""
     head_sdf = lambda P: A.body(P, ['head'])
-    xs = np.linspace(0.0085, 0.0545, 11)
-    u = (xs - xs[0]) / (xs[-1] - xs[0])
-    ys = 1.6540 + 0.0009 * np.sin(np.pi * np.clip(u * 1.1, 0, 1)) - 0.0022 * u ** 2   # まっすぐ（外の端だけ少し下がる）
-    pts = np.array([(s * x, y, 0.12) for x, y in zip(xs, ys)])
+    xs = np.linspace(0.010, 0.053, 9)
+    pts = np.array([(s * x, 1.6505 + 0.0045 * math.sin((x - 0.01) / 0.043 * math.pi) - 0.004 * ((x - 0.01) / 0.043) ** 2, 0.12) for x in xs])
     for _ in range(30):
         d = head_sdf(pts.astype(np.float32)).astype(float)
-        pts[:, 2] -= np.clip(d - 0.0006, -0.01, 0.01)
+        pts[:, 2] -= np.clip(d - 0.0007, -0.01, 0.01)
     up = np.array([0, 1.0, 0])
     V, UV = [], []
     for i, p in enumerate(pts):
-        w = 0.0125 - 0.0055 * u[i] ** 1.3
-        V.append(p - up * w * 0.42)
-        V.append(p + up * w * 0.58)
-        UV += [(u[i], 0.0), (u[i], 1.0)]
+        w = 0.0115 - 0.004 * (i / (len(pts) - 1))
+        n = np.array(A.body(p[None].astype(np.float32) + np.array([[1e-3, 0, 0]], np.float32), ['head']) - A.body(p[None].astype(np.float32) - np.array([[1e-3, 0, 0]], np.float32), ['head']))
+        V.append(p - up * w * 0.45)
+        V.append(p + up * w * 0.55)
+        u = i / (len(pts) - 1)
+        UV += [(u, 0.0), (u, 1.0)]
     V = np.array(V)
     Fc = [(2 * i, 2 * i + 2, 2 * i + 3, 2 * i + 1) if s > 0 else (2 * i, 2 * i + 1, 2 * i + 3, 2 * i + 2) for i in range(len(pts) - 1)]
+    # 眉の面から少し浮かせる
     return V, Fc, np.array(UV)
 
 
 def lash_strip(s):
-    """上まぶたの縁の濃い線（まつ毛の代わり）。head_form の目の開きの上の縁に沿って、まぶたの面のすぐ外"""
+    """上まぶたの縁の濃い線（まつ毛の代わり）"""
     c = A.mirror(A.EYE_C, s)
-    R = A.EYE_R
-    xs = np.linspace(-HF.AP_IN * 0.92, HF.AP_OUT * 0.96, 15)
-    up, _ = HF.lid_curves(xs)
-
-    def on_sphere(x, y, rad):
-        hx, vy = x / R, y / R
-        return c + rad * np.array([s * math.sin(hx) * math.cos(vy), math.sin(vy), math.cos(hx) * math.cos(vy)])
+    head_sdf = lambda P: A.body(P, ['head'])
+    V = []
+    xs = np.linspace(-0.0142, 0.0142, 11)
+    for x in xs:
+        # 上まぶたの弧（anatomy._eye_aperture と同じ）
+        y = -0.0196 + math.sqrt(max(0.0, 0.0251 ** 2 - x * x))
+        y += 0.0012 * (x / 0.0145)
+        p = c + np.array([s * x, y + 0.0004, A.EYE_R + 0.004])
+        V.append(p)
+    V = np.array(V)
+    for _ in range(20):
+        d = head_sdf(V.astype(np.float32)).astype(float)
+        V[:, 2] -= np.clip(d - 0.0004, -0.004, 0.004)
     out = []
-    for x, y in zip(xs, up):
-        u = (x + HF.AP_IN) / (HF.AP_IN + HF.AP_OUT)
-        w = 0.0011 * (0.35 + 0.65 * math.sin(math.pi * min(1.0, u * 1.1)) ** 0.5)
-        out.append(on_sphere(x, y - 0.0002, R + 0.0009))
-        out.append(on_sphere(x, y + w, R + 0.0016))
+    for p in V:
+        out.append(p + np.array([0, -0.0007, 0.0006]))
+        out.append(p + np.array([0, 0.0010, 0.0014]))
     out = np.array(out)
-    Fc = [(2 * i, 2 * i + 2, 2 * i + 3, 2 * i + 1) if s > 0 else (2 * i, 2 * i + 1, 2 * i + 3, 2 * i + 2) for i in range(len(xs) - 1)]
+    Fc = [(2 * i, 2 * i + 2, 2 * i + 3, 2 * i + 1) if s > 0 else (2 * i, 2 * i + 1, 2 * i + 3, 2 * i + 2) for i in range(len(V) - 1)]
     return out, Fc
 
 
@@ -235,10 +228,9 @@ def build_parts():
         V, Fc = lash_strip(s)
         P['lash' + nm] = U.make_mesh('Lash' + nm, V, Fc)
     P['hair'] = U.make_mesh('Hair', *H.cap_mesh())
-    V, Fc, UV = H.face_strands()
-    P['strands'] = U.make_mesh('HairStrands', V, Fc)
-    uv_from_vertex(P['strands'], UV)
-    recalc_normals(P['strands'])
+    V, Fc, UV = H.clumps()
+    P['clumps'] = U.make_mesh('HairClumps', V, Fc)
+    uv_from_vertex(P['clumps'], UV)
     P['bun'] = U.make_mesh('Topknot', *H.bun_mesh())
     P['motoyui'] = U.make_mesh('Motoyui', *H.motoyui())
     V, Fc, UV = H.bun_strands()
@@ -290,7 +282,7 @@ def build_parts():
 
 
 # 小袖は厚み（solidify）を付けず両面の材質にし、その分の三角形をしわの形へ回す
-BUDGET = {'head': 13500, 'armL': 1850, 'armR': 1850, 'footL': 500, 'footR': 500, 'hair': 6500, 'bun': 1100, 'kosode': 10500, 'knotB': 360}
+BUDGET = {'head': 5600, 'armL': 1850, 'armR': 1850, 'footL': 500, 'footR': 500, 'hair': 2100, 'bun': 1100, 'kosode': 10500, 'knotB': 360}
 
 
 def decimate(P):
@@ -312,8 +304,8 @@ def materials(P):
         return U.principled(name, color, rough, base_tex=tex[nm][0], normal_tex=tex[nm][1], uv_scale=1, double=double, normal_strength=nstr)
 
     M = {
-        'skin': U.principled('Skin', (0.53, 0.300, 0.192), 0.58),
-        'eye': U.principled('Eye', (1, 1, 1), 0.30),
+        'skin': U.principled('Skin', (0.44, 0.245, 0.145), 0.55),
+        'eye': U.principled('Eye', (1, 1, 1), 0.12),
         'brow': U.principled('Brow', (1, 1, 1), 0.7, base_tex=brow, uv_scale=1, alpha_clip=True, double=True),
         'lash': U.principled('Lash', (0.012, 0.010, 0.009), 0.6),
         'hair': tmat('Hair', 'hair', 0.5),
@@ -335,7 +327,7 @@ def materials(P):
     assign = {
         'head': 'skin', 'armL': 'skin', 'armR': 'skin', 'footL': 'tabi', 'footR': 'tabi',
         'eyeL': 'eye', 'eyeR': 'eye', 'browL': 'brow', 'browR': 'brow', 'lashL': 'lash', 'lashR': 'lash',
-        'hair': 'hair', 'strands': 'hair', 'bun': 'hair', 'bunstr': 'hair', 'wisps': 'wisp', 'motoyui': 'cord',
+        'hair': 'hair', 'clumps': 'hair', 'bun': 'hair', 'bunstr': 'hair', 'wisps': 'wisp', 'motoyui': 'cord',
         'kosode': 'kosode', 'eri': 'kosode', 'juban': 'juban',
         'hakama': 'hakama', 'obi': 'obi', 'koshiita': 'hakama', 'himo1': 'himo', 'himo2': 'himo', 'knotF': 'himo', 'knotB': 'himo', 'knotE': 'himo',
         'sw_saya': 'saya', 'sw_metal': 'metal', 'sw_iron': 'iron', 'sw_tsuka': 'tsuka',
@@ -368,40 +360,17 @@ def skin_tint(P):
 
     def near(c, r):
         return np.exp(-np.sum(((Vh - np.array(c)) / np.array(r)) ** 2, axis=1))
-
-    def mul(w, k):
-        return (1 - w[:, None] * np.array(k))
-    # 唇（赤み。下唇は少し明るい）
-    lips = near((0, 1.5668, 0.093), (0.022, 0.0068, 0.012))
-    col *= mul(lips, [0.08, 0.36, 0.32])
-    col *= mul(near((0, 1.5625, 0.093), (0.014, 0.003, 0.008)), [-0.04, -0.02, -0.02])
-    col *= mul(near((0, 1.5667, 0.0955), (0.021, 0.0020, 0.014)), [0.38, 0.46, 0.44])   # 口の合わせ目
-    for s_ in (1, -1):
-        col *= mul(near((s_ * 0.0232, 1.5670, 0.0825), (0.0035, 0.0028, 0.004)), [0.16, 0.20, 0.18])   # 口角
+    lips = np.maximum(near((0, 1.5635, 0.088), (0.022, 0.0065, 0.012)), 0)
+    col *= (1 - lips[:, None] * np.array([0.10, 0.34, 0.34]))
     for s in (1, -1):
-        col *= mul(near((s * 0.040, 1.598, 0.068), (0.018, 0.016, 0.02)), [0.0, 0.075, 0.075])   # 頬の赤み
-        col *= mul(near((s * 0.077, 1.615, -0.012), (0.012, 0.030, 0.022)), [0.0, 0.11, 0.11])   # 耳（血の色）
+        col *= (1 - near((s * 0.042, 1.595, 0.066), (0.02, 0.018, 0.02))[:, None] * np.array([0.0, 0.08, 0.08]))
+        col *= (1 - near((s * 0.08, 1.61, -0.012), (0.012, 0.03, 0.02))[:, None] * np.array([0.0, 0.10, 0.10]))
         ec = A.mirror(A.EYE_C, s)
-        col *= mul(near(ec + np.array([0, 0.001, 0.010]), (0.019, 0.011, 0.011)), [0.08, 0.10, 0.06])   # 目のまわり（少し暗く、紫がかる）
-        col *= mul(near(ec + np.array([0, 0.008, 0.009]), (0.014, 0.004, 0.008)), [0.07, 0.09, 0.06])   # 上まぶたの折れ目の陰
-        col *= mul(near(ec + np.array([s * 0.004, -0.0065, 0.010]), (0.012, 0.0025, 0.008)), [0.05, 0.07, 0.04])   # 下まぶたの際
-        col *= mul(near((s * 0.050, 1.560, 0.030), (0.014, 0.025, 0.03)), [0.035, 0.03, 0.0])   # あごの横（少し青み）
-    col *= mul(near((0, 1.600, 0.107), (0.011, 0.010, 0.012)), [0.0, 0.07, 0.07])   # 鼻先
-    col *= mul(near((0, 1.642, 0.090), (0.010, 0.008, 0.01)), [-0.03, -0.03, -0.03])   # 鼻筋の付け根（少し明るい）
-    # ひげの剃り跡（あご・口のまわり・上唇の上）：赤みを抜いて少し青く暗く
-    beard = np.maximum(near((0, 1.540, 0.065), (0.045, 0.028, 0.04)), near((0, 1.580, 0.092), (0.020, 0.006, 0.01)) * 0.6) * (1 - lips)
-    col *= mul(beard, [0.07, 0.06, 0.025])
-    # 肌のむら（低い周波数、ごく弱く）
-    x, y, z = Vh[:, 0], Vh[:, 1], Vh[:, 2]
-    nz = (np.sin(x * 157 + y * 61 + 1.3) * np.sin(y * 113 - z * 89 + 0.4) + 0.6 * np.sin(z * 211 + x * 97 + 2.1) * np.sin(y * 173 + 0.7))
-    col *= (1 + 0.035 * nz)[:, None] * np.array([1.0, 0.99, 0.98])[None] ** nz[:, None]
-    # 生え際：髪の根元が透けて見える帯（肌を髪の色の方へ）。髪の下はさらに暗く（すき間から肌が見えない）
-    yh = H.hairline_y(Vh.astype(np.float32)).astype(float)
-    below = np.clip((yh - y) / 0.006, 0, None)
-    band = np.where(y >= yh, 1.0, np.exp(-below ** 2))
-    col *= (1 - 0.45 * band)[:, None] * np.array([1.0, 1.02, 1.04])[None] ** (-band[:, None])
-    under = np.clip((y - yh - 0.004) / 0.008, 0, 1)
-    col *= (1 - 0.45 * under)[:, None]
+        col *= (1 - near(ec + np.array([0, 0.004, 0.01]), (0.018, 0.009, 0.01))[:, None] * np.array([0.10, 0.14, 0.10]))
+    col *= (1 - near((0, 1.598, 0.108), (0.012, 0.01, 0.012))[:, None] * np.array([0.0, 0.07, 0.07]))
+    # ひげの剃り跡（あご・口のまわり）をほんの少し
+    jaw = near((0, 1.545, 0.06), (0.05, 0.03, 0.04)) * (1 - lips)
+    col *= (1 - jaw[:, None] * np.array([0.05, 0.05, 0.03]))
     # 首の下（襟の中）は少し暗く
     col *= (0.86 + 0.14 * np.clip((Vh[:, 1] - 1.40) / 0.08, 0, 1))[:, None]
     out['head'] = col
@@ -479,7 +448,7 @@ def fold_shade(ob, depth=0.30):
 
 def write_colors(P, tint, ao):
     """最終の頂点の色 COLOR_0 = 色味 × AO（弱め）。three.js は線形の値として掛ける"""
-    strength = {'hakama': 0.65, 'kosode': 0.8, 'head': 0.55, 'armL': 0.5, 'armR': 0.5, 'hair': 0.6, 'strands': 0.5, 'obi': 0.55}
+    strength = {'hakama': 0.65, 'kosode': 0.8, 'head': 0.55, 'armL': 0.5, 'armR': 0.5, 'hair': 0.6, 'clumps': 0.5, 'obi': 0.55}
     for k, ob in P.items():
         me = ob.data
         n = len(me.vertices)
@@ -493,8 +462,6 @@ def write_colors(P, tint, ao):
             col *= (1 - s + s * a)[:, None]
         if k == 'kosode':
             col *= fold_shade(ob, 0.42)[:, None]
-        if k == 'head':
-            col *= fold_shade(ob, 0.16)[:, None]     # 顔のくぼみ（目のまわり・小鼻の脇・口角・耳の中）を少し暗く：日陰でも形が読める
         if 'vcol' in ob.keys():
             col = np.array(ob['vcol'], float).reshape(-1, 3)
         ca = me.color_attributes.new('Col', 'FLOAT_COLOR', 'POINT')
@@ -682,23 +649,14 @@ def rig(P, arm):
     Vp, Wp = heat_proxy()
     log('heat proxy done')
     no_arm = ('LeftUpperArm', 'LeftForeArm', 'LeftHand', 'RightUpperArm', 'RightForeArm', 'RightHand')
-    head_W = None
-    order = ['head'] + [k for k in P if k != 'head']       # 頭の肌を先に（髪はその重みを写す）
-    for k in order:
-        ob = P[k]
+    for k, ob in P.items():
         V = U.verts_game(ob)
         n = len(V)
         if k in ('head', 'armL', 'armR', 'footL', 'footR'):
             W = transfer(Vp, Wp, V)
             if k == 'head':
                 W = smooth_weights(ob, W, 2)
-                head_W = (V, W)
-        elif k in ('hair', 'wisps'):
-            # 髪の層・うなじの毛は、すぐ下の肌と同じ重み（うなじで首の肌と一緒に動き、離れたりめり込んだりしない）
-            W = transfer(head_W[0], head_W[1], V, k=6)
-            if k == 'hair':
-                W = smooth_weights(ob, W, 2)
-        elif k in ('eyeL', 'eyeR', 'browL', 'browR', 'lashL', 'lashR', 'strands', 'bun', 'motoyui', 'bunstr'):
+        elif k in ('eyeL', 'eyeR', 'browL', 'browR', 'lashL', 'lashR', 'hair', 'clumps', 'bun', 'motoyui', 'bunstr', 'wisps'):
             W = one_hot(n, 'Head')
         elif k in ('soleL', 'hanaoL'):
             W = one_hot(n, 'LeftFoot')
