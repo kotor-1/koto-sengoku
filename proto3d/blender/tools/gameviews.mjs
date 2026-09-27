@@ -43,6 +43,21 @@ for (const variant of vlist.split(',')) {
         if (v.pitch !== undefined) p.orbit.pitch = v.pitch;
         for (let i = 0; i < 30; i++) p.step(1 / 30, 0, 0);
         window.__restore = () => { p.orbit.yaw = yaw0; p.orbit.pitch = pitch0; for (let i = 0; i < 30; i++) p.step(1 / 30, 0, 0); };
+      } else if (v && v.face !== undefined) {
+        // 一時的な確認用カメラ：主人公の頭の骨の位置を基準に、顔の正面から az 度（左回り）回った所から胸から上を撮る。
+        // 通常の操作カメラ・光は変えない（この 1 枚だけ別のカメラで描く）
+        let head = null;
+        p.scene.traverse((o) => { if (o.isBone && /^head$/i.test(o.name) && o.visible !== false && !head) head = o; });
+        const hp = new p.camera.position.constructor();
+        head.getWorldPosition(hp);
+        const a = p.hero.heading + (v.face * Math.PI) / 180;
+        const tgt = [hp.x, hp.y + (v.dy ?? 0.02), hp.z];
+        p.camera.position.set(tgt[0] + Math.sin(a) * v.dist, tgt[1] + (v.up ?? 0), tgt[2] + Math.cos(a) * v.dist);
+        p.camera.fov = v.fov;
+        p.camera.updateProjectionMatrix();
+        p.camera.lookAt(...tgt);
+        p.scene.traverse((o) => { if (o.isSkinnedMesh || o.isMesh) o.visible = o.visible || o.isSkinnedMesh; });
+        if (p.renderNow) p.renderNow(); else p.renderer.render(p.scene, p.camera);
       } else if (v) {
         p.camera.position.set(...v.cam);
         p.camera.fov = v.fov;
