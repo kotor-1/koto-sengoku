@@ -75,36 +75,70 @@ def hair(size=1024, seed=11):
     return col, nrm
 
 
-def brow_card(w=256, h=64, seed=5):
-    """眉（上から見た毛の向きのある帯）の透ける画像（RGBA）"""
+def _splat_line(acc, x0, y0, x1, y1, val, width=1.0):
+    """なめらかな線（双一次の重みで点を置く）。acc は (h, w)。値は最大を取る"""
+    h, w = acc.shape
+    L = math.hypot(x1 - x0, y1 - y0)
+    n = max(2, int(L * 2.5))
+    for i in range(n):
+        t = i / (n - 1)
+        x = x0 + (x1 - x0) * t
+        y = y0 + (y1 - y0) * t
+        v = val(t)
+        for oy in np.arange(-width * 0.5, width * 0.5 + 1e-6, 0.5):
+            yy = y + oy
+            ix, iy = int(math.floor(x)), int(math.floor(yy))
+            fx, fy = x - ix, yy - iy
+            for dx, dy, wt in ((0, 0, (1 - fx) * (1 - fy)), (1, 0, fx * (1 - fy)), (0, 1, (1 - fx) * fy), (1, 1, fx * fy)):
+                px, py = ix + dx, iy + dy
+                if 0 <= px < w and 0 <= py < h:
+                    acc[py, px] = max(acc[py, px], v * wt * 1.6)
+
+
+def brow_card(w=512, h=128, seed=5):
+    """眉の透ける画像（RGBA、2026-09 第 5 案）。U：内（眉頭）→ 外（眉尻）、V：下 → 上（行 0 が上）。
+    眉頭は上へ立つ毛でまばらに始まり、真ん中は外へ寝た毛で濃く、眉尻は細く薄れる。色は黒に近い焦げ茶で、毛の向きの筋が見える。
+    縁は毛の先で柔らかい（切り抜きでなく半透明で描く）"""
     rng = _rng(seed)
     img = np.zeros((h, w, 4))
-    col = srgb((24, 19, 16))
-    img[..., :3] = col
     yy, xx = np.mgrid[0:h, 0:w]
-    a = np.zeros((h, w))
-    for _ in range(1100):                     # 濃く太い眉（2026-09：頭の作り直しで密度を上げた）
-        x0 = rng.uniform(0, w)
-        y0 = rng.uniform(h * 0.22, h * 0.88)
-        L = rng.uniform(9, 22)
-        ang = math.radians(rng.uniform(-35, -15)) if x0 > w * 0.25 else math.radians(rng.uniform(-80, -50))
-        for tt in np.linspace(0, 1, 12):
-            px = int(x0 + math.cos(ang) * L * tt)
-            py = int(y0 + math.sin(ang) * L * tt)
-            for qy in (py, py + 1):
-                if 0 <= px < w and 0 <= qy < h:
-                    a[qy, px] = max(a[qy, px], 0.9 - 0.3 * tt)
-    # 帯の形（内側が太く、外へ細く）
     u = xx / w
-    band = np.exp(-(((yy / h) - 0.55) / (0.30 - 0.12 * u)) ** 4)
-    fade = np.clip(u / 0.08, 0, 1) * np.clip((1 - u) / 0.15, 0, 1)
-    # 切り抜き（0.5 で丸める）でも帯の芯が埋まり、縁だけ毛の向きでぎざぎざになるように
-    core = np.exp(-(((yy / h) - 0.55) / (0.20 - 0.09 * u)) ** 2)
-    a = np.clip(np.maximum(a * 1.3, 0.62 * core * (0.75 + 0.25 * a)), 0, 1) * band * fade
+    v = 1 - yy / h
+    # 帯の形：中心の高さ・太さ（眉頭 0.62、真ん中 0.70、眉尻 0.28）
+    cy = 0.50 + 0.04 * np.sin(np.pi * np.clip(u * 1.2, 0, 1)) - 0.06 * u ** 2
+    thick = (0.62 + 0.10 * np.sin(np.pi * np.clip(u / 0.6, 0, 1))) * (1 - 0.62 * np.clip((u - 0.55) / 0.45, 0, 1) ** 1.2)
+    body = np.exp(-((v - cy) / (0.5 * thick)) ** 4)
+    head = np.clip(u / 0.12, 0, 1) ** 0.8
+    tail = np.clip((1 - u) / 0.10, 0, 1)
+    shape = body * head * tail
+    acc = np.zeros((h, w))
+    shade = np.zeros((h, w))
+    for _ in range(2600):
+        uu = rng.uniform(0, 1)
+        ix = int(uu * (w - 1))
+        c = 0.50 + 0.04 * math.sin(math.pi * min(1, uu * 1.2)) - 0.06 * uu ** 2
+        th = (0.62 + 0.10 * math.sin(math.pi * min(1, uu / 0.6))) * (1 - 0.62 * min(1, max(0, (uu - 0.55) / 0.45)) ** 1.2)
+        vv = c + rng.uniform(-0.55, 0.45) * th
+        # 毛の向き：眉頭は上へ立ち、外へ行くほど寝て、眉尻では少し下向き
+        ang = math.radians(float(np.interp(uu, [0, 0.10, 0.30, 0.6, 1.0], [72, 55, 16, 6, -8])) + rng.uniform(-11, 11))
+        Lpx = rng.uniform(14, 30) * (0.65 + 0.35 * min(1.0, uu / 0.2))
+        x0, y0 = uu * w, (1 - vv) * h
+        x1, y1 = x0 + math.cos(ang) * Lpx, y0 - math.sin(ang) * Lpx
+        strength = rng.uniform(0.55, 1.0)
+        _splat_line(acc, x0, y0, x1, y1, lambda t: strength * (1 - 0.75 * t), width=1.0)
     k = np.array([0.25, 0.5, 0.25])
-    for axis in (0, 1):
-        a = np.apply_along_axis(lambda r: np.convolve(r, k, 'same'), axis, a)
-    img[..., 3] = np.clip(a * 1.6, 0, 1)
+    acc = np.apply_along_axis(lambda r: np.convolve(r, k, 'same'), 1, acc)
+    a = np.clip(acc * 1.25, 0, 1) * np.clip(shape * 1.6, 0, 1)
+    # 芯：毛の間から肌が少し見える程度に埋める（眉尻・眉頭は薄く）
+    core = np.exp(-((v - cy) / (0.30 * thick)) ** 2) * head * tail
+    a = np.clip(np.maximum(a, 0.55 * core * shape), 0, 1)
+    a *= 0.92
+    # 色：焦げ茶の黒（毛の筋は少し明るい茶、芯は濃く）
+    dark = srgb((22, 17, 13))
+    light = srgb((58, 43, 31))
+    mixv = np.clip(acc * 0.6, 0, 1)[..., None] * 0.35 + np.clip(1 - shape, 0, 1)[..., None] * 0.4
+    img[..., :3] = dark * (1 - mixv) + light * mixv
+    img[..., 3] = a
     return img
 
 
@@ -114,8 +148,8 @@ def strand_card(w=64, h=256, seed=9):
     img = np.zeros((h, w, 4))
     img[..., :3] = srgb((26, 21, 18))
     a = np.zeros((h, w))
-    for _ in range(26):
-        x0 = rng.uniform(w * 0.2, w * 0.8)
+    for _ in range(44):
+        x0 = rng.uniform(w * 0.12, w * 0.88)
         amp = rng.uniform(2, 7)
         ph = rng.uniform(0, 6.28)
         L = rng.uniform(0.6, 1.0)

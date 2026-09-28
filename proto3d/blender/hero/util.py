@@ -167,7 +167,7 @@ def join(objs, name=None):
 
 
 def principled(name, color=(0.5, 0.5, 0.5), rough=0.8, metal=0.0, *, base_tex=None, normal_tex=None, normal_strength=1.0,
-               rough_tex=None, alpha_clip=False, uv_scale=None, vcol=None, double=False, spec=0.5):
+               rough_tex=None, alpha_clip=False, uv_scale=None, vcol=None, double=False, spec=0.5, alpha_blend=False):
     """glTF に素直に書き出せる形の材質。base_tex 等は bpy の画像"""
     mat = bpy.data.materials.new(name)
     mat.use_nodes = True
@@ -189,7 +189,10 @@ def principled(name, color=(0.5, 0.5, 0.5), rough=0.8, metal=0.0, *, base_tex=No
         if uvnode:
             nt.links.new(uvnode.outputs['UV'], tn.inputs['Vector'])
         col_out = tn.outputs['Color']
-        if alpha_clip:
+        if alpha_blend:
+            # glTF の BLEND（半透明）：アルファを直接つなぐ（縁が柔らかい。影は落とさない設定を物の側で）
+            nt.links.new(tn.outputs['Alpha'], bsdf.inputs['Alpha'])
+        elif alpha_clip:
             # glTF の MASK（切り抜き）は、アルファを「丸め」の計算ノードに通すと書き出される
             rnd = nt.nodes.new('ShaderNodeMath')
             rnd.operation = 'ROUND'
@@ -240,6 +243,11 @@ def principled(name, color=(0.5, 0.5, 0.5), rough=0.8, metal=0.0, *, base_tex=No
         except Exception:
             pass
         mat.alpha_threshold = 0.5 if hasattr(mat, 'alpha_threshold') else None
+    if alpha_blend:
+        try:
+            mat.surface_render_method = 'BLENDED'
+        except Exception:
+            mat.blend_method = 'BLEND'
     mat.use_backface_culling = not double
     return mat
 

@@ -140,12 +140,16 @@ def eyeball(c, r):
     iris_in = np.array([0.105, 0.062, 0.034])
     iris_out = np.array([0.060, 0.034, 0.020])
     limbus = np.array([0.028, 0.020, 0.015])
-    sclera = np.array([0.47, 0.435, 0.395])
+    sclera = np.array([0.405, 0.360, 0.312])     # 第 5 案：暖かく少し暗く（空の青を拾って白く浮かない）
     t = np.clip((ang - 9) / 15, 0, 1)[:, None]
     col = np.where(ang[:, None] < 9, pupil, iris_in * (1 - t) + iris_out * t)
     col = np.where(ang[:, None] >= 25, limbus, col)
-    sc = sclera * (1 - 0.30 * np.clip((ang - 33) / 30, 0, 1))[:, None]   # まぶたの際へ暗く
+    sc = sclera * (1 - 0.38 * np.clip((ang - 31) / 30, 0, 1))[:, None]   # まぶたの際へ暗く
     col = np.where(ang[:, None] >= 28.5, sc, col)
+    # 目頭の側の白目を少し明るく（鼻と眉の陰で暗くなり、外の白目だけが見えて寄り目に見えるのを防ぐ）。局所の x は世界の x と同じ向き
+    s_eye = 1.0 if c[0] > 0 else -1.0
+    vx = V[:, 0] / np.maximum(np.linalg.norm(V, axis=1), 1e-9)
+    col = np.where(ang[:, None] >= 28.5, col * (1 + 0.16 * np.clip(-s_eye * vx / 0.7, 0, 1))[:, None] * (1 - 0.06 * np.clip(s_eye * vx / 0.7, 0, 1))[:, None], col)
     # 上まぶたの陰：眼球の上の方ほど暗く（開いた目の上の縁の下に落ちる陰）
     vy = V[:, 1] / np.maximum(np.linalg.norm(V, axis=1), 1e-9)
     col = col * (1 - 0.45 * np.clip((vy - 0.05) / 0.35, 0, 1))[:, None]
@@ -169,17 +173,17 @@ def eyeball(c, r):
 def brow_strip(s):
     """眉：眉の骨の上に沿った帯（透ける画像）。まっすぐで太め、外の端は少し下がって細い"""
     head_sdf = lambda P: A.body(P, ['head'])
-    xs = np.linspace(0.0085, 0.0545, 11)
+    xs = np.linspace(0.0085, 0.0545, 15)
     u = (xs - xs[0]) / (xs[-1] - xs[0])
-    ys = 1.6485 + 0.0014 * np.sin(np.pi * np.clip(u * 1.1, 0, 1)) - 0.0022 * u ** 2   # まっすぐ（外の端だけ少し下がる）
-    w = 0.0140 - 0.0065 * u ** 1.3
+    ys = 1.6472 + 0.0012 * np.sin(np.pi * np.clip(u * 1.1, 0, 1)) - 0.0024 * u ** 2   # まっすぐ（外の端だけ少し下がる）。第 5 案：1.3mm 下げる
+    w = 0.0165 - 0.0040 * u ** 1.3      # 板は画像の柔らかい縁の分だけ広め（眉の形は画像で決める）
     rows = []
-    ks = (-0.42, 0.08, 0.58)
+    ks = (-0.46, -0.21, 0.04, 0.29, 0.54)       # 5 段（段の間で眉の骨が板を突き抜けない）
     for k in ks:
         pts = np.array([(s * x, y + k * ww, 0.12) for x, y, ww in zip(xs, ys, w)])
         for _ in range(30):                      # 各段を肌の面へ（眉の骨のふくらみに沿う。板が肌に埋まらない）
             d = head_sdf(pts.astype(np.float32)).astype(float)
-            pts[:, 2] -= np.clip(d - 0.0007, -0.01, 0.01)
+            pts[:, 2] -= np.clip(d - 0.0010, -0.01, 0.01)
         rows.append(pts)
     nr = len(ks)
     V = np.array([rows[r][i] for i in range(len(xs)) for r in range(nr)])
@@ -238,6 +242,7 @@ def build_parts():
         V, Fc, UV = brow_strip(s)
         o = U.make_mesh('Brow' + nm, V, Fc)
         uv_from_vertex(o, UV)
+        o['cast'] = False
         P['brow' + nm] = o
         V, Fc = lash_strip(s)
         P['lash' + nm] = U.make_mesh('Lash' + nm, V, Fc)
@@ -247,6 +252,7 @@ def build_parts():
     uv_from_vertex(P['strands'], UV)
     P['lockcards'] = U.make_mesh('HairLockCards', V2, F2)
     uv_from_vertex(P['lockcards'], UV2)
+    P['lockcards']['cast'] = False          # 半透明の板は影を落とさない（ゲームの prepare() が userData.cast を見る）
     P['bun'] = U.make_mesh('Topknot', *H.bun_mesh())
     P['motoyui'] = U.make_mesh('Motoyui', *H.motoyui())
     V, Fc, UV = H.tuft()
@@ -298,7 +304,7 @@ def build_parts():
 
 
 # 小袖は厚み（solidify）を付けず両面の材質にし、その分の三角形をしわの形へ回す
-BUDGET = {'head': 13500, 'armL': 1850, 'armR': 1850, 'footL': 500, 'footR': 500, 'hair': 6500, 'bun': 1100, 'kosode': 10500, 'knotB': 360}
+BUDGET = {'head': 13300, 'armL': 1850, 'armR': 1850, 'footL': 500, 'footR': 500, 'hair': 6400, 'bun': 450, 'kosode': 10500, 'knotB': 360}
 
 
 def decimate(P):
@@ -317,18 +323,22 @@ def materials(P):
     brow = U.image_from_array('tex_brow', TX.brow_card(), WORK / 'tex_brow.png')
     wisp = U.image_from_array('tex_wisp', TX.wisp_card(), WORK / 'tex_wisp.png')
     lockc = U.image_from_array('tex_lock', TX.strand_card(), WORK / 'tex_lock.png')
+    # 房・髷の房の色：髪の画像を少し明るい焦げ茶へ（顔の前で黒い線に見えない。光の当たる縁が茶に見える）
+    lk = np.clip(TX.hair()[0] * np.array([1.32, 1.24, 1.14]) + np.array([0.008, 0.005, 0.003]), 0, 1)
+    locktex = (U.image_from_array('tex_hairlock', lk, WORK / 'tex_hairlock.png'),)
 
     def tmat(name, nm, rough, color=(1, 1, 1), double=False, nstr=1.0):
         return U.principled(name, color, rough, base_tex=tex[nm][0], normal_tex=tex[nm][1], uv_scale=1, double=double, normal_strength=nstr)
 
     M = {
-        'skin': U.principled('Skin', (0.58, 0.315, 0.185), 0.56),
-        'eye': U.principled('Eye', (1, 1, 1), 0.30),
-        'brow': U.principled('Brow', (1, 1, 1), 0.7, base_tex=brow, uv_scale=1, alpha_clip=True, double=True),
+        'skin': U.principled('Skin', (0.58, 0.315, 0.185), 0.58),
+        'eye': U.principled('Eye', (1, 1, 1), 0.40),
+        'brow': U.principled('Brow', (1, 1, 1), 0.75, base_tex=brow, uv_scale=1, alpha_blend=True, double=True),
         'lash': U.principled('Lash', (0.012, 0.010, 0.009), 0.6),
-        'hair': tmat('Hair', 'hair', 0.5),
+        'hair': tmat('Hair', 'hair', 0.62),
+        'hairlock': U.principled('Hair_lock_clumps', (1, 1, 1), 0.6, base_tex=locktex[0], normal_tex=tex['hair'][1], uv_scale=1),
         'wisp': U.principled('Hair_wisps', (1, 1, 1), 0.55, base_tex=wisp, uv_scale=1, alpha_clip=True, double=True),
-        'lockcard': U.principled('Hair_locks', (1, 1, 1), 0.5, base_tex=lockc, uv_scale=1, alpha_clip=True, double=True),
+        'lockcard': U.principled('Hair_locks', (1, 1, 1), 0.6, base_tex=lockc, uv_scale=1, alpha_blend=True, double=True),
         'cord': U.principled('Motoyui_paper', (0.50, 0.46, 0.39), 0.6),
         'kosode': tmat('Kosode_indigo_hemp', 'indigo', 0.85, double=True),   # 厚みなしの 1 枚の布（袖口の中も見える）
         'juban': tmat('Juban_linen', 'linen', 0.85),
@@ -346,7 +356,7 @@ def materials(P):
     assign = {
         'head': 'skin', 'armL': 'skin', 'armR': 'skin', 'footL': 'tabi', 'footR': 'tabi',
         'eyeL': 'eye', 'eyeR': 'eye', 'browL': 'brow', 'browR': 'brow', 'lashL': 'lash', 'lashR': 'lash',
-        'hair': 'hair', 'strands': 'hair', 'lockcards': 'lockcard', 'bun': 'hair', 'bunstr': 'hair', 'wisps': 'wisp', 'motoyui': 'cord',
+        'hair': 'hair', 'strands': 'hairlock', 'lockcards': 'lockcard', 'bun': 'hair', 'bunstr': 'hairlock', 'wisps': 'wisp', 'motoyui': 'cord',
         'kosode': 'kosode', 'eri': 'kosode', 'juban': 'juban',
         'hakama': 'hakama', 'obi': 'obi', 'koshiita': 'hakama', 'himo1': 'himo', 'himo2': 'himo', 'knotF': 'himo', 'knotB': 'himo', 'knotE': 'himo',
         'sw_saya': 'saya', 'sw_metal': 'metal', 'sw_iron': 'iron', 'sw_tsuka': 'tsuka',
@@ -388,10 +398,10 @@ def skin_tint(P):
     col *= mul(near((0, 1.5610, 0.095), (0.014, 0.003, 0.008)), [-0.04, -0.02, -0.02])
     col *= mul(near((0, 1.5667, 0.0960), (0.021, 0.0019, 0.014)), [0.38, 0.46, 0.44])   # 口の合わせ目
     for s_ in (1, -1):
-        col *= mul(near((s_ * 0.0245, 1.5668, 0.0830), (0.0035, 0.0028, 0.004)), [0.16, 0.20, 0.18])   # 口角
+        col *= mul(near((s_ * 0.0245, 1.5668, 0.0830), (0.0030, 0.0024, 0.004)), [0.08, 0.10, 0.09])   # 口角（第 5 案：弱く）
     for s in (1, -1):
         col *= mul(near((s * 0.042, 1.600, 0.072), (0.018, 0.015, 0.02)), [0.0, 0.09, 0.09])   # 頬の赤み
-        col *= mul(near((s * 0.077, 1.620, -0.013), (0.012, 0.030, 0.022)), [0.0, 0.12, 0.12])   # 耳（血の色）
+        col *= mul(near((s * 0.075, 1.620, -0.013), (0.012, 0.028, 0.020)), [0.10, 0.17, 0.16])   # 耳（血の色。第 5 案：少し暗く、日なたで光りすぎない）
         col *= mul(near((s * 0.0105, 1.5930, 0.094), (0.006, 0.006, 0.008)), [0.0, 0.07, 0.07])   # 小鼻
         ec = A.mirror(A.EYE_C, s)
         col *= mul(near(ec + np.array([0, 0.001, 0.010]), (0.019, 0.011, 0.011)), [0.08, 0.10, 0.06])   # 目のまわり（少し暗く、紫がかる）
@@ -492,6 +502,19 @@ def fold_shade(ob, depth=0.30):
     return 1.0 - depth * np.clip(t, 0, 1) ** 0.8 + 0.04 * np.clip(-t, 0, 1) - 0.04
 
 
+def smooth_vertex_values(ob, x, iters=3, lam=0.5):
+    """面のつながりで頂点の値をならす（ベクトル化）"""
+    e = np.array([ed.vertices[:] for ed in ob.data.edges])
+    n = len(x)
+    deg = np.bincount(e.ravel(), minlength=n).astype(float)
+    for _ in range(iters):
+        acc = np.zeros(n)
+        np.add.at(acc, e[:, 0], x[e[:, 1]])
+        np.add.at(acc, e[:, 1], x[e[:, 0]])
+        x = np.where(deg > 0, x * (1 - lam) + lam * acc / np.maximum(deg, 1), x)
+    return x
+
+
 def write_colors(P, tint, ao):
     """最終の頂点の色 COLOR_0 = 色味 × AO（弱め）。three.js は線形の値として掛ける"""
     strength = {'hakama': 0.65, 'kosode': 0.8, 'head': 0.75, 'armL': 0.5, 'armR': 0.5, 'hair': 0.6, 'strands': 0.5, 'obi': 0.55}
@@ -504,12 +527,14 @@ def write_colors(P, tint, ao):
         if k in ao:
             s = strength.get(k, 0.7)
             a = np.clip(ao[k], 0, 1)
+            if k in ('head', 'hair'):
+                a = smooth_vertex_values(ob, a, 3)      # 頂点ごとの AO のむら（日なたの顔の細かな斑点）をならす
             a = 0.30 + 0.70 * a        # 真っ黒にはしない
             col *= (1 - s + s * a)[:, None]
         if k == 'kosode':
             col *= fold_shade(ob, 0.42)[:, None]
         if k == 'head':
-            col *= fold_shade(ob, 0.16)[:, None]     # 顔のくぼみ（目のまわり・小鼻の脇・口角・耳の中）を少し暗く：日陰でも形が読める
+            col *= fold_shade(ob, 0.10)[:, None]     # 顔のくぼみ（目のまわり・小鼻の脇・口角・耳の中）を少し暗く：日陰でも形が読める
         if 'vcol' in ob.keys():
             col = np.array(ob['vcol'], float).reshape(-1, 3)
         ca = me.color_attributes.new('Col', 'FLOAT_COLOR', 'POINT')

@@ -25,18 +25,24 @@ E2 = np.cross(TIE_DIR, E1)
 
 # 生え際：頭の周りの角度（前 0°、横 90°、後ろ 180°）ごとの高さ
 _HL_T = np.array([0, 12, 22, 32, 40, 47, 53, 58, 63, 68, 72, 76, 79, 82, 86, 92, 100, 108, 116, 126, 140, 155, 168, 180])
-_HL_Y = np.array([1.707, 1.708, 1.706, 1.700, 1.692, 1.682, 1.668, 1.652, 1.636, 1.620, 1.608, 1.603, 1.610, 1.640, 1.660, 1.664, 1.660, 1.640, 1.606, 1.578, 1.558, 1.550, 1.547, 1.545])
+# 2026-09 第 5 案：額の生え際を 6mm 下げ、こめかみに浅い剃り込み（22〜32°）。耳の上（82〜108°）は 3cm 下げて耳の上の 3 分の 1 を髪で覆う
+_HL_Y = np.array([1.701, 1.702, 1.704, 1.701, 1.690, 1.678, 1.664, 1.650, 1.635, 1.620, 1.608, 1.603, 1.612, 1.628, 1.631, 1.633, 1.632, 1.624, 1.600, 1.576, 1.558, 1.550, 1.547, 1.545])
 
 
 def hairline_y(P):
     th = np.degrees(np.arctan2(np.abs(P[:, 0]), P[:, 2] - C[2]))
-    return np.interp(th, _HL_T, _HL_Y).astype(F)
+    y = np.interp(th, _HL_T, _HL_Y)
+    # 生え際の小さな不ぞろい（額からこめかみ。左右で少し違う）
+    sg = np.sign(P[:, 0]) + 0.5
+    jit = 0.0012 * np.sin(np.radians(th) * 23 + 1.3 * sg) + 0.0007 * np.sin(np.radians(th) * 41 + 0.4 + sg)
+    y = y + jit * np.clip((72 - th) / 12, 0, 1)
+    return y.astype(F)
 
 
 def mask(P):
     """髪のある所 1、無い所 0（生え際で 5mm ほどでなめらかに）"""
     th = np.degrees(np.arctan2(np.abs(P[:, 0]), P[:, 2] - C[2]))
-    soft = np.interp(th, [0, 50, 70, 100, 140, 180], [0.026, 0.020, 0.010, 0.010, 0.014, 0.014]).astype(F)
+    soft = np.interp(th, [0, 50, 70, 80, 86, 104, 112, 140, 180], [0.026, 0.020, 0.010, 0.009, 0.004, 0.004, 0.009, 0.014, 0.014]).astype(F)
     m = np.clip((P[:, 1] - hairline_y(P)) / soft, 0, 1)
     return (m * m * m * (10 - 15 * m + 6 * m * m)).astype(F)     # 生え際で薄く（縁が立たない）
 
@@ -63,10 +69,15 @@ def clump_profile(P):
     ph = (a * N_CLUMP + 1.7 * np.sin(3 * a + 0.8) + 1.1 * np.sin(5 * a + 2.0) + 0.8 * np.sin(11 * a + 0.3)
           + 2.2 * psi + 0.9 * np.sin(4 * psi + 3 * a))
     main = 0.5 + 0.5 * np.cos(ph)
-    # 束ごとの深さのむら（隣り合う束で山の高さが違う）
+    # 束ごとの深さのむら（隣り合う束で山の高さが違う。浅い束も混ぜて、規則的な溝に見えない）
     idx = np.floor(ph / (2 * math.pi) + 0.5)
-    amp = 0.55 + 0.45 * (0.5 + 0.5 * np.sin(idx * 12.9898 + 4.1))
+    amp = 0.30 + 0.70 * (0.5 + 0.5 * np.sin(idx * 12.9898 + 4.1)) ** 1.5
     main = 1 - (1 - main) * amp
+    # 太い束（17 本の周期）を場所によって混ぜる：束の幅がそろわない
+    ph2 = a * 17 + 2.1 * np.sin(2 * a + 1.1) + 1.6 * psi + 0.7 * np.sin(6 * a + 2.5)
+    main2 = 0.5 + 0.5 * np.cos(ph2)
+    wmix = 0.45 * (0.5 + 0.5 * np.sin(3 * a + 1.7 + 2.0 * psi))
+    main = main * (1 - wmix) + main2 * wmix
     fine = 0.5 + 0.5 * np.cos(ph * 2.6 + 1.3 * np.sin(7 * a + psi * 3))
     return main.astype(F), fine.astype(F)
 
@@ -79,10 +90,10 @@ def base_thickness(P):
     th = np.degrees(np.arctan2(np.abs(P[:, 0]), P[:, 2] - C[2]))
     front = np.exp(-(th / 48) ** 2) * np.clip((P[:, 1] - 1.675) / 0.03, 0, 1)
     # 2026-09 第 4 案：量を増やす（頭頂 1.7cm・横 1cm・額の上 1.4cm。旧は頭頂 1.5cm・横 7mm）。後ろへなでつけた髪のふくらみ
-    t = 0.0080 + 0.0070 * top + 0.0030 * np.exp(-(psi / math.radians(24)) ** 2) + 0.0045 * front
-    # 耳のまわりは少し薄く、なでつける（耳の上に塊が乗らない）
-    ear = np.exp(-((th - 90) / 22) ** 2) * np.clip((1.675 - P[:, 1]) / 0.03, 0, 1)
-    t = t * (1 - 0.30 * ear)
+    t = 0.0080 + 0.0085 * top + 0.0030 * np.exp(-(psi / math.radians(24)) ** 2) + 0.0045 * front
+    # 2026-09 第 5 案：耳の上は髪を厚くして耳の上の端を覆う（髪の層は耳を含まない頭の面から測るので、耳の上が髪の下に入る）
+    ear = np.exp(-((th - 94) / 14) ** 2) * np.clip((P[:, 1] - 1.620) / 0.010, 0, 1) * np.clip((1.690 - P[:, 1]) / 0.025, 0, 1)
+    t = t + 0.0068 * ear
     return (t * m).astype(F)
 
 
@@ -99,7 +110,8 @@ def thickness(P):
 
 
 def cap_sdf(P):
-    return A.body(P, ['neck', 'head']) - thickness(P)
+    # 耳を含まない頭の面から（耳の上の端は髪の下に入る）
+    return A.body(P, ['neck', 'headnoear']) - thickness(P)
 
 
 def cap_mesh(h=0.0017):
@@ -317,7 +329,7 @@ def motoyui(seg=24, rows=13):
     return np.array(V), np.array(Fc)
 
 
-def tube(path, radii, ring=6, flat=1.0, up=None, uv_u0=0.0, uv_v=(0.0, 1.0), twist=0.0):
+def tube(path, radii, ring=6, flat=1.0, up=None, uv_u0=0.0, uv_v=(0.0, 1.0), twist=0.0, u_span=0.06):
     """道の点の列に沿う管（先を閉じる）。断面は楕円（flat 倍に平たい。平たい向きは up に直交）。返り値：頂点・面・UV"""
     path = np.asarray(path, float)
     n = len(path)
@@ -337,7 +349,7 @@ def tube(path, radii, ring=6, flat=1.0, up=None, uv_u0=0.0, uv_v=(0.0, 1.0), twi
         for k in range(ring):
             a = 2 * math.pi * k / ring
             V.append(path[j] + (b * math.cos(a) + u * math.sin(a) * flat) * radii[j])
-            UV.append((uv_u0 + 0.06 * k / ring, uv_v[0] + (uv_v[1] - uv_v[0]) * j / (n - 1)))
+            UV.append((uv_u0 + u_span * k / ring, uv_v[0] + (uv_v[1] - uv_v[0]) * j / (n - 1)))
     for j in range(n - 1):
         for k in range(ring):
             a0 = j * ring + k
@@ -345,48 +357,72 @@ def tube(path, radii, ring=6, flat=1.0, up=None, uv_u0=0.0, uv_v=(0.0, 1.0), twi
             Fc.append((a0, a1, a1 + ring, a0 + ring))
     tip = len(V)
     V.append(path[-1] + T[-1] * radii[-1])
-    UV.append((uv_u0 + 0.03, uv_v[1]))
+    UV.append((uv_u0 + u_span * 0.5, uv_v[1]))
     last = (n - 1) * ring
     for k in range(ring):
         Fc.append((last + k, last + (k + 1) % ring, tip))
     return V, Fc, UV
 
 
-def tuft(n=15, seed=5):
-    """髷の房（茶筅）：根元の筒の上から、刷毛のように広がって後ろへ反る毛の束。束は先ほど細く、少しねじれる"""
+def tuft(n=8, seed=5):
+    """髷の房（2026-09 第 5 案）：根元の筒の上から後ろへ倒れ、先ほど下へ垂れる太めの束 8 本（旧：細い 15 本の刷毛）。
+    束は平たく、先で 2〜3 本に分かれて細る（先が柔らかく見える）。前から見て頭のてっぺんより上へ突き出さない"""
     rng = np.random.default_rng(seed)
     T = tie_point()
     ax, b1, b2 = BUN_AXIS, BUN_B1, BUN_B2
-    back = np.array([0.0, -0.35, -1.0])
+    back = np.array([0.0, 0.10, -1.0])
     back /= np.linalg.norm(back)
+    down = np.array([0.0, -1.0, 0.0])
     V, Fc, UV = [], [], []
+
+    def add(v, f, uv):
+        base = len(V)
+        V.extend(v)
+        UV.extend(uv)
+        Fc.extend([tuple(x + base for x in ff) for ff in f])
     for k in range(n):
-        ang = 2 * math.pi * (k + rng.uniform(-0.3, 0.3)) / n
+        ang = 2 * math.pi * (k + rng.uniform(-0.25, 0.25)) / n
         e = math.cos(ang) * b1 + math.sin(ang) * b2
-        r0 = 0.0085 * math.sqrt(rng.uniform(0.25, 1.0))
-        start = T + ax * (ROOT_TOP - 0.010) + e * r0
-        spread = math.radians(rng.uniform(10, 30))
-        d0 = ax * math.cos(spread) + e * math.sin(spread)
-        L = rng.uniform(0.045, 0.062)
-        bend = rng.uniform(0.55, 0.95)
-        m = 10
+        r0 = 0.0060 * math.sqrt(rng.uniform(0.3, 1.0))
+        start = T + ax * (ROOT_TOP - 0.006) + e * r0
+        spread = math.radians(rng.uniform(8, 20))
+        d0 = ax * 0.55 + back * 0.45
+        d0 = d0 / np.linalg.norm(d0) * math.cos(spread) + e * math.sin(spread)
+        L = rng.uniform(0.070, 0.090)
+        m = 12
         pts = []
         p = start.copy()
-        d = d0.copy()
+        d = d0 / np.linalg.norm(d0)
         for j in range(m):
             t = j / (m - 1)
             pts.append(p.copy())
-            d = d + back * bend * 0.30 + e * 0.05
+            d = d + back * 0.10 + down * (0.07 + 0.20 * t) + e * 0.02
             d /= np.linalg.norm(d)
             p = p + d * L / (m - 1)
         pts = np.array(pts)
         t = np.linspace(0, 1, m)
-        rad = (0.0042 * rng.uniform(0.8, 1.15)) * (1 - 0.82 * t ** 1.3)
-        v, f, uv = tube(pts, rad, ring=6, flat=0.65, up=e, uv_u0=k * 0.13, uv_v=(0.0, 0.5), twist=rng.uniform(-1, 1))
-        base = len(V)
-        V += v
-        UV += uv
-        Fc += [tuple(x + base for x in ff) for ff in f]
+        R0 = 0.0062 * rng.uniform(0.85, 1.15)
+        rad = R0 * (1 - 0.55 * t ** 1.2)
+        # 太い束（先の 3 割は細い束に任せる）
+        mc = int(m * 0.75)
+        v, f, uv = tube(pts[:mc], rad[:mc] * (1 - 0.5 * np.linspace(0, 1, mc) ** 3), ring=6, flat=0.6, up=e,
+                        uv_u0=k * 0.13, uv_v=(0.0, 0.4), twist=rng.uniform(-0.8, 0.8))
+        add(v, f, uv)
+        # 先の細い束（2〜3 本）：太い束の半ばから出て、少し広がって細る
+        side = np.cross(pts[-1] - pts[0], e)
+        side /= np.linalg.norm(side) + 1e-12
+        for q in range(2):
+            j0 = int(m * 0.35)
+            sub = pts[j0:].copy()
+            uu = np.linspace(0, 1, len(sub))
+            sgn = (q - 0.5) * 2 + rng.uniform(-0.3, 0.3)
+            Ls = rng.uniform(0.85, 1.12)
+            sub = sub[0] + (sub - sub[0]) * Ls
+            sub = sub + (side * sgn * 0.0035 + e * rng.uniform(-0.002, 0.002))[None, :] * (uu ** 1.5)[:, None]
+            sub = sub + down * 0.004 * (uu ** 2)[:, None] * rng.uniform(0.3, 1.0)
+            rs = R0 * 0.42 * (1 - 0.9 * uu ** 1.2)
+            v, f, uv = tube(sub, rs, ring=4, flat=0.7, up=e, uv_u0=k * 0.13 + 0.04 * q, uv_v=(0.15, 0.5))
+            add(v, f, uv)
     return np.array(V), Fc, np.array(UV)
 
 
@@ -448,16 +484,19 @@ def _catmull(pts, n):
     return np.array(out)
 
 
-# ---- 顔のまわりの房（2026-09 第 4 案）：額の生え際（髪の塊の中）から出て、こめかみの前を通り、頬骨の横へ垂れる束。
-# 1 房 = 平たい太い束（根元 1cm 幅）＋ 先で分かれる細い束 2〜3 本 ＋ 透ける毛の板。肌から先ほど離れる（貼り付いた帯に見えない）。
-# 目にはかからない（目じりより外を通る）。左右で長さ・本数を変える。旧（第 3 案）は git の履歴
+# ---- 顔のまわりの房（2026-09 第 5 案）：分け目の近く（髪の塊の中）から出て、額の端・こめかみの前へ垂れる幅の広い平たい束。
+# 1 房 = 並んだ細い束 5〜7 本（断面は平たい。真ん中が少し厚い）＋ その下の透ける毛の板。先は束が少しずつ分かれて長さがそろわない。
+# 前髪の房（F）は額の端を斜めに横切って眉の外の端の高さまで、横の房（L）はこめかみの前を頬骨の横まで。目にはかからない（目じりより外）。
+# 旧（第 4 案：細い管の房 3 本）は git の履歴
 LOCKS = [
-    # (制御点（左 s=+1 の形。x に s を掛ける）, 根元の半幅, 細い束の数, s, 種)
-    ([(.022, 1.736, .058), (.038, 1.720, .078), (.054, 1.698, .080), (.066, 1.668, .068), (.073, 1.634, .052),
-      (.076, 1.604, .042), (.076, 1.586, .038)], .0075, 1, 1, 1),
-    ([(.038, 1.727, .050), (.053, 1.709, .064), (.066, 1.684, .058), (.073, 1.656, .046), (.076, 1.634, .036)], .0050, 1, 1, 2),
-    ([(.020, 1.737, .058), (.036, 1.722, .078), (.052, 1.700, .081), (.064, 1.670, .070), (.071, 1.636, .055),
-      (.074, 1.610, .046)], .0072, 1, -1, 3),
+    # (制御点（左 s=+1 の形。x に s を掛ける）, 根元の半幅, 細い束の数, s, 種, 肌からの距離（先）)
+    ([(.006, 1.748, .050), (.018, 1.733, .080), (.032, 1.710, .092), (.046, 1.684, .090), (.057, 1.662, .083),
+      (.064, 1.644, .074)], .0105, 3, 1, 1, .0045),
+    ([(.030, 1.742, .058), (.047, 1.720, .078), (.060, 1.694, .078), (.068, 1.664, .066), (.072, 1.634, .052),
+      (.074, 1.606, .044), (.074, 1.588, .040)], .0080, 3, 1, 2, .0070),
+    ([(.004, 1.748, .052), (.016, 1.734, .082), (.029, 1.713, .094), (.043, 1.688, .093), (.055, 1.664, .086),
+      (.063, 1.642, .076), (.068, 1.624, .066)], .0110, 3, -1, 3, .0050),
+    ([(.034, 1.740, .056), (.052, 1.714, .070), (.064, 1.686, .064), (.070, 1.656, .050), (.073, 1.628, .040)], .0070, 2, -1, 4, .0060),
 ]
 
 
@@ -470,20 +509,20 @@ def _grad(fn, p, e=2e-4):
     return g / (np.linalg.norm(g, axis=1, keepdims=True) + 1e-12)
 
 
-def _lock_path(ctrl, s, seed, n_per=5):
+def _lock_path(ctrl, s, seed, tip_off=0.006, n_per=4):
     rng = np.random.default_rng(seed)
     c = np.array(ctrl, float)
     c[:, 0] *= s
-    c[2:] += rng.normal(0, 0.0010, (len(c) - 2, 3)) * np.array([1, 0.4, 1])
+    c[2:] += rng.normal(0, 0.0008, (len(c) - 2, 3)) * np.array([1, 0.4, 1])
     sp = _catmull(c, n_per)
     n = len(sp)
     tt = np.linspace(0, 1, n)
-    # 髪の面・肌からの距離：根元は髪の塊の中（-2mm）→ 生え際を越えて 3mm → 先で 7mm
-    want = -0.0020 + 0.0055 * _sm(tt / 0.30) + 0.0075 * _sm((tt - 0.3) / 0.7)
-    for _ in range(20):
+    # 髪の面・肌からの距離：根元は髪の塊の中（-2.5mm）→ 生え際を越えて 2.5mm → 先で tip_off
+    want = -0.0025 + 0.0050 * _sm(tt / 0.30) + (tip_off - 0.0025) * _sm((tt - 0.3) / 0.7)
+    for _ in range(24):
         d = cap_sdf(sp.astype(F)).astype(float)
         g = _grad(cap_sdf, sp)
-        push = np.clip(want - d, -0.003, 0.004) * np.where(tt < 0.15, 0.3, 1.0)
+        push = np.clip(want - d, -0.003, 0.004) * np.where(tt < 0.12, 0.3, 1.0)
         sp += g * push[:, None]
     return sp
 
@@ -494,7 +533,7 @@ def _sm(x):
 
 
 def lock_meshes():
-    """房：太い束と細い束（管、髪の材質）、房ごとの透ける板（毛の板の材質）。返り値：(V, F, UV), (V2, F2, UV2)"""
+    """房：並んだ細い束（管、房の材質）、房ごとの透ける板（毛の板の材質）。返り値：(V, F, UV), (V2, F2, UV2)"""
     V, Fc, UV = [], [], []
     V2, F2, UV2 = [], [], []
 
@@ -503,44 +542,54 @@ def lock_meshes():
         V.extend(v)
         UV.extend(uv)
         Fc.extend([tuple(x + base for x in ff) for ff in f])
-    for ctrl, w0, nsub, s, seed in LOCKS:
-        sp = _lock_path(ctrl, s, seed)
+    for ctrl, w0, nsub, s, seed, tip_off in LOCKS:
+        sp = _lock_path(ctrl, s, seed, tip_off)
         n = len(sp)
         tt = np.linspace(0, 1, n)
         N = _grad(cap_sdf, sp)
         T = np.gradient(sp, axis=0)
         T /= np.linalg.norm(T, axis=1, keepdims=True)
+        N = N - T * (N * T).sum(1, keepdims=True)
+        N /= np.linalg.norm(N, axis=1, keepdims=True) + 1e-12
         B = np.cross(T, N)
         B /= np.linalg.norm(B, axis=1, keepdims=True) + 1e-12
         rng = np.random.default_rng(seed + 50)
-        # 太い束（平たい：肌の向きに薄い）。先の 2 割は細い束に任せて短め
-        m = n
-        rad = w0 * (1 - 0.85 * tt[:m] ** 1.1)
-        v, f, uv = tube(sp[:m], rad, ring=6, flat=0.35, up=N[:m], uv_u0=seed * 0.2, uv_v=(0.0, 0.7), twist=0.4 * s)
-        add(v, f, uv)
-        # 細い束：太い束の縁から出て、先で少し広がる
+        half = w0 * (1 - 0.45 * tt ** 1.2)                 # 房の半幅（根元 → 先で半分）
+        # 房の本体：平たい幅の広い束（断面は薄い楕円）。画像の毛の筋が幅の中に何本も並ぶ（u_span を広く）。先の 2 割で細る
+        mm = n
+        u = np.linspace(0, 1, mm)
+        r = half * (1 - 0.70 * np.clip((u - 0.55) / 0.45, 0, 1) ** 1.3)
+        v, fc, uv = tube(sp, r, ring=8, flat=0.15, up=N, uv_u0=seed * 0.2, uv_v=(0.0, 0.55), twist=0.0, u_span=0.22)
+        add(v, fc, uv)
+        # 先で分かれる細い束：本体の半ばから出て、本体の縁の外へ少し広がり、本体より少し長い（先が柔らかくそろわない）
         for k in range(nsub):
-            side = (k - (nsub - 1) / 2) / max(nsub - 1, 1) * 2 if nsub > 1 else 0.0
-            off = side * w0 * 0.7
-            fan = side * rng.uniform(0.002, 0.005) + rng.uniform(-0.0015, 0.0015)
-            L = rng.uniform(0.85, 1.0)
-            mm = max(5, int(n * L))
-            u = np.linspace(0, 1, mm)
-            p = sp[:mm] + B[:mm] * (off * (1 - 0.4 * u) + fan * u ** 1.5)[:, None] + N[:mm] * (0.0008 + 0.0015 * u)[:, None]
-            r = w0 * 0.22 * (1 - 0.85 * u ** 1.1)
-            v, f, uv = tube(p, r, ring=4, flat=0.8, up=N[:mm], uv_u0=seed * 0.2 + 0.07 * k, uv_v=(0.0, 0.7))
-            add(v, f, uv)
-        # 透ける板（束の芯に沿う、肌の側に少し沈める。幅は根元 1.4cm → 先 0.8cm）
+            f = (k + 0.5) / nsub - 0.5
+            j0 = int(n * rng.uniform(0.35, 0.55))
+            sub = sp[j0:].copy()
+            ms = len(sub)
+            uu = np.linspace(0, 1, ms)
+            ext = rng.uniform(1.0, 1.15)
+            sub = sub[0] + (sub - sub[0]) * ext
+            fan = (f * 2) * half[j0:] * 0.95 + (f * 2) * rng.uniform(0.001, 0.004) * uu ** 2 + rng.normal(0, 0.0008) * uu ** 2
+            p = sub + B[j0:] * fan[:, None] + N[j0:] * (0.0006 + 0.0004 * (k % 2))
+            rr = (w0 / nsub * 1.2) * (1 - 0.88 * uu ** 1.2)
+            v, fc, uv = tube(p, rr, ring=4, flat=0.5, up=N[j0:], uv_u0=seed * 0.2 + 0.05 * k, uv_v=(0.25, 0.55))
+            add(v, fc, uv)
+        # 透ける板（束の下、肌の側に少し沈める。幅は房の幅の 1.3 倍、先は束より少し長い）
         base = len(V2)
-        for j in range(n):
-            t = tt[j]
-            w = 0.014 * (1 - 0.45 * t)
-            p = sp[j] - N[j] * 0.0006
-            V2.append(p - B[j] * w / 2)
-            V2.append(p + B[j] * w / 2)
+        ext = np.vstack([sp, sp[-1] + (sp[-1] - sp[-2]) * np.arange(1, 4)[:, None]])
+        Ne = np.vstack([N, np.repeat(N[-1:], 3, 0)])
+        Be = np.vstack([B, np.repeat(B[-1:], 3, 0)])
+        ne = len(ext)
+        for j in range(ne):
+            t = j / (ne - 1)
+            w = 2.6 * w0 * (1 - 0.45 * t)
+            p = ext[j] - Ne[j] * 0.0007
+            V2.append(p - Be[j] * w / 2)
+            V2.append(p + Be[j] * w / 2)
             UV2.append((0.0, 1 - t))
             UV2.append((1.0, 1 - t))
-        for j in range(n - 1):
+        for j in range(ne - 1):
             a = base + 2 * j
             F2.append((a, a + 1, a + 3, a + 2))
     return (np.array(V), Fc, np.array(UV)), (np.array(V2), np.array(F2), np.array(UV2))

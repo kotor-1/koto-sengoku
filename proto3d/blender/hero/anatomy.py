@@ -75,15 +75,19 @@ def torso(P):
 
 
 def neck(P):
-    # 下（襟の中）は第 1 版と同じ太さ。あごの下（y 1.52 より上）は細め（頭の方が首より広く見えるように。2026-09）
+    # 下（襟の中・襟の縁の高さまで）は第 1 版と同じ太さ。あごの下（y 1.505 より上）は細め（頭の方が首より広く見えるように。
+    # 2026-09 第 5 案：あごの下を約 1 割細く、胸鎖乳突筋・喉仏を弱く。襟の縁（横で y 1.496、後ろで 1.525）の高さの太さは変えない）
     d = ecapsule(P, (0, 1.40, -.016), (0, 1.585, -.024), .057, .052, .88, (0, 0, 1))
-    r = np.interp(P[:, 1], [1.48, 1.515, 1.58], [.070, .0565, .0455]).astype(F)
-    d = smax(d, (np.sqrt(P[:, 0] ** 2 + ((P[:, 2] + F(.021)) / F(.88)) ** 2) - r) * F(.88), .008)
+    # 幅（x）だけ細くする。前後（喉・うなじ）の厚みは第 4 案のまま（喉の前にくびれが出ない）
+    rx = np.interp(P[:, 1], [1.48, 1.505, 1.52, 1.58], [.070, .0580, .0495, .0405]).astype(F)
+    rz = F(.88) * np.interp(P[:, 1], [1.48, 1.515, 1.58], [.070, .0565, .0455]).astype(F)
+    q = np.sqrt((P[:, 0] / rx) ** 2 + ((P[:, 2] + F(.021)) / rz) ** 2)
+    d = smax(d, (q - F(1)) * np.minimum(rx, rz), .008)
     for s in (1, -1):
-        # 胸鎖乳突筋：耳の後ろ（乳様突起）から胸骨の上へ
-        d = smin(d, capsule(P, (s * .052, 1.594, -.032), (s * .013, 1.447, .048), .0115, .0088), .012)
-    d = smin(d, ellipsoid(P, (0, 1.488, .036), (.010, .014, .010)), .01)   # 喉仏
-    d = smin(d, ellipsoid(P, (0, 1.512, .020), (.026, .018, .030)), .016)   # あごの下から喉へ（斜めの面）
+        # 胸鎖乳突筋：耳の後ろ（乳様突起）から胸骨の上へ（細く、なだらかに）
+        d = smin(d, capsule(P, (s * .049, 1.590, -.034), (s * .013, 1.447, .045), .0092, .0074), .016)
+    d = smin(d, ellipsoid(P, (0, 1.488, .033), (.0085, .011, .0075)), .012)   # 喉仏（弱く）
+    d = smin(d, ellipsoid(P, (0, 1.512, .018), (.024, .016, .027)), .016)   # あごの下から喉へ（斜めの面）
     return d
 
 
@@ -234,6 +238,7 @@ BOXES = {
     'torso': ((-.26, .75, -.16), (.26, 1.49, .14)),
     'neck': ((-.08, 1.38, -.09), (.08, 1.61, .08)),
     'head': ((-.105, 1.49, -.125), (.105, 1.76, .125)),
+    'headnoear': ((-.105, 1.49, -.125), (.105, 1.76, .125)),
     'armL': ((.14, .86, -.07), (.37, 1.44, .08)),
     'armR': ((-.37, .86, -.07), (-.14, 1.44, .08)),
     'handL': ((.25, .68, -.04), (.39, .93, .12)),
@@ -244,26 +249,26 @@ BOXES = {
     'footR': ((-.16, .0, -.06), (-.04, .22, .23)),
 }
 PARTS = {
-    'torso': torso, 'neck': neck, 'head': head,
+    'torso': torso, 'neck': neck, 'head': head, 'headnoear': lambda P: HF.head(P, ears=False),
     'armL': lambda P: arm(P, 1), 'armR': lambda P: arm(P, -1),
     'handL': lambda P: hand(P, 1), 'handR': lambda P: hand(P, -1),
     'legL': lambda P: leg(P, 1), 'legR': lambda P: leg(P, -1),
     'footL': lambda P: foot(P, 1), 'footR': lambda P: foot(P, -1),
 }
-BLEND = {'torso': .0, 'neck': .03, 'head': .02, 'armL': .03, 'armR': .03, 'handL': .02, 'handR': .02,
+BLEND = {'torso': .0, 'neck': .03, 'head': .02, 'headnoear': .02, 'armL': .03, 'armR': .03, 'handL': .02, 'handR': .02,
          'legL': .04, 'legR': .04, 'footL': .02, 'footR': .02}
 
 
 def body(P, parts=None):
     """全身（または一部）の SDF。部位は箱で区切って計算を省く"""
-    parts = parts or list(PARTS)
+    parts = parts or [k for k in PARTS if k != 'headnoear']
     d = None
     for name in parts:
         lo, hi = BOXES[name]
         dd = bounded(P, PARTS[name], lo, hi, margin=.05)
         if d is None:
             d = dd
-        elif name == 'head':
+        elif name in ('head', 'headnoear'):
             d = smin_var(d, dd, head_blend_k(P))
         else:
             d = smin(d, dd, BLEND[name])
@@ -279,5 +284,6 @@ def smin_var(a, b, k):
 
 def head_blend_k(P):
     """頭と首のつなぎの丸み：うなじ・耳の下は広く（2cm）、あごの下（前）は狭く（あごの線が立つ）"""
-    t = np.clip((P[:, 2] + F(.010)) / F(.040), 0, 1)
+    # 第 5 案：横（えらの下）も狭く。広いのはうなじ（z < -0.04）だけ
+    t = np.clip((P[:, 2] + F(.045)) / F(.040), 0, 1)
     return (F(.020) - F(.013) * t * t * (3 - 2 * t)).astype(F)
