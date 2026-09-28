@@ -17,16 +17,16 @@ CACHE = HERE.parents[0] / 'build' / 'hero' / 'cache'
 CACHE.mkdir(parents=True, exist_ok=True)
 
 
-def _src_hash(extra=''):
+def _src_hash(extra='', head=True):
     h = hashlib.sha1()
-    for f in ('anatomy.py', 'head_form.py', 'sdf.py', 'skin.py'):
+    for f in ('anatomy.py', 'head_form.py', 'sdf.py', 'skin.py') if head else ('anatomy.py', 'sdf.py', 'skin.py'):
         h.update((HERE / f).read_bytes())
     h.update(extra.encode())
     return h.hexdigest()[:12]
 
 
 def cached_mesh(key, parts, lo, hi, h):
-    path = CACHE / f'{key}-{_src_hash(repr((parts, lo, hi, h)))}.npz'
+    path = CACHE / f'{key}-{_src_hash(repr((parts, lo, hi, h)), head=key not in ("arm", "foot"))}.npz'
     if path.exists():
         z = np.load(path)
         return z['V'], z['Q']

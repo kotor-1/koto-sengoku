@@ -83,6 +83,7 @@ def neck(P):
         # 胸鎖乳突筋：耳の後ろ（乳様突起）から胸骨の上へ
         d = smin(d, capsule(P, (s * .052, 1.594, -.032), (s * .013, 1.447, .048), .0115, .0088), .012)
     d = smin(d, ellipsoid(P, (0, 1.488, .036), (.010, .014, .010)), .01)   # 喉仏
+    d = smin(d, ellipsoid(P, (0, 1.512, .020), (.026, .018, .030)), .016)   # あごの下から喉へ（斜めの面）
     return d
 
 
@@ -260,5 +261,23 @@ def body(P, parts=None):
     for name in parts:
         lo, hi = BOXES[name]
         dd = bounded(P, PARTS[name], lo, hi, margin=.05)
-        d = dd if d is None else smin(d, dd, BLEND[name])
+        if d is None:
+            d = dd
+        elif name == 'head':
+            d = smin_var(d, dd, head_blend_k(P))
+        else:
+            d = smin(d, dd, BLEND[name])
     return d
+
+
+def smin_var(a, b, k):
+    """場所ごとに丸みの幅 k（配列）が違う smin"""
+    k = np.maximum(k, F(1e-5))
+    h = np.clip(0.5 + 0.5 * (b - a) / k, 0.0, 1.0)
+    return b + (a - b) * h - k * h * (1.0 - h)
+
+
+def head_blend_k(P):
+    """頭と首のつなぎの丸み：うなじ・耳の下は広く（2cm）、あごの下（前）は狭く（あごの線が立つ）"""
+    t = np.clip((P[:, 2] + F(.010)) / F(.040), 0, 1)
+    return (F(.020) - F(.013) * t * t * (3 - 2 * t)).astype(F)

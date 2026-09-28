@@ -300,14 +300,50 @@ def neck_opening_mask(V, E, W, kind, margin=0.004):
     ただし襟の交わりより下の前の線（上前が下前に重なる所）は開きではない"""
     out = np.zeros(len(V), bool)
     active = (kind == 1) | (E[:, 1] > Y_CROSS)
+    # 首のまわり（襟の後ろ半分と横）：上から見た襟の線（首の軸のまわりの角度ごとの半径）より内を開きにする。
+    # 襟の線の高さの上下で面を切ると、肩の上の斜めの面が段々に切れて穴に見えるので（2026-09）
+    nk = (kind == 1) & (E[:, 1] > 1.44)
+    th_e = np.arctan2(E[nk, 0], E[nk, 2] + 0.022)
+    r_e = np.hypot(E[nk, 0], E[nk, 2] + 0.022)
+    o = np.argsort(th_e)
+    th_e, r_e = th_e[o], r_e[o]
     for i0 in range(0, len(V), 4000):
         p = V[i0:i0 + 4000]
         d = ((p[:, None, :] - E[None, :, :]) ** 2).sum(2)
         j = np.argmin(d, 1)
         side = ((p - E[j]) * W[j]).sum(1)
         near = np.sqrt(d[np.arange(len(p)), j]) < 0.09
-        out[i0:i0 + 4000] = near & (side < margin) & active[j]
+        cut = near & (side < margin) & active[j]
+        th = np.arctan2(p[:, 0], p[:, 2] + 0.022)
+        rr = np.hypot(p[:, 0], p[:, 2] + 0.022)
+        in_neck = (np.abs(th) > np.abs(th_e).min()) & (p[:, 1] > 1.415)
+        re = np.interp(th, th_e, r_e)
+        cut = np.where(in_neck, rr < re + margin, cut)
+        out[i0:i0 + 4000] = cut
     return out
+
+
+def smooth_opening(V, Q, fn, sel, iters=12):
+    """開きの縁（1 回だけ出る辺）の段々を、縁に沿ってならし、布の面へ戻す。sel(V) が真の縁だけ"""
+    E = np.concatenate([Q[:, [0, 1]], Q[:, [1, 2]], Q[:, [2, 3]], Q[:, [3, 0]]])
+    E = np.sort(E, axis=1)
+    Eu, cnt = np.unique(E, axis=0, return_counts=True)
+    B = Eu[cnt == 1]
+    nb = {}
+    for a, b in B:
+        nb.setdefault(a, []).append(b)
+        nb.setdefault(b, []).append(a)
+    idx = np.array([i for i in nb if len(nb[i]) == 2])
+    idx = idx[sel(V[idx])]
+    if len(idx) == 0:
+        return V
+    n1 = np.array([nb[i][0] for i in idx])
+    n2 = np.array([nb[i][1] for i in idx])
+    V = V.copy()
+    for _ in range(iters):
+        V[idx] = 0.5 * V[idx] + 0.25 * (V[n1] + V[n2])
+    V[idx] = project(fn, V[idx].astype(F), iters=3, max_step=0.004).astype(np.float64)
+    return V
 
 
 def _edge_verts(Q):
@@ -362,6 +398,7 @@ def kosode_mesh(h=0.0055):
     V = V[used].copy()
     Q = remap[Q]
     V = taubin(V, Q)
+    V = smooth_opening(V, Q, kosode_sdf, lambda X: X[:, 1] > 1.40)     # 首のまわりの縁の段々をならす
     # 袖口の縁をそろえる（水平の輪）
     bnd = _edge_verts(Q)
     for s in (1, -1):

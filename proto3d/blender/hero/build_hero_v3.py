@@ -140,12 +140,15 @@ def eyeball(c, r):
     iris_in = np.array([0.105, 0.062, 0.034])
     iris_out = np.array([0.060, 0.034, 0.020])
     limbus = np.array([0.028, 0.020, 0.015])
-    sclera = np.array([0.60, 0.555, 0.505])
+    sclera = np.array([0.47, 0.435, 0.395])
     t = np.clip((ang - 9) / 15, 0, 1)[:, None]
     col = np.where(ang[:, None] < 9, pupil, iris_in * (1 - t) + iris_out * t)
     col = np.where(ang[:, None] >= 25, limbus, col)
     sc = sclera * (1 - 0.30 * np.clip((ang - 33) / 30, 0, 1))[:, None]   # まぶたの際へ暗く
     col = np.where(ang[:, None] >= 28.5, sc, col)
+    # 上まぶたの陰：眼球の上の方ほど暗く（開いた目の上の縁の下に落ちる陰）
+    vy = V[:, 1] / np.maximum(np.linalg.norm(V, axis=1), 1e-9)
+    col = col * (1 - 0.45 * np.clip((vy - 0.05) / 0.35, 0, 1))[:, None]
     nr = len(rings) - 2
     Fc = [(0, 1 + k, 1 + (k + 1) % seg) for k in range(seg)]
     for i in range(nr - 1):
@@ -168,21 +171,25 @@ def brow_strip(s):
     head_sdf = lambda P: A.body(P, ['head'])
     xs = np.linspace(0.0085, 0.0545, 11)
     u = (xs - xs[0]) / (xs[-1] - xs[0])
-    ys = 1.6540 + 0.0009 * np.sin(np.pi * np.clip(u * 1.1, 0, 1)) - 0.0022 * u ** 2   # まっすぐ（外の端だけ少し下がる）
-    pts = np.array([(s * x, y, 0.12) for x, y in zip(xs, ys)])
-    for _ in range(30):
-        d = head_sdf(pts.astype(np.float32)).astype(float)
-        pts[:, 2] -= np.clip(d - 0.0006, -0.01, 0.01)
-    up = np.array([0, 1.0, 0])
-    V, UV = [], []
-    for i, p in enumerate(pts):
-        w = 0.0125 - 0.0055 * u[i] ** 1.3
-        V.append(p - up * w * 0.42)
-        V.append(p + up * w * 0.58)
-        UV += [(u[i], 0.0), (u[i], 1.0)]
-    V = np.array(V)
-    Fc = [(2 * i, 2 * i + 2, 2 * i + 3, 2 * i + 1) if s > 0 else (2 * i, 2 * i + 1, 2 * i + 3, 2 * i + 2) for i in range(len(pts) - 1)]
-    return V, Fc, np.array(UV)
+    ys = 1.6485 + 0.0014 * np.sin(np.pi * np.clip(u * 1.1, 0, 1)) - 0.0022 * u ** 2   # まっすぐ（外の端だけ少し下がる）
+    w = 0.0140 - 0.0065 * u ** 1.3
+    rows = []
+    ks = (-0.42, 0.08, 0.58)
+    for k in ks:
+        pts = np.array([(s * x, y + k * ww, 0.12) for x, y, ww in zip(xs, ys, w)])
+        for _ in range(30):                      # 各段を肌の面へ（眉の骨のふくらみに沿う。板が肌に埋まらない）
+            d = head_sdf(pts.astype(np.float32)).astype(float)
+            pts[:, 2] -= np.clip(d - 0.0007, -0.01, 0.01)
+        rows.append(pts)
+    nr = len(ks)
+    V = np.array([rows[r][i] for i in range(len(xs)) for r in range(nr)])
+    UV = np.array([(u[i], r / (nr - 1)) for i in range(len(xs)) for r in range(nr)])
+    Fc = []
+    for i in range(len(xs) - 1):
+        for r in range(nr - 1):
+            a0, a1, b0, b1 = i * nr + r, i * nr + r + 1, (i + 1) * nr + r, (i + 1) * nr + r + 1
+            Fc.append((a0, b0, b1, a1) if s > 0 else (a0, a1, b1, b0))
+    return V, Fc, UV
 
 
 def lash_strip(s):
@@ -198,7 +205,7 @@ def lash_strip(s):
     out = []
     for x, y in zip(xs, up):
         u = (x + HF.AP_IN) / (HF.AP_IN + HF.AP_OUT)
-        w = 0.0011 * (0.35 + 0.65 * math.sin(math.pi * min(1.0, u * 1.1)) ** 0.5)
+        w = 0.0016 * (0.35 + 0.65 * math.sin(math.pi * min(1.0, u * 1.1)) ** 0.5)
         out.append(on_sphere(x, y - 0.0002, R + 0.0009))
         out.append(on_sphere(x, y + w, R + 0.0016))
     out = np.array(out)
@@ -242,7 +249,7 @@ def build_parts():
     uv_from_vertex(P['lockcards'], UV2)
     P['bun'] = U.make_mesh('Topknot', *H.bun_mesh())
     P['motoyui'] = U.make_mesh('Motoyui', *H.motoyui())
-    V, Fc, UV = H.bun_strands()
+    V, Fc, UV = H.tuft()
     P['bunstr'] = U.make_mesh('TopknotStrands', V, Fc)
     uv_from_vertex(P['bunstr'], UV)
     V, Fc, UV = H.nape_wisps()
@@ -315,7 +322,7 @@ def materials(P):
         return U.principled(name, color, rough, base_tex=tex[nm][0], normal_tex=tex[nm][1], uv_scale=1, double=double, normal_strength=nstr)
 
     M = {
-        'skin': U.principled('Skin', (0.53, 0.300, 0.192), 0.58),
+        'skin': U.principled('Skin', (0.58, 0.315, 0.185), 0.56),
         'eye': U.principled('Eye', (1, 1, 1), 0.30),
         'brow': U.principled('Brow', (1, 1, 1), 0.7, base_tex=brow, uv_scale=1, alpha_clip=True, double=True),
         'lash': U.principled('Lash', (0.012, 0.010, 0.009), 0.6),
@@ -384,7 +391,7 @@ def skin_tint(P):
         col *= mul(near((s_ * 0.0245, 1.5668, 0.0830), (0.0035, 0.0028, 0.004)), [0.16, 0.20, 0.18])   # 口角
     for s in (1, -1):
         col *= mul(near((s * 0.042, 1.600, 0.072), (0.018, 0.015, 0.02)), [0.0, 0.09, 0.09])   # 頬の赤み
-        col *= mul(near((s * 0.077, 1.615, -0.012), (0.012, 0.030, 0.022)), [0.0, 0.12, 0.12])   # 耳（血の色）
+        col *= mul(near((s * 0.077, 1.620, -0.013), (0.012, 0.030, 0.022)), [0.0, 0.12, 0.12])   # 耳（血の色）
         col *= mul(near((s * 0.0105, 1.5930, 0.094), (0.006, 0.006, 0.008)), [0.0, 0.07, 0.07])   # 小鼻
         ec = A.mirror(A.EYE_C, s)
         col *= mul(near(ec + np.array([0, 0.001, 0.010]), (0.019, 0.011, 0.011)), [0.08, 0.10, 0.06])   # 目のまわり（少し暗く、紫がかる）
@@ -398,7 +405,7 @@ def skin_tint(P):
     col *= mul(near((0, 1.512, 0.040), (0.040, 0.012, 0.040)), [0.14, 0.14, 0.11])   # あごの下（首への影）
     # ひげの剃り跡（あご・口のまわり・上唇の上）：赤みを抜いて少し青く暗く
     beard = np.maximum(near((0, 1.540, 0.068), (0.045, 0.026, 0.04)), near((0, 1.580, 0.094), (0.020, 0.006, 0.01)) * 0.6) * (1 - lips)
-    col *= mul(beard, [0.07, 0.06, 0.025])
+    col *= mul(beard, [0.045, 0.04, 0.015])
     # 肌のむら（低い周波数、ごく弱く）
     x, y, z = Vh[:, 0], Vh[:, 1], Vh[:, 2]
     nz = (np.sin(x * 157 + y * 61 + 1.3) * np.sin(y * 113 - z * 89 + 0.4) + 0.6 * np.sin(z * 211 + x * 97 + 2.1) * np.sin(y * 173 + 0.7))
@@ -502,7 +509,7 @@ def write_colors(P, tint, ao):
         if k == 'kosode':
             col *= fold_shade(ob, 0.42)[:, None]
         if k == 'head':
-            col *= fold_shade(ob, 0.26)[:, None]     # 顔のくぼみ（目のまわり・小鼻の脇・口角・耳の中）を少し暗く：日陰でも形が読める
+            col *= fold_shade(ob, 0.16)[:, None]     # 顔のくぼみ（目のまわり・小鼻の脇・口角・耳の中）を少し暗く：日陰でも形が読める
         if 'vcol' in ob.keys():
             col = np.array(ob['vcol'], float).reshape(-1, 3)
         ca = me.color_attributes.new('Col', 'FLOAT_COLOR', 'POINT')
