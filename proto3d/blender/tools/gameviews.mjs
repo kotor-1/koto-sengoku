@@ -14,7 +14,7 @@ const page = await (await browser.newContext({ viewport: { width: 1280, height: 
 page.setDefaultTimeout(900000);
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
-await page.goto(BASE + '/');
+await page.goto(BASE + '/' + (process.env.QUERY || '')); // QUERY='?hero=mpfb' など
 await page.waitForFunction(() => window.__p3?.stats.readyMs > 0, null, { timeout: 600000 });
 await page.evaluate(() => {
   const p = window.__p3;
@@ -57,7 +57,16 @@ for (const variant of vlist.split(',')) {
         p.camera.updateProjectionMatrix();
         p.camera.lookAt(...tgt);
         p.scene.traverse((o) => { if (o.isSkinnedMesh || o.isMesh) o.visible = o.visible || o.isSkinnedMesh; });
+        // 確認用の柔らかな光（この 1 枚だけ）：日差しを弱め、空の光を強めて、形を影と切り分けて見る。描いたら元に戻す（ゲームには適用しない）
+        const saved = [];
+        if (v.soft) {
+          p.scene.traverse((o) => { if (o.isLight) saved.push([o, o.intensity]); });
+          for (const [l] of saved) l.intensity = l.isDirectionalLight ? l.intensity * 0.12 : l.intensity * 2.4;
+          saved.push(['env', p.scene.environmentIntensity]);
+          p.scene.environmentIntensity = (p.scene.environmentIntensity || 0.45) * 2.2;
+        }
         if (p.renderNow) p.renderNow(); else p.renderer.render(p.scene, p.camera);
+        for (const [l, i] of saved) { if (l === 'env') p.scene.environmentIntensity = i; else l.intensity = i; }
       } else if (v) {
         p.camera.position.set(...v.cam);
         p.camera.fov = v.fov;

@@ -78,5 +78,29 @@
   "fov": 30,
   "dy": 0.02,
   "up": 0.03
+ },
+ "face0s": {
+  "face": 0,
+  "dist": 1.25,
+  "fov": 30,
+  "dy": 0.02,
+  "up": 0.03,
+  "soft": true
+ },
+ "face45s": {
+  "face": 45,
+  "dist": 1.25,
+  "fov": 30,
+  "dy": 0.02,
+  "up": 0.03,
+  "soft": true
+ },
+ "face90s": {
+  "face": 90,
+  "dist": 1.25,
+  "fov": 30,
+  "dy": 0.02,
+  "up": 0.03,
+  "soft": true
  }
 }

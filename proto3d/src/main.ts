@@ -312,16 +312,18 @@ interface HeroView {
  * - v3：Blender で作り直した主人公（proto3d/blender/hero/。体・髪・衣服を別の形で作り、布の厚み・重なり・折り目を持つ）。
  *   骨組みと動き（Idle / Walk / Run）は第 2 版と同じ
  * - v2：自作の主人公モデル 第 2 版（利用者が用意した第 1 版 proto3d/assets-src/hero_v1/ を改良。proto3d/assets-src/hero_v2/）
+ * - mpfb：頭部の比較案（MPFB／MakeHuman の CC0 の人体の基本形から作った頭部。体・衣服・動きは v3 と同じ）。?hero=mpfb のときだけ読む（本採用前の確認用）
  */
-type HeroKey = 'v3' | 'v2';
+type HeroKey = 'v3' | 'v2' | 'mpfb';
 // 基準速度（Walk 1.4m/秒・Run 3.0m/秒。接地した足の送りの速さを骨組みから測って一致を確認）× 1 周期の長さ。v3 は v2 と同じ動き
 const cycleOf = (w: THREE.AnimationClip, r: THREE.AnimationClip) => ({ walk: 1.4 * w.duration, run: 3.0 * r.duration });
 const HERO_MODELS: Record<HeroKey, { file: string; clips: [string, string, string]; cycle: (walk: THREE.AnimationClip, run: THREE.AnimationClip) => { walk: number; run: number } }> = {
     v3: { file: 'hero_v3', clips: ['Idle', 'Walk', 'Run'], cycle: cycleOf },
     v2: { file: 'hero_v2', clips: ['Idle', 'Walk', 'Run'], cycle: cycleOf },
+    mpfb: { file: 'hero_v3_mpfb', clips: ['Idle', 'Walk', 'Run'], cycle: cycleOf },
 };
 const heroParam = params.get('hero') ?? new URLSearchParams(location.hash.slice(1)).get('hero');
-let heroKey: HeroKey = heroParam === 'old' || heroParam === 'v2' ? 'v2' : 'v3';
+let heroKey: HeroKey = heroParam === 'old' || heroParam === 'v2' ? 'v2' : heroParam === 'mpfb' ? 'mpfb' : 'v3';
 const heroViews = new Map<HeroKey, HeroView>();
 
 async function loadHeroView(key: HeroKey): Promise<HeroView> {
