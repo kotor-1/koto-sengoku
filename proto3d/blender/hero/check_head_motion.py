@@ -50,7 +50,7 @@ def main():
     bpy.ops.wm.open_mainfile(filepath=str(WORK / 'hero_v3.blend'))
     arm = bpy.data.objects['Hero_v3']
     head = bpy.data.objects['Head']
-    parts = [n for n in ('Hair', 'HairStrands', 'Topknot', 'Motoyui', 'TopknotStrands', 'NapeWisps', 'BrowL', 'BrowR', 'LashL', 'LashR', 'EyeL', 'EyeR') if n in bpy.data.objects]
+    parts = [n for n in ('Hair', 'HairStrands', 'HairLockCards', 'Topknot', 'Motoyui', 'TopknotStrands', 'NapeWisps', 'BrowL', 'BrowR', 'LashL', 'LashR', 'EyeL', 'EyeR') if n in bpy.data.objects]
     collar = [n for n in ('Eri', 'Juban') if n in bpy.data.objects]
     arm.animation_data.action = bpy.data.actions['Idle']
     bpy.context.scene.frame_set(0)

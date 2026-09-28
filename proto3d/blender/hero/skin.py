@@ -86,6 +86,26 @@ def head_piece():
     return V, Q
 
 
+def trim_under_collar(V, Q, keep_under=0.018):
+    """襟の開きの外（小袖の下に隠れる肩・胸の肌）を落とす。襟の内の縁から keep_under までは残す
+    （首と襟のあいだにすき間が見えないように）。小袖の面から肌が透けて見えるのも防ぐ"""
+    import cloth as CL
+    E, kind = CL.collar_curve()
+    W = CL.collar_frame(E, kind)
+    active = (kind == 1) | (E[:, 1] > CL.Y_CROSS)
+    Ea, Wa = E[active], W[active]
+    side = np.empty(len(V))
+    dist = np.empty(len(V))
+    for i0 in range(0, len(V), 4000):
+        p = V[i0:i0 + 4000]
+        d = ((p[:, None, :] - Ea[None, :, :]) ** 2).sum(2)
+        j = np.argmin(d, 1)
+        side[i0:i0 + 4000] = ((p - Ea[j]) * Wa[j]).sum(1)
+        dist[i0:i0 + 4000] = np.sqrt(d[np.arange(len(p)), j])
+    drop = (side > keep_under) & (dist < 0.12) & (V[:, 1] < 1.53)
+    return keep_faces(V, Q, ~drop)
+
+
 def arm_piece(s):
     """前腕と手（肘から先）。肘で上腕の向きに直角な面で切る"""
     lo, hi = A.BOXES['handL']

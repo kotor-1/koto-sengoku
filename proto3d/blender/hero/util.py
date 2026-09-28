@@ -104,6 +104,42 @@ def decimate_to(ob, target_tris, symmetric=False):
     return ntris(ob)
 
 
+def fix_folds(ob, max_dev=40.0, rounds=4):
+    """減らした後の小さな折れ（隣の法線から大きくずれた頂点：日の光で白い点になる）を、隣の平均の位置へ寄せる"""
+    me = ob.data
+    n = len(me.vertices)
+    e = np.zeros(len(me.edges) * 2, np.int64)
+    me.edges.foreach_get('vertices', e)
+    e = e.reshape(-1, 2)
+    deg = np.bincount(e.ravel(), minlength=n).astype(float)
+    fixed = 0
+    for _ in range(rounds):
+        me.update()
+        co = np.zeros(n * 3, np.float32)
+        me.vertices.foreach_get('co', co)
+        co = co.reshape(-1, 3).astype(float)
+        nr = np.zeros(n * 3, np.float32)
+        me.vertices.foreach_get('normal', nr)
+        nr = nr.reshape(-1, 3).astype(float)
+        acc = np.zeros_like(nr)
+        np.add.at(acc, e[:, 0], nr[e[:, 1]])
+        np.add.at(acc, e[:, 1], nr[e[:, 0]])
+        acc /= np.maximum(np.linalg.norm(acc, axis=1, keepdims=True), 1e-9)
+        dev = np.degrees(np.arccos(np.clip((acc * nr).sum(1), -1, 1)))
+        bad = dev > max_dev
+        if not bad.any():
+            break
+        pa = np.zeros_like(co)
+        np.add.at(pa, e[:, 0], co[e[:, 1]])
+        np.add.at(pa, e[:, 1], co[e[:, 0]])
+        pa /= np.maximum(deg, 1)[:, None]
+        co[bad] = pa[bad]
+        me.vertices.foreach_set('co', co.astype(np.float32).ravel())
+        fixed += int(bad.sum())
+    me.update()
+    return fixed
+
+
 def smooth_mesh(ob, factor=0.5, iters=2, preserve_volume=True):
     m = ob.modifiers.new('sm', 'CORRECTIVE_SMOOTH' if preserve_volume else 'SMOOTH')
     if preserve_volume:
