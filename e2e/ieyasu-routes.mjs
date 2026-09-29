@@ -14,15 +14,16 @@
 //   3（スマホ横 844×390・タッチ）：C 自領 × 約束を引き受けない（中立）× 勝利。号令をタップで。戦後に開き直す → 続きから（同じ）。
 //   4（PC）：A × 勝利・約束を守れなかった（経路 1 の支度の保存から続きから。合戦は台本で早送り）。
 //   F（PC）：架空の第一章の古い保存（版 1・版 2）がそのまま読める（田代・大森のまま。書き換えない）。
+//   H（PC）：歴史分岐の古い保存（版 1。信頼に家臣の酒井・石川・榊原が無い形）が読める → メニューから保存し直すと版 2（既存の値はそのまま）。
 //
 // 使い方：自動再読み込みなしの開発サーバーを起動して
 //   (PORT=8154 nohup npx vite --config proto3d/blender/tools/vite.nohmr.mjs > /tmp/vite-8154.log 2>&1 &)
-//   BASE3D=http://localhost:8154 node e2e/ieyasu-routes.mjs [出力先]   （ONLY=1234F などで絞る）
+//   BASE3D=http://localhost:8154 node e2e/ieyasu-routes.mjs [出力先]   （ONLY=1234FH などで絞る）
 import { launchBrowser, outDir } from './lib.mjs';
 
 const OUT = outDir(process.argv[2] || 'e2e-out/ieyasu/routes');
 const BASE = process.env.BASE3D || 'http://localhost:8154';
-const ONLY = process.env.ONLY || '1234F';
+const ONLY = process.env.ONLY || '1234FH';
 const browser = await launchBrowser();
 let failed = 0;
 const T0 = Date.now();
@@ -45,6 +46,9 @@ let musterSaveA = null;
 
 // 架空の第一章の古い保存（版 1：tests/proto3d-save-v1-fixtures.ts の戦後・大森・敗北と同じ中身）
 const V1_FICTIONAL = '{"version":1,"savedAt":"2026-09-28T10:00:00.000Z","point":"aftermath","playTimeSec":0,"phase":"aftermath","alliance":"omori","relations":{"tashiro":-20,"omori":0,"washio":-60},"troops":{"honjin":240,"genzo":400,"shinpachi":280,"reserve":300},"characters":{"hero":"wounded","genzo":"wounded","shinpachi":"alive","tashiro_envoy":"alive","omori_envoy":"alive","washio_gen":"alive"},"talked":{"explore.genzo":true,"explore.shinpachi":true,"council.council":true,"muster.gate":true},"battle":{"result":"defeat","reason":"ally_hq_routed","elapsedSec":300,"units":[{"id":"a_hq","side":"ally","clan":"kotosaka","startStrength":300,"endStrength":240,"status":"routed","leaderId":"hero"},{"id":"a_genzo","side":"ally","clan":"kotosaka","startStrength":500,"endStrength":400,"status":"ready","leaderId":"genzo"},{"id":"a_shinpachi","side":"ally","clan":"kotosaka","startStrength":350,"endStrength":280,"status":"ready","leaderId":"shinpachi"},{"id":"a_omori","side":"ally","clan":"omori","startStrength":400,"endStrength":320,"status":"ready","leaderId":"omori_envoy"},{"id":"e_hq","side":"enemy","clan":"washio","startStrength":350,"endStrength":280,"status":"ready","leaderId":"washio_gen"},{"id":"e_sente","side":"enemy","clan":"washio","startStrength":550,"endStrength":440,"status":"ready"},{"id":"e_yumi","side":"enemy","clan":"washio","startStrength":350,"endStrength":280,"status":"ready"},{"id":"e_tashiro","side":"enemy","clan":"tashiro","startStrength":250,"endStrength":200,"status":"ready","leaderId":"tashiro_envoy"}]},"ending":null,"explore":null}';
+
+// 歴史分岐の版 1 の保存（tests/proto3d-ieyasu-save-v1-fixtures.ts の戦後・B 浅井・撤退・約束を守った と同じ中身。版 2 に上げる前のコードが書いた物）
+const V1_IEYASU_AFTERMATH = '{"version":1,"scenario":"ieyasu1570","savedAt":"2026-09-28T11:00:00.000Z","point":"aftermath","playTimeSec":1234,"phase":"aftermath","policy":"asai","trust":{"oda":0,"asai":35,"tadakatsu":40},"troops":{"honjin":290,"tadakatsu":350,"yumi":330,"reserve":300},"characters":{"ieyasu":"alive","tadakatsu":"alive","nobunaga":"alive","nagamasa":"alive"},"talked":{"explore.tadakatsu":true,"council.council":true,"muster.asai_envoy":true,"muster.gate":true},"pledge":{"accepted":true,"partner":"asai","targetId":"a_nagamasa","result":"kept"},"battle":{"result":"retreat","reason":"ordered_retreat","elapsedSec":300,"units":[{"id":"t_honjin","side":"ally","clan":"tokugawa","startStrength":300,"endStrength":240,"status":"withdrawn","leaderId":"ieyasu"},{"id":"t_tadakatsu","side":"ally","clan":"tokugawa","startStrength":450,"endStrength":300,"status":"withdrawn","leaderId":"tadakatsu"},{"id":"t_yumi","side":"ally","clan":"tokugawa","startStrength":350,"endStrength":280,"status":"withdrawn"},{"id":"a_nagamasa","side":"ally","clan":"asai","startStrength":400,"endStrength":320,"status":"withdrawn","leaderId":"nagamasa"},{"id":"e_oda_hq","side":"enemy","clan":"oda","startStrength":350,"endStrength":280,"status":"ready"},{"id":"e_oda_sente","side":"enemy","clan":"oda","startStrength":550,"endStrength":440,"status":"ready"},{"id":"e_oda_teppo","side":"enemy","clan":"oda","startStrength":350,"endStrength":280,"status":"ready"},{"id":"e_oda_kiba","side":"enemy","clan":"oda","startStrength":250,"endStrength":200,"status":"ready"}],"pledge":{"targetId":"a_nagamasa","result":"kept"},"abilitiesUsed":{"a_nagamasa":40}},"battleId":"ieyasu1570-v1fixture","appliedBattleId":"ieyasu1570-v1fixture","support":{"reinforcement":true,"from":"asai","recovered":150,"carryOver":["policy_asai","pledge_kept","reinforcement_asai"]},"ending":null,"explore":null}';
 
 const V1_DEPARTURE_TASHIRO = '{"version":1,"savedAt":"2026-09-28T09:00:00.000Z","point":"departure","playTimeSec":0,"phase":"battle","alliance":"tashiro","relations":{"tashiro":10,"omori":10,"washio":-60},"troops":{"honjin":300,"genzo":500,"shinpachi":350,"reserve":300},"characters":{"hero":"alive","genzo":"alive","shinpachi":"alive","tashiro_envoy":"alive","omori_envoy":"alive","washio_gen":"alive"},"talked":{"explore.genzo":true,"explore.shinpachi":true,"council.council":true,"muster.gate":true},"battle":null,"ending":null,"explore":null}';
 // ---------------------------------------------------------------- ページ
@@ -228,9 +232,12 @@ async function council(page, io, policy) {
   await waitScreen(page, 'council');
   u = await readThrough(page, io.next);
   check('軍議：3 つの方針が並ぶ', ['policy_oda', 'policy_asai', 'policy_home'].every((c) => u.choices.includes(c)));
+  const said = (r, name) => r.seen.some((l) => l.startsWith(`${name}：`));
+  check('軍議の始めに、酒井忠次・石川数正が一言ずつ述べる', said(u, '酒井忠次') && said(u, '石川数正'), u.seen.filter((l) => /^(酒井|石川)/.test(l)).join(' / ').slice(0, 120));
   await io.pick(`policy_${policy}`);
   u = await readThrough(page, io.next);
   check(`方針 ${policy} を選ぶ → 確かめる（決める／考え直す）`, u.seenId === `council.confirm.${policy}` && u.choices.includes('confirm_policy'), u.seenId);
+  check(`方針 ${policy} の確かめで、酒井忠次（采配）・石川数正（兵の備え）が意見を述べる`, said(u, '酒井忠次') && said(u, '石川数正'), u.seen.filter((l) => /^(酒井|石川)/.test(l)).join(' / ').slice(0, 160));
   await io.pick('confirm_policy');
   await waitScreen(page, 'explore');
   const s = await st(page);
@@ -877,12 +884,55 @@ async function routeF() {
   await ctx.close();
 }
 
+// ================================================================ H：歴史分岐の古い保存（版 1）
+async function routeH() {
+  console.log('--- H：歴史分岐の古い保存（版 1。家臣の信頼が無い形）を読む → メニューから保存し直すと版 2');
+  const { ctx, page } = await open();
+  const io = desktopIO(page);
+  const f = await raw(page, FKEY);
+  const d2 = await raw(page, KEY2D);
+  const OLD = { oda: 0, asai: 35, tadakatsu: 40 };
+  const WANT = JSON.stringify({ ...OLD, sakai: 40, ishikawa: 40, sakakibara: 40 });
+  await page.evaluate(([k, v]) => localStorage.setItem(k, v), [KEY, V1_IEYASU_AFTERMATH]);
+  await reloadToTitle(page);
+  check('H タイトルの歴史分岐の「つづきから」に版 1 の戦後の保存', (await page.textContent('.g-btn[data-id="continue:ieyasu1570"]')).includes('戦の後'));
+  await io.btn('continue:ieyasu1570');
+  await waitScreen(page, 'explore');
+  let s = await st(page);
+  check('H 版 1 の保存から続ける：戦後・撤退・約束を守った・信頼は版 1 のまま（家臣の 3 人は初期値 40）', s.scenario === 'ieyasu1570' && s.phase === 'aftermath' && s.result === 'retreat' && s.pledge?.result === 'kept' && JSON.stringify(s.trust) === WANT, JSON.stringify(s.trust));
+  check('H 読むだけでは保存を書き換えない・架空の第一章と 2D 版の保存に触れない', (await raw(page, KEY)) === V1_IEYASU_AFTERMATH && (await raw(page, FKEY)) === f && (await raw(page, KEY2D)) === d2);
+  await page.keyboard.press('Escape');
+  await waitUi(page, 'menu');
+  const menu = (await ui(page)).text;
+  check('H メニューの状態：信頼に酒井忠次・石川数正が出る（榊原康政はこの章に出ないので出さない）', menu.includes('酒井忠次') && menu.includes('石川数正') && !menu.includes('榊原'), menu.slice(0, 160));
+  await io.btn('save');
+  await page.waitForFunction(() => window.__game.ui?.kind === 'menu' && window.__game.ui.text.includes('保存しました'), null, POLL);
+  await io.btn('close');
+  await waitScreen(page, 'explore');
+  const v2 = await saved(page);
+  const v1 = JSON.parse(V1_IEYASU_AFTERMATH);
+  const same = ['scenario', 'phase', 'policy', 'troops', 'characters', 'pledge', 'battle', 'battleId', 'appliedBattleId', 'support', 'ending'].filter((k) => JSON.stringify(v2?.[k]) !== JSON.stringify(v1[k]));
+  check('H メニューの保存で版 2 になる（信頼に家臣の 3 人・ほかの値は版 1 のまま）', v2?.version === 2 && JSON.stringify(v2.trust) === WANT && same.length === 0, same.length ? `違う：${same.join('、')}` : '');
+  await reloadToTitle(page);
+  await io.btn('continue:ieyasu1570');
+  await waitScreen(page, 'explore');
+  s = await st(page);
+  check('H 版 2 の保存から続ける（同じ戦後・信頼・兵。二重に反映しない）', s.phase === 'aftermath' && s.result === 'retreat' && JSON.stringify(s.trust) === WANT && JSON.stringify(s.troops) === JSON.stringify(v1.troops) && s.applied === s.battleId, JSON.stringify({ trust: s.trust, troops: s.troops }));
+  // 戦後の忠勝と話して結末へ：結末の本文に家臣の信頼の 1 行（版 1 から続けたので動いていない）
+  const { e } = await toEnding(page, io, 'H');
+  check('H 結末の本文に、酒井・石川の信頼の 1 行（版 1 から続けたので ±0）', e.text.includes('酒井 ±0・石川 ±0'), '');
+  checkEnding('H', e);
+  check('H 架空の第一章と 2D 版の保存に触れない', (await raw(page, FKEY)) === f && (await raw(page, KEY2D)) === d2);
+  await ctx.close();
+}
+
 try {
   if (ONLY.includes('1')) await route1();
   if (ONLY.includes('2')) await route2();
   if (ONLY.includes('3')) await route3();
   if (ONLY.includes('4')) await route4();
   if (ONLY.includes('F')) await routeF();
+  if (ONLY.includes('H')) await routeH();
 } catch (e) {
   failed++;
   console.log('NG 途中で止まった：', e.stack || e.message);
