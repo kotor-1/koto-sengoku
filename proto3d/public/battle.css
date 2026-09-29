@@ -255,6 +255,9 @@ body.mode-battle #build { display: none !important; }
 .b-ab-r i { font-style: normal; color: var(--ink-soft); margin-right: 6px; font-size: 10.5px; }
 .b-ab-long { font-size: 10.5px; color: var(--ink-soft); margin-top: 2px; }
 .b-ab-note { font-size: 10px; color: var(--ink-soft); opacity: 0.85; margin-top: 2px; }
+/* 目標の欄のある合戦：能力の欄の長い説明は省く（短い説明の行はある。左上の縦の長さを抑える） */
+.with-goals .b-ab-long { display: none; }
+.b-goal .b-goal-p[hidden] { display: none; }
 .b-inspect .b-kind { margin-left: 8px; }
 /* 率いる武将の行（能力の欄の先頭） */
 .b-gen { display: flex; flex-wrap: wrap; align-items: baseline; gap: 1px 8px; }

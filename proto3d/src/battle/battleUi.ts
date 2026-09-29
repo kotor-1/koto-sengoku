@@ -228,7 +228,10 @@ export class BattleUi {
         this.pledgeEl = el('div', 'b-pledge');
         this.pledgeEl.hidden = true;
         obj.append(this.objHead, this.pledgeEl, body);
-        if (opts.touch) obj.classList.add('closed');
+        // 目標のある合戦（合戦場の演習）は、勝ち負けを目標の欄が示すので、条件の欄は PC でも畳んでおく（左上の縦の長さを抑える）
+        const hasGoals = !!s.objectives;
+        if (opts.touch || hasGoals) obj.classList.add('closed');
+        if (hasGoals) r.classList.add('with-goals');
         press(this.objHead, () => obj.classList.toggle('closed'));
         this.inspect = el('div', 'b-inspect');
         this.inspect.hidden = true;
@@ -585,7 +588,9 @@ export class BattleUi {
             g.last = sig;
             g.e.dataset.state = r.state;
             g.e.dataset.tone = r.tone;
-            setText(g.text, r.state === 'done' ? '✓ 達成' : r.state === 'failed' ? '✗ 果たせない' : r.progressText);
+            // 進みの文が目標の名前と同じ（敵本陣を崩す など）なら出さない
+            setText(g.text, r.state === 'done' ? '✓ 達成' : r.state === 'failed' ? '✗ 果たせない' : r.progressText === r.label ? '' : r.progressText);
+            g.text.hidden = !g.text.textContent;
         }
         const p = m.primary;
         // 見出しの短い進み（括弧の中の説明は省く）

@@ -997,7 +997,10 @@ export function mapLabels(s: BattleState): MapLabel[] {
         }
     });
     const ex = s.map.exits;
-    out.push({ id: 'exit-ally', text: '味方の退き口', x: ex.ally.x + 28, z: ex.ally.z - 6, y: 0 });
+    // 援軍の出る所が味方の退き口のすぐ近くなら、退き口の名札は東へ離す（援軍の部隊の名札と重ならないように）
+    const reinfs = reinforcementMarks(s);
+    const nearExit = reinfs.some((r) => Math.hypot(r.x - ex.ally.x, r.z - ex.ally.z) < 30);
+    out.push({ id: 'exit-ally', text: '味方の退き口', x: Math.min(ex.ally.x + (nearExit ? 70 : 28), s.map.width / 2 - 25), z: ex.ally.z - 6, y: 0 });
     // 敵の退き口は敵本陣・予備隊（丘の上と後ろ）の名札と重ならないよう、東へ離して置く（狭い戦場では戦場の内側に収める）
     out.push({ id: 'exit-enemy', text: '敵の退き口', x: Math.min(ex.enemy.x + 75, s.map.width / 2 - 25), z: ex.enemy.z + 10, y: 0 });
     // 戦前の約束の安全地点（南の「味方の陣」）。輪（view.ts）の西の縁に名札
@@ -1013,7 +1016,7 @@ export function mapLabels(s: BattleState): MapLabel[] {
         out.push({ id: `obj-${m.id}`, text: `${m.role === 'primary' ? '主目標' : '副目標'}：${m.name}`, x: c.x, z, y: 0.5 });
     }
     // 援軍の出る所（部隊の名札と重ならないよう西へずらす）
-    for (const r of reinforcementMarks(s)) out.push({ id: `reinf-${r.id}`, text: `援軍の出る所（開始 ${fmtClock(r.at)}）`, x: r.x - 40, z: r.z - 4, y: 0 });
+    for (const r of reinfs) out.push({ id: `reinf-${r.id}`, text: `援軍の出る所（開始 ${fmtClock(r.at)}）`, x: Math.max(r.x - 70, -s.map.width / 2 + 30), z: r.z - 4, y: 0 });
     // 狭い正面の区域（区域の北の端に名札）
     (s.setup.fieldRules?.specialRules ?? []).forEach((r, i) => {
         if (r.type !== 'narrow_frontage') return;
