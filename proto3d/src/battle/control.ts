@@ -2,13 +2,17 @@
  * 合戦の画面の決まりごと（純粋な TypeScript。three・DOM なし）。表示（view.ts）・UI（battleUi.ts）・つなぎ（entry.ts）が共通に使い、
  * テスト（tests/proto3d-battle-control.test.ts）で確かめる。
  * - 部隊の見た目：兵の人形の数（兵 25 人ごとに 1 体、最大 30 体）・隊列の並び・兵が減ったときに消える順。
- * - 地図を押したときに何をするか（選ぶ・移動・攻撃・敵を調べる）。
- * - 画面に出す言葉（部隊の札・勝ち負けの条件・結果・知らせ）。
+ * - 地図を押したときに何をするか（選ぶ・移動・攻撃・敵を調べる）と、選んでいる部隊（id の並び）・命令の出し方。
+ * - 画面に出す言葉（部隊の札・率いる武将・勝ち負けの条件・目標・結果・知らせ）。
+ * - 地図の上の印（地形・目標の区域・援軍の出る所）の名札の位置。
  * - 見下ろしカメラの範囲。
  */
-import type { AbilityId, BattleEndReason, BattleMap, BattleOutcome, BattleResultKind, Order, Side, UnitKind } from './types';
-import { STATUS_LABEL, engagementLabel, hqOf, isActive, orderLabel, pledgeProgress, timeLeft, unitById, type BattleEvent, type BattleState, type UnitState } from './sim';
+import type { AbilityId, BattleEndReason, BattleMap, BattleOutcome, BattleResultKind, ObjectiveDef, Order, Side, UnitKind, Zone } from './types';
+import { STATUS_LABEL, canCommand, engagementLabel, hqOf, isActive, issueOrder, orderLabel, pledgeProgress, timeLeft, unitById, type BattleEvent, type BattleState, type UnitState } from './sim';
 import { ABILITY_DATA, ABILITY_FICTION_NOTE, abilityInfo, abilityMarks, isRooted, provisionalAbilityShort, type AbilityInfo } from './abilities';
+import { objectiveProgress, type ObjectiveRole, type ObjectiveState } from './objectives';
+import { zoneCenter } from './fieldRules';
+import { GENERAL_ROLE_LABELS, generalById } from './generals';
 
 // ---------------------------------------------------------------- 部隊の見た目
 
@@ -209,6 +213,78 @@ export function orderAck(s: BattleState, unitId: string, order: Order): string {
     }
 }
 
+// ---------------------------------------------------------------- 選んでいる部隊（id の並び）
+
+/**
+ * 選んでいる部隊（部隊 id の並び）。今は 1 部隊だけを選ぶ（並びの長さは 0 か 1）。先頭が「主に選んでいる部隊」で、
+ * 地図を押したときの決まり（resolveTap）・札の印・能力の欄は先頭の部隊で決める。
+ * 複数の選択・部隊のまとまり（グループ）を足すときは、この並びに id を足し、命令は orderUnits で並びの部隊すべてへ出す。
+ */
+export type Selection = readonly string[];
+
+/** 1 部隊だけを選ぶ（今の決まり。null なら選択を外す） */
+export function selectOnly(id: string | null): string[] {
+    return id ? [id] : [];
+}
+
+/** 主に選んでいる部隊（先頭。選んでいなければ null） */
+export function leadOf(sel: Selection): string | null {
+    return sel.length > 0 ? sel[0] : null;
+}
+
+/** 選んでいる部隊の様子（resolveTap に渡す。先頭の部隊で決める） */
+export function selectedOf(s: BattleState, sel: Selection): Selected | null {
+    const id = leadOf(sel);
+    const u = id ? unitById(s, id) : undefined;
+    if (!u) return null;
+    return { id: u.id, side: u.side, commandable: u.side === 'ally' && canCommand(s, u) };
+}
+
+/**
+ * 選択を今の状態に合わせる：見えなくなった敵・戦場を離れた敵・知らない id を外す（味方は崩れても選んだまま＝札で様子を見られる）。
+ * 変わらなければ同じ並びを返す。
+ */
+export function pruneSelection(s: BattleState, sel: Selection): Selection {
+    const keep = sel.filter((id) => {
+        const u = unitById(s, id);
+        if (!u) return false;
+        return u.side === 'ally' || (u.present && u.seenBy.ally);
+    });
+    return keep.length === sel.length ? sel : keep;
+}
+
+/** 並びの中で、いま命令を出せる味方の部隊 */
+export function commandableIds(s: BattleState, sel: Selection): string[] {
+    return sel.filter((id) => {
+        const u = unitById(s, id);
+        return !!u && u.side === 'ally' && canCommand(s, u);
+    });
+}
+
+/** 命令を出した結果（出せた部隊・断られた部隊） */
+export interface OrderUnitsResult {
+    issued: string[];
+    refused: string[];
+}
+
+/**
+ * 命令を並びの部隊すべてへ出す（今は 1 部隊）。issue は確認用に差し替えられる（既定は sim.ts の issueOrder）。
+ * 同じ命令を部隊ごとに出す（複数の部隊を同じ地点へ動かすときの並べ方は、複数の選択を足すときに決める）。
+ */
+export function orderUnits(s: BattleState, ids: Selection, order: Order, issue: (s: BattleState, id: string, o: Order) => boolean = issueOrder): OrderUnitsResult {
+    const r: OrderUnitsResult = { issued: [], refused: [] };
+    for (const id of ids) (issue(s, id, order) ? r.issued : r.refused).push(id);
+    return r;
+}
+
+/** 命令を出した・出せなかったときの短い知らせ（1 部隊なら orderAck・refusalText と同じ文） */
+export function orderUnitsText(s: BattleState, order: Order, r: OrderUnitsResult): string {
+    if (r.issued.length === 0) return r.refused.length ? refusalText(s, r.refused[0], order) : '命令を出せませんでした';
+    if (r.issued.length === 1 && r.refused.length === 0) return orderAck(s, r.issued[0], order);
+    const head = orderAck(s, r.issued[0], order).replace(/^[^：]*：/, '');
+    return `${r.issued.length} 部隊：${head}${r.refused.length ? `（${r.refused.length} 部隊は命令を聞けない）` : ''}`;
+}
+
 // ---------------------------------------------------------------- 画面の言葉
 
 export const KIND_SHORT: Record<UnitKind, string> = { honjin: '本陣', yari: '槍', yumi: '弓', kiba: '騎馬' };
@@ -282,6 +358,25 @@ export const CONDITIONS: { label: string; text: string; tone: 'good' | 'bad' | '
     { label: '敗北', text: '味方本陣の敗走／本陣以外の味方が崩れて戦えない', tone: 'bad' },
     { label: '撤退', text: '全軍撤退／本陣以外をすべて退かせる／日没', tone: 'info' },
 ];
+
+/**
+ * その合戦の勝ち負けの条件。主目標の無い合戦（国境の原・歴史分岐の章）は CONDITIONS のまま。
+ * 主目標のある合戦（合戦場の演習）は、主目標の達成で勝ち、果たせなくなれば負け（sim.ts の decideByObjective と同じ決まり）。
+ */
+export function conditionsFor(s: BattleState): typeof CONDITIONS {
+    const p = s.objectives?.primary?.def;
+    if (!p) return CONDITIONS;
+    const win =
+        p.type === 'destroy_hq'
+            ? '敵本陣を敗走させる／敵の本陣以外をすべて崩す'
+            : `主目標「${p.label}」を果たす／敵の部隊をすべて崩す`;
+    const retreat = p.type === 'retreat_success' ? '全軍撤退・本陣の撤退で終われば、主目標の達成で勝ち負けが決まる／日没' : '全軍撤退／本陣以外をすべて退かせる／日没';
+    return [
+        { label: '勝利', text: win, tone: 'good' },
+        { label: '敗北', text: `味方本陣の敗走／本陣以外の味方が崩れて戦えない${p.type === 'destroy_hq' ? '' : '／主目標を果たせなくなる'}`, tone: 'bad' },
+        { label: '撤退', text: retreat, tone: 'info' },
+    ];
+}
 
 export const RESULT_LABEL: Record<BattleResultKind, string> = { victory: '勝利', defeat: '敗北', retreat: '撤退' };
 export const REASON_TEXT: Record<BattleEndReason, string> = {
@@ -379,12 +474,14 @@ export function clampCam(c: CamState, map: BattleMap, maxDist: number): CamState
     };
 }
 
-// ---------------------------------------------------------------- シナリオごとの言葉（架空の第一章・歴史分岐）
+// ---------------------------------------------------------------- シナリオごとの言葉（架空の第一章・歴史分岐・合戦場の演習）
 
 /** 画面の言葉のうち、シナリオで変わるもの */
 export interface ScenarioTexts {
-    /** 歴史分岐「元亀元年・家康」の合戦か（味方の本陣が徳川家） */
+    /** 歴史分岐「元亀元年・家康」の合戦か（味方の本陣が徳川家。合戦場の演習は除く） */
     historical: boolean;
+    /** 合戦場の演習か（敵の本陣が架空の「敵勢」＝家 rival。ゲーム用の演習で、史実の合戦ではない） */
+    practice: boolean;
     /** 画面の上の札（例：仮シナリオ） */
     tag: string;
     /** 合戦の前の説明の題の添え書き */
@@ -393,15 +490,49 @@ export interface ScenarioTexts {
     notes: Record<BattleResultKind, string>;
 }
 
+/** 主目標の文（主目標の無い合戦は「主目標」） */
+function primaryLabel(s: BattleState): string {
+    const l = s.objectives?.primary?.def.label;
+    return l ? `主目標「${l}」` : '主目標';
+}
+
 /**
  * シナリオの言葉。架空の第一章は今までと同じ（REASON_TEXT・鷲尾勢・若殿）。
  * 歴史分岐（味方の本陣が徳川家）は「1570年の情勢を背景にした架空の局地戦」とし、家康は落ち延びる（討死ではない）。
+ * 合戦場の演習（敵の本陣が架空の「敵勢」）は「ゲーム用の演習（架空の相手）」とし、史実の合戦のようには書かない。
  */
 export function scenarioTexts(s: BattleState): ScenarioTexts {
-    const historical = hqOf(s, 'ally')?.clan === 'tokugawa';
+    const practice = hqOf(s, 'enemy')?.clan === 'rival';
+    const historical = !practice && hqOf(s, 'ally')?.clan === 'tokugawa';
+    if (practice) {
+        const enemy = hqOf(s, 'enemy')?.name ?? '敵の本陣';
+        const lord = hqOf(s, 'ally')?.name ?? '味方の本陣';
+        return {
+            historical,
+            practice,
+            tag: '演習（架空の相手）',
+            titleNote: 'ゲーム用の演習（架空の相手）',
+            reasons: {
+                enemy_hq_routed: `${enemy}が崩れ、敵勢は兵を引いた`,
+                enemy_army_broken: '敵勢の部隊が崩れ、戦える部隊がなくなった',
+                ally_hq_routed: `${lord}が崩れた（演習。大将は落ち延びる）`,
+                ally_army_broken: '味方の本陣以外の部隊が崩れ、戦える部隊がなくなった',
+                ordered_retreat: '撤退を命じ、兵をまとめて戦場を離れた',
+                nightfall: '日が暮れ、両軍とも兵を引いた',
+                objective_done: `${primaryLabel(s)}を果たした`,
+                objective_failed: `${primaryLabel(s)}を果たせなくなった`,
+            },
+            notes: {
+                victory: '演習の勝ち。地形に合った戦い方を確かめられた。',
+                defeat: '演習の負け。地形と目標を見直して、もう一度試せる。',
+                retreat: '勝敗は決まらなかった。兵を失いすぎないうちに引いた。',
+            },
+        };
+    }
     if (!historical) {
         return {
             historical,
+            practice,
             tag: '仮シナリオ',
             titleNote: '仮シナリオ',
             reasons: REASON_TEXT,
@@ -415,6 +546,7 @@ export function scenarioTexts(s: BattleState): ScenarioTexts {
     const enemy = hqOf(s, 'enemy')?.name ?? '敵の本陣';
     return {
         historical,
+        practice,
         tag: '架空の局地戦',
         titleNote: '1570年の情勢を背景にした架空の局地戦',
         reasons: {
@@ -634,4 +766,253 @@ export function abilitiesUsedText(s: BattleState, o: BattleOutcome): string {
         return `${ABILITY_DATA[r.id].name}：${at === undefined ? '使わなかった' : `開始 ${fmtClock(at)} に使った`}`;
     });
     return `特殊能力（ゲーム用の創作）— ${parts.join('／')}`;
+}
+
+// ---------------------------------------------------------------- 率いる武将（部隊を選んだときの欄）
+
+/** 選んだ部隊を率いる武将の欄に出すもの（武将のいない部隊は null） */
+export interface GeneralLineModel {
+    generalId: string;
+    /** 武将の表示名（例：酒井忠次） */
+    name: string;
+    /** 役割の呼び方（例：采配・軍議） */
+    roleLabel: string;
+    /** 固有能力の名前（能力のデータが無ければ空） */
+    abilityName: string;
+    /** 仮の能力（差し替え前提。画面に「仮」の印） */
+    provisional: boolean;
+    side: Side;
+}
+
+export function generalLineModel(s: BattleState, unitId: string): GeneralLineModel | null {
+    const u = unitById(s, unitId);
+    const gid = u?.generalId ?? u?.leaderId;
+    const g = gid ? generalById(gid) : undefined;
+    if (!u || !g) return null;
+    // 能力：合戦の中の能力（部隊の ability か武将の能力）。無ければ武将のデータの能力
+    const id: AbilityId | undefined = abilityInfo(s, unitId)?.id ?? (ABILITY_DATA[g.abilityId] ? g.abilityId : undefined);
+    const d = id ? ABILITY_DATA[id] : undefined;
+    return { generalId: g.id, name: g.name, roleLabel: GENERAL_ROLE_LABELS[g.role], abilityName: d?.name ?? '', provisional: !!d?.provisional, side: u.side };
+}
+
+// ---------------------------------------------------------------- 目標の欄・結果（主目標・副目標。約束とは別の欄）
+
+/** 目標の 1 行（objectives.ts の objectiveProgress から） */
+export interface ObjectiveRowModel {
+    id: string;
+    role: ObjectiveRole;
+    label: string;
+    state: ObjectiveState;
+    progressText: string;
+    /** 色分け：まだ・果たした・果たせない */
+    tone: 'progress' | 'ok' | 'bad';
+}
+
+/** 目標の欄（目標の無い合戦は null）。rules は戦場の特殊ルール・地形の決まりの短い説明 */
+export interface ObjectivePanelModel {
+    primary: ObjectiveRowModel | null;
+    secondary: ObjectiveRowModel[];
+    rules: string[];
+}
+
+export function objectivePanelModel(s: BattleState): ObjectivePanelModel | null {
+    const list = objectiveProgress(s);
+    if (list.length === 0) return null;
+    const row = (p: (typeof list)[number]): ObjectiveRowModel => ({
+        id: p.id,
+        role: p.role,
+        label: p.label,
+        state: p.state,
+        progressText: p.progressText,
+        tone: p.state === 'done' ? 'ok' : p.state === 'failed' ? 'bad' : 'progress',
+    });
+    const primary = list.find((p) => p.role === 'primary');
+    return { primary: primary ? row(primary) : null, secondary: list.filter((p) => p.role === 'secondary').map(row), rules: fieldRuleTexts(s) };
+}
+
+/** 戦場の決まりの短い説明（その戦場のデータにあるものだけ。無い合戦は空） */
+export function fieldRuleTexts(s: BattleState): string[] {
+    const fr = s.setup.fieldRules;
+    if (!fr) return [];
+    const out: string[] = [];
+    for (const r of fr.specialRules ?? []) {
+        if (r.type === 'narrow_frontage') out.push(`狭い正面：区域の中では、同じ相手に斬りかかれるのは ${r.maxEngaged} 部隊まで`);
+        else if (r.type === 'woods_ambush') out.push(`林の奇襲：見られていない部隊の最初の当たり ×${r.firstStrikeMul}（${r.sec} 秒）`);
+    }
+    const tr = fr.terrainRules ?? {};
+    const ford = tr.ford;
+    if (ford) out.push(`浅瀬：動き ×${ford.speed ?? 0.4}・与える損害 ×${ford.dealMul ?? 0.8}・受ける損害 ×${ford.takeMul ?? 1.2}`);
+    const woodsKiba = tr.woods?.kindSpeed?.kiba;
+    if (woodsKiba !== undefined) out.push(`林の中の騎馬：動き ×${woodsKiba}`);
+    const hg = fr.highGround;
+    if (hg) {
+        const parts: string[] = [];
+        if (hg.defenseVsLower !== undefined) parts.push(`下から攻める相手の損害 ×${hg.defenseVsLower}`);
+        if (hg.rangeBonus) parts.push(`弓の射程 +${hg.rangeBonus} m`);
+        if (hg.sightBonus) parts.push(`見通し +${hg.sightBonus} m`);
+        if (parts.length) out.push(`高所：${parts.join('・')}`);
+    }
+    if (s.map.terrain.some((a) => a.kind === 'river')) out.push('深い川は渡れない（浅瀬だけ渡れる）');
+    if (s.map.terrain.some((a) => a.kind === 'cliff')) out.push('崖は通れない');
+    return out;
+}
+
+/** 結果の画面の目標の行（勝敗・約束とは別の行。目標の無い合戦は null） */
+export interface ObjectiveResultModel {
+    primary: { label: string; achieved: boolean } | null;
+    secondary: { label: string; achieved: boolean }[];
+}
+
+export function objectiveResultModel(o: BattleOutcome): ObjectiveResultModel | null {
+    const ob = o.objectives;
+    if (!ob) return null;
+    return {
+        primary: ob.primary ? { label: ob.primary.label, achieved: ob.primary.achieved } : null,
+        secondary: ob.secondary.map((r) => ({ label: r.label, achieved: r.achieved })),
+    };
+}
+
+// ---------------------------------------------------------------- 地図の上の印（目標の区域・援軍・特殊ルールの区域・名札）
+
+/** 目標の区域の短い呼び方 */
+const ZONE_NAME: Partial<Record<ObjectiveDef['type'], string>> = {
+    hold_point: '確保する地点',
+    defend_time: '守る地点',
+    rescue: '救出の地点',
+    breakthrough: '突破する地点',
+};
+
+/** 地図に描く目標の区域（区域を持つ目標だけ。主目標 → 副目標の順） */
+export interface ObjectiveZoneMark {
+    id: string;
+    role: ObjectiveRole;
+    zone: Zone;
+    /** 短い名前（例：確保する地点） */
+    name: string;
+}
+
+export function objectiveZoneMarks(s: BattleState): ObjectiveZoneMark[] {
+    const tr = s.objectives;
+    if (!tr) return [];
+    const out: ObjectiveZoneMark[] = [];
+    for (const r of tr.list) {
+        const d = r.def;
+        const zone = 'zone' in d ? d.zone : undefined;
+        const name = ZONE_NAME[d.type];
+        if (zone && name) out.push({ id: d.id, role: r.role, zone, name });
+    }
+    return out;
+}
+
+/** 目標の今の状態（目標の見張りから。無ければ active） */
+export function objectiveStateOf(s: BattleState, id: string): ObjectiveState {
+    return s.objectives?.list.find((r) => r.def.id === id)?.state ?? 'active';
+}
+
+/** 援軍の出る所（BattleSetup.reinforcements。部隊の最初の位置と、着く時刻の早いほう） */
+export interface ReinforcementMark {
+    id: string;
+    side: Side;
+    x: number;
+    z: number;
+    /** 着く時刻（秒） */
+    at: number;
+}
+
+export function reinforcementMarks(s: BattleState): ReinforcementMark[] {
+    const out: ReinforcementMark[] = [];
+    for (const r of s.setup.reinforcements ?? []) {
+        const defs = r.unitIds.map((id) => s.setup.units.find((u) => u.id === id)).filter((u): u is NonNullable<typeof u> => !!u);
+        if (defs.length === 0) continue;
+        out.push({ id: r.id, side: r.side, x: defs[0].x, z: defs[0].z, at: Math.min(...defs.map((u) => u.arriveAt ?? 0)) });
+    }
+    return out;
+}
+
+/** 目標が指す部隊の印（名札に添える。例：救出・守る・崩す）。部隊 id → 印 */
+export function objectiveUnitMarks(s: BattleState): Map<string, string> {
+    const m = new Map<string, string>();
+    for (const r of s.objectives?.list ?? []) {
+        const d = r.def;
+        if (d.type === 'rescue') m.set(d.unitId, '救出');
+        else if (d.type === 'preserve_unit') m.set(d.unitId, '守る');
+        else if (d.type === 'break_unit') m.set(d.unitId, '崩す');
+    }
+    return m;
+}
+
+/** 地図の上の名札（地形・退き口・約束の安全地点・目標の区域・援軍の出る所・狭い正面）。y は地面からの高さ */
+export interface MapLabel {
+    id: string;
+    text: string;
+    x: number;
+    z: number;
+    y: number;
+}
+
+const TERRAIN_LABEL: Record<string, string> = {
+    hill: '丘',
+    woods: '林（中は敵から見えない）',
+    marsh: '湿地（動きが遅い）',
+    river: '深い川（渡れない）',
+    ford: '浅瀬（遅い・戦うと不利）',
+    cliff: '崖（通れない）',
+};
+
+/** 四角の区域（川）の名札の置き場所：中心の行で、浅瀬と重ならない所 */
+function rectLabelPoint(s: BattleState, rect: { x0: number; x1: number; z0: number; z1: number }, avoid: { x0: number; x1: number; z0: number; z1: number }[]): { x: number; z: number } {
+    const z = (rect.z0 + rect.z1) / 2;
+    for (const f of [0.5, 0.3, 0.7, 0.18, 0.82]) {
+        const x = rect.x0 + (rect.x1 - rect.x0) * f;
+        if (Math.abs(x) > s.map.width / 2 - 30) continue;
+        if (!avoid.some((a) => x >= a.x0 - 40 && x <= a.x1 + 40)) return { x, z };
+    }
+    return { x: (rect.x0 + rect.x1) / 2, z };
+}
+
+export function mapLabels(s: BattleState): MapLabel[] {
+    const out: MapLabel[] = [];
+    const fords = s.map.terrain.filter((a) => a.kind === 'ford' && a.rect).map((a) => a.rect!);
+    s.map.terrain.forEach((a, i) => {
+        const name = TERRAIN_LABEL[a.kind];
+        if (!name) return;
+        if (a.circle) out.push({ id: `t${i}`, text: name, x: a.circle.cx + a.circle.r * 0.55, z: a.circle.cz + a.circle.r * 0.75, y: 2 });
+        else if (a.rect) {
+            const r = a.rect;
+            if (a.kind === 'river') {
+                const p = rectLabelPoint(s, r, fords);
+                out.push({ id: `t${i}`, text: name, x: p.x, z: p.z, y: 0.5 });
+            } else if (a.kind === 'ford') out.push({ id: `t${i}`, text: name, x: (r.x0 + r.x1) / 2, z: r.z1 + 6, y: 0.5 });
+            else if (a.kind === 'cliff') {
+                // 細い崖（関の狭まり）には名札を付けない
+                if (r.x1 - r.x0 < 20 || r.z1 - r.z0 < 20) return;
+                out.push({ id: `t${i}`, text: name, x: (r.x0 + r.x1) / 2, z: (r.z0 + r.z1) / 2, y: 8 });
+            }
+            // 四角の区域（林・湿地）は真ん中より少し南（別働隊が着く所・通り道の名札と重ならないように）
+            else out.push({ id: `t${i}`, text: name, x: (r.x0 + r.x1) / 2, z: Math.min((r.z0 + r.z1) / 2 + 30, s.map.depth / 2 - 30), y: 1 });
+        }
+    });
+    const ex = s.map.exits;
+    out.push({ id: 'exit-ally', text: '味方の退き口', x: ex.ally.x + 28, z: ex.ally.z - 6, y: 0 });
+    // 敵の退き口は敵本陣・予備隊（丘の上と後ろ）の名札と重ならないよう、東へ離して置く（狭い戦場では戦場の内側に収める）
+    out.push({ id: 'exit-enemy', text: '敵の退き口', x: Math.min(ex.enemy.x + 75, s.map.width / 2 - 25), z: ex.enemy.z + 10, y: 0 });
+    // 戦前の約束の安全地点（南の「味方の陣」）。輪（view.ts）の西の縁に名札
+    const pz = s.pledge?.safeZone;
+    if (pz) out.push({ id: 'safe-zone', text: '味方の陣（約束の安全地点）', x: pz.cx - pz.r - 30, z: pz.cz + 4, y: 0 });
+    // 目標の区域（輪の南の縁に名札）
+    for (const m of objectiveZoneMarks(s)) {
+        const c = zoneCenter(m.zone);
+        const south = m.zone.circle ? c.z + m.zone.circle.r : m.zone.rect ? m.zone.rect.z1 : c.z;
+        out.push({ id: `obj-${m.id}`, text: `${m.role === 'primary' ? '主目標' : '副目標'}：${m.name}`, x: c.x, z: south + 4, y: 0.5 });
+    }
+    // 援軍の出る所（部隊の名札と重ならないよう西へずらす）
+    for (const r of reinforcementMarks(s)) out.push({ id: `reinf-${r.id}`, text: `援軍の出る所（開始 ${fmtClock(r.at)}）`, x: r.x - 40, z: r.z - 4, y: 0 });
+    // 狭い正面の区域（区域の北の端に名札）
+    (s.setup.fieldRules?.specialRules ?? []).forEach((r, i) => {
+        if (r.type !== 'narrow_frontage') return;
+        const c = zoneCenter(r.zone);
+        const north = r.zone.rect ? r.zone.rect.z0 : r.zone.circle ? c.z - r.zone.circle.r : c.z;
+        out.push({ id: `narrow-${i}`, text: `狭い正面（${r.maxEngaged} 部隊まで）`, x: c.x, z: north + 12, y: 0.5 });
+    });
+    return out;
 }
