@@ -2,7 +2,7 @@
  * 合戦場の演習の通しの確認：タイトル → 合戦場の演習 → 戦場の一覧 → 戦場を選ぶ → 合戦の前の説明 → 出陣 → 合戦 → 結果 → 記録の保存 → 一覧、
  * を実際のブラウザで、実際のクリック・キー（PC）・タップ（スマホ）で通す。
  *   BASE=http://localhost:8174 node e2e/fields-practice.mjs [出力先]   （開発サーバー：proto3d/blender/tools/vite.nohmr.mjs）
- *   既定の出力先は e2e-out/fields-practice/。PARTS=desktop,phone,eight で一部だけ（既定はすべて）。
+ *   既定の出力先は e2e-out/fields-practice/。PARTS=desktop,phone,eight,oldsaves で一部だけ（既定はすべて）。
  *
  * desktop（PC 1280×720、マウスとキー）：
  *   - 一覧・説明の画面の中身と並び（横にはみ出さない・札が重ならない・ボタンが画面の中）。説明の「一覧へ戻る」。
@@ -23,6 +23,9 @@
  *     地図のタップで移動、「攻撃」→ 敵のタップで攻撃、「防衛・待機」、「撤退」。全軍撤退 → 早送り → 結果 → 演習の結果 → 一覧（どれもタップ）。
  * eight（開発用の入口 ?dev=field&id=plains&allies=8 で味方を 8 部隊にする）：
  *   - PC：キー 8・8 番目の札のクリックで選ぶ。スマホ：札の列を横になぞって 7・8 番目の札を出し、タップで選ぶ。
+ * oldsaves（PC）：古い保存を全部入れた状態（歴史分岐 版 1・架空の第一章 版 1・2D 版）で開き、演習を 1 回遊んでも古い保存は 1 字も変わらない。
+ *   歴史分岐・架空の第一章をそれぞれ「つづきから」で続けられ（中身が壊れない。田代・大森のまま）、読むだけでは書き換えない。
+ *   架空の第一章をメニューから保存し直した版 2 と、歴史分岐の版 1・2D 版を並べても同じ。2D 版のキー koto-sengoku/save は最後まで同じ。
  *
  * 確認の種類：画面の操作はすべて本物のクリック・キー・タップ。「早送り」は window.__battle.fastForward（開発用。合戦の時間を進めるだけ）。
  * カメラの位置は、撮影と地面のクリックのために window.__battle.centerOn で合わせる（表示だけ。合戦の状態は変えない）。
@@ -33,7 +36,7 @@ import { mkdirSync } from 'node:fs';
 
 const OUT = process.argv[2] || 'e2e-out/fields-practice';
 mkdirSync(OUT, { recursive: true });
-const PARTS = (process.env.PARTS || 'desktop,phone,eight').split(',');
+const PARTS = (process.env.PARTS || 'desktop,phone,eight,oldsaves').split(',');
 const FIELD_IDS = ['plains', 'river_ford', 'hills', 'forest', 'mountain_pass'];
 /** 通常の速さで動かしてから早送りで決着まで進める戦場 */
 const DECIDE_FIELD = 'hills';
@@ -737,10 +740,99 @@ async function eight() {
     }
 }
 
+// ================================================================ 古い保存を全部入れた状態
+
+const KEY_IE = 'koto-sengoku/3d-ieyasu1570';
+const KEY_FIC = 'koto-sengoku/3d-chapter1';
+const KEY_2D = 'koto-sengoku/save';
+const KEY_FIELDS = 'koto-sengoku/3d-fields';
+// 歴史分岐の版 1（tests/proto3d-ieyasu-save-v1-fixtures.ts の戦後・B 浅井・撤退・約束を守った。e2e/ieyasu-routes.mjs の経路 H と同じ中身）
+const V1_IEYASU = '{"version":1,"scenario":"ieyasu1570","savedAt":"2026-09-28T11:00:00.000Z","point":"aftermath","playTimeSec":1234,"phase":"aftermath","policy":"asai","trust":{"oda":0,"asai":35,"tadakatsu":40},"troops":{"honjin":290,"tadakatsu":350,"yumi":330,"reserve":300},"characters":{"ieyasu":"alive","tadakatsu":"alive","nobunaga":"alive","nagamasa":"alive"},"talked":{"explore.tadakatsu":true,"council.council":true,"muster.asai_envoy":true,"muster.gate":true},"pledge":{"accepted":true,"partner":"asai","targetId":"a_nagamasa","result":"kept"},"battle":{"result":"retreat","reason":"ordered_retreat","elapsedSec":300,"units":[{"id":"t_honjin","side":"ally","clan":"tokugawa","startStrength":300,"endStrength":240,"status":"withdrawn","leaderId":"ieyasu"},{"id":"t_tadakatsu","side":"ally","clan":"tokugawa","startStrength":450,"endStrength":300,"status":"withdrawn","leaderId":"tadakatsu"},{"id":"t_yumi","side":"ally","clan":"tokugawa","startStrength":350,"endStrength":280,"status":"withdrawn"},{"id":"a_nagamasa","side":"ally","clan":"asai","startStrength":400,"endStrength":320,"status":"withdrawn","leaderId":"nagamasa"},{"id":"e_oda_hq","side":"enemy","clan":"oda","startStrength":350,"endStrength":280,"status":"ready"},{"id":"e_oda_sente","side":"enemy","clan":"oda","startStrength":550,"endStrength":440,"status":"ready"},{"id":"e_oda_teppo","side":"enemy","clan":"oda","startStrength":350,"endStrength":280,"status":"ready"},{"id":"e_oda_kiba","side":"enemy","clan":"oda","startStrength":250,"endStrength":200,"status":"ready"}],"pledge":{"targetId":"a_nagamasa","result":"kept"},"abilitiesUsed":{"a_nagamasa":40}},"battleId":"ieyasu1570-v1fixture","appliedBattleId":"ieyasu1570-v1fixture","support":{"reinforcement":true,"from":"asai","recovered":150,"carryOver":["policy_asai","pledge_kept","reinforcement_asai"]},"ending":null,"explore":null}';
+// 架空の第一章の版 1（tests/proto3d-save-v1-fixtures.ts の V1_AFTERMATH_OMORI_DEFEAT と同じ中身）
+const V1_FICTIONAL = '{"version":1,"savedAt":"2026-09-28T10:00:00.000Z","point":"aftermath","playTimeSec":0,"phase":"aftermath","alliance":"omori","relations":{"tashiro":-20,"omori":0,"washio":-60},"troops":{"honjin":240,"genzo":400,"shinpachi":280,"reserve":300},"characters":{"hero":"wounded","genzo":"wounded","shinpachi":"alive","tashiro_envoy":"alive","omori_envoy":"alive","washio_gen":"alive"},"talked":{"explore.genzo":true,"explore.shinpachi":true,"council.council":true,"muster.gate":true},"battle":{"result":"defeat","reason":"ally_hq_routed","elapsedSec":300,"units":[{"id":"a_hq","side":"ally","clan":"kotosaka","startStrength":300,"endStrength":240,"status":"routed","leaderId":"hero"},{"id":"a_genzo","side":"ally","clan":"kotosaka","startStrength":500,"endStrength":400,"status":"ready","leaderId":"genzo"},{"id":"a_shinpachi","side":"ally","clan":"kotosaka","startStrength":350,"endStrength":280,"status":"ready","leaderId":"shinpachi"},{"id":"a_omori","side":"ally","clan":"omori","startStrength":400,"endStrength":320,"status":"ready","leaderId":"omori_envoy"},{"id":"e_hq","side":"enemy","clan":"washio","startStrength":350,"endStrength":280,"status":"ready","leaderId":"washio_gen"},{"id":"e_sente","side":"enemy","clan":"washio","startStrength":550,"endStrength":440,"status":"ready"},{"id":"e_yumi","side":"enemy","clan":"washio","startStrength":350,"endStrength":280,"status":"ready"},{"id":"e_tashiro","side":"enemy","clan":"tashiro","startStrength":250,"endStrength":200,"status":"ready","leaderId":"tashiro_envoy"}]},"ending":null,"explore":null}';
+// 2D 版の保存（src/core/save.ts の版 2 の形。3D 版は読まない・書かない）
+const SAVE_2D = '{"version":2,"savedAt":"2026-09-20T08:00:00.000Z","playTimeSec":321,"player":{"x":400,"y":300,"facing":"down"},"flags":{},"battle":{"played":0,"won":0,"lost":0}}';
+
+const raw = (page, k) => page.evaluate((k) => localStorage.getItem(k), k);
+async function reloadTitle(page) {
+    await page.reload();
+    await waitTitle(page);
+    await page.waitForFunction(() => document.getElementById('loading')?.hidden !== false, null, POLL);
+}
+/** タイトルから「つづきから」で続けて、章の状態を読む */
+async function continueFrom(p, id) {
+    await press(p, `.g-btn[data-id="continue:${id}"]`);
+    await p.page.waitForFunction(() => window.__game.screen === 'explore' && !!window.__game.state, null, POLL);
+    return p.page.evaluate(() => {
+        const g = window.__game;
+        const x = g.state;
+        return { sc: g.scenario, phase: x.phase, alliance: x.alliance ?? null, relations: x.relations ?? null, trust: x.trust ?? null, pledge: x.pledge?.result ?? null, result: x.battle?.result ?? null, side: x.sideObjectives ?? null, troops: x.troops };
+    });
+}
+
+async function oldsaves() {
+    log('== oldsaves（PC）：古い保存を全部入れた状態');
+    const p = await openTitle('desktop');
+    const { page } = p;
+    await page.evaluate(([a, b, c]) => {
+        localStorage.clear();
+        localStorage.setItem(a[0], a[1]);
+        localStorage.setItem(b[0], b[1]);
+        localStorage.setItem(c[0], c[1]);
+    }, [[KEY_IE, V1_IEYASU], [KEY_FIC, V1_FICTIONAL], [KEY_2D, SAVE_2D]]);
+    await reloadTitle(page);
+    const subs = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('.g-title-layer .g-btn')].map((b) => [b.dataset.id, { text: b.textContent, disabled: b.disabled }])));
+    check(!subs['continue:ieyasu1570'].disabled && subs['continue:ieyasu1570'].text.includes('戦の後') && !subs['continue:fictional'].disabled, '[oldsaves] タイトル：歴史分岐（版 1）・架空の第一章（版 1）の「つづきから」が押せる', JSON.stringify(subs));
+    const same = async (label, fic) => {
+        const r = { ie: await raw(page, KEY_IE), fic: await raw(page, KEY_FIC), d2: await raw(page, KEY_2D) };
+        check(r.ie === V1_IEYASU && r.fic === fic && r.d2 === SAVE_2D, `[oldsaves] ${label}：古い保存（歴史分岐・架空の第一章・2D 版）は 1 字も変わらない`, JSON.stringify({ ie: r.ie === V1_IEYASU, fic: r.fic === fic, d2: r.d2 === SAVE_2D }));
+    };
+    // 演習を 1 回（大平原に出陣 → 全軍撤退 → 早送り → 結果 → 一覧 → タイトル）
+    await titleToList(p, false);
+    await listToBattle(p, 'plains', false);
+    await retreatAndFinish(p);
+    await resultToTitle(p, 'plains', 'retreat');
+    await same('演習を 1 回遊んだ後', V1_FICTIONAL);
+    check((await page.evaluate((k) => JSON.parse(localStorage.getItem(k) || 'null')?.records?.plains?.plays, KEY_FIELDS)) === 1, '[oldsaves] 演習の記録は koto-sengoku/3d-fields に別に入る');
+    // 歴史分岐（版 1）を続ける
+    const ie = await continueFrom(p, 'ieyasu1570');
+    check(ie.sc === 'ieyasu1570' && ie.phase === 'aftermath' && ie.result === 'retreat' && ie.pledge === 'kept' && JSON.stringify(ie.trust) === JSON.stringify({ oda: 0, asai: 35, tadakatsu: 40, sakai: 40, ishikawa: 40, sakakibara: 40 }) && ie.side === null,
+        '[oldsaves] 歴史分岐（版 1）を続ける：戦後・撤退・約束を守った・信頼は版 1 のまま（家臣 3 人は 40）・副目標は記録なし', JSON.stringify(ie));
+    await page.screenshot({ path: `${OUT}/oldsaves-1-ieyasu-v1.png` });
+    await same('歴史分岐を続けた後（読むだけでは書き換えない）', V1_FICTIONAL);
+    // 架空の第一章（版 1）を続ける
+    await reloadTitle(page);
+    const f1 = await continueFrom(p, 'fictional');
+    check(f1.sc === 'fictional' && f1.phase === 'aftermath' && f1.alliance === 'omori' && f1.relations?.tashiro === -20 && f1.result === 'defeat', '[oldsaves] 架空の第一章（版 1）を続ける：戦後・大森・田代のまま（織田・浅井へ書き換えない）', JSON.stringify(f1));
+    await same('架空の第一章を続けた後', V1_FICTIONAL);
+    // メニューから保存し直す → 架空の第一章は版 2 に。歴史分岐・2D 版はそのまま
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => window.__game.ui?.kind === 'menu', null, POLL);
+    await press(p, '.g-layer[data-kind="menu"] .g-btn[data-id="save"]');
+    await page.waitForFunction(() => window.__game.ui?.kind === 'menu' && window.__game.ui.text.includes('保存しました'), null, POLL);
+    await press(p, '.g-layer[data-kind="menu"] .g-btn[data-id="close"]');
+    const v2 = JSON.parse((await raw(page, KEY_FIC)) || 'null');
+    check(v2?.version === 2 && v2.alliance === 'omori' && v2.relations.tashiro === -20 && v2.battle.result === 'defeat', '[oldsaves] 架空の第一章をメニューで保存し直すと版 2（大森・田代のまま）');
+    const V2_FICTIONAL = await raw(page, KEY_FIC);
+    await same('架空の第一章を保存し直した後', V2_FICTIONAL);
+    // 版 2 の架空の第一章・版 1 の歴史分岐・2D 版を並べて開き直す
+    await reloadTitle(page);
+    const f2 = await continueFrom(p, 'fictional');
+    check(f2.sc === 'fictional' && f2.phase === 'aftermath' && f2.alliance === 'omori' && f2.relations?.tashiro === -20, '[oldsaves] 架空の第一章（版 2）を続ける（大森・田代のまま）', JSON.stringify(f2));
+    await reloadTitle(page);
+    const ie2 = await continueFrom(p, 'ieyasu1570');
+    check(ie2.sc === 'ieyasu1570' && ie2.phase === 'aftermath' && ie2.result === 'retreat' && JSON.stringify(ie2.troops) === JSON.stringify(JSON.parse(V1_IEYASU).troops), '[oldsaves] 歴史分岐（版 1）をもう一度続けても同じ（兵・勝敗）', JSON.stringify({ troops: ie2.troops }));
+    await same('最後', V2_FICTIONAL);
+    const keys = await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('koto-sengoku')).sort());
+    check(JSON.stringify(keys) === JSON.stringify([KEY_FIELDS, KEY_FIC, KEY_IE, KEY_2D].sort()), '[oldsaves] 保存のキーは 4 つだけ（2D 版のキーは koto-sengoku/save のまま）', keys.join(','));
+    await p.ctx.close();
+}
+
 try {
     if (PARTS.includes('desktop')) await desktop();
     if (PARTS.includes('phone')) await phone();
     if (PARTS.includes('eight')) await eight();
+    if (PARTS.includes('oldsaves')) await oldsaves();
 } catch (e) {
     failures.push(`例外: ${e instanceof Error ? e.stack : String(e)}`);
     log(e);
