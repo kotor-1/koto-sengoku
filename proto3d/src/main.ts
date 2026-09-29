@@ -17,6 +17,7 @@ import { CAMERA_YAW, SPEED, createHero, stepHero, type HeroState } from './game/
 import { START, TREES, cameraBlockers, groundY } from './layout';
 import treesMeta from '../blender/trees/trees.meta.json';
 import { SKY, makeHills, makeSky } from './scenery';
+import { activeMode, setAppContext } from './app/modes';
 import { createPost, type Post } from './post';
 
 /**
@@ -111,6 +112,7 @@ function resize(): void {
     // 縦に狭い画面（スマホ横向き）でも、上下の見える範囲が狭くなりすぎないよう少し引く
     camera.fov = (tps ? TPS_FOV : CAMERA.fov) * (w / h < 1.6 ? 1.12 : 1);
     camera.updateProjectionMatrix();
+    activeMode()?.resize?.(w, h);
 }
 window.addEventListener('resize', resize);
 resize();
@@ -312,7 +314,7 @@ interface HeroView {
  * - v3：Blender で作り直した主人公（proto3d/blender/hero/。体・髪・衣服を別の形で作り、布の厚み・重なり・折り目を持つ）。
  *   骨組みと動き（Idle / Walk / Run）は第 2 版と同じ
  * - v2：自作の主人公モデル 第 2 版（利用者が用意した第 1 版 proto3d/assets-src/hero_v1/ を改良。proto3d/assets-src/hero_v2/）
- * - mpfb：頭部の比較案（MPFB／MakeHuman の CC0 の人体の基本形から作った頭部。体・衣服・動きは v3 と同じ）。?hero=mpfb のときだけ読む（本採用前の確認用）
+ * - mpfb：既定（暫定の素材）。MPFB／MakeHuman の CC0 の人体の基本形から作った頭部。体・衣服・動きは v3 と同じ
  */
 type HeroKey = 'v3' | 'v2' | 'mpfb';
 // 基準速度（Walk 1.4m/秒・Run 3.0m/秒。接地した足の送りの速さを骨組みから測って一致を確認）× 1 周期の長さ。v3 は v2 と同じ動き
@@ -323,7 +325,8 @@ const HERO_MODELS: Record<HeroKey, { file: string; clips: [string, string, strin
     mpfb: { file: 'hero_v3_mpfb', clips: ['Idle', 'Walk', 'Run'], cycle: cycleOf },
 };
 const heroParam = params.get('hero') ?? new URLSearchParams(location.hash.slice(1)).get('hero');
-let heroKey: HeroKey = heroParam === 'old' || heroParam === 'v2' ? 'v2' : heroParam === 'mpfb' ? 'mpfb' : 'v3';
+// 既定は mpfb（MPFB の基本形から作った頭部。完成品質ではない暫定の素材。?hero=v3 で前の自作頭部、?hero=old で第 2 版）
+let heroKey: HeroKey = heroParam === 'old' || heroParam === 'v2' ? 'v2' : heroParam === 'v3' ? 'v3' : 'mpfb';
 const heroViews = new Map<HeroKey, HeroView>();
 
 async function loadHeroView(key: HeroKey): Promise<HeroView> {
@@ -384,10 +387,10 @@ async function switchHero(key: HeroKey): Promise<void> {
 heroBtn.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     e.stopPropagation();
-    void switchHero(heroKey === 'v2' ? 'v3' : 'v2');
+    void switchHero(heroKey === 'v2' ? 'mpfb' : 'v2');
 });
 heroBtn.addEventListener('click', (e) => {
-    if (e.detail === 0) void switchHero(heroKey === 'v2' ? 'v3' : 'v2');
+    if (e.detail === 0) void switchHero(heroKey === 'v2' ? 'mpfb' : 'v2');
 });
 
 function prepare(obj: THREE.Object3D): void {
@@ -566,6 +569,12 @@ let fpsFrames = 0;
 
 function frame(): void {
     const raw = clock.getDelta();
+    // 合戦などの場面に入っている間は、そちらに進めと描画を任せる（探索は止める）
+    const mode = activeMode();
+    if (mode) {
+        mode.frame(Math.min(raw, 0.1));
+        return;
+    }
     const [ix, iy] = readInput();
     advance(Math.min(raw, 0.1), raw, ix, iy);
 }
@@ -613,12 +622,33 @@ function renderNow(): void {
     else renderer.render(scene, camera);
 }
 
-start().catch((e: unknown) => {
+setAppContext({
+    renderer,
+    view,
+    app: document.getElementById('app')!,
+    low,
+    touch,
+    releaseExploreInput: () => {
+        releaseAll();
+        releaseLook();
+    },
+});
+
+// 開発時の確認用：proto3d/src/dev/*.ts があれば、読み込みの後に呼ぶ（?dev=<名前> のとき）。本番の画面には出さない
+const devHooks = import.meta.env.DEV ? import.meta.glob<{ devStart?: () => void }>('./dev/*.ts') : {};
+const devName = params.get('dev');
+
+start()
+    .then(async () => {
+        const hook = devName && devHooks[`./dev/${devName}.ts`];
+        if (hook) (await hook()).devStart?.();
+    })
+    .catch((e: unknown) => {
     loading.hidden = false;
     loading.classList.add('error');
     loading.textContent = `読み込めませんでした：${e instanceof Error ? e.message : String(e)}`;
     console.error(e);
-});
+    });
 
 // 開発時のみ：自動確認から状態を読めるようにする
 if (import.meta.env.DEV) {
