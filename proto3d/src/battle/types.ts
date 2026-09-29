@@ -19,7 +19,7 @@ export type UnitKind =
 /** 部隊に出す命令 */
 export type Order =
     | { type: 'hold' } // 防衛・待機：その場で向きを保って守る（守りに少し強い）
-    | { type: 'move'; x: number; z: number } // 指定地点へ移動（着いたら待機）
+    | { type: 'move'; x: number; z: number; face?: number } // 指定地点へ移動（着いたら待機。face があれば着いた後にその向き（ラジアン）へ向き直る。省けば進んできた向きのまま）
     | { type: 'attack'; targetId: string } // 指定した敵部隊へ攻撃（追いかけて交戦）
     | { type: 'retreat' }; // 撤退：自軍の退き口へ下がり、着いたら戦場を離れる（兵を残す）
 
