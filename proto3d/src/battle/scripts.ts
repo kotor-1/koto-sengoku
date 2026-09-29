@@ -1,10 +1,14 @@
 /**
- * 合戦の釣り合いのテストで使う「利用者の采配」の台本（刻みごとに呼ぶ。条件がそろった時に 1 回だけ命令を出す）。
- * proto3d/src/battle の demoSetup(alliance) の布陣に合わせてある。
+ * 「利用者の采配」の台本（純粋な TypeScript）。合戦の釣り合いのテスト（tests/proto3d-battle-balance.test.ts）と、
+ * 開発時の早送り（dev フック・e2e：例 runToEnd(state, planScript('tashiro')) で勝利まで一気に進める）に使う。
+ * 本番の画面からは使わない。
+ *
+ * 台本は刻みごと（または毎フレーム）に呼ぶ関数で、条件がそろった時に 1 回だけ命令を出す。
+ * maps.ts の demoUnits(alliance) の布陣（部隊の id）に合わせてある。
  */
-import { isActive, issueOrder, orderAllRetreat, unitById, type BattleState } from '../proto3d/src/battle/sim';
-import type { Alliance } from '../proto3d/src/battle/maps';
-import type { Order } from '../proto3d/src/battle/types';
+import { isActive, issueOrder, orderAllRetreat, unitById, type BattleState } from './sim';
+import type { Alliance } from './maps';
+import type { Order } from './types';
 
 export type Script = (s: BattleState) => void;
 
@@ -18,6 +22,7 @@ function scripted(steps: [key: string, when: (s: BattleState) => boolean, act: (
         }
     };
 }
+/** いると分かっている部隊（alive で確かめてから使う） */
 const U = (s: BattleState, id: string) => unitById(s, id)!;
 const alive = (s: BattleState, id: string) => {
     const u = unitById(s, id);
@@ -25,8 +30,8 @@ const alive = (s: BattleState, id: string) => {
 };
 const seen = (s: BattleState, id: string) => alive(s, id) && U(s, id).seenBy.ally;
 const at = (s: BattleState, id: string, x: number, z: number, r = 6) => {
-    const u = U(s, id);
-    return Math.hypot(u.x - x, u.z - z) <= r;
+    const u = unitById(s, id);
+    return !!u && Math.hypot(u.x - x, u.z - z) <= r;
 };
 const order = (s: BattleState, id: string, o: Order) => issueOrder(s, id, o);
 const attack = (s: BattleState, id: string, targetId: string) => issueOrder(s, id, { type: 'attack', targetId });
@@ -96,7 +101,7 @@ export function planScript(alliance: Alliance): Script {
             ['genzo-cav', (s) => seen(s, 'e_tashiro'), (s) => attack(s, 'a_genzo', 'e_tashiro')],
             // 田代勢を退けたら、源蔵隊が先手を正面から押さえ、同時に大森槍隊が先手の横（東）へ回る
             ['genzo-sente', (s) => !alive(s, 'e_tashiro') && idle(s, 'a_genzo'), (s) => attack(s, 'a_genzo', 'e_sente')],
-            ['omori-sente', (s) => U(s, 'a_genzo').order.type === 'attack' && !alive(s, 'e_tashiro'), (s) => attack(s, 'a_omori', 'e_sente')],
+            ['omori-sente', (s) => alive(s, 'a_genzo') && U(s, 'a_genzo').order.type === 'attack' && !alive(s, 'e_tashiro'), (s) => attack(s, 'a_omori', 'e_sente')],
             // 先手が崩れたら本陣へ
             ['omori-hq', (s) => !alive(s, 'e_sente') && alive(s, 'a_omori'), (s) => attack(s, 'a_omori', 'e_hq')],
             ['genzo-hq', (s) => !alive(s, 'e_sente') && alive(s, 'a_genzo'), (s) => attack(s, 'a_genzo', 'e_hq')],

@@ -1,6 +1,6 @@
 /**
  * 合戦の釣り合い（国境の原・協力陣営ごとの標準の布陣 demoSetup）。
- * 利用者の采配の台本（proto3d-battle-plans.ts）で最後まで進め、次を確かめる：
+ * 利用者の采配の台本（proto3d/src/battle/scripts.ts）で最後まで進め、次を確かめる：
  * - 何もしない（全部隊待機）では勝てない。
  * - 全軍で正面から丘を押すと負ける（勝てても大きな損害）。
  * - 別働隊・予備隊・側面を使う采配なら勝てる（損害も正面押しより少ない）。反応が数秒遅れても勝てる。
@@ -12,7 +12,7 @@ import { createBattle, runToEnd, type BattleState } from '../proto3d/src/battle/
 import { BORDER_FIELD, BORDER_FIELD_TIME_LIMIT, TASHIRO_ARRIVE_SEC, demoSetup, demoUnits, type Alliance } from '../proto3d/src/battle/maps';
 import { inTerrain } from '../proto3d/src/battle/sim';
 import type { BattleOutcome } from '../proto3d/src/battle/types';
-import { frontalNoHqScript, frontalScript, holdScript, hqAloneScript, planScript, retreatAt, type Script } from './proto3d-battle-plans';
+import { frontalNoHqScript, frontalScript, holdScript, hqAloneScript, planScript, retreatAt, type Script } from '../proto3d/src/battle/scripts';
 
 const ALLIANCES: Alliance[] = ['tashiro', 'omori', 'alone'];
 
