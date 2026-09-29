@@ -108,9 +108,12 @@ export function clashShift(d: number, halfDepthA: number, halfDepthB: number): n
 /** 命令の出し方の途中（「移動」「攻撃」のボタンの後で地図を押す） */
 export type Pending = 'none' | 'move' | 'attack';
 
-/** 地図を押した所 */
+/**
+ * 地図を押した所。unit の near は「部隊そのもの（隊列の広がり）ではなく、そのすぐ近く（押しやすくするための余白）を押した」。
+ * x, z は押した地面の位置。
+ */
 export type TapTarget =
-    | { kind: 'unit'; unitId: string; side: Side; x: number; z: number }
+    | { kind: 'unit'; unitId: string; side: Side; x: number; z: number; near?: boolean }
     | { kind: 'ground'; x: number; z: number };
 
 /** 選んでいる部隊（命令できるか） */
@@ -138,9 +141,12 @@ export type TapAction =
  * - 味方を選んでいて敵を押す：攻撃（「移動」の途中なら、その地点へ移動）。味方を選んでいなければ、敵を調べる。
  * - 味方を選んでいて地面を押す：移動（「攻撃」の途中なら、敵を押すよう案内）。
  * - 命令できない味方（敗走・撤退済みなど）や敵を選んでいて地面を押す：選択を外す。
+ * - 命令できる味方を選んでいて、味方の部隊の「すぐ近く」（near：隊列の外の余白）を押す：地面を押したのと同じ（その地点へ移動）。
+ *   スマホの引いた画面でも、選んだ部隊を少しだけ動かす・味方の隣へ付ける、ができるように。選び直すには部隊そのものか札を押す。
  */
 export function resolveTap(sel: Selected | null, pending: Pending, tap: TapTarget): TapAction {
     const ally = sel && sel.side === 'ally' ? sel : null;
+    if (tap.kind === 'unit' && tap.side === 'ally' && tap.near && ally && ally.commandable) return resolveTap(sel, pending, { kind: 'ground', x: tap.x, z: tap.z });
     if (tap.kind === 'unit' && tap.side === 'ally') return sel && sel.id === tap.unitId && pending === 'none' ? { type: 'deselect' } : { type: 'select', unitId: tap.unitId };
     if (tap.kind === 'unit') {
         if (ally && ally.commandable) {
@@ -258,8 +264,8 @@ export function armySummary(s: BattleState, side: Side): { hq: string; able: num
 /** 勝ち負けの条件（画面の上の説明。短く） */
 export const CONDITIONS: { label: string; text: string; tone: 'good' | 'bad' | 'info' }[] = [
     { label: '勝利', text: '敵本陣を敗走させる／敵の本陣以外をすべて崩す', tone: 'good' },
-    { label: '敗北', text: '味方本陣の敗走／味方の本陣以外がすべて戦えない', tone: 'bad' },
-    { label: '撤退', text: '全軍撤退を命じる／日没', tone: 'info' },
+    { label: '敗北', text: '味方本陣の敗走／本陣以外の味方が崩れて戦えない', tone: 'bad' },
+    { label: '撤退', text: '全軍撤退／本陣以外をすべて退かせる／日没', tone: 'info' },
 ];
 
 export const RESULT_LABEL: Record<BattleResultKind, string> = { victory: '勝利', defeat: '敗北', retreat: '撤退' };
@@ -267,8 +273,8 @@ export const REASON_TEXT: Record<BattleEndReason, string> = {
     enemy_hq_routed: '敵本陣が崩れ、鷲尾勢は総崩れとなった',
     enemy_army_broken: '敵の本陣以外の部隊がすべて戦えなくなった',
     ally_hq_routed: '味方本陣が崩れた。若殿は家臣に守られて落ち延びた（討死ではない）',
-    ally_army_broken: '味方の本陣以外の部隊がすべて戦えなくなった。若殿は兵をまとめて落ち延びた',
-    ordered_retreat: '全軍撤退を命じ、兵をまとめて戦場を離れた',
+    ally_army_broken: '味方の本陣以外の部隊が崩れ、戦える部隊がなくなった。若殿は兵をまとめて落ち延びた',
+    ordered_retreat: '撤退を命じ、兵をまとめて戦場を離れた',
     nightfall: '日が暮れ、両軍とも兵を引いた',
 };
 

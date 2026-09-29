@@ -114,7 +114,7 @@ export function planScript(alliance: Alliance): Script {
         return t ? attack(s, id, t) : false;
     };
     return scripted([
-        // 源蔵隊・予備隊は先手の持ち場から 110 m より離れて左右に構える（先手が安心して打って出るように）
+        // 源蔵隊・予備隊は先手の持ち場から 90 m（AI.provokeCalm）より離れて左右に構える（先手が安心して打って出るように）
         ['genzo-wait', () => true, (s) => order(s, 'a_genzo', { type: 'move', x: -45, z: 75 })],
         ['res-wait', () => true, (s) => order(s, 'a_reserve', { type: 'move', x: 50, z: 80 })],
         // 新八隊（弓）は前へ出て先手を射る
@@ -127,5 +127,26 @@ export function planScript(alliance: Alliance): Script {
         ['res-next', (s) => !alive(s, 'e_sente') && idle(s, 'a_reserve'), press('a_reserve')],
         ['genzo-next2', (s) => !alive(s, 'e_sente') && !alive(s, 'e_reserve') && idle(s, 'a_genzo'), press('a_genzo')],
         ['res-next2', (s) => !alive(s, 'e_sente') && !alive(s, 'e_reserve') && idle(s, 'a_reserve'), press('a_reserve')],
+    ]);
+}
+
+/**
+ * 独力のときの家臣の助言どおりの采配（仮シナリオの源蔵の台詞）：布陣は動かさず、新八隊（弓）で先手を射続ける。
+ * 先手が丘を下りて新八隊に斬りかかったら、源蔵隊と予備隊で両の横から挟む。崩れたら、見えている敵へ次々に当てる。
+ */
+export function lureScript(): Script {
+    const engagedWithArchers = (s: BattleState) => alive(s, 'e_sente') && U(s, 'e_sente').engagedWith === 'a_shinpachi';
+    const next = (id: string) => (s: BattleState) => {
+        const t = ['e_reserve', 'e_yumi', 'e_hq'].find((e) => seen(s, e));
+        return t ? attack(s, id, t) : false;
+    };
+    const follow = (id: string) =>
+        [1, 2, 3].map((k) => [`${id}-next${k}`, (s: BattleState) => !alive(s, 'e_sente') && idle(s, id) && (k === 1 || !alive(s, k === 2 ? 'e_reserve' : 'e_yumi')), next(id)] as [string, (s: BattleState) => boolean, (s: BattleState) => boolean]);
+    return scripted([
+        ['archers', () => true, (s) => attack(s, 'a_shinpachi', 'e_sente')],
+        ['genzo-sente', engagedWithArchers, (s) => attack(s, 'a_genzo', 'e_sente')],
+        ['res-sente', engagedWithArchers, (s) => attack(s, 'a_reserve', 'e_sente')],
+        ...follow('a_genzo'),
+        ...follow('a_reserve'),
     ]);
 }

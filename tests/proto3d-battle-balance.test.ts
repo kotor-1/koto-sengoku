@@ -8,11 +8,11 @@
  * - 同じ采配なら同じ結果。
  */
 import { describe, expect, it } from 'vitest';
-import { createBattle, runToEnd, type BattleState } from '../proto3d/src/battle/sim';
+import { createBattle, issueOrder, runToEnd, type BattleState } from '../proto3d/src/battle/sim';
 import { BORDER_FIELD, BORDER_FIELD_TIME_LIMIT, TASHIRO_ARRIVE_SEC, demoSetup, demoUnits, type Alliance } from '../proto3d/src/battle/maps';
 import { inTerrain } from '../proto3d/src/battle/sim';
 import type { BattleOutcome } from '../proto3d/src/battle/types';
-import { frontalNoHqScript, frontalScript, holdScript, hqAloneScript, planScript, retreatAt, type Script } from '../proto3d/src/battle/scripts';
+import { frontalNoHqScript, frontalScript, holdScript, hqAloneScript, lureScript, planScript, retreatAt, type Script } from '../proto3d/src/battle/scripts';
 
 const ALLIANCES: Alliance[] = ['tashiro', 'omori', 'alone'];
 
@@ -96,6 +96,28 @@ describe('協力陣営の選択で、合戦の所属と布陣が変わる', () =
     });
 });
 
+describe('家臣の助言どおりの采配（独力）', () => {
+    it('弓で先手を丘から誘い出し、下りてきた先手を両の横から挟むと勝てる（反応が数秒遅れても）', () => {
+        for (const period of [0, 2, 5]) {
+            const { r, s } = play('alone', period ? slow(lureScript(), period) : lureScript());
+            expect(r.result).toBe('victory');
+            expect(s.events.some((e) => e.kind === 'ai' && e.text.includes('矢を嫌って打って出た'))).toBe(true);
+            expect(s.events.some((e) => (e.kind === 'flank' || e.kind === 'rear') && e.unitId?.startsWith('a_'))).toBe(true);
+        }
+    });
+
+    it('同じ 2 部隊でも、丘の上の先手へ正面から重ねて当てると勝てない', () => {
+        const both: Script = (s) => {
+            for (const id of ['a_genzo', 'a_reserve']) {
+                const u = s.units.find((x) => x.id === id)!;
+                if (u.order.type !== 'attack' && u.status === 'ready') issueOrder(s, id, { type: 'attack', targetId: 'e_sente' });
+            }
+        };
+        const { r } = play('alone', both);
+        expect(r.result).not.toBe('victory');
+    });
+});
+
 describe.each(ALLIANCES)('合戦の釣り合い（%s）', (alliance) => {
     it('何もしない（全部隊待機）では勝てない', () => {
         const { r } = play(alliance, holdScript);
@@ -118,7 +140,9 @@ describe.each(ALLIANCES)('合戦の釣り合い（%s）', (alliance) => {
         const { r, s } = play(alliance, planScript(alliance));
         expect(r.result).toBe('victory');
         expect(allyLoss(r)).toBeLessThan(0.4);
-        expect(allyLoss(r)).toBeLessThan(allyLoss(play(alliance, frontalScript).r));
+        // 損害は、本陣を残して正面から押し続けたとき（最後まで斬り合う）より少ない。
+        // 本陣ごと突っ込む正面押しは、本陣が早く崩れて合戦が早く終わるため損害の比べ物にならない（そちらは「敗北」であることを別に確かめる）
+        expect(allyLoss(r)).toBeLessThan(allyLoss(play(alliance, frontalNoHqScript).r));
         // 側面・背後を突いた知らせが出ている
         expect(s.events.some((e) => (e.kind === 'flank' || e.kind === 'rear') && s.units.find((u) => u.id === e.unitId)?.side === 'ally')).toBe(true);
         expect(r.elapsedSec).toBeLessThan(BORDER_FIELD_TIME_LIMIT);

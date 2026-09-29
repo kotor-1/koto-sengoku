@@ -18,6 +18,8 @@
  * - 林の中の部隊は、相手の部隊が 60 m 以内に来るまで相手から見えない（seenBy）。
  * - 向き：待機中は向きを保つ（周りを見回して向き直ったりしない）。斬り合いの最中はゆっくり（4°/秒）しか向き直れない。
  *   そのため、正面で組み合っている相手の側面・背後へ別の部隊を当てると効く。
+ * - 味方どうし：動く部隊は、止まっている味方の部隊（待機・斬り合い中など）を押しのけず、横へよけて通る。
+ *   行き先が止まっている味方のすぐ隣なら、その隣で止まる（待機中の本陣が、後ろから来た予備隊に押し出されない）。
  */
 import type {
     BattleEndReason,
@@ -105,6 +107,10 @@ export const RULES = {
     retreatGraceSec: 20,
     /** 味方どうしが重ならない距離 */
     spacing: 18,
+    /** 動く部隊が、止まっている味方の部隊をよけて通り始める先の距離（m） */
+    avoidLook: 60,
+    /** 正面の幅：同じ相手の正面へ 2 部隊目から斬りかかる部隊の損害の倍率 */
+    frontCrowdMul: 0.4,
 } as const;
 
 /** 種類ごとの性質 */
@@ -206,6 +212,8 @@ export interface UnitState {
     shockT: Record<string, number>;
     /** 直近 1 秒ほどの損害（表示用。毎刻み少しずつ減る） */
     recentLoss: number;
+    /** いまよけて通っている味方の部隊と、よける側（-1 左・1 右）。よけ始めたら通り過ぎるまで同じ側を通る */
+    avoid: { id: string; side: -1 | 1 } | null;
 }
 
 export interface BattleState {
@@ -421,6 +429,7 @@ export function createBattle(setup: BattleSetup): BattleState {
             chargeUntil: -1,
             shockT: {},
             recentLoss: 0,
+            avoid: null,
         } satisfies UnitState;
     });
     const s: BattleState = {
@@ -587,6 +596,7 @@ function tick(s: BattleState): void {
         index.set(u, i);
         u.attackers = [];
     });
+    const crowd = frontCrowding(s, plans, index);
     for (const a of s.units) {
         const p = plans.get(a);
         if (!p) continue;
@@ -612,7 +622,7 @@ function tick(s: BattleState): void {
                 }
             }
             a.lastMeleeT = t;
-            const dmg = meleeDamage(s, a, d, arc) * dt;
+            const dmg = meleeDamage(s, a, d, arc) * dt * (crowd.get(a) ?? 1);
             loss[di] += dmg;
             d.attackers.push(a.id);
             if (d.status === 'ready') {
@@ -718,6 +728,31 @@ function tick(s: BattleState): void {
 
     // 10. 勝ち負け
     decide(s);
+}
+
+/**
+ * 正面の幅：戦える相手の正面へ 2 部隊以上で斬りかかると、2 部隊目からは与える損害 ×frontCrowdMul
+ * （相手の正面はもう塞がっていて、後ろから押すだけになる）。先に数えるのは、相手が斬り合っている部隊、次に近い順・並びの順。
+ * 同じ相手でも、側面・背後から当たる部隊は減らない（数で押すより、回り込む方が効く）。
+ */
+function frontCrowding(s: BattleState, plans: Map<UnitState, Plan>, index: Map<UnitState, number>): Map<UnitState, number> {
+    const out = new Map<UnitState, number>();
+    const fronts = new Map<UnitState, UnitState[]>();
+    for (const a of s.units) {
+        const d = plans.get(a)?.melee;
+        if (!d || a.status !== 'ready' || d.status !== 'ready') continue;
+        if (attackArc(d, a.x, a.z) !== 'front') continue;
+        const list = fronts.get(d);
+        if (list) list.push(a);
+        else fronts.set(d, [a]);
+    }
+    for (const [d, list] of fronts) {
+        if (list.length < 2) continue;
+        const theirs = plans.get(d)?.melee ?? null;
+        list.sort((a, b) => Number(b === theirs) - Number(a === theirs) || dist(a, d) - dist(b, d) || index.get(a)! - index.get(b)!);
+        for (let k = 1; k < list.length; k++) out.set(list[k]!, RULES.frontCrowdMul);
+    }
+    return out;
 }
 
 /** 見えているか（林の中の部隊は、相手の戦える部隊が 60 m 以内に来るまで見えない） */
@@ -878,11 +913,15 @@ function moveUnit(s: BattleState, u: UnitState, p: Plan, dt: number): void {
     u.moving = false;
     if (p.goal) {
         const d = dist(u, p.goal);
-        const want = headingTo(u.x, u.z, p.goal.x, p.goal.z);
-        const room = d - p.goal.stopAt;
+        const direct = headingTo(u.x, u.z, p.goal.x, p.goal.z);
+        let room = d - p.goal.stopAt;
+        // 行き先が止まっている味方のすぐ隣で、もうその味方に触れる所まで来た：ここで着いたことにする（押しのけない）
+        if (room > 0.05 && u.status === 'ready' && u.order.type === 'move' && friendHoldsGoal(s, u, p.goal)) room = 0;
         if (room > 0.05) {
             // 少しだけ後ろへ下がるときは、向きを変えずに後ずさりする（半分の速さ）
-            const backStep = u.status === 'ready' && u.order.type === 'move' && room < 20 && Math.abs(angleDiff(u.facing, want)) > 120 * DEG;
+            const backStep = u.status === 'ready' && u.order.type === 'move' && room < 20 && Math.abs(angleDiff(u.facing, direct)) > 120 * DEG;
+            // 止まっている味方の部隊が行く手にあれば、横へよけて通る（戦える部隊だけ。撤退・敗走は味方の間をすり抜ける）
+            const want = backStep || u.status !== 'ready' || u.order.type === 'retreat' ? direct : steerAround(s, u, p.goal, u.order.type === 'attack');
             let aligned = 0.5;
             if (!backStep) {
                 const turnRate = (u.status === 'routed' ? 180 : st.turnDeg) * DEG * dt;
@@ -930,9 +969,83 @@ function moveUnit(s: BattleState, u: UnitState, p: Plan, dt: number): void {
     }
 }
 
+/** 味方の部隊をよける相手（戦えて、撤退中でなく、この刻みに動いていない味方） */
+function isFriendObstacle(u: UnitState, o: UnitState): boolean {
+    return o !== u && o.side === u.side && isActive(o) && o.order.type !== 'retreat' && !o.moving;
+}
+
+/** 移動の行き先のすぐ隣（18 m 以内）に止まっている味方がいて、もうその味方に触れる所まで来ている */
+function friendHoldsGoal(s: BattleState, u: UnitState, goal: { x: number; z: number }): boolean {
+    for (const o of s.units) {
+        if (!isFriendObstacle(u, o)) continue;
+        if (dist(o, goal) < RULES.spacing && dist(u, o) <= RULES.spacing + 1) return true;
+    }
+    return false;
+}
+
+/**
+ * 行き先へ向かう向き。まっすぐ進むと止まっている味方の部隊の中を通るときは、その部隊の横をよけて通る向きにする。
+ * - 行く手（前方 avoidLook m 以内・行き先より手前）で、進む線から 20 m 以内にいる味方をよける。いちばん手前の 1 部隊だけ見る。
+ * - 移動の行き先がその味方の隣なら、よけずに近づく（friendHoldsGoal で隣に止まる）。攻撃の相手の手前の味方は回り込む。
+ * - よける側：味方が進む線の右にいれば左、左にいれば右、線の真上なら左。よけた先に別の味方がいて、反対側が空いていれば反対側。
+ * - 向き：その味方を中心とする半径 20 m の円に接する向き（もう円の中なら、円に沿って回る向き）。
+ */
+function steerAround(s: BattleState, u: UnitState, goal: { x: number; z: number }, attacking: boolean): number {
+    const direct = headingTo(u.x, u.z, goal.x, goal.z);
+    const fx = Math.sin(direct);
+    const fz = -Math.cos(direct);
+    // 右手の向き
+    const rx = Math.cos(direct);
+    const rz = Math.sin(direct);
+    const goalDist = dist(u, goal);
+    const R = RULES.spacing + 2;
+    let block: UnitState | null = null;
+    let blockAlong = Infinity;
+    let blockPerp = 0;
+    for (const o of s.units) {
+        if (!isFriendObstacle(u, o)) continue;
+        const ox = o.x - u.x;
+        const oz = o.z - u.z;
+        const along = ox * fx + oz * fz;
+        if (along <= 0 || along > Math.min(goalDist, RULES.avoidLook)) continue;
+        const perp = ox * rx + oz * rz;
+        if (Math.abs(perp) >= R) continue;
+        if (!attacking && dist(o, goal) < R) continue;
+        if (along < blockAlong) {
+            block = o;
+            blockAlong = along;
+            blockPerp = perp;
+        }
+    }
+    if (!block) {
+        u.avoid = null;
+        return direct;
+    }
+    const b = block;
+    const D = dist(u, b);
+    const toB = headingTo(u.x, u.z, b.x, b.z);
+    const off = D > R ? Math.asin(R / D) : Math.PI / 2;
+    // side -1：左をよける（味方を右に見て通る）、+1：右をよける
+    const tangent = (side: number) => toB + side * off;
+    let side: -1 | 1;
+    if (u.avoid && u.avoid.id === b.id) side = u.avoid.side;
+    else {
+        const clear = (h: number) => {
+            const k = Math.min(D, 30);
+            const p = { x: u.x + Math.sin(h) * k, z: u.z - Math.cos(h) * k };
+            return !s.units.some((o) => o !== b && isFriendObstacle(u, o) && dist(o, p) < R && (attacking || dist(o, goal) >= R));
+        };
+        side = blockPerp > 1e-6 ? -1 : blockPerp < -1e-6 ? 1 : -1;
+        if (!clear(tangent(side)) && clear(tangent(-side))) side = side === 1 ? -1 : 1;
+        u.avoid = { id: b.id, side };
+    }
+    return tangent(side);
+}
+
 /**
  * 部隊どうしが重ならないようにする。
  * - 同じ陣営の戦える部隊は 18 m まで押し離す（動いている部隊が主によける。待機・斬り合い中の部隊はほとんど動かさない）。
+ *   動いている部隊と止まっている部隊が近づいたときは、動いている部隊だけを押し戻す（止まっている味方を押し出さない）。
  *   押し離した先が相手の部隊に近づく（14 m より近い）ときは押さない（味方に押されて敵の中へ入らないように）。
  * - 相手の陣営の戦える部隊どうしは、14 m より近ければ押し離す。
  * - 敗走・撤退中の部隊は味方の間をすり抜ける。
@@ -976,8 +1089,10 @@ function separate(s: BattleState): void {
                 b.z += (uz * push) / 2;
                 continue;
             }
-            const wa = weight(a);
-            const wb = weight(b);
+            let wa = weight(a);
+            let wb = weight(b);
+            if (a.moving && !b.moving) wb = 0;
+            else if (b.moving && !a.moving) wa = 0;
             const sum = wa + wb;
             nudge(a, -ux * push * (wa / sum), -uz * push * (wa / sum));
             nudge(b, ux * push * (wb / sum), uz * push * (wb / sum));
@@ -1045,6 +1160,21 @@ function decide(s: BattleState): void {
     const enemyOthers = s.units.filter((u) => u.side === 'enemy' && !u.isHq);
     if (enemyOthers.length > 0 && !enemyOthers.some(able)) return finish(s, 'victory', 'enemy_army_broken');
     const allyOthers = s.units.filter((u) => u.side === 'ally' && !u.isHq);
-    if (allyOthers.length > 0 && !allyOthers.some(able)) return finish(s, 'defeat', 'ally_army_broken');
+    if (allyOthers.length > 0 && !allyOthers.some(able)) {
+        // 本陣以外の味方がすべて戦場にいない：命令で退かせた部隊が、崩れた（敗走・全滅）部隊より少なくなければ「撤退」
+        // （本陣も兵をまとめて退く）。崩れた部隊の方が多ければ「敗北」
+        const withdrawn = allyOthers.filter((u) => u.status === 'withdrawn').length;
+        if (withdrawn >= allyOthers.length - withdrawn) {
+            for (const u of s.units) {
+                if (u.side !== 'ally' || !isActive(u)) continue;
+                u.status = 'withdrawn';
+                u.present = false;
+                u.engagedWith = null;
+                u.shootingAt = null;
+            }
+            return finish(s, 'retreat', 'ordered_retreat');
+        }
+        return finish(s, 'defeat', 'ally_army_broken');
+    }
     if (s.tick >= Math.round(s.timeLimitSec / RULES.tick)) return finish(s, 'retreat', 'nightfall');
 }

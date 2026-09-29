@@ -127,6 +127,22 @@ describe('地図を押したとき', () => {
         expect(resolveTap(ally, 'move', ground)).toEqual({ type: 'order', unitId: 'a_genzo', order: { type: 'move', x: 12, z: 34 } });
         expect(resolveTap(ally, 'attack', ground).type).toBe('hint');
     });
+    it('味方を選んでいて、味方の部隊の「すぐ近く」（隊列の外の余白）を押すと、その地点へ移動（選び直し・選択を外すにならない）', () => {
+        const nearFriend = { ...friend, x: 22, z: 112, near: true };
+        const nearSelf = { kind: 'unit' as const, unitId: 'a_genzo', side: 'ally' as const, x: 20, z: 50, near: true };
+        expect(resolveTap(ally, 'none', nearFriend)).toEqual({ type: 'order', unitId: 'a_genzo', order: { type: 'move', x: 22, z: 112 } });
+        expect(resolveTap(ally, 'move', nearFriend)).toEqual({ type: 'order', unitId: 'a_genzo', order: { type: 'move', x: 22, z: 112 } });
+        expect(resolveTap(ally, 'none', nearSelf)).toEqual({ type: 'order', unitId: 'a_genzo', order: { type: 'move', x: 20, z: 50 } });
+        expect(resolveTap(ally, 'move', nearSelf)).toEqual({ type: 'order', unitId: 'a_genzo', order: { type: 'move', x: 20, z: 50 } });
+        // 「攻撃」の途中なら地面と同じく案内だけ
+        expect(resolveTap(ally, 'attack', nearFriend).type).toBe('hint');
+        // 何も選んでいない・命令できない味方のときは、今まで通り近くの味方を選ぶ（引いた画面でも選びやすい）
+        expect(resolveTap(null, 'none', nearFriend)).toEqual({ type: 'select', unitId: 'a_hq' });
+        expect(resolveTap(gone, 'none', nearFriend)).toEqual({ type: 'select', unitId: 'a_hq' });
+        // 部隊そのものを押したときは選び直し・外す（今まで通り）
+        expect(resolveTap(ally, 'none', { ...nearSelf, near: false })).toEqual({ type: 'deselect' });
+        expect(resolveTap(ally, 'move', { ...nearFriend, near: false })).toEqual({ type: 'select', unitId: 'a_hq' });
+    });
     it('命令できない味方・敵を選んでいて地面を押すと、選択を外す。何も選んでいなければ何もしない', () => {
         expect(resolveTap(gone, 'none', ground)).toEqual({ type: 'deselect' });
         expect(resolveTap(enemySel, 'none', ground)).toEqual({ type: 'deselect' });

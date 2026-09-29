@@ -72,7 +72,7 @@ describe('敵の考え：hold_line（持ち場を守る）', () => {
         expect(o.type === 'attack' && o.targetId === 'b').toBe(true);
         expect(lure.events.some((e) => e.text.includes('矢を嫌って打って出た'))).toBe(true);
 
-        const calm = battle([U('line', 'enemy', 'yari', 0, 0, S, { aiRole: 'hold_line' }), U('b', 'ally', 'yumi', 0, 100, N), U('guard', 'ally', 'yari', 60, 88, N)]);
+        const calm = battle([U('line', 'enemy', 'yari', 0, 0, S, { aiRole: 'hold_line' }), U('b', 'ally', 'yumi', 0, 100, N), U('guard', 'ally', 'yari', 50, 70, N)]);
         advance(calm, AI.provokeSec + 10);
         expect(get(calm, 'line').order.type).toBe('hold');
     });

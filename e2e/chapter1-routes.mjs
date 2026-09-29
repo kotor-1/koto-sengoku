@@ -687,6 +687,21 @@ async function runC() {
   check('C 合戦：「防衛・待機」をタップ', (await unit(page, 'a_genzo')).order.type === 'hold');
   await hitUnit(page, true, 'a_shinpachi');
   check('C 合戦：地図の新八隊をタップして選ぶ', (await bUi(page)).selectedId === 'a_shinpachi');
+  // 引いた画面（「全体」）で、味方の部隊のすぐ横（押しやすくするための余白の中）をタップ：選んでいる部隊がそこへ移動（近くの味方を選び直さない）
+  await hitEl(page, true, page.locator('.b-zall'));
+  await center(page, 10, 100); // 寄せずに（全体の距離のまま）本陣のあたりを画面の中ほどへ（下の札に隠れないように）
+  await sleep(600);
+  const hqPx = await screenOf(page, 'a_hq');
+  const besidePx = await groundXY(page, 22, 110);
+  const gapPx = Math.hypot(hqPx.x - besidePx.x, hqPx.y - besidePx.y);
+  await hitGround(page, true, 22, 110);
+  g = await unit(page, 'a_shinpachi');
+  check(`C 合戦（スマホ・全体）：本陣の 22 m 横（画面で ${gapPx.toFixed(0)} px）の地面をタップ → 新八隊がそこへ移動（本陣を選び直さない）`,
+    gapPx < 30 && (await bUi(page)).selectedId === 'a_shinpachi' && g.order.type === 'move' && Math.hypot(g.order.x - 22, g.order.z - 110) < 10, JSON.stringify(g.order));
+  await hitUnit(page, true, 'a_hq');
+  check('C 合戦（スマホ・全体）：本陣そのものをタップすると本陣を選ぶ', (await bUi(page)).selectedId === 'a_hq');
+  await hitEl(page, true, card(page, '新八隊'));
+  await frameOn(page, 0, 50, 230);
   await hitEl(page, true, cmd(page, '移動'));
   await hitGround(page, true, 20, 60);
   g = await unit(page, 'a_shinpachi');
@@ -694,8 +709,20 @@ async function runC() {
   await hitEl(page, true, cmd(page, '攻撃'));
   await hitUnit(page, true, 'e_sente');
   check('C 合戦：「攻撃」の後で敵（鷲尾先手）をタップ', (await unit(page, 'a_shinpachi')).order.type === 'attack');
+  // 本陣の真後ろの予備隊で先手へ攻めかかる：予備隊は本陣をよけて進み、防衛・待機の本陣は押し出されない
+  const hq0 = await unit(page, 'a_hq');
+  await hitEl(page, true, card(page, '琴坂予備隊'));
+  await hitEl(page, true, cmd(page, '攻撃'));
+  await hitUnit(page, true, 'e_sente');
+  check('C 合戦：予備隊の札 →「攻撃」→ 鷲尾先手をタップ', (await unit(page, 'a_reserve')).order.type === 'attack');
   await hitEl(page, true, page.locator('.b-pause'));
   await ffUntil(page, 's.t > 25', 40);
+  const hq1 = await unit(page, 'a_hq');
+  const res1 = await unit(page, 'a_reserve');
+  check(`C 合戦：予備隊が本陣の横を抜けて前へ（予備隊 z ${res1.z.toFixed(0)}）、本陣はその場（動いた距離 ${Math.hypot(hq1.x - hq0.x, hq1.z - hq0.z).toFixed(1)} m・命令 ${hq1.order.type}）`,
+    res1.z < hq0.z - 20 && Math.hypot(hq1.x - hq0.x, hq1.z - hq0.z) < 1.5 && hq1.order.type === 'hold');
+  await frameOn(page, 0, 80, 230);
+  await shot(page, 'C07-reserve-passes-hq');
   await hitEl(page, true, page.locator('.b-allret'));
   check('C 合戦：「全軍撤退」をタップすると確かめる（止まる）', (await bUi(page)).modal === 'confirm' && (await bUi(page)).paused);
   await shot(page, 'C07-allretreat-confirm');

@@ -395,6 +395,42 @@ describe('合戦の計算：勝ち負け', () => {
         expect(outcome(s)?.reason).toBe('ally_army_broken');
     });
 
+    it('本陣以外の味方を 1 部隊ずつ撤退させて全部が戦場を離れると「撤退」（敗北ではない）。本陣も兵をまとめて退く', () => {
+        const s = createBattle(
+            setup([U('a_x', 'ally', 'yari', -20, 170, N), U('a_y', 'ally', 'yumi', 20, 170, N), U('a_hq2', 'ally', 'honjin', 0, 120, N), U('e_b', 'enemy', 'yari', 0, -100, S)]),
+        );
+        advance(s, 2);
+        expect(issueOrder(s, 'a_x', { type: 'retreat' })).toBe(true);
+        expect(issueOrder(s, 'a_y', { type: 'retreat' })).toBe(true);
+        advance(s, 20);
+        const r = outcome(s)!;
+        expect(r).not.toBeNull();
+        expect(r.result).toBe('retreat');
+        expect(r.reason).toBe('ordered_retreat');
+        expect(r.units.find((u) => u.id === 'a_x')!.status).toBe('withdrawn');
+        expect(r.units.find((u) => u.id === 'a_y')!.status).toBe('withdrawn');
+        // 本陣（最初の honjin）も戦場を離れた扱い（兵は残る）
+        expect(r.units.find((u) => u.id === 'a_hq2')!.status).toBe('withdrawn');
+        expect(r.units.find((u) => u.id === 'a_hq2')!.endStrength).toBe(300);
+    });
+
+    it('本陣以外の味方が戦えなくなったとき、崩れた部隊の方が退かせた部隊より多ければ「敗北」', () => {
+        const s = createBattle(
+            setup([
+                U('a_x', 'ally', 'yari', 0, 100, N, { morale: 15.1 }),
+                U('a_z', 'ally', 'yari', 40, 100, N, { morale: 15.1 }),
+                U('a_y', 'ally', 'yumi', 60, 185, N),
+                U('e_b', 'enemy', 'yumi', 0, 0, S),
+            ]),
+        );
+        issueOrder(s, 'a_y', { type: 'retreat' });
+        runToEnd(s, undefined, 60);
+        const r = outcome(s)!;
+        expect(r.units.find((u) => u.id === 'a_y')!.status).toBe('withdrawn');
+        expect(r.result).toBe('defeat');
+        expect(r.reason).toBe('ally_army_broken');
+    });
+
     it('全軍撤退：味方は退き口へ下がり、撤退で終わる。まだ着いていない部隊は来ない', () => {
         const s = createBattle(setup([U('a_x', 'ally', 'yari', 0, 180, N), U('a_late', 'ally', 'kiba', 0, 150, N, { arriveAt: 100 }), U('e_b', 'enemy', 'yari', 0, 0, S)]));
         advance(s, 5);
@@ -428,6 +464,69 @@ describe('合戦の計算：勝ち負け', () => {
         expect(x).toEqual({ id: 'a_x', side: 'ally', clan: 'kotosaka', leaderId: 'genzo', startStrength: 300, endStrength: 300, status: 'ready' });
         expect(r.units.find((u) => u.id === 'e_x')!.leaderId).toBeUndefined();
         expect(JSON.parse(JSON.stringify(r))).toEqual(r);
+    });
+});
+
+describe('合戦の計算：味方どうしの動き・正面の幅', () => {
+    it('後ろの味方が前へ攻めかかっても、待機中の本陣は押し出されない（横をよけて通る）', () => {
+        // 独力の布陣と同じ並び：本陣 (0,110) の真後ろ (0,135) の予備隊が、北の敵へ攻めかかる
+        const s = createBattle(
+            setup([
+                U('a_hq', 'ally', 'honjin', 0, 110, N, { morale: 100 }),
+                U('a_res', 'ally', 'yari', 0, 135, N),
+                U('e_x', 'enemy', 'yari', 0, -120, S),
+            ]),
+        );
+        expect(issueOrder(s, 'a_res', { type: 'attack', targetId: 'e_x' })).toBe(true);
+        const hq = get(s, 'a_hq');
+        let maxShift = 0;
+        let passed = false;
+        for (let i = 0; i < 600; i++) {
+            stepBattle(s, RULES.tick);
+            maxShift = Math.max(maxShift, Math.hypot(hq.x, hq.z - 110));
+            if (get(s, 'a_res').z < 80) passed = true;
+        }
+        expect(passed).toBe(true);
+        expect(maxShift).toBeLessThan(1);
+        expect(hq.order.type).toBe('hold');
+    });
+
+    it('本陣の向こうの地点へ移動する部隊は、本陣を押さずに回り込んで着く', () => {
+        const s = createBattle(setup([U('a_hq', 'ally', 'honjin', 0, 110, N, { morale: 100 }), U('a_g', 'ally', 'yari', 0, 50, N)]));
+        expect(issueOrder(s, 'a_g', { type: 'move', x: 0, z: 150 })).toBe(true);
+        advance(s, 60);
+        const g = get(s, 'a_g');
+        expect(Math.hypot(g.x, g.z - 150)).toBeLessThan(2);
+        expect(g.order.type).toBe('hold');
+        expect(Math.hypot(get(s, 'a_hq').x, get(s, 'a_hq').z - 110)).toBeLessThan(1);
+    });
+
+    it('止まっている味方のすぐ隣を行き先にすると、その隣で止まる（味方を押しのけない・動き続けない）', () => {
+        const s = createBattle(setup([U('a_hq', 'ally', 'honjin', 0, 110, N, { morale: 100 }), U('a_g', 'ally', 'yari', 0, 40, N)]));
+        expect(issueOrder(s, 'a_g', { type: 'move', x: 0, z: 100 })).toBe(true);
+        advance(s, 40);
+        const g = get(s, 'a_g');
+        expect(g.order.type).toBe('hold');
+        expect(g.moving).toBe(false);
+        expect(Math.hypot(g.x - 0, g.z - 110)).toBeGreaterThanOrEqual(RULES.spacing - 0.5);
+        expect(Math.hypot(get(s, 'a_hq').x, get(s, 'a_hq').z - 110)).toBeLessThan(1);
+    });
+
+    it('正面の幅：同じ相手の正面へ 2 部隊目から斬りかかる部隊の損害は ×frontCrowdMul。側面から当たる部隊は減らない', () => {
+        // d は北を向いて待機。a1・a2 は正面（北）から、f は東（側面）から
+        // 最初の 1 刻みの損害で比べる（攻め手の兵・士気がまだ同じ）
+        const lossOf = (units: UnitDef[]) => {
+            const s = createBattle(setup([U('d', 'enemy', 'yari', 0, 0, N, { strength: 2000, morale: 100 }), ...units], FLAT, 600));
+            for (const u of units) issueOrder(s, u.id, { type: 'attack', targetId: 'd' });
+            stepBattle(s, RULES.tick);
+            return 2000 - get(s, 'd').strength;
+        };
+        const one = lossOf([U('a1', 'ally', 'yari', 0, -22, S)]);
+        const twoFront = lossOf([U('a1', 'ally', 'yari', -6, -22, S), U('a2', 'ally', 'yari', 6, -22, S)]);
+        const frontAndFlank = lossOf([U('a1', 'ally', 'yari', 0, -22, S), U('f', 'ally', 'yari', 22, 0, -E)]);
+        expect(one).toBeGreaterThan(0);
+        expect(twoFront).toBeCloseTo(one * (1 + RULES.frontCrowdMul), 6);
+        expect(frontAndFlank).toBeCloseTo(one * (1 + RULES.flankMul), 6);
     });
 });
 

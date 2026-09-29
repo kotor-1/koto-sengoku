@@ -26,6 +26,11 @@ import { REASON_TEXT, RESULT_LABEL, eventTone, fmtClock, orderAck, refusalText, 
 const TREE_TIMEOUT_MS = 12000;
 /** 押したとみなす指・マウスの動きの上限（px） */
 const TAP_SLOP = { touch: 12, mouse: 6 };
+/**
+ * 部隊「そのもの」を押したとみなす最小の半径（px。隊列の広がりが画面でこれより大きければ、そちら）。
+ * これより外で、押しやすくするための余白（タッチ 30 px・マウス 20 px）の中は「すぐ近く」（control.ts の resolveTap の near）。
+ */
+const TAP_EXACT_PX = { touch: 16, mouse: 10 };
 
 let current: BattleRun | null = null;
 
@@ -503,18 +508,21 @@ class BattleRun implements Mode {
     /** 地図を押した（動かさずに離した）。command は右クリック（味方を選んでいれば命令だけ） */
     private tap(x: number, y: number, command: boolean): void {
         if (this.resultShown || this.ui.modalOpen) return;
-        const id = this.view.pick(this.s, x, y, this.ctx.touch ? 30 : 20);
+        // 部隊そのもの（隊列の広がり＋少し）を押したか、押しやすくするための余白（タッチ 30 px・マウス 20 px）を押したか
+        const exactId = this.view.pick(this.s, x, y, this.ctx.touch ? TAP_EXACT_PX.touch : TAP_EXACT_PX.mouse);
+        const id = exactId ?? this.view.pick(this.s, x, y, this.ctx.touch ? 30 : 20);
         const g = this.view.groundAt(x, y);
         const u = id ? unitById(this.s, id) : undefined;
         let target: TapTarget;
-        if (u) target = { kind: 'unit', unitId: u.id, side: u.side, x: g?.x ?? u.x, z: g?.z ?? u.z };
+        if (u) target = { kind: 'unit', unitId: u.id, side: u.side, x: g?.x ?? u.x, z: g?.z ?? u.z, near: !exactId };
         else if (g) target = { kind: 'ground', x: g.x, z: g.z };
         else return;
         const sel = this.selected();
         if (command) {
-            // 右クリック：選んでいる味方への命令だけ（選び直しはしない）
+            // 右クリック：選んでいる味方への命令だけ（選び直しはしない）。味方のすぐ近くなら、その地点へ移動
             if (!sel || !sel.commandable) return;
-            if (target.kind === 'unit' && target.side === 'ally') return;
+            if (target.kind === 'unit' && target.side === 'ally' && !target.near) return;
+            if (target.kind === 'unit' && target.side === 'ally') target = { kind: 'ground', x: target.x, z: target.z };
             const o: Order = target.kind === 'unit' ? { type: 'attack', targetId: target.unitId } : { type: 'move', x: target.x, z: target.z };
             this.order(sel.id, o);
             return;
@@ -627,7 +635,8 @@ function terrainLabelsFor(s: BattleState): { id: string; text: string; x: number
     });
     const ex = s.map.exits;
     out.push({ id: 'exit-ally', text: '味方の退き口', x: ex.ally.x + 28, z: ex.ally.z - 6, y: 0 });
-    out.push({ id: 'exit-enemy', text: '敵の退き口', x: ex.enemy.x + 26, z: ex.enemy.z + 14, y: 0 });
+    // 敵の退き口は敵本陣・予備隊（丘の上と後ろ）の名札と重ならないよう、東へ離して置く
+    out.push({ id: 'exit-enemy', text: '敵の退き口', x: ex.enemy.x + 75, z: ex.enemy.z + 10, y: 0 });
     return out;
 }
 
