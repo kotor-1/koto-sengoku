@@ -266,6 +266,7 @@ body.mode-battle #build { display: none !important; }
 .b-gen-role { font-size: 10.5px; padding: 0 6px; border-radius: 999px; background: rgba(143, 220, 255, 0.18); color: #c4ebff; white-space: nowrap; }
 .b-abil[data-side="enemy"] .b-gen-role { background: rgba(255, 91, 76, 0.2); color: #ffc2ba; }
 .b-gen-ab { font-size: 11px; color: var(--ink-soft); }
+.b-gen-rel { font-size: 10.5px; color: #e9d9a8; white-space: nowrap; }
 .b-prov { font-style: normal; margin-left: 4px; padding: 0 4px; border-radius: 3px; background: #f0c050; color: #2a1d05; font-size: 9.5px; }
 
 /* ---- 上の真ん中：一時停止・知らせ ---- */
@@ -649,6 +650,7 @@ body.mode-battle #build { display: none !important; }
     .b-gen { gap: 0 6px; }
     .b-gen-role { font-size: 9.5px; padding: 0 4px; }
     .b-gen-ab { font-size: 10px; }
+    .b-gen-rel { font-size: 9.5px; }
     /* 能力の欄が続くときは、武将の行は名前と役割だけの細い一行（固有能力は下の見出しに出ている）。左上の縦の長さを抑える */
     .b-gen:has(+ .b-ab-h) { font-size: 10.5px; line-height: 1.2; }
     .b-gen:has(+ .b-ab-h) .b-gen-ab { display: none; }

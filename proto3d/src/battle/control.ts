@@ -12,7 +12,7 @@ import { STATUS_LABEL, canCommand, engagementLabel, hqOf, isActive, issueOrder, 
 import { ABILITY_DATA, ABILITY_FICTION_NOTE, abilityInfo, abilityMarks, isRooted, provisionalAbilityShort, type AbilityInfo } from './abilities';
 import { objectiveProgress, type ObjectiveRole, type ObjectiveState } from './objectives';
 import { zoneCenter } from './fieldRules';
-import { GENERAL_ROLE_LABELS, generalById } from './generals';
+import { GENERAL_ROLE_LABELS, RELATION_SELF, generalById } from './generals';
 
 // ---------------------------------------------------------------- 部隊の見た目
 
@@ -786,6 +786,8 @@ export interface GeneralLineModel {
     /** 仮の能力（差し替え前提。画面に「仮」の印） */
     provisional: boolean;
     side: Side;
+    /** 主人公との関係状態（武将の relationKey で BattleSetup.relations から引く。無い合戦・主人公本人は null） */
+    relation: { label: string; value: number } | null;
 }
 
 export function generalLineModel(s: BattleState, unitId: string): GeneralLineModel | null {
@@ -796,7 +798,10 @@ export function generalLineModel(s: BattleState, unitId: string): GeneralLineMod
     // 能力：合戦の中の能力（部隊の ability か武将の能力）。無ければ武将のデータの能力
     const id: AbilityId | undefined = abilityInfo(s, unitId)?.id ?? (ABILITY_DATA[g.abilityId] ? g.abilityId : undefined);
     const d = id ? ABILITY_DATA[id] : undefined;
-    return { generalId: g.id, name: g.name, roleLabel: GENERAL_ROLE_LABELS[g.role], abilityName: d?.name ?? '', provisional: !!d?.provisional, side: u.side };
+    // 関係状態：武将の relationKey で、合戦の設定の relations（歴史分岐なら信頼）を引く
+    const rv = g.relationKey !== RELATION_SELF ? s.setup.relations?.[g.relationKey] : undefined;
+    const relation = typeof rv === 'number' && Number.isFinite(rv) ? { label: '信頼', value: rv } : null;
+    return { generalId: g.id, name: g.name, roleLabel: GENERAL_ROLE_LABELS[g.role], abilityName: d?.name ?? '', provisional: !!d?.provisional, side: u.side, relation };
 }
 
 // ---------------------------------------------------------------- 目標の欄・結果（主目標・副目標。約束とは別の欄）

@@ -47,6 +47,9 @@ interface GeneralDef {
   - 演習の戦場では、酒井・石川が部隊を率いて、能力を使える。
   - 歴史分岐の章の合戦は、部隊と数値を今のまま（Version 11 の釣り合いを守る）。
 - **関係状態：** 歴史分岐の状態の `trust` に、`sakai`・`ishikawa`・`sakakibara` を足す。保存の版 2 で、版 1 は初期値で読む。
+  - 合戦の画面の武将の行は、`relationKey` で `BattleSetup.relations`（歴史分岐は `trust` の写し。合戦の計算には使わない）を引いて「信頼 40」と出す。
+- **AI の基本方針：** `aiPolicy` は、`aiRole` を省いた部隊の既定の役割になる（`ai.ts` の `defaultAiRole`：攻めかかる＝相手の本陣へ `assault`、持ち場を保つ＝`hold_line`、慎重に守る＝`guard_hq`、味方を支える＝`reserve`）。
+  今の戦場・章の部隊は `aiRole` を持つか `generalId` を持たないので、今の合戦の動きは変わらない。
 - **史実と解釈：** `docs/generals-history.md` に分けて書く。
   - 資料メモで確かめたのは忠勝（家康の旗本）だけ。
   - 酒井・石川・榊原の年代・所属・役割は、今回の資料では確かめていない。「一般に知られる事柄（未確認）」と「ゲーム用の解釈」に分ける。

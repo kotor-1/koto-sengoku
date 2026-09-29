@@ -3,7 +3,9 @@
  * 敵の部隊だけを動かす（味方の部隊は利用者の命令だけで動く。待機中に間合いの相手と斬り合うのは sim.ts の決まり）。
  * 敵は「敵から見えている味方」（seenBy.enemy）だけを相手に考える。林の中の味方は 60 m 以内に来るまで気づかない。
  *
- * 役割（UnitDef.aiRole。省けば本陣は guard_hq、ほかは hold_line）：
+ * 役割（UnitDef.aiRole。省けば本陣は guard_hq。ほかは、率いる武将（generalId）がいればその AI の基本方針（generals.ts の aiPolicy）から
+ * 決め（defaultAiRole：攻めかかる＝相手の本陣へ assault・持ち場を保つ＝hold_line・慎重に守る＝guard_hq・味方を支える＝reserve）、
+ * いなければ hold_line。Version 11 の部隊は generalId を持たないので今までどおり）：
  * - hold_line：持ち場（最初の位置）を守る。持ち場の 75 m 以内に来た見えている味方が、
  *   ほかの部隊へ向かう・横を通るなら打って出て迎え撃つ（自分へ向かって来る相手は、持ち場で待ち構える）。
  *   持ち場から 120 m より離れた相手は追わず、持ち場へ戻る。矢を 12 秒以上浴び、持ち場の 90 m 以内に相手の槍・騎馬・本陣がいなければ、射手へ打って出る（誘い出せる）。
@@ -35,9 +37,25 @@
  */
 import type { Order, UnitDef } from './types';
 import { ABILITY_DATA, rearguardCover } from './abilities';
+import { generalById, type GeneralAiPolicy } from './generals';
 import type { BattleState, UnitState } from './sim';
 
 export type AiRole = NonNullable<UnitDef['aiRole']>;
+
+/** 武将の AI の基本方針 → aiRole を省いた部隊の既定の役割 */
+export const AI_POLICY_ROLE: Readonly<Record<GeneralAiPolicy, AiRole>> = {
+    aggressive: 'assault',
+    steady: 'hold_line',
+    cautious: 'guard_hq',
+    support: 'reserve',
+};
+
+/** aiRole を省いた部隊の役割（本陣は guard_hq。率いる武将がいれば、その AI の基本方針から。いなければ hold_line） */
+export function defaultAiRole(u: Pick<UnitDef, 'kind' | 'generalId'>): AiRole {
+    if (u.kind === 'honjin') return 'guard_hq';
+    const g = u.generalId ? generalById(u.generalId) : undefined;
+    return g ? AI_POLICY_ROLE[g.aiPolicy] : 'hold_line';
+}
 
 export const AI = {
     /** hold_line：持ち場からこの距離に来た相手を見る */
@@ -121,9 +139,11 @@ export function createAiState(units: readonly UnitState[]): AiState {
     const memo: Record<string, AiMemo> = {};
     for (const u of units) {
         if (u.side !== 'enemy') continue;
-        const role: AiRole = u.aiRole ?? (u.kind === 'honjin' ? 'guard_hq' : 'hold_line');
+        const role: AiRole = u.aiRole ?? defaultAiRole(u);
         const zoned = role === 'hold_zone' || role === 'assault';
-        const zone = zoned ? { x: u.aiTarget?.x ?? u.x, z: u.aiTarget?.z ?? u.z, r: u.aiTarget?.r ?? AI.zoneRadius } : null;
+        // 攻め進む先を省いた assault（攻めかかる方針の武将）は、相手の本陣の最初の位置へ攻め進む
+        const foeHq = !u.aiTarget && role === 'assault' ? units.find((o) => o.side !== u.side && o.isHq) : undefined;
+        const zone = zoned ? { x: u.aiTarget?.x ?? foeHq?.x ?? u.x, z: u.aiTarget?.z ?? foeHq?.z ?? u.z, r: u.aiTarget?.r ?? AI.zoneRadius } : null;
         // hold_zone の持ち場：最初の位置が区域の中ならそこ、外なら区域の中心
         const outside = role === 'hold_zone' && zone && Math.hypot(u.x - zone.x, u.z - zone.z) > zone.r;
         memo[u.id] = {

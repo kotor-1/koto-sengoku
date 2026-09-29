@@ -173,6 +173,14 @@ describe('約束', () => {
             expect(ieyasuBattleSetup(ieyasuToBattle(p, 'decline')).pledge).toBeUndefined();
         }
     });
+    it('合戦の設定に、武将の行に出す信頼の写し（relations）が付く。合戦の計算には使わない', () => {
+        for (const p of POLICIES) {
+            const s = ieyasuToBattle(p, 'accept');
+            const setup = ieyasuBattleSetup(s);
+            expect(setup.relations).toEqual(s.trust);
+            expect(setup.relations).not.toBe(s.trust);
+        }
+    });
     it('合戦の計算が約束の結果を返さないとき（確認用の偽の結果）は、最後の状態から同じ決まりで判定する', () => {
         const s = ieyasuToBattle('home', 'accept');
         const setup = ieyasuBattleSetup(s);

@@ -254,7 +254,9 @@ export function ieyasuBattleSetup(state: IeyasuState): BattleSetup {
     if (state.phase !== 'battle') throw new FlowError(`今（${state.phase}）は合戦を始められません`);
     if (!state.policy) throw new FlowError('方針が決まっていません');
     if (!state.pledge) throw new FlowError('約束の返事をしていません');
-    return withIeyasuSideObjective(ieyasu1570Setup(state.policy, { troops: { ...state.troops }, pledgeAccepted: state.pledge.accepted }), state.policy);
+    const setup = withIeyasuSideObjective(ieyasu1570Setup(state.policy, { troops: { ...state.troops }, pledgeAccepted: state.pledge.accepted }), state.policy);
+    // 武将の行に出す信頼（武将の relationKey で引く。合戦の計算には使わない）
+    return { ...setup, relations: { ...state.trust } };
 }
 
 /** 合戦の設定に、方針の副目標と、その説明の 1 行を足す（設定は写して返す） */

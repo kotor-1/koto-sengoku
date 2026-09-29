@@ -604,11 +604,11 @@ export class BattleUi {
         const u = selId ? s.units.find((x) => x.id === selId) : undefined;
         const m = u ? abilityPanelModel(s, u.id) : null;
         const gm = u ? generalLineModel(s, u.id) : null;
-        // 率いる武将の行（名前・役割・固有能力。仮の能力は「仮」の印）
+        // 率いる武将の行（名前・役割・主人公との関係（歴史分岐の信頼）・固有能力。仮の能力は「仮」の印）
         const gen = gm
             ? `<div class="b-gen" data-general="${escapeHtml(gm.generalId)}"><b>${escapeHtml(gm.name)}</b><span class="b-gen-role">${escapeHtml(gm.roleLabel)}</span>${
-                  gm.abilityName ? `<span class="b-gen-ab">固有能力「${escapeHtml(gm.abilityName)}」${gm.provisional ? '<em class="b-prov">仮</em>' : ''}</span>` : ''
-              }</div>`
+                  gm.relation ? `<span class="b-gen-rel">${escapeHtml(gm.relation.label)} ${gm.relation.value}</span>` : ''
+              }${gm.abilityName ? `<span class="b-gen-ab">固有能力「${escapeHtml(gm.abilityName)}」${gm.provisional ? '<em class="b-prov">仮</em>' : ''}</span>` : ''}</div>`
             : '';
         let html = '';
         let side = '';

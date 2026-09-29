@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { RULES, createBattle, issueOrder, runToEnd, stepBattle, unitById, type BattleState } from '../proto3d/src/battle/sim';
-import { AI } from '../proto3d/src/battle/ai';
+import { AI, AI_POLICY_ROLE, defaultAiRole } from '../proto3d/src/battle/ai';
+import { GENERALS } from '../proto3d/src/battle/generals';
 import { demoSetup } from '../proto3d/src/battle/maps';
 import type { BattleMap, Side, UnitDef, UnitKind } from '../proto3d/src/battle/types';
 
@@ -139,5 +140,29 @@ describe('敵の考え：flank・reserve・guard_hq', () => {
                 }
             });
         }
+    });
+});
+
+describe('敵の考え：役割を省いた部隊の既定の役割（武将の AI の基本方針から）', () => {
+    it('本陣は guard_hq。武将のいない部隊は hold_line。武将の部隊は aiPolicy の役割（攻めかかる＝assault・持ち場を保つ＝hold_line・慎重に守る＝guard_hq・味方を支える＝reserve）', () => {
+        expect(defaultAiRole({ kind: 'honjin', generalId: 'tadakatsu' })).toBe('guard_hq');
+        expect(defaultAiRole({ kind: 'yari' })).toBe('hold_line');
+        expect(AI_POLICY_ROLE).toEqual({ aggressive: 'assault', steady: 'hold_line', cautious: 'guard_hq', support: 'reserve' });
+        for (const g of GENERALS) expect([g.id, defaultAiRole({ kind: 'yari', generalId: g.id })]).toEqual([g.id, AI_POLICY_ROLE[g.aiPolicy]]);
+        // 同じ部隊でも、率いる武将の方針を変えれば動きが変わる（攻めかかる忠勝＝相手の本陣へ攻め進む／持ち場を保つ酒井＝持ち場に残る）
+        const run = (generalId: string) => {
+            const s = battle([U('e1', 'enemy', 'yari', 0, -100, S, { generalId })]);
+            expect(s.ai.memo.e1!.role).toBe(defaultAiRole({ kind: 'yari', generalId }));
+            advance(s, 20);
+            return get(s, 'e1');
+        };
+        const aggressive = run('tadakatsu');
+        const steady = run('sakai');
+        expect(Math.hypot(steady.x - 0, steady.z + 100)).toBeLessThan(1);
+        // 相手（味方）の本陣 (190,195) の方へ進む
+        expect(Math.hypot(aggressive.x - 190, aggressive.z - 195)).toBeLessThan(Math.hypot(0 - 190, -100 - 195) - 40);
+        // 役割を書いた部隊は、武将の方針より役割が先
+        const s = battle([U('e2', 'enemy', 'yari', 0, -100, S, { generalId: 'tadakatsu', aiRole: 'hold_line' })]);
+        expect(s.ai.memo.e2!.role).toBe('hold_line');
     });
 });

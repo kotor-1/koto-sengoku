@@ -5,7 +5,11 @@
  * - 1 部隊を 1 人の武将が率いる（部隊との結び付けは UnitDef の leaderId／generalId。ここは武将の側のデータだけ）。
  * - 固有能力（abilityId）は battle/abilities.ts の ABILITY_DATA を指す id。差し替えできるよう、ここでは id だけを持つ。
  *   酒井・石川・榊原の能力は差し替え前提の仮のデータ（数値は abilities.ts）。
- * - 主人公との関係状態は relationKey で、シナリオの状態（歴史分岐なら IeyasuState.trust）の鍵を指す。
+ * - 主人公との関係状態は relationKey で、シナリオの状態（歴史分岐なら IeyasuState.trust）の鍵を指す。合戦の画面の武将の行は、
+ *   この鍵で BattleSetup.relations（歴史分岐は信頼の写し）を引いて「信頼 40」のように出す（control.ts の generalLineModel）。
+ * - AI の基本方針（aiPolicy）は、aiRole を省いた部隊の既定の役割になる（ai.ts の defaultAiRole。攻めかかる＝相手の本陣へ assault、
+ *   持ち場を保つ＝hold_line、慎重に守る＝guard_hq、味方を支える＝reserve）。今の戦場・章の部隊はどれも aiRole を持つか generalId を持たないので、
+ *   今の合戦の動きは変わらない（新しい戦場で役割を省いた武将の部隊に効く）。
  * - history は「資料で確かめたこと」「一般に知られる事柄（今回の資料では未確認）」「ゲーム用の解釈」を分けて持つ。
  *   確かめた資料は docs/historical-source-notes.md のメモだけ（ChatGPT が公式ページの本文を確認したもの。Claude は公式ページに到達できなかった）。
  *   役割・能力・AI の方針・台詞はすべてゲーム用の創作で、史実の人物の能力や発言ではない。
@@ -48,8 +52,9 @@ export interface GeneralDef {
     role: GeneralRole;
     /** 固有能力の id（battle/abilities.ts の ABILITY_DATA の鍵）。部隊に ability が無ければ、generalId からこの能力を使う */
     abilityId: AbilityId;
+    /** AI の基本方針（aiRole を省いた部隊の既定の役割。ai.ts の defaultAiRole） */
     aiPolicy: GeneralAiPolicy;
-    /** 主人公との関係状態の鍵（歴史分岐では IeyasuState.trust の鍵。主人公本人は RELATION_SELF） */
+    /** 主人公との関係状態の鍵（歴史分岐では IeyasuState.trust の鍵。主人公本人は RELATION_SELF。合戦の武将の行が BattleSetup.relations から引く） */
     relationKey: string;
     history: GeneralHistory;
 }

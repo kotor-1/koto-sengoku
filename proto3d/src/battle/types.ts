@@ -243,6 +243,11 @@ export interface BattleSetup {
     objectives?: { primary?: ObjectiveDef; secondary?: ObjectiveDef[] };
     /** 援軍（survive_until の目標が使う）。部隊は units に arriveAt と出現地点を入れておく */
     reinforcements?: { id: string; side: Side; unitIds: string[] }[];
+    /**
+     * 主人公との関係状態（武将の relationKey → 値。歴史分岐なら信頼 trust の写し）。画面の武将の行に出すだけで、合戦の計算には使わない。
+     * 省けば出さない（演習・架空の第一章）
+     */
+    relations?: Record<string, number>;
 }
 
 /** 合戦の結果の種類 */

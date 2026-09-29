@@ -97,6 +97,21 @@ describe('率いる武将の欄', () => {
         // 武将のいない部隊・敵勢の部隊
         expect(generalLineModel(s, 'a_yumi')).toBeNull();
         expect(generalLineModel(s, 'e_hq')).toBeNull();
+        // 演習には関係状態（信頼）が無い
+        expect(generalLineModel(s, 'a_tadakatsu')!.relation).toBeNull();
+    });
+
+    it('関係状態：武将の relationKey で合戦の設定の relations（歴史分岐の信頼）を引く。主人公本人・値の無い武将は出さない', () => {
+        const setup = buildBattleSetup(getField('plains')!, 'standard');
+        const s = createBattle({ ...setup, relations: { tadakatsu: 55, sakai: 40, self: 99 } });
+        expect(generalLineModel(s, 'a_tadakatsu')!.relation).toEqual({ label: '信頼', value: 55 });
+        expect(generalLineModel(s, 'a_sakai')!.relation).toEqual({ label: '信頼', value: 40 });
+        expect(generalLineModel(s, 'a_ieyasu')!.relation).toBeNull();
+        expect(generalLineModel(s, 'a_ishikawa')!.relation).toBeNull();
+        // 歴史分岐の章の部隊（leaderId だけ）：浅井長政は浅井家への信頼（trust.asai）を引く
+        const ie = createBattle({ ...ieyasu1570Setup('asai', { troops: { ...IEYASU_INITIAL_TROOPS }, pledgeAccepted: false }), relations: { asai: 12, tadakatsu: 40 } });
+        const lord = ie.units.find((u) => u.leaderId === 'nagamasa')!;
+        expect(generalLineModel(ie, lord.id)!.relation).toEqual({ label: '信頼', value: 12 });
     });
     it('歴史分岐の章（leaderId だけ）でも、家康・忠勝・長政の欄が出る。架空の第一章の人物は武将ではない', () => {
         const ie = createBattle(ieyasu1570Setup('asai', { troops: { ...IEYASU_INITIAL_TROOPS }, pledgeAccepted: true }));
