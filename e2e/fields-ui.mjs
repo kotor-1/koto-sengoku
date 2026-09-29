@@ -6,8 +6,10 @@
  * - 大平原（plains。味方 7 部隊）：PC は 1〜7 キーで選ぶ・札の数・武将の行（名前・役割・固有能力の「仮」）・移動・攻撃・防衛・撤退を
  *   クリックとキーで出す。スマホは札を横になぞってずらす（なぞっても選ばない）・札をタップで選ぶ・地図のタップで移動・目標の欄を開く／畳む。
  * - 結果の画面：全軍撤退で終え、勝敗・主目標・副目標の行が別々に出る（約束は演習に無い）。
+ * - スマホ（goals）：5 戦場で、部隊の札をタップ → 目標の見出しを開く（能力の欄は隠れ、左上の列が札の列に重ならない）→ 別の部隊を選ぶ
+ *   （目標の欄を畳み、能力の欄が戻る。左上の列の下端が札の列より上）。
  * 待つ時間だけは開発用の早送り（window.__battle.fastForward）を使う。命令は画面のクリック・タップ・キーで出す。状態は window.__battle から読むだけ。
- * PARTS=shots,desktop,phone で一部だけ（既定はすべて）。
+ * PARTS=shots,desktop,phone,goals で一部だけ（既定はすべて）。
  */
 import { launchBrowser, BASE } from './lib.mjs';
 import { mkdirSync } from 'node:fs';
@@ -20,7 +22,7 @@ function check(ok, what, extra = '') {
     log(`${ok ? '  ok ' : '  NG '} ${what}${extra ? `  ${extra}` : ''}`);
     if (!ok) failures.push(what);
 }
-const PARTS = (process.env.PARTS || 'shots,desktop,phone').split(',');
+const PARTS = (process.env.PARTS || 'shots,desktop,phone,goals').split(',');
 const FIELD_IDS = ['plains', 'river_ford', 'hills', 'forest', 'mountain_pass'];
 
 const b = await launchBrowser();
@@ -236,6 +238,45 @@ if (PARTS.includes('phone')) {
     await overlapCheck(page, '大平原（スマホ・操作の後）');
     await page.screenshot({ path: `${OUT}/plains-phone-orders.png` });
     await p.ctx.close();
+}
+
+// ================================================================ スマホ：目標の欄を開いたまま部隊を選んでも、左上の列が札の列に重ならない
+if (PARTS.includes('goals')) {
+    for (const id of FIELD_IDS) {
+        log(`== スマホ：${id} の目標の欄と能力の欄`);
+        const p = await openPage('phone', id);
+        const { page } = p;
+        await start(p);
+        const ids = await page.evaluate(() => [...document.querySelectorAll('.b-card')].map((c) => c.dataset.id));
+        const first = ids.includes('a_sakai') ? 'a_sakai' : 'a_tadakatsu';
+        const second = first === 'a_sakai' ? 'a_tadakatsu' : 'a_ieyasu';
+        // 札の列の外にあれば、見える所までずらしてからタップする
+        const tapCard = async (uid) => {
+            await page.evaluate((u) => document.querySelector(`.b-card[data-id="${u}"]`).scrollIntoView({ inline: 'nearest', block: 'nearest' }), uid);
+            await page.waitForTimeout(100);
+            await page.tap(`.b-card[data-id="${uid}"]`);
+            await page.waitForTimeout(200);
+        };
+        // レビューの手順：部隊の札をタップ → 目標の見出しをタップして開く
+        await tapCard(first);
+        check((await ui(page)).selectedId === first && !(await hidden(page, '.b-abil')), `${id}：${first} を選ぶと能力の欄が出る`);
+        await page.tap('.b-goals-head');
+        await page.waitForTimeout(250);
+        check(!(await hidden(page, '.b-goals-body')), `${id}：目標の欄を開ける`);
+        check(await hidden(page, '.b-abil'), `${id}：目標の欄を開いている間は能力の欄を隠す`);
+        await overlapCheck(page, `${id}（スマホ・部隊を選んで目標の欄を開いた）`);
+        await page.screenshot({ path: `${OUT}/${id}-phone-goals-open.png` });
+        // 別の部隊を選ぶ → 目標の欄は畳まれ、能力の欄が戻る
+        await tapCard(second);
+        check((await ui(page)).selectedId === second, `${id}：${second} を選び直す`);
+        check(await page.evaluate(() => document.querySelector('.b-goals').classList.contains('closed')), `${id}：部隊を選び直すと目標の欄を畳む`);
+        check(!(await hidden(page, '.b-abil')), `${id}：能力の欄が戻る`);
+        const gap = await page.evaluate(() => document.querySelector('.b-cards').getBoundingClientRect().top - document.querySelector('.b-topleft').getBoundingClientRect().bottom);
+        check(gap > 0, `${id}：左上の列の下端が札の列より上`, `${Math.round(gap)} px`);
+        await overlapCheck(page, `${id}（スマホ・選び直した）`);
+        await page.screenshot({ path: `${OUT}/${id}-phone-goals-reselect.png` });
+        await p.ctx.close();
+    }
 }
 
 await b.close();

@@ -168,6 +168,8 @@ export class BattleUi {
     /** 目標の欄（目標のある合戦だけ） */
     private readonly goals: HTMLDivElement | null = null;
     private readonly goalSum: HTMLElement | null = null;
+    /** 能力の欄を最後に作ったときに選んでいた部隊（縦の狭い画面で、選び直したら目標の欄を畳むため） */
+    private lastAbilSel: string | null = null;
     private readonly goalRows = new Map<string, { e: HTMLElement; text: HTMLElement; last: string }>();
     private readonly cmdBtns: Record<CommandKind, HTMLButtonElement>;
     /** 「能力」のボタン（特殊能力のある合戦だけ） */
@@ -600,7 +602,27 @@ export class BattleUi {
     }
 
     /** 選んだ部隊の能力の欄（先頭に率いる武将。能力名・対象・範囲・効果・代償・使えるか） */
+    /** 縦の狭い画面（スマホの横向き。battle.css の @media (max-height: 520px) と同じ） */
+    private compactScreen(): boolean {
+        try {
+            return typeof matchMedia === 'function' && matchMedia('(max-height: 520px)').matches;
+        } catch {
+            return false;
+        }
+    }
+
     private updateAbility(s: BattleState, selId: string | null, pending: Pending): void {
+        // 縦の狭い画面：目標の欄と能力の欄を同時に開くと、左上の列が札の列まで伸びて重なり、地図の左も覆う。
+        // 部隊を選び直したら目標の欄を畳み、目標の欄を開いている間は能力の欄を隠す（目標の見出しを押して畳めば戻る）
+        if (this.goals && this.compactScreen()) {
+            const open = !this.goals.classList.contains('closed');
+            if (open && selId && selId !== this.lastAbilSel) this.goals.classList.add('closed');
+            this.lastAbilSel = selId;
+            if (!this.goals.classList.contains('closed')) {
+                if (!this.abil.hidden) this.abil.hidden = true;
+                return;
+            }
+        } else this.lastAbilSel = selId;
         const u = selId ? s.units.find((x) => x.id === selId) : undefined;
         const m = u ? abilityPanelModel(s, u.id) : null;
         const gm = u ? generalLineModel(s, u.id) : null;
