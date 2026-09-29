@@ -845,7 +845,11 @@ export function fieldRuleTexts(s: BattleState): string[] {
     }
     const tr = fr.terrainRules ?? {};
     const ford = tr.ford;
-    if (ford) out.push(`浅瀬：動き ×${ford.speed ?? 0.4}・与える損害 ×${ford.dealMul ?? 0.8}・受ける損害 ×${ford.takeMul ?? 1.2}`);
+    // 矢の損害の倍率は、1 でない（既定から上書きした）ときだけ添える
+    if (ford) {
+        const arrow = ford.arrowTakeMul !== undefined && ford.arrowTakeMul !== 1 ? `・矢の損害 ×${ford.arrowTakeMul}` : '';
+        out.push(`浅瀬：動き ×${ford.speed ?? 0.4}・与える損害 ×${ford.dealMul ?? 0.8}・受ける損害 ×${ford.takeMul ?? 1.2}${arrow}`);
+    }
     const woodsKiba = tr.woods?.kindSpeed?.kiba;
     if (woodsKiba !== undefined) out.push(`林の中の騎馬：動き ×${woodsKiba}`);
     const hg = fr.highGround;

@@ -32,6 +32,8 @@
  * - 地形の決まり（fieldRules.ts）：地形ごとの速さ・与える／受ける損害・矢・隠れる距離・高所の有利を、戦場ごとに上書きできる。
  *   深い川（浅瀬を除く）・崖・通れる範囲の外には入れない。通れない所がある戦場だけ、格子（5 m）の A*（pathfind.ts）で道を作って
  *   その点を順にたどる（攻撃の相手が動くときは 1 秒ごと、または相手が 10 m 以上動いたら作り直す）。
+ *   狭い所の動き（通れない所がある戦場だけ）：通り過ぎた点・味方が立って近づけない点は飛ばし、道から外れて次の点へまっすぐ
+ *   行けなくなったら作り直す。横をよける幅の無い所に止まっている味方はすり抜け、並んで抜ける味方どうしは崖・川へ押し込まない。
  * - 特殊ルール：narrow_frontage（区域の中で同じ相手へ斬りかかれる部隊の数を絞る。あふれた部隊は後ろで待つ）・
  *   woods_ambush（見えていなかった部隊の最初の当たりの損害を上げる）。
  * - 目標（objectives.ts）：主目標があれば、主目標の達成で勝利・果たせなくなれば敗北。副目標は結果に記録するだけ。
@@ -169,6 +171,11 @@ export const RULES = {
     repathMove: 10,
     /** 道探し：通る点にこの距離（m）まで近づいたら次の点へ */
     waypointReach: 3,
+    /**
+     * 通れない所がある戦場だけ：移動の行き先の隣に味方がいるかを見るときのゆとり（m）。ちょうど spacing 離れた二つの行き先へ二隊を
+     * 出したとき、浮動小数の誤差で後の隊が手前で止まらないように、隣とみなすのは spacing − これ より近い味方だけにする
+     */
+    goalHoldSlack: 0.5,
 } as const;
 
 /** 種類ごとの性質 */
@@ -294,6 +301,8 @@ export interface UnitState {
     recentLoss: number;
     /** いまよけて通っている味方の部隊と、よける側（-1 左・1 右）。よけ始めたら通り過ぎるまで同じ側を通る */
     avoid: { id: string; side: -1 | 1 } | null;
+    /** この刻みにすり抜けている味方の部隊（通れない所がある戦場で、横をよける幅が無いとき。押し離さない） */
+    passThrough: string | null;
     /** 道探しでたどっている道（通れない所がある戦場だけ。goal は作ったときの行き先、pts は通る点、idx は次に向かう点） */
     path: { goalX: number; goalZ: number; builtT: number; pts: { x: number; z: number }[]; idx: number } | null;
     /** 戦場にいて相手から隠れていたことがあり、まだ見つかっていない（林の奇襲の判定） */
@@ -594,6 +603,7 @@ export function createBattle(setup: BattleSetup): BattleState {
             shockT: {},
             recentLoss: 0,
             avoid: null,
+            passThrough: null,
             path: null,
             wasHidden: false,
             revealT: -999,
@@ -1215,6 +1225,7 @@ export function rangedDamage(s: BattleState, a: UnitState, d: UnitState): number
 function moveUnit(s: BattleState, u: UnitState, p: Plan, dt: number): void {
     const st = KIND_STATS[u.kind];
     u.moving = false;
+    u.passThrough = null;
     if (!p.goal) u.path = null;
     if (p.goal) {
         const d = dist(u, p.goal);
@@ -1228,7 +1239,7 @@ function moveUnit(s: BattleState, u: UnitState, p: Plan, dt: number): void {
             // 少しだけ後ろへ下がるときは、向きを変えずに後ずさりする（半分の速さ）
             const backStep = u.status === 'ready' && u.order.type === 'move' && room < 20 && Math.abs(angleDiff(u.facing, direct)) > 120 * DEG;
             // 止まっている味方の部隊が行く手にあれば、横へよけて通る（戦える部隊だけ。撤退・敗走は味方の間をすり抜ける）
-            const want = backStep || u.status !== 'ready' || u.order.type === 'retreat' ? direct : steerAround(s, u, aim, u.order.type === 'attack');
+            const want = backStep || u.status !== 'ready' || u.order.type === 'retreat' ? direct : steerAround(s, u, aim, u.order.type === 'attack', p.goal);
             let aligned = 0.5;
             if (!backStep) {
                 const turnRate = (u.status === 'routed' ? 180 : st.turnDeg) * DEG * dt;
@@ -1295,16 +1306,38 @@ function pathAim(s: BattleState, u: UnitState, goal: { x: number; z: number }): 
     const chasing = u.status === 'ready' && u.order.type === 'attack';
     let P = u.path;
     const moved = P ? Math.hypot(P.goalX - goal.x, P.goalZ - goal.z) : Infinity;
-    const stale = !P || (chasing ? moved >= RULES.repathMove || s.t - P.builtT >= RULES.repathSec - 1e-9 : moved > 0.5);
+    let stale = !P || (chasing ? moved >= RULES.repathMove || s.t - P.builtT >= RULES.repathSec - 1e-9 : moved > 0.5);
+    // 味方に押されるなどして道から外れ、次の点へまっすぐ行けなくなった（崖の角の陰に入った）：作り直す（RULES.repathSec 秒に 1 回まで）
+    if (!stale && s.t - P!.builtT >= RULES.repathSec - 1e-9 && !lineClear(nav, u, P!.pts[P!.idx]!)) stale = true;
     if (stale) {
         const pts = findPath(nav, u.kind, u.x, u.z, goal.x, goal.z);
         P = u.path = { goalX: goal.x, goalZ: goal.z, builtT: s.t, pts: pts ?? [{ x: goal.x, z: goal.z }], idx: 0 };
     }
     const path = P!;
-    while (path.idx < path.pts.length - 1 && dist(u, path.pts[path.idx]!) <= RULES.waypointReach) path.idx++;
+    while (path.idx < path.pts.length - 1 && (dist(u, path.pts[path.idx]!) <= RULES.waypointReach || passedWaypoint(nav, u, path.pts[path.idx]!, path.pts[path.idx + 1]!))) path.idx++;
     if (path.idx < path.pts.length - 1) return path.pts[path.idx]!;
     // 最後の点：動く相手は今の位置へ（通れる所にいれば）
     return isPassable(nav, goal.x, goal.z) ? goal : path.pts[path.pts.length - 1]!;
+}
+
+/**
+ * 通る点 a を、もう通り過ぎたか：a から次の点 b へ向かう向きで見て a より先にいて、今の位置から b までまっすぐ通れる。
+ * 味方をよけて横へずれた部隊や、通る点に味方が立っていて近づけない部隊が、後ろの点へ戻ろうとして詰まらないようにする。
+ */
+function passedWaypoint(nav: NonNullable<FieldEnv['nav']>, u: UnitState, a: { x: number; z: number }, b: { x: number; z: number }): boolean {
+    if ((u.x - a.x) * (b.x - a.x) + (u.z - a.z) * (b.z - a.z) <= 0) return false;
+    return lineClear(nav, u, b);
+}
+
+/** a から b までまっすぐ通れるか（2 m おきに見る） */
+function lineClear(nav: NonNullable<FieldEnv['nav']>, a: { x: number; z: number }, b: { x: number; z: number }): boolean {
+    const d = Math.hypot(b.x - a.x, b.z - a.z);
+    const steps = Math.max(1, Math.ceil(d / 2));
+    for (let k = 1; k <= steps; k++) {
+        const t = k / steps;
+        if (!isPassable(nav, a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t)) return false;
+    }
+    return true;
 }
 
 /** 味方の部隊をよける相手（戦えて、撤退中でなく、この刻みに動いていない味方） */
@@ -1314,9 +1347,11 @@ function isFriendObstacle(u: UnitState, o: UnitState): boolean {
 
 /** 移動の行き先のすぐ隣（18 m 以内）に止まっている味方がいて、もうその味方に触れる所まで来ている */
 function friendHoldsGoal(s: BattleState, u: UnitState, goal: { x: number; z: number }): boolean {
+    // 通れない所がある戦場だけ、境目にゆとりを持たせる（無い戦場は Version 11 と同じ判定）
+    const near = s.field.nav ? RULES.spacing - RULES.goalHoldSlack : RULES.spacing;
     for (const o of s.units) {
         if (!isFriendObstacle(u, o)) continue;
-        if (dist(o, goal) < RULES.spacing && dist(u, o) <= RULES.spacing + 1) return true;
+        if (dist(o, goal) < near && dist(u, o) <= RULES.spacing + 1) return true;
     }
     return false;
 }
@@ -1327,8 +1362,11 @@ function friendHoldsGoal(s: BattleState, u: UnitState, goal: { x: number; z: num
  * - 移動の行き先がその味方の隣なら、よけずに近づく（friendHoldsGoal で隣に止まる）。攻撃の相手の手前の味方は回り込む。
  * - よける側：味方が進む線の右にいれば左、左にいれば右、線の真上なら左。よけた先に別の味方がいて、反対側が空いていれば反対側。
  * - 向き：その味方を中心とする半径 20 m の円に接する向き（もう円の中なら、円に沿って回る向き）。
+ * - 通れない所がある戦場：goal は道探しの次の点、final は移動の行き先（無い戦場では同じ点）。行き先の隣の味方をよけないのは final で見る。
+ *   よける側の横（味方から RULES.spacing m）が通れない側は通らない。どちらの側も通れない（崖に挟まれた狭い所に味方が止まっている）
+ *   ときは、よけずにその味方の中をすり抜ける（passThrough。この刻みは押し離さない）。よける向きの先が崖・川なら、行き先の向きへ寄せる。
  */
-function steerAround(s: BattleState, u: UnitState, goal: { x: number; z: number }, attacking: boolean): number {
+function steerAround(s: BattleState, u: UnitState, goal: { x: number; z: number }, attacking: boolean, final: { x: number; z: number } = goal): number {
     const direct = headingTo(u.x, u.z, goal.x, goal.z);
     const fx = Math.sin(direct);
     const fz = -Math.cos(direct);
@@ -1348,7 +1386,7 @@ function steerAround(s: BattleState, u: UnitState, goal: { x: number; z: number 
         if (along <= 0 || along > Math.min(goalDist, RULES.avoidLook)) continue;
         const perp = ox * rx + oz * rz;
         if (Math.abs(perp) >= R) continue;
-        if (!attacking && dist(o, goal) < R) continue;
+        if (!attacking && dist(o, final) < R) continue;
         if (along < blockAlong) {
             block = o;
             blockAlong = along;
@@ -1365,19 +1403,36 @@ function steerAround(s: BattleState, u: UnitState, goal: { x: number; z: number 
     const off = D > R ? Math.asin(R / D) : Math.PI / 2;
     // side -1：左をよける（味方を右に見て通る）、+1：右をよける
     const tangent = (side: number) => toB + side * off;
+    // 通れない所がある戦場：進む向きで見て、その味方の横（spacing m。右手は (rx, rz)）が通れるか。無い戦場はいつも通れる
+    const nav = s.field.nav;
+    const room = (side: number) => !nav || isPassable(nav, b.x + side * rx * RULES.spacing, b.z + side * rz * RULES.spacing);
+    if (nav && !room(-1) && !room(1)) {
+        u.avoid = null;
+        u.passThrough = b.id;
+        return direct;
+    }
     let side: -1 | 1;
-    if (u.avoid && u.avoid.id === b.id) side = u.avoid.side;
+    if (u.avoid && u.avoid.id === b.id && room(u.avoid.side)) side = u.avoid.side;
     else {
         const clear = (h: number) => {
             const k = Math.min(D, 30);
             const p = { x: u.x + Math.sin(h) * k, z: u.z - Math.cos(h) * k };
-            return !s.units.some((o) => o !== b && isFriendObstacle(u, o) && dist(o, p) < R && (attacking || dist(o, goal) >= R));
+            return !s.units.some((o) => o !== b && isFriendObstacle(u, o) && dist(o, p) < R && (attacking || dist(o, final) >= R));
         };
         side = blockPerp > 1e-6 ? -1 : blockPerp < -1e-6 ? 1 : -1;
-        if (!clear(tangent(side)) && clear(tangent(-side))) side = side === 1 ? -1 : 1;
+        if (!room(side)) side = side === 1 ? -1 : 1;
+        else if (!clear(tangent(side)) && clear(tangent(-side)) && room(-side)) side = side === 1 ? -1 : 1;
         u.avoid = { id: b.id, side };
     }
-    return tangent(side);
+    const h = tangent(side);
+    if (!nav) return h;
+    // 接する向きの少し先（5 m）が通れない（崖の角・川岸）なら、行き先へまっすぐの向きへ寄せて、先が通れる最初の向きにする
+    const d = angleDiff(h, direct);
+    for (let k = 0; k <= 4; k++) {
+        const hk = h + (d * k) / 4;
+        if (isPassable(nav, u.x + Math.sin(hk) * 5, u.z - Math.cos(hk) * 5)) return hk;
+    }
+    return direct;
 }
 
 /**
@@ -1386,7 +1441,8 @@ function steerAround(s: BattleState, u: UnitState, goal: { x: number; z: number 
  *   動いている部隊と止まっている部隊が近づいたときは、動いている部隊だけを押し戻す（止まっている味方を押し出さない）。
  *   押し離した先が相手の部隊に近づく（14 m より近い）ときは押さない（味方に押されて敵の中へ入らないように）。
  * - 相手の陣営の戦える部隊どうしは、14 m より近ければ押し離す。
- * - 敗走・撤退中の部隊は味方の間をすり抜ける。
+ * - 敗走・撤退中の部隊は味方の間をすり抜ける。狭い所で味方の中をすり抜けている部隊（passThrough）も、その味方とは押し離さない。
+ * - 通れない所がある戦場で、動いている味方どうしを押し離すとどちらかが崖・川へ入るときは、押し離さない（狭い所を並んで抜ける）。
  */
 function separate(s: BattleState): void {
     const us = s.units;
@@ -1414,6 +1470,7 @@ function separate(s: BattleState): void {
             const d = dist(a, b);
             const gap = b.side === a.side ? RULES.spacing : ENEMY_GAP;
             if (d >= gap) continue;
+            if (a.passThrough === b.id || b.passThrough === a.id) continue;
             let ux: number;
             let uz: number;
             if (d < 1e-6) {
@@ -1451,6 +1508,13 @@ function separate(s: BattleState): void {
             if (a.moving && !b.moving) wb = 0;
             else if (b.moving && !a.moving) wa = 0;
             const sum = wa + wb;
+            // 通れない所がある戦場：どちらも動いていて、押し離すとどちらかが崖・川へ入る（狭い所を並んで抜けている）ときは、押し離さずに
+            // すれ違わせる（押し合って両方が止まらないように。抜けて広い所へ出れば、また押し離す）
+            if (nav && a.moving && b.moving) {
+                const ka = (push * wa) / sum;
+                const kb = (push * wb) / sum;
+                if (!okAt(a, a.x - ux * ka, a.z - uz * ka) || !okAt(b, b.x + ux * kb, b.z + uz * kb)) continue;
+            }
             nudge(a, -ux * push * (wa / sum), -uz * push * (wa / sum));
             nudge(b, ux * push * (wb / sum), uz * push * (wb / sum));
         }

@@ -3,7 +3,7 @@
  *
  * - 240 m × 400 m。南北に峠道（幅 40 m。x -20〜20、z -130〜110）。両側は崖（通れない）。途中に関（z 25〜55 は幅 30 m）。
  *   北の出口（z -200〜-130）と南の出口（z 110〜200）は開けている。道（road）は開けた所だけ（峠道の中に速い筋を作ると、
- *   並んで進む部隊が道探しで真ん中へ寄り合って詰まるため）。
+ *   並んで進む部隊が道探しで真ん中へ寄り合って詰まったため。その詰まりは sim.ts の動きで直したが、釣り合いは道の無い形で整えている）。
  * - 関は南から上る坂の上（丘 (0,60) r50 高さ 10）。下から正面に来る相手の損害 ×0.5、坂の上の弓の射程 +20 m。
  * - 狭い正面：峠道の中では、同じ相手へ斬りかかれるのは 2 部隊まで（あふれた部隊は後ろで待つ）。
  * - 敵勢 10 部隊が北から 3 回に分かれて（0・30・60 秒）峠道を抜け、南の本陣へ攻め込む（assault）。弓は 90 秒に来て関へ射に出る。
@@ -16,6 +16,8 @@
  * - 忠勝隊・酒井隊を関に横に並べ、弓を関の後ろの坂に置く → 援軍が着いてから 60 秒耐えて勝つ。
  *   本陣も峠道の南の口まで上げて、疲れた頃（120 秒ごろ）に立て直しの号令をかけると関を失わない（副目標）。本陣を動かさないと、
  *   勝っても 200 秒ごろに関を失う。
+ * - 狭い所の動きの直し（止まった味方のすり抜け・並んで進む味方の押し合いの解消）で関へ着くのが早くなった分、敵勢の兵を 1.15 倍ほどにした
+ *   （一番手の槍 630・騎馬 400、二番手・三番手の槍 575、弓 290）。
  */
 import type { BattlefieldDef } from './types';
 import { E, T } from './roster';
@@ -101,15 +103,15 @@ export const MOUNTAIN_PASS: BattlefieldDef = {
                 { ...T.sakakibara('', 'yari', 400), slot: undefined, reinforcement: 'relief' },
                 { ...T.ishikawa('', 350), slot: undefined, reinforcement: 'relief' },
                 E('e_hq', 'honjin', '敵勢の本陣', 350, 85, 'hq', { aiRole: 'guard_hq' }),
-                E('e_w1a', 'yari', '敵勢の一番手（左）', 550, 80, 'w1a', { aiRole: 'assault', aiTarget: HQ_AIM }),
-                E('e_w1b', 'yari', '敵勢の一番手（右）', 550, 80, 'w1b', { aiRole: 'assault', aiTarget: HQ_AIM }),
-                E('e_w1c', 'kiba', '敵勢の騎馬', 350, 75, 'w1c', { aiRole: 'assault', aiTarget: HQ_AIM }),
-                E('e_w2a', 'yari', '敵勢の二番手（左）', 500, 75, 'w2a', { aiRole: 'assault', aiTarget: HQ_AIM, arriveAt: 30 }),
-                E('e_w2b', 'yari', '敵勢の二番手（中）', 500, 75, 'w2b', { aiRole: 'assault', aiTarget: HQ_AIM, arriveAt: 30 }),
-                E('e_w2c', 'yari', '敵勢の二番手（右）', 500, 75, 'w2c', { aiRole: 'assault', aiTarget: HQ_AIM, arriveAt: 30 }),
-                E('e_w3a', 'yari', '敵勢の三番手（左）', 500, 75, 'w3a', { aiRole: 'assault', aiTarget: HQ_AIM, arriveAt: 60 }),
-                E('e_w3b', 'yari', '敵勢の三番手（右）', 500, 75, 'w3b', { aiRole: 'assault', aiTarget: HQ_AIM, arriveAt: 60 }),
-                E('e_yumi', 'yumi', '敵勢の弓隊', 250, 75, 'yumi', { aiRole: 'assault', aiTarget: GATE_AIM, arriveAt: 90 }),
+                E('e_w1a', 'yari', '敵勢の一番手（左）', 630, 80, 'w1a', { aiRole: 'assault', aiTarget: HQ_AIM }),
+                E('e_w1b', 'yari', '敵勢の一番手（右）', 630, 80, 'w1b', { aiRole: 'assault', aiTarget: HQ_AIM }),
+                E('e_w1c', 'kiba', '敵勢の騎馬', 400, 75, 'w1c', { aiRole: 'assault', aiTarget: HQ_AIM }),
+                E('e_w2a', 'yari', '敵勢の二番手（左）', 575, 75, 'w2a', { aiRole: 'assault', aiTarget: HQ_AIM, arriveAt: 30 }),
+                E('e_w2b', 'yari', '敵勢の二番手（中）', 575, 75, 'w2b', { aiRole: 'assault', aiTarget: HQ_AIM, arriveAt: 30 }),
+                E('e_w2c', 'yari', '敵勢の二番手（右）', 575, 75, 'w2c', { aiRole: 'assault', aiTarget: HQ_AIM, arriveAt: 30 }),
+                E('e_w3a', 'yari', '敵勢の三番手（左）', 575, 75, 'w3a', { aiRole: 'assault', aiTarget: HQ_AIM, arriveAt: 60 }),
+                E('e_w3b', 'yari', '敵勢の三番手（右）', 575, 75, 'w3b', { aiRole: 'assault', aiTarget: HQ_AIM, arriveAt: 60 }),
+                E('e_yumi', 'yumi', '敵勢の弓隊', 290, 75, 'yumi', { aiRole: 'assault', aiTarget: GATE_AIM, arriveAt: 90 }),
             ],
         },
     ],

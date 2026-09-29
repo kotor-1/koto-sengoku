@@ -138,6 +138,8 @@ describe('目標の欄・勝ち負けの条件・結果の行', () => {
         expect(fieldRuleTexts(field('mountain_pass')).join('|')).toMatch(/狭い正面：.*2 部隊まで.*\|崖は通れない/);
         expect(fieldRuleTexts(field('forest')).join('|')).toMatch(/林の奇襲：.*×1\.5（8 秒）.*林の中の騎馬：動き ×0\.5/);
         expect(fieldRuleTexts(field('river_ford')).join('|')).toMatch(/浅瀬：動き ×0\.4・与える損害 ×0\.8・受ける損害 ×1\.2.*深い川は渡れない/);
+        // 浅瀬の矢の損害の倍率（1 でないときだけ）も同じ行に出す
+        expect(fieldRuleTexts(field('river_ford'))).toContain('浅瀬：動き ×0.4・与える損害 ×0.8・受ける損害 ×1.2・矢の損害 ×2.5');
         expect(fieldRuleTexts(field('hills')).join('|')).toMatch(/高所：下から攻める相手の損害 ×0\.65・弓の射程 \+30 m・見通し \+40 m/);
     });
     it('結果：勝敗・主目標・副目標・約束は別々（演習は約束の欄なし。主目標の達成は勝敗と同じ）', () => {

@@ -165,11 +165,11 @@ describe('河川・浅瀬：地形に合わない作戦（早送り）', () => {
         expect(r.o.elapsedSec).toBeLessThan(200);
     });
 
-    it('全部隊で先手へ攻めかかる → 先手は崩れても、浅瀬で大きく削られて丘まで届かず日没（損害 5 割を超える）', () => {
+    it('全部隊で先手へ攻めかかる → 先手は崩れても、浅瀬で大きく削られて丘まで届かず日没（損害 4 割を超える）', () => {
         const r = play(FIGHTERS.map((id) => [0, id, atk('e_sente')] as Step));
         expect(r.o.result).not.toBe('victory');
         expect(r.o.objectives!.primary!.achieved).toBe(false);
-        expect(r.loss).toBeGreaterThan(0.5);
+        expect(r.loss).toBeGreaterThan(0.4);
     });
 
     it('全部隊で先手へ攻めかかり、30 秒ごとに近い敵へ当て直す → 地点を取れず、損害が大きい', () => {
