@@ -6,7 +6,6 @@
  * - 関係状態の鍵は、歴史分岐の状態の信頼（trust）の鍵と同じ（主人公本人は持たない）。
  * - 史実の記録：確かめたのは資料メモ（docs/historical-source-notes.md）にある事柄だけ。ほかは「未確認」「伝承」と明記する。
  */
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ABILITY_DATA } from '../proto3d/src/battle/abilities';
 import { GENERALS, GENERAL_IDS, GENERAL_ROLE_LABELS, RELATION_SELF, generalById } from '../proto3d/src/battle/generals';
@@ -75,8 +74,11 @@ describe('史実と解釈を分ける', () => {
         expect(all).toContain('創作');
         for (const id of ['sakai', 'ishikawa', 'sakakibara']) expect(generalById(id)!.history.interpretation.join('')).toContain('仮');
     });
-    it('データだけ（three・DOM を使わない）', () => {
-        const src = readFileSync(new URL('../proto3d/src/battle/generals.ts', import.meta.url), 'utf8');
+    it('データだけ（three・DOM を使わない）', async () => {
+        // 型の確かめ（ルートの tsc）に node の型が無いので、node:fs は実行時に読み込む（proto3d-battle-v11-identity.test.ts と同じやり方）
+        const fsName = 'node:fs';
+        const fs = (await import(/* @vite-ignore */ fsName)) as { readFileSync(p: URL, enc: 'utf8'): string };
+        const src = fs.readFileSync(new URL('../proto3d/src/battle/generals.ts', import.meta.url), 'utf8');
         expect(src).not.toMatch(/from 'three'|document\.|window\./);
     });
 });
