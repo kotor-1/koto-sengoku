@@ -1,0 +1,315 @@
+/* 第一章の画面（タイトル・目的・話すボタン・会話・選択肢・メニュー・結末・知らせ）。
+   既存の 3D 版の見た目（暗い半透明の板・細い縁・金の差し色、public/style.css の変数）にそろえる。見た目の作り込みはしない。 */
+#g-root {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    font-family: var(--font);
+    color: var(--ink);
+    z-index: 5;
+}
+#g-root button {
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+/* 章が始まったら、試作の見出し（3D 比較版）は隠す */
+body.g-on #hud { display: none; }
+/* 画面（会話・メニュー・タイトル・結末）が開いている間・合戦の間は、探索の操作部品を隠す */
+body.g-modal #run-btn,
+body.g-modal #stick-zone,
+body.g-modal #help,
+body.g-modal #hero-btn,
+body.mode-battle #run-btn,
+body.mode-battle #stick-zone,
+body.mode-battle #help,
+body.mode-battle #hero-btn,
+body.mode-battle #look-zone,
+body.mode-battle #hud,
+body.mode-battle #npc-labels { display: none !important; }
+body.g-modal #look-zone { pointer-events: none; }
+body.g-title #build { display: block; }
+
+/* ---- 目的（左上） ---- */
+.g-hud {
+    position: absolute;
+    top: calc(var(--safe-t) + 10px);
+    left: calc(var(--safe-l) + 12px);
+    max-width: min(56vw, 440px);
+    padding: 7px 12px 8px;
+    border-radius: 12px;
+    background: var(--panel);
+    border: 1px solid var(--hairline);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+}
+.g-hud[hidden] { display: none; }
+.g-hud-chapter { color: var(--gold); font-weight: 600; letter-spacing: 0.1em; }
+.g-hud-chapter .g-phase { color: var(--ink-soft); font-weight: 400; margin-left: 8px; letter-spacing: 0.04em; }
+.g-hud-obj { margin-top: 3px; font-size: 13px; }
+.g-hud-obj b { color: var(--ink-soft); font-weight: 400; font-size: 11px; margin-right: 6px; }
+.g-tag {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 1px 6px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    color: #e9c9a0;
+    border: 1px solid rgba(233, 201, 160, 0.45);
+    vertical-align: 1px;
+}
+
+/* ---- メニューのボタン（右上） ---- */
+.g-menu-btn {
+    position: absolute;
+    top: calc(var(--safe-t) + 10px);
+    right: calc(var(--safe-r) + 12px);
+    padding: 9px 16px;
+    border-radius: 999px;
+    background: var(--panel);
+    border: 1px solid var(--hairline);
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    pointer-events: auto;
+}
+.g-menu-btn[hidden] { display: none; }
+body.touch .g-menu-btn { padding: 12px 18px; }
+
+/* ---- 話すボタン（右下、歩く／走るの上） ---- */
+.g-talk {
+    position: absolute;
+    right: calc(var(--safe-r) + 16px);
+    bottom: calc(var(--safe-b) + 92px);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 132px;
+    padding: 12px 18px;
+    border-radius: 999px;
+    background: rgba(56, 42, 20, 0.85);
+    border: 1px solid rgba(200, 168, 106, 0.8);
+    box-shadow: 0 0 0 3px rgba(200, 168, 106, 0.18);
+    font-size: 15px;
+    letter-spacing: 0.08em;
+    pointer-events: auto;
+}
+.g-talk[hidden] { display: none; }
+.g-talk .verb { color: var(--gold); font-weight: 600; }
+.g-talk kbd { margin-left: auto; opacity: 0.7; }
+body.touch .g-talk { bottom: calc(var(--safe-b) + 108px); padding: 16px 22px; font-size: 16px; }
+body.touch .g-talk kbd { display: none; }
+
+/* ---- 段階の案内（中央上）・知らせ ---- */
+.g-intro {
+    position: absolute;
+    top: 22%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(86vw, 560px);
+    text-align: center;
+    padding: 14px 20px;
+    border-radius: 14px;
+    background: rgba(20, 18, 15, 0.7);
+    border: 1px solid var(--hairline);
+    transition: opacity 0.6s;
+}
+.g-intro[hidden] { display: none; }
+.g-intro.fade { opacity: 0; }
+.g-intro h2 { margin: 0; font-size: 20px; letter-spacing: 0.24em; color: var(--gold); font-weight: 600; }
+.g-intro p { margin: 6px 0 0; font-size: 14px; line-height: 1.6; }
+.g-toast {
+    position: absolute;
+    top: calc(var(--safe-t) + 64px);
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: min(88vw, 560px);
+    padding: 9px 16px;
+    border-radius: 10px;
+    background: rgba(20, 18, 15, 0.88);
+    border: 1px solid rgba(160, 200, 150, 0.6);
+    font-size: 13px;
+    line-height: 1.5;
+    pointer-events: auto;
+}
+.g-toast[hidden] { display: none; }
+.g-toast.error { border-color: rgba(224, 144, 127, 0.9); color: #f3c9bf; }
+.g-toast.info { border-color: var(--hairline); }
+
+/* ---- 画面を覆う層（会話・確認・メニュー・タイトル・結末） ---- */
+.g-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: auto;
+    touch-action: none;
+}
+.g-layer.dim { background: rgba(12, 10, 8, 0.45); }
+.g-layer.council { background: radial-gradient(ellipse at 50% 40%, rgba(40, 30, 18, 0.72), rgba(8, 6, 4, 0.9)); }
+.g-layer.solid { background: linear-gradient(180deg, rgba(14, 12, 10, 0.78), rgba(14, 12, 10, 0.94)); }
+
+/* 会話 */
+.g-dialog {
+    position: absolute;
+    left: 50%;
+    bottom: calc(var(--safe-b) + 14px);
+    transform: translateX(-50%);
+    width: min(calc(100vw - 28px - var(--safe-l) - var(--safe-r)), 780px);
+    box-sizing: border-box;
+    padding: 12px 18px 14px;
+    border-radius: 14px;
+    background: rgba(18, 16, 13, 0.9);
+    border: 1px solid rgba(200, 168, 106, 0.45);
+    min-height: 92px;
+}
+.g-dialog .name { font-size: 13px; color: var(--gold); letter-spacing: 0.12em; font-weight: 600; min-height: 1em; }
+.g-dialog .name.hero { color: #9fc3e6; }
+.g-dialog .text { margin-top: 4px; font-size: 16px; line-height: 1.7; letter-spacing: 0.03em; }
+.g-dialog .text.narration { color: var(--ink-soft); font-style: normal; }
+.g-dialog .more { position: absolute; right: 14px; bottom: 8px; font-size: 12px; color: var(--gold); animation: g-bob 1s ease-in-out infinite; }
+.g-dialog .count { position: absolute; right: 16px; top: 10px; font-size: 11px; color: var(--ink-soft); }
+@keyframes g-bob { 50% { transform: translateY(3px); } }
+.g-council-head {
+    position: absolute;
+    top: calc(var(--safe-t) + 18px);
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+}
+.g-council-head h2 { margin: 0; font-size: 22px; letter-spacing: 0.4em; color: var(--gold); font-weight: 600; }
+.g-council-head p { margin: 4px 0 0; font-size: 12px; color: var(--ink-soft); letter-spacing: 0.08em; }
+.g-choices {
+    position: absolute;
+    right: max(calc(50vw - 390px), calc(var(--safe-r) + 14px));
+    bottom: calc(var(--safe-b) + 122px);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: min(calc(100vw - 28px), 420px);
+}
+.g-choice {
+    text-align: left;
+    padding: 10px 16px;
+    border-radius: 12px;
+    background: rgba(20, 18, 15, 0.92);
+    border: 1px solid var(--hairline);
+    font-size: 15px;
+    letter-spacing: 0.04em;
+}
+.g-choice .d { display: block; margin-top: 3px; font-size: 12px; line-height: 1.5; color: var(--ink-soft); letter-spacing: 0.02em; }
+.g-choice.sel { border-color: var(--gold); background: rgba(70, 54, 26, 0.94); box-shadow: 0 0 0 2px rgba(200, 168, 106, 0.25); }
+.g-choice .n { color: var(--gold); margin-right: 8px; font-size: 12px; }
+body.touch .g-choice .n { display: none; }
+body.touch .g-choice { padding: 12px 16px; }
+
+/* 真ん中の板（確認・メニュー・合戦の仮の選択） */
+.g-panel {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(calc(100vw - 28px), 520px);
+    max-height: calc(100% - 28px - var(--safe-t) - var(--safe-b));
+    box-sizing: border-box;
+    overflow: auto;
+    padding: 16px 20px 18px;
+    border-radius: 16px;
+    background: rgba(20, 18, 15, 0.95);
+    border: 1px solid rgba(200, 168, 106, 0.45);
+    touch-action: pan-y;
+}
+.g-panel h2 { margin: 0 0 8px; font-size: 17px; letter-spacing: 0.14em; color: var(--gold); font-weight: 600; }
+.g-panel p { margin: 6px 0; font-size: 14px; line-height: 1.6; }
+.g-panel .btns { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.g-btn {
+    flex: 1 1 auto;
+    min-height: 44px;
+    padding: 10px 16px;
+    border-radius: 12px;
+    background: rgba(40, 34, 26, 0.95);
+    border: 1px solid var(--hairline);
+    font-size: 15px;
+    letter-spacing: 0.06em;
+}
+.g-btn.sel { border-color: var(--gold); background: rgba(70, 54, 26, 0.95); }
+.g-btn:disabled { opacity: 0.45; cursor: default; }
+.g-status { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 8px 0 0; font-size: 13px; line-height: 1.5; }
+.g-status dt { color: var(--ink-soft); white-space: nowrap; }
+.g-status dd { margin: 0; }
+.g-msg { margin-top: 10px; padding: 8px 12px; border-radius: 10px; font-size: 13px; line-height: 1.5; border: 1px solid rgba(160, 200, 150, 0.6); }
+.g-msg.ng { border-color: rgba(224, 144, 127, 0.9); color: #f3c9bf; }
+.g-note { font-size: 12px !important; color: var(--ink-soft); }
+.g-test { color: #f0b37a !important; font-weight: 600; }
+
+/* タイトル */
+.g-title-box {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(calc(100vw - 28px), 460px);
+    text-align: center;
+}
+.g-title-box .kicker { margin: 0; font-size: 12px; letter-spacing: 0.4em; color: var(--ink-soft); }
+.g-title-box h1 { margin: 6px 0 2px; font-size: 30px; letter-spacing: 0.3em; font-weight: 600; color: var(--gold); }
+.g-title-box .prov { margin: 0 0 16px; }
+.g-title-box .g-btn { display: block; width: 100%; margin-top: 10px; }
+.g-title-box .g-btn small { display: block; margin-top: 2px; font-size: 11px; color: var(--ink-soft); letter-spacing: 0.02em; }
+.g-title-box .g-note, .g-title-box .problem { margin: 12px 0 0; font-size: 12px; line-height: 1.6; }
+.g-title-box .problem { color: #f3c9bf; }
+@media (max-height: 430px) {
+    .g-title-box h1 { font-size: 24px; }
+    .g-title-box .prov { margin-bottom: 8px; }
+    .g-title-box .g-btn { margin-top: 6px; min-height: 40px; padding: 7px 16px; }
+    .g-title-box .g-note { margin-top: 6px; }
+    .g-choices { bottom: calc(var(--safe-b) + 110px); gap: 6px; }
+    .g-choice { padding: 8px 14px; }
+    .g-choice:not(.sel) .d { display: none; }
+    .g-dialog { padding: 9px 16px 11px; min-height: 84px; }
+    .g-dialog .text { font-size: 15px; line-height: 1.6; }
+}
+
+/* 結末 */
+.g-ending {
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+}
+.g-ending-inner {
+    width: min(calc(100vw - 32px), 680px);
+    margin: 0 auto;
+    padding: calc(var(--safe-t) + 26px) 0 calc(var(--safe-b) + 28px);
+}
+.g-ending .kicker { margin: 0; font-size: 12px; letter-spacing: 0.3em; color: var(--ink-soft); text-align: center; }
+.g-ending h1 { margin: 6px 0 16px; text-align: center; font-size: 28px; letter-spacing: 0.3em; color: var(--gold); font-weight: 600; }
+.g-ending .body p { margin: 0 0 8px; font-size: 15px; line-height: 1.85; }
+.g-ending .record { margin: 18px 0 0; padding: 12px 16px; border-radius: 12px; background: rgba(20, 18, 15, 0.8); border: 1px solid var(--hairline); }
+.g-ending .record h2 { margin: 0 0 6px; font-size: 13px; letter-spacing: 0.2em; color: var(--ink-soft); font-weight: 400; }
+.g-ending .footer { margin: 20px 0 0; text-align: center; font-size: 16px; letter-spacing: 0.3em; color: var(--gold); }
+.g-ending .g-btn { display: block; margin: 16px auto 0; min-width: 200px; }
+
+/* ---- 人物の頭の上の名前（explore/world.ts が位置を決める） ---- */
+#npc-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.npc-label {
+    position: absolute;
+    left: 0;
+    top: 0;
+    padding: 2px 9px;
+    border-radius: 8px;
+    background: rgba(20, 18, 15, 0.66);
+    border: 1px solid var(--hairline);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+    will-change: transform;
+}
+.npc-label[hidden] { display: none; }
+.npc-label.key { color: var(--gold); border-color: rgba(200, 168, 106, 0.75); }
+.npc-label.key::before { content: '◆ '; }
+.npc-label.far { opacity: 0.75; font-size: 11px; }
+body.g-modal #npc-labels { display: none; }
+/* 主人公の見た目の比較のボタンは開発の確認用（?dev のときだけ出す） */
+#hero-btn[hidden] { display: none; }

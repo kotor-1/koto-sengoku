@@ -14,11 +14,12 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { FOLLOW, createOrbit, look, placeFollow } from './game/follow';
 import { CAMERA_YAW, SPEED, createHero, stepHero, type HeroState } from './game/motion';
-import { START, TREES, cameraBlockers, groundY } from './layout';
+import { START, TREES, cameraBlockers, colliders, groundY, type Rect } from './layout';
 import treesMeta from '../blender/trees/trees.meta.json';
 import { SKY, makeHills, makeSky } from './scenery';
 import { activeMode, setAppContext } from './app/modes';
 import { createPost, type Post } from './post';
+import { bootChapter, type ExploreHost } from './ui/boot';
 
 /**
  * カメラ：南の斜め上から北を見下ろす「正面寄りの見下ろし」（向きは固定。回転しない）。
@@ -119,6 +120,8 @@ resize();
 
 // ---- 入力（キーボード・タッチのスティック・歩く／走るの切り替え） ----
 const keys = new Set<string>();
+/** 探索の操作を受け付けるか（第一章の会話・メニュー・タイトル・結末・合戦の間は止める。ui/boot.ts の setControl） */
+let controlEnabled = true;
 /** 歩く／走る：ボタンで選んでいる方（押し続けなくてよい）と、PC の Shift（押している間だけ走る） */
 let runMode = false;
 let shiftHeld = false;
@@ -132,7 +135,8 @@ window.addEventListener('keydown', (e) => {
     // Shift の離しを取りこぼしても、次のキー入力で今の状態に合わせる
     shiftHeld = e.shiftKey || e.key === 'Shift';
     if (KEY_DIR[e.code]) {
-        keys.add(e.code);
+        // 探索の操作を止めている間（会話・メニューなど）は受け付けない。離した扱いにした後は、押し直すまで（押しっぱなしの繰り返しでは）再開しない
+        if (controlEnabled && (!e.repeat || keys.has(e.code))) keys.add(e.code);
         e.preventDefault();
     }
     updateRunUi();
@@ -183,7 +187,7 @@ function releaseAll(): void {
 }
 zone.addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    if (stick.id !== -1) return;
+    if (stick.id !== -1 || !controlEnabled) return;
     stick.id = e.pointerId;
     zone.setPointerCapture(e.pointerId);
     stick.ox = e.clientX;
@@ -224,7 +228,7 @@ function releaseLook(): void {
     lookZone.classList.remove('active');
 }
 lookZone.addEventListener('pointerdown', (e) => {
-    if (!tps || lookPtr.id !== -1) return;
+    if (!tps || lookPtr.id !== -1 || !controlEnabled) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     e.preventDefault();
     lookPtr.id = e.pointerId;
@@ -248,9 +252,18 @@ window.addEventListener('blur', releaseAll);
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') releaseAll();
 });
-document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+// ページのスクロール・拡大を止める（第一章の結末・メニューの長い中身（.g-scroll）だけは指でなぞって読める）
+document.addEventListener(
+    'touchmove',
+    (e) => {
+        if ((e.target as Element | null)?.closest?.('.g-scroll')) return;
+        e.preventDefault();
+    },
+    { passive: false },
+);
 
 function readInput(): [number, number] {
+    if (!controlEnabled) return [0, 0];
     let x = stick.x;
     let y = stick.y;
     for (const k of keys) {
@@ -370,6 +383,8 @@ function showHero(key: HeroKey, view: HeroView): void {
     heroBtn.setAttribute('aria-label', `主人公の見た目：${key === 'v2' ? '旧' : '新'}（押すと切り替え）`);
 }
 const heroBtn = document.getElementById('hero-btn')!;
+// 主人公の見た目の比較は開発の確認用（?dev のときだけ出す。?hero= の指定はそのまま使える）
+heroBtn.hidden = !params.has('dev');
 let heroSwitching = false;
 async function switchHero(key: HeroKey): Promise<void> {
     if (heroSwitching || key === heroKey) return;
@@ -458,6 +473,11 @@ function fadeOccluders(dt: number): void {
     }
 }
 const hero: HeroState = createHero(START.x, START.z, START.heading);
+/** 歩きの当たり判定（壁・家・木など）と、第一章の人物・高札の分（ExploreHost.setExtraColliders） */
+const WALK_RECTS = colliders();
+let walkRects: Rect[] = WALK_RECTS;
+/** 探索の毎フレームの呼び出し（第一章の人物の動き・名前の札・話しかけの判定。カメラを置いた後・描く前） */
+const frameHooks: ((dt: number) => void)[] = [];
 
 async function start(): Promise<void> {
     const t0 = performance.now();
@@ -582,7 +602,7 @@ function frame(): void {
 /** 1 フレーム進めて描く（録画用に、決まった時間と入力で進めることもできる） */
 function advance(dt: number, raw: number, ix: number, iy: number): void {
     stats.frames++;
-    stepHero(hero, ix, iy, tps ? orbit.yaw : CAMERA.yaw, dt, running());
+    stepHero(hero, ix, iy, tps ? orbit.yaw : CAMERA.yaw, dt, running(), walkRects);
     const v = heroView!;
     v.root.position.set(hero.x, groundY(hero.x, hero.z), hero.z); // 足を地面の起伏に合わせる（動き・当たり判定は平面のまま）
     v.root.rotation.y = hero.heading;
@@ -602,6 +622,7 @@ function advance(dt: number, raw: number, ix: number, iy: number): void {
     v.mixer.update(dt);
     placeCamera(1 - Math.exp(-6 * dt), dt);
     fadeOccluders(dt);
+    for (const f of frameHooks) f(dt);
     renderNow();
     if (showFps) {
         // 表示する fps は実際の時間で数える（1 フレームの上限 0.1 秒で切り詰めた時間ではなく）
@@ -634,14 +655,56 @@ setAppContext({
     },
 });
 
+/** 第一章（ui/boot.ts）が探索の場面を使うための口。探索の動き・カメラ・読み込みはここ（main.ts）のまま */
+const exploreHost: ExploreHost = {
+    scene,
+    camera,
+    overlay: document.getElementById('app')!,
+    hero,
+    low,
+    load,
+    prepare,
+    setHeroPose(p) {
+        hero.x = p.x;
+        hero.z = p.z;
+        hero.heading = p.heading;
+        hero.speed = 0;
+        hero.dirX = Math.sin(p.heading);
+        hero.dirZ = Math.cos(p.heading);
+        // カメラは主人公の背後から、向いている方を見る（開始の位置なら、決めてある開始の構図）
+        const atStart = Math.abs(p.x - START.x) < 1e-6 && Math.abs(p.z - START.z) < 1e-6 && Math.abs(p.heading - START.heading) < 1e-6;
+        orbit.yaw = atStart ? START.yaw : Math.atan2(Math.sin(p.heading - Math.PI), Math.cos(p.heading - Math.PI));
+        orbit.pitch = START.pitch;
+        orbit.dist = FOLLOW.distance;
+        placeCamera(1);
+    },
+    setControl(enabled) {
+        controlEnabled = enabled;
+        if (!enabled) {
+            releaseAll();
+            releaseLook();
+        }
+    },
+    setExtraColliders(r) {
+        walkRects = r.length ? [...WALK_RECTS, ...r] : WALK_RECTS;
+    },
+    onFrame(fn) {
+        frameHooks.push(fn);
+    },
+    viewSize: () => ({ w: view.clientWidth || window.innerWidth, h: view.clientHeight || window.innerHeight }),
+};
+
 // 開発時の確認用：proto3d/src/dev/*.ts があれば、読み込みの後に呼ぶ（?dev=<名前> のとき）。本番の画面には出さない
 const devHooks = import.meta.env.DEV ? import.meta.glob<{ devStart?: () => void }>('./dev/*.ts') : {};
 const devName = params.get('dev');
+/** 開発時だけ：?nogame で第一章を始めず、これまでの探索だけにする（歩き・カメラの確認用） */
+const noGame = import.meta.env.DEV && params.has('nogame');
 
 start()
     .then(async () => {
         const hook = devName && devHooks[`./dev/${devName}.ts`];
         if (hook) (await hook()).devStart?.();
+        else if (!noGame) bootChapter(exploreHost);
     })
     .catch((e: unknown) => {
     loading.hidden = false;
