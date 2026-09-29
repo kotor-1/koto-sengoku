@@ -19,8 +19,8 @@ import { inGateZone, nearestInteractable, safePose, type CastMember } from '../e
 import { applyBattleOutcome, battleSetupFor, finishTalk, newGame, outcomeFromSetup } from './flow';
 import { fictionalScenario } from './fictional';
 import { CampaignSaveStore, SAVE_POINT_LABELS, saveFailureMessage, type SavePoint } from './save';
-import { formatSavedTime, type AnyScenario, type Scenario, type ScenarioEndingView, type ScenarioId, type ScenarioScript, type ScenarioStateCore, type StatusLine } from './scenario';
-import type { Alliance, CampaignState, ChoiceId, ExplorePose, TalkId } from './state';
+import { formatSavedTime, type AnyScenario, type ScenarioEndingView, type ScenarioId, type ScenarioScript, type ScenarioStateCore, type StatusLine } from './scenario';
+import type { Alliance, CampaignState, ChoiceId, ExplorePose } from './state';
 import type { Rect } from '../layout';
 
 export { statusLines } from './fictional';
@@ -731,6 +731,3 @@ export function devStateFor(phase: 'explore' | 'muster' | 'aftermath' | 'ending'
     if (phase === 'aftermath') return s;
     return finishTalk(s, 'genzo', 'end_chapter');
 }
-
-/** 型だけの確認：Scenario<CampaignState> を満たす（fictional.ts） */
-export type FictionalScenario = Scenario<CampaignState>;
