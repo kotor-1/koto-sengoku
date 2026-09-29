@@ -19,9 +19,8 @@ const HILLS = getField('hills')!;
 type Step = [number, string, Order | 'ability'];
 
 const atk = (targetId: string): Order => ({ type: 'attack', targetId });
-/** 移動。face を付けると着いた後に北（敵の方）を向く */
-const mv = (x: number, z: number, face?: number): Order => (face === undefined ? { type: 'move', x, z } : { type: 'move', x, z, face });
-const NORTH = 0;
+/** 移動（画面の命令と同じく、着いた後の向きは指定しない） */
+const mv = (x: number, z: number): Order => ({ type: 'move', x, z });
 
 interface Run {
     o: BattleOutcome;
@@ -74,16 +73,19 @@ const meanLoss = (rs: Run[]) => rs.reduce((a, r) => a + r.loss, 0) / rs.length;
 // ---------------------------------------------------------------- 台本
 
 /**
- * 地形に合った作戦その 1（先に頂を取る）：騎馬（榊原隊）を頂へ走らせ、槍二隊を頂の左右に、石川隊と弓を頂のすぐ後ろに置く。
+ * 地形に合った作戦その 1（先に頂を取る）：騎馬（榊原隊）を頂の真南 (0,25) へ回してから、北へ頂まで上げる。槍二隊を頂の左右に、石川隊と弓を頂のすぐ後ろに置く。
  * 騎馬は敵の先手より先に頂に着いて踏みとどまり、槍が着くまで敵を坂の途中で止める。あとは攻め上がる敵を上から受ける。
- * 命令は 5 回（始めの 8 秒に 2 秒おき）
+ * 命令は 6 回（始めの 8 秒に 2 秒おき、12 秒に騎馬を頂へ）。どれも画面で出せる命令（移動の後の向きは画面から指定できないので、
+ * 部隊は進んできた向きのまま止まる。騎馬を左の前の持ち場から頂へ斜めに上げると北東を向いて着き、攻め上がる敵に横から当たられて負けやすい。
+ * 真南から北へ上げれば、敵の来る北を向いて着く）
  */
 const TAKE: Step[] = [
-    [0, 'a_sakakibara', mv(0, -20, NORTH)],
-    [2, 'a_tadakatsu', mv(-18, -26, NORTH)],
-    [4, 'a_sakai', mv(18, -26, NORTH)],
-    [6, 'a_ishikawa', mv(0, -5, NORTH)],
-    [8, 'a_yumi', mv(-25, -5, NORTH)],
+    [0, 'a_sakakibara', mv(0, 25)],
+    [2, 'a_tadakatsu', mv(-18, -26)],
+    [4, 'a_sakai', mv(18, -26)],
+    [6, 'a_ishikawa', mv(0, -5)],
+    [8, 'a_yumi', mv(-25, -5)],
+    [12, 'a_sakakibara', mv(0, -20)],
 ];
 
 /**
@@ -218,7 +220,7 @@ describe('丘陵：地形に合わない作戦（早送り）', () => {
 });
 
 describe('丘陵：地形に合った作戦（早送り）', () => {
-    it('騎馬で先に頂を取り、槍二隊を左右に並べ、石川隊・弓をすぐ後ろに置く → 攻め上がる敵を上から受けて勝つ', () => {
+    it('騎馬を頂の真南から上げて先に頂を取り、槍二隊を左右に並べ、石川隊・弓をすぐ後ろに置く → 攻め上がる敵を上から受けて勝つ', () => {
         const r = play(TAKE);
         expect(r.refused).toEqual([]);
         expect(r.o.result).toBe('victory');
@@ -233,10 +235,17 @@ describe('丘陵：地形に合った作戦（早送り）', () => {
         expect(secondaryOf(r)).toBe(false);
     });
 
-    it('先に頂を取る作戦は、始めの命令を 0〜8 秒遅らせた 16 通りすべてで勝つ（損害 3 割未満）', () => {
+    it('先に頂を取る作戦は、始めの命令を 0〜8 秒遅らせた 16 通りすべてで勝つ（損害 3 割未満。どれも画面で出せる命令）', () => {
         const rs = variants(TAKE, 8, 0);
         expect(wins(rs)).toBe(16);
         expect(rs.every((r) => r.loss < 0.3)).toBe(true);
+    }, 30_000);
+
+    it('同じ作戦で、騎馬を左の前の持ち場から頂へ斜めに上げる（北東を向いて着く）と、攻め上がる敵に横から当たられて 16 通りの半分ほどしか勝てない', () => {
+        const diagonal: Step[] = [[0, 'a_sakakibara', mv(0, -20)], ...TAKE.filter(([, id]) => id !== 'a_sakakibara')];
+        const rs = variants(diagonal, 8, 0);
+        expect(wins(rs)).toBeLessThanOrEqual(10);
+        expect(wins(rs)).toBeLessThan(wins(variants(TAKE, 8, 0)));
     }, 30_000);
 
     it('頂を取られたら、東の丘の弓を崩してから、忠勝隊が南から当たるのに合わせて東から横へ当たる → 勝つ（副目標も達成）', () => {
