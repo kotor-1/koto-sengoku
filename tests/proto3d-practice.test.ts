@@ -273,6 +273,10 @@ class FakePracticeView implements PracticeView {
     practiceResult(info: PracticeResultInfo) {
         return new Promise<void>((answer) => this.reqs.push({ kind: 'result', info, answer }));
     }
+    loadingLog: boolean[] = [];
+    practiceLoading(on: boolean) {
+        this.loadingLog.push(on);
+    }
     take<K extends PReq['kind']>(kind: K): Extract<PReq, { kind: K }> {
         const r = this.reqs.shift();
         if (!r || r.kind !== kind) throw new Error(`${kind} を待ったが ${r?.kind ?? 'なし'}`);
@@ -385,6 +389,8 @@ describe('演習の画面の流れ（一覧 → 説明 → 合戦 → 結果 →
         view.take('list').answer('back');
         await done;
         expect(tries).toBe(3);
+        // 読み込みの待ちの表示は、出したら必ず消す（読み込めなかったときも）
+        expect(view.loadingLog).toEqual([true, false, true, false, true, false]);
     });
 });
 

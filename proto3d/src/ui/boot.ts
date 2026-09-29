@@ -48,26 +48,37 @@ export function bootChapter(host: ExploreHost): ChapterGame<any> {
     // 合戦場の演習（タイトルの入口）：画面の塊は選んだときに読み込む。記録は 'koto-sengoku/3d-fields' だけに書く
     let practice: { mode: PracticeMode; store: PracticeRecordStore } | null = null;
     const runPractice = async (): Promise<void> => {
-        for (;;) {
-            try {
-                const m = await import('./practiceView');
-                practice = m.createPractice(view, storage, loadBattleRunner);
-                break;
-            } catch (e) {
-                const c = await view.confirm({
-                    title: '演習を読み込めませんでした',
-                    lines: [e instanceof Error ? e.message : String(e)],
-                    buttons: [
-                        { id: 'retry', label: 'もう一度' },
-                        { id: 'back', label: 'タイトルへ戻る' },
-                    ],
-                    defaultIndex: 0,
-                    cancelId: 'back',
-                });
-                if (c !== 'retry') return;
+        // 演習の間は、画面の切り替え・読み込みの待ちの間も探索を覆ったまま（描画を止める）
+        view.holdCover(true);
+        try {
+            for (;;) {
+                view.loading('演習を読み込んでいます…');
+                try {
+                    const m = await import('./practiceView');
+                    practice = m.createPractice(view, storage, loadBattleRunner);
+                    break;
+                } catch (e) {
+                    view.loading(null);
+                    const c = await view.confirm({
+                        title: '演習を読み込めませんでした',
+                        lines: [e instanceof Error ? e.message : String(e)],
+                        buttons: [
+                            { id: 'retry', label: 'もう一度' },
+                            { id: 'back', label: 'タイトルへ戻る' },
+                        ],
+                        defaultIndex: 0,
+                        cancelId: 'back',
+                    });
+                    if (c !== 'retry') return;
+                } finally {
+                    view.loading(null);
+                }
             }
+            await practice.mode.run();
+        } finally {
+            view.loading(null);
+            view.holdCover(false);
         }
-        await practice.mode.run();
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const game = new ChapterGame<any>({ view, world, store, scenarios, battleRunner: loadBattleRunner, practice: runPractice });

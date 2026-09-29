@@ -366,6 +366,8 @@ export interface PracticeView {
     /** 合戦の画面を読み込めなかった・始められなかった */
     practiceLoadFailed(message: string): Promise<'retry' | 'back'>;
     practiceResult(info: PracticeResultInfo): Promise<void>;
+    /** 合戦の画面の読み込みを待っている間の表示（true で出し、false で消す） */
+    practiceLoading(on: boolean): void;
 }
 
 export type PracticeRunner = (setup: BattleSetup, hooks?: BattleRunHooks) => Promise<BattleOutcome>;
@@ -441,7 +443,13 @@ export class PracticeMode {
         while (!outcome) {
             this._screen = 'battle';
             try {
-                const runner = await this.deps.battleRunner();
+                let runner: PracticeRunner | null;
+                view.practiceLoading(true);
+                try {
+                    runner = await this.deps.battleRunner();
+                } finally {
+                    view.practiceLoading(false);
+                }
                 if (!runner) throw new Error('合戦の画面を読み込めませんでした。');
                 outcome = await runner(practiceSetup(field), { onDecided: (o) => savedNote(record(o)) });
             } catch (e) {

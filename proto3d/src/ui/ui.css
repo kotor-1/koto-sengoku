@@ -405,7 +405,12 @@ body.g-modal #npc-labels { display: none; }
     .g-practice-entry p { font-size: 10.5px; line-height: 1.4; }
 }
 
+/* 読み込みの待ち（DomView.loading） */
+.g-loading { display: flex; align-items: center; justify-content: center; }
+.g-loading p { margin: 0; padding: 12px 20px; border-radius: 12px; background: rgba(20, 18, 15, 0.9); border: 1px solid var(--hairline); font-size: 14px; letter-spacing: 0.08em; color: var(--ink-soft); }
+
 /* 画面いっぱいの板（DomView.sheet）：中身は縦に動かせる。ボタンの並びは下に留める */
+.g-layer.g-sheet-layer { background: #0e0c0a; }
 .g-sheet {
     position: absolute;
     inset: 0;
@@ -428,7 +433,7 @@ body.g-modal #npc-labels { display: none; }
     gap: 10px;
     margin-top: 12px;
     padding: 10px 0 calc(var(--safe-b) + 12px);
-    background: linear-gradient(180deg, rgba(14, 12, 10, 0), rgba(14, 12, 10, 0.96) 30%);
+    background: linear-gradient(180deg, rgba(14, 12, 10, 0), #0e0c0a 10px);
 }
 .g-sheet-btns .g-btn { flex: 0 1 220px; }
 .g-pr .kicker { margin: 0; font-size: 12px; letter-spacing: 0.3em; color: var(--ink-soft); text-align: center; }

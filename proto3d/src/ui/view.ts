@@ -219,11 +219,36 @@ export class DomView implements GameView {
     }
 
     private covered = false;
+    /** 画面を覆うものが無い間も探索を覆ったままにする（合戦場の演習の間。holdCover） */
+    private coverHeld = false;
+    private loadingEl: HTMLElement | null = null;
     private updateCover(): void {
-        const c = this.modals.some((m) => m.kind !== 'script' || m.layer.classList.contains('council'));
+        const c = this.coverHeld || this.modals.some((m) => m.kind !== 'script' || m.layer.classList.contains('council'));
         if (c === this.covered) return;
         this.covered = c;
         this.onCover(c);
+    }
+
+    /**
+     * 探索を覆ったままにする（合戦場の演習の間：画面の切り替え・読み込みの待ちの間も、探索の描画を止めたまま）。
+     * 合戦の場面に入っている間は、合戦の画面が描く（app/modes.ts）。
+     */
+    holdCover(on: boolean): void {
+        this.coverHeld = on;
+        this.updateCover();
+    }
+
+    /** 読み込みの待ちの間の画面（押せるものは無い。text を null で消す） */
+    loading(text: string | null): void {
+        this.loadingEl?.remove();
+        this.loadingEl = null;
+        if (text === null) return;
+        const layer = el('div', 'g-layer solid g-loading');
+        layer.addEventListener('pointerdown', (e) => e.preventDefault());
+        layer.append(el('p', undefined, text));
+        this.introEl.hidden = true;
+        this.root.appendChild(layer);
+        this.loadingEl = layer;
     }
 
     private close(m: Modal): void {
@@ -672,7 +697,7 @@ export class DomView implements GameView {
      */
     sheet(o: SheetOptions): Promise<string> {
         return new Promise((resolve) => {
-            const layer = this.open('sheet', 'solid');
+            const layer = this.open('sheet', 'g-sheet-layer');
             layer.dataset.sheet = o.name;
             const scroll = el('div', 'g-sheet g-scroll');
             const inner = el('div', 'g-sheet-inner');

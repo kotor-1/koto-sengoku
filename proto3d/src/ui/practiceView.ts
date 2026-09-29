@@ -153,6 +153,10 @@ export class PracticeDomView implements PracticeView {
         }) as Promise<'retry' | 'back'>;
     }
 
+    practiceLoading(on: boolean): void {
+        this.view.loading(on ? '合戦の画面を読み込んでいます…' : null);
+    }
+
     async practiceResult(info: PracticeResultInfo): Promise<void> {
         const body = el('div', 'g-pr g-pr-result');
         body.dataset.field = info.fieldId;
