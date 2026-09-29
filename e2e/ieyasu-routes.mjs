@@ -757,7 +757,8 @@ async function route3() {
       return ok;
     }],
   ];
-  for (const id of ['t_tadakatsu', 't_yumi', 't_honjin', 't_reserve'])
+  // 槍を崩したら、忠勝隊・弓・守備隊で残りを攻める（本陣は陣に残す。丘の上の敵本陣へ本陣ごと上ると、崩れて負けることがある）
+  for (const id of ['t_tadakatsu', 't_yumi', 't_reserve'])
     for (const e of ['e_ronin_yumi', 'e_ronin_hq'])
       rules.push([`${id}>${e}`, `broken('e_ronin_yari') && alive('${id}') && seen('${e}') && ${notBusy(id)}`, () => B.attack(id, e)]);
   await drive(page, B, rules);

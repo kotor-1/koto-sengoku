@@ -96,7 +96,8 @@ function route3(): Rule[] {
         ['hq-yari', sallied, attack('t_honjin', 'e_ronin_yari')],
         ['rally', (s) => sallied(s) && near(s, 't_honjin', 't_yumi', 90), (s) => useAbility(s, 't_honjin').ok],
     ];
-    for (const id of ['t_tadakatsu', 't_yumi', 't_honjin', 't_reserve'])
+    // 槍を崩したら、忠勝隊・弓・守備隊で残りを攻める（本陣は陣に残す）
+    for (const id of ['t_tadakatsu', 't_yumi', 't_reserve'])
         for (const e of ['e_ronin_yumi', 'e_ronin_hq']) rules.push([`${id}>${e}`, (s) => broken(s, 'e_ronin_yari') && alive(s, id) && seen(s, e) && free(s, id), attack(id, e)]);
     return rules;
 }
