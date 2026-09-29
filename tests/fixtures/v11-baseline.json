@@ -1,0 +1,6824 @@
+{
+ "border:tashiro:hold": {
+  "outcome": {
+   "result": "retreat",
+   "reason": "nightfall",
+   "elapsedSec": 480,
+   "units": [
+    {
+     "id": "a_hq",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "hero",
+     "startStrength": 300,
+     "endStrength": 276,
+     "status": "ready"
+    },
+    {
+     "id": "a_genzo",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "genzo",
+     "startStrength": 500,
+     "endStrength": 500,
+     "status": "ready"
+    },
+    {
+     "id": "a_shinpachi",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "shinpachi",
+     "startStrength": 350,
+     "endStrength": 93,
+     "status": "routed"
+    },
+    {
+     "id": "a_tashiro",
+     "side": "ally",
+     "clan": "tashiro",
+     "leaderId": "tashiro_envoy",
+     "startStrength": 250,
+     "endStrength": 250,
+     "status": "ready"
+    },
+    {
+     "id": "e_hq",
+     "side": "enemy",
+     "clan": "washio",
+     "leaderId": "washio_gen",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_sente",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 550,
+     "endStrength": 550,
+     "status": "ready"
+    },
+    {
+     "id": "e_yumi",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_omori",
+     "side": "enemy",
+     "clan": "omori",
+     "leaderId": "omori_envoy",
+     "startStrength": 400,
+     "endStrength": 36,
+     "status": "routed"
+    }
+   ]
+  },
+  "snaps": [
+   "0:fb951fac",
+   "300:fb951fac",
+   "600:78b2be13",
+   "900:f59f36b8",
+   "1200:5137fa29",
+   "1500:c39348cf",
+   "1800:56cc6fc7",
+   "2100:cc7ae060",
+   "2400:9d761063",
+   "2700:1da2d136",
+   "3000:9b302d1f",
+   "3300:eb19fb68",
+   "3600:e06f2dc9",
+   "3900:e06f2dc9",
+   "4200:e06f2dc9",
+   "4500:e06f2dc9",
+   "4800:e06f2dc9"
+  ],
+  "events": "a7eb9491",
+  "eventCount": 13
+ },
+ "border:tashiro:frontal": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_army_broken",
+   "elapsedSec": 145.2,
+   "units": [
+    {
+     "id": "a_hq",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "hero",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "a_genzo",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "genzo",
+     "startStrength": 500,
+     "endStrength": 62,
+     "status": "routed"
+    },
+    {
+     "id": "a_shinpachi",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "shinpachi",
+     "startStrength": 350,
+     "endStrength": 197,
+     "status": "routed"
+    },
+    {
+     "id": "a_tashiro",
+     "side": "ally",
+     "clan": "tashiro",
+     "leaderId": "tashiro_envoy",
+     "startStrength": 250,
+     "endStrength": 58,
+     "status": "routed"
+    },
+    {
+     "id": "e_hq",
+     "side": "enemy",
+     "clan": "washio",
+     "leaderId": "washio_gen",
+     "startStrength": 350,
+     "endStrength": 285,
+     "status": "ready"
+    },
+    {
+     "id": "e_sente",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 550,
+     "endStrength": 278,
+     "status": "routed"
+    },
+    {
+     "id": "e_yumi",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_omori",
+     "side": "enemy",
+     "clan": "omori",
+     "leaderId": "omori_envoy",
+     "startStrength": 400,
+     "endStrength": 367,
+     "status": "ready"
+    }
+   ]
+  },
+  "snaps": [
+   "0:fb951fac",
+   "300:8f0d1efb",
+   "600:d0670555",
+   "900:5b983edc",
+   "1200:00af184c",
+   "1452:a065f139"
+  ],
+  "events": "0058602d",
+  "eventCount": 25
+ },
+ "border:tashiro:frontalNoHq": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_army_broken",
+   "elapsedSec": 118.1,
+   "units": [
+    {
+     "id": "a_hq",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "hero",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "a_genzo",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "genzo",
+     "startStrength": 500,
+     "endStrength": 154,
+     "status": "routed"
+    },
+    {
+     "id": "a_shinpachi",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "shinpachi",
+     "startStrength": 350,
+     "endStrength": 172,
+     "status": "routed"
+    },
+    {
+     "id": "a_tashiro",
+     "side": "ally",
+     "clan": "tashiro",
+     "leaderId": "tashiro_envoy",
+     "startStrength": 250,
+     "endStrength": 96,
+     "status": "routed"
+    },
+    {
+     "id": "e_hq",
+     "side": "enemy",
+     "clan": "washio",
+     "leaderId": "washio_gen",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_sente",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 550,
+     "endStrength": 346,
+     "status": "ready"
+    },
+    {
+     "id": "e_yumi",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_omori",
+     "side": "enemy",
+     "clan": "omori",
+     "leaderId": "omori_envoy",
+     "startStrength": 400,
+     "endStrength": 370,
+     "status": "ready"
+    }
+   ]
+  },
+  "snaps": [
+   "0:fb951fac",
+   "300:954d1faf",
+   "600:561e484b",
+   "900:f821819f",
+   "1181:b77a2170"
+  ],
+  "events": "13021de0",
+  "eventCount": 15
+ },
+ "border:tashiro:retreat60": {
+  "outcome": {
+   "result": "retreat",
+   "reason": "ordered_retreat",
+   "elapsedSec": 80,
+   "units": [
+    {
+     "id": "a_hq",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "hero",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "withdrawn"
+    },
+    {
+     "id": "a_genzo",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "genzo",
+     "startStrength": 500,
+     "endStrength": 500,
+     "status": "withdrawn"
+    },
+    {
+     "id": "a_shinpachi",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "shinpachi",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "withdrawn"
+    },
+    {
+     "id": "a_tashiro",
+     "side": "ally",
+     "clan": "tashiro",
+     "leaderId": "tashiro_envoy",
+     "startStrength": 250,
+     "endStrength": 250,
+     "status": "withdrawn"
+    },
+    {
+     "id": "e_hq",
+     "side": "enemy",
+     "clan": "washio",
+     "leaderId": "washio_gen",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_sente",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 550,
+     "endStrength": 550,
+     "status": "ready"
+    },
+    {
+     "id": "e_yumi",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_omori",
+     "side": "enemy",
+     "clan": "omori",
+     "leaderId": "omori_envoy",
+     "startStrength": 400,
+     "endStrength": 389,
+     "status": "ready"
+    }
+   ]
+  },
+  "snaps": [
+   "0:fb951fac",
+   "300:fb951fac",
+   "600:78b2be13",
+   "800:f576f0b5"
+  ],
+  "events": "7b0e5dc5",
+  "eventCount": 8
+ },
+ "border:tashiro:hqAlone": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_hq_routed",
+   "elapsedSec": 70,
+   "units": [
+    {
+     "id": "a_hq",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "hero",
+     "startStrength": 300,
+     "endStrength": 110,
+     "status": "routed"
+    },
+    {
+     "id": "a_genzo",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "genzo",
+     "startStrength": 500,
+     "endStrength": 500,
+     "status": "ready"
+    },
+    {
+     "id": "a_shinpachi",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "shinpachi",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "a_tashiro",
+     "side": "ally",
+     "clan": "tashiro",
+     "leaderId": "tashiro_envoy",
+     "startStrength": 250,
+     "endStrength": 250,
+     "status": "ready"
+    },
+    {
+     "id": "e_hq",
+     "side": "enemy",
+     "clan": "washio",
+     "leaderId": "washio_gen",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_sente",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 550,
+     "endStrength": 523,
+     "status": "ready"
+    },
+    {
+     "id": "e_yumi",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_omori",
+     "side": "enemy",
+     "clan": "omori",
+     "leaderId": "omori_envoy",
+     "startStrength": 400,
+     "endStrength": 373,
+     "status": "ready"
+    }
+   ]
+  },
+  "snaps": [
+   "0:fb951fac",
+   "300:b372cbd4",
+   "600:859bdb31",
+   "700:3701322e"
+  ],
+  "events": "e760059b",
+  "eventCount": 6
+ },
+ "border:tashiro:plan": {
+  "outcome": {
+   "result": "victory",
+   "reason": "enemy_hq_routed",
+   "elapsedSec": 146.8,
+   "units": [
+    {
+     "id": "a_hq",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "hero",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "a_genzo",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "genzo",
+     "startStrength": 500,
+     "endStrength": 204,
+     "status": "ready"
+    },
+    {
+     "id": "a_shinpachi",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "shinpachi",
+     "startStrength": 350,
+     "endStrength": 255,
+     "status": "ready"
+    },
+    {
+     "id": "a_tashiro",
+     "side": "ally",
+     "clan": "tashiro",
+     "leaderId": "tashiro_envoy",
+     "startStrength": 250,
+     "endStrength": 204,
+     "status": "ready"
+    },
+    {
+     "id": "e_hq",
+     "side": "enemy",
+     "clan": "washio",
+     "leaderId": "washio_gen",
+     "startStrength": 350,
+     "endStrength": 227,
+     "status": "routed"
+    },
+    {
+     "id": "e_sente",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 550,
+     "endStrength": 484,
+     "status": "ready"
+    },
+    {
+     "id": "e_yumi",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_omori",
+     "side": "enemy",
+     "clan": "omori",
+     "leaderId": "omori_envoy",
+     "startStrength": 400,
+     "endStrength": 235,
+     "status": "routed"
+    }
+   ]
+  },
+  "snaps": [
+   "0:fb951fac",
+   "300:fb951fac",
+   "600:162d4a58",
+   "900:a220106e",
+   "1200:763e6221",
+   "1468:a9c8ed1e"
+  ],
+  "events": "4091bdb2",
+  "eventCount": 15
+ },
+ "border:tashiro:planSlow": {
+  "outcome": {
+   "result": "victory",
+   "reason": "enemy_hq_routed",
+   "elapsedSec": 149.5,
+   "units": [
+    {
+     "id": "a_hq",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "hero",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "a_genzo",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "genzo",
+     "startStrength": 500,
+     "endStrength": 203,
+     "status": "ready"
+    },
+    {
+     "id": "a_shinpachi",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "shinpachi",
+     "startStrength": 350,
+     "endStrength": 254,
+     "status": "ready"
+    },
+    {
+     "id": "a_tashiro",
+     "side": "ally",
+     "clan": "tashiro",
+     "leaderId": "tashiro_envoy",
+     "startStrength": 250,
+     "endStrength": 204,
+     "status": "ready"
+    },
+    {
+     "id": "e_hq",
+     "side": "enemy",
+     "clan": "washio",
+     "leaderId": "washio_gen",
+     "startStrength": 350,
+     "endStrength": 228,
+     "status": "routed"
+    },
+    {
+     "id": "e_sente",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 550,
+     "endStrength": 484,
+     "status": "ready"
+    },
+    {
+     "id": "e_yumi",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_omori",
+     "side": "enemy",
+     "clan": "omori",
+     "leaderId": "omori_envoy",
+     "startStrength": 400,
+     "endStrength": 234,
+     "status": "routed"
+    }
+   ]
+  },
+  "snaps": [
+   "0:fb951fac",
+   "300:fb951fac",
+   "600:3b65fd4d",
+   "900:11ae96e5",
+   "1200:ee13f6ee",
+   "1495:ccdbe57f"
+  ],
+  "events": "22a6e4c7",
+  "eventCount": 15
+ },
+ "border:tashiro:wander": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_hq_routed",
+   "elapsedSec": 186.7,
+   "units": [
+    {
+     "id": "a_hq",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "hero",
+     "startStrength": 300,
+     "endStrength": 186,
+     "status": "routed"
+    },
+    {
+     "id": "a_genzo",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "genzo",
+     "startStrength": 500,
+     "endStrength": 310,
+     "status": "ready"
+    },
+    {
+     "id": "a_shinpachi",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "shinpachi",
+     "startStrength": 350,
+     "endStrength": 39,
+     "status": "routed"
+    },
+    {
+     "id": "a_tashiro",
+     "side": "ally",
+     "clan": "tashiro",
+     "leaderId": "tashiro_envoy",
+     "startStrength": 250,
+     "endStrength": 250,
+     "status": "ready"
+    },
+    {
+     "id": "e_hq",
+     "side": "enemy",
+     "clan": "washio",
+     "leaderId": "washio_gen",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_sente",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 550,
+     "endStrength": 423,
+     "status": "ready"
+    },
+    {
+     "id": "e_yumi",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_omori",
+     "side": "enemy",
+     "clan": "omori",
+     "leaderId": "omori_envoy",
+     "startStrength": 400,
+     "endStrength": 356,
+     "status": "ready"
+    }
+   ]
+  },
+  "snaps": [
+   "0:fb951fac",
+   "300:04ab6a5a",
+   "600:fe4dbc92",
+   "900:c6276723",
+   "1200:958e14c3",
+   "1500:2b8faf64",
+   "1800:5ab2dfe4",
+   "1867:a0198e9d"
+  ],
+  "events": "3dcf2679",
+  "eventCount": 22
+ },
+ "border:omori:hold": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_hq_routed",
+   "elapsedSec": 129.7,
+   "units": [
+    {
+     "id": "a_hq",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "hero",
+     "startStrength": 300,
+     "endStrength": 196,
+     "status": "routed"
+    },
+    {
+     "id": "a_genzo",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "genzo",
+     "startStrength": 500,
+     "endStrength": 500,
+     "status": "ready"
+    },
+    {
+     "id": "a_shinpachi",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "shinpachi",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "a_omori",
+     "side": "ally",
+     "clan": "omori",
+     "leaderId": "omori_envoy",
+     "startStrength": 400,
+     "endStrength": 400,
+     "status": "ready"
+    },
+    {
+     "id": "e_hq",
+     "side": "enemy",
+     "clan": "washio",
+     "leaderId": "washio_gen",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_sente",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 550,
+     "endStrength": 550,
+     "status": "ready"
+    },
+    {
+     "id": "e_yumi",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_tashiro",
+     "side": "enemy",
+     "clan": "tashiro",
+     "leaderId": "tashiro_envoy",
+     "startStrength": 250,
+     "endStrength": 115,
+     "status": "ready"
+    }
+   ]
+  },
+  "snaps": [
+   "0:f774f827",
+   "300:f774f827",
+   "600:0345cf8c",
+   "900:2b69a336",
+   "1200:2c517caf",
+   "1297:07384593"
+  ],
+  "events": "4b6ce6ac",
+  "eventCount": 7
+ },
+ "border:omori:frontal": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_hq_routed",
+   "elapsedSec": 75.7,
+   "units": [
+    {
+     "id": "a_hq",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "hero",
+     "startStrength": 300,
+     "endStrength": 191,
+     "status": "routed"
+    },
+    {
+     "id": "a_genzo",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "genzo",
+     "startStrength": 500,
+     "endStrength": 253,
+     "status": "ready"
+    },
+    {
+     "id": "a_shinpachi",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "shinpachi",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "a_omori",
+     "side": "ally",
+     "clan": "omori",
+     "leaderId": "omori_envoy",
+     "startStrength": 400,
+     "endStrength": 312,
+     "status": "ready"
+    },
+    {
+     "id": "e_hq",
+     "side": "enemy",
+     "clan": "washio",
+     "leaderId": "washio_gen",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_sente",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 550,
+     "endStrength": 303,
+     "status": "ready"
+    },
+    {
+     "id": "e_yumi",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_tashiro",
+     "side": "enemy",
+     "clan": "tashiro",
+     "leaderId": "tashiro_envoy",
+     "startStrength": 250,
+     "endStrength": 250,
+     "status": "ready"
+    }
+   ]
+  },
+  "snaps": [
+   "0:f774f827",
+   "300:44071c69",
+   "600:bf20ddc6",
+   "757:2b9eb929"
+  ],
+  "events": "50fe1c39",
+  "eventCount": 10
+ },
+ "border:omori:frontalNoHq": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_army_broken",
+   "elapsedSec": 125,
+   "units": [
+    {
+     "id": "a_hq",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "hero",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "a_genzo",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "genzo",
+     "startStrength": 500,
+     "endStrength": 160,
+     "status": "routed"
+    },
+    {
+     "id": "a_shinpachi",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "shinpachi",
+     "startStrength": 350,
+     "endStrength": 137,
+     "status": "routed"
+    },
+    {
+     "id": "a_omori",
+     "side": "ally",
+     "clan": "omori",
+     "leaderId": "omori_envoy",
+     "startStrength": 400,
+     "endStrength": 169,
+     "status": "routed"
+    },
+    {
+     "id": "e_hq",
+     "side": "enemy",
+     "clan": "washio",
+     "leaderId": "washio_gen",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_sente",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 550,
+     "endStrength": 267,
+     "status": "ready"
+    },
+    {
+     "id": "e_yumi",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_tashiro",
+     "side": "enemy",
+     "clan": "tashiro",
+     "leaderId": "tashiro_envoy",
+     "startStrength": 250,
+     "endStrength": 237,
+     "status": "ready"
+    }
+   ]
+  },
+  "snaps": [
+   "0:f774f827",
+   "300:b554c1e2",
+   "600:b2b1ec1e",
+   "900:e4a39a08",
+   "1200:09797da7",
+   "1250:30ba0d32"
+  ],
+  "events": "ebcf6f66",
+  "eventCount": 20
+ },
+ "border:omori:retreat60": {
+  "outcome": {
+   "result": "retreat",
+   "reason": "ordered_retreat",
+   "elapsedSec": 80,
+   "units": [
+    {
+     "id": "a_hq",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "hero",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "withdrawn"
+    },
+    {
+     "id": "a_genzo",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "genzo",
+     "startStrength": 500,
+     "endStrength": 500,
+     "status": "withdrawn"
+    },
+    {
+     "id": "a_shinpachi",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "shinpachi",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "withdrawn"
+    },
+    {
+     "id": "a_omori",
+     "side": "ally",
+     "clan": "omori",
+     "leaderId": "omori_envoy",
+     "startStrength": 400,
+     "endStrength": 400,
+     "status": "withdrawn"
+    },
+    {
+     "id": "e_hq",
+     "side": "enemy",
+     "clan": "washio",
+     "leaderId": "washio_gen",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_sente",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 550,
+     "endStrength": 550,
+     "status": "ready"
+    },
+    {
+     "id": "e_yumi",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_tashiro",
+     "side": "enemy",
+     "clan": "tashiro",
+     "leaderId": "tashiro_envoy",
+     "startStrength": 250,
+     "endStrength": 250,
+     "status": "ready"
+    }
+   ]
+  },
+  "snaps": [
+   "0:f774f827",
+   "300:f774f827",
+   "600:0345cf8c",
+   "800:35fc0165"
+  ],
+  "events": "02758b06",
+  "eventCount": 4
+ },
+ "border:omori:hqAlone": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_hq_routed",
+   "elapsedSec": 70,
+   "units": [
+    {
+     "id": "a_hq",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "hero",
+     "startStrength": 300,
+     "endStrength": 110,
+     "status": "routed"
+    },
+    {
+     "id": "a_genzo",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "genzo",
+     "startStrength": 500,
+     "endStrength": 500,
+     "status": "ready"
+    },
+    {
+     "id": "a_shinpachi",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "shinpachi",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "a_omori",
+     "side": "ally",
+     "clan": "omori",
+     "leaderId": "omori_envoy",
+     "startStrength": 400,
+     "endStrength": 400,
+     "status": "ready"
+    },
+    {
+     "id": "e_hq",
+     "side": "enemy",
+     "clan": "washio",
+     "leaderId": "washio_gen",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_sente",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 550,
+     "endStrength": 523,
+     "status": "ready"
+    },
+    {
+     "id": "e_yumi",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_tashiro",
+     "side": "enemy",
+     "clan": "tashiro",
+     "leaderId": "tashiro_envoy",
+     "startStrength": 250,
+     "endStrength": 250,
+     "status": "ready"
+    }
+   ]
+  },
+  "snaps": [
+   "0:f774f827",
+   "300:de50698d",
+   "600:554ddf14",
+   "700:ed9eb394"
+  ],
+  "events": "2ab16bba",
+  "eventCount": 4
+ },
+ "border:omori:plan": {
+  "outcome": {
+   "result": "victory",
+   "reason": "enemy_hq_routed",
+   "elapsedSec": 246.6,
+   "units": [
+    {
+     "id": "a_hq",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "hero",
+     "startStrength": 300,
+     "endStrength": 262,
+     "status": "ready"
+    },
+    {
+     "id": "a_genzo",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "genzo",
+     "startStrength": 500,
+     "endStrength": 237,
+     "status": "ready"
+    },
+    {
+     "id": "a_shinpachi",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "shinpachi",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "a_omori",
+     "side": "ally",
+     "clan": "omori",
+     "leaderId": "omori_envoy",
+     "startStrength": 400,
+     "endStrength": 148,
+     "status": "routed"
+    },
+    {
+     "id": "e_hq",
+     "side": "enemy",
+     "clan": "washio",
+     "leaderId": "washio_gen",
+     "startStrength": 350,
+     "endStrength": 222,
+     "status": "routed"
+    },
+    {
+     "id": "e_sente",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 550,
+     "endStrength": 361,
+     "status": "routed"
+    },
+    {
+     "id": "e_yumi",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_tashiro",
+     "side": "enemy",
+     "clan": "tashiro",
+     "leaderId": "tashiro_envoy",
+     "startStrength": 250,
+     "endStrength": 28,
+     "status": "routed"
+    }
+   ]
+  },
+  "snaps": [
+   "0:f774f827",
+   "300:72a3e857",
+   "600:233a03f3",
+   "900:8d17cf5e",
+   "1200:e70b9b4d",
+   "1500:1721f91f",
+   "1800:2c46bf50",
+   "2100:4717e928",
+   "2400:1443014b",
+   "2466:f6acc49f"
+  ],
+  "events": "1cadc44c",
+  "eventCount": 21
+ },
+ "border:omori:planSlow": {
+  "outcome": {
+   "result": "victory",
+   "reason": "enemy_hq_routed",
+   "elapsedSec": 237.2,
+   "units": [
+    {
+     "id": "a_hq",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "hero",
+     "startStrength": 300,
+     "endStrength": 256,
+     "status": "ready"
+    },
+    {
+     "id": "a_genzo",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "genzo",
+     "startStrength": 500,
+     "endStrength": 255,
+     "status": "ready"
+    },
+    {
+     "id": "a_shinpachi",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "shinpachi",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "a_omori",
+     "side": "ally",
+     "clan": "omori",
+     "leaderId": "omori_envoy",
+     "startStrength": 400,
+     "endStrength": 187,
+     "status": "ready"
+    },
+    {
+     "id": "e_hq",
+     "side": "enemy",
+     "clan": "washio",
+     "leaderId": "washio_gen",
+     "startStrength": 350,
+     "endStrength": 256,
+     "status": "routed"
+    },
+    {
+     "id": "e_sente",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 550,
+     "endStrength": 357,
+     "status": "routed"
+    },
+    {
+     "id": "e_yumi",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_tashiro",
+     "side": "enemy",
+     "clan": "tashiro",
+     "leaderId": "tashiro_envoy",
+     "startStrength": 250,
+     "endStrength": 28,
+     "status": "routed"
+    }
+   ]
+  },
+  "snaps": [
+   "0:f774f827",
+   "300:72a3e857",
+   "600:233a03f3",
+   "900:28487733",
+   "1200:e86afd33",
+   "1500:4e701293",
+   "1800:62e36293",
+   "2100:bcfbdcd7",
+   "2372:cbb17a89"
+  ],
+  "events": "c2ae538e",
+  "eventCount": 21
+ },
+ "border:omori:wander": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_hq_routed",
+   "elapsedSec": 106.3,
+   "units": [
+    {
+     "id": "a_hq",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "hero",
+     "startStrength": 300,
+     "endStrength": 177,
+     "status": "routed"
+    },
+    {
+     "id": "a_genzo",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "genzo",
+     "startStrength": 500,
+     "endStrength": 382,
+     "status": "ready"
+    },
+    {
+     "id": "a_shinpachi",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "shinpachi",
+     "startStrength": 350,
+     "endStrength": 259,
+     "status": "ready"
+    },
+    {
+     "id": "a_omori",
+     "side": "ally",
+     "clan": "omori",
+     "leaderId": "omori_envoy",
+     "startStrength": 400,
+     "endStrength": 400,
+     "status": "ready"
+    },
+    {
+     "id": "e_hq",
+     "side": "enemy",
+     "clan": "washio",
+     "leaderId": "washio_gen",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_sente",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 550,
+     "endStrength": 398,
+     "status": "routed"
+    },
+    {
+     "id": "e_yumi",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_tashiro",
+     "side": "enemy",
+     "clan": "tashiro",
+     "leaderId": "tashiro_envoy",
+     "startStrength": 250,
+     "endStrength": 211,
+     "status": "ready"
+    }
+   ]
+  },
+  "snaps": [
+   "0:f774f827",
+   "300:35acd120",
+   "600:de178d93",
+   "900:046e5dfb",
+   "1063:d65ad42b"
+  ],
+  "events": "4955e01c",
+  "eventCount": 16
+ },
+ "border:alone:hold": {
+  "outcome": {
+   "result": "retreat",
+   "reason": "nightfall",
+   "elapsedSec": 480,
+   "units": [
+    {
+     "id": "a_hq",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "hero",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "a_genzo",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "genzo",
+     "startStrength": 500,
+     "endStrength": 500,
+     "status": "ready"
+    },
+    {
+     "id": "a_shinpachi",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "shinpachi",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "a_reserve",
+     "side": "ally",
+     "clan": "kotosaka",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "e_hq",
+     "side": "enemy",
+     "clan": "washio",
+     "leaderId": "washio_gen",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_sente",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 550,
+     "endStrength": 550,
+     "status": "ready"
+    },
+    {
+     "id": "e_yumi",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_reserve",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    }
+   ]
+  },
+  "snaps": [
+   "0:d494b348",
+   "300:d494b348",
+   "600:d494b348",
+   "900:d494b348",
+   "1200:d494b348",
+   "1500:d494b348",
+   "1800:d494b348",
+   "2100:d494b348",
+   "2400:d494b348",
+   "2700:d494b348",
+   "3000:d494b348",
+   "3300:d494b348",
+   "3600:d494b348",
+   "3900:d494b348",
+   "4200:d494b348",
+   "4500:d494b348",
+   "4800:d494b348"
+  ],
+  "events": "c38679f0",
+  "eventCount": 2
+ },
+ "border:alone:frontal": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_hq_routed",
+   "elapsedSec": 131.9,
+   "units": [
+    {
+     "id": "a_hq",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "hero",
+     "startStrength": 300,
+     "endStrength": 223,
+     "status": "routed"
+    },
+    {
+     "id": "a_genzo",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "genzo",
+     "startStrength": 500,
+     "endStrength": 35,
+     "status": "routed"
+    },
+    {
+     "id": "a_shinpachi",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "shinpachi",
+     "startStrength": 350,
+     "endStrength": 310,
+     "status": "ready"
+    },
+    {
+     "id": "a_reserve",
+     "side": "ally",
+     "clan": "kotosaka",
+     "startStrength": 300,
+     "endStrength": 114,
+     "status": "routed"
+    },
+    {
+     "id": "e_hq",
+     "side": "enemy",
+     "clan": "washio",
+     "leaderId": "washio_gen",
+     "startStrength": 350,
+     "endStrength": 222,
+     "status": "ready"
+    },
+    {
+     "id": "e_sente",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 550,
+     "endStrength": 278,
+     "status": "routed"
+    },
+    {
+     "id": "e_yumi",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_reserve",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 342,
+     "status": "ready"
+    }
+   ]
+  },
+  "snaps": [
+   "0:d494b348",
+   "300:e0d187de",
+   "600:21caf703",
+   "900:cd1ef714",
+   "1200:52813242",
+   "1319:c2fc50bf"
+  ],
+  "events": "bc2d274d",
+  "eventCount": 23
+ },
+ "border:alone:frontalNoHq": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_army_broken",
+   "elapsedSec": 171.5,
+   "units": [
+    {
+     "id": "a_hq",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "hero",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "a_genzo",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "genzo",
+     "startStrength": 500,
+     "endStrength": 155,
+     "status": "routed"
+    },
+    {
+     "id": "a_shinpachi",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "shinpachi",
+     "startStrength": 350,
+     "endStrength": 148,
+     "status": "routed"
+    },
+    {
+     "id": "a_reserve",
+     "side": "ally",
+     "clan": "kotosaka",
+     "startStrength": 300,
+     "endStrength": 133,
+     "status": "routed"
+    },
+    {
+     "id": "e_hq",
+     "side": "enemy",
+     "clan": "washio",
+     "leaderId": "washio_gen",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_sente",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 550,
+     "endStrength": 216,
+     "status": "ready"
+    },
+    {
+     "id": "e_yumi",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_reserve",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    }
+   ]
+  },
+  "snaps": [
+   "0:d494b348",
+   "300:c35e4cf2",
+   "600:96eba7be",
+   "900:e9291ad9",
+   "1200:2bfb2d9f",
+   "1500:a7192bb8",
+   "1715:e73eccfb"
+  ],
+  "events": "881c47ed",
+  "eventCount": 15
+ },
+ "border:alone:retreat60": {
+  "outcome": {
+   "result": "retreat",
+   "reason": "ordered_retreat",
+   "elapsedSec": 80,
+   "units": [
+    {
+     "id": "a_hq",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "hero",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "withdrawn"
+    },
+    {
+     "id": "a_genzo",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "genzo",
+     "startStrength": 500,
+     "endStrength": 500,
+     "status": "withdrawn"
+    },
+    {
+     "id": "a_shinpachi",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "shinpachi",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "withdrawn"
+    },
+    {
+     "id": "a_reserve",
+     "side": "ally",
+     "clan": "kotosaka",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "withdrawn"
+    },
+    {
+     "id": "e_hq",
+     "side": "enemy",
+     "clan": "washio",
+     "leaderId": "washio_gen",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_sente",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 550,
+     "endStrength": 550,
+     "status": "ready"
+    },
+    {
+     "id": "e_yumi",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_reserve",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    }
+   ]
+  },
+  "snaps": [
+   "0:d494b348",
+   "300:d494b348",
+   "600:d494b348",
+   "800:b9b9478b"
+  ],
+  "events": "6be8fe0f",
+  "eventCount": 5
+ },
+ "border:alone:hqAlone": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_hq_routed",
+   "elapsedSec": 70,
+   "units": [
+    {
+     "id": "a_hq",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "hero",
+     "startStrength": 300,
+     "endStrength": 110,
+     "status": "routed"
+    },
+    {
+     "id": "a_genzo",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "genzo",
+     "startStrength": 500,
+     "endStrength": 500,
+     "status": "ready"
+    },
+    {
+     "id": "a_shinpachi",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "shinpachi",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "a_reserve",
+     "side": "ally",
+     "clan": "kotosaka",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "e_hq",
+     "side": "enemy",
+     "clan": "washio",
+     "leaderId": "washio_gen",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_sente",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 550,
+     "endStrength": 523,
+     "status": "ready"
+    },
+    {
+     "id": "e_yumi",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_reserve",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    }
+   ]
+  },
+  "snaps": [
+   "0:d494b348",
+   "300:688ebada",
+   "600:1f6e8a12",
+   "700:3a67305d"
+  ],
+  "events": "2ab16bba",
+  "eventCount": 4
+ },
+ "border:alone:plan": {
+  "outcome": {
+   "result": "victory",
+   "reason": "enemy_army_broken",
+   "elapsedSec": 240.2,
+   "units": [
+    {
+     "id": "a_hq",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "hero",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "a_genzo",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "genzo",
+     "startStrength": 500,
+     "endStrength": 258,
+     "status": "ready"
+    },
+    {
+     "id": "a_shinpachi",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "shinpachi",
+     "startStrength": 350,
+     "endStrength": 310,
+     "status": "ready"
+    },
+    {
+     "id": "a_reserve",
+     "side": "ally",
+     "clan": "kotosaka",
+     "startStrength": 300,
+     "endStrength": 99,
+     "status": "routed"
+    },
+    {
+     "id": "e_hq",
+     "side": "enemy",
+     "clan": "washio",
+     "leaderId": "washio_gen",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_sente",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 550,
+     "endStrength": 322,
+     "status": "routed"
+    },
+    {
+     "id": "e_yumi",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 70,
+     "status": "routed"
+    },
+    {
+     "id": "e_reserve",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 85,
+     "status": "routed"
+    }
+   ]
+  },
+  "snaps": [
+   "0:d494b348",
+   "300:1617107c",
+   "600:f7306538",
+   "900:0feb0de7",
+   "1200:75576631",
+   "1500:06b58304",
+   "1800:ea49a165",
+   "2100:68a895ac",
+   "2400:8f075f5c",
+   "2402:9b9cb4a2"
+  ],
+  "events": "6e341e2d",
+  "eventCount": 20
+ },
+ "border:alone:planSlow": {
+  "outcome": {
+   "result": "victory",
+   "reason": "enemy_army_broken",
+   "elapsedSec": 240.5,
+   "units": [
+    {
+     "id": "a_hq",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "hero",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "a_genzo",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "genzo",
+     "startStrength": 500,
+     "endStrength": 260,
+     "status": "ready"
+    },
+    {
+     "id": "a_shinpachi",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "shinpachi",
+     "startStrength": 350,
+     "endStrength": 308,
+     "status": "ready"
+    },
+    {
+     "id": "a_reserve",
+     "side": "ally",
+     "clan": "kotosaka",
+     "startStrength": 300,
+     "endStrength": 99,
+     "status": "routed"
+    },
+    {
+     "id": "e_hq",
+     "side": "enemy",
+     "clan": "washio",
+     "leaderId": "washio_gen",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_sente",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 550,
+     "endStrength": 316,
+     "status": "routed"
+    },
+    {
+     "id": "e_yumi",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 70,
+     "status": "routed"
+    },
+    {
+     "id": "e_reserve",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 86,
+     "status": "routed"
+    }
+   ]
+  },
+  "snaps": [
+   "0:d494b348",
+   "300:c6ba5a64",
+   "600:bcb59237",
+   "900:06421d16",
+   "1200:feb59a10",
+   "1500:48eb211e",
+   "1800:d4cdd59a",
+   "2100:62a90f9d",
+   "2400:ba0cacea",
+   "2405:7c706288"
+  ],
+  "events": "ec8cd2e9",
+  "eventCount": 20
+ },
+ "border:alone:wander": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_hq_routed",
+   "elapsedSec": 198.4,
+   "units": [
+    {
+     "id": "a_hq",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "hero",
+     "startStrength": 300,
+     "endStrength": 202,
+     "status": "routed"
+    },
+    {
+     "id": "a_genzo",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "genzo",
+     "startStrength": 500,
+     "endStrength": 385,
+     "status": "ready"
+    },
+    {
+     "id": "a_shinpachi",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "shinpachi",
+     "startStrength": 350,
+     "endStrength": 234,
+     "status": "ready"
+    },
+    {
+     "id": "a_reserve",
+     "side": "ally",
+     "clan": "kotosaka",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "e_hq",
+     "side": "enemy",
+     "clan": "washio",
+     "leaderId": "washio_gen",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_sente",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 550,
+     "endStrength": 398,
+     "status": "routed"
+    },
+    {
+     "id": "e_yumi",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_reserve",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 307,
+     "status": "ready"
+    }
+   ]
+  },
+  "snaps": [
+   "0:d494b348",
+   "300:149fc728",
+   "600:9606b936",
+   "900:df353509",
+   "1200:3531e76a",
+   "1500:e5754f5c",
+   "1800:b024bf4d",
+   "1984:57c3bbd9"
+  ],
+  "events": "f4a279de",
+  "eventCount": 14
+ },
+ "border:alone:lure": {
+  "outcome": {
+   "result": "victory",
+   "reason": "enemy_army_broken",
+   "elapsedSec": 197.9,
+   "units": [
+    {
+     "id": "a_hq",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "hero",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "a_genzo",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "genzo",
+     "startStrength": 500,
+     "endStrength": 317,
+     "status": "ready"
+    },
+    {
+     "id": "a_shinpachi",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "shinpachi",
+     "startStrength": 350,
+     "endStrength": 213,
+     "status": "ready"
+    },
+    {
+     "id": "a_reserve",
+     "side": "ally",
+     "clan": "kotosaka",
+     "startStrength": 300,
+     "endStrength": 165,
+     "status": "ready"
+    },
+    {
+     "id": "e_hq",
+     "side": "enemy",
+     "clan": "washio",
+     "leaderId": "washio_gen",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_sente",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 550,
+     "endStrength": 343,
+     "status": "routed"
+    },
+    {
+     "id": "e_yumi",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 189,
+     "status": "routed"
+    },
+    {
+     "id": "e_reserve",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 144,
+     "status": "routed"
+    }
+   ]
+  },
+  "snaps": [
+   "0:d494b348",
+   "300:93d73498",
+   "600:d94a9c8d",
+   "900:3efb8af3",
+   "1200:fd6daff7",
+   "1500:c412645a",
+   "1800:b22d4ab1",
+   "1979:609901cc"
+  ],
+  "events": "9432b227",
+  "eventCount": 21
+ },
+ "border:alone:weak": {
+  "outcome": {
+   "result": "retreat",
+   "reason": "nightfall",
+   "elapsedSec": 480,
+   "units": [
+    {
+     "id": "a_hq",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "hero",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "a_genzo",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "genzo",
+     "startStrength": 420,
+     "endStrength": 143,
+     "status": "routed"
+    },
+    {
+     "id": "a_shinpachi",
+     "side": "ally",
+     "clan": "kotosaka",
+     "leaderId": "shinpachi",
+     "startStrength": 350,
+     "endStrength": 173,
+     "status": "ready"
+    },
+    {
+     "id": "a_reserve",
+     "side": "ally",
+     "clan": "kotosaka",
+     "startStrength": 300,
+     "endStrength": 100,
+     "status": "routed"
+    },
+    {
+     "id": "e_hq",
+     "side": "enemy",
+     "clan": "washio",
+     "leaderId": "washio_gen",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_sente",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 550,
+     "endStrength": 330,
+     "status": "routed"
+    },
+    {
+     "id": "e_yumi",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 65,
+     "status": "ready"
+    },
+    {
+     "id": "e_reserve",
+     "side": "enemy",
+     "clan": "washio",
+     "startStrength": 350,
+     "endStrength": 71,
+     "status": "routed"
+    }
+   ]
+  },
+  "snaps": [
+   "0:9974d13f",
+   "300:50266d3d",
+   "600:35955d90",
+   "900:07745930",
+   "1200:989c4982",
+   "1500:e2b897c9",
+   "1800:329f362d",
+   "2100:4f2faa51",
+   "2400:b1606f87",
+   "2700:422130a5",
+   "3000:2df6df8c",
+   "3300:8fe78356",
+   "3600:f24de8bf",
+   "3900:a6d0ab9e",
+   "4200:da0335c3",
+   "4500:04400356",
+   "4800:b4bf78f3"
+  ],
+  "events": "ecb0b108",
+  "eventCount": 21
+ },
+ "ieyasu:oda:pledge:hold": {
+  "outcome": {
+   "result": "retreat",
+   "reason": "nightfall",
+   "elapsedSec": 480,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 450,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 209,
+     "status": "ready"
+    },
+    {
+     "id": "a_oda",
+     "side": "ally",
+     "clan": "oda",
+     "startStrength": 400,
+     "endStrength": 157,
+     "status": "routed"
+    },
+    {
+     "id": "e_nagamasa",
+     "side": "enemy",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 400,
+     "status": "ready"
+    },
+    {
+     "id": "e_asai_sente",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 600,
+     "endStrength": 600,
+     "status": "ready"
+    },
+    {
+     "id": "e_asai_yumi",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "e_asakura",
+     "side": "enemy",
+     "clan": "asakura",
+     "startStrength": 450,
+     "endStrength": 181,
+     "status": "routed"
+    }
+   ],
+   "abilitiesUsed": {},
+   "pledge": {
+    "targetId": "a_oda",
+    "result": "broken"
+   }
+  },
+  "snaps": [
+   "0:679cb8c0",
+   "300:d880d9a1",
+   "600:8d97f08d",
+   "900:6019cbcb",
+   "1200:6ceca097",
+   "1500:be1881aa",
+   "1800:d8aeee6f",
+   "2100:3141fe26",
+   "2400:727f9f04",
+   "2700:ad7de7dc",
+   "3000:ad7de7dc",
+   "3300:ad7de7dc",
+   "3600:ad7de7dc",
+   "3900:ad7de7dc",
+   "4200:ad7de7dc",
+   "4500:ad7de7dc",
+   "4800:ad7de7dc"
+  ],
+  "events": "46de1463",
+  "eventCount": 14
+ },
+ "ieyasu:oda:pledge:frontal": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_hq_routed",
+   "elapsedSec": 81.4,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 180,
+     "status": "routed"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 450,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "a_oda",
+     "side": "ally",
+     "clan": "oda",
+     "startStrength": 400,
+     "endStrength": 87,
+     "status": "routed"
+    },
+    {
+     "id": "e_nagamasa",
+     "side": "enemy",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 400,
+     "status": "ready"
+    },
+    {
+     "id": "e_asai_sente",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 600,
+     "endStrength": 307,
+     "status": "ready"
+    },
+    {
+     "id": "e_asai_yumi",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "e_asakura",
+     "side": "enemy",
+     "clan": "asakura",
+     "startStrength": 450,
+     "endStrength": 450,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {
+    "e_nagamasa": 19.1
+   },
+   "pledge": {
+    "targetId": "a_oda",
+    "result": "broken"
+   }
+  },
+  "snaps": [
+   "0:679cb8c0",
+   "300:e3ae3611",
+   "600:82ef5ac7",
+   "814:3de96369"
+  ],
+  "events": "3a54c3d0",
+  "eventCount": 18
+ },
+ "ieyasu:oda:pledge:frontalNoHq": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_army_broken",
+   "elapsedSec": 112.7,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 165,
+     "status": "routed"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 168,
+     "status": "routed"
+    },
+    {
+     "id": "a_oda",
+     "side": "ally",
+     "clan": "oda",
+     "startStrength": 400,
+     "endStrength": 151,
+     "status": "routed"
+    },
+    {
+     "id": "e_nagamasa",
+     "side": "enemy",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 400,
+     "status": "ready"
+    },
+    {
+     "id": "e_asai_sente",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 600,
+     "endStrength": 402,
+     "status": "ready"
+    },
+    {
+     "id": "e_asai_yumi",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "e_asakura",
+     "side": "enemy",
+     "clan": "asakura",
+     "startStrength": 450,
+     "endStrength": 421,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {
+    "e_nagamasa": 19.1
+   },
+   "pledge": {
+    "targetId": "a_oda",
+    "result": "broken"
+   }
+  },
+  "snaps": [
+   "0:679cb8c0",
+   "300:fd2b4109",
+   "600:c16ec3b0",
+   "900:f5af2166",
+   "1127:af12c2c4"
+  ],
+  "events": "6d71e9aa",
+  "eventCount": 18
+ },
+ "ieyasu:oda:pledge:planKeep": {
+  "outcome": {
+   "result": "victory",
+   "reason": "enemy_army_broken",
+   "elapsedSec": 259.1,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 167,
+     "status": "ready"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 278,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 126,
+     "status": "ready"
+    },
+    {
+     "id": "a_oda",
+     "side": "ally",
+     "clan": "oda",
+     "startStrength": 400,
+     "endStrength": 372,
+     "status": "ready"
+    },
+    {
+     "id": "e_nagamasa",
+     "side": "enemy",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 400,
+     "status": "ready"
+    },
+    {
+     "id": "e_asai_sente",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 600,
+     "endStrength": 357,
+     "status": "routed"
+    },
+    {
+     "id": "e_asai_yumi",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 300,
+     "endStrength": 100,
+     "status": "routed"
+    },
+    {
+     "id": "e_asakura",
+     "side": "enemy",
+     "clan": "asakura",
+     "startStrength": 450,
+     "endStrength": 186,
+     "status": "routed"
+    }
+   ],
+   "abilitiesUsed": {
+    "t_honjin": 93.5,
+    "e_nagamasa": 213.1
+   },
+   "pledge": {
+    "targetId": "a_oda",
+    "result": "kept"
+   }
+  },
+  "snaps": [
+   "0:679cb8c0",
+   "300:cbe4ef56",
+   "600:ccc9568c",
+   "900:7ebbc624",
+   "1200:cbd35233",
+   "1500:f4bc2ee1",
+   "1800:aa8ac8c9",
+   "2100:901d048d",
+   "2400:be9b0c92",
+   "2591:67744c15"
+  ],
+  "events": "f9f6ca3e",
+  "eventCount": 32
+ },
+ "ieyasu:oda:pledge:planBreak": {
+  "outcome": {
+   "result": "victory",
+   "reason": "enemy_army_broken",
+   "elapsedSec": 286.9,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 347,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 167,
+     "status": "ready"
+    },
+    {
+     "id": "a_oda",
+     "side": "ally",
+     "clan": "oda",
+     "startStrength": 400,
+     "endStrength": 118,
+     "status": "routed"
+    },
+    {
+     "id": "e_nagamasa",
+     "side": "enemy",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 400,
+     "status": "ready"
+    },
+    {
+     "id": "e_asai_sente",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 600,
+     "endStrength": 304,
+     "status": "routed"
+    },
+    {
+     "id": "e_asai_yumi",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 300,
+     "endStrength": 121,
+     "status": "routed"
+    },
+    {
+     "id": "e_asakura",
+     "side": "enemy",
+     "clan": "asakura",
+     "startStrength": 450,
+     "endStrength": 299,
+     "status": "routed"
+    }
+   ],
+   "abilitiesUsed": {
+    "e_nagamasa": 218.6
+   },
+   "pledge": {
+    "targetId": "a_oda",
+    "result": "broken"
+   }
+  },
+  "snaps": [
+   "0:679cb8c0",
+   "300:f7890b3c",
+   "600:5dcef696",
+   "900:b519e94f",
+   "1200:3efc23b0",
+   "1500:947d41ba",
+   "1800:07d48df6",
+   "2100:23753839",
+   "2400:f09d8777",
+   "2700:037e7fe0",
+   "2869:3338d1ea"
+  ],
+  "events": "645dccee",
+  "eventCount": 30
+ },
+ "ieyasu:oda:pledge:retreatSave": {
+  "outcome": {
+   "result": "retreat",
+   "reason": "ordered_retreat",
+   "elapsedSec": 132.9,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "withdrawn"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 278,
+     "status": "routed"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "withdrawn"
+    },
+    {
+     "id": "a_oda",
+     "side": "ally",
+     "clan": "oda",
+     "startStrength": 400,
+     "endStrength": 273,
+     "status": "withdrawn"
+    },
+    {
+     "id": "e_nagamasa",
+     "side": "enemy",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 400,
+     "status": "ready"
+    },
+    {
+     "id": "e_asai_sente",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 600,
+     "endStrength": 600,
+     "status": "ready"
+    },
+    {
+     "id": "e_asai_yumi",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "e_asakura",
+     "side": "enemy",
+     "clan": "asakura",
+     "startStrength": 450,
+     "endStrength": 236,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {
+    "t_tadakatsu": 64.3
+   },
+   "pledge": {
+    "targetId": "a_oda",
+    "result": "kept"
+   }
+  },
+  "snaps": [
+   "0:679cb8c0",
+   "300:463a6d3a",
+   "600:1c22496a",
+   "900:96f469ad",
+   "1200:8103b41c",
+   "1329:13607b23"
+  ],
+  "events": "c841d64c",
+  "eventCount": 19
+ },
+ "ieyasu:oda:pledge:retreat90": {
+  "outcome": {
+   "result": "retreat",
+   "reason": "ordered_retreat",
+   "elapsedSec": 110,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "withdrawn"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 450,
+     "status": "withdrawn"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "withdrawn"
+    },
+    {
+     "id": "a_oda",
+     "side": "ally",
+     "clan": "oda",
+     "startStrength": 400,
+     "endStrength": 165,
+     "status": "routed"
+    },
+    {
+     "id": "e_nagamasa",
+     "side": "enemy",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 400,
+     "status": "ready"
+    },
+    {
+     "id": "e_asai_sente",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 600,
+     "endStrength": 600,
+     "status": "ready"
+    },
+    {
+     "id": "e_asai_yumi",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "e_asakura",
+     "side": "enemy",
+     "clan": "asakura",
+     "startStrength": 450,
+     "endStrength": 344,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {},
+   "pledge": {
+    "targetId": "a_oda",
+    "result": "broken"
+   }
+  },
+  "snaps": [
+   "0:679cb8c0",
+   "300:d880d9a1",
+   "600:8d97f08d",
+   "900:6019cbcb",
+   "1100:973be3ea"
+  ],
+  "events": "820da032",
+  "eventCount": 13
+ },
+ "ieyasu:oda:pledge:wander": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_hq_routed",
+   "elapsedSec": 183.1,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 175,
+     "status": "routed"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 301,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 31,
+     "status": "routed"
+    },
+    {
+     "id": "a_oda",
+     "side": "ally",
+     "clan": "oda",
+     "startStrength": 400,
+     "endStrength": 201,
+     "status": "routed"
+    },
+    {
+     "id": "e_nagamasa",
+     "side": "enemy",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 400,
+     "status": "ready"
+    },
+    {
+     "id": "e_asai_sente",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 600,
+     "endStrength": 413,
+     "status": "routed"
+    },
+    {
+     "id": "e_asai_yumi",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "e_asakura",
+     "side": "enemy",
+     "clan": "asakura",
+     "startStrength": 450,
+     "endStrength": 413,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {},
+   "pledge": {
+    "targetId": "a_oda",
+    "result": "broken"
+   }
+  },
+  "snaps": [
+   "0:679cb8c0",
+   "300:cf482ca8",
+   "600:58e5c074",
+   "900:f6316cba",
+   "1200:bf9e391e",
+   "1500:7ace79bd",
+   "1800:f245d943",
+   "1831:b51d15d0"
+  ],
+  "events": "9feaf52e",
+  "eventCount": 29
+ },
+ "ieyasu:oda:nopledge:hold": {
+  "outcome": {
+   "result": "retreat",
+   "reason": "nightfall",
+   "elapsedSec": 480,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 450,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 209,
+     "status": "ready"
+    },
+    {
+     "id": "a_oda",
+     "side": "ally",
+     "clan": "oda",
+     "startStrength": 400,
+     "endStrength": 157,
+     "status": "routed"
+    },
+    {
+     "id": "e_nagamasa",
+     "side": "enemy",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 400,
+     "status": "ready"
+    },
+    {
+     "id": "e_asai_sente",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 600,
+     "endStrength": 600,
+     "status": "ready"
+    },
+    {
+     "id": "e_asai_yumi",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "e_asakura",
+     "side": "enemy",
+     "clan": "asakura",
+     "startStrength": 450,
+     "endStrength": 181,
+     "status": "routed"
+    }
+   ],
+   "abilitiesUsed": {}
+  },
+  "snaps": [
+   "0:679cb8c0",
+   "300:d880d9a1",
+   "600:8d97f08d",
+   "900:6019cbcb",
+   "1200:6ceca097",
+   "1500:be1881aa",
+   "1800:d8aeee6f",
+   "2100:3141fe26",
+   "2400:727f9f04",
+   "2700:ad7de7dc",
+   "3000:ad7de7dc",
+   "3300:ad7de7dc",
+   "3600:ad7de7dc",
+   "3900:ad7de7dc",
+   "4200:ad7de7dc",
+   "4500:ad7de7dc",
+   "4800:ad7de7dc"
+  ],
+  "events": "10f261cb",
+  "eventCount": 12
+ },
+ "ieyasu:oda:nopledge:frontal": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_hq_routed",
+   "elapsedSec": 81.4,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 180,
+     "status": "routed"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 450,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "a_oda",
+     "side": "ally",
+     "clan": "oda",
+     "startStrength": 400,
+     "endStrength": 87,
+     "status": "routed"
+    },
+    {
+     "id": "e_nagamasa",
+     "side": "enemy",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 400,
+     "status": "ready"
+    },
+    {
+     "id": "e_asai_sente",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 600,
+     "endStrength": 307,
+     "status": "ready"
+    },
+    {
+     "id": "e_asai_yumi",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "e_asakura",
+     "side": "enemy",
+     "clan": "asakura",
+     "startStrength": 450,
+     "endStrength": 450,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {
+    "e_nagamasa": 19.1
+   }
+  },
+  "snaps": [
+   "0:679cb8c0",
+   "300:e3ae3611",
+   "600:82ef5ac7",
+   "814:3de96369"
+  ],
+  "events": "b56561e1",
+  "eventCount": 16
+ },
+ "ieyasu:oda:nopledge:frontalNoHq": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_army_broken",
+   "elapsedSec": 112.7,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 165,
+     "status": "routed"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 168,
+     "status": "routed"
+    },
+    {
+     "id": "a_oda",
+     "side": "ally",
+     "clan": "oda",
+     "startStrength": 400,
+     "endStrength": 151,
+     "status": "routed"
+    },
+    {
+     "id": "e_nagamasa",
+     "side": "enemy",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 400,
+     "status": "ready"
+    },
+    {
+     "id": "e_asai_sente",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 600,
+     "endStrength": 402,
+     "status": "ready"
+    },
+    {
+     "id": "e_asai_yumi",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "e_asakura",
+     "side": "enemy",
+     "clan": "asakura",
+     "startStrength": 450,
+     "endStrength": 421,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {
+    "e_nagamasa": 19.1
+   }
+  },
+  "snaps": [
+   "0:679cb8c0",
+   "300:fd2b4109",
+   "600:c16ec3b0",
+   "900:f5af2166",
+   "1127:af12c2c4"
+  ],
+  "events": "7d3772f1",
+  "eventCount": 16
+ },
+ "ieyasu:oda:nopledge:planKeep": {
+  "outcome": {
+   "result": "victory",
+   "reason": "enemy_army_broken",
+   "elapsedSec": 259.1,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 167,
+     "status": "ready"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 278,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 126,
+     "status": "ready"
+    },
+    {
+     "id": "a_oda",
+     "side": "ally",
+     "clan": "oda",
+     "startStrength": 400,
+     "endStrength": 372,
+     "status": "ready"
+    },
+    {
+     "id": "e_nagamasa",
+     "side": "enemy",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 400,
+     "status": "ready"
+    },
+    {
+     "id": "e_asai_sente",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 600,
+     "endStrength": 357,
+     "status": "routed"
+    },
+    {
+     "id": "e_asai_yumi",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 300,
+     "endStrength": 100,
+     "status": "routed"
+    },
+    {
+     "id": "e_asakura",
+     "side": "enemy",
+     "clan": "asakura",
+     "startStrength": 450,
+     "endStrength": 186,
+     "status": "routed"
+    }
+   ],
+   "abilitiesUsed": {
+    "t_honjin": 93.5,
+    "e_nagamasa": 213.1
+   }
+  },
+  "snaps": [
+   "0:679cb8c0",
+   "300:cbe4ef56",
+   "600:ccc9568c",
+   "900:7ebbc624",
+   "1200:cbd35233",
+   "1500:f4bc2ee1",
+   "1800:aa8ac8c9",
+   "2100:901d048d",
+   "2400:be9b0c92",
+   "2591:67744c15"
+  ],
+  "events": "a28bfc64",
+  "eventCount": 30
+ },
+ "ieyasu:oda:nopledge:planBreak": {
+  "outcome": {
+   "result": "victory",
+   "reason": "enemy_army_broken",
+   "elapsedSec": 212.8,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 357,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 144,
+     "status": "ready"
+    },
+    {
+     "id": "a_oda",
+     "side": "ally",
+     "clan": "oda",
+     "startStrength": 400,
+     "endStrength": 214,
+     "status": "ready"
+    },
+    {
+     "id": "e_nagamasa",
+     "side": "enemy",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 400,
+     "status": "ready"
+    },
+    {
+     "id": "e_asai_sente",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 600,
+     "endStrength": 384,
+     "status": "routed"
+    },
+    {
+     "id": "e_asai_yumi",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 300,
+     "endStrength": 134,
+     "status": "routed"
+    },
+    {
+     "id": "e_asakura",
+     "side": "enemy",
+     "clan": "asakura",
+     "startStrength": 450,
+     "endStrength": 300,
+     "status": "routed"
+    }
+   ],
+   "abilitiesUsed": {
+    "e_nagamasa": 160.6
+   }
+  },
+  "snaps": [
+   "0:679cb8c0",
+   "300:f7890b3c",
+   "600:5dcef696",
+   "900:eca5c1f6",
+   "1200:652b730a",
+   "1500:0c2855f9",
+   "1800:7101386a",
+   "2100:f3acf5a1",
+   "2128:665a71e8"
+  ],
+  "events": "2eee2670",
+  "eventCount": 31
+ },
+ "ieyasu:oda:nopledge:retreatSave": {
+  "outcome": {
+   "result": "retreat",
+   "reason": "ordered_retreat",
+   "elapsedSec": 132.9,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "withdrawn"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 278,
+     "status": "routed"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "withdrawn"
+    },
+    {
+     "id": "a_oda",
+     "side": "ally",
+     "clan": "oda",
+     "startStrength": 400,
+     "endStrength": 273,
+     "status": "withdrawn"
+    },
+    {
+     "id": "e_nagamasa",
+     "side": "enemy",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 400,
+     "status": "ready"
+    },
+    {
+     "id": "e_asai_sente",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 600,
+     "endStrength": 600,
+     "status": "ready"
+    },
+    {
+     "id": "e_asai_yumi",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "e_asakura",
+     "side": "enemy",
+     "clan": "asakura",
+     "startStrength": 450,
+     "endStrength": 236,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {
+    "t_tadakatsu": 64.3
+   }
+  },
+  "snaps": [
+   "0:679cb8c0",
+   "300:463a6d3a",
+   "600:1c22496a",
+   "900:96f469ad",
+   "1200:8103b41c",
+   "1329:13607b23"
+  ],
+  "events": "8d5e67c6",
+  "eventCount": 17
+ },
+ "ieyasu:oda:nopledge:retreat90": {
+  "outcome": {
+   "result": "retreat",
+   "reason": "ordered_retreat",
+   "elapsedSec": 110,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "withdrawn"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 450,
+     "status": "withdrawn"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "withdrawn"
+    },
+    {
+     "id": "a_oda",
+     "side": "ally",
+     "clan": "oda",
+     "startStrength": 400,
+     "endStrength": 165,
+     "status": "routed"
+    },
+    {
+     "id": "e_nagamasa",
+     "side": "enemy",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 400,
+     "status": "ready"
+    },
+    {
+     "id": "e_asai_sente",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 600,
+     "endStrength": 600,
+     "status": "ready"
+    },
+    {
+     "id": "e_asai_yumi",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "e_asakura",
+     "side": "enemy",
+     "clan": "asakura",
+     "startStrength": 450,
+     "endStrength": 344,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {}
+  },
+  "snaps": [
+   "0:679cb8c0",
+   "300:d880d9a1",
+   "600:8d97f08d",
+   "900:6019cbcb",
+   "1100:973be3ea"
+  ],
+  "events": "50ab038e",
+  "eventCount": 11
+ },
+ "ieyasu:oda:nopledge:wander": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_hq_routed",
+   "elapsedSec": 183.1,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 175,
+     "status": "routed"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 301,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 31,
+     "status": "routed"
+    },
+    {
+     "id": "a_oda",
+     "side": "ally",
+     "clan": "oda",
+     "startStrength": 400,
+     "endStrength": 201,
+     "status": "routed"
+    },
+    {
+     "id": "e_nagamasa",
+     "side": "enemy",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 400,
+     "status": "ready"
+    },
+    {
+     "id": "e_asai_sente",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 600,
+     "endStrength": 413,
+     "status": "routed"
+    },
+    {
+     "id": "e_asai_yumi",
+     "side": "enemy",
+     "clan": "asai",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "e_asakura",
+     "side": "enemy",
+     "clan": "asakura",
+     "startStrength": 450,
+     "endStrength": 413,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {}
+  },
+  "snaps": [
+   "0:679cb8c0",
+   "300:cf482ca8",
+   "600:58e5c074",
+   "900:f6316cba",
+   "1200:bf9e391e",
+   "1500:7ace79bd",
+   "1800:f245d943",
+   "1831:b51d15d0"
+  ],
+  "events": "59950c3b",
+  "eventCount": 27
+ },
+ "ieyasu:asai:pledge:hold": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_hq_routed",
+   "elapsedSec": 129.1,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 198,
+     "status": "routed"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 450,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "a_nagamasa",
+     "side": "ally",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 191,
+     "status": "routed"
+    },
+    {
+     "id": "e_oda_hq",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_sente",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 550,
+     "endStrength": 414,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_teppo",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_kiba",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 250,
+     "endStrength": 102,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {},
+   "pledge": {
+    "targetId": "a_nagamasa",
+    "result": "broken"
+   }
+  },
+  "snaps": [
+   "0:3b6f94f3",
+   "300:06c6b036",
+   "600:c6e3fce5",
+   "900:ec638acd",
+   "1200:3c0e579a",
+   "1291:da392db1"
+  ],
+  "events": "6c8d55b6",
+  "eventCount": 14
+ },
+ "ieyasu:asai:pledge:frontal": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_hq_routed",
+   "elapsedSec": 73.8,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 206,
+     "status": "routed"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 330,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "a_nagamasa",
+     "side": "ally",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 161,
+     "status": "routed"
+    },
+    {
+     "id": "e_oda_hq",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_sente",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 550,
+     "endStrength": 305,
+     "status": "routed"
+    },
+    {
+     "id": "e_oda_teppo",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_kiba",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 250,
+     "endStrength": 250,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {},
+   "pledge": {
+    "targetId": "a_nagamasa",
+    "result": "broken"
+   }
+  },
+  "snaps": [
+   "0:3b6f94f3",
+   "300:6fea7f84",
+   "600:1898fa1b",
+   "738:cd25446c"
+  ],
+  "events": "a56fd4ae",
+  "eventCount": 19
+ },
+ "ieyasu:asai:pledge:frontalNoHq": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_army_broken",
+   "elapsedSec": 113.4,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 162,
+     "status": "routed"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 138,
+     "status": "routed"
+    },
+    {
+     "id": "a_nagamasa",
+     "side": "ally",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 207,
+     "status": "routed"
+    },
+    {
+     "id": "e_oda_hq",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_sente",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 550,
+     "endStrength": 301,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_teppo",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_kiba",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 250,
+     "endStrength": 237,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {},
+   "pledge": {
+    "targetId": "a_nagamasa",
+    "result": "broken"
+   }
+  },
+  "snaps": [
+   "0:3b6f94f3",
+   "300:5998ab11",
+   "600:41446600",
+   "900:1242d612",
+   "1134:ffe41f4e"
+  ],
+  "events": "410c9a67",
+  "eventCount": 19
+ },
+ "ieyasu:asai:pledge:planKeep": {
+  "outcome": {
+   "result": "victory",
+   "reason": "enemy_army_broken",
+   "elapsedSec": 157.7,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 268,
+     "status": "ready"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 199,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 336,
+     "status": "ready"
+    },
+    {
+     "id": "a_nagamasa",
+     "side": "ally",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 390,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_hq",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_sente",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 550,
+     "endStrength": 209,
+     "status": "routed"
+    },
+    {
+     "id": "e_oda_teppo",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 143,
+     "status": "routed"
+    },
+    {
+     "id": "e_oda_kiba",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 250,
+     "endStrength": 100,
+     "status": "routed"
+    }
+   ],
+   "abilitiesUsed": {
+    "t_honjin": 23.4,
+    "a_nagamasa": 21.4
+   },
+   "pledge": {
+    "targetId": "a_nagamasa",
+    "result": "kept"
+   }
+  },
+  "snaps": [
+   "0:3b6f94f3",
+   "300:d14636d6",
+   "600:6b47515a",
+   "900:e2e8a7d4",
+   "1200:7a249278",
+   "1500:f909c0d1",
+   "1577:200dd120"
+  ],
+  "events": "64ea4473",
+  "eventCount": 31
+ },
+ "ieyasu:asai:pledge:planBreak": {
+  "outcome": {
+   "result": "victory",
+   "reason": "enemy_army_broken",
+   "elapsedSec": 396.6,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 265,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 339,
+     "status": "ready"
+    },
+    {
+     "id": "a_nagamasa",
+     "side": "ally",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 191,
+     "status": "routed"
+    },
+    {
+     "id": "e_oda_hq",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_sente",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 550,
+     "endStrength": 41,
+     "status": "routed"
+    },
+    {
+     "id": "e_oda_teppo",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 97,
+     "status": "routed"
+    },
+    {
+     "id": "e_oda_kiba",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 250,
+     "endStrength": 108,
+     "status": "routed"
+    }
+   ],
+   "abilitiesUsed": {},
+   "pledge": {
+    "targetId": "a_nagamasa",
+    "result": "broken"
+   }
+  },
+  "snaps": [
+   "0:3b6f94f3",
+   "300:089baef0",
+   "600:bf81b4bd",
+   "900:42906020",
+   "1200:c7d99231",
+   "1500:d770d005",
+   "1800:4e9a10c3",
+   "2100:63585e14",
+   "2400:0ea596ef",
+   "2700:ed39937b",
+   "3000:2078e16f",
+   "3300:a355cee8",
+   "3600:1164e318",
+   "3900:a407ad07",
+   "3966:25f38f79"
+  ],
+  "events": "616b92dc",
+  "eventCount": 20
+ },
+ "ieyasu:asai:pledge:retreatSave": {
+  "outcome": {
+   "result": "retreat",
+   "reason": "ordered_retreat",
+   "elapsedSec": 84.4,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "withdrawn"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 147,
+     "status": "routed"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "withdrawn"
+    },
+    {
+     "id": "a_nagamasa",
+     "side": "ally",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 359,
+     "status": "withdrawn"
+    },
+    {
+     "id": "e_oda_hq",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_sente",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 550,
+     "endStrength": 379,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_teppo",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_kiba",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 250,
+     "endStrength": 250,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {
+    "t_tadakatsu": 12.5
+   },
+   "pledge": {
+    "targetId": "a_nagamasa",
+    "result": "kept"
+   }
+  },
+  "snaps": [
+   "0:3b6f94f3",
+   "300:a7868302",
+   "600:dc08deb4",
+   "844:5bc7d6f7"
+  ],
+  "events": "8c1822d5",
+  "eventCount": 24
+ },
+ "ieyasu:asai:pledge:retreat90": {
+  "outcome": {
+   "result": "retreat",
+   "reason": "ordered_retreat",
+   "elapsedSec": 110,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 189,
+     "status": "withdrawn"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 434,
+     "status": "withdrawn"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "withdrawn"
+    },
+    {
+     "id": "a_nagamasa",
+     "side": "ally",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 191,
+     "status": "routed"
+    },
+    {
+     "id": "e_oda_hq",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_sente",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 550,
+     "endStrength": 414,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_teppo",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_kiba",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 250,
+     "endStrength": 241,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {},
+   "pledge": {
+    "targetId": "a_nagamasa",
+    "result": "broken"
+   }
+  },
+  "snaps": [
+   "0:3b6f94f3",
+   "300:06c6b036",
+   "600:c6e3fce5",
+   "900:ec638acd",
+   "1100:435866e9"
+  ],
+  "events": "d581d70b",
+  "eventCount": 17
+ },
+ "ieyasu:asai:pledge:wander": {
+  "outcome": {
+   "result": "retreat",
+   "reason": "nightfall",
+   "elapsedSec": 480,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 353,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 255,
+     "status": "ready"
+    },
+    {
+     "id": "a_nagamasa",
+     "side": "ally",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 251,
+     "status": "routed"
+    },
+    {
+     "id": "e_oda_hq",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_sente",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 550,
+     "endStrength": 378,
+     "status": "routed"
+    },
+    {
+     "id": "e_oda_teppo",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 344,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_kiba",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 250,
+     "endStrength": 133,
+     "status": "routed"
+    }
+   ],
+   "abilitiesUsed": {},
+   "pledge": {
+    "targetId": "a_nagamasa",
+    "result": "broken"
+   }
+  },
+  "snaps": [
+   "0:3b6f94f3",
+   "300:4574f6de",
+   "600:9f145e25",
+   "900:c924c5d2",
+   "1200:0665028b",
+   "1500:8f48bd7b",
+   "1800:4bce2005",
+   "2100:4bce2005",
+   "2400:4bce2005",
+   "2700:4bce2005",
+   "3000:4bce2005",
+   "3300:4bce2005",
+   "3600:4bce2005",
+   "3900:4bce2005",
+   "4200:4bce2005",
+   "4500:4bce2005",
+   "4800:4bce2005"
+  ],
+  "events": "2a9a689e",
+  "eventCount": 23
+ },
+ "ieyasu:asai:nopledge:hold": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_hq_routed",
+   "elapsedSec": 129.1,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 198,
+     "status": "routed"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 450,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "a_nagamasa",
+     "side": "ally",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 191,
+     "status": "routed"
+    },
+    {
+     "id": "e_oda_hq",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_sente",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 550,
+     "endStrength": 414,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_teppo",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_kiba",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 250,
+     "endStrength": 102,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {}
+  },
+  "snaps": [
+   "0:3b6f94f3",
+   "300:06c6b036",
+   "600:c6e3fce5",
+   "900:ec638acd",
+   "1200:3c0e579a",
+   "1291:da392db1"
+  ],
+  "events": "3de985e1",
+  "eventCount": 12
+ },
+ "ieyasu:asai:nopledge:frontal": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_hq_routed",
+   "elapsedSec": 73.8,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 206,
+     "status": "routed"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 330,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "a_nagamasa",
+     "side": "ally",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 161,
+     "status": "routed"
+    },
+    {
+     "id": "e_oda_hq",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_sente",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 550,
+     "endStrength": 305,
+     "status": "routed"
+    },
+    {
+     "id": "e_oda_teppo",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_kiba",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 250,
+     "endStrength": 250,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {}
+  },
+  "snaps": [
+   "0:3b6f94f3",
+   "300:6fea7f84",
+   "600:1898fa1b",
+   "738:cd25446c"
+  ],
+  "events": "29d8efbb",
+  "eventCount": 17
+ },
+ "ieyasu:asai:nopledge:frontalNoHq": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_army_broken",
+   "elapsedSec": 113.4,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 162,
+     "status": "routed"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 138,
+     "status": "routed"
+    },
+    {
+     "id": "a_nagamasa",
+     "side": "ally",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 207,
+     "status": "routed"
+    },
+    {
+     "id": "e_oda_hq",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_sente",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 550,
+     "endStrength": 301,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_teppo",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_kiba",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 250,
+     "endStrength": 237,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {}
+  },
+  "snaps": [
+   "0:3b6f94f3",
+   "300:5998ab11",
+   "600:41446600",
+   "900:1242d612",
+   "1134:ffe41f4e"
+  ],
+  "events": "ead5e8d1",
+  "eventCount": 17
+ },
+ "ieyasu:asai:nopledge:planKeep": {
+  "outcome": {
+   "result": "victory",
+   "reason": "enemy_army_broken",
+   "elapsedSec": 157.7,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 268,
+     "status": "ready"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 199,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 336,
+     "status": "ready"
+    },
+    {
+     "id": "a_nagamasa",
+     "side": "ally",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 390,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_hq",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_sente",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 550,
+     "endStrength": 209,
+     "status": "routed"
+    },
+    {
+     "id": "e_oda_teppo",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 143,
+     "status": "routed"
+    },
+    {
+     "id": "e_oda_kiba",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 250,
+     "endStrength": 100,
+     "status": "routed"
+    }
+   ],
+   "abilitiesUsed": {
+    "t_honjin": 23.4,
+    "a_nagamasa": 21.4
+   }
+  },
+  "snaps": [
+   "0:3b6f94f3",
+   "300:d14636d6",
+   "600:6b47515a",
+   "900:e2e8a7d4",
+   "1200:7a249278",
+   "1500:f909c0d1",
+   "1577:200dd120"
+  ],
+  "events": "32260182",
+  "eventCount": 30
+ },
+ "ieyasu:asai:nopledge:planBreak": {
+  "outcome": {
+   "result": "victory",
+   "reason": "enemy_army_broken",
+   "elapsedSec": 396.6,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 265,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 339,
+     "status": "ready"
+    },
+    {
+     "id": "a_nagamasa",
+     "side": "ally",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 191,
+     "status": "routed"
+    },
+    {
+     "id": "e_oda_hq",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_sente",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 550,
+     "endStrength": 41,
+     "status": "routed"
+    },
+    {
+     "id": "e_oda_teppo",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 97,
+     "status": "routed"
+    },
+    {
+     "id": "e_oda_kiba",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 250,
+     "endStrength": 108,
+     "status": "routed"
+    }
+   ],
+   "abilitiesUsed": {}
+  },
+  "snaps": [
+   "0:3b6f94f3",
+   "300:089baef0",
+   "600:bf81b4bd",
+   "900:42906020",
+   "1200:c7d99231",
+   "1500:d770d005",
+   "1800:4e9a10c3",
+   "2100:63585e14",
+   "2400:0ea596ef",
+   "2700:ed39937b",
+   "3000:2078e16f",
+   "3300:a355cee8",
+   "3600:1164e318",
+   "3900:a407ad07",
+   "3966:25f38f79"
+  ],
+  "events": "1c9ab88b",
+  "eventCount": 18
+ },
+ "ieyasu:asai:nopledge:retreatSave": {
+  "outcome": {
+   "result": "retreat",
+   "reason": "ordered_retreat",
+   "elapsedSec": 84.4,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "withdrawn"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 147,
+     "status": "routed"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "withdrawn"
+    },
+    {
+     "id": "a_nagamasa",
+     "side": "ally",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 359,
+     "status": "withdrawn"
+    },
+    {
+     "id": "e_oda_hq",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_sente",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 550,
+     "endStrength": 379,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_teppo",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_kiba",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 250,
+     "endStrength": 250,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {
+    "t_tadakatsu": 12.5
+   }
+  },
+  "snaps": [
+   "0:3b6f94f3",
+   "300:a7868302",
+   "600:dc08deb4",
+   "844:5bc7d6f7"
+  ],
+  "events": "4947ff41",
+  "eventCount": 22
+ },
+ "ieyasu:asai:nopledge:retreat90": {
+  "outcome": {
+   "result": "retreat",
+   "reason": "ordered_retreat",
+   "elapsedSec": 110,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 189,
+     "status": "withdrawn"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 434,
+     "status": "withdrawn"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "withdrawn"
+    },
+    {
+     "id": "a_nagamasa",
+     "side": "ally",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 191,
+     "status": "routed"
+    },
+    {
+     "id": "e_oda_hq",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_sente",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 550,
+     "endStrength": 414,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_teppo",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_kiba",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 250,
+     "endStrength": 241,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {}
+  },
+  "snaps": [
+   "0:3b6f94f3",
+   "300:06c6b036",
+   "600:c6e3fce5",
+   "900:ec638acd",
+   "1100:435866e9"
+  ],
+  "events": "8915844e",
+  "eventCount": 15
+ },
+ "ieyasu:asai:nopledge:wander": {
+  "outcome": {
+   "result": "retreat",
+   "reason": "nightfall",
+   "elapsedSec": 480,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 353,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 255,
+     "status": "ready"
+    },
+    {
+     "id": "a_nagamasa",
+     "side": "ally",
+     "clan": "asai",
+     "leaderId": "nagamasa",
+     "startStrength": 400,
+     "endStrength": 251,
+     "status": "routed"
+    },
+    {
+     "id": "e_oda_hq",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_sente",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 550,
+     "endStrength": 378,
+     "status": "routed"
+    },
+    {
+     "id": "e_oda_teppo",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 350,
+     "endStrength": 344,
+     "status": "ready"
+    },
+    {
+     "id": "e_oda_kiba",
+     "side": "enemy",
+     "clan": "oda",
+     "startStrength": 250,
+     "endStrength": 133,
+     "status": "routed"
+    }
+   ],
+   "abilitiesUsed": {}
+  },
+  "snaps": [
+   "0:3b6f94f3",
+   "300:4574f6de",
+   "600:9f145e25",
+   "900:c924c5d2",
+   "1200:0665028b",
+   "1500:8f48bd7b",
+   "1800:4bce2005",
+   "2100:4bce2005",
+   "2400:4bce2005",
+   "2700:4bce2005",
+   "3000:4bce2005",
+   "3300:4bce2005",
+   "3600:4bce2005",
+   "3900:4bce2005",
+   "4200:4bce2005",
+   "4500:4bce2005",
+   "4800:4bce2005"
+  ],
+  "events": "2c36d083",
+  "eventCount": 21
+ },
+ "ieyasu:home:pledge:hold": {
+  "outcome": {
+   "result": "retreat",
+   "reason": "nightfall",
+   "elapsedSec": 480,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 386,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "t_reserve",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 300,
+     "endStrength": 43,
+     "status": "routed"
+    },
+    {
+     "id": "e_ronin_hq",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_yari",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 550,
+     "endStrength": 550,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_yumi",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_kiba",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 250,
+     "endStrength": 88,
+     "status": "routed"
+    }
+   ],
+   "abilitiesUsed": {},
+   "pledge": {
+    "targetId": "t_reserve",
+    "result": "broken"
+   }
+  },
+  "snaps": [
+   "0:1727e4b6",
+   "300:efd60969",
+   "600:96dee641",
+   "900:463e0990",
+   "1200:dade91b9",
+   "1500:f89fe70d",
+   "1800:9eaaa9e4",
+   "2100:9eaaa9e4",
+   "2400:9eaaa9e4",
+   "2700:9eaaa9e4",
+   "3000:9eaaa9e4",
+   "3300:9eaaa9e4",
+   "3600:9eaaa9e4",
+   "3900:9eaaa9e4",
+   "4200:9eaaa9e4",
+   "4500:9eaaa9e4",
+   "4800:9eaaa9e4"
+  ],
+  "events": "3b9ea8ad",
+  "eventCount": 16
+ },
+ "ieyasu:home:pledge:frontal": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_hq_routed",
+   "elapsedSec": 70.6,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 203,
+     "status": "routed"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 330,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "t_reserve",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 300,
+     "endStrength": 231,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_hq",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 350,
+     "endStrength": 337,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_yari",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 550,
+     "endStrength": 330,
+     "status": "routed"
+    },
+    {
+     "id": "e_ronin_yumi",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 300,
+     "endStrength": 266,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_kiba",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 250,
+     "endStrength": 250,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {},
+   "pledge": {
+    "targetId": "t_reserve",
+    "result": "kept"
+   }
+  },
+  "snaps": [
+   "0:1727e4b6",
+   "300:abc3e698",
+   "600:5a8329cc",
+   "706:d07e3c8b"
+  ],
+  "events": "a040fdcd",
+  "eventCount": 20
+ },
+ "ieyasu:home:pledge:frontalNoHq": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_army_broken",
+   "elapsedSec": 128.7,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 118,
+     "status": "routed"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 188,
+     "status": "routed"
+    },
+    {
+     "id": "t_reserve",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 300,
+     "endStrength": 0,
+     "status": "destroyed"
+    },
+    {
+     "id": "e_ronin_hq",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 350,
+     "endStrength": 221,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_yari",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 550,
+     "endStrength": 332,
+     "status": "routed"
+    },
+    {
+     "id": "e_ronin_yumi",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_kiba",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 250,
+     "endStrength": 240,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {},
+   "pledge": {
+    "targetId": "t_reserve",
+    "result": "broken"
+   }
+  },
+  "snaps": [
+   "0:1727e4b6",
+   "300:369ff211",
+   "600:e746839e",
+   "900:2204a617",
+   "1200:caa8e8dd",
+   "1287:d8707d51"
+  ],
+  "events": "fcf93f5d",
+  "eventCount": 28
+ },
+ "ieyasu:home:pledge:planKeep": {
+  "outcome": {
+   "result": "victory",
+   "reason": "enemy_army_broken",
+   "elapsedSec": 235.6,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 338,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 197,
+     "status": "ready"
+    },
+    {
+     "id": "t_reserve",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 300,
+     "endStrength": 278,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_hq",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_yari",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 550,
+     "endStrength": 350,
+     "status": "routed"
+    },
+    {
+     "id": "e_ronin_yumi",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 300,
+     "endStrength": 146,
+     "status": "routed"
+    },
+    {
+     "id": "e_ronin_kiba",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 250,
+     "endStrength": 104,
+     "status": "routed"
+    }
+   ],
+   "abilitiesUsed": {
+    "t_honjin": 147.9
+   },
+   "pledge": {
+    "targetId": "t_reserve",
+    "result": "kept"
+   }
+  },
+  "snaps": [
+   "0:1727e4b6",
+   "300:9d95e3a1",
+   "600:2215fa4f",
+   "900:83ba3c3b",
+   "1200:072ba5be",
+   "1500:a39e2258",
+   "1800:bb564daa",
+   "2100:771f6e2a",
+   "2356:35a9c925"
+  ],
+  "events": "af38917d",
+  "eventCount": 26
+ },
+ "ieyasu:home:pledge:planBreak": {
+  "outcome": {
+   "result": "victory",
+   "reason": "enemy_army_broken",
+   "elapsedSec": 258.5,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 218,
+     "status": "ready"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 401,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 113,
+     "status": "ready"
+    },
+    {
+     "id": "t_reserve",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 300,
+     "endStrength": 134,
+     "status": "routed"
+    },
+    {
+     "id": "e_ronin_hq",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_yari",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 550,
+     "endStrength": 328,
+     "status": "routed"
+    },
+    {
+     "id": "e_ronin_yumi",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 300,
+     "endStrength": 140,
+     "status": "routed"
+    },
+    {
+     "id": "e_ronin_kiba",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 250,
+     "endStrength": 146,
+     "status": "routed"
+    }
+   ],
+   "abilitiesUsed": {
+    "t_honjin": 135.7
+   },
+   "pledge": {
+    "targetId": "t_reserve",
+    "result": "broken"
+   }
+  },
+  "snaps": [
+   "0:1727e4b6",
+   "300:a8294be4",
+   "600:88e6a554",
+   "900:24e03f2d",
+   "1200:658d3d3f",
+   "1500:7a277fcd",
+   "1800:7f97060b",
+   "2100:6290766e",
+   "2400:9f02c9d9",
+   "2585:d61d84f0"
+  ],
+  "events": "33221c38",
+  "eventCount": 29
+ },
+ "ieyasu:home:pledge:retreatSave": {
+  "outcome": {
+   "result": "retreat",
+   "reason": "ordered_retreat",
+   "elapsedSec": 166.5,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "withdrawn"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 415,
+     "status": "withdrawn"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "withdrawn"
+    },
+    {
+     "id": "t_reserve",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 300,
+     "endStrength": 162,
+     "status": "withdrawn"
+    },
+    {
+     "id": "e_ronin_hq",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_yari",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 550,
+     "endStrength": 550,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_yumi",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_kiba",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 250,
+     "endStrength": 109,
+     "status": "routed"
+    }
+   ],
+   "abilitiesUsed": {
+    "t_tadakatsu": 78.4
+   },
+   "pledge": {
+    "targetId": "t_reserve",
+    "result": "kept"
+   }
+  },
+  "snaps": [
+   "0:1727e4b6",
+   "300:393e1b3b",
+   "600:474b2e5f",
+   "900:b45dee9c",
+   "1200:b36c5a43",
+   "1500:f19971f5",
+   "1665:33984d0a"
+  ],
+  "events": "43c4feb2",
+  "eventCount": 17
+ },
+ "ieyasu:home:pledge:retreat90": {
+  "outcome": {
+   "result": "retreat",
+   "reason": "ordered_retreat",
+   "elapsedSec": 110,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "withdrawn"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 450,
+     "status": "withdrawn"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "withdrawn"
+    },
+    {
+     "id": "t_reserve",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 300,
+     "endStrength": 43,
+     "status": "routed"
+    },
+    {
+     "id": "e_ronin_hq",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_yari",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 550,
+     "endStrength": 550,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_yumi",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_kiba",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 250,
+     "endStrength": 245,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {},
+   "pledge": {
+    "targetId": "t_reserve",
+    "result": "broken"
+   }
+  },
+  "snaps": [
+   "0:1727e4b6",
+   "300:efd60969",
+   "600:96dee641",
+   "900:463e0990",
+   "1100:82d26304"
+  ],
+  "events": "2fdc64f7",
+  "eventCount": 12
+ },
+ "ieyasu:home:pledge:wander": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_hq_routed",
+   "elapsedSec": 137.9,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 182,
+     "status": "routed"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 216,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 285,
+     "status": "ready"
+    },
+    {
+     "id": "t_reserve",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 300,
+     "endStrength": 26,
+     "status": "routed"
+    },
+    {
+     "id": "e_ronin_hq",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_yari",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 550,
+     "endStrength": 377,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_yumi",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_kiba",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 250,
+     "endStrength": 228,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {},
+   "pledge": {
+    "targetId": "t_reserve",
+    "result": "broken"
+   }
+  },
+  "snaps": [
+   "0:1727e4b6",
+   "300:a457c3b0",
+   "600:87413821",
+   "900:0450e874",
+   "1200:5da8fc63",
+   "1379:8cb9d835"
+  ],
+  "events": "fe9cfea2",
+  "eventCount": 25
+ },
+ "ieyasu:home:nopledge:hold": {
+  "outcome": {
+   "result": "retreat",
+   "reason": "nightfall",
+   "elapsedSec": 480,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 386,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "t_reserve",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 300,
+     "endStrength": 43,
+     "status": "routed"
+    },
+    {
+     "id": "e_ronin_hq",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_yari",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 550,
+     "endStrength": 550,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_yumi",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_kiba",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 250,
+     "endStrength": 88,
+     "status": "routed"
+    }
+   ],
+   "abilitiesUsed": {}
+  },
+  "snaps": [
+   "0:1727e4b6",
+   "300:efd60969",
+   "600:96dee641",
+   "900:463e0990",
+   "1200:dade91b9",
+   "1500:f89fe70d",
+   "1800:9eaaa9e4",
+   "2100:9eaaa9e4",
+   "2400:9eaaa9e4",
+   "2700:9eaaa9e4",
+   "3000:9eaaa9e4",
+   "3300:9eaaa9e4",
+   "3600:9eaaa9e4",
+   "3900:9eaaa9e4",
+   "4200:9eaaa9e4",
+   "4500:9eaaa9e4",
+   "4800:9eaaa9e4"
+  ],
+  "events": "d393640b",
+  "eventCount": 14
+ },
+ "ieyasu:home:nopledge:frontal": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_hq_routed",
+   "elapsedSec": 70.6,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 203,
+     "status": "routed"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 330,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "t_reserve",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 300,
+     "endStrength": 231,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_hq",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 350,
+     "endStrength": 337,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_yari",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 550,
+     "endStrength": 330,
+     "status": "routed"
+    },
+    {
+     "id": "e_ronin_yumi",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 300,
+     "endStrength": 266,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_kiba",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 250,
+     "endStrength": 250,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {}
+  },
+  "snaps": [
+   "0:1727e4b6",
+   "300:abc3e698",
+   "600:5a8329cc",
+   "706:d07e3c8b"
+  ],
+  "events": "10c92816",
+  "eventCount": 19
+ },
+ "ieyasu:home:nopledge:frontalNoHq": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_army_broken",
+   "elapsedSec": 128.7,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 118,
+     "status": "routed"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 188,
+     "status": "routed"
+    },
+    {
+     "id": "t_reserve",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 300,
+     "endStrength": 0,
+     "status": "destroyed"
+    },
+    {
+     "id": "e_ronin_hq",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 350,
+     "endStrength": 221,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_yari",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 550,
+     "endStrength": 332,
+     "status": "routed"
+    },
+    {
+     "id": "e_ronin_yumi",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_kiba",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 250,
+     "endStrength": 240,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {}
+  },
+  "snaps": [
+   "0:1727e4b6",
+   "300:369ff211",
+   "600:e746839e",
+   "900:2204a617",
+   "1200:caa8e8dd",
+   "1287:d8707d51"
+  ],
+  "events": "0dbe9673",
+  "eventCount": 26
+ },
+ "ieyasu:home:nopledge:planKeep": {
+  "outcome": {
+   "result": "victory",
+   "reason": "enemy_army_broken",
+   "elapsedSec": 235.6,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 338,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 197,
+     "status": "ready"
+    },
+    {
+     "id": "t_reserve",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 300,
+     "endStrength": 278,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_hq",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_yari",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 550,
+     "endStrength": 350,
+     "status": "routed"
+    },
+    {
+     "id": "e_ronin_yumi",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 300,
+     "endStrength": 146,
+     "status": "routed"
+    },
+    {
+     "id": "e_ronin_kiba",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 250,
+     "endStrength": 104,
+     "status": "routed"
+    }
+   ],
+   "abilitiesUsed": {
+    "t_honjin": 147.9
+   }
+  },
+  "snaps": [
+   "0:1727e4b6",
+   "300:9d95e3a1",
+   "600:2215fa4f",
+   "900:83ba3c3b",
+   "1200:072ba5be",
+   "1500:a39e2258",
+   "1800:bb564daa",
+   "2100:771f6e2a",
+   "2356:35a9c925"
+  ],
+  "events": "1283cddf",
+  "eventCount": 24
+ },
+ "ieyasu:home:nopledge:planBreak": {
+  "outcome": {
+   "result": "victory",
+   "reason": "enemy_army_broken",
+   "elapsedSec": 258.5,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 218,
+     "status": "ready"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 401,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 113,
+     "status": "ready"
+    },
+    {
+     "id": "t_reserve",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 300,
+     "endStrength": 134,
+     "status": "routed"
+    },
+    {
+     "id": "e_ronin_hq",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_yari",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 550,
+     "endStrength": 328,
+     "status": "routed"
+    },
+    {
+     "id": "e_ronin_yumi",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 300,
+     "endStrength": 140,
+     "status": "routed"
+    },
+    {
+     "id": "e_ronin_kiba",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 250,
+     "endStrength": 146,
+     "status": "routed"
+    }
+   ],
+   "abilitiesUsed": {
+    "t_honjin": 135.7
+   }
+  },
+  "snaps": [
+   "0:1727e4b6",
+   "300:a8294be4",
+   "600:88e6a554",
+   "900:24e03f2d",
+   "1200:658d3d3f",
+   "1500:7a277fcd",
+   "1800:7f97060b",
+   "2100:6290766e",
+   "2400:9f02c9d9",
+   "2585:d61d84f0"
+  ],
+  "events": "c42e6177",
+  "eventCount": 27
+ },
+ "ieyasu:home:nopledge:retreatSave": {
+  "outcome": {
+   "result": "retreat",
+   "reason": "ordered_retreat",
+   "elapsedSec": 166.5,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "withdrawn"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 415,
+     "status": "withdrawn"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "withdrawn"
+    },
+    {
+     "id": "t_reserve",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 300,
+     "endStrength": 162,
+     "status": "withdrawn"
+    },
+    {
+     "id": "e_ronin_hq",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_yari",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 550,
+     "endStrength": 550,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_yumi",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_kiba",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 250,
+     "endStrength": 109,
+     "status": "routed"
+    }
+   ],
+   "abilitiesUsed": {
+    "t_tadakatsu": 78.4
+   }
+  },
+  "snaps": [
+   "0:1727e4b6",
+   "300:393e1b3b",
+   "600:474b2e5f",
+   "900:b45dee9c",
+   "1200:b36c5a43",
+   "1500:f19971f5",
+   "1665:33984d0a"
+  ],
+  "events": "f6008c01",
+  "eventCount": 15
+ },
+ "ieyasu:home:nopledge:retreat90": {
+  "outcome": {
+   "result": "retreat",
+   "reason": "ordered_retreat",
+   "elapsedSec": 110,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "withdrawn"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 450,
+     "status": "withdrawn"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "withdrawn"
+    },
+    {
+     "id": "t_reserve",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 300,
+     "endStrength": 43,
+     "status": "routed"
+    },
+    {
+     "id": "e_ronin_hq",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_yari",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 550,
+     "endStrength": 550,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_yumi",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_kiba",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 250,
+     "endStrength": 245,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {}
+  },
+  "snaps": [
+   "0:1727e4b6",
+   "300:efd60969",
+   "600:96dee641",
+   "900:463e0990",
+   "1100:82d26304"
+  ],
+  "events": "68e5237d",
+  "eventCount": 10
+ },
+ "ieyasu:home:nopledge:wander": {
+  "outcome": {
+   "result": "defeat",
+   "reason": "ally_hq_routed",
+   "elapsedSec": 137.9,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 300,
+     "endStrength": 182,
+     "status": "routed"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 450,
+     "endStrength": 216,
+     "status": "ready"
+    },
+    {
+     "id": "t_yumi",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 350,
+     "endStrength": 285,
+     "status": "ready"
+    },
+    {
+     "id": "t_reserve",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 300,
+     "endStrength": 26,
+     "status": "routed"
+    },
+    {
+     "id": "e_ronin_hq",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_yari",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 550,
+     "endStrength": 377,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_yumi",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_kiba",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 250,
+     "endStrength": 228,
+     "status": "ready"
+    }
+   ],
+   "abilitiesUsed": {}
+  },
+  "snaps": [
+   "0:1727e4b6",
+   "300:a457c3b0",
+   "600:87413821",
+   "900:0450e874",
+   "1200:5da8fc63",
+   "1379:8cb9d835"
+  ],
+  "events": "b74127ef",
+  "eventCount": 23
+ },
+ "ieyasu:home:weak:plan": {
+  "outcome": {
+   "result": "retreat",
+   "reason": "nightfall",
+   "elapsedSec": 480,
+   "units": [
+    {
+     "id": "t_honjin",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "ieyasu",
+     "startStrength": 120,
+     "endStrength": 120,
+     "status": "ready"
+    },
+    {
+     "id": "t_tadakatsu",
+     "side": "ally",
+     "clan": "tokugawa",
+     "leaderId": "tadakatsu",
+     "startStrength": 200,
+     "endStrength": 112,
+     "status": "ready"
+    },
+    {
+     "id": "t_reserve",
+     "side": "ally",
+     "clan": "tokugawa",
+     "startStrength": 90,
+     "endStrength": 68,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_hq",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 350,
+     "endStrength": 350,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_yari",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 550,
+     "endStrength": 550,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_yumi",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 300,
+     "endStrength": 300,
+     "status": "ready"
+    },
+    {
+     "id": "e_ronin_kiba",
+     "side": "enemy",
+     "clan": "ronin",
+     "startStrength": 250,
+     "endStrength": 141,
+     "status": "routed"
+    }
+   ],
+   "abilitiesUsed": {},
+   "pledge": {
+    "targetId": "t_reserve",
+    "result": "kept"
+   }
+  },
+  "snaps": [
+   "0:17b32afc",
+   "300:e7bf1086",
+   "600:b24928e2",
+   "900:0f18b6e0",
+   "1200:d71dd151",
+   "1500:3385ba00",
+   "1800:327ee15e",
+   "2100:d3737c4e",
+   "2400:d3737c4e",
+   "2700:d3737c4e",
+   "3000:d3737c4e",
+   "3300:d3737c4e",
+   "3600:d3737c4e",
+   "3900:d3737c4e",
+   "4200:d3737c4e",
+   "4500:d3737c4e",
+   "4800:d3737c4e"
+  ],
+  "events": "1a46cb92",
+  "eventCount": 9
+ }
+}
