@@ -1,16 +1,35 @@
 /**
  * 戦場「丘陵」（hills）。高所を取る意味がある。高低差の効果は highGround のデータで調整する。
  *
- * - 400 m × 320 m。中央に大きな丘（中心 (0,-10)、半径 75 m、高さ 14 m）、東に丘（中心 (140,40)、半径 55 m、高さ 10 m）。間は谷。
+ * - 400 m × 320 m。中央に大きな丘（中心 (0,-20)）。裾野（半径 75 m・高さ 10 m）の上に、急な頂（半径 35 m・高さ 20 m）が乗る。
+ *   頂の近くは坂が急なので、頂に立つ部隊と 20 m ほど下の部隊とでは高さが 5 m ほど違い、高所の有利がはっきり効く
+ *   （なだらかな丘だと、頂で組み合う部隊どうしの高さの差が 2 m に届かず、有利が効かない）。
+ * - 東に丘（中心 (140,25)、半径 50 m、高さ 12 m）。中央の丘との間は谷。東の丘には敵勢の弓隊が陣取り、
+ *   高所の射程（+30 m）で谷と、中央の丘へ南から登る道筋（こちらの右翼の持ち場まで）を射る。頂（こちらより高い所）には届かない。
  * - 高所の有利（この戦場は強め）：下から正面に来る相手の損害 ×0.65、弓の射程 +30 m、隠れた相手を 40 m 遠くから見つける。
- * - 敵勢の先手と槍は、始まるとすぐ中央の丘へ攻め上がる（assault）。東の丘には敵の弓が陣取る。
- * - 主目標：中央の丘を 90 秒確保する。副目標：敵の弓隊（東の丘）を崩す。
+ *   横・後ろから当たる相手には効かない（回り込めば丘の上の相手も崩せる）。
+ * - 敵勢：先手（槍）と槍隊は、始まるとすぐ中央の丘の頂へ攻め上がり（assault）、着いたら頂を守る。
+ *   後詰め（槍）も遅れて頂へ上がって来る。騎馬は本陣の脇の後詰め（reserve）で、味方（敵勢）が崩れ始めると出て来る。
+ *   こちらの槍が頂へまっすぐ向かうと、敵の先手が数秒早く頂に着く。騎馬（足が速い）なら先に頂に着ける。
+ * - 主目標：中央の丘の頂を 90 秒確保する（頂に敵がいない間、味方がいれば数える）。副目標：東の丘の弓隊を崩す。
+ * - 特殊ルールなし（高所の決まり highGround で表す）。
+ *
+ * 釣り合い（tests/proto3d-field-hills.test.ts。早送りの台本で確かめた。命令は 1 部隊ずつ 2 秒おきに出す）：
+ * - 何もしない → 日没（頂を取れない。右翼の酒井隊は東の丘の弓に射すくめられて全滅する）。
+ * - 騎馬を使わずに槍で頂へ向かう → 敵の先手が先に頂に着き、下から当たることになって負ける。
+ * - 敵が頂を取った後で、四隊で正面から攻め上がる → 勝っても日没の間際で損害 4 割近く（時刻をずらすと多くは負け・日没）。
+ * - 騎馬で先に頂を取り、槍二隊を頂の左右に並べ、石川隊・弓を頂のすぐ後ろに置く → 攻め上がる敵を上から受けて勝つ（損害 2 割ほど）。
+ * - 頂を取られたら：騎馬と酒井隊で東の丘の弓を崩し、石川隊と谷を抜けて頂の東へ回り、忠勝隊が南から当たるのに合わせて
+ *   横から当たる → 勝つ（損害 1 割ほど、副目標も達成）。弓を放って谷を抜けると、谷で矢を浴びて損害が大きい。
  */
 import type { BattlefieldDef } from './types';
 import { E, T } from './roster';
 
 const N = 0;
 const S = Math.PI;
+
+/** 中央の丘の頂 */
+const CREST = { x: 0, z: -20 };
 
 export const HILLS: BattlefieldDef = {
     id: 'hills',
@@ -20,42 +39,50 @@ export const HILLS: BattlefieldDef = {
     width: 400,
     depth: 320,
     terrain: [
-        { kind: 'hill', circle: { cx: 0, cz: -10, r: 75 }, height: 14 },
-        { kind: 'hill', circle: { cx: 140, cz: 40, r: 55 }, height: 10 },
+        // 中央の丘：なだらかな裾野と、急な頂（重なる所は高い方）
+        { kind: 'hill', circle: { cx: CREST.x, cz: CREST.z, r: 75 }, height: 10 },
+        { kind: 'hill', circle: { cx: CREST.x, cz: CREST.z, r: 35 }, height: 20 },
+        // 東の丘（敵勢の弓隊）
+        { kind: 'hill', circle: { cx: 140, cz: 25, r: 50 }, height: 12 },
         { kind: 'woods', rect: { x0: -200, x1: -150, z0: -160, z1: 20 } },
     ],
     highGround: { defenseVsLower: 0.65, minDiff: 2, rangeBonus: 30, sightBonus: 40 },
     deployments: {
         ally: [
-            { id: 'hq', x: 0, z: 130, facing: N, note: '本陣' },
-            { id: 'center_l', x: -30, z: 85, facing: N, note: '正面の左' },
-            { id: 'center_r', x: 30, z: 85, facing: N, note: '正面の右' },
-            { id: 'flank', x: -115, z: 95, facing: N, note: '左の外（騎馬）' },
-            { id: 'reserve', x: 0, z: 110, facing: N, note: '後詰め' },
-            { id: 'archers', x: 70, z: 105, facing: N, note: '弓' },
+            { id: 'hq', x: 0, z: 140, facing: N, note: '本陣' },
+            { id: 'center_l', x: -30, z: 95, facing: N, note: '正面の左' },
+            { id: 'center_r', x: 30, z: 95, facing: N, note: '正面の右（東の丘の弓が届く）' },
+            { id: 'flank', x: -60, z: 60, facing: N, note: '左の前（騎馬。頂まで 100 m）' },
+            { id: 'reserve', x: 0, z: 120, facing: N, note: '後詰め' },
+            { id: 'archers', x: -40, z: 105, facing: N, note: '弓' },
         ],
         enemy: [
-            { id: 'hq', x: 0, z: -135, facing: S, note: '本陣' },
-            { id: 'vanguard', x: 0, z: -95, facing: S, note: '先手（丘へ攻め上がる）' },
-            { id: 'left', x: -55, z: -105, facing: S, note: '槍（丘へ攻め上がる）' },
-            { id: 'east_hill', x: 140, z: 30, facing: S, note: '東の丘の弓' },
-            { id: 'west', x: -125, z: -110, facing: S, note: '西の騎馬（回り込む）' },
-            { id: 'reserve', x: 60, z: -120, facing: S, note: '後詰め' },
+            { id: 'hq', x: 0, z: -140, facing: S, note: '本陣' },
+            { id: 'vanguard', x: -15, z: -130, facing: S, note: '先手（頂の西へ攻め上がる）' },
+            { id: 'right', x: 25, z: -130, facing: S, note: '槍（頂の東へ攻め上がる）' },
+            { id: 'reserve', x: 60, z: -125, facing: S, note: '後詰め（遅れて頂へ上がる）' },
+            { id: 'west', x: -45, z: -125, facing: S, note: '騎馬（本陣の脇で控える）' },
+            { id: 'east_hill', x: 140, z: 17, facing: S, note: '東の丘の弓' },
         ],
     },
     exits: { ally: { x: 0, z: 160 }, enemy: { x: 0, z: -160 } },
     objectives: {
-        primary: { id: 'hills_center', type: 'hold_point', label: '中央の丘を確保する', zone: { circle: { cx: 0, cz: -10, r: 35 } }, sec: 90 },
+        primary: { id: 'hills_center', type: 'hold_point', label: '中央の丘の頂を確保する', zone: { circle: { cx: CREST.x, cz: CREST.z, r: 35 } }, sec: 90 },
         secondary: [{ id: 'hills_archers', type: 'break_unit', label: '東の丘の敵の弓隊を崩す', unitId: 'e_yumi' }],
     },
     timeLimitSec: 480,
     briefing: [
-        'ゲーム用の演習（架空の相手）。中央に大きな丘、東に丘がある。間は谷。',
-        '高所の有利（この戦場は強め）：丘の上の部隊は、下から正面に来る相手の損害を ×0.65 に抑える。弓は高所から 30 m 遠くまで届き、隠れた相手を 40 m 遠くから見つける。',
-        '敵勢の先手と槍は、始まるとすぐ中央の丘へ攻め上がる。東の丘には敵の弓が陣取り、谷を射る。',
+        'ゲーム用の演習（架空の相手）。中央に大きな丘、東に丘がある。間は谷。中央の丘は頂の近くが急で、頂を取った側が有利になる。',
+        '高所の有利（この戦場は強め）：丘の上の部隊は、下から正面に来る相手の損害を ×0.65 に抑える（横・後ろから来る相手には効かない）。弓は高所から 30 m 遠くまで届き、隠れた相手を 40 m 遠くから見つける。',
+        '敵勢の先手と槍は、始まるとすぐ中央の丘の頂へ攻め上がる。槍の足では敵の先手より遅れる。騎馬なら先に頂に着ける。後詰めも遅れて頂へ上がって来る。',
+        '東の丘には敵の弓が陣取り、谷と、中央の丘へ南から登る道筋（右翼の持ち場まで）を射る。',
         '勝利：中央の丘の頂を 90 秒確保する（頂に敵がいない間、味方がいれば数える）。敵勢の部隊をすべて崩しても勝ち。副目標：東の丘の弓隊を崩す。',
     ],
-    tactics: ['先に中央の丘へ上がって、攻め上がってくる敵を上から受ける', '丘を取られたら正面から押さず、横・後ろへ回り込む。東の丘の弓は谷を避けて回って崩す'],
+    tactics: [
+        '騎馬（榊原隊）で先に頂を取り、槍（忠勝隊・酒井隊）を頂の左右に並べて、攻め上がって来る敵を上から受ける。石川隊と弓は頂のすぐ後ろに置く（弓は高所から遠くまで届く）',
+        '頂を取られたら正面から押さない。騎馬と一隊で東の丘の弓を先に崩し、谷を抜けて頂の東へ回り、南から当たる忠勝隊に合わせて横から当たる',
+        '弓を放って谷を抜けると、谷で矢を浴び続ける。頂を取られたまま正面から攻め上がると、勝っても損害が大きい',
+    ],
     presets: [
         {
             id: 'standard',
@@ -63,17 +90,17 @@ export const HILLS: BattlefieldDef = {
             summary: '味方 6／敵 6。家康・本多忠勝・榊原康政（騎馬）・酒井忠次・石川数正と、徳川弓隊',
             units: [
                 T.ieyasu('hq'),
-                T.tadakatsu('center_l'),
+                T.tadakatsu('center_l', 500),
                 T.sakai('center_r'),
-                T.sakakibara('flank', 'kiba', 280),
-                T.ishikawa('reserve'),
+                { ...T.sakakibara('flank', 'kiba', 350), morale: 90 },
+                T.ishikawa('reserve', 400),
                 T.yumi('archers'),
                 E('e_hq', 'honjin', '敵勢の本陣', 350, 85, 'hq', { aiRole: 'guard_hq' }),
-                E('e_sente', 'yari', '敵勢の先手', 500, 80, 'vanguard', { aiRole: 'assault', aiTarget: { x: 0, z: -15, r: 30 } }),
-                E('e_yari', 'yari', '敵勢の槍', 400, 75, 'left', { aiRole: 'assault', aiTarget: { x: -25, z: -5, r: 30 } }),
-                E('e_yumi', 'yumi', '敵勢の弓隊', 300, 75, 'east_hill', { aiRole: 'hold_zone', aiTarget: { x: 140, z: 35, r: 40 } }),
-                E('e_kiba', 'kiba', '敵勢の騎馬', 250, 75, 'west', { aiRole: 'flank' }),
-                E('e_reserve', 'yari', '敵勢の後詰め', 350, 75, 'reserve', { aiRole: 'reserve' }),
+                E('e_sente', 'yari', '敵勢の先手', 600, 80, 'vanguard', { aiRole: 'assault', aiTarget: { x: -10, z: CREST.z, r: 14 } }),
+                E('e_yari', 'yari', '敵勢の槍', 500, 70, 'right', { aiRole: 'assault', aiTarget: { x: 12, z: CREST.z, r: 14 } }),
+                E('e_yumi', 'yumi', '敵勢の弓隊', 300, 75, 'east_hill', { aiRole: 'hold_zone', aiTarget: { x: 140, z: 20, r: 40 } }),
+                E('e_kiba', 'kiba', '敵勢の騎馬', 250, 75, 'west', { aiRole: 'reserve' }),
+                E('e_reserve', 'yari', '敵勢の後詰め', 300, 75, 'reserve', { aiRole: 'assault', aiTarget: { x: 0, z: CREST.z - 2, r: 14 } }),
             ],
         },
     ],
