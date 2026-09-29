@@ -13,7 +13,7 @@ import './ui.css';
 import type { ConfirmOptions, EndingOptions, GameView, HudInfo, MenuAction, MenuInfo, PromptInfo, ScriptOptions, TitleAction, TitleInfo, TitleScenarioInfo } from '../campaign/game';
 import type { ScenarioEndingView, ScenarioScript } from '../campaign/scenario';
 import { CHAPTER_TITLE, PROVISIONAL_LABEL } from '../campaign/story';
-import { SCENARIO_TITLE_TEXT } from './scenarioTitles';
+import { PRACTICE_TITLE_TEXT, SCENARIO_TITLE_TEXT } from './scenarioTitles';
 import { el, nowMs, onPress } from './dom';
 import { ADVANCE_GUARD_MS, CHOICE_GUARD_MS, HeldKeys, InputGate } from './guard';
 
@@ -27,7 +27,7 @@ function startedAt(e: Event): number {
     return Number.isFinite(t) && t > 0 && t <= now + 1000 ? t : now;
 }
 
-type ModalKind = 'title' | 'script' | 'confirm' | 'menu' | 'ending';
+type ModalKind = 'title' | 'script' | 'confirm' | 'menu' | 'ending' | 'sheet';
 
 /** 確認用（開発ビルドの __game）：今の画面の中身と、押す操作 */
 export interface ModalProbe {
@@ -42,6 +42,21 @@ export interface ModalProbe {
     /** 確認・メニュー・タイトル・結末：ボタンの id と文字 */
     buttons?: { id: string; label: string; disabled: boolean }[];
     text?: string;
+    /** 板（sheet）の名前（例：practice-list） */
+    sheet?: string;
+}
+
+/** 画面いっぱいの板（sheet）：中身は呼ぶ側が作り、ボタンの並びは見張り（ui/guard.ts）付きで置く */
+export interface SheetOptions {
+    /** 板の名前（層の data-sheet と ModalProbe.sheet に入る） */
+    name: string;
+    /** 中身（ボタンを置く所 parent も、この中に作っておく） */
+    body: HTMLElement;
+    /** ボタン（parent を省けば中身の最後の並びに置く） */
+    buttons: { id: string; label: string; sub?: string; disabled?: boolean; parent?: HTMLElement }[];
+    defaultIndex?: number;
+    /** Esc で選ぶボタン */
+    cancelId?: string;
 }
 
 interface Modal {
@@ -342,7 +357,7 @@ export class DomView implements GameView {
     title(info: TitleInfo): Promise<TitleAction> {
         // ページの題（タブ）：タイトルでは遊ぶシナリオが決まっていないので、シナリオの名前を付けない
         document.title = info.scenarios.length > 1 ? PAGE_TITLE : `${PAGE_TITLE} ${CHAPTER_TITLE}（${PROVISIONAL_LABEL}）`;
-        if (info.scenarios.length > 1) return this.titleMulti(info.scenarios);
+        if (info.scenarios.length > 1) return this.titleMulti(info.scenarios, !!info.practice);
         return new Promise((resolve) => {
             const layer = this.open('title', 'solid g-title-layer');
             const box = el('div', 'g-title-box');
@@ -382,8 +397,9 @@ export class DomView implements GameView {
     /**
      * シナリオを並べたタイトル：シナリオごとの札（名前・札・史実と創作の注記・はじめから／つづきから（それぞれの保存））。
      * ボタンは 'new:<id>'／'continue:<id>' を返す。低い画面（スマホ横）では札を左右に並べ、はみ出す分は縦に動かせる。
+     * practice なら、札の下に合戦場の演習の入口（1 行。ボタン 'practice'）を足す（シナリオのボタンの並び・id は変えない）。
      */
-    private titleMulti(list: TitleScenarioInfo[]): Promise<TitleAction> {
+    private titleMulti(list: TitleScenarioInfo[], practice = false): Promise<TitleAction> {
         return new Promise((resolve) => {
             const layer = this.open('title', 'solid g-title-layer');
             const scroll = el('div', 'g-title-scroll g-scroll');
@@ -410,6 +426,18 @@ export class DomView implements GameView {
                 if (sc.problem) card.append(el('p', 'problem', sc.problem));
                 card.append(el('p', 'g-note', sc.note));
                 cards.append(card);
+            }
+            if (practice) {
+                // 合戦場の演習の入口（シナリオとは別。章の状態・保存には触れない）
+                const pr = el('section', 'g-practice-entry');
+                pr.dataset.practice = 'entry';
+                const txt = el('div', 'txt');
+                const h = el('h2', undefined, PRACTICE_TITLE_TEXT.name);
+                h.append(el('span', 'g-tag', PRACTICE_TITLE_TEXT.label));
+                txt.append(h, el('p', undefined, PRACTICE_TITLE_TEXT.lead));
+                pr.append(txt);
+                box.append(pr);
+                items.push({ id: 'practice', label: '演習を選ぶ', parent: pr });
             }
             // 最初に選ばれている：保存のある最初のシナリオの「つづきから」。どれにも保存が無ければ最初のシナリオの「はじめから」
             const firstSave = list.findIndex((x) => !!x.save);
@@ -634,6 +662,45 @@ export class DomView implements GameView {
                 this.close(m);
                 resolve(id as MenuAction);
             });
+            this.push(m);
+        });
+    }
+
+    /**
+     * 画面いっぱいの板（合戦場の演習の一覧・説明・結果）。中身は呼ぶ側（ui/practiceView.ts）が作る。
+     * 覆っている間は探索の描画を止める（onCover）。ボタンは確認・メニューと同じ見張り付きの並び（出たばかりは決まらない）。
+     */
+    sheet(o: SheetOptions): Promise<string> {
+        return new Promise((resolve) => {
+            const layer = this.open('sheet', 'solid');
+            layer.dataset.sheet = o.name;
+            const scroll = el('div', 'g-sheet g-scroll');
+            const inner = el('div', 'g-sheet-inner');
+            inner.append(o.body);
+            const btns = el('div', 'g-sheet-btns');
+            inner.append(btns);
+            scroll.append(inner);
+            layer.append(scroll);
+            const m: Modal = {
+                kind: 'sheet',
+                layer,
+                key: (e) => {
+                    if (e.code === 'Escape' && o.cancelId) {
+                        e.preventDefault();
+                        if (!e.repeat) row.press(o.cancelId);
+                        return;
+                    }
+                    row.key(e);
+                },
+                probe: () => ({ kind: 'sheet', sheet: o.name, buttons: row.buttons, text: inner.textContent ?? '' }),
+                press: (id) => row.press(id),
+                reexpose: () => row.reexpose(),
+            };
+            const row = this.buttonRow(btns, o.buttons, o.defaultIndex ?? 0, (id) => {
+                this.close(m);
+                resolve(id);
+            });
+            if (!btns.childElementCount) btns.remove();
             this.push(m);
         });
     }

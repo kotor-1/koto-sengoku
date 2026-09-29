@@ -51,9 +51,11 @@ export interface TitleInfo {
     note: string;
     /** 選べるシナリオ（1 つだけのときは、上の 3 つと同じ中身が 1 つ入る） */
     scenarios: TitleScenarioInfo[];
+    /** 合戦場の演習の入口を出すか（GameDeps.practice があるとき。シナリオを並べたタイトルだけに出す） */
+    practice?: boolean;
 }
-/** 'new'／'continue' は最初のシナリオ。'new:ieyasu1570' のようにシナリオを指定もできる */
-export type TitleAction = 'new' | 'continue' | `${'new' | 'continue'}:${ScenarioId}`;
+/** 'new'／'continue' は最初のシナリオ。'new:ieyasu1570' のようにシナリオを指定もできる。'practice' は合戦場の演習 */
+export type TitleAction = 'new' | 'continue' | `${'new' | 'continue'}:${ScenarioId}` | 'practice';
 
 export interface ConfirmOptions {
     title: string;
@@ -145,9 +147,14 @@ export interface GameDeps {
     battleRunner: () => Promise<BattleRunnerLike | null>;
     /** 今の時刻（ミリ秒。合戦にかかった時間を遊んだ時間に足す） */
     now?: () => number;
+    /**
+     * 合戦場の演習（タイトルの入口。ui/practiceView.ts）。一覧の「戻る」で終わるまで待ち、終わればタイトルへ戻る。
+     * 章の状態・シナリオの保存には触れない。省けばタイトルに入口を出さない。
+     */
+    practice?: () => Promise<void>;
 }
 
-export type GameScreen = 'boot' | 'title' | 'explore' | 'talk' | 'council' | 'menu' | 'battle' | 'ending';
+export type GameScreen = 'boot' | 'title' | 'explore' | 'talk' | 'council' | 'menu' | 'battle' | 'ending' | 'practice';
 
 // ================= 本体 =================
 
@@ -258,8 +265,22 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
                 note: sc.note,
             }));
             const first = entries[0]!;
-            const info: TitleInfo = { save: first.save, problem: first.problem, note: first.note, scenarios: entries };
+            const info: TitleInfo = { save: first.save, problem: first.problem, note: first.note, scenarios: entries, ...(this.deps.practice ? { practice: true } : {}) };
             const act = await view.title(info);
+            if (act === 'practice') {
+                // 合戦場の演習：終われば、またタイトル（章の状態は持たないまま）
+                if (!this.deps.practice) continue;
+                this._screen = 'practice';
+                try {
+                    await this.deps.practice();
+                } catch (e) {
+                    this.lastError = errorText(e);
+                    console.error(e);
+                    view.toast(`演習を続けられませんでした：${this.lastError}`, 'error');
+                }
+                this._screen = 'title';
+                continue;
+            }
             const [kind, sid] = act.split(':') as ['new' | 'continue', ScenarioId | undefined];
             const pick = loads.find((l) => l.sc.id === (sid ?? loads[0]!.sc.id));
             if (!pick) continue;

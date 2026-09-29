@@ -17,6 +17,13 @@ export const SCENARIO_TITLE_TEXT: Readonly<Record<ScenarioId, { name: string; le
     },
 };
 
+/** タイトルの合戦場の演習の入口（シナリオとは別の 1 行。ボタンの id は 'practice'） */
+export const PRACTICE_TITLE_TEXT = {
+    name: '合戦場の演習',
+    label: 'ゲーム用の演習（架空の相手）',
+    lead: '大平原・河川・丘陵・森林・山道の 5 つの合戦場で、地形と目標に合った戦い方を試せます。相手は架空の「敵勢」で、史実の合戦の再現ではありません。',
+} as const;
+
 /** タイトルのボタンの id（'new:<シナリオ>'／'continue:<シナリオ>'。campaign/game.ts の TitleAction） */
 export function titleButtonIds(ids: readonly ScenarioId[]): string[] {
     return ids.flatMap((id) => [`new:${id}`, `continue:${id}`]);

@@ -382,3 +382,123 @@ body.g-modal #npc-labels { display: none; }
     .g-status { font-size: 12px; line-height: 1.35; gap: 2px 10px; margin-top: 4px; }
     .g-msg { margin-top: 6px; padding: 6px 10px; font-size: 12px; }
 }
+
+/* ---- 合戦場の演習（タイトルの入口・一覧・合戦の前の説明・結果。ui/practiceView.ts） ---- */
+.g-practice-entry {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 12px;
+    padding: 10px 14px;
+    border-radius: 14px;
+    background: rgba(20, 18, 15, 0.78);
+    border: 1px dashed rgba(200, 168, 106, 0.45);
+    text-align: left;
+}
+.g-practice-entry .txt { flex: 1 1 auto; min-width: 0; }
+.g-practice-entry h2 { margin: 0; font-size: 15px; letter-spacing: 0.08em; color: var(--gold); font-weight: 600; }
+.g-practice-entry p { margin: 3px 0 0; font-size: 11.5px; line-height: 1.5; color: var(--ink-soft); }
+.g-title-box.multi .g-practice-entry .g-btn { flex: 0 0 auto; width: auto; margin-top: 0; min-width: 132px; }
+@media (max-height: 430px) {
+    .g-practice-entry { margin-top: 8px; padding: 6px 12px; }
+    .g-practice-entry h2 { font-size: 14px; }
+    .g-practice-entry p { font-size: 10.5px; line-height: 1.4; }
+}
+
+/* 画面いっぱいの板（DomView.sheet）：中身は縦に動かせる。ボタンの並びは下に留める */
+.g-sheet {
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+}
+.g-sheet-inner {
+    width: min(calc(100vw - 28px - var(--safe-l) - var(--safe-r)), 980px);
+    margin: 0 auto;
+    padding: calc(var(--safe-t) + 16px) 0 0;
+    box-sizing: border-box;
+}
+.g-sheet-btns {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 12px;
+    padding: 10px 0 calc(var(--safe-b) + 12px);
+    background: linear-gradient(180deg, rgba(14, 12, 10, 0), rgba(14, 12, 10, 0.96) 30%);
+}
+.g-sheet-btns .g-btn { flex: 0 1 220px; }
+.g-pr .kicker { margin: 0; font-size: 12px; letter-spacing: 0.3em; color: var(--ink-soft); text-align: center; }
+.g-pr h1 { margin: 4px 0 2px; text-align: center; font-size: 22px; letter-spacing: 0.24em; color: var(--gold); font-weight: 600; }
+.g-pr .prov { margin: 0 0 8px; text-align: center; }
+.g-pr .prov .g-tag { margin-left: 0; }
+.g-pr-lead { margin: 0 0 10px; font-size: 13px; line-height: 1.6; text-align: center; color: var(--ink-soft); }
+.g-pr .problem { margin: 0 0 10px; font-size: 12px; color: #f3c9bf; text-align: center; }
+.g-pr .g-tag { vertical-align: 1px; }
+
+/* 一覧：戦場の札 */
+.g-pr-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 10px; }
+.g-pr-field {
+    display: flex;
+    flex-direction: column;
+    padding: 10px 14px 12px;
+    border-radius: 14px;
+    background: rgba(20, 18, 15, 0.8);
+    border: 1px solid var(--hairline);
+}
+.g-pr-field h2 { margin: 0; font-size: 16px; letter-spacing: 0.1em; color: var(--gold); font-weight: 600; }
+.g-pr-field .sum { margin: 3px 0 4px; font-size: 12.5px; line-height: 1.5; }
+.g-pr-field .g-status { font-size: 12px; margin-top: 2px; }
+.g-pr-field .rec.none { color: var(--ink-soft); }
+.g-pr-field .rec.best { color: var(--gold); }
+.g-pr-field-btn { margin-top: auto; padding-top: 8px; display: flex; }
+.g-pr-field-btn .g-btn { min-height: 40px; padding: 7px 12px; }
+
+/* 説明：左に目標・地形・決まり、右に編成 */
+.g-pr-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 12px; align-items: start; }
+.g-pr-cols .col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.g-pr-sec { padding: 10px 14px; border-radius: 12px; background: rgba(20, 18, 15, 0.8); border: 1px solid var(--hairline); }
+.g-pr-sec h2 { margin: 0 0 4px; font-size: 13px; letter-spacing: 0.2em; color: var(--ink-soft); font-weight: 400; }
+.g-pr-sec p { margin: 4px 0 0; font-size: 13px; line-height: 1.6; }
+.g-pr-sec ul { margin: 2px 0 0; padding-left: 1.2em; font-size: 13px; line-height: 1.6; }
+.g-pr-sec.obj dd[data-objective='primary'] { color: var(--gold); font-weight: 600; }
+.g-pr-units { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 1.35; }
+.g-pr-units th { text-align: left; font-weight: 400; color: var(--ink-soft); font-size: 11px; padding: 2px 6px 4px 0; border-bottom: 1px solid var(--hairline); white-space: nowrap; }
+.g-pr-units td { padding: 5px 6px 5px 0; border-bottom: 1px solid rgba(255, 246, 225, 0.06); vertical-align: top; }
+.g-pr-units td.num { text-align: right; padding-right: 10px; font-variant-numeric: tabular-nums; }
+.g-pr-units td.name small { display: block; font-size: 10.5px; color: var(--gold); }
+.g-pr-units td.ab .g-tag { margin-left: 4px; padding: 0 4px; }
+.g-pr-units + .g-note { margin-top: 6px; line-height: 1.5; }
+
+/* 結果：勝敗・主目標・副目標を別々の行に */
+.g-pr-result { max-width: 620px; margin: 0 auto; }
+.g-pr-outcome { font-size: 14px; gap: 6px 14px; padding: 12px 16px; border-radius: 12px; background: rgba(20, 18, 15, 0.8); border: 1px solid var(--hairline); }
+.g-pr-outcome .res { font-size: 18px; font-weight: 600; letter-spacing: 0.2em; }
+.g-pr-outcome .res.victory { color: var(--gold); }
+.g-pr-outcome .res.defeat { color: #f3c9bf; }
+.g-pr-outcome .ok { color: #cfe6c4; }
+.g-pr-outcome .ng { color: #f3c9bf; }
+
+@media (max-width: 700px) {
+    .g-pr-cols { grid-template-columns: 1fr; }
+}
+@media (max-height: 430px) {
+    .g-sheet-inner { padding-top: calc(var(--safe-t) + 8px); }
+    .g-pr .kicker { font-size: 11px; }
+    .g-pr h1 { font-size: 17px; margin: 2px 0 0; }
+    .g-pr .prov { margin-bottom: 4px; }
+    .g-pr-lead { font-size: 11.5px; margin-bottom: 6px; line-height: 1.45; }
+    .g-pr-fields { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 8px; }
+    .g-pr-field { padding: 8px 12px 10px; }
+    .g-pr-field h2 { font-size: 14px; }
+    .g-pr-field .sum { font-size: 11.5px; line-height: 1.4; }
+    .g-pr-field .g-status { font-size: 11px; }
+    .g-pr-sec { padding: 8px 12px; }
+    .g-pr-sec p, .g-pr-sec ul { font-size: 12px; line-height: 1.5; }
+    .g-pr-units { font-size: 11.5px; }
+    .g-sheet-btns { padding-top: 8px; padding-bottom: calc(var(--safe-b) + 8px); margin-top: 8px; }
+    .g-sheet-btns .g-btn { min-height: 40px; padding: 7px 12px; }
+}

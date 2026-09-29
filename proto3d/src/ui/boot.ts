@@ -17,6 +17,7 @@ import type { Alliance, CampaignPhase } from '../campaign/state';
 import type { BattleResultKind } from '../battle/types';
 import { ExploreWorld, type ExploreHost } from '../explore/world';
 import { DomView } from './view';
+import type { PracticeMode, PracticeRecordStore } from '../campaign/practice';
 
 export type { ExploreHost };
 
@@ -42,9 +43,34 @@ export function bootChapter(host: ExploreHost): ChapterGame<any> {
     const view = new DomView(host.overlay);
     const world = new ExploreWorld(host);
     // タイトルに並べるシナリオ（歴史分岐「元亀元年・家康」と架空の第一章「国境の砦」）。保存のキーはシナリオごとに別
-    const { scenarios, fictionalStore: store } = createScenarios(getBrowserStorage());
+    const storage = getBrowserStorage();
+    const { scenarios, fictionalStore: store } = createScenarios(storage);
+    // 合戦場の演習（タイトルの入口）：画面の塊は選んだときに読み込む。記録は 'koto-sengoku/3d-fields' だけに書く
+    let practice: { mode: PracticeMode; store: PracticeRecordStore } | null = null;
+    const runPractice = async (): Promise<void> => {
+        for (;;) {
+            try {
+                const m = await import('./practiceView');
+                practice = m.createPractice(view, storage, loadBattleRunner);
+                break;
+            } catch (e) {
+                const c = await view.confirm({
+                    title: '演習を読み込めませんでした',
+                    lines: [e instanceof Error ? e.message : String(e)],
+                    buttons: [
+                        { id: 'retry', label: 'もう一度' },
+                        { id: 'back', label: 'タイトルへ戻る' },
+                    ],
+                    defaultIndex: 0,
+                    cancelId: 'back',
+                });
+                if (c !== 'retry') return;
+            }
+        }
+        await practice.mode.run();
+    };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const game = new ChapterGame<any>({ view, world, store, scenarios, battleRunner: loadBattleRunner });
+    const game = new ChapterGame<any>({ view, world, store, scenarios, battleRunner: loadBattleRunner, practice: runPractice });
     view.onTalk = () => void game.interact();
     view.onMenu = () => void game.openMenu();
     // タイトル・軍議・メニュー・結末などが探索を覆っている間は、探索の描画を止める（見えない所の描画で電池と処理を使わない）
@@ -130,6 +156,29 @@ export function bootChapter(host: ExploreHost): ChapterGame<any> {
                     void game.openMenu();
                 },
                 loadBattleRunner,
+            },
+            // 合戦場の演習：今の画面（'closed'／'list'／'briefing'／'battle'／'result'）・選んでいる戦場・記録（読むだけ）
+            __practice: {
+                get screen() {
+                    return practice?.mode.screen ?? 'closed';
+                },
+                get fieldId() {
+                    return practice?.mode.fieldId ?? null;
+                },
+                /** 記録（保存を読み直した物。{ status, data? }） */
+                get records() {
+                    return practice?.store.load() ?? null;
+                },
+                get lastOutcome() {
+                    return practice?.mode.lastOutcome ?? null;
+                },
+                get lastSave() {
+                    return practice?.mode.lastSave ?? null;
+                },
+                /** 一番上の画面（__game.ui と同じ。kind 'sheet' なら sheet に practice-list などが入る） */
+                get ui() {
+                    return view.probe();
+                },
             },
         });
     }
