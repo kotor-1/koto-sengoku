@@ -2,6 +2,7 @@
  * 歴史分岐シナリオ「元亀元年・家康」の進め方（proto3d/src/campaign/ieyasu1570/flow.ts）：
  * 3 方針 × 勝利・撤退・敗北 × 約束（守った・守れなかった・引き受けなかった）のすべてが、戦後と結末へ着き、
  * 信頼・支援・兵・次章への印が決まりどおりになる。引き受けなかったのは約束違反と別。結果の反映は合戦の id ごとに 1 回だけ。
+ * 家臣の信頼：酒井忠次は勝敗、石川数正は約束の結果で動き、榊原康政（この章に出ない）は動かない。
  */
 import { describe, expect, it } from 'vitest';
 import type { BattleResultKind } from '../proto3d/src/battle/types';
@@ -36,6 +37,7 @@ import {
     type IeyasuState,
     type PledgeResult,
     type Policy,
+    type TrustId,
 } from '../proto3d/src/campaign/ieyasu1570/state';
 import { answerPledge, ieyasuToAftermath, ieyasuToBattle, ieyasuToMuster } from './proto3d-ieyasu-helpers';
 import { snapshot } from './proto3d-campaign-helpers';
@@ -44,7 +46,7 @@ const RESULTS: BattleResultKind[] = ['victory', 'retreat', 'defeat'];
 const PLEDGES: PledgeResult[] = ['kept', 'broken', 'declined'];
 
 /** 表どおりの信頼（テストの側で別に計算する） */
-function expectedTrust(p: Policy, r: BattleResultKind, pl: PledgeResult): Record<'oda' | 'asai' | 'tadakatsu', number> {
+function expectedTrust(p: Policy, r: BattleResultKind, pl: PledgeResult): Record<TrustId, number> {
     const t = { ...INITIAL_TRUST };
     const partner = { victory: 15, retreat: 0, defeat: -10 }[r];
     if (p === 'oda') {
@@ -58,6 +60,8 @@ function expectedTrust(p: Policy, r: BattleResultKind, pl: PledgeResult): Record
     }
     t.tadakatsu += { victory: 5, retreat: 0, defeat: 0 }[r];
     t[PLEDGE_SPECS[p].partner] += { kept: 25, broken: -25, declined: 0 }[pl];
+    t.sakai += { victory: 5, retreat: 0, defeat: -5 }[r];
+    t.ishikawa += { kept: 5, broken: -5, declined: 0 }[pl];
     return t;
 }
 

@@ -26,13 +26,19 @@ export const IEYASU_SCENARIO_ID = 'ieyasu1570' as const;
 export type Policy = IeyasuPolicy;
 export const POLICIES: readonly Policy[] = ['oda', 'asai', 'home'];
 
-/** 信頼を持つ相手（織田家・浅井家・本多忠勝） */
-export type TrustId = 'oda' | 'asai' | 'tadakatsu';
-export const TRUST_IDS: readonly TrustId[] = ['oda', 'asai', 'tadakatsu'];
+/**
+ * 信頼を持つ相手（織田家・浅井家・本多忠勝・酒井忠次・石川数正・榊原康政）。
+ * 家臣の鍵は battle/generals.ts の武将の relationKey と同じ。榊原康政はこの章に登場しない（値だけ持ち、次の章へ持ち越す）。
+ * 保存の版 1 は oda・asai・tadakatsu だけを持つ（読むときに残りを初期値で補う：save.ts）。
+ */
+export type TrustId = 'oda' | 'asai' | 'tadakatsu' | 'sakai' | 'ishikawa' | 'sakakibara';
+export const TRUST_IDS: readonly TrustId[] = ['oda', 'asai', 'tadakatsu', 'sakai', 'ishikawa', 'sakakibara'];
+/** 保存の版 1 にあった相手 */
+export const TRUST_IDS_V1: readonly TrustId[] = ['oda', 'asai', 'tadakatsu'];
 export const TRUST_MIN = -100;
 export const TRUST_MAX = 100;
-/** 信頼の初期値（ゲーム用の数値。1570 年の時点で織田と協力している、という開始の情勢だけを表す） */
-export const INITIAL_TRUST: Readonly<Record<TrustId, number>> = { oda: 30, asai: 10, tadakatsu: 40 };
+/** 信頼の初期値（ゲーム用の数値。1570 年の時点で織田と協力している、という開始の情勢だけを表す。家臣は忠勝と同じ 40 から） */
+export const INITIAL_TRUST: Readonly<Record<TrustId, number>> = { oda: 30, asai: 10, tadakatsu: 40, sakai: 40, ishikawa: 40, sakakibara: 40 };
 
 /** 人物（登場のしかたは設計 §2。信長は書状と使者だけで、戦場には出ない） */
 export type IeyasuCharacterId = 'ieyasu' | 'tadakatsu' | 'nobunaga' | 'nagamasa';
@@ -89,7 +95,8 @@ export type IeyasuChoiceId =
 export type PledgeResult = 'kept' | 'broken' | 'declined';
 export const PLEDGE_RESULTS: readonly PledgeResult[] = ['kept', 'broken', 'declined'];
 /** 約束の相手（信頼が動く相手）：A は織田家（使者）、B は浅井家（長政の使者）、C は本多忠勝 */
-export type PledgePartner = TrustId;
+export type PledgePartner = Extract<TrustId, 'oda' | 'asai' | 'tadakatsu'>;
+export const PLEDGE_PARTNERS: readonly PledgePartner[] = ['oda', 'asai', 'tadakatsu'];
 
 export interface PledgeState {
     /** 引き受けたか */

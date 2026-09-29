@@ -127,9 +127,9 @@ function toBattle(policy: Policy, answer: 'accept' | 'decline'): IeyasuState {
 }
 
 const ROUTES = [
-    { name: '経路 1：A × 約束を引き受ける → 勝利・約束を守った', policy: 'oda' as Policy, answer: 'accept' as const, plan: route1, result: 'victory', pledge: 'kept', abilities: ['t_honjin', 't_tadakatsu'], trust: { oda: 70, asai: -5, tadakatsu: 45 }, reinforcement: true, ending: 'oda_victory' },
-    { name: '経路 2：B × 約束を引き受ける → 撤退・約束を守った（退いたが味方を救った）', policy: 'asai' as Policy, answer: 'accept' as const, plan: route2, result: 'retreat', pledge: 'kept', abilities: ['a_nagamasa', 't_tadakatsu'], trust: { oda: 0, asai: 35, tadakatsu: 40 }, reinforcement: true, ending: 'retreat' },
-    { name: '経路 3：C × 約束を引き受けない → 勝利（中立）', policy: 'home' as Policy, answer: 'decline' as const, plan: route3, result: 'victory', pledge: 'declined', abilities: ['t_honjin'], trust: { oda: 20, asai: 10, tadakatsu: 45 }, reinforcement: false, ending: 'home_victory' },
+    { name: '経路 1：A × 約束を引き受ける → 勝利・約束を守った', policy: 'oda' as Policy, answer: 'accept' as const, plan: route1, result: 'victory', pledge: 'kept', abilities: ['t_honjin', 't_tadakatsu'], trust: { oda: 70, asai: -5, tadakatsu: 45, sakai: 45, ishikawa: 45, sakakibara: 40 }, reinforcement: true, ending: 'oda_victory' },
+    { name: '経路 2：B × 約束を引き受ける → 撤退・約束を守った（退いたが味方を救った）', policy: 'asai' as Policy, answer: 'accept' as const, plan: route2, result: 'retreat', pledge: 'kept', abilities: ['a_nagamasa', 't_tadakatsu'], trust: { oda: 0, asai: 35, tadakatsu: 40, sakai: 40, ishikawa: 45, sakakibara: 40 }, reinforcement: true, ending: 'retreat' },
+    { name: '経路 3：C × 約束を引き受けない → 勝利（中立）', policy: 'home' as Policy, answer: 'decline' as const, plan: route3, result: 'victory', pledge: 'declined', abilities: ['t_honjin'], trust: { oda: 20, asai: 10, tadakatsu: 45, sakai: 45, ishikawa: 40, sakakibara: 40 }, reinforcement: false, ending: 'home_victory' },
 ];
 
 describe('通しの経路の采配（画面で出せる命令だけ・反応の遅れ 1〜3 秒）', () => {
@@ -159,7 +159,7 @@ describe('通しの経路：戦後・保存・開き直し・結末（本物の�
             run: (s: IeyasuState) => runToEnd(createBattle(ieyasuBattleSetup(s)), ieyasuPlanScript('oda', 'break')),
             result: 'victory',
             pledge: 'broken',
-            trust: { oda: 20, asai: -5, tadakatsu: 45 },
+            trust: { oda: 20, asai: -5, tadakatsu: 45, sakai: 45, ishikawa: 35, sakakibara: 40 },
             reinforcement: false,
             ending: 'oda_victory',
         },

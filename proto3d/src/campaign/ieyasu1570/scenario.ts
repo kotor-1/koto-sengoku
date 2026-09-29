@@ -33,6 +33,7 @@ import {
     IEYASU_STATUS_LABELS,
     IEYASU_TALK_NAMES,
     POLICY_DONE_LABELS,
+    SHOWN_TRUST_IDS,
     TOKUGAWA_UNIT_NAMES,
     TRUST_NAMES,
     ieyasuEndingView,
@@ -143,7 +144,7 @@ export function ieyasuStatusLines(s: IeyasuState, extraPlaySec = 0): StatusLine[
         { label: '今', value: IEYASU_PHASE_LABELS[s.phase] },
         { label: '目的', value: ieyasuObjective(s) },
         { label: '方針', value: s.policy ? POLICY_DONE_LABELS[s.policy] : 'まだ決めていない' },
-        { label: '信頼', value: (['oda', 'asai', 'tadakatsu'] as const).map((c) => `${TRUST_NAMES[c]} ${signed(s.trust[c])}`).join('・') },
+        { label: '信頼', value: SHOWN_TRUST_IDS.map((c) => `${TRUST_NAMES[c]} ${signed(s.trust[c])}`).join('・') },
         { label: '徳川の兵', value: TOKUGAWA_UNIT_IDS.map((k) => `${TOKUGAWA_UNIT_NAMES[k]} ${s.troops[k]}`).join('・') },
         { label: '人物', value: people.map((c) => `${IEYASU_CHARACTER_NAMES[c]} ${IEYASU_STATUS_LABELS[s.characters[c]]}`).join('・') },
     ];

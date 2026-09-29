@@ -17,6 +17,7 @@ import {
     ieyasuEndingView,
     ieyasuObjective,
     ieyasuPhaseIntro,
+    retainerTrustLine,
 } from '../proto3d/src/campaign/ieyasu1570/story';
 import { castColliders, nearestInteractable, type CastMember } from '../proto3d/src/explore/cast';
 import { BOUNDS, START, colliders, type Rect } from '../proto3d/src/layout';
@@ -143,6 +144,57 @@ describe('どの状態でも台詞と結末が作れ、関係・損害・方針�
             expect(ieyasuObjective(m)).toContain('約束');
             expect(ieyasuObjective(answerPledge(m, 'decline'))).toContain('城門');
         }
+    });
+});
+
+describe('軍議での酒井忠次・石川数正（台詞は創作）', () => {
+    const opened = () => finishTalkIeyasu(newIeyasuGame(), 'tadakatsu', 'open_council');
+    const speakers = (sc: ReturnType<typeof talkIeyasu>) => sc.lines.map((l) => l.speaker);
+    it('軍議の始めに二人が居て、一言ずつ述べる（選択肢の並び・id は今までどおり）', () => {
+        const sc = talkIeyasu(opened(), 'council');
+        expect(sc.id).toBe('council');
+        expect(sc.lines[0]!.text).toContain('酒井忠次・石川数正');
+        expect(speakers(sc)).toContain('sakai');
+        expect(speakers(sc)).toContain('ishikawa');
+        expect(sc.choices?.map((c) => c.id)).toEqual(['policy_oda', 'policy_asai', 'policy_home']);
+        // 最後は忠勝の問いかけ（選択肢の前）
+        expect(sc.lines[sc.lines.length - 1]!.speaker).toBe('tadakatsu');
+    });
+    it('方針ごとに、酒井（采配）と石川（兵・退き口の備え）が 1〜2 行ずつ意見を述べ、決める／考え直すの選択肢は変わらない', () => {
+        const seen = new Set<string>();
+        for (const p of POLICIES) {
+            const sc = talkIeyasu(finishTalkIeyasu(opened(), 'council', `policy_${p}`), 'council');
+            expect(sc.id).toBe(`council.confirm.${p}`);
+            expect(sc.choices?.map((c) => c.id)).toEqual(['confirm_policy', 'reconsider']);
+            const sk = sc.lines.filter((l) => l.speaker === 'sakai');
+            const ik = sc.lines.filter((l) => l.speaker === 'ishikawa');
+            expect(sk.length).toBeGreaterThanOrEqual(1);
+            expect(sk.length).toBeLessThanOrEqual(2);
+            expect(ik.length).toBeGreaterThanOrEqual(1);
+            expect(ik.length).toBeLessThanOrEqual(2);
+            expect(sk.every((l) => l.name === '酒井忠次') && ik.every((l) => l.name === '石川数正')).toBe(true);
+            // 方針ごとに違う意見
+            for (const l of [...sk, ...ik]) {
+                expect(seen.has(l.text)).toBe(false);
+                seen.add(l.text);
+            }
+            // 忠勝の方針のまとめは残る（C は宣戦ではない）
+            if (p === 'home') expect(sc.lines.some((l) => l.text.includes('両家に刃を向けるわけではございませぬ'))).toBe(true);
+            // 忠勝を参謀として扱わない：采配の意見は酒井が述べる
+            expect(sc.lines.filter((l) => l.speaker === 'tadakatsu').every((l) => !l.text.includes('采配'))).toBe(true);
+        }
+    });
+    it('結末の本文に、酒井・石川の信頼の変化を 1 行で述べる（勝敗と約束の結果に合う）', () => {
+        const e1 = finishTalkIeyasu(ieyasuToAftermath('oda', 'victory', 'accept', { pledge: 'kept' }), 'tadakatsu', 'end_chapter');
+        expect(retainerTrustLine(e1)).toBe('酒井忠次は、この日の采配を認めた。石川数正は、退き口を守る約束が果たされたことを重く見ている。（信頼：酒井 +5・石川 +5）');
+        expect(ieyasuEndingView(e1).body).toContain(retainerTrustLine(e1));
+        const e2 = finishTalkIeyasu(ieyasuToAftermath('home', 'defeat', 'decline'), 'tadakatsu', 'end_chapter');
+        expect(retainerTrustLine(e2)).toContain('（信頼：酒井 -5・石川 ±0）');
+        const rec = Object.fromEntries(ieyasuEndingView(e2).record.map((r) => [r.label, r.value]));
+        expect(rec['信頼']).toContain('酒井忠次');
+        expect(rec['信頼の変化']).toContain('石川数正 ±0');
+        // 榊原康政はこの章に出ないので、画面の記録には出さない
+        expect(rec['信頼']).not.toContain('榊原');
     });
 });
 

@@ -259,6 +259,9 @@ export const TOKUGAWA_UNIT_OF: Readonly<Record<string, TokugawaUnitId>> = Object
  * - opposed：A で浅井と戦った／B で織田と手を切った。
  * - home：C（兵を出さなかった）。織田は不満、浅井は変わらない（両家への宣戦ではない）。
  * - tadakatsu：家臣の信頼（勝てば少し上がる）。
+ * - sakai：酒井忠次（采配・軍議）。合戦の結果を見る（勝てば上がり、負ければ下がる）。
+ * - ishikawa：石川数正（後詰め）。退き口を守る約束の結果を見る（引き受けなかったときは 0）。
+ *   榊原康政はこの章に出ないので動かない。どの家臣の信頼も、合戦・約束の判定そのものには使わない。
  * - pledge：約束の相手への変化。引き受けなかったときは 0（約束違反とは別）。
  */
 export const TRUST_DELTA = {
@@ -266,6 +269,8 @@ export const TRUST_DELTA = {
     opposed: { oda: { asai: -15 }, asai: { oda: -30 } } as const,
     home: { oda: -10, asai: 0 } as const,
     tadakatsu: { victory: 5, retreat: 0, defeat: 0 } as Readonly<Record<BattleResultKind, number>>,
+    sakai: { victory: 5, retreat: 0, defeat: -5 } as Readonly<Record<BattleResultKind, number>>,
+    ishikawa: { kept: 5, broken: -5, declined: 0 } as Readonly<Record<PledgeResult, number>>,
     pledge: { kept: 25, broken: -25, declined: 0 } as Readonly<Record<PledgeResult, number>>,
 };
 /** 約束を守ったときの援兵：徳川の部隊の兵を合わせてこれだけ戻す（各部隊の上限＝章の始めの兵の中で） */
@@ -311,7 +316,7 @@ export function distributeReinforcement(troops: Record<TokugawaUnitId, number>, 
  * - 徳川の部隊の兵：生き残った兵を戻す（合戦に出なかった部隊はそのまま）。
  * - 人物：家康本陣・忠勝隊・（B の）浅井長政隊が敗走・全滅 → その武将は負傷（死亡・捕らわれは無い）。
  * - 約束：勝敗とは別に判定（kept／broken。引き受けなければ declined）。
- * - 信頼：TRUST_DELTA。約束の相手は ±25（declined は 0）。
+ * - 信頼：TRUST_DELTA。約束の相手は ±25（declined は 0）。酒井は勝敗、石川は約束の結果で ±5。
  * - 支援：約束を守れば援兵（兵 +150、上限の中）と、次の章へ持ち越す印。
  */
 export function applyIeyasuOutcome(state: IeyasuState, outcome: BattleOutcome): IeyasuState {
@@ -353,12 +358,14 @@ export function applyIeyasuOutcome(state: IeyasuState, outcome: BattleOutcome): 
         s.trust.asai = clampTrust(s.trust.asai + TRUST_DELTA.home.asai);
     }
     s.trust.tadakatsu = clampTrust(s.trust.tadakatsu + TRUST_DELTA.tadakatsu[o.result]);
+    s.trust.sakai = clampTrust(s.trust.sakai + TRUST_DELTA.sakai[o.result]);
 
     // 約束（勝敗とは別）
     const result = judgePledge(s, o);
     s.pledge = { ...s.pledge!, result };
     const partner = s.pledge.partner;
     s.trust[partner] = clampTrust(s.trust[partner] + TRUST_DELTA.pledge[result]);
+    s.trust.ishikawa = clampTrust(s.trust.ishikawa + TRUST_DELTA.ishikawa[result]);
 
     // 支援
     const carry: CarryFlag[] = [`policy_${p}`, `pledge_${result}`];

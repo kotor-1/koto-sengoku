@@ -1,7 +1,9 @@
 /**
  * 歴史分岐シナリオ「元亀元年・家康」の保存と読み込み（端末内の localStorage）。設計：docs/ieyasu1570-design.md §7。
  *
- * - 保存先のキーは 'koto-sengoku/3d-ieyasu1570'（版 1）。データにシナリオの id（'ieyasu1570'）を入れる。
+ * - 保存先のキーは 'koto-sengoku/3d-ieyasu1570'（今は版 2）。データにシナリオの id（'ieyasu1570'）を入れる。
+ *   版 2：信頼（trust）に家臣の酒井忠次・石川数正・榊原康政を足した（docs/battlefields-design.md §1）。キーは同じ。
+ *   版 1 も読む（足りない信頼は初期値で補う。ほかの値はそのまま）。書くときは版 2。版 1 のデータを勝手に書き換えない。
  * - 架空の第一章のキー 'koto-sengoku/3d-chapter1' と、2D 版のキー 'koto-sengoku/save' には、読みも書きも消しもしない。
  * - 書き込んだ後に読み戻して一致を確かめ、確かめられたときだけ ok: true（失敗は理由つき。成功したように見せない）。
  * - 読み込み時は形・値の範囲・段階との食い違いを検査し、壊れたデータでは始めない（勝手に消しもしない）。
@@ -20,11 +22,14 @@ import {
     IEYASU_SCENARIO_ID,
     IEYASU_TALK_FLAGS,
     IEYASU_TROOPS_MAX,
+    INITIAL_TRUST,
+    PLEDGE_PARTNERS,
     PLEDGE_RESULTS,
     PLEDGE_SPECS,
     POLICIES,
     TOKUGAWA_UNIT_IDS,
     TRUST_IDS,
+    TRUST_IDS_V1,
     TRUST_MAX,
     TRUST_MIN,
     cloneIeyasuOutcome,
@@ -38,6 +43,7 @@ import {
     type IeyasuEndingId,
     type IeyasuState,
     type IeyasuTalkFlag,
+    type PledgePartner,
     type PledgeResult,
     type PledgeState,
     type Policy,
@@ -50,7 +56,9 @@ import type { BattleOutcome } from '../../battle/types';
 
 export const IEYASU_SAVE_KEY = 'koto-sengoku/3d-ieyasu1570';
 export const IEYASU_SAVE_ARCHIVE_KEY = 'koto-sengoku/3d-ieyasu1570/previous';
-export const IEYASU_SAVE_VERSION = 1;
+export const IEYASU_SAVE_VERSION = 2;
+/** 読める版（1 は信頼に家臣の 3 人が無い形） */
+export const IEYASU_SAVE_READABLE_VERSIONS: readonly number[] = [1, 2];
 
 type SavedPhase = Exclude<CampaignPhase, 'council'>;
 
@@ -138,7 +146,7 @@ function parsePledge(v: unknown, policy: Policy | null): PledgeState | null | un
 function parseSupport(v: unknown): SupportState | null | undefined {
     if (v === null) return null;
     if (!isObject(v) || typeof v.reinforcement !== 'boolean') return undefined;
-    if (v.from !== null && !TRUST_IDS.includes(v.from as TrustId)) return undefined;
+    if (v.from !== null && !PLEDGE_PARTNERS.includes(v.from as PledgePartner)) return undefined;
     if (typeof v.recovered !== 'number' || !Number.isInteger(v.recovered) || v.recovered < 0 || v.recovered > IEYASU_TROOPS_MAX) return undefined;
     if (!Array.isArray(v.carryOver) || v.carryOver.length > CARRY_FLAGS.length) return undefined;
     const carry: CarryFlag[] = [];
@@ -147,10 +155,25 @@ function parseSupport(v: unknown): SupportState | null | undefined {
         carry.push(f as CarryFlag);
     }
     if (v.reinforcement ? v.from === null : v.from !== null || v.recovered !== 0) return undefined;
-    return { reinforcement: v.reinforcement, from: v.from as TrustId | null, recovered: v.recovered, carryOver: carry };
+    return { reinforcement: v.reinforcement, from: v.from as PledgePartner | null, recovered: v.recovered, carryOver: carry };
 }
 
-/** JSON 文字列を検査して保存データにする。形・範囲・段階との食い違いがあれば null */
+/**
+ * 信頼を読む。版 2 は 6 人すべてが要る。版 1 は oda・asai・tadakatsu だけを読み、家臣の 3 人は初期値で補う
+ * （版 1 にあった値は変えない。版 1 のデータに余計な鍵があっても、今までどおり見ない）。
+ */
+function parseTrust(v: unknown, version: number): Record<TrustId, number> | null {
+    if (!isObject(v)) return null;
+    const trust = { ...INITIAL_TRUST } as Record<TrustId, number>;
+    for (const c of version === 1 ? TRUST_IDS_V1 : TRUST_IDS) {
+        const r = v[c];
+        if (!isFiniteNumber(r) || r < TRUST_MIN || r > TRUST_MAX) return null;
+        trust[c] = r;
+    }
+    return trust;
+}
+
+/** JSON 文字列を検査して保存データにする（版 1 も版 2 の形にして返す）。形・範囲・段階との食い違いがあれば null */
 export function parseIeyasuSaveData(json: string): IeyasuSaveData | null {
     let v: unknown;
     try {
@@ -159,7 +182,8 @@ export function parseIeyasuSaveData(json: string): IeyasuSaveData | null {
         return null;
     }
     if (!isObject(v)) return null;
-    if (v.version !== IEYASU_SAVE_VERSION || v.scenario !== IEYASU_SCENARIO_ID) return null;
+    if (!IEYASU_SAVE_READABLE_VERSIONS.includes(v.version as number) || v.scenario !== IEYASU_SCENARIO_ID) return null;
+    const version = v.version as number;
     if (typeof v.savedAt !== 'string' || Number.isNaN(Date.parse(v.savedAt))) return null;
     if (!SAVE_POINTS.includes(v.point as SavePoint)) return null;
     const point = v.point as SavePoint;
@@ -169,13 +193,8 @@ export function parseIeyasuSaveData(json: string): IeyasuSaveData | null {
     if (v.policy !== null && !POLICIES.includes(v.policy as Policy)) return null;
     const policy = v.policy as Policy | null;
 
-    if (!isObject(v.trust)) return null;
-    const trust = {} as Record<TrustId, number>;
-    for (const c of TRUST_IDS) {
-        const r = v.trust[c];
-        if (!isFiniteNumber(r) || r < TRUST_MIN || r > TRUST_MAX) return null;
-        trust[c] = r;
-    }
+    const trust = parseTrust(v.trust, version);
+    if (!trust) return null;
     if (!isObject(v.troops)) return null;
     const troops = {} as Record<TokugawaUnitId, number>;
     for (const k of TOKUGAWA_UNIT_IDS) {

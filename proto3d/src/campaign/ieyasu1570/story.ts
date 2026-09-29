@@ -9,12 +9,14 @@
  * - 方針 C（自領の防衛）は、両家への宣戦ではない。選ばなかった家が必ず敵になる、という形にはしない。
  * - 戦場は「1570年の情勢を背景にした架空の局地戦」。姉川の戦いの再現とは書かない。
  * - 資料で確かめていないこと（同盟の成立年・縁戚・離反の経緯・忠勝の逸話）は、台詞で事実として述べない。
+ * - 酒井忠次・石川数正は軍議で方針ごとに意見を述べる（台詞・役割は創作。年代・所属・役割は資料で確かめていない：docs/generals-history.md）。
  *
  * ここは文章を作るだけ（状態を書き換えない。three も DOM も使わない）。誰と話せるか・話した後にどう進むかは flow.ts。
  */
 import type { BattleEndReason, BattleOutcome, BattleResultKind } from '../../battle/types';
 import { IEYASU_PLEDGE_HOLD_SEC, IEYASU_PLEDGE_MIN_RATIO, IEYASU_UNIT_IDS } from '../../battle/maps';
 import { RULES } from '../../battle/sim';
+import { generalById, type GeneralId } from '../../battle/generals';
 import type { ScenarioChoice, ScenarioLine, ScenarioScript } from '../scenario';
 import {
     INITIAL_TRUST,
@@ -28,6 +30,7 @@ import {
     type IeyasuEndingId,
     type IeyasuState,
     type IeyasuTalkId,
+    type PledgePartner,
     type PledgeResult,
     type Policy,
     type TokugawaUnitId,
@@ -67,7 +70,17 @@ export const IEYASU_TALK_NAMES: Readonly<Record<Exclude<IeyasuTalkId, 'council'>
     notice: '高札',
     gate: '城門（出陣）',
 };
-export const TRUST_NAMES: Readonly<Record<TrustId, string>> = { oda: '織田家', asai: '浅井家', tadakatsu: '本多忠勝' };
+const generalName = (id: GeneralId) => generalById(id)!.name;
+export const TRUST_NAMES: Readonly<Record<TrustId, string>> = {
+    oda: '織田家',
+    asai: '浅井家',
+    tadakatsu: '本多忠勝',
+    sakai: generalName('sakai'),
+    ishikawa: generalName('ishikawa'),
+    sakakibara: generalName('sakakibara'),
+};
+/** 画面（状態・結末の記録）に出す信頼の相手。榊原康政はこの章に登場しないので出さない（値は持ち越す） */
+export const SHOWN_TRUST_IDS: readonly TrustId[] = ['oda', 'asai', 'tadakatsu', 'sakai', 'ishikawa'];
 export const POLICY_LABELS: Readonly<Record<Policy, string>> = {
     oda: 'A. 織田との協力を続ける',
     asai: 'B. 浅井との協力を選ぶ（史実から分かれた道）',
@@ -108,18 +121,30 @@ export function ieyasuReasonLabel(policy: Policy, reason: BattleEndReason): stri
             return '撤退を命じ、兵をまとめて退いた';
         case 'nightfall':
             return '日没で両軍が兵を引いた';
+        default:
+            // この章の合戦は主目標を持たない（今の勝ち負けの決まりのまま）。目標で決着する理由が増えても文が空にならないように
+            return '合戦の目標の判定で決着した';
     }
 }
 
 // ---- 行を作る小道具 ----
 
-type Speaker = 'hero' | 'tadakatsu' | 'oda_envoy' | 'asai_envoy';
-const SPEAKER_NAMES: Record<Speaker, string> = { hero: '家康', tadakatsu: '忠勝', oda_envoy: '織田家の使者', asai_envoy: '浅井家の使者' };
+type Speaker = 'hero' | 'tadakatsu' | 'sakai' | 'ishikawa' | 'oda_envoy' | 'asai_envoy';
+const SPEAKER_NAMES: Record<Speaker, string> = {
+    hero: '家康',
+    tadakatsu: '忠勝',
+    sakai: generalName('sakai'),
+    ishikawa: generalName('ishikawa'),
+    oda_envoy: '織田家の使者',
+    asai_envoy: '浅井家の使者',
+};
 const say = (speaker: Speaker, text: string): ScenarioLine => ({ speaker, name: SPEAKER_NAMES[speaker], text });
 const narrate = (text: string): ScenarioLine => ({ speaker: 'narration', name: '', text });
 const notice = (text: string): ScenarioLine => ({ speaker: 'notice', name: '高札', text });
 const H = (t: string) => say('hero', t);
 const T = (t: string) => say('tadakatsu', t);
+const SK = (t: string) => say('sakai', t);
+const IK = (t: string) => say('ishikawa', t);
 const OE = (t: string) => say('oda_envoy', t);
 const AE = (t: string) => say('asai_envoy', t);
 
@@ -148,7 +173,7 @@ export function pledgeUnfought(state: IeyasuState, o: BattleOutcome | null = sta
 }
 
 /** 援兵の出どころの呼び方（C は忠勝の約束に応えた岡崎の守備隊） */
-export function supportSourceName(from: TrustId): string {
+export function supportSourceName(from: PledgePartner): string {
     return from === 'tadakatsu' ? '岡崎の守備隊（忠勝の約束）' : TRUST_NAMES[from];
 }
 
@@ -255,27 +280,41 @@ const POLICY_CHOICES: ScenarioChoice[] = [
 const POLICY_CHOICE_OF: Readonly<Record<Policy, string>> = { oda: 'policy_oda', asai: 'policy_asai', home: 'policy_home' };
 export { POLICY_CHOICE_OF };
 
+/**
+ * 方針を選んだ後の確かめの台詞。忠勝が方針をまとめ、酒井忠次（采配）と石川数正（後詰め・兵の備え）が意見を述べる（台詞は創作）。
+ * 酒井の意見は、その方針の戦場で効く采配の目安（先に当たる相手・退かせ方）に合わせてある。
+ */
+const COUNCIL_CONFIRM_LINES: Readonly<Record<Policy, readonly ScenarioLine[]>> = {
+    oda: [
+        T('織田との協力を続ける。浅井・朝倉の勢と向き合うことになります。'),
+        T('織田の援軍は前に出たがります。崩れたときの退き場を、考えておかねばなりませぬ。'),
+        SK('浅井は丘に構え、朝倉は東から回り込んでまいりましょう。先に朝倉を叩き、丘の敵が下りてくるのを待つのが上策にござる。'),
+        IK('岡崎の守備隊は城に残しましょう。国の守りを空にはできませぬ。援軍の退き口は、先に決めておくべきかと。'),
+        T('皆の考えは出揃いました。この道で、よろしいか。'),
+    ],
+    asai: [
+        T('浅井と組む。……これまでの道から、大きく外れることになります。'),
+        T('織田方の一隊が、浅井の兵を追ってくるでしょう。織田との間には、深い溝が残ります。'),
+        SK('織田方の追い足は速うござる。長政殿の隊を退かせるなら、忠勝の隊を間に入れて盾とするのがよい。'),
+        IK('一度手を切れば、元へは戻せませぬ。浅井の兵を退かせる道だけは、先に確かめておきましょう。'),
+        T('皆の考えは出揃いました。この道で、よろしいか。'),
+    ],
+    home: [
+        T('どちらにも兵を出さず、国を守る。両家に刃を向けるわけではございませぬ。'),
+        T('ただ、織田は快く思いますまい。国境の浪人どもを追い払い、守備隊を無事に戻しましょう。'),
+        SK('浪人どもは、まず騎馬が林から出てきましょう。騎馬を先に止めれば、残りはまとまりを欠きまする。'),
+        IK('兵を損なわぬ道にございます。両家への申し開きは、戦の後に拙者が文を整えまする。'),
+        T('皆の考えは出揃いました。この道で、よろしいか。'),
+    ],
+};
+
 function councilScript(state: IeyasuState): ScenarioScript {
     const p = state.pendingPolicy;
     if (p) {
-        const lines: Record<Policy, ScenarioLine[]> = {
-            oda: [
-                T('織田との協力を続ける。浅井・朝倉の勢と向き合うことになります。'),
-                T('織田の援軍は前に出たがります。崩れたときの退き場を、考えておかねばなりませぬ。よろしいか。'),
-            ],
-            asai: [
-                T('浅井と組む。……これまでの道から、大きく外れることになります。'),
-                T('織田方の一隊が、浅井の兵を追ってくるでしょう。織田との間には、深い溝が残ります。よろしいか。'),
-            ],
-            home: [
-                T('どちらにも兵を出さず、国を守る。両家に刃を向けるわけではございませぬ。'),
-                T('ただ、織田は快く思いますまい。国境の浪人どもを追い払い、守備隊を無事に戻しましょう。よろしいか。'),
-            ],
-        };
         return {
             id: `council.confirm.${p}`,
             talk: 'council',
-            lines: lines[p],
+            lines: [...COUNCIL_CONFIRM_LINES[p]],
             choices: [
                 { id: 'confirm_policy', label: 'それで決める', detail: '決めた後は変えられません' },
                 { id: 'reconsider', label: '考え直す' },
@@ -287,7 +326,7 @@ function councilScript(state: IeyasuState): ScenarioScript {
         return { id: 'council.again', talk: 'council', lines: [T('改めて、いずれの道を取られますか。')], choices: POLICY_CHOICES, defaultChoice: 0 };
     }
     const lines: ScenarioLine[] = [
-        narrate('城の広間に、主だった者が集まった。（ここからの話し合いと選択は、ゲーム用の創作）'),
+        narrate('城の広間に、主だった者が集まった。酒井忠次・石川数正の顔も見える。（ここからの話し合いと選択は、ゲーム用の創作）'),
         T('では、軍議を始めます。'),
         T('道は三つと存じます。'),
         T('一つ。織田との協力を続け、浅井・朝倉の勢と戦う。'),
@@ -296,7 +335,11 @@ function councilScript(state: IeyasuState): ScenarioScript {
     ];
     if (talked(state, 'oda_envoy', 'explore')) lines.push(H('織田の使者は、兵を出してほしいと言っていた。'));
     if (talked(state, 'asai_envoy', 'explore')) lines.push(H('浅井の使者は、手を結びたいと。'));
-    lines.push(T('いずれを選んでも、一度の戦で家が決まるわけではございませぬ。殿、いかがなさいます。'));
+    lines.push(
+        SK('いずれの道を取られても、戦の段取りは拙者が組みまする。'),
+        IK('兵の備えも、道によって変わりまする。お決めになる前に、申し上げましょう。'),
+        T('いずれを選んでも、一度の戦で家が決まるわけではございませぬ。殿、いかがなさいます。'),
+    );
     return { id: 'council', talk: 'council', lines, choices: POLICY_CHOICES, defaultChoice: 0 };
 }
 
@@ -671,7 +714,30 @@ function endingBody(state: IeyasuState, id: IeyasuEndingId): string[] {
     if (state.support?.reinforcement)
         body.push(state.support.from === 'tadakatsu' ? '忠勝の約束に応えて加わった岡崎の守備隊は、次の戦でも頼りにできる。' : `${TRUST_NAMES[state.support.from!]}からの援兵は、次の戦でも頼りにできる。`);
     if (state.characters.tadakatsu === 'wounded') body.push('忠勝の傷が癒えるまで、しばらくかかりそうだ。');
+    body.push(retainerTrustLine(state));
     return body;
+}
+
+/**
+ * 結末の本文の 1 行：軍議で意見を述べた酒井忠次（合戦の結果を見る）と石川数正（退き口を守る約束の結果を見る）の信頼の変化。
+ * 信頼の動き方は flow.ts の TRUST_DELTA.sakai／ishikawa。文は実際の変化（章のはじめとの差）の向きで選ぶ
+ * （版 1 の保存から続けた戦後など、家臣の信頼が動いていないときは「動かなかった」文になる）。ここは文を作るだけ。
+ */
+export function retainerTrustLine(state: IeyasuState): string {
+    const d = (id: 'sakai' | 'ishikawa') => state.trust[id] - INITIAL_TRUST[id];
+    const ds = d('sakai');
+    const di = d('ishikawa');
+    const sakai = ds > 0 ? '酒井忠次は、この日の采配を認めた' : ds < 0 ? '酒井忠次は、崩れた陣の采配を厳しく振り返った' : '酒井忠次は、この日の采配を黙って見届けた';
+    const ishikawa =
+        di > 0
+            ? '石川数正は、退き口を守る約束が果たされたことを重く見ている'
+            : di < 0
+              ? '石川数正は、約束を果たせなかったことを案じている'
+              : state.pledge?.result === 'declined'
+                ? '石川数正は、約束を引き受けなかったことを咎めなかった'
+                : '石川数正は、約束の件で多くを語らなかった';
+    const n = (x: number) => (x === 0 ? '±0' : signed(x));
+    return `${sakai}。${ishikawa}。（信頼：酒井 ${n(ds)}・石川 ${n(di)}）`;
 }
 
 const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
@@ -712,12 +778,10 @@ export function carryOverText(state: IeyasuState): string {
 
 /** 信頼の変化（章のはじめ → 今） */
 export function trustChangeText(state: IeyasuState): string {
-    return (['oda', 'asai', 'tadakatsu'] as const)
-        .map((c) => {
-            const d = state.trust[c] - INITIAL_TRUST[c];
-            return `${TRUST_NAMES[c]} ${d === 0 ? '±0' : signed(d)}`;
-        })
-        .join('・');
+    return SHOWN_TRUST_IDS.map((c) => {
+        const d = state.trust[c] - INITIAL_TRUST[c];
+        return `${TRUST_NAMES[c]} ${d === 0 ? '±0' : signed(d)}`;
+    }).join('・');
 }
 
 export interface IeyasuEndingView {
@@ -746,7 +810,7 @@ export function ieyasuEndingView(state: IeyasuState): IeyasuEndingView {
         { label: '徳川の兵', value: `${t.after.toLocaleString('ja-JP')}（出陣前 ${t.before.toLocaleString('ja-JP')}）` },
         { label: '部隊ごとの兵', value: TOKUGAWA_UNIT_IDS.map((k) => `${TOKUGAWA_UNIT_NAMES[k]} ${state.troops[k]}`).join('・') },
         { label: '支援', value: supportRecordText(state) },
-        { label: '信頼', value: (['oda', 'asai', 'tadakatsu'] as const).map((c) => `${TRUST_NAMES[c]} ${signed(state.trust[c])}`).join('・') },
+        { label: '信頼', value: SHOWN_TRUST_IDS.map((c) => `${TRUST_NAMES[c]} ${signed(state.trust[c])}`).join('・') },
         { label: '信頼の変化', value: `${trustChangeText(state)}（章のはじめから）` },
         { label: '次の章へ', value: carryOverText(state) },
         { label: '人物', value: people.map((c) => `${IEYASU_CHARACTER_NAMES[c]} ${IEYASU_STATUS_LABELS[state.characters[c]]}`).join('・') },
