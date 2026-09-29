@@ -299,6 +299,11 @@ export class DomView implements GameView {
             const prov = el('p', 'prov');
             prov.append(el('span', 'g-tag', PROVISIONAL_LABEL));
             box.append(prov);
+            // 仮シナリオの注記は、最初に目に入るよう題のすぐ下（ボタンより前）に大きめに出す
+            box.append(
+                el('p', 'g-prov-lead', 'この第一章は、歴史分岐 RPG の仕組みを完成させるために作った仮シナリオです。史実として確認したものではありません。'),
+                el('p', 'g-note', info.note),
+            );
             const btnBox = el('div');
             box.append(btnBox);
             const items = [
@@ -317,7 +322,6 @@ export class DomView implements GameView {
                 resolve(id as TitleAction);
             });
             if (info.problem) box.append(el('p', 'problem', info.problem));
-            box.append(el('p', 'g-note', info.note));
             layer.append(box);
             this.push(m);
         });
