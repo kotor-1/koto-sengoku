@@ -39,15 +39,33 @@ async function open(opts = {}) {
   const page = await ctx.newPage();
   lastPage = page;
   page.setDefaultTimeout(300000);
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  // 誤りは出た時刻と一緒に記録する（どの操作の最中かを後で追えるように）。
+  // 開き直し（reload）の最中に、前のページで読み込みかけていた素材の画像が止まった知らせは、前のページの後始末なので誤りに数えない
+  const onErr = (text) => {
+    if (reloading && /Couldn't load texture blob:/.test(text)) {
+      console.log(`   （開き直しで前のページの読み込みが止まった [${secs()}] ${text.slice(0, 120)}）`);
+      return;
+    }
+    errors.push(text);
+    console.log(`   ！ページの誤り [${secs()}] ${text.slice(0, 160)}`);
+  };
+  page.on('pageerror', (e) => onErr(e.message));
+  page.on('console', (m) => { if (m.type() === 'error') onErr(m.text()); });
   await page.goto(BASE + '/?q=low' + (MANUAL ? '&render=manual' : ''));
   await waitTitle(page);
   return { ctx, page };
 }
 const waitTitle = (page) => page.waitForFunction(() => window.__game?.ui?.kind === 'title', null, POLL);
+let reloading = false;
 async function reloadToTitle(page) {
-  await page.reload();
+  // 最初の読み込み（場面の素材）が終わってから開き直す（遊ぶ人の開き直しも、ふつうは画面が出てから）
+  await page.waitForFunction(() => document.getElementById('loading')?.hidden === true, null, POLL);
+  reloading = true;
+  try {
+    await page.reload();
+  } finally {
+    reloading = false;
+  }
   await waitTitle(page);
 }
 const ui = (page) => page.evaluate(() => window.__game.ui);
