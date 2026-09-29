@@ -93,7 +93,7 @@ console.log('--- 1. 会話を進めた入力で、直後の選択肢が決まら
   await page.mouse.dblclick(first.cx, first.cy);
   await sleep(120);
   u = await ui();
-  check('(b) 出たばかりの選択肢をマウスで二度押ししても決まらない', u?.kind === 'script' && u.id === 'explore.genzo.again', JSON.stringify({ kind: u?.kind }));
+  check('(b) 出たばかりの選択肢をマウスで二度押ししても決まらない', u?.kind === 'script' && u.id === 'explore.genzo.again' && (await page.evaluate(() => window.__game.screen)) === 'talk', JSON.stringify({ kind: u?.kind, id: u?.id }));
 
   // (c) Enter を押さえたまま（自動の繰り返し）
   await openTalk('explore', undefined, 'genzo');
@@ -103,12 +103,12 @@ console.log('--- 1. 会話を進めた入力で、直後の選択肢が決まら
   await page.keyboard.down('Enter'); // 最後の行へ（選択肢が出る）
   for (let i = 0; i < 12; i++) { await sleep(60); await page.keyboard.down('Enter'); } // 自動の繰り返し（repeat 付き）約 0.7 秒
   u = await ui();
-  check('(c) 押さえたままの Enter（自動の繰り返し）では決まらない', u?.kind === 'script' && u.index === u.count - 1 && u.choices.length === 2, JSON.stringify({ kind: u?.kind, i: u?.index }));
+  check('(c) 押さえたままの Enter（自動の繰り返し）では決まらない', u?.kind === 'script' && u.id === 'explore.genzo' && u.index === u.count - 1 && u.choices.length === 2, JSON.stringify({ kind: u?.kind, i: u?.index }));
   // repeat の付かない keydown（離さないまま）でも決まらない
   await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Enter', key: 'Enter', repeat: false, bubbles: true })));
   await sleep(80);
   u = await ui();
-  check('(c) 離さないまま来た repeat なしの keydown でも決まらない', u?.kind === 'script', u?.kind);
+  check('(c) 離さないまま来た repeat なしの keydown でも決まらない', u?.kind === 'script' && u.id === 'explore.genzo' && u.choices.length === 2, `${u?.kind} ${u?.id}`);
   await page.keyboard.up('Enter');
   await page.keyboard.press('ArrowDown');
   await sleep(60);
