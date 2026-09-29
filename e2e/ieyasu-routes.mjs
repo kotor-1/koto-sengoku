@@ -14,6 +14,7 @@
 //   3（スマホ横 844×390・タッチ）：C 自領 × 約束を引き受けない（中立）× 勝利。号令をタップで。戦後に開き直す → 続きから（同じ）。
 //   4（PC）：A × 勝利・約束を守れなかった（経路 1 の支度の保存から続きから。合戦は台本で早送り）。
 //   F（PC）：架空の第一章の古い保存（版 1・版 2）がそのまま読める（田代・大森のまま。書き換えない）。
+//   経路 2・3 は開き直した後、勝敗・約束に加えて副目標の達成（版 3 の sideObjectives）も別の欄のまま残ることを確かめる。
 //   H（PC）：歴史分岐の古い保存（版 1。信頼に家臣の酒井・石川・榊原が無い形）が読める → メニューから保存し直すと版 3（既存の値はそのまま。副目標は記録なし）。
 //
 // 使い方：自動再読み込みなしの開発サーバーを起動して
@@ -79,7 +80,7 @@ const ui = (page) => page.evaluate(() => window.__game.ui);
 const st = (page) => page.evaluate(() => {
   const g = window.__game;
   const s = g.state;
-  return s && { scenario: g.scenario, screen: g.screen, phase: s.phase, policy: s.policy, trust: s.trust, troops: s.troops, pledge: s.pledge, support: s.support, result: s.battle?.result ?? null, reason: s.battle?.reason ?? null, abilitiesUsed: s.battle?.abilitiesUsed ?? null, outcomePledge: s.battle?.pledge ?? null, battleId: s.battleId, applied: s.appliedBattleId, ending: s.ending, characters: s.characters };
+  return s && { scenario: g.scenario, screen: g.screen, phase: s.phase, policy: s.policy, trust: s.trust, troops: s.troops, pledge: s.pledge, support: s.support, result: s.battle?.result ?? null, reason: s.battle?.reason ?? null, abilitiesUsed: s.battle?.abilitiesUsed ?? null, outcomePledge: s.battle?.pledge ?? null, sideObjectives: s.sideObjectives ?? null, battleId: s.battleId, applied: s.appliedBattleId, ending: s.ending, characters: s.characters };
 });
 const saved = (page, k = KEY) => page.evaluate((k) => JSON.parse(localStorage.getItem(k) || 'null'), k);
 const raw = (page, k) => page.evaluate((k) => localStorage.getItem(k), k);
@@ -702,6 +703,7 @@ async function route2() {
   await waitScreen(page, 'explore');
   s = await st(page);
   check('2 つづきから：戦後・撤退・約束を守った（結果と約束の結果が残る）', s.phase === 'aftermath' && s.result === 'retreat' && s.pledge.result === 'kept' && s.outcomePledge?.result === 'kept');
+  check('2 つづきから：副目標の達成も勝敗・約束とは別の欄のまま残る（保存と同じ）', Array.isArray(s.sideObjectives) && s.sideObjectives.length === 1 && JSON.stringify(s.sideObjectives) === JSON.stringify(sv.sideObjectives), JSON.stringify(s.sideObjectives));
   check('2 二重に反映しない：信頼・兵・援兵が保存と同じ（浅井 35＝+0 +25・織田 0＝−30・忠勝 40）', JSON.stringify(s.trust) === JSON.stringify(sv.trust) && JSON.stringify(s.troops) === JSON.stringify(sv.troops) && s.applied === s.battleId && s.trust.asai === 35 && s.trust.oda === 0 && s.trust.tadakatsu === 40 && s.support?.reinforcement === true,
     JSON.stringify({ trust: s.trust, troops: s.troops, support: s.support }));
   await shot(page, '2-05-aftermath-after-reload');
@@ -789,6 +791,7 @@ async function route3() {
   await waitScreen(page, 'explore');
   s = await st(page);
   check('3 戦後で開き直す → つづきから：勝敗・約束・信頼・兵が同じ（二重に反映しない）', s.phase === 'aftermath' && s.result === 'victory' && s.pledge.result === 'declined' && JSON.stringify(s.trust) === JSON.stringify(trust3) && JSON.stringify(s.troops) === JSON.stringify(sv.troops) && s.applied === s.battleId);
+  check('3 つづきから：副目標の達成も勝敗・約束とは別の欄のまま残る（保存と同じ）', Array.isArray(s.sideObjectives) && s.sideObjectives.length === 1 && JSON.stringify(s.sideObjectives) === JSON.stringify(sv.sideObjectives), JSON.stringify(s.sideObjectives));
   await shot(page, '3-05-aftermath-phone');
   u = await talkTo(page, 'oda_envoy', io).catch(() => null);
   if (u) check('3 戦後：織田家の使者が不満を伝えに来る（敵ではない）', u.seenId === 'aftermath.oda_envoy.home', u.seenId);
