@@ -141,4 +141,9 @@ export interface BattlefieldDef {
     tactics: string[];
     /** 演習の編成（1 つ以上） */
     presets: FieldPreset[];
+    /**
+     * true なら、部隊の動きを Version 11 のまま（FieldRules.settleMoves を付けない）。国境の原（架空の第一章・歴史分岐の章）だけが使う。
+     * 新しい戦場は省く（行き先の近くで詰まった移動を着いたことにする、など新しい動きの決まりになる）
+     */
+    keepV11Movement?: boolean;
 }

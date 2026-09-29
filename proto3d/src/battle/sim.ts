@@ -66,7 +66,7 @@ import {
     type FieldEnv,
 } from './fieldRules';
 import { findPath, isPassable, nearestPassable } from './pathfind';
-import { createObjectiveTrack, finalObjectives, refreshObjective, trackObjectives, type ObjectiveTrack } from './objectives';
+import { activeObjectiveZones, createObjectiveTrack, finalObjectives, refreshObjective, trackObjectives, type ObjectiveTrack } from './objectives';
 import {
     abilitiesUsedRecord,
     abilityDealMul,
@@ -176,6 +176,13 @@ export const RULES = {
      * 出したとき、浮動小数の誤差で後の隊が手前で止まらないように、隣とみなすのは spacing − これ より近い味方だけにする
      */
     goalHoldSlack: 0.5,
+    /**
+     * 新しい戦場の動き（FieldRules.settleMoves）だけ：移動の行き先からこの距離（m）以内で、settleSec 秒のあいだ行き先へ 1 m も
+     * 近づけなかった部隊は、着いたことにして待機にする（味方どうしで押し合って止まらない・並べた行き先の後ろの列で詰まる）。
+     * 近くの味方が動いている間は長めに待つ。遠くても、味方の間に挟まって行き詰まったときは同じく待機にする（sim.ts の stuckNearGoal）
+     */
+    settleNear: 45,
+    settleSec: 6,
 } as const;
 
 /** 種類ごとの性質 */
@@ -305,6 +312,8 @@ export interface UnitState {
     passThrough: string | null;
     /** 道探しでたどっている道（通れない所がある戦場だけ。goal は作ったときの行き先、pts は通る点、idx は次に向かう点） */
     path: { goalX: number; goalZ: number; builtT: number; pts: { x: number; z: number }[]; idx: number } | null;
+    /** 移動の進み（新しい動きの決まりの戦場だけ）：行き先・それまでに近づいた一番近い距離・その距離を 1 m 縮めた時刻・最後に見た時刻 */
+    moveProg: { gx: number; gz: number; best: number; t: number; seen: number } | null;
     /** 戦場にいて相手から隠れていたことがあり、まだ見つかっていない（林の奇襲の判定） */
     wasHidden: boolean;
     /** 隠れていた所から相手に見つかった時刻 */
@@ -605,6 +614,7 @@ export function createBattle(setup: BattleSetup): BattleState {
             avoid: null,
             passThrough: null,
             path: null,
+            moveProg: null,
             wasHidden: false,
             revealT: -999,
             ambushOn: null,
@@ -1232,6 +1242,8 @@ function moveUnit(s: BattleState, u: UnitState, p: Plan, dt: number): void {
         let room = d - p.goal.stopAt;
         // 行き先が止まっている味方のすぐ隣で、もうその味方に触れる所まで来た：ここで着いたことにする（押しのけない）
         if (room > 0.05 && u.status === 'ready' && u.order.type === 'move' && friendHoldsGoal(s, u, p.goal)) room = 0;
+        // 新しい動きの決まりの戦場：行き先の近くで進めなくなった移動は、着いたことにする
+        if (room > 0.05 && s.field.settleMoves && u.status === 'ready' && u.order.type === 'move' && stuckNearGoal(s, u, p.goal, d)) room = 0;
         // 通れない所がある戦場では、道探しの道の次の点へ向かう（無い戦場では行き先へまっすぐ）
         const aim = s.field.nav && room > 0.05 ? pathAim(s, u, p.goal) : p.goal;
         const direct = headingTo(u.x, u.z, aim.x, aim.z);
@@ -1280,6 +1292,7 @@ function moveUnit(s: BattleState, u: UnitState, p: Plan, dt: number): void {
             // 着いた：待機に変える（向き直りの指定があれば、そちらへ向き直る）
             u.faceGoal = u.order.face ?? null;
             u.order = { type: 'hold' };
+            u.moveProg = null;
         }
         if (u.moving) return;
     }
@@ -1345,15 +1358,59 @@ function isFriendObstacle(u: UnitState, o: UnitState): boolean {
     return o !== u && o.side === u.side && isActive(o) && o.order.type !== 'retreat' && !o.moving;
 }
 
-/** 移動の行き先のすぐ隣（18 m 以内）に止まっている味方がいて、もうその味方に触れる所まで来ている */
+/**
+ * 移動の行き先のすぐ隣（18 m 以内）に止まっている味方がいて、もうその味方に触れる所まで来ている。
+ * 新しい動きの決まりの戦場で、目標の区域の中の行き先へ区域の外から向かう部隊は、斬り合っている味方を数えない
+ * （その横をよけて区域へ入る。区域の縁で斬り合う味方の手前に止まって、確保を数えないままにならないように）
+ */
 function friendHoldsGoal(s: BattleState, u: UnitState, goal: { x: number; z: number }): boolean {
     // 通れない所がある戦場だけ、境目にゆとりを持たせる（無い戦場は Version 11 と同じ判定）
     const near = s.field.nav ? RULES.spacing - RULES.goalHoldSlack : RULES.spacing;
     for (const o of s.units) {
         if (!isFriendObstacle(u, o)) continue;
+        if (o.engagedWith && entersObjectiveZone(s, u, goal)) continue;
         if (dist(o, goal) < near && dist(u, o) <= RULES.spacing + 1) return true;
     }
     return false;
+}
+
+/** 新しい動きの決まりの戦場で、まだ果たしていない目標の区域の中の行き先へ、区域の外から向かっている */
+function entersObjectiveZone(s: BattleState, u: UnitState, goal: { x: number; z: number }): boolean {
+    if (!s.field.settleMoves || !s.objectives) return false;
+    return activeObjectiveZones(s).some((z) => inZone(z, goal.x, goal.z) && !inZone(z, u.x, u.z));
+}
+
+/**
+ * 移動の行き先の近く（RULES.settleNear m 以内）で、RULES.settleSec 秒（近くの味方が動いていれば 3 倍）のあいだ行き先へ 1 m も近づけていない。
+ * 遠くても、2 倍の時間近づけず、近くの味方がみな止まっている（動く・斬り合う味方がいない＝行き詰まっている）。近く（36 m）に戦える敵が
+ * いる間は数えない（新しい動きの決まりの戦場だけ。
+ * 毎刻み呼んで進みを覚える。行き先が変わった・続けて呼ばれなかったときは数え直す）
+ */
+function stuckNearGoal(s: BattleState, u: UnitState, goal: { x: number; z: number }, d: number): boolean {
+    const m = u.moveProg;
+    // 初め・行き先が変わった・途中で見ていない刻みがあった（斬り合い・命令の出し直し）：今から数え直す
+    if (!m || Math.abs(m.gx - goal.x) > 0.5 || Math.abs(m.gz - goal.z) > 0.5 || s.t - m.seen > RULES.tick * 1.5) {
+        u.moveProg = { gx: goal.x, gz: goal.z, best: d, t: s.t, seen: s.t };
+        return false;
+    }
+    m.seen = s.t;
+    // 行く手を敵に塞がれている（近くに戦える敵がいる）間は数えない（敵がどけば、また進む）
+    const foeNear = s.units.some((o) => o.side !== u.side && isActive(o) && dist(o, u) < RULES.spacing * 2);
+    if (d <= m.best - 1 || foeNear) {
+        m.best = Math.min(m.best, d);
+        m.t = s.t;
+        return false;
+    }
+    const still = s.t - m.t;
+    if (still < RULES.settleSec - 1e-9) return false;
+    // 近く（36 m）の味方：動いている味方がいれば、どくのを待って長めに（押し合ったまま止まらない二隊も、いずれ片方が着く）。
+    // 行き先から遠い部隊は、動いている・斬り合っている味方がいれば待ち続ける（狭い所を抜ける列の途中・前の味方が戦っている列の後ろ）
+    const friends = s.units.filter((o) => o !== u && o.side === u.side && isActive(o) && dist(o, u) < RULES.spacing * 2);
+    const moving = friends.some((o) => o.moving);
+    const fighting = friends.some((o) => !!o.engagedWith);
+    if (d <= RULES.settleNear) return still >= RULES.settleSec * (moving ? 3 : 1) - 1e-9;
+    if (fighting || moving) return false;
+    return still >= RULES.settleSec * 2 - 1e-9;
 }
 
 /**
@@ -1373,7 +1430,9 @@ function steerAround(s: BattleState, u: UnitState, goal: { x: number; z: number 
     // 右手の向き
     const rx = Math.cos(direct);
     const rz = Math.sin(direct);
-    const goalDist = dist(u, goal);
+    // 目標の区域へ外から入る部隊は、道探しの次の点より先（移動の行き先まで）にいる味方も見てよける
+    const entering = !attacking && entersObjectiveZone(s, u, final);
+    const goalDist = entering ? Math.max(dist(u, goal), dist(u, final)) : dist(u, goal);
     const R = RULES.spacing + 2;
     let block: UnitState | null = null;
     let blockAlong = Infinity;
@@ -1386,7 +1445,8 @@ function steerAround(s: BattleState, u: UnitState, goal: { x: number; z: number 
         if (along <= 0 || along > Math.min(goalDist, RULES.avoidLook)) continue;
         const perp = ox * rx + oz * rz;
         if (Math.abs(perp) >= R) continue;
-        if (!attacking && dist(o, final) < R) continue;
+        // 行き先の隣の味方はよけない（隣に止まる）。目標の区域へ外から入る部隊は、斬り合っている味方をよけて行き先へ近づく
+        if (!attacking && dist(o, final) < R && !(o.engagedWith && entering)) continue;
         if (along < blockAlong) {
             block = o;
             blockAlong = along;

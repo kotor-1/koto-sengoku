@@ -52,17 +52,20 @@ describe('主目標で勝ち負けが決まる', () => {
 
     it('hold_point：敵のいない区域に味方が続けて sec 秒いれば勝利。敵が入ると数え直し', () => {
         const s = createBattle(setup(P({ id: 'h', type: 'hold_point', label: '丘を確保', zone: { circle: { cx: 0, cz: 0, r: 20 } }, sec: 30 })));
+        // 数えていない理由を出す：区域に味方がいない
+        expect(objectiveProgress(s)[0]!.progressText).toBe('確保 0／30 秒・区域に味方がいない（輪の中へ移動させる）');
         issueOrder(s, 'a1', { type: 'move', x: 0, z: 0 });
         advance(s, 30);
-        expect(objectiveProgress(s)[0]!.progressText).toMatch(/確保 \d+／30 秒/);
+        expect(objectiveProgress(s)[0]!.progressText).toMatch(/^確保 \d+／30 秒（敵のいない区域に味方がいる間だけ数える）$/);
         const before = s.objectives!.primary!.sec;
         expect(before).toBeGreaterThan(0);
-        // 敵を区域へ（直接操作）：数え直し
+        // 敵を区域へ（直接操作）：数え直し。理由は「区域に敵がいる」
         const e1 = unitById(s, 'e1')!;
         e1.x = 10;
         e1.z = -10;
         stepBattle(s, RULES.tick);
         expect(s.objectives!.primary!.sec).toBe(0);
+        expect(objectiveProgress(s)[0]!.progressText).toBe('確保 0／30 秒・区域に敵がいる（敵を追い出すと数え始める）');
         e1.x = 100;
         e1.z = -140;
         const r = runToEnd(s);

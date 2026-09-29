@@ -153,6 +153,14 @@ export interface FieldRules {
     passable?: { x0: number; x1: number; z0: number; z1: number };
     /** true なら、通れない所が無くても格子の道探しで動く（道の速さを生かす）。省けば通れない所があるときだけ道探しを使う */
     pathfinding?: boolean;
+    /**
+     * true なら、新しい戦場の動きの決まりを使う（省けば Version 11 の動き）：
+     * - 移動の行き先の近く（RULES.settleNear m 以内）で RULES.settleSec 秒進めなかった部隊は、着いたことにして待機にする
+     *   （味方の間に行き先を並べたときに、押し合って「移動中」のまま止まらないように）。
+     * - 行き先の隣で斬り合っている味方は「行き先を押さえている味方」に数えず、その横をよけて行き先へ近づく。
+     * 合戦場のデータから作る合戦（fields/build.ts）は、keepV11Movement の戦場（国境の原）を除いて付ける。
+     */
+    settleMoves?: boolean;
 }
 
 /**

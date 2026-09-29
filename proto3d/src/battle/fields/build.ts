@@ -6,7 +6,8 @@
  *   const problems = validateField(field);   // 空なら問題なし
  *
  * - 地図（BattleMap）は fieldMap(field) で作る（同じ戦場なら同じ物を返す）。
- * - fieldRules は、戦場に地形の上書き・高所・特殊ルール・通れる範囲のどれかがあるときだけ付ける（無い戦場＝国境の原は付けない）。
+ * - fieldRules は、地形の上書き・高所・特殊ルール・通れる範囲と、新しい動きの決まり（settleMoves）を付ける。
+ *   国境の原（keepV11Movement）は、ほかの決まりも無いので付けない（Version 11 の合戦のまま）。
  * - 目標は opts.objectives：'field'（既定。戦場の主目標・副目標）／'none'（付けない＝今までの勝ち負け）／自分で渡す。
  * - 援軍：編成の部隊が reinforcement を指せば、その出現地点・時刻（arriveAt）に置き、BattleSetup.reinforcements に入れる。
  */
@@ -46,6 +47,7 @@ export function fieldRulesOf(field: BattlefieldDef): FieldRules | undefined {
     if (field.highGround) r.highGround = field.highGround;
     if (field.specialRules && field.specialRules.length) r.specialRules = field.specialRules;
     if (field.passable) r.passable = field.passable;
+    if (!field.keepV11Movement) r.settleMoves = true;
     return Object.keys(r).length ? r : undefined;
 }
 

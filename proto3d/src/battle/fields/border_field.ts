@@ -44,6 +44,8 @@ export const BORDER_FIELD_DEF: BattlefieldDef = {
     name: '国境の原',
     kind: 'plains',
     summary: '丘に陣取る敵を、林と湿地に挟まれた原で迎え撃つ（架空の第一章・歴史分岐の章の戦場）',
+    // Version 11 の合戦と 1 刻みも同じ結果にするため、部隊の動きは Version 11 のまま
+    keepV11Movement: true,
     width: 360,
     depth: 300,
     terrain: [

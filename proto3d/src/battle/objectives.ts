@@ -10,7 +10,7 @@
  * 目標の種類を足すときは：types.ts の ObjectiveDef に型を 1 つ足し、このファイルの update・finalAchieved・progressText に分岐を足す。
  * sim.ts を実行時に import しない（sim.ts がこのファイルを import するため）。
  */
-import type { BattleEndReason, BattleResultKind, BattleSetup, ObjectiveDef, ObjectiveResult, Side } from './types';
+import type { BattleEndReason, BattleResultKind, BattleSetup, ObjectiveDef, ObjectiveResult, Side, Zone } from './types';
 import type { BattleState, UnitState } from './sim';
 import { inZone } from './fieldRules';
 
@@ -92,6 +92,14 @@ function reinforcementUnits(s: BattleState, rid: string): UnitState[] {
     return r ? r.unitIds.map((id) => byId(s, id)).filter((u): u is UnitState => !!u) : [];
 }
 
+/** 区域の中に、戦える味方・敵がいるか */
+function zoneHolders(s: BattleState, zone: Zone): { allyIn: boolean; enemyIn: boolean } {
+    return {
+        allyIn: s.units.some((u) => u.side === 'ally' && active(u) && inZone(zone, u.x, u.z)),
+        enemyIn: s.units.some((u) => u.side === 'enemy' && active(u) && inZone(zone, u.x, u.z)),
+    };
+}
+
 // ---------------------------------------------------------------- 作る
 
 /** 合戦の始めに作る（目標の無い合戦は null）。目標の指す部隊・援軍が無ければ投げる */
@@ -136,8 +144,7 @@ function update(s: BattleState, r: ObjectiveRun, dt: number, log: (text: string)
             return;
         }
         case 'hold_point': {
-            const allyIn = s.units.some((u) => u.side === 'ally' && active(u) && inZone(d.zone, u.x, u.z));
-            const enemyIn = s.units.some((u) => u.side === 'enemy' && active(u) && inZone(d.zone, u.x, u.z));
+            const { allyIn, enemyIn } = zoneHolders(s, d.zone);
             r.sec = allyIn && !enemyIn ? r.sec + dt : 0;
             if (r.sec >= d.sec - 1e-9) settle(s, r, 'done', log);
             return;
@@ -285,8 +292,14 @@ function progressText(s: BattleState, r: ObjectiveRun): string {
             const e = hq(s, 'enemy');
             return e ? `${e.name}を崩す` : '敵をすべて崩す';
         }
-        case 'hold_point':
-            return `確保 ${Math.floor(r.sec)}／${d.sec} 秒（敵のいない区域に味方がいる間だけ数える）`;
+        case 'hold_point': {
+            // 数えていないときは、なぜ数えていないか（区域に敵がいる・味方がいない）を出す（畳んだ見出しでも読めるよう括弧の外に）
+            const head = `確保 ${Math.floor(r.sec)}／${d.sec} 秒`;
+            const { allyIn, enemyIn } = zoneHolders(s, d.zone);
+            if (enemyIn) return `${head}・区域に敵がいる（敵を追い出すと数え始める）`;
+            if (!allyIn) return `${head}・区域に味方がいない（輪の中へ移動させる）`;
+            return `${head}（敵のいない区域に味方がいる間だけ数える）`;
+        }
         case 'defend_time':
             return `残り ${Math.max(0, Math.ceil(d.sec - s.t))} 秒` + (d.zone && r.sec > 0 ? `（区域を敵に奪われている：${Math.floor(r.sec)}／${d.loseSec ?? 10} 秒）` : '');
         case 'rescue': {
@@ -321,6 +334,20 @@ export function objectiveProgress(s: BattleState): ObjectiveProgress[] {
     const tr = s.objectives;
     if (!tr) return [];
     return tr.list.map((r) => ({ id: r.def.id, label: r.def.label, role: r.role, state: r.state, progressText: progressText(s, r) }));
+}
+
+/** まだ果たしていない（active の）目標の、味方が入る区域（地点の確保・区域の防衛・突破・救出の陣）。sim.ts の動きが使う */
+export function activeObjectiveZones(s: BattleState): Zone[] {
+    const tr = s.objectives;
+    if (!tr) return [];
+    const out: Zone[] = [];
+    for (const r of tr.list) {
+        if (r.state !== 'active') continue;
+        const d = r.def;
+        if (d.type === 'hold_point' || d.type === 'breakthrough' || d.type === 'rescue') out.push(d.zone);
+        else if (d.type === 'defend_time' && d.zone) out.push(d.zone);
+    }
+    return out;
 }
 
 /** 主目標の状態（主目標の無い合戦は null） */

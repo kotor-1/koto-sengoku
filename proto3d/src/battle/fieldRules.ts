@@ -61,6 +61,8 @@ export interface FieldEnv {
     /** 特殊ルール（種類ごとに取り出したもの） */
     narrow: Extract<SpecialRule, { type: 'narrow_frontage' }>[];
     ambush: Extract<SpecialRule, { type: 'woods_ambush' }> | null;
+    /** 新しい戦場の動きの決まり（FieldRules.settleMoves。省けば Version 11 の動き） */
+    settleMoves: boolean;
 }
 
 /** 区域（地形・目標）の中か */
@@ -137,6 +139,7 @@ export function createFieldEnv(map: BattleMap, rules?: FieldRules): FieldEnv {
         hideKinds: kinds.filter((k) => terrain[k].hideSight !== null),
         narrow: special.filter((r): r is Extract<SpecialRule, { type: 'narrow_frontage' }> => r.type === 'narrow_frontage'),
         ambush: special.find((r): r is Extract<SpecialRule, { type: 'woods_ambush' }> => r.type === 'woods_ambush') ?? null,
+        settleMoves: !!rules?.settleMoves,
     };
     if (hasBlockingTerrain(map) || passable || rules?.pathfinding) {
         env.nav = buildNav(
