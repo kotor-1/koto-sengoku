@@ -278,21 +278,27 @@ export function ieyasuPlanScript(policy: IeyasuPolicy, variant: 'keep' | 'break'
 }
 
 /**
- * 退いて味方を救う（歴史分岐）：約束の対象にすぐ撤退を命じ、忠勝隊をその退路に置いて、追ってくる敵が近づいたら「退路の守護」。
+ * 退いて味方を救う（歴史分岐）：忠勝隊を約束の対象の退路に置き、対象が敵と斬り合ったら（約束の場面）撤退を命じる。
+ * 追ってくる敵がいて、対象が忠勝隊の近くまで退いたら「退路の守護」で追っ手を阻む。
  * 対象が戦場を離れたら（または崩れたら）全軍撤退。結果は「撤退」、約束は守れる見込み。台本は 1 回の合戦ごとに作り直す。
  */
 export function ieyasuRetreatScript(policy: IeyasuPolicy): Script {
     const target = policy === 'oda' ? 'a_oda' : policy === 'asai' ? 'a_nagamasa' : 't_reserve';
     const cover = policy === 'oda' ? { x: 70, z: 45 } : policy === 'asai' ? { x: -45, z: 40 } : { x: -65, z: 50 };
-    const chased = (s: BattleState) => {
+    const pressed = (s: BattleState) => {
         const t = unitById(s, target);
         if (!t || !isActive(t)) return false;
-        return s.units.some((e) => e.side === 'enemy' && isActive(e) && Math.hypot(e.x - t.x, e.z - t.z) <= 70);
+        return !!t.engagedWith || s.units.some((e) => e.side === 'enemy' && isActive(e) && e.engagedWith === target);
+    };
+    const chased = (s: BattleState) => {
+        const t = unitById(s, target);
+        if (!t || !isActive(t) || t.order.type !== 'retreat') return false;
+        return s.units.some((e) => e.side === 'enemy' && isActive(e) && e.order.type === 'attack' && e.order.targetId === target);
     };
     return scripted([
-        ['target-out', () => true, (s) => order(s, target, { type: 'retreat' })],
         ['tada-cover', () => true, (s) => order(s, 't_tadakatsu', { type: 'move', x: cover.x, z: cover.z })],
-        ['rearguard', (s) => chased(s) && near(s, 't_tadakatsu', target, 70), (s) => useAbility(s, 't_tadakatsu').ok],
+        ['target-out', (s) => pressed(s), (s) => order(s, target, { type: 'retreat' })],
+        ['rearguard', (s) => chased(s) && near(s, 't_tadakatsu', target, 60), (s) => useAbility(s, 't_tadakatsu').ok],
         ['all-out', (s) => broken(s, target), (s) => orderAllRetreat(s)],
     ]);
 }

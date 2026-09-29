@@ -117,6 +117,11 @@ export interface BattleSetup {
         holdSec: number;
         minStrengthRatio: number;
     };
+    /**
+     * 追い討ち（歴史分岐シナリオの合戦だけ true。省けば架空の第一章と同じ）：敵の考えが、近くで退いている味方の部隊へ追い討ちをかけ、
+     * 退く相手を攻める部隊は斬りながら後を追う。退路の守護の効果中は、範囲内で退く味方を追う敵が忠勝隊に阻まれる。
+     */
+    pursuit?: boolean;
 }
 
 /** 合戦の結果の種類 */

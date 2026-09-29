@@ -115,6 +115,28 @@ describe('どの状態でも台詞と結末が作れ、関係・損害・方針�
                     expect(e.body.length).toBeGreaterThan(1);
                 }
     });
+    it('（プレイテストの指摘）敵と斬り合う前に退いて約束を守れなかったときは、「守りきれなかった」ではなく「刃を交える前に退いた」と語る', () => {
+        const target = { oda: 'a_oda', asai: 'a_nagamasa', home: 't_reserve' } as const;
+        for (const p of POLICIES) {
+            const unfought = ieyasuToAftermath(p, 'retreat', 'accept', { pledge: 'broken', units: { [target[p]]: { status: 'withdrawn' } } });
+            const tl = talkIeyasu(unfought, 'tadakatsu').lines.map((l) => l.text).join('\n');
+            expect(tl).toContain('刃を交える前に兵を引きました');
+            expect(tl).not.toContain('守りきれませなんだ');
+            const end = ieyasuEndingView(finishTalkIeyasu(unfought, 'tadakatsu', 'end_chapter'));
+            expect(end.body.join('\n')).toContain('敵と刃を交える前に兵を引いたため');
+            const fell = ieyasuToAftermath(p, 'retreat', 'accept', { pledge: 'broken', units: { [target[p]]: { status: 'routed', end: 50 } } });
+            expect(talkIeyasu(fell, 'tadakatsu').lines.map((l) => l.text).join('\n')).toContain('守りきれませなんだ');
+        }
+    });
+    it('（プレイテストの指摘）C で約束を守った援兵は「岡崎の守備隊（忠勝の約束）」と呼ぶ（本多忠勝からの援兵とは書かない）', () => {
+        const e = ieyasuEndingView(finishTalkIeyasu(ieyasuToAftermath('home', 'victory', 'accept', { pledge: 'kept' }), 'tadakatsu', 'end_chapter'));
+        const rec = Object.fromEntries(e.record.map((x) => [x.label, x.value]));
+        expect(rec['支援']).toContain('援兵（岡崎の守備隊（忠勝の約束））');
+        expect(e.body.join('\n')).toContain('岡崎の守備隊');
+        expect(e.body.join('\n')).not.toContain('本多忠勝からの援兵');
+        const a = ieyasuEndingView(finishTalkIeyasu(ieyasuToAftermath('oda', 'victory', 'accept', { pledge: 'kept' }), 'tadakatsu', 'end_chapter'));
+        expect(Object.fromEntries(a.record.map((x) => [x.label, x.value]))['支援']).toContain('援兵（織田家）');
+    });
     it('支度の目的は、約束に答える前は約束の相手と話すこと', () => {
         for (const p of POLICIES) {
             const m = ieyasuToMuster(p);

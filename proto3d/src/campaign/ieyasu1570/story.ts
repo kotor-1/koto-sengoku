@@ -14,6 +14,7 @@
  */
 import type { BattleEndReason, BattleOutcome, BattleResultKind } from '../../battle/types';
 import { IEYASU_PLEDGE_HOLD_SEC, IEYASU_PLEDGE_MIN_RATIO, IEYASU_UNIT_IDS } from '../../battle/maps';
+import { RULES } from '../../battle/sim';
 import type { ScenarioChoice, ScenarioLine, ScenarioScript } from '../scenario';
 import {
     INITIAL_TRUST,
@@ -130,8 +131,25 @@ export function pledgeConditionText(policy: Policy): string {
     return (
         `対象：${t}。達成：${t}が南の「味方の陣」（家康本陣の後ろ）に ${IEYASU_PLEDGE_HOLD_SEC} 秒以上とどまる、撤退の命令で退き口から離れる、` +
         `または合戦の終わりに戦えている — そのうえで兵が最初の ${Math.round(IEYASU_PLEDGE_MIN_RATIO * 100)}% 以上残っていること。` +
-        `${t}が敗走・全滅すると守れない。勝敗とは別に判定する。`
+        `${t}が敗走・全滅すると守れない。敵と斬り合う前に（${t}が斬り合うか、味方が合わせて ${RULES.pledgeContestMeleeSec} 秒斬り結ぶ前に）撤退で終えると、守ったことにならない。勝敗とは別に判定する。`
     );
+}
+
+/**
+ * 約束を「守れなかった」のうち、対象は無事だったが、敵と斬り合う前に撤退・敗北で終えたもの（約束の場面を果たしていない）。
+ * 合戦の結果（対象の状態と兵）から判じる（保存に新しい項目を足さない）。
+ */
+export function pledgeUnfought(state: IeyasuState, o: BattleOutcome | null = state.battle): boolean {
+    const pl = state.pledge;
+    if (!pl || pl.result !== 'broken' || !o) return false;
+    const u = o.units.find((x) => x.id === pl.targetId);
+    if (!u || u.status === 'routed' || u.status === 'destroyed') return false;
+    return u.startStrength > 0 && u.endStrength >= u.startStrength * IEYASU_PLEDGE_MIN_RATIO - 1e-9;
+}
+
+/** 援兵の出どころの呼び方（C は忠勝の約束に応えた岡崎の守備隊） */
+export function supportSourceName(from: TrustId): string {
+    return from === 'tadakatsu' ? '岡崎の守備隊（忠勝の約束）' : TRUST_NAMES[from];
 }
 
 /** 今の段階の、その相手の台詞。居るかどうかの検査は flow.ts（talk）が先に行う */
@@ -484,7 +502,11 @@ function aftermathTadakatsu(state: IeyasuState, o: BattleOutcome, p: Policy): Sc
                 );
             }
         } else if (pl.result === 'broken') {
-            lines.push(T(`${spec.targetName}を守りきれませなんだ。……約束を果たせなかったこと、先方は忘れますまい。`));
+            lines.push(
+                pledgeUnfought(state, o)
+                    ? T(`${spec.targetName}は無事ですが、敵と刃を交える前に兵を引きました。退路を守ると申した約束を、果たしたとは言えませぬ。`)
+                    : T(`${spec.targetName}を守りきれませなんだ。……約束を果たせなかったこと、先方は忘れますまい。`),
+            );
         } else {
             lines.push(T('頼みは引き受けておりませなんだゆえ、そのことで責められる筋はございませぬ。'));
         }
@@ -520,7 +542,12 @@ function aftermathEnvoy(state: IeyasuState, o: BattleOutcome, p: Policy, id: 'od
         lines.push(key === 'defeat_good' ? E('負け戦ですが、手は結んだまま。退く道は、こちらで開けます。') : E('こちらの兵を盾にされた、と皆が申しております。しばらくは頼りになさいますな。'));
     }
     if (pl?.result === 'kept') lines.push(E(clan === 'oda' ? '援軍の退路を守っていただいたこと、主に必ず伝えます。' : '主の隊の退き口を守っていただいたこと、決して忘れませぬ。'));
-    else if (pl?.result === 'broken') lines.push(E('……ただ、約束の退路は守られなかった。そのことは、主に申し上げねばなりませぬ。'));
+    else if (pl?.result === 'broken')
+        lines.push(
+            pledgeUnfought(state, o)
+                ? E('……ただ、刃を交える前に退かれた。退路を守るとのお約束は、果たされなかったと主に申し上げねばなりませぬ。')
+                : E('……ただ、約束の退路は守られなかった。そのことは、主に申し上げねばなりませぬ。'),
+        );
     return { id: `aftermath.${id}.${key}.${pl?.result ?? 'none'}`, talk: id, lines };
 }
 
@@ -635,8 +662,14 @@ function endingBody(state: IeyasuState, id: IeyasuEndingId): string[] {
     }
     const pl = state.pledge;
     if (pl?.result === 'kept') body.push(`${PLEDGE_SPECS[p].targetName}の退路を守るという約束は、果たされた。`);
-    else if (pl?.result === 'broken') body.push(`${PLEDGE_SPECS[p].targetName}の退路を守るという約束は、果たせなかった。`);
-    if (state.support?.reinforcement) body.push(`${TRUST_NAMES[state.support.from!]}からの援兵は、次の戦でも頼りにできる。`);
+    else if (pl?.result === 'broken')
+        body.push(
+            pledgeUnfought(state)
+                ? `${PLEDGE_SPECS[p].targetName}は無事に退いたが、敵と刃を交える前に兵を引いたため、退路を守るという約束は果たせなかった。`
+                : `${PLEDGE_SPECS[p].targetName}の退路を守るという約束は、果たせなかった。`,
+        );
+    if (state.support?.reinforcement)
+        body.push(state.support.from === 'tadakatsu' ? '忠勝の約束に応えて加わった岡崎の守備隊は、次の戦でも頼りにできる。' : `${TRUST_NAMES[state.support.from!]}からの援兵は、次の戦でも頼りにできる。`);
     if (state.characters.tadakatsu === 'wounded') body.push('忠勝の傷が癒えるまで、しばらくかかりそうだ。');
     return body;
 }
@@ -656,7 +689,7 @@ export function supportRecordText(state: IeyasuState): string {
     const s = state.support;
     if (!s) return 'まだない';
     if (!s.reinforcement) return 'なし';
-    return `援兵（${TRUST_NAMES[s.from!]}）：兵 +${s.recovered}（次の章へ持ち越す）`;
+    return `援兵（${supportSourceName(s.from!)}）：兵 +${s.recovered}（次の章へ持ち越す）`;
 }
 
 /** 次の章へ持ち越す印の読み方 */

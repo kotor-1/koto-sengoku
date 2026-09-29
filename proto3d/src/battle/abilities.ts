@@ -41,7 +41,7 @@ export interface AbilityData {
     radius: number;
     /** 効果の時間（秒・合戦の時間） */
     durationSec: number;
-    /** 使った瞬間、範囲内の同じ陣営の戦える部隊の士気 +（上限 100）。0 なら何もしない */
+    /** 使った瞬間、範囲内の同じ陣営の戦える部隊の士気 +（その部隊の最初の士気まで。上限 100）。0 なら何もしない */
     moraleBoost: number;
     /** 範囲内（areaFilter）の部隊：受ける損害 ×、士気の低下 ×、敗走する士気の線（null なら変えない） */
     areaFilter: AbilityAreaFilter;
@@ -81,7 +81,7 @@ export const ABILITY_DATA: Record<AbilityId, AbilityData> = {
         selfTakeMul: 1,
         rooted: false,
         targetText: '家康本陣を中心に、半径 90 m の味方の部隊（使った後も本陣について動く）',
-        effectText: '使った時に範囲内の味方の士気 +25（上限 100）。30 秒のあいだ、範囲内の味方の士気の低下 −40%、敗走しにくい（士気 15 → 8 まで持ちこたえる）',
+        effectText: '使った時に範囲内の味方の士気 +25（下がった士気を戻す。その部隊の最初の士気より上へは上がらない）。30 秒のあいだ、範囲内の味方の士気の低下 −40%、敗走しにくい（士気 15 → 8 まで持ちこたえる）',
         costText: '効果中、家康本陣の与える損害 ×0.5・動き ×0.5（守りを優先）。失った兵や戦えない部隊は戻らない',
     },
     tadakatsu_rearguard: {
@@ -101,7 +101,7 @@ export const ABILITY_DATA: Record<AbilityId, AbilityData> = {
         selfTakeMul: 1.15,
         rooted: true,
         targetText: '忠勝隊の今の位置で踏みとどまる。半径 70 m で退いている味方（撤退の命令・敗走中）',
-        effectText: '40 秒のあいだ、範囲内で退いている味方の受ける損害 −50%・士気の低下 −50%',
+        effectText: '40 秒のあいだ、範囲内で退いている味方の受ける損害 −50%・士気の低下 −50%。範囲内で退く味方を追ってくる敵は、忠勝隊に阻まれて忠勝隊へ向かう',
         costText: '効果中、忠勝隊は動けない（移動・攻撃・撤退の命令を受けない）。忠勝隊の受ける損害 ×1.15。無敵ではない（崩れれば効果も終わる）',
     },
     nagamasa_support: {
@@ -253,6 +253,20 @@ export function abilitySpeedMul(s: BattleState, u: UnitState): number {
     return m;
 }
 
+/**
+ * 退いている部隊 u を守っている、効果中の「退路の守護」の持ち主（なければ null）。
+ * 追い討ちのある合戦（BattleSetup.pursuit）で、敵の考えは u を追う代わりに、この持ち主へ向かう（追っ手を阻む）。
+ */
+export function rearguardCover(s: BattleState, u: UnitState): UnitState | null {
+    if (s.abilityList.length === 0) return null;
+    for (const r of liveRuns(s)) {
+        if (ABILITY_DATA[r.id].areaFilter !== 'retreating') continue;
+        const holder = byId(s, r.unitId);
+        if (holder && inArea(r, holder, u)) return holder;
+    }
+    return null;
+}
+
 /** 効果中で動けない（退路の守護）。issueOrder が移動・攻撃・撤退の命令を断る */
 export function isRooted(s: BattleState, unitId: string): boolean {
     const r = s.abilities[unitId];
@@ -347,7 +361,8 @@ function activate(s: BattleState, unitId: string, targetId: string | undefined, 
     if (data.moraleBoost > 0) {
         for (const o of s.units) {
             if (o.side !== u.side || !active(o) || d2(o, u) > data.radius) continue;
-            o.morale = Math.min(100, o.morale + data.moraleBoost);
+            // 立て直す（回復させる）だけ：その部隊の最初の士気より上へは上げない
+            o.morale = Math.min(Math.max(o.maxMorale, o.morale), o.morale + data.moraleBoost, 100);
         }
     }
     if (data.rooted) {
@@ -421,7 +436,11 @@ export function abilityInfo(s: BattleState, unitId: string, viewer: Side = 'ally
     if (!reason && data.target === 'ally_unit') {
         const cands = s.units.filter((o) => o !== u && o.side === u.side && active(o) && d2(o, u) <= data.radius).sort((a, b) => d2(a, u) - d2(b, u));
         for (const o of cands) validTargets.push(o.id);
-        if (validTargets.length === 0) reason = `${data.radius} m 以内に援護できる味方の部隊がいない`;
+        if (validTargets.length === 0) {
+            // いちばん近い味方（近づければ選べる）も添える
+            const near = s.units.filter((o) => o !== u && o.side === u.side && active(o)).sort((a, b) => d2(a, u) - d2(b, u))[0];
+            reason = `${data.radius} m 以内に援護できる味方の部隊がいない` + (near ? `（いちばん近い${near.name}は今 ${Math.round(d2(near, u))} m。近づければ選べる）` : '');
+        }
     }
     return {
         id: r.id,

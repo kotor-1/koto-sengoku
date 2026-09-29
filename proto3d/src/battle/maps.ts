@@ -16,6 +16,7 @@
  * - IEYASU_PLEDGE_TARGET・IEYASU_SAFE_ZONE：約束の対象・南の「味方の陣」（安全地点）。
  */
 import type { BattleMap, BattleSetup, UnitDef } from './types';
+import { RULES } from './sim';
 
 /** 協力陣営の選択 */
 export type Alliance = 'tashiro' | 'omori' | 'alone';
@@ -199,7 +200,7 @@ export const IEYASU_PLEDGE_MIN_RATIO = 0.4;
 /** 方針ごとの布陣の位置（x, z, 向き） */
 export const IEYASU_POS = {
     /** A：前に突出した織田援軍（右前。浅井弓隊の矢が届き、東から朝倉勢が回り込む） */
-    odaForward: { x: 75, z: -15, facing: N },
+    odaForward: { x: 60, z: 5, facing: N },
     /** B：前に出た浅井長政隊（左前。西の林から織田騎馬が回り込む） */
     nagamasaForward: { x: -45, z: -5, facing: N },
     /** C：国境の砦に孤立した岡崎の守備隊（左前。浪人衆の弓が届く） */
@@ -295,25 +296,29 @@ export function ieyasuBriefing(policy: IeyasuPolicy, pledgeAccepted: boolean): s
     } else {
         lines.push(
             '方針：自領の防衛を優先する。国境の村を荒らす浪人衆（架空の一団）を退ける。織田・浅井のどちらとも戦わない。',
-            '岡崎の守備隊が左前の国境の砦に孤立している。浪人衆の弓が届き、東から浪人衆の騎馬が回り込んでくる。',
+            '岡崎の守備隊が左前の国境の砦に孤立している。浪人衆の弓が届き、西の林から浪人衆の騎馬が回り込んでくる。',
             '勝利：浪人衆の本隊を敗走させる。または、浪人衆の本隊以外の部隊をすべて戦えなくする。',
         );
     }
     lines.push(
         '敗北：家康本陣が敗走する（家康は落ち延びる）。または、本陣以外の味方がすべて戦えなくなり、崩れた部隊の方が多い。一度の敗北で家が滅ぶことはない。',
         '撤退：「全軍撤退」を命じる。本陣以外の部隊をすべて退かせる。または、日没（8 分）で両軍が引く。',
-        '特殊能力（ゲーム用の創作。各 1 合戦 1 回）：家康本陣「立て直しの号令」・本多忠勝隊「退路の守護」' + (policy === 'asai' ? '・浅井長政隊「盟友への援護」' : '') + '。部隊を選ぶと効果と代償が見える。',
     );
+    // 約束は画面の上の方に（説明の枠が小さい画面でも、下まで送らずに読める）
     const target = policy === 'oda' ? '織田援軍' : policy === 'asai' ? '浅井長政隊' : '岡崎の守備隊';
     if (pledgeAccepted) {
         lines.push(
             `約束（引き受けた）：${target}の退路を守る。`,
             `達成：${target}が、南の「味方の陣」（家康本陣の後ろの輪）に ${IEYASU_PLEDGE_HOLD_SEC} 秒以上とどまる、または撤退の命令で退き口から離れる、または合戦の終わりに戦えている — そのうえで兵が最初の ${Math.round(IEYASU_PLEDGE_MIN_RATIO * 100)}% 以上残っていること。`,
-            `${target}が敗走・全滅すると守れない。近くに一瞬立っただけでは達成にならない。勝敗とは別に判定する。`,
+            `${target}が敗走・全滅すると守れない。近くに一瞬立っただけでは達成にならない。敵と斬り合う前に（${target}が斬り合うか、味方が合わせて ${RULES.pledgeContestMeleeSec} 秒斬り結ぶ前に）撤退・敗北で終えると、守ったことにならない（勝利・日没なら要らない）。勝敗とは別に判定する。`,
         );
     } else {
         lines.push(`約束：引き受けていない（${target}の退路を守る約束はない。約束違反にはならない）。`);
     }
+    lines.push(
+        '特殊能力（ゲーム用の創作。各 1 合戦 1 回）：家康本陣「立て直しの号令」・本多忠勝隊「退路の守護」' + (policy === 'asai' ? '・浅井長政隊「盟友への援護」' : '') + '。部隊を選ぶと効果と代償が見える。',
+        '追い討ち：撤退の命令で退く部隊は、近くの敵に追われて背後を突かれる（騎馬は遠くからでも追う）。退路の守護の範囲で退けば、追っ手は忠勝隊に阻まれる。',
+    );
     return lines;
 }
 
@@ -324,6 +329,8 @@ export function ieyasu1570Setup(policy: IeyasuPolicy, opts: IeyasuSetupOptions):
         units: ieyasuUnits(policy, opts.troops),
         timeLimitSec: BORDER_FIELD_TIME_LIMIT,
         briefing: ieyasuBriefing(policy, opts.pledgeAccepted),
+        // 退く部隊への追い討ち（歴史分岐の合戦だけ。退路の守護・約束の退路に意味を持たせる）
+        pursuit: true,
     };
     // 約束は、対象の部隊が合戦に出るときだけ（兵のいない部隊は出ない）
     if (opts.pledgeAccepted && setup.units.some((u) => u.id === IEYASU_PLEDGE_TARGET[policy])) {

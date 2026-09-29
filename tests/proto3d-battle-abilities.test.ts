@@ -61,24 +61,29 @@ function advance(s: BattleState, sec: number, each?: (s: BattleState) => void): 
 function rallyScene(): BattleSetup {
     return setup([
         U('a_hq', 'ally', 'honjin', 0, 100, N, { morale: 90, ...withAbility('ieyasu_rally', 'ieyasu') }),
-        U('a_y', 'ally', 'yari', 0, 40, N, { morale: 70 }),
+        U('a_y', 'ally', 'yari', 0, 40, N, { morale: 95 }),
         U('e_y', 'enemy', 'yari', 0, 5, S, { strength: 600, morale: 90, order: { type: 'attack', targetId: 'a_y' } }),
     ]);
 }
 
 describe('立て直しの号令（家康本陣）', () => {
-    it('使った瞬間、半径 90 m の味方の士気 +25（上限 100）。範囲外・敗走中の部隊は上がらない', () => {
+    it('（状態を直接変更）使った瞬間、半径 90 m の味方の下がった士気 +25（その部隊の最初の士気まで）。範囲外・敗走中の部隊は上がらない', () => {
         const s = createBattle(
             setup([
                 U('a_hq', 'ally', 'honjin', 0, 100, N, { morale: 90, ...withAbility('ieyasu_rally', 'ieyasu') }),
-                U('a_in', 'ally', 'yari', 0, 30, N, { morale: 50 }),
-                U('a_out', 'ally', 'yari', 150, 100, N, { morale: 50 }),
+                U('a_in', 'ally', 'yari', 0, 30, N, { morale: 80 }),
+                U('a_out', 'ally', 'yari', 150, 100, N, { morale: 80 }),
+                U('a_full', 'ally', 'yumi', 40, 80, N, { morale: 75 }),
             ]),
         );
+        get(s, 'a_in').morale = 50;
+        get(s, 'a_out').morale = 50;
+        get(s, 'a_hq').morale = 70;
         expect(useAbility(s, 'a_hq')).toEqual({ ok: true, reason: null });
         expect(get(s, 'a_in').morale).toBe(75);
         expect(get(s, 'a_out').morale).toBe(50);
-        expect(get(s, 'a_hq').morale).toBe(100); // 90 + 25 → 上限 100
+        expect(get(s, 'a_hq').morale).toBe(90); // 70 + 25 → 最初の士気 90 まで
+        expect(get(s, 'a_full').morale).toBe(75); // 下がっていない部隊は上がらない（最初の士気より上へは上げない）
         expect(s.events[s.events.length - 1]).toMatchObject({ kind: 'ability', unitId: 'a_hq' });
         expect(abilityMarks(s, 'a_in')).toContain('号令');
         expect(abilityMarks(s, 'a_out')).toEqual([]);
@@ -90,6 +95,8 @@ describe('立て直しの号令（家康本陣）', () => {
         advance(a, 5);
         advance(b, 5);
         expect(get(a, 'a_y').morale).toBe(get(b, 'a_y').morale);
+        // （状態を直接変更）攻められて士気が下がった所（号令は最初の士気 95 までしか戻さない）
+        for (const x of [a, b]) get(x, 'a_y').morale = 60;
         useAbility(b, 'a_hq');
         expect(abilityMoraleLossMul(b, get(b, 'a_y'))).toBeCloseTo(0.6);
         expect(abilityMoraleLossMul(a, get(a, 'a_y'))).toBe(1);
@@ -371,8 +378,9 @@ describe('能力の共通の決まり', () => {
 
     it('連打しても重ねて発動しない（2 回目は断る。士気の上げは 1 回だけ）', () => {
         const s = createBattle(
-            setup([U('a_hq', 'ally', 'honjin', 0, 100, N, { morale: 60, ...withAbility('ieyasu_rally', 'ieyasu') }), U('a_y', 'ally', 'yari', 0, 60, N, { morale: 40 })]),
+            setup([U('a_hq', 'ally', 'honjin', 0, 100, N, { morale: 60, ...withAbility('ieyasu_rally', 'ieyasu') }), U('a_y', 'ally', 'yari', 0, 60, N, { morale: 80 })]),
         );
+        get(s, 'a_y').morale = 40; // （状態を直接変更）下がった士気
         expect(useAbility(s, 'a_hq').ok).toBe(true);
         const usedAt = s.abilities.a_hq.usedAt;
         const again = useAbility(s, 'a_hq');
@@ -485,15 +493,61 @@ describe('戦前の約束（達成の判定）', () => {
         expect(s.events.some((e) => e.kind === 'pledge' && e.text.includes('20 秒持ちこたえた'))).toBe(true);
     });
 
-    it('撤退の命令で退き口から離れ、兵が 40% 以上なら守れた', () => {
-        const s = createBattle(pledgeScene());
+    it('撤退の命令で退き口から離れ、兵が 40% 以上なら守れた（約束の場面：味方が敵と 15 秒以上斬り結んだ後の撤退）', () => {
+        const s = createBattle(
+            setup([U('a_t', 'ally', 'yari', 0, 60, N, { strength: 400 }), U('a_g', 'ally', 'yari', 60, 0, N, { strength: 400, morale: 100 }), U('e_y', 'enemy', 'yari', 60, -25, S, { strength: 200, morale: 100 }), U('e_far', 'enemy', 'yari', -150, -150, S)], {
+                timeLimitSec: 600,
+                pledge: { targetId: 'a_t', safeZone: ZONE, holdSec: 20, minStrengthRatio: 0.4 },
+            }),
+        );
         issueOrder(s, 'a_t', { type: 'retreat' });
-        advance(s, 60);
+        advance(s, 90);
         expect(get(s, 'a_t').status).toBe('withdrawn');
-        expect(pledgeProgress(s)!.withdrew).toBe(true);
+        const p = pledgeProgress(s)!;
+        expect(p.withdrew).toBe(true);
+        expect(p.pressed).toBe(false); // 対象そのものは斬り合っていない
+        expect(p.meleeSec).toBeGreaterThanOrEqual(15); // 忠勝役の a_g が斬り結んで退路を守った
+        expect(p.contested).toBe(true);
+        expect(s.events.some((e) => e.kind === 'pledge' && e.text.includes('約束の場面'))).toBe(true);
         orderAllRetreat(s);
         const r = runToEnd(s);
         expect(r.pledge).toEqual({ targetId: 'a_t', result: 'kept' });
+    });
+
+    it('約束の場面の前（敵と斬り合う前）に全軍撤退すると、対象が無事でも約束を果たしたことにならない（broken）', () => {
+        const s = createBattle(pledgeScene());
+        orderAllRetreat(s);
+        const r = runToEnd(s);
+        expect(r.result).toBe('retreat');
+        expect(r.units.find((u) => u.id === 'a_t')!.status).toBe('withdrawn');
+        expect(r.units.find((u) => u.id === 'a_t')!.endStrength).toBe(400);
+        expect(r.pledge).toEqual({ targetId: 'a_t', result: 'broken' });
+        expect(pledgeProgress(s)!.contested).toBe(false);
+    });
+
+    it('約束の場面の前でも、勝利か日没で終われば（戦場に踏みとどまった）守れた', () => {
+        // 日没は下の「合戦の終わりに戦えていて…（日没）」。勝利：敵の本陣が崩れる
+        const s = createBattle(pledgeScene());
+        get(s, 'e_hq').morale = 5; // （状態を直接変更）
+        const r = runToEnd(s);
+        expect(r.result).toBe('victory');
+        expect(pledgeProgress(s)!.contested).toBe(false);
+        expect(r.pledge?.result).toBe('kept');
+    });
+
+    it('対象が敵と斬り合えば、すぐに約束の場面になる', () => {
+        const s = createBattle(
+            setup([U('a_t', 'ally', 'yari', 0, 60, N, { strength: 400 }), U('e_y', 'enemy', 'yari', 0, 35, S, { strength: 200, order: { type: 'attack', targetId: 'a_t' } })], {
+                timeLimitSec: 600,
+                pledge: { targetId: 'a_t', safeZone: ZONE, holdSec: 20, minStrengthRatio: 0.4 },
+            }),
+        );
+        expect(pledgeProgress(s)!.contested).toBe(false);
+        advance(s, 3);
+        const p = pledgeProgress(s)!;
+        expect(p.pressed).toBe(true);
+        expect(p.contested).toBe(true);
+        expect(p.onTrack).toBe(true);
     });
 
     it('合戦の終わりに戦えていて兵が 40% 以上なら守れた（日没）', () => {
@@ -541,5 +595,60 @@ describe('戦前の約束（達成の判定）', () => {
         expect(() =>
             createBattle(setup([U('e_x', 'enemy', 'yari', 0, -60, S)], { pledge: { targetId: 'e_x', safeZone: ZONE, holdSec: 20, minStrengthRatio: 0.4 } })),
         ).toThrow();
+    });
+});
+
+// ---------------------------------------------------------------- 追い討ち（歴史分岐の合戦だけ）
+
+/** 味方の槍 a_t が敵の槍 e_y と斬り合っている所。rg なら忠勝役 a_rg（退路の守護）を a_t の退路（南）に置く */
+function pursuitScene(pursuit: boolean, rg = false): BattleSetup {
+    const units = [
+        U('a_t', 'ally', 'yari', 0, 20, N, { strength: 400, morale: 90 }),
+        U('e_y', 'enemy', 'yari', 0, -4, S, { strength: 400, morale: 100 }),
+        U('e_far', 'enemy', 'yari', -150, -150, S),
+    ];
+    if (rg) units.push(U('a_rg', 'ally', 'yari', 30, 75, N, { strength: 400, morale: 100, ...withAbility('tadakatsu_rearguard', 'tadakatsu') }));
+    return setup(units, { pursuit });
+}
+
+describe('追い討ち（BattleSetup.pursuit。歴史分岐の合戦だけ）', () => {
+    it('退く味方を、近くの敵は斬りながら後を追う（追い討ちなしの合戦では離れれば止む）', () => {
+        const out: Record<string, number> = {};
+        for (const pursuit of [false, true]) {
+            const s = createBattle(pursuitScene(pursuit));
+            advance(s, 4);
+            expect(get(s, 'a_t').engagedWith).toBe('e_y');
+            const before = get(s, 'a_t').strength;
+            issueOrder(s, 'a_t', { type: 'retreat' });
+            advance(s, 20);
+            out[String(pursuit)] = before - get(s, 'a_t').strength;
+            if (pursuit) {
+                const e = get(s, 'e_y');
+                expect(e.order).toEqual({ type: 'attack', targetId: 'a_t' });
+                expect(Math.hypot(e.x - get(s, 'a_t').x, e.z - get(s, 'a_t').z)).toBeLessThan(40); // 離されない
+            }
+        }
+        expect(out.true).toBeGreaterThan(out.false * 2 + 40);
+    });
+
+    it('退路の守護の範囲で退く味方を追う敵は、忠勝隊に阻まれて忠勝隊へ向かう', () => {
+        const s = createBattle(pursuitScene(true, true));
+        advance(s, 4);
+        issueOrder(s, 'a_t', { type: 'retreat' });
+        expect(useAbility(s, 'a_rg').ok).toBe(true);
+        advance(s, 1);
+        advance(s, 20, (x) => {
+            if (get(x, 'e_y').order.type === 'attack') expect(['a_t', 'a_rg']).toContain((get(x, 'e_y').order as { targetId: string }).targetId);
+        });
+        expect(get(s, 'e_y').order).toEqual({ type: 'attack', targetId: 'a_rg' });
+        expect(s.events.some((e) => e.kind === 'ai' && e.text.includes('追い討ちをa_rgが阻む'))).toBe(true);
+        expect(get(s, 'a_t').status).toBe('ready');
+    });
+
+    it('架空の第一章（pursuit なし）の合戦は、追い討ちの考えを使わない（同じ采配で同じ結果）', () => {
+        const a = runToEnd(createBattle(demoSetup('alone')));
+        const b = runToEnd(createBattle({ ...demoSetup('alone'), pursuit: false }));
+        expect(b).toEqual(a);
+        expect(demoSetup('tashiro').pursuit).toBeUndefined();
     });
 });

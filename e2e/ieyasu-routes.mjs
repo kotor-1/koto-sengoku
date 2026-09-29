@@ -257,6 +257,17 @@ async function depart(page, io, prefix) {
   const units = await page.evaluate(() => window.__battle.state.units.map((u) => ({ id: u.id, side: u.side, clan: u.clan, name: u.name, ability: u.ability ?? null })));
   const pledge = await page.evaluate(() => window.__battle.state.pledge && { targetId: window.__battle.state.pledge.targetId });
   check(`${prefix} 合戦の説明：「1570年の情勢を背景にした架空の局地戦」・勝ち負け・撤退の条件`, brief.includes('1570年の情勢を背景にした架空の局地戦') && brief.includes('勝利') && brief.includes('撤退'));
+  // （プレイテストの指摘）説明が長くても、「合戦を始める」は送らずに画面の中に見えて押せる（枠の下に貼りつく）
+  const vp = page.viewportSize();
+  const sb = await page.evaluate(() => {
+    const b = document.querySelector('.b-brief .b-primary').getBoundingClientRect();
+    const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+    const box = document.querySelector('.b-modal.b-brief');
+    const more = document.querySelector('.b-brief .b-more');
+    return { top: b.top, bottom: b.bottom, hit: !!hit && !!hit.closest('.b-primary'), overflow: box.scrollHeight > box.clientHeight + 4, more: !!more && !more.hidden };
+  });
+  check(`${prefix} 合戦の説明：「合戦を始める」が送らずに見えて押せる（${vp.width}×${vp.height}）・続きがあれば「続きがある」`, sb.top >= 0 && sb.bottom <= vp.height && sb.hit && sb.more === sb.overflow, JSON.stringify(sb));
+  if (brief.includes('浪人衆')) check(`${prefix} 合戦の説明（C）：浪人衆の騎馬は西の林から（布陣と同じ向き）`, brief.includes('西の林から浪人衆の騎馬') && !brief.includes('東から浪人衆'));
   return { brief, units, pledge, departSave: sv };
 }
 

@@ -7,7 +7,7 @@
  * 台本で最後まで一気に進める（早送り）。状態の直接変更はしない。
  */
 import { describe, expect, it } from 'vitest';
-import { createBattle, runToEnd, type BattleState } from '../proto3d/src/battle/sim';
+import { createBattle, orderAllRetreat, runToEnd, unitById, type BattleState } from '../proto3d/src/battle/sim';
 import {
     BORDER_FIELD,
     IEYASU_INITIAL_TROOPS,
@@ -71,7 +71,7 @@ describe('方針ごとの布陣（1570年の情勢を背景にした架空の局
     it('A 織田との協力：織田援軍が前に突出した味方（約束の対象）。浅井長政隊は敵の本陣で、能力は敵方', () => {
         const us = ieyasuUnits('oda', troops());
         expect(us.find((u) => u.id === 'a_oda')).toMatchObject({ side: 'ally', clan: 'oda', name: '織田援軍' });
-        expect(us.find((u) => u.id === 'a_oda')!.z).toBeLessThan(0); // 前（北）に突出
+        expect(us.find((u) => u.id === 'a_oda')!.z).toBeLessThan(us.find((u) => u.id === 't_tadakatsu')!.z - 30); // 徳川の前線より前（北）に突出
         expect(us.find((u) => u.id === 'e_nagamasa')).toMatchObject({ side: 'enemy', clan: 'asai', kind: 'honjin', leaderId: 'nagamasa', ability: 'nagamasa_support' });
         expect(us.filter((u) => u.side === 'enemy').map((u) => u.clan).sort()).toEqual(['asai', 'asai', 'asai', 'asakura']);
         expect(IEYASU_PLEDGE_TARGET.oda).toBe('a_oda');
@@ -128,9 +128,21 @@ describe('方針ごとの布陣（1570年の情勢を背景にした架空の局
                     expect(b).toContain('約束（引き受けた）');
                     expect(b).toContain('20 秒以上');
                     expect(b).toContain('40% 以上');
+                    expect(b).toContain('敵と斬り合う前に');
                 } else expect(b).toContain('約束違反にはならない');
+                expect(b).toContain('追い討ち');
             }
         }
+        // （プレイテストの指摘）回り込む敵の向きが布陣と合っている：C の浪人衆の騎馬・B の織田騎馬は西の林、A の朝倉勢は東
+        const dir = (p: IeyasuPolicy, id: string) => (ieyasuUnits(p, troops()).find((u) => u.id === id)!.x < 0 ? '西' : '東');
+        const home = ieyasu1570Setup('home', { troops: troops(), pledgeAccepted: true }).briefing.join('');
+        expect(dir('home', 'e_ronin_kiba')).toBe('西');
+        expect(home).toContain('西の林から浪人衆の騎馬が回り込んでくる');
+        expect(home).not.toContain('東から浪人衆');
+        expect(dir('asai', 'e_oda_kiba')).toBe('西');
+        expect(ieyasu1570Setup('asai', { troops: troops(), pledgeAccepted: true }).briefing.join('')).toContain('西の林から織田騎馬');
+        expect(dir('oda', 'e_asakura')).toBe('東');
+        expect(ieyasu1570Setup('oda', { troops: troops(), pledgeAccepted: true }).briefing.join('')).toContain('東から回り込む朝倉勢');
         expect(ieyasu1570Setup('asai', { troops: troops(), pledgeAccepted: true }).briefing.join('')).toContain('史実から分かれた道');
         expect(ieyasu1570Setup('oda', { troops: troops(), pledgeAccepted: true }).briefing.join('')).not.toContain('史実から分かれた道');
     });
@@ -197,6 +209,44 @@ describe.each(POLICIES)('合戦の釣り合い（方針 %s）', (policy) => {
         expect(r.pledge).toEqual({ targetId: IEYASU_PLEDGE_TARGET[policy], result: 'kept' });
         expect(r.units.find((u) => u.id === IEYASU_PLEDGE_TARGET[policy])!.status).toBe('withdrawn');
         expect(s.events.some((e) => e.kind === 'pledge' && e.text.includes('退き口から無事に'))).toBe(true);
+    });
+
+    it('（プレイテストの指摘）合戦が始まってすぐ全軍撤退しても、約束は守ったことにならない（敵と斬り合う前に退いた）', () => {
+        const { r, s } = play(policy, (x) => {
+            if (x.allRetreatAt === null) orderAllRetreat(x);
+        });
+        expect(r.result).toBe('retreat');
+        expect(r.pledge).toEqual({ targetId: IEYASU_PLEDGE_TARGET[policy], result: 'broken' });
+        expect(s.pledge!.contested).toBe(false);
+        // 引き受けなければ、同じ撤退でも約束の記録はない（違反ではない）
+        expect(play(policy, (x) => void (x.allRetreatAt === null && orderAllRetreat(x)), false).r.pledge).toBeUndefined();
+    });
+
+    it('（プレイテストの指摘）退路の守護が効く：同じ「斬り合ってから退く」采配で、守護なしなら対象が追い討ちで崩れて約束は broken、守護ありなら kept', () => {
+        const withRg = play(policy, ieyasuRetreatScript(policy));
+        expect(withRg.r.pledge?.result).toBe('kept');
+        expect(withRg.r.abilitiesUsed!.t_tadakatsu).toBeGreaterThan(0);
+        expect(withRg.s.events.some((e) => e.kind === 'ai' && e.text.includes('追い討ちを本多忠勝隊が阻む'))).toBe(true);
+        // 守護なし（使えない状態にしてから同じ台本）
+        const s = createBattle(ieyasu1570Setup(policy, { troops: troops(), pledgeAccepted: true }));
+        s.abilities.t_tadakatsu.usedAt = -1; // （状態を直接変更）この合戦ではもう使った扱い
+        const r = runToEnd(s, ieyasuRetreatScript(policy));
+        expect(r.pledge?.result).toBe('broken');
+        expect(['routed', 'destroyed']).toContain(r.units.find((u) => u.id === IEYASU_PLEDGE_TARGET[policy])!.status);
+    });
+
+    it('（プレイテストの指摘）全軍で正面から押して号令を 1 回使うだけでは、いつ使っても勝てない', () => {
+        const at = (t0: number | 'hq'): Script => {
+            const f = ieyasuFrontalScript(policy, true);
+            let done = false;
+            return (x) => {
+                f(x);
+                if (done) return;
+                const hq = unitById(x, 't_honjin')!;
+                if (t0 === 'hq' ? !!hq.engagedWith : x.t >= t0) done = useAbility(x, 't_honjin').ok;
+            };
+        };
+        for (const t0 of ['hq', 0, 20, 40, 60, 80] as const) expect(play(policy, at(t0)).r.result, `号令 ${t0}`).toBe('defeat');
     });
 
     it('約束を引き受けなければ、同じ采配でも約束の記録はない（約束違反と同じにしない）', () => {

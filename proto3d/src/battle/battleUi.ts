@@ -597,7 +597,14 @@ export class BattleUi {
         press(b, () => this.h.start());
         this.startBtn = b;
         const row = el('div', 'b-modal-row');
-        row.append(b);
+        // 説明が枠に収まらないときは、続きがあることを添える（「合戦を始める」は枠の下に貼りついて常に見える）
+        const more = el('span', 'b-more', this.opts.touch ? '↓ 続きがある（なぞって読む）' : '↓ 続きがある（ホイールで読む）');
+        const updateMore = () => {
+            more.hidden = box.scrollHeight - box.clientHeight - box.scrollTop <= 4;
+        };
+        box.addEventListener('scroll', updateMore, { passive: true });
+        requestAnimationFrame(updateMore);
+        row.append(more, b);
         box.append(row);
         this.modalPrimary = () => {
             if (!b.classList.contains('off')) this.h.start();

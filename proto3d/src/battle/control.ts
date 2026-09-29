@@ -444,13 +444,13 @@ export function abilityShort(id: AbilityId): { target: string; effect: string; c
         case 'ieyasu_rally':
             return {
                 target: `本陣の周り ${d.radius} m の味方`,
-                effect: `士気 +${d.moraleBoost}・${d.durationSec} 秒 士気の低下 −${pct(d.areaMoraleLossMul)}・崩れにくい`,
+                effect: `下がった士気 +${d.moraleBoost}（最初の士気まで）・${d.durationSec} 秒 士気の低下 −${pct(d.areaMoraleLossMul)}・崩れにくい`,
                 cost: `本陣の与える損害 ×${d.selfDealMul}・動き ×${d.selfSpeedMul}`,
             };
         case 'tadakatsu_rearguard':
             return {
                 target: `その場で踏みとどまり、周り ${d.radius} m で退く味方`,
-                effect: `${d.durationSec} 秒 退く味方の損害 −${pct(d.areaTakeMul)}・士気の低下 −${pct(d.areaMoraleLossMul)}`,
+                effect: `${d.durationSec} 秒 退く味方の損害 −${pct(d.areaTakeMul)}・士気の低下 −${pct(d.areaMoraleLossMul)}・追っ手を引き受ける`,
                 cost: `動けない（撤退も不可）・受ける損害 ×${d.selfTakeMul}`,
             };
         case 'nagamasa_support':
@@ -585,6 +585,11 @@ export function pledgeLineModel(s: BattleState): PledgeLineModel | null {
         tone = low ? 'warn' : 'progress';
     }
     if (!p.result && !p.failed && low) status += `・${need}% 未満では守れない`;
+    // 約束の場面（対象が斬り合う・味方が合わせて 15 秒斬り結ぶ）の前は、撤退で終えると守ったことにならない
+    if (!p.result && !p.failed && !p.contested) {
+        status += ` / まだ敵と斬り合っていない（${Math.floor(p.meleeSec)}/${p.contestMeleeSec} 秒）— 今退くと守れない`;
+        if (tone === 'ok') tone = 'progress';
+    }
     return { targetId: p.targetId, title, status, tone };
 }
 
@@ -602,7 +607,13 @@ export function pledgeResultModel(s: BattleState, o: BattleOutcome): { result: '
     if (o.pledge.result === 'kept') {
         return { result: 'kept', title: `約束を守った：${name}の退路を守る`, text: `${name}は${status}（兵 ${ratio}% 残る）。勝敗とは別に、約束は果たした。` };
     }
-    const why = row && (row.status === 'routed' || row.status === 'destroyed') ? `${name}が${status}` : `${name}の兵が ${ratio}%（${Math.round((s.pledge?.minStrengthRatio ?? 0.4) * 100)}% 未満）`;
+    const need = s.pledge?.minStrengthRatio ?? 0.4;
+    const fell = row && (row.status === 'routed' || row.status === 'destroyed');
+    const why = fell
+        ? `${name}が${status}`
+        : row && row.startStrength > 0 && row.endStrength >= row.startStrength * need - 1e-9
+          ? `${name}は${status}（兵 ${ratio}%）が、敵と斬り合う前に${o.result === 'defeat' ? '敗れた' : '退いた'}ため、退路を守ったことにならない`
+          : `${name}の兵が ${ratio}%（${Math.round(need * 100)}% 未満）`;
     return { result: 'broken', title: `約束を守れなかった：${name}の退路を守る`, text: `${why}。勝敗とは別に、約束は果たせなかった。` };
 }
 

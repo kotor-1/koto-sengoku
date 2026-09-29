@@ -10,7 +10,8 @@
 // この中で、次のヘッダー付きの簡易サーバーを立てる：
 //   content-security-policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'
 // 経路：タイトル（歴史分岐のはじめから）→ 本多忠勝と話す → 軍議で C（自領の防衛）→ 支度で忠勝の約束を引き受ける（メニューから保存）
-//       → 城門で出陣 → 合戦（指揮・家康本陣の「立て直しの号令」を「能力」ボタンで・×2・全軍撤退）→ 結果（勝敗と約束を別々に）→ 戦後（自動保存）
+//       → 城門で出陣 → 合戦（指揮・家康本陣の「立て直しの号令」を「能力」ボタンで・×2・すぐに全軍撤退）→ 結果（撤退・約束は「敵と斬り合う前に退いた」ので
+//       守れなかった。勝敗と約束を別々に）→ 戦後（自動保存）
 //       → 開き直して続きから → 忠勝と話して結末 → タイトル。CSP の違反・ページの誤り・読めなかったファイル・data: の URL が無いこと。
 import { createServer } from 'node:http';
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -198,12 +199,21 @@ try {
   check('出陣前の自動保存（段階 battle・約束を引き受けた）→ 合戦の説明', dep?.point === 'departure' && dep?.phase === 'battle' && dep.pledge?.accepted === true, gateText.slice(0, 60));
   const brief = await page.textContent('.b-modal');
   check('合戦の説明：「1570年の情勢を背景にした架空の局地戦」・約束の対象（岡崎の守備隊）・浪人衆', brief.includes('1570年の情勢を背景にした架空の局地戦') && brief.includes('岡崎の守備隊') && brief.includes('浪人衆') && !brief.includes('織田方'));
+  // （プレイテストの指摘）説明が長くても「合戦を始める」は送らずに見えて押せる（枠の下に貼りつく）
+  const startBox = await page.locator('.b-primary', { hasText: '合戦を始める' }).boundingBox();
+  const startHit = await page.evaluate(() => {
+    const b = document.querySelector('.b-brief .b-primary').getBoundingClientRect();
+    const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+    return !!hit && !!hit.closest('.b-primary');
+  });
+  check('合戦の説明：「合戦を始める」が送らずに画面の中に見えて押せる', !!startBox && startBox.y >= 0 && startBox.y + startBox.height <= VH && startHit, JSON.stringify(startBox));
   await shot('I06-briefing');
   await page.locator('.b-primary', { hasText: '合戦を始める' }).click();
   await sleep(1500);
   await page.locator('.b-pause').click();
   await sleep(800);
-  check('指揮（一時停止）の印が出る・約束の行が出る', (await page.locator('.b-pausepill').isVisible()) && (await page.locator('.b-pledge').isVisible()), await page.locator('.b-pledge').textContent());
+  const pl0 = await page.locator('.b-pledge').textContent();
+  check('指揮（一時停止）の印が出る・約束の行が出る（敵と斬り合う前は「今退くと守れない」）', (await page.locator('.b-pausepill').isVisible()) && (await page.locator('.b-pledge').isVisible()) && pl0.includes('今退くと守れない'), pl0);
   await page.locator('.b-card', { hasText: '家康本陣' }).click();
   await sleep(800);
   const abil0 = await page.textContent('.b-abil');
@@ -227,14 +237,15 @@ try {
   await sleep(1000);
   await shot('I08-result');
   const res = await page.textContent('.b-result');
-  check('全軍撤退 → 結果の画面「撤退」と、勝敗とは別の約束の欄・使った能力', (await page.textContent('.b-result h2')).includes('撤退') && /約束を(守った|守れなかった)/.test(res) && res.includes('勝敗とは別') && res.includes('立て直しの号令'), res.slice(0, 120));
+  // （プレイテストの指摘）始まってすぐの全軍撤退では、守備隊が無事でも約束は守ったことにならない
+  check('すぐに全軍撤退 → 結果の画面「撤退」と、勝敗とは別に「約束を守れなかった（敵と斬り合う前に退いた）」・使った能力', (await page.textContent('.b-result h2')).includes('撤退') && res.includes('約束を守れなかった') && res.includes('敵と斬り合う前に退いた') && res.includes('勝敗とは別') && res.includes('立て直しの号令'), res.slice(0, 160));
   const decided = await save();
-  check('結果の画面の時点で戦後の自動保存（撤退・約束の結果）', decided?.point === 'aftermath' && decided.battle?.result === 'retreat' && ['kept', 'broken'].includes(decided.pledge?.result) && decided.appliedBattleId === decided.battleId, JSON.stringify({ p: decided?.point, r: decided?.battle?.result, pl: decided?.pledge?.result }));
+  check('結果の画面の時点で戦後の自動保存（撤退・約束の結果）', decided?.point === 'aftermath' && decided.battle?.result === 'retreat' && decided.pledge?.result === 'broken' && decided.appliedBattleId === decided.battleId, JSON.stringify({ p: decided?.point, r: decided?.battle?.result, pl: decided?.pledge?.result }));
   await page.locator('.b-primary', { hasText: '続ける' }).click();
   await page.waitForFunction(() => !document.body.classList.contains('mode-battle') && !document.getElementById('battle-ui') && document.querySelector('.g-hud') && !document.querySelector('.g-hud').hidden, null, W);
   const aft = await save();
   const kept = aft?.pledge?.result === 'kept';
-  check('合戦の後 → 戦後の探索（撤退・約束の結果・信頼：忠勝 ±25・織田 −10・浅井 そのまま）', aft?.phase === 'aftermath' && aft.battle.result === 'retreat' && aft.trust.tadakatsu === (kept ? 65 : 15) && aft.trust.oda === 20 && aft.trust.asai === 10 && aft.support?.reinforcement === kept, JSON.stringify({ trust: aft?.trust, pledge: aft?.pledge?.result, support: aft?.support }));
+  check('合戦の後 → 戦後の探索（撤退・約束を守れなかった・信頼：忠勝 −25 → 15・織田 −10・浅井 そのまま・援兵なし）', aft?.phase === 'aftermath' && aft.battle.result === 'retreat' && !kept && aft.trust.tadakatsu === 15 && aft.trust.oda === 20 && aft.trust.asai === 10 && aft.support?.reinforcement === kept, JSON.stringify({ trust: aft?.trust, pledge: aft?.pledge?.result, support: aft?.support }));
   // 開き直して続きから
   await page.reload();
   await page.locator('.g-btn[data-id="continue:ieyasu1570"]').waitFor({ state: 'visible', timeout: 600000 });
@@ -255,6 +266,7 @@ try {
   const ending = await page.textContent('.g-ending');
   await shot('I10-ending');
   check('結末：方針（自領の防衛）・撤退・約束・信頼・史実と創作', ending.includes('自領の防衛') && ending.includes('撤退') && ending.includes('約束') && ending.includes('信頼') && ending.includes('史実と創作'));
+  check('結末：守備隊は無事でも「刃を交える前に兵を引いた」ので約束は果たせなかった、と書く', ending.includes('敵と刃を交える前に兵を引いたため') && ending.includes('守れなかった'));
   check('結末に「姉川の戦いの再現」とは書かない', !ending.includes('姉川の戦いを再現'));
   await page.locator('.g-btn[data-id="title"]').scrollIntoViewIfNeeded();
   await pressBtn('title');

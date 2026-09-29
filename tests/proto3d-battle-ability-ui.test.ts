@@ -130,6 +130,7 @@ describe('能力の欄（abilityPanelModel）', () => {
         const m2 = abilityPanelModel(s, 'a_nagamasa')!;
         expect(m2.usable).toBe(false);
         expect(m2.reason).toContain('60 m 以内に援護できる味方の部隊がいない');
+        expect(m2.reason).toMatch(/いちばん近い.+は今 \d+ m。近づければ選べる/); // （プレイテストの指摘）どの味方をどれだけ寄せればよいか
     });
     it('援護を使った後：対象と、離れて外れている状態を出す（状態を直接変える）', () => {
         const s = ieyasu('asai');
@@ -189,7 +190,7 @@ describe('約束の行・結果（pledgeLineModel・pledgeResultModel）', () =>
         calm(s);
         const l0 = pledgeLineModel(s)!;
         expect(l0.title).toBe('約束：織田援軍の退路を守る');
-        expect(l0.status).toBe('味方の陣の外（入って 20 秒） / 兵 100%');
+        expect(l0.status).toBe('味方の陣の外（入って 20 秒） / 兵 100% / まだ敵と斬り合っていない（0/15 秒）— 今退くと守れない');
         const oda = unitById(s, 'a_oda')!;
         const keep = (st: BattleState) => {
             const u = unitById(st, 'a_oda')!;
@@ -199,11 +200,17 @@ describe('約束の行・結果（pledgeLineModel・pledgeResultModel）', () =>
         keep(s);
         issueOrder(s, oda.id, { type: 'hold' });
         advance(s, 12, keep);
-        expect(pledgeLineModel(s)!.status).toMatch(/^陣に入って 1[12]\/20 秒 \/ 兵 100%$/);
+        expect(pledgeLineModel(s)!.status).toMatch(/^陣に入って 1[12]\/20 秒 \/ 兵 100% \/ まだ敵と斬り合っていない（\d+\/15 秒）— 今退くと守れない$/);
         advance(s, 9, keep);
         const l2 = pledgeLineModel(s)!;
         expect(l2.status).toContain('陣で 20 秒 持ちこたえた ✓');
-        expect(l2.tone).toBe('ok');
+        // 約束の場面の前は「今退くと守れない」を添え、ok にはしない
+        expect(l2.status).toContain('今退くと守れない');
+        expect(l2.tone).toBe('progress');
+        s.pledge!.contested = true; // （状態を直接変える）敵と斬り合った後
+        const l3 = pledgeLineModel(s)!;
+        expect(l3.status).toBe('陣で 20 秒 持ちこたえた ✓ / 兵 100%');
+        expect(l3.tone).toBe('ok');
     });
     it('兵が 40% 未満なら注意、崩れたら守れない（状態を直接変える）', () => {
         const s = ieyasu('home');
@@ -234,6 +241,11 @@ describe('約束の行・結果（pledgeLineModel・pledgeResultModel）', () =>
         expect(broken.result).toBe('broken');
         expect(broken.text).toContain('織田援軍が敗走');
         expect(broken.text).toContain('勝敗とは別');
+        // 対象は無事だが、敵と斬り合う前に退いた（プレイテストの指摘：すぐ全軍撤退しても約束は守れない）
+        const unfought = pledgeResultModel(s, { ...base, result: 'retreat', reason: 'ordered_retreat', units: [{ ...row('ready', 400), status: 'withdrawn' }], pledge: { targetId: 'a_oda', result: 'broken' } })!;
+        expect(unfought.result).toBe('broken');
+        expect(unfought.text).toContain('敵と斬り合う前に退いた');
+        expect(unfought.text).toContain('兵 100%');
     });
     it('使った能力の記録：使った・使わなかった。架空は空', () => {
         const s = ieyasu('oda');

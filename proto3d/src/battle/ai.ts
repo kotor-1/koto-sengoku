@@ -19,9 +19,14 @@
  *   （A の方針の浅井長政隊は、丘の前で持ち場を守る浅井先手が交戦すると支える）
  * - 立て直しの号令：範囲の中の戦える味方（敵方）が 2 部隊以上で士気 50 未満、または本陣自身が 45 未満になったら使う。
  * - 退路の守護：範囲の中で味方（敵方）が敗走・撤退しているとき、自分が斬り合っていなければ使う。
+ *
+ * 追い討ち（BattleSetup.pursuit の合戦＝歴史分岐だけ。架空の第一章では何もしない）：
+ * - 弓・本陣以外の部隊は、近く（騎馬 110 m・ほか 60 m）で撤退の命令で退いている見えている味方へ追い討ちをかける
+ *   （hold_line は持ち場から 120 m、guard_hq は本陣から 110 m の中だけ。reserve は動き出してから）。
+ * - その味方が「退路の守護」の範囲の中にいれば、追う代わりに守護の持ち主（忠勝隊）へ向かう（追っ手を阻む）。
  */
 import type { Order, UnitDef } from './types';
-import { ABILITY_DATA } from './abilities';
+import { ABILITY_DATA, rearguardCover } from './abilities';
 import type { BattleState, UnitState } from './sim';
 
 export type AiRole = NonNullable<UnitDef['aiRole']>;
@@ -47,6 +52,9 @@ export const AI = {
     flankDelay: 30,
     /** flank：回り込む途中、この距離に相手が見えたらすぐ当たる */
     flankStrike: 60,
+    /** 追い討ち（BattleSetup.pursuit の合戦だけ）：退いている相手を追い始める距離（騎馬・ほか） */
+    pursuitRangeKiba: 110,
+    pursuitRange: 60,
 } as const;
 
 export interface AiMemo {
@@ -153,6 +161,7 @@ export function thinkEnemy(s: BattleState, api: AiApi): void {
         // 矢を浴びている時間
         if (s.t - u.lastArrowT < 0.6) m.arrowSec += 0.5;
         else m.arrowSec = Math.max(0, m.arrowSec - 0.25);
+        if (s.setup.pursuit && pursue(s, api, u, m)) continue;
         switch (m.role) {
             case 'hold_line':
                 holdLine(s, api, u, m);
@@ -168,6 +177,58 @@ export function thinkEnemy(s: BattleState, api: AiApi): void {
                 break;
         }
     }
+}
+
+/** 撤退の命令で退いている、敵から見えている味方 */
+function retreatingAlly(o: UnitState): boolean {
+    return o.side === 'ally' && active(o) && o.order.type === 'retreat' && o.seenBy.enemy;
+}
+
+/** 追い討ちで追ってよいか（役割ごとの持ち場の縛り） */
+function mayChase(s: BattleState, u: UnitState, m: AiMemo, o: UnitState): boolean {
+    switch (m.role) {
+        case 'hold_line':
+            return d2(o, home(m)) <= AI.holdLeash;
+        case 'guard_hq': {
+            const hq = s.units.find((x) => x.side === u.side && x.isHq);
+            return d2(o, hq && active(hq) ? hq : home(m)) <= AI.guardLeash;
+        }
+        case 'reserve':
+            return m.phase === 'active';
+        case 'flank':
+            return true;
+    }
+}
+
+/**
+ * 追い討ち（BattleSetup.pursuit の合戦だけ）。この部隊の命令を決めたら true（役割の考えは飛ばす）。
+ * 退路の守護に守られた味方は追わず、守護の持ち主へ向かう。
+ */
+function pursue(s: BattleState, api: AiApi, u: UnitState, m: AiMemo): boolean {
+    if (u.kind === 'yumi' || u.isHq) return false;
+    const cur = attackTarget(s, u);
+    if (cur && retreatingAlly(cur)) {
+        const guard = rearguardCover(s, cur);
+        if (guard && guard.seenBy.enemy) {
+            attack(s, api, u, guard, `${u.name}の追い討ちを${guard.name}が阻む`);
+            return true;
+        }
+        return mayChase(s, u, m, cur);
+    }
+    if (u.engagedWith) return false;
+    const range = u.kind === 'kiba' ? AI.pursuitRangeKiba : AI.pursuitRange;
+    const cands = s.units.filter((o) => retreatingAlly(o) && d2(o, u) <= range && mayChase(s, u, m, o)).sort((a, b) => d2(a, u) - d2(b, u));
+    for (const o of cands) {
+        const guard = rearguardCover(s, o);
+        if (guard) {
+            if (!guard.seenBy.enemy) continue;
+            attack(s, api, u, guard, `${u.name}の追い討ちを${guard.name}が阻む`);
+            return true;
+        }
+        attack(s, api, u, o, `${u.name}が退く${o.name}へ追い討ちをかける`);
+        return true;
+    }
+    return false;
 }
 
 function holdLine(s: BattleState, api: AiApi, u: UnitState, m: AiMemo): void {

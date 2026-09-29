@@ -20,7 +20,7 @@
 import { appContext, enterMode, exitMode, registerBattleRunner, type AppContext, type Mode } from '../app/modes';
 import { loadModel } from '../app/models';
 import type { BattleOutcome, BattleRunHooks, BattleSetup, Order } from './types';
-import { canCommand, createBattle, issueOrder, orderAllRetreat, stepBattle, unitById, type BattleEvent, type BattleState } from './sim';
+import { canCommand, createBattle, elevationAt, issueOrder, orderAllRetreat, stepBattle, unitById, type BattleEvent, type BattleState } from './sim';
 import { BattleView } from './view';
 import { BattleUi, type CommandKind } from './battleUi';
 import { useAbility } from './abilities';
@@ -813,12 +813,15 @@ function exposeDev(run: BattleRun): void {
             const p = run.view.unitPos(i);
             const u = run.s.units[i];
             const r = appContext().renderer.domElement.getBoundingClientRect();
-            const q = run.view.project(p.shown ? p.x : u.x, 2, p.shown ? p.z : u.z);
+            const x = p.shown ? p.x : u.x;
+            const z = p.shown ? p.z : u.z;
+            // 丘の上の部隊（敵本陣など）も、描かれている高さで押せるように（地面の高さ + 2 m）
+            const q = run.view.project(x, elevationAt(run.s.map, x, z) + 2, z);
             return { x: q.x + r.left, y: q.y + r.top, shown: p.shown };
         },
         screenOfGround(x: number, z: number) {
             const r = appContext().renderer.domElement.getBoundingClientRect();
-            const q = run.view.project(x, 0, z);
+            const q = run.view.project(x, elevationAt(run.s.map, x, z), z);
             return { x: q.x + r.left, y: q.y + r.top };
         },
         centerOn: (x: number, z: number, dist?: number) => {

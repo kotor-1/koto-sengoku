@@ -125,6 +125,13 @@ export const RULES = {
     hqUnderAttack: 0.6,
     /** 全軍撤退の命令から、戦場を離れ切るまで待つ最長の秒数 */
     retreatGraceSec: 20,
+    /**
+     * 戦前の約束（歴史分岐だけ）：「約束の場面」になる条件。対象が敵と斬り合う、または味方の部隊が（どれかが）合わせてこの秒数以上
+     * 敵と斬り結ぶ。場面になる前に撤退・敗北で終わったときは、約束を果たしたことにならない（勝利・日没なら要らない）
+     */
+    pledgeContestMeleeSec: 15,
+    /** 追い討ち（BattleSetup.pursuit の合戦だけ）：退いている相手を攻める部隊は、斬りながら後を追う（離されない） */
+    pursuitFollowStop: 12,
     /** 味方どうしが重ならない距離 */
     spacing: 18,
     /** 動く部隊が、止まっている味方の部隊をよけて通り始める先の距離（m） */
@@ -282,6 +289,12 @@ export interface PledgeTrack {
     withdrew: boolean;
     /** 対象が崩れたことを知らせた */
     failNoted: boolean;
+    /** 対象が敵と斬り合った */
+    pressed: boolean;
+    /** 味方の部隊が敵と斬り結んだ秒数（どれか 1 部隊でも斬り合っている刻みを数える） */
+    meleeSec: number;
+    /** 約束の場面になった（pressed、または meleeSec が RULES.pledgeContestMeleeSec 以上）。一度なれば消えない */
+    contested: boolean;
 }
 
 /** 約束の見通し（画面の表示用）。pending＝まだ決まらない（このまま終われば kept になる見込みかは onTrack） */
@@ -299,8 +312,15 @@ export interface PledgeProgress {
     minStrengthRatio: number;
     /** 対象が敗走・全滅した（もう守れない） */
     failed: boolean;
-    /** 今終わったら「守った」になる */
+    /** 約束の場面になった（対象が敵と斬り合った、または味方が斬り結んだ秒数が足りた）。撤退・敗北で終わるときに要る */
+    contested: boolean;
+    pressed: boolean;
+    meleeSec: number;
+    contestMeleeSec: number;
+    /** 今「全軍撤退」で終わったら「守った」になる（勝利・日没では contested は要らない） */
     onTrack: boolean;
+    /** 約束の場面を除いた条件（崩れていない・兵が足りる・陣・退き口・戦えている）を満たす */
+    onTrackIgnoringContest: boolean;
     /** 合戦が終わっていれば結果 */
     result: 'kept' | 'broken' | null;
 }
@@ -523,7 +543,7 @@ export function createBattle(setup: BattleSetup): BattleState {
     if (pl) {
         const tgt = units.find((u) => u.id === pl.targetId);
         if (!tgt || tgt.side !== 'ally') throw new Error(`約束の対象が味方の部隊にありません: ${pl.targetId}`);
-        s.pledge = { targetId: pl.targetId, safeZone: { ...pl.safeZone }, holdSec: pl.holdSec, minStrengthRatio: pl.minStrengthRatio, zoneSec: 0, secured: false, withdrew: false, failNoted: false };
+        s.pledge = { targetId: pl.targetId, safeZone: { ...pl.safeZone }, holdSec: pl.holdSec, minStrengthRatio: pl.minStrengthRatio, zoneSec: 0, secured: false, withdrew: false, failNoted: false, pressed: false, meleeSec: 0, contested: false };
     }
     updateVisibility(s, null);
     s.events.push({ t: 0, kind: 'start', text: `${setup.map.name}の合戦が始まった` });
@@ -937,7 +957,11 @@ function planFor(s: BattleState, u: UnitState): Plan {
     if (order.type === 'attack') {
         const tgt = unitById(s, order.targetId)!;
         const d = dist(u, tgt);
-        if (near.includes(tgt) || prev === tgt) return { melee: tgt, ranged: null, goal: null };
+        if (near.includes(tgt) || prev === tgt) {
+            // 追い討ち（歴史分岐の合戦だけ）：退いている相手は、斬りながら後を追う
+            if (s.setup.pursuit && isRetreatingUnit(tgt)) return { melee: tgt, ranged: null, goal: { x: tgt.x, z: tgt.z, stopAt: RULES.pursuitFollowStop } };
+            return { melee: tgt, ranged: null, goal: null };
+        }
         if (u.kind === 'yumi') {
             if (near.length || prev) return { melee: holdMelee(), ranged: null, goal: null };
             if (d <= RULES.bowStandoff + 0.5) return { melee: null, ranged: tgt, goal: null };
@@ -952,6 +976,11 @@ function planFor(s: BattleState, u: UnitState): Plan {
     if (m) return { melee: m, ranged: null, goal: null };
     if (u.kind === 'yumi') return { melee: null, ranged: nearestShootable(s, u), goal: null };
     return { melee: null, ranged: null, goal: null };
+}
+
+/** 撤退の命令で退いている（戦える状態で退き口へ向かっている）部隊 */
+export function isRetreatingUnit(u: UnitState): boolean {
+    return u.present && u.status === 'ready' && u.order.type === 'retreat';
 }
 
 function nearestShootable(s: BattleState, u: UnitState): UnitState | null {
@@ -1229,7 +1258,9 @@ function finish(s: BattleState, result: BattleResultKind, reason: BattleEndReaso
     if (s.abilityList.length > 0) s.result.abilitiesUsed = abilitiesUsedRecord(s);
     if (s.pledge) {
         const p = pledgeProgress(s)!;
-        s.result.pledge = { targetId: p.targetId, result: p.onTrack ? 'kept' : 'broken' };
+        // 勝利・日没（戦場に踏みとどまった）では約束の場面は要らない。撤退・敗北で終わるときは、場面になっていなければ守ったことにならない
+        const ok = p.onTrackIgnoringContest && (p.contested || result === 'victory' || reason === 'nightfall');
+        s.result.pledge = { targetId: p.targetId, result: ok ? 'kept' : 'broken' };
     }
     // 大将の呼び方（架空の第一章は「若殿」、歴史分岐は「家康」）
     const lord = hqOf(s, 'ally')?.clan === 'tokugawa' ? '家康' : '若殿';
@@ -1299,6 +1330,16 @@ function trackPledge(s: BattleState, dt: number): void {
         p.failNoted = true;
         log(s, 'pledge', `${u.name}が崩れた。約束（退路を守る）は果たせない`, u.id);
     }
+    if (!p.contested) {
+        if (!p.pressed && u.present && u.status === 'ready') {
+            p.pressed = !!u.engagedWith || s.units.some((o) => o.side !== u.side && isActive(o) && o.engagedWith === u.id);
+        }
+        if (s.units.some((o) => o.side === 'ally' && isActive(o) && !!o.engagedWith)) p.meleeSec += dt;
+        if (p.pressed || p.meleeSec >= RULES.pledgeContestMeleeSec - 1e-9) {
+            p.contested = true;
+            log(s, 'pledge', p.pressed ? `${u.name}が敵と斬り合った。ここからが約束の場面（退路を守り切れば果たせる）` : `味方が敵と斬り結んだ。ここからが約束の場面（${u.name}を守り切れば果たせる）`, u.id);
+        }
+    }
     if (!p.secured && p.zoneSec >= p.holdSec - 1e-9) {
         p.secured = true;
         log(s, 'pledge', `${u.name}が味方の陣で ${p.holdSec} 秒持ちこたえた（約束：兵が最初の ${Math.round(p.minStrengthRatio * 100)}% 以上なら守れる）`, u.id);
@@ -1320,7 +1361,7 @@ export function pledgeProgress(s: BattleState): PledgeProgress | null {
     const enough = ratio >= p.minStrengthRatio - 1e-9;
     const reached = p.secured || p.withdrew;
     const standing = u.status === 'ready' || u.status === 'withdrawn';
-    const onTrack = !failed && enough && (reached || standing);
+    const onTrackIgnoringContest = !failed && enough && (reached || standing);
     const inZone = u.present && u.status === 'ready' && Math.hypot(u.x - p.safeZone.cx, u.z - p.safeZone.cz) <= p.safeZone.r;
     return {
         targetId: p.targetId,
@@ -1333,7 +1374,12 @@ export function pledgeProgress(s: BattleState): PledgeProgress | null {
         strengthRatio: ratio,
         minStrengthRatio: p.minStrengthRatio,
         failed,
-        onTrack,
+        contested: p.contested,
+        pressed: p.pressed,
+        meleeSec: round1(p.meleeSec),
+        contestMeleeSec: RULES.pledgeContestMeleeSec,
+        onTrack: onTrackIgnoringContest && p.contested,
+        onTrackIgnoringContest,
         result: s.result ? (s.result.pledge?.result ?? null) : null,
     };
 }
