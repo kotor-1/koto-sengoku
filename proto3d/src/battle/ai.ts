@@ -24,6 +24,9 @@
  *   （A の方針の浅井長政隊は、丘の前で持ち場を守る浅井先手が交戦すると支える）
  * - 立て直しの号令：範囲の中の戦える味方（敵方）が 2 部隊以上で士気 50 未満、または本陣自身が 45 未満になったら使う。
  * - 退路の守護：範囲の中で味方（敵方）が敗走・撤退しているとき、自分が斬り合っていなければ使う。
+ * - 仮の能力（新しい武将。敵方が持つとき）：
+ *   両翼の采配＝範囲の中で斬り合っている味方（敵方。自分も）が 2 部隊以上／後詰めの差配＝範囲の中に味方（敵方）が 2 部隊以上いて、
+ *   自分か範囲の味方が斬り合っている／先駆けの号＝自分が斬り合っていて、士気が 40 以上（切れたときの士気 −10 で崩れないうち）。
  *
  * 追い討ち（BattleSetup.pursuit の合戦＝歴史分岐だけ。架空の第一章では何もしない）：
  * - 弓・本陣以外の部隊は、近く（騎馬 110 m・ほか 60 m）で撤退の命令で退いている見えている味方へ追い討ちをかける
@@ -105,6 +108,12 @@ export const AI_ABILITY = {
     /** 号令：範囲の中でこの士気より低い部隊が 2 つ以上、または本陣自身がこれより低い */
     rallyMorale: 50,
     rallySelfMorale: 45,
+    /** 両翼の采配：範囲の中で斬り合っている部隊（自分も）がこの数以上 */
+    flankEngaged: 2,
+    /** 後詰めの差配：範囲の中の味方（自分を除く）がこの数以上 */
+    reserveFriends: 2,
+    /** 先駆けの号：自分の士気がこれ以上 */
+    vanguardMorale: 40,
 } as const;
 
 
@@ -480,6 +489,19 @@ function enemyAbilities(s: BattleState, api: AiApi): void {
             if (u.engagedWith) continue;
             const fleeing = s.units.some((o) => o !== u && o.side === 'enemy' && o.present && (o.status === 'routed' || o.order.type === 'retreat') && d2(o, u) <= R);
             if (fleeing) api.useAbility!(u.id);
+        } else if (r.id === 'sakai_flank') {
+            const engaged = [u, ...friends].filter((o) => !!o.engagedWith).length;
+            if (engaged >= AI_ABILITY.flankEngaged) api.useAbility!(u.id);
+        } else if (r.id === 'ishikawa_reserve') {
+            const fighting = [u, ...friends].some((o) => !!o.engagedWith || inMelee(s, o));
+            if (friends.length >= AI_ABILITY.reserveFriends && fighting) api.useAbility!(u.id);
+        } else if (r.id === 'sakakibara_vanguard') {
+            if (u.engagedWith && u.morale >= AI_ABILITY.vanguardMorale) api.useAbility!(u.id);
         }
     }
+}
+
+/** u に斬りかかっている相手がいる */
+function inMelee(s: BattleState, u: UnitState): boolean {
+    return s.units.some((o) => o.side !== u.side && active(o) && o.engagedWith === u.id);
 }

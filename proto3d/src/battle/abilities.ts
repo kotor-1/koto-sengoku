@@ -8,26 +8,33 @@
  * - 不適切な対象（敵・自分・範囲外・戦えない部隊）や、使えない時（まだ着いていない・敗走・撤退済み・全滅・合戦の後）は、
  *   断るだけで使用回数を減らさない。
  * - 全軍撤退の命令の後でも、戦場にいて戦える部隊なら使える（退路の守護で殿を務めるなど）。
- * - 武将（leaderId）のいない部隊は能力を持たない。敵方の武将の能力は敵の考え（ai.ts）だけが使う。
+ * - 武将（leaderId／generalId）のいない部隊は能力を持たない。敵方の武将の能力は敵の考え（ai.ts）だけが使う。
  *   プレイヤーの操作（useAbility）は味方の部隊の能力しか使えない。
+ * - 部隊の能力の決め方（resolveAbilityId）：UnitDef.ability があればそれ、無ければ generalId の武将の abilityId（battle/generals.ts）。
+ * - 酒井忠次・石川数正・榊原康政の能力は仮のデータ（provisional: true）。数値・効果はこのファイルの ABILITY_DATA だけを差し替えればよい。
+ *   画面の説明（abilityInfo）は名前に「（仮）」を付け、断り書きにも仮と書く。
  *
  * 画面から：
  *   abilityInfo(s, unitId)          … 能力名・対象・範囲・効果・代償・使えるか（理由）。能力のない部隊は null
  *   useAbility(s, unitId, targetId?) … プレイヤーが使う（一時停止中でもよい）。{ ok, reason }
  *   abilityMarks(s, unitId)          … いまその部隊に効いている能力の印（状態の表示用）
- * sim.ts（合戦の計算）から：abilityTakeMul・abilityDealMul・abilityMoraleLossMul・abilityRoutMorale・abilitySpeedMul・
+ * sim.ts（合戦の計算）から：abilityTakeMul・abilityDealMul・abilityFlankDealMul・abilityMoraleLossMul・abilityRoutMorale・abilitySpeedMul・
  *   isRooted・updateAbilities（毎刻み）。能力がない合戦（架空の第一章）では、どれも 1（または元の値）を返すだけで計算は変わらない。
  *
  * sim.ts を実行時に import しない（sim.ts がこのファイルを import するため）。小さな道具はここにも置く。
  */
 import type { AbilityId, Side } from './types';
 import type { BattleEvent, BattleState, UnitState } from './sim';
+import { generalById } from './generals';
 
-/** 対象の選び方：self_area＝その部隊を中心に範囲内へ効く（対象は選ばない）／ally_unit＝味方の部隊を 1 つ選ぶ */
-export type AbilityTargetKind = 'self_area' | 'ally_unit';
+/** 対象の選び方：self_area＝その部隊を中心に範囲内へ効く（対象は選ばない）／ally_unit＝味方の部隊を 1 つ選ぶ／self＝自分の部隊だけ（対象は選ばない） */
+export type AbilityTargetKind = 'self_area' | 'ally_unit' | 'self';
 
-/** 範囲内のどの部隊に効くか：all＝同じ陣営の戦える部隊（自分も）／retreating＝退いている味方（撤退の命令・敗走中。自分は除く）／target＝選んだ部隊 */
-export type AbilityAreaFilter = 'all' | 'retreating' | 'target';
+/**
+ * 範囲内のどの部隊に効くか：all＝同じ陣営の戦える部隊（自分も）／retreating＝退いている味方（撤退の命令・敗走中。自分は除く）／
+ * target＝選んだ部隊／self＝持つ部隊だけ
+ */
+export type AbilityAreaFilter = 'all' | 'retreating' | 'target' | 'self';
 
 /** 能力のデータ（調整はここだけ） */
 export interface AbilityData {
@@ -54,14 +61,36 @@ export interface AbilityData {
     selfTakeMul: number;
     /** 効果中は動けない（移動・攻撃・撤退の命令を受けない。全軍撤退も効果が終わってから） */
     rooted: boolean;
+    /** 範囲内（areaFilter）の部隊の動きの速さ ×（重なるときは、いちばん強い 1 つだけ効く） */
+    areaSpeedMul: number;
+    /** 範囲内（areaFilter）の部隊が側面・背後を突いたときの与える損害 ×（斬り合い。重なるときは、いちばん強い 1 つだけ効く） */
+    areaFlankDealMul: number;
+    /** true なら areaMoraleLossMul は斬り合っている部隊（斬りかかっている・斬りかかられている）にだけ効く */
+    areaMoraleLossMeleeOnly: boolean;
+    /** 効果が時間で切れたとき、持つ部隊の士気 −（崩れて終わったときは何もしない）。0 なら何もしない */
+    endMoraleCost: number;
+    /** 仮の能力（差し替え前提の数値。画面の説明に「仮」と出す） */
+    provisional: boolean;
+    /** 部隊の札・名札に添える短い呼び名（例：号令・守護・援護） */
+    cardLabel: string;
+    /** 効果中の印（状態の表示用）：持つ部隊・範囲内の部隊（省けば今までの 3 能力の印） */
+    markSelf?: string;
+    markArea?: string;
+    /** 使ったときの知らせ（「{name}：「能力名」— 」に続く文。省けば今までの 3 能力の文） */
+    useText?: string;
     /** 画面の説明（対象・効果・代償） */
     targetText: string;
     effectText: string;
     costText: string;
 }
 
+/** 今までの能力の既定（仮の能力で使う項目は「効かない」値） */
+const NO_EXTRA = { areaSpeedMul: 1, areaFlankDealMul: 1, areaMoraleLossMeleeOnly: false, endMoraleCost: 0, provisional: false } as const;
+
 /** 画面に添える断り書き */
 export const ABILITY_FICTION_NOTE = 'ゲーム用の創作の能力（史実の人物が実際に持っていた能力ではない）';
+/** 仮の能力に添える断り書き */
+export const ABILITY_PROVISIONAL_NOTE = '仮の能力（数値・効果は差し替え予定）';
 
 export const ABILITY_DATA: Record<AbilityId, AbilityData> = {
     ieyasu_rally: {
@@ -80,6 +109,8 @@ export const ABILITY_DATA: Record<AbilityId, AbilityData> = {
         selfSpeedMul: 0.5,
         selfTakeMul: 1,
         rooted: false,
+        ...NO_EXTRA,
+        cardLabel: '号令',
         targetText: '家康本陣を中心に、半径 90 m の味方の部隊（使った後も本陣について動く）',
         effectText: '使った時に範囲内の味方の士気 +25（下がった士気を戻す。その部隊の最初の士気より上へは上がらない）。30 秒のあいだ、範囲内の味方の士気の低下 −40%、敗走しにくい（士気 15 → 8 まで持ちこたえる）',
         costText: '効果中、家康本陣の与える損害 ×0.5・動き ×0.5（守りを優先）。失った兵や戦えない部隊は戻らない',
@@ -100,6 +131,8 @@ export const ABILITY_DATA: Record<AbilityId, AbilityData> = {
         selfSpeedMul: 0,
         selfTakeMul: 1.15,
         rooted: true,
+        ...NO_EXTRA,
+        cardLabel: '守護',
         targetText: '忠勝隊の今の位置で踏みとどまる。半径 70 m で退いている味方（撤退の命令・敗走中）',
         effectText: '40 秒のあいだ、範囲内で退いている味方の受ける損害 −50%・士気の低下 −50%。範囲内で退く味方を追ってくる敵は、忠勝隊に阻まれて忠勝隊へ向かう',
         costText: '効果中、忠勝隊は動けない（移動・攻撃・撤退の命令を受けない）。忠勝隊の受ける損害 ×1.15。無敵ではない（崩れれば効果も終わる）',
@@ -120,11 +153,148 @@ export const ABILITY_DATA: Record<AbilityId, AbilityData> = {
         selfSpeedMul: 1,
         selfTakeMul: 1,
         rooted: false,
+        ...NO_EXTRA,
+        cardLabel: '援護',
         targetText: '長政隊から 60 m 以内の、同じ陣営の味方の部隊を 1 つ選ぶ（長政隊自身は選べない）',
         effectText: '最大 45 秒。対象が長政隊から 60 m 以内にいる間だけ、対象の受ける損害 −30%・士気の低下 −40%。離れると外れ、戻れば再び効く（時間は減り続ける）',
         costText: '効果中、長政隊の与える損害 ×0.8',
     },
+    // ---- ここから仮の能力（新しい武将用。provisional: true。数値・効果は差し替え前提） ----
+    sakai_flank: {
+        id: 'sakai_flank',
+        name: '両翼の采配',
+        holderName: '酒井忠次隊',
+        target: 'self_area',
+        radius: 80,
+        durationSec: 20,
+        moraleBoost: 0,
+        areaFilter: 'all',
+        areaTakeMul: 1,
+        areaMoraleLossMul: 1,
+        areaRoutMorale: null,
+        selfDealMul: 1,
+        selfSpeedMul: 0.7,
+        selfTakeMul: 1,
+        rooted: false,
+        areaSpeedMul: 1,
+        areaFlankDealMul: 1.25,
+        areaMoraleLossMeleeOnly: false,
+        endMoraleCost: 0,
+        provisional: true,
+        cardLabel: '両翼',
+        markSelf: '両翼の采配（足が鈍る）',
+        markArea: '両翼の采配',
+        useText: '周りの味方が側面・背後を突く',
+        targetText: '酒井隊を中心に、半径 80 m の味方の部隊（酒井隊自身も。使った後も酒井隊について動く）',
+        effectText: '20 秒のあいだ、範囲内の味方が敵の側面・背後を突いたときの与える損害 ×1.25（斬り合い。正面の当たりは変わらない）',
+        costText: '効果中、酒井隊の動き ×0.7',
+    },
+    ishikawa_reserve: {
+        id: 'ishikawa_reserve',
+        name: '後詰めの差配',
+        holderName: '石川数正隊',
+        target: 'self_area',
+        radius: 90,
+        durationSec: 30,
+        moraleBoost: 0,
+        areaFilter: 'all',
+        areaTakeMul: 1,
+        areaMoraleLossMul: 0.75,
+        areaRoutMorale: null,
+        selfDealMul: 0.7,
+        selfSpeedMul: 1,
+        selfTakeMul: 1,
+        rooted: false,
+        areaSpeedMul: 1.3,
+        areaFlankDealMul: 1,
+        areaMoraleLossMeleeOnly: true,
+        endMoraleCost: 0,
+        provisional: true,
+        cardLabel: '後詰め',
+        markSelf: '後詰めの差配（与える損害が減る）',
+        markArea: '後詰め',
+        useText: '周りの味方の足を速め、斬り合いで崩れにくくする',
+        targetText: '石川隊を中心に、半径 90 m の味方の部隊（石川隊自身も。使った後も石川隊について動く）',
+        effectText: '30 秒のあいだ、範囲内の味方の動き ×1.3、斬り合っている間の士気の低下 −25%',
+        costText: '効果中、石川隊の与える損害 ×0.7',
+    },
+    sakakibara_vanguard: {
+        id: 'sakakibara_vanguard',
+        name: '先駆けの号',
+        holderName: '榊原康政隊',
+        target: 'self',
+        radius: 0,
+        durationSec: 20,
+        moraleBoost: 0,
+        areaFilter: 'self',
+        areaTakeMul: 1,
+        areaMoraleLossMul: 1,
+        areaRoutMorale: null,
+        selfDealMul: 1.3,
+        selfSpeedMul: 1,
+        selfTakeMul: 1,
+        rooted: false,
+        areaSpeedMul: 1,
+        areaFlankDealMul: 1,
+        areaMoraleLossMeleeOnly: false,
+        endMoraleCost: 10,
+        provisional: true,
+        cardLabel: '先駆け',
+        markSelf: '先駆け',
+        useText: '先駆けて攻めかかる',
+        targetText: '榊原隊だけ（対象は選ばない）',
+        effectText: '20 秒のあいだ、榊原隊の与える損害 ×1.3（斬り合い・矢）',
+        costText: '効果が時間で切れたとき、榊原隊の士気 −10（途中で崩れたときは何もしない）',
+    },
 };
+
+/**
+ * 部隊の能力の決め方：UnitDef.ability があればそれ、無ければ generalId の武将の abilityId（battle/generals.ts）。
+ * 武将のいない部隊（leaderId も generalId も無い）は能力を持たない（undefined）。
+ */
+export function resolveAbilityId(u: { ability?: AbilityId; generalId?: string; leaderId?: string }): AbilityId | undefined {
+    if (!u.leaderId && !u.generalId) return undefined;
+    if (u.ability) return ABILITY_DATA[u.ability] ? u.ability : undefined;
+    const g = u.generalId ? generalById(u.generalId) : undefined;
+    return g && ABILITY_DATA[g.abilityId] ? g.abilityId : undefined;
+}
+
+/** 画面に出す能力の名前（仮の能力は「（仮）」を付ける） */
+export function abilityDisplayName(id: AbilityId): string {
+    const d = ABILITY_DATA[id];
+    return d.provisional ? `${d.name}（仮）` : d.name;
+}
+
+/**
+ * 能力の短い説明（スマホでも収まる長さ。数値は ABILITY_DATA から）。仮の 3 能力の分。
+ * 今までの 3 能力の短い説明は control.ts の abilityShort にある（そちらは画面の担当が持つ）。
+ */
+export function provisionalAbilityShort(id: AbilityId): { target: string; effect: string; cost: string } {
+    const d = ABILITY_DATA[id];
+    const pct = (mul: number) => `${Math.round(Math.abs(1 - mul) * 100)}%`;
+    switch (id) {
+        case 'sakai_flank':
+            return {
+                target: `酒井隊の周り ${d.radius} m の味方`,
+                effect: `${d.durationSec} 秒 側面・背後を突いたときの損害 ×${d.areaFlankDealMul}（仮）`,
+                cost: `酒井隊の動き ×${d.selfSpeedMul}`,
+            };
+        case 'ishikawa_reserve':
+            return {
+                target: `石川隊の周り ${d.radius} m の味方`,
+                effect: `${d.durationSec} 秒 動き ×${d.areaSpeedMul}・斬り合いの士気の低下 −${pct(d.areaMoraleLossMul)}（仮）`,
+                cost: `石川隊の与える損害 ×${d.selfDealMul}`,
+            };
+        case 'sakakibara_vanguard':
+            return {
+                target: '榊原隊だけ',
+                effect: `${d.durationSec} 秒 与える損害 ×${d.selfDealMul}（仮）`,
+                cost: `切れたとき士気 −${d.endMoraleCost}`,
+            };
+        default:
+            return { target: d.targetText, effect: d.effectText, cost: d.costText };
+    }
+}
 
 /** 合戦中の能力の状態（持つ部隊ごと。sim.ts の BattleState.abilities に入る） */
 export interface AbilityRun {
@@ -143,12 +313,13 @@ export interface AbilityRun {
     linked: boolean;
 }
 
-/** 合戦の始めに作る（能力を持ち、武将のいる部隊だけ） */
-export function createAbilityRuns(units: readonly { id: string; side: Side; ability?: AbilityId; leaderId?: string }[]): Record<string, AbilityRun> {
+/** 合戦の始めに作る（能力を持ち、武将のいる部隊だけ。能力の決め方は resolveAbilityId） */
+export function createAbilityRuns(units: readonly { id: string; side: Side; ability?: AbilityId; leaderId?: string; generalId?: string }[]): Record<string, AbilityRun> {
     const out: Record<string, AbilityRun> = {};
     for (const u of units) {
-        if (!u.ability || !u.leaderId || !ABILITY_DATA[u.ability]) continue;
-        out[u.id] = { id: u.ability, unitId: u.id, side: u.side, usedAt: null, until: 0, targetId: null, ended: false, linked: false };
+        const id = resolveAbilityId(u);
+        if (!id) continue;
+        out[u.id] = { id, unitId: u.id, side: u.side, usedAt: null, until: 0, targetId: null, ended: false, linked: false };
     }
     return out;
 }
@@ -196,6 +367,8 @@ function inArea(r: AbilityRun, holder: UnitState, u: UnitState): boolean {
             return u !== holder && retreating(u) && d2(holder, u) <= data.radius;
         case 'target':
             return u.id === r.targetId && u.status === 'ready' && d2(holder, u) <= data.radius;
+        case 'self':
+            return u === holder && u.status === 'ready';
     }
 }
 
@@ -221,13 +394,34 @@ export function abilityDealMul(s: BattleState, a: UnitState): number {
     return m;
 }
 
-/** u の士気の低下の倍率（範囲の効果が重なるときは、いちばん強い 1 つだけ効く。能力がなければ 1） */
-export function abilityMoraleLossMul(s: BattleState, u: UnitState): number {
+/**
+ * a が側面・背後を突いたときの与える損害の倍率（斬り合い。両翼の采配。範囲の効果が重なるときは、いちばん強い 1 つだけ効く。
+ * 正面の当たり・能力がなければ 1）
+ */
+export function abilityFlankDealMul(s: BattleState, a: UnitState, arc: 'front' | 'flank' | 'rear'): number {
+    if (arc === 'front' || s.abilityList.length === 0) return 1;
+    let m = 1;
+    for (const r of liveRuns(s)) {
+        const data = ABILITY_DATA[r.id];
+        if (data.areaFlankDealMul === 1) continue;
+        const holder = byId(s, r.unitId);
+        if (holder && inArea(r, holder, a)) m = Math.max(m, data.areaFlankDealMul);
+    }
+    return m;
+}
+
+/**
+ * u の士気の低下の倍率（範囲の効果が重なるときは、いちばん強い 1 つだけ効く。能力がなければ 1）。
+ * inMelee：u がいま斬り合っているか（斬り合いだけに効く効果＝後詰めの差配の分け目。省けば斬り合い中とみなす）
+ */
+export function abilityMoraleLossMul(s: BattleState, u: UnitState, inMelee = true): number {
     if (s.abilityList.length === 0) return 1;
     let m = 1;
     for (const r of liveRuns(s)) {
+        const data = ABILITY_DATA[r.id];
+        if (data.areaMoraleLossMeleeOnly && !inMelee) continue;
         const holder = byId(s, r.unitId);
-        if (holder && inArea(r, holder, u)) m = Math.min(m, ABILITY_DATA[r.id].areaMoraleLossMul);
+        if (holder && inArea(r, holder, u)) m = Math.min(m, data.areaMoraleLossMul);
     }
     return m;
 }
@@ -245,12 +439,20 @@ export function abilityRoutMorale(s: BattleState, u: UnitState, base: number): n
     return line;
 }
 
-/** u の動きの速さの倍率（能力がなければ 1） */
+/** u の動きの速さの倍率（持つ部隊の代償 × 範囲の効果。範囲の効果が重なるときは、いちばん強い 1 つだけ効く。能力がなければ 1） */
 export function abilitySpeedMul(s: BattleState, u: UnitState): number {
     if (s.abilityList.length === 0) return 1;
     let m = 1;
-    for (const r of liveRuns(s)) if (r.unitId === u.id) m *= ABILITY_DATA[r.id].selfSpeedMul;
-    return m;
+    let area = 1;
+    for (const r of liveRuns(s)) {
+        const data = ABILITY_DATA[r.id];
+        if (r.unitId === u.id) m *= data.selfSpeedMul;
+        if (data.areaSpeedMul !== 1) {
+            const holder = byId(s, r.unitId);
+            if (holder && inArea(r, holder, u)) area = Math.max(area, data.areaSpeedMul);
+        }
+    }
+    return area === 1 ? m : m * area;
 }
 
 /**
@@ -291,7 +493,14 @@ export function updateAbilities(s: BattleState): void {
             r.ended = true;
             r.linked = false;
             const name = holder?.name ?? r.unitId;
-            pushEvent(s, { kind: 'ability_end', text: why === 'が崩れて' ? `${name}が崩れて「${data.name}」が終わった` : `${name}の「${data.name}」が終わった${why}`, unitId: r.unitId });
+            // 時間で切れたときの代償（先駆けの号：士気 −）。崩れて終わったときは何もしない
+            const cost = why === '' && data.endMoraleCost > 0 && holder && active(holder) ? data.endMoraleCost : 0;
+            if (cost > 0) holder!.morale = Math.max(0, holder!.morale - cost);
+            pushEvent(s, {
+                kind: 'ability_end',
+                text: why === 'が崩れて' ? `${name}が崩れて「${data.name}」が終わった` : `${name}の「${data.name}」が終わった${why}` + (cost > 0 ? `（勢いが尽き、士気 −${cost}）` : ''),
+                unitId: r.unitId,
+            });
             if (data.rooted && holder && active(holder) && holder.side === 'ally' && s.allRetreatAt !== null) {
                 holder.order = { type: 'retreat' };
                 holder.faceGoal = null;
@@ -370,8 +579,9 @@ function activate(s: BattleState, unitId: string, targetId: string | undefined, 
         u.faceGoal = null;
     }
     const tgt = byId(s, r.targetId);
-    const text =
-        r.id === 'ieyasu_rally'
+    const text = data.useText
+        ? `${u.name}：「${data.name}」— ${data.useText}（${data.durationSec} 秒）`
+        : r.id === 'ieyasu_rally'
             ? `${u.name}：「${data.name}」— 周りの味方が踏みとどまる（${data.durationSec} 秒）`
             : r.id === 'tadakatsu_rearguard'
               ? `${u.name}：「${data.name}」— その場で踏みとどまり、退く味方を守る（${data.durationSec} 秒）`
@@ -397,7 +607,12 @@ export function enemyUseAbility(s: BattleState, unitId: string, targetId?: strin
 export interface AbilityInfo {
     id: AbilityId;
     unitId: string;
+    /** 能力名（仮の能力は「（仮）」付き） */
     name: string;
+    /** 仮の能力（数値・効果は差し替え予定） */
+    provisional: boolean;
+    /** 部隊の札・名札に添える短い呼び名（例：号令・両翼） */
+    cardLabel: string;
     side: Side;
     /** プレイヤーが操作できる（味方の部隊の能力） */
     controllable: boolean;
@@ -408,7 +623,7 @@ export interface AbilityInfo {
     durationSec: number;
     effectText: string;
     costText: string;
-    /** 断り書き（ゲーム用の創作） */
+    /** 断り書き（ゲーム用の創作。仮の能力は、仮であることも書く） */
     note: string;
     /** いま使えるか（対象を選ぶ能力は、選べる対象が 1 つ以上あるとき）。使えなければ reason */
     usable: boolean;
@@ -442,19 +657,22 @@ export function abilityInfo(s: BattleState, unitId: string, viewer: Side = 'ally
             reason = `${data.radius} m 以内に援護できる味方の部隊がいない` + (near ? `（いちばん近い${near.name}は今 ${Math.round(d2(near, u))} m。近づければ選べる）` : '');
         }
     }
+    const prov = data.provisional;
     return {
         id: r.id,
         unitId,
-        name: data.name,
+        name: abilityDisplayName(r.id),
+        provisional: prov,
+        cardLabel: data.cardLabel,
         side: r.side,
         controllable: r.side === viewer,
         target: data.target,
         targetText: data.targetText,
         range: data.radius,
         durationSec: data.durationSec,
-        effectText: data.effectText,
-        costText: data.costText,
-        note: ABILITY_FICTION_NOTE,
+        effectText: prov ? `${data.effectText}（仮の数値）` : data.effectText,
+        costText: prov ? `${data.costText}（仮の数値）` : data.costText,
+        note: prov ? `${ABILITY_FICTION_NOTE}。${ABILITY_PROVISIONAL_NOTE}` : ABILITY_FICTION_NOTE,
         usable: reason === null,
         reason,
         state: r.usedAt === null ? 'unused' : live ? 'active' : 'spent',
@@ -474,7 +692,11 @@ export function abilityMarks(s: BattleState, unitId: string): string[] {
         const holder = byId(s, r.unitId);
         if (!holder) continue;
         const inside = inArea(r, holder, u);
-        if (r.id === 'ieyasu_rally') {
+        const data = ABILITY_DATA[r.id];
+        if (data.markSelf !== undefined) {
+            if (holder === u) out.push(data.markSelf);
+            else if (inside && data.markArea) out.push(data.markArea);
+        } else if (r.id === 'ieyasu_rally') {
             if (holder === u) out.push('号令（守りを優先）');
             else if (inside) out.push('号令');
         } else if (r.id === 'tadakatsu_rearguard') {

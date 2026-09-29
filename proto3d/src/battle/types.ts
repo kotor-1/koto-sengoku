@@ -41,8 +41,11 @@ export type ClanId =
  * - ieyasu_rally：立て直しの号令（家康本陣）
  * - tadakatsu_rearguard：退路の守護（本多忠勝隊）
  * - nagamasa_support：盟友への援護（浅井長政隊。対象の部隊を 1 つ選ぶ）
+ * - sakai_flank：両翼の采配（酒井忠次隊。仮の能力）
+ * - ishikawa_reserve：後詰めの差配（石川数正隊。仮の能力）
+ * - sakakibara_vanguard：先駆けの号（榊原康政隊。仮の能力）
  */
-export type AbilityId = 'ieyasu_rally' | 'tadakatsu_rearguard' | 'nagamasa_support';
+export type AbilityId = 'ieyasu_rally' | 'tadakatsu_rearguard' | 'nagamasa_support' | 'sakai_flank' | 'ishikawa_reserve' | 'sakakibara_vanguard';
 
 /** 部隊の初期設定（章の進行が、協力陣営の選択などから作る） */
 export interface UnitDef {
@@ -72,7 +75,7 @@ export interface UnitDef {
     aiRole?: 'hold_line' | 'reserve' | 'flank' | 'guard_hq' | 'hold_zone' | 'assault';
     /** hold_zone（守る区域）・assault（攻め進む先）の地点と半径（m）。省けば最初の位置・半径 60 m */
     aiTarget?: { x: number; z: number; r?: number };
-    /** この部隊を率いる武将の特殊能力（武将がいる部隊だけ。1 合戦 1 回） */
+    /** この部隊を率いる武将の特殊能力（武将がいる部隊だけ。1 合戦 1 回）。省けば generalId の武将の能力（battle/generals.ts の abilityId） */
     ability?: AbilityId;
 }
 

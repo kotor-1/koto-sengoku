@@ -10,7 +10,7 @@
  *   確かめた資料は docs/historical-source-notes.md のメモだけ（ChatGPT が公式ページの本文を確認したもの。Claude は公式ページに到達できなかった）。
  *   役割・能力・AI の方針・台詞はすべてゲーム用の創作で、史実の人物の能力や発言ではない。
  */
-import type { ClanId } from './types';
+import type { AbilityId, ClanId } from './types';
 
 /** 部隊での役割 */
 export type GeneralRole =
@@ -46,8 +46,8 @@ export interface GeneralDef {
     /** 所属（既定。シナリオの設定で上書きできる） */
     clan: ClanId;
     role: GeneralRole;
-    /** 固有能力の id（battle/abilities.ts の ABILITY_DATA の鍵。今は文字列で持つ） */
-    abilityId: string;
+    /** 固有能力の id（battle/abilities.ts の ABILITY_DATA の鍵）。部隊に ability が無ければ、generalId からこの能力を使う */
+    abilityId: AbilityId;
     aiPolicy: GeneralAiPolicy;
     /** 主人公との関係状態の鍵（歴史分岐では IeyasuState.trust の鍵。主人公本人は RELATION_SELF） */
     relationKey: string;

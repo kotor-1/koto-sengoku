@@ -8,7 +8,7 @@
  */
 import type { AbilityId, BattleEndReason, BattleMap, BattleOutcome, BattleResultKind, Order, Side, UnitKind } from './types';
 import { STATUS_LABEL, engagementLabel, hqOf, isActive, orderLabel, pledgeProgress, timeLeft, unitById, type BattleEvent, type BattleState, type UnitState } from './sim';
-import { ABILITY_DATA, ABILITY_FICTION_NOTE, abilityInfo, abilityMarks, isRooted, type AbilityInfo } from './abilities';
+import { ABILITY_DATA, ABILITY_FICTION_NOTE, abilityInfo, abilityMarks, isRooted, provisionalAbilityShort, type AbilityInfo } from './abilities';
 
 // ---------------------------------------------------------------- 部隊の見た目
 
@@ -463,6 +463,9 @@ export function abilityShort(id: AbilityId): { target: string; effect: string; c
                 effect: `最大 ${d.durationSec} 秒 対象の損害 −${pct(d.areaTakeMul)}・士気の低下 −${pct(d.areaMoraleLossMul)}（${d.radius} m 離れると外れる）`,
                 cost: `長政隊の与える損害 ×${d.selfDealMul}`,
             };
+        default:
+            // 新しい武将の仮の能力（abilities.ts が短い説明を持つ）
+            return provisionalAbilityShort(id);
     }
 }
 
@@ -536,7 +539,7 @@ export function abilityPanelModel(s: BattleState, unitId: string): AbilityPanelM
 export function cardAbilityText(s: BattleState, unitId: string): string {
     const info = abilityInfo(s, unitId);
     if (!info) return '';
-    const short = info.id === 'ieyasu_rally' ? '号令' : info.id === 'tadakatsu_rearguard' ? '守護' : '援護';
+    const short = info.cardLabel;
     if (info.state === 'active') return `${short} ${Math.ceil(info.remainingSec)} 秒`;
     if (info.state === 'spent') return `${short} 済`;
     return info.usable ? `${short} 可` : `${short} ―`;

@@ -68,12 +68,14 @@ import { createObjectiveTrack, finalObjectives, refreshObjective, trackObjective
 import {
     abilitiesUsedRecord,
     abilityDealMul,
+    abilityFlankDealMul,
     abilityMoraleLossMul,
     abilityRoutMorale,
     abilitySpeedMul,
     abilityTakeMul,
     createAbilityRuns,
     enemyUseAbility,
+    resolveAbilityId,
     isRooted,
     updateAbilities,
     type AbilityRun,
@@ -552,6 +554,8 @@ export function createBattle(setup: BattleSetup): BattleState {
         const arriveAt = d.arriveAt && d.arriveAt > 0 ? d.arriveAt : 0;
         const strength = Math.max(0, d.strength);
         const morale = clamp(d.morale, 0, 100);
+        // 能力：部隊の ability、無ければ率いる武将（generalId）の能力（abilities.ts の resolveAbilityId）
+        const ability = resolveAbilityId(d);
         return {
             id: d.id,
             side: d.side,
@@ -562,7 +566,7 @@ export function createBattle(setup: BattleSetup): BattleState {
             ...(d.generalId ? { generalId: d.generalId } : {}),
             aiRole: d.aiRole,
             ...(d.aiTarget ? { aiTarget: { ...d.aiTarget } } : {}),
-            ...(d.ability ? { ability: d.ability } : {}),
+            ...(ability ? { ability } : {}),
             isHq,
             startStrength: strength,
             strength,
@@ -881,7 +885,7 @@ function tick(s: BattleState): void {
         if (meleeCount[i] >= 2) down += RULES.outnumberedPressure * dt;
         if (u.isHq && meleeCount[i] >= 1) down += RULES.hqUnderAttack * dt;
         down *= aura;
-        down *= abilityMoraleLossMul(s, u);
+        down *= abilityMoraleLossMul(s, u, meleeCount[i] > 0 || !!u.engagedWith);
         let m = u.morale - down;
         if (t - u.lastHitT >= RULES.recoverDelay && !u.engagedWith) {
             m += (RULES.recoverRate + (aura < 1 ? RULES.recoverHqBonus : 0)) * dt;
@@ -912,7 +916,7 @@ function tick(s: BattleState): void {
         log(s, 'rout', u.isHq ? `${u.name}が崩れた！` : `${u.name}が敗走した`, u.id);
         for (const o of s.units) {
             if (o === u || o.side !== u.side || !isActive(o)) continue;
-            const mul = abilityMoraleLossMul(s, o);
+            const mul = abilityMoraleLossMul(s, o, !!o.engagedWith);
             if (u.isHq) o.morale = Math.max(0, o.morale - RULES.hqRoutShock * mul);
             else if (dist(o, u) <= RULES.nearbyRoutRadius) o.morale = Math.max(0, o.morale - RULES.nearbyRoutShock * mul);
         }
@@ -1183,6 +1187,8 @@ export function meleeDamage(s: BattleState, a: UnitState, d: UnitState, arc: 'fr
     if (d.status === 'routed') m *= RULES.pursuitMul;
     // 特殊能力（号令・援護の代償、退路の守護・援護の守り。能力がなければ 1）
     m *= abilityDealMul(s, a) * abilityTakeMul(s, d);
+    // 両翼の采配（側面・背後の当たりだけ。能力がなければ掛けない）
+    if (arc !== 'front' && s.abilityList.length > 0) m *= abilityFlankDealMul(s, a, arc);
     return a.strength * m;
 }
 
