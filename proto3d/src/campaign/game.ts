@@ -90,6 +90,16 @@ export interface PromptInfo {
 export interface ScriptOptions {
     /** 'council' は軍議の画面（城の広間。探索の場面を暗くして見出しを出す） */
     mode: 'talk' | 'council';
+    /** 遊んでいるシナリオの章の名前と札（軍議の見出しに出す。省けば画面の既定） */
+    chapter?: string;
+    label?: string;
+}
+
+/** 結末の画面に添えるもの（どのシナリオの結末か） */
+export interface EndingOptions {
+    chapter: string;
+    label: string;
+    scenario: ScenarioId;
 }
 
 /** 画面（ui/view.ts）。待つもの（会話・選択・確認・メニュー・タイトル・結末）は Promise で結果を返す */
@@ -99,7 +109,7 @@ export interface GameView {
     script(script: ScenarioScript, opts: ScriptOptions): Promise<string | null>;
     confirm(opts: ConfirmOptions): Promise<string>;
     menu(info: MenuInfo): Promise<MenuAction>;
-    ending(view: ScenarioEndingView): Promise<void>;
+    ending(view: ScenarioEndingView, opts?: EndingOptions): Promise<void>;
     hud(info: HudInfo | null): void;
     prompt(p: PromptInfo | null): void;
     intro(title: string, text: string): void;
@@ -393,7 +403,7 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
             this._screen = 'talk';
             this.deps.world.faceTalk?.(target);
             const script = this.sc.talk(this.st, target);
-            const choice = await this.deps.view.script(script, { mode: 'talk' });
+            const choice = await this.deps.view.script(script, { mode: 'talk', chapter: this.sc.chapterTitle, label: this.sc.label });
             if (this.sc.isDeparture(target, choice)) {
                 await this.depart(target, choice!);
                 return;
@@ -424,7 +434,7 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         view.intro(intro.title, intro.text);
         while (this.st.phase === 'council') {
             const script = this.sc.talk(this.st, 'council');
-            const choice = await view.script(script, { mode: 'council' });
+            const choice = await view.script(script, { mode: 'council', chapter: this.sc.chapterTitle, label: this.sc.label });
             if (!choice) throw new Error('軍議で選択肢が選ばれませんでした');
             this.st = this.sc.finishTalk(this.st, 'council', choice);
         }
@@ -555,7 +565,7 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         this.setPrompt(null);
         view.hud(null);
         world.setControl(false);
-        await view.ending(this.sc.endingView(this.st));
+        await view.ending(this.sc.endingView(this.st), { chapter: this.sc.chapterTitle, label: this.sc.label, scenario: this.sc.id });
         await this.title();
     }
 

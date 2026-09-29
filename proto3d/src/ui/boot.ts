@@ -9,8 +9,11 @@
  */
 import { activeModeName, exitMode, getBattleRunner } from '../app/modes';
 import { ChapterGame, devStateFor, type BattleRunnerLike } from '../campaign/game';
-import { CampaignSaveStore, getBrowserStorage } from '../campaign/save';
-import type { Alliance, CampaignPhase, TalkId } from '../campaign/state';
+import { getBrowserStorage } from '../campaign/save';
+import { createScenarios } from '../campaign/scenarios';
+import { devIeyasuState } from '../campaign/ieyasu1570/flow';
+import type { Policy } from '../campaign/ieyasu1570/state';
+import type { Alliance, CampaignPhase } from '../campaign/state';
 import type { BattleResultKind } from '../battle/types';
 import { ExploreWorld, type ExploreHost } from '../explore/world';
 import { DomView } from './view';
@@ -33,12 +36,15 @@ async function loadBattleRunner(): Promise<BattleRunnerLike | null> {
     };
 }
 
-export function bootChapter(host: ExploreHost): ChapterGame {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function bootChapter(host: ExploreHost): ChapterGame<any> {
     document.body.classList.add('g-on');
     const view = new DomView(host.overlay);
     const world = new ExploreWorld(host);
-    const store = new CampaignSaveStore(getBrowserStorage());
-    const game = new ChapterGame({ view, world, store, battleRunner: loadBattleRunner });
+    // タイトルに並べるシナリオ（歴史分岐「元亀元年・家康」と架空の第一章「国境の砦」）。保存のキーはシナリオごとに別
+    const { scenarios, fictionalStore: store } = createScenarios(getBrowserStorage());
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const game = new ChapterGame<any>({ view, world, store, scenarios, battleRunner: loadBattleRunner });
     view.onTalk = () => void game.interact();
     view.onMenu = () => void game.openMenu();
     // タイトル・軍議・メニュー・結末などが探索を覆っている間は、探索の描画を止める（見えない所の描画で電池と処理を使わない）
@@ -61,6 +67,10 @@ export function bootChapter(host: ExploreHost): ChapterGame {
                 get state() {
                     return game.state;
                 },
+                /** 遊んでいるシナリオ（'fictional'／'ieyasu1570'。タイトルでは null） */
+                get scenario() {
+                    return game.scenarioId;
+                },
                 get screen() {
                     return game.screen;
                 },
@@ -79,7 +89,7 @@ export function bootChapter(host: ExploreHost): ChapterGame {
                     return game.lastError;
                 },
                 /** 話しかける（距離は問わない。今の段階で居る相手だけ） */
-                talk(id: TalkId) {
+                talk(id: string) {
                     void game.interact(id);
                     return true;
                 },
@@ -95,7 +105,22 @@ export function bootChapter(host: ExploreHost): ChapterGame {
                 setPhase(phase: Exclude<CampaignPhase, 'council' | 'battle'>, alliance?: Alliance, result?: BattleResultKind) {
                     view.devReset();
                     game.devAbandon();
-                    game.begin(devStateFor(phase, alliance, result));
+                    game.begin(devStateFor(phase, alliance, result), 'fictional');
+                    return game.state?.phase;
+                },
+                /**
+                 * 確認用：歴史分岐「元亀元年・家康」を指定の段階から始める（テスト専用。普通の遊び方と同じ関数の順で状態を作る。
+                 * aftermath・ending の合戦の結果は、合戦を遊ばずに作った仮の結果。本番の画面には出さない）
+                 */
+                setIeyasuPhase(
+                    phase: 'explore' | 'muster' | 'aftermath' | 'ending',
+                    policy?: Policy,
+                    result?: BattleResultKind,
+                    opts?: { pledge?: 'accept' | 'decline'; pledgeResult?: 'kept' | 'broken'; answerPledge?: boolean },
+                ) {
+                    view.devReset();
+                    game.devAbandon();
+                    game.begin(devIeyasuState(phase, policy, result, opts), 'ieyasu1570');
                     return game.state?.phase;
                 },
                 teleport(x: number, z: number, heading = Math.PI) {

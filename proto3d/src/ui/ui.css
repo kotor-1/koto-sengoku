@@ -281,6 +281,51 @@ body.touch .g-choice { padding: 12px 16px; }
     .g-dialog .text { font-size: 15px; line-height: 1.6; }
 }
 
+/* タイトル：シナリオを並べる（歴史分岐・架空。それぞれに、はじめから／つづきから） */
+.g-title-scroll {
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+    display: flex;
+    padding: calc(var(--safe-t) + 16px) calc(var(--safe-r) + 14px) calc(var(--safe-b) + 16px) calc(var(--safe-l) + 14px);
+    box-sizing: border-box;
+}
+.g-title-box.multi {
+    position: static;
+    transform: none;
+    margin: auto;
+    width: min(100%, 880px);
+}
+.g-title-box.multi h1 { font-size: 20px; letter-spacing: 0.24em; margin: 4px 0 12px; }
+.g-scn-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; text-align: left; }
+.g-scn {
+    padding: 12px 14px 12px;
+    border-radius: 14px;
+    background: rgba(20, 18, 15, 0.78);
+    border: 1px solid var(--hairline);
+}
+.g-scn[data-scenario='ieyasu1570'] { border-color: rgba(200, 168, 106, 0.55); }
+.g-scn h2 { margin: 0 0 4px; font-size: 17px; letter-spacing: 0.08em; color: var(--gold); font-weight: 600; }
+.g-scn .prov { margin: 0 0 6px; }
+.g-scn .prov .g-tag, .g-ending .prov .g-tag { margin-left: 0; }
+.g-scn .g-scn-lead { margin: 0 0 6px; font-size: 13px; line-height: 1.55; font-weight: 600; }
+.g-scn .g-scn-btns { display: flex; gap: 8px; }
+.g-title-box.multi .g-scn .g-btn { display: block; flex: 1 1 0; width: auto; min-width: 0; margin-top: 4px; }
+.g-title-box.multi .g-scn .g-btn small { line-height: 1.35; }
+.g-title-box.multi .g-scn .g-note { margin: 8px 0 0; font-size: 11px !important; line-height: 1.5; }
+.g-title-box.multi .g-scn .problem { margin: 6px 0 0; }
+@media (max-height: 430px) {
+    .g-title-scroll { padding-top: calc(var(--safe-t) + 8px); padding-bottom: calc(var(--safe-b) + 8px); }
+    .g-title-box.multi .kicker { font-size: 11px; }
+    .g-title-box.multi h1 { font-size: 16px; margin: 2px 0 6px; }
+    .g-scn { padding: 8px 12px; }
+    .g-scn h2 { font-size: 15px; }
+    .g-scn .g-scn-lead { font-size: 12px; line-height: 1.45; margin-bottom: 4px; }
+    .g-title-box.multi .g-scn .g-note { margin-top: 6px; font-size: 10.5px !important; line-height: 1.4; }
+}
+
 /* 結末 */
 .g-ending {
     position: absolute;
@@ -295,6 +340,7 @@ body.touch .g-choice { padding: 12px 16px; }
     padding: calc(var(--safe-t) + 26px) 0 calc(var(--safe-b) + 28px);
 }
 .g-ending .kicker { margin: 0; font-size: 12px; letter-spacing: 0.3em; color: var(--ink-soft); text-align: center; }
+.g-ending .prov { margin: 4px 0 0; text-align: center; }
 .g-ending h1 { margin: 6px 0 16px; text-align: center; font-size: 28px; letter-spacing: 0.3em; color: var(--gold); font-weight: 600; }
 .g-ending .body p { margin: 0 0 8px; font-size: 15px; line-height: 1.85; }
 .g-ending .record { margin: 18px 0 0; padding: 12px 16px; border-radius: 12px; background: rgba(20, 18, 15, 0.8); border: 1px solid var(--hairline); }

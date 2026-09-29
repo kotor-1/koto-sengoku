@@ -16,8 +16,10 @@ import type { BattleEndReason, BattleOutcome, BattleResultKind } from '../../bat
 import { IEYASU_PLEDGE_HOLD_SEC, IEYASU_PLEDGE_MIN_RATIO, IEYASU_UNIT_IDS } from '../../battle/maps';
 import type { ScenarioChoice, ScenarioLine, ScenarioScript } from '../scenario';
 import {
+    INITIAL_TRUST,
     PLEDGE_SPECS,
     TOKUGAWA_UNIT_IDS,
+    type CarryFlag,
     ieyasuTalkFlag,
     type CampaignPhase,
     type IeyasuCharacterId,
@@ -657,6 +659,34 @@ export function supportRecordText(state: IeyasuState): string {
     return `援兵（${TRUST_NAMES[s.from!]}）：兵 +${s.recovered}（次の章へ持ち越す）`;
 }
 
+/** 次の章へ持ち越す印の読み方 */
+export const CARRY_FLAG_LABELS: Readonly<Record<CarryFlag, string>> = {
+    policy_oda: '方針：織田との協力',
+    policy_asai: '方針：浅井との協力',
+    policy_home: '方針：自領の防衛',
+    pledge_kept: '約束を守った',
+    pledge_broken: '約束を守れなかった',
+    pledge_declined: '約束を引き受けなかった',
+    reinforcement_oda: '援兵：織田家',
+    reinforcement_asai: '援兵：浅井家',
+    reinforcement_tadakatsu: '援兵：守備隊（忠勝の約束）',
+};
+
+export function carryOverText(state: IeyasuState): string {
+    const f = state.support?.carryOver ?? [];
+    return f.length ? f.map((x) => CARRY_FLAG_LABELS[x]).join('・') : 'なし';
+}
+
+/** 信頼の変化（章のはじめ → 今） */
+export function trustChangeText(state: IeyasuState): string {
+    return (['oda', 'asai', 'tadakatsu'] as const)
+        .map((c) => {
+            const d = state.trust[c] - INITIAL_TRUST[c];
+            return `${TRUST_NAMES[c]} ${d === 0 ? '±0' : signed(d)}`;
+        })
+        .join('・');
+}
+
 export interface IeyasuEndingView {
     id: IeyasuEndingId;
     title: string;
@@ -684,6 +714,8 @@ export function ieyasuEndingView(state: IeyasuState): IeyasuEndingView {
         { label: '部隊ごとの兵', value: TOKUGAWA_UNIT_IDS.map((k) => `${TOKUGAWA_UNIT_NAMES[k]} ${state.troops[k]}`).join('・') },
         { label: '支援', value: supportRecordText(state) },
         { label: '信頼', value: (['oda', 'asai', 'tadakatsu'] as const).map((c) => `${TRUST_NAMES[c]} ${signed(state.trust[c])}`).join('・') },
+        { label: '信頼の変化', value: `${trustChangeText(state)}（章のはじめから）` },
+        { label: '次の章へ', value: carryOverText(state) },
         { label: '人物', value: people.map((c) => `${IEYASU_CHARACTER_NAMES[c]} ${IEYASU_STATUS_LABELS[state.characters[c]]}`).join('・') },
         { label: '特殊能力', value: `${used > 0 ? `${used} 回使った` : '使わなかった'}（能力はゲーム用の創作）` },
         { label: '史実と創作', value: '開始の情勢（1570年、織田・徳川と浅井・朝倉の対立）は資料に合わせた。会話・分岐・戦場・結末は創作。' },

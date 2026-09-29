@@ -260,8 +260,11 @@ async function runA() {
   const kb = { talk: () => page.keyboard.press('KeyE'), next: () => page.keyboard.press('Enter') };
   await shot(page, 'A01-title');
   let u = await ui(page);
-  check('タイトル：はじめから・つづきから（保存なしで押せない）・仮シナリオ', u.buttons.map((b) => b.id).join() === 'new,continue' && u.buttons[1].disabled && u.text.includes('仮シナリオ'));
+  check('タイトル：シナリオごとに はじめから・つづきから（保存なしで押せない）・仮シナリオ', u.buttons.map((b) => b.id).join() === 'new:ieyasu1570,continue:ieyasu1570,new:fictional,continue:fictional' && u.buttons[3].disabled && u.text.includes('仮シナリオ'));
   await sleep(400);
+  // キーで架空の第一章の「はじめから」へ（押せない「つづきから」は飛ばす）
+  await page.keyboard.press('ArrowDown');
+  await sleep(100);
   await page.keyboard.press('Enter');
   await waitScreen(page, 'explore');
   await page.waitForFunction(() => window.__game.cast.some((c) => c.model), null, POLL);
@@ -367,7 +370,7 @@ async function runA() {
   await waitScreen(page, 'explore');
   await reloadToTitle(page);
   u = await ui(page);
-  check('開き直すと、タイトルのつづきからに保存の段階（最初に選ばれている）', u.buttons[1].disabled === false && u.text.includes('出陣の支度'));
+  check('開き直すと、タイトルのつづきからに保存の段階（最初に選ばれている）', u.buttons.find((b) => b.id === 'continue:fictional').disabled === false && u.text.includes('出陣の支度'));
   await shot(page, 'A08-title-continue');
   await sleep(400);
   await page.keyboard.press('Enter');
@@ -392,7 +395,7 @@ async function runA() {
   const departure = b.save;
   await reloadToTitle(page);
   u = await ui(page);
-  check('合戦の途中で開き直す → タイトルのつづきからは「出陣前」の保存', !u.buttons[1].disabled && u.text.includes('出陣前'), u.text.slice(0, 120));
+  check('合戦の途中で開き直す → タイトルのつづきからは「出陣前」の保存', !u.buttons.find((b) => b.id === 'continue:fictional').disabled && u.text.includes('出陣前'), u.text.slice(0, 120));
   await sleep(400);
   await page.keyboard.press('Enter');
   await waitScreen(page, 'explore');
@@ -531,7 +534,7 @@ async function runB() {
   const { ctx, page } = await open();
   // 前の保存がある状態を作る（A と独立に。はじめから → 城下でメニューの「保存する」をクリック）
   await sleep(400);
-  await page.click('.g-btn[data-id="new"]');
+  await page.click('.g-btn[data-id="new:fictional"]');
   await waitScreen(page, 'explore');
   await page.click('.g-menu-btn');
   await waitUi(page, 'menu');
@@ -542,7 +545,7 @@ async function runB() {
   const prev = await page.evaluate((k) => localStorage.getItem(k), SAVE_KEY);
   await reloadToTitle(page);
   await sleep(400);
-  await page.click('.g-btn[data-id="new"]');
+  await page.click('.g-btn[data-id="new:fictional"]');
   await waitUi(page, 'confirm');
   await shot(page, 'B01-new-confirm');
   let u = await ui(page);
@@ -645,7 +648,7 @@ async function runC() {
   const touch = { cdp, talk: () => tap('.g-talk'), next: () => page.touchscreen.tap(422, 120) };
   await shot(page, 'C01-title');
   await sleep(400);
-  await tap('.g-btn[data-id="new"]');
+  await tap('.g-btn[data-id="new:fictional"]');
   await waitScreen(page, 'explore');
   await page.waitForFunction(() => window.__game.cast.some((c) => c.model), null, POLL);
   await shot(page, 'C02-explore');

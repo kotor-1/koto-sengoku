@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { GameWorld } from '../campaign/game';
-import type { CharacterId, ExplorePose, TalkId } from '../campaign/state';
+import type { CharacterId, ExplorePose } from '../campaign/state';
 import type { HeroState } from '../game/motion';
 import { colliders, groundY, type Rect } from '../layout';
 import { castColliders, headingToward, type CastMember } from './cast';
@@ -53,7 +53,7 @@ const LOOKS: Record<Exclude<CharacterId, 'hero' | 'washio_gen'>, { kosode: [numb
 const NPC_MODEL = 'hero_v2';
 
 interface NpcView {
-    member: CastMember;
+    member: CastMember<string>;
     root: THREE.Object3D;
     mixer: THREE.AnimationMixer | null;
     bones: Map<string, THREE.Bone>;
@@ -70,8 +70,8 @@ export class ExploreWorld implements GameWorld {
     private base: GLTF | null = null;
     private baseFailed = false;
     private loading: Promise<void> | null = null;
-    private cast: CastMember[] = [];
-    private readonly views = new Map<TalkId, NpcView>();
+    private cast: CastMember<string>[] = [];
+    private readonly views = new Map<string, NpcView>();
     private readonly group = new THREE.Group();
     private readonly labels: HTMLElement;
     private readonly wallRects = colliders();
@@ -112,7 +112,7 @@ export class ExploreWorld implements GameWorld {
 
     // ---------------- GameWorld ----------------
 
-    setCast(cast: CastMember[]): void {
+    setCast(cast: CastMember<string>[]): void {
         // 同じ相手・同じ姿勢・同じ場所なら作り直さない
         const same =
             cast.length === this.cast.length &&
@@ -138,7 +138,7 @@ export class ExploreWorld implements GameWorld {
         this.host.setControl(enabled);
     }
 
-    faceTalk(id: TalkId): void {
+    faceTalk(id: string): void {
         const v = this.views.get(id);
         const h = this.host.hero;
         const m = v?.member ?? this.cast.find((c) => c.id === id);
@@ -169,7 +169,7 @@ export class ExploreWorld implements GameWorld {
         this.host.setExtraColliders([]);
     }
 
-    private build(cast: CastMember[]): void {
+    private build(cast: CastMember<string>[]): void {
         this.cast = cast.slice();
         this.host.setExtraColliders(castColliders(cast));
         for (const m of cast) {
@@ -181,7 +181,7 @@ export class ExploreWorld implements GameWorld {
         }
     }
 
-    private makeLabel(m: CastMember): HTMLElement {
+    private makeLabel(m: CastMember<string>): HTMLElement {
         const l = document.createElement('div');
         l.className = `npc-label${m.key ? ' key' : ''}${m.kind === 'gate' ? ' gate' : ''}`;
         l.textContent = m.label;
@@ -190,14 +190,14 @@ export class ExploreWorld implements GameWorld {
         return l;
     }
 
-    private makeStatic(m: CastMember, obj: THREE.Object3D, labelY: number): NpcView {
+    private makeStatic(m: CastMember<string>, obj: THREE.Object3D, labelY: number): NpcView {
         obj.position.set(m.x, groundY(m.x, m.z), m.z);
         obj.rotation.y = m.heading;
         this.group.add(obj);
         return { member: m, root: obj, mixer: null, bones: new Map(), heading: m.heading, targetHeading: m.heading, label: this.makeLabel(m), labelY };
     }
 
-    private makePerson(m: CastMember): NpcView | null {
+    private makePerson(m: CastMember<string>): NpcView | null {
         if (!this.ready) {
             // 素材を読み終えたら作る（preload の最後で作り直す）。名前の札だけは先に出さない
             void this.preload();
@@ -312,7 +312,7 @@ export class ExploreWorld implements GameWorld {
     }
 
     /** 確認用：置いている人物（id・姿勢・場所） */
-    probe(): { id: TalkId; pose: string; x: number; z: number; model: boolean }[] {
+    probe(): { id: string; pose: string; x: number; z: number; model: boolean }[] {
         return [...this.views.values()].map((v) => ({ id: v.member.id, pose: v.member.pose, x: v.member.x, z: v.member.z, model: !!v.mixer }));
     }
 }
@@ -389,7 +389,7 @@ function makeNoticeBoard(): THREE.Object3D {
 }
 
 /** 城門の出陣の場所（地面の輪。人物の素材ではない印） */
-function makeGateMark(m: CastMember): THREE.Object3D {
+function makeGateMark(m: CastMember<string>): THREE.Object3D {
     const g = new THREE.Group();
     const ring = new THREE.Mesh(
         new THREE.RingGeometry(m.reach - 0.25, m.reach, 48),

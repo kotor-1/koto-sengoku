@@ -34,7 +34,7 @@ async function reloadContinue() {
   await loaded();
   await page.reload();
   await waitTitle();
-  await page.evaluate(() => window.__game.choose('continue'));
+  await page.evaluate(() => window.__game.choose('continue:fictional'));
   await page.waitForFunction(() => window.__game.screen === 'explore', null, POLL);
 }
 async function departAndRetreat() {

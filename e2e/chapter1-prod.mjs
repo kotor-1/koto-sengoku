@@ -121,13 +121,13 @@ async function saveAndReadPose() {
 try {
   const t0 = Date.now();
   await page.goto(URL0);
-  await page.locator('.g-btn[data-id="new"]').waitFor({ state: 'visible', timeout: 600000 });
+  await page.locator('.g-btn[data-id="new:fictional"]').waitFor({ state: 'visible', timeout: 600000 });
   check(`本番ビルドを CSP の下で読み込み、タイトルが出る（${((Date.now() - t0) / 1000).toFixed(0)} 秒）`, true, await page.textContent('#build'));
   check('本番ビルドの表示（開発用の比較ボタンは無い）', (await page.textContent('#build')).includes('本番') && !(await page.isVisible('#hero-btn')));
   const models = served.filter((p) => p.startsWith('/models/'));
   check('素材は JSON（glTF）と画像で読む（.glb も data: の URL も使わない）', models.length > 0 && models.every((p) => /\.(json|jpg|png)$/.test(p)) && dataUrls.length === 0, `${models.filter((p) => p.endsWith('.json')).length} 個の JSON`);
   await shot('P01-title');
-  await pressBtn('new');
+  await pressBtn('new:fictional');
   await page.locator('.g-hud').waitFor({ state: 'visible' });
   check('はじめから → 城下（目的：源蔵と話す）', (await page.textContent('.g-hud')).includes('源蔵'));
   await sleep(1500);
@@ -212,9 +212,9 @@ try {
   check('合戦の後 → 戦後の探索・戦後の自動保存（撤退・関係はそのまま）', aft?.point === 'aftermath' && aft?.phase === 'aftermath' && aft.battle.result === 'retreat' && aft.relations.tashiro === 10 && aft.relations.omori === 10);
   // 開き直して続きから
   await page.reload();
-  await page.locator('.g-btn[data-id="continue"]').waitFor({ state: 'visible', timeout: 600000 });
-  check('開き直すと、つづきからに戦後の保存', (await page.textContent('.g-btn[data-id="continue"]')).includes('戦後'));
-  await pressBtn('continue');
+  await page.locator('.g-btn[data-id="continue:fictional"]').waitFor({ state: 'visible', timeout: 600000 });
+  check('開き直すと、つづきからに戦後の保存', (await page.textContent('.g-btn[data-id="continue:fictional"]')).includes('戦後'));
+  await pressBtn('continue:fictional');
   await page.locator('.g-hud').waitFor({ state: 'visible' });
   await sleep(1500);
   await shot('P09-aftermath');
@@ -230,8 +230,8 @@ try {
   check('結末：雌伏（独力で戦った・撤退・第一章 完（仮シナリオ））', ending.includes('雌伏') && ending.includes('独力で戦った') && ending.includes('第一章 完（仮シナリオ）'));
   await page.locator('.g-btn[data-id="title"]').scrollIntoViewIfNeeded();
   await pressBtn('title');
-  await page.locator('.g-btn[data-id="continue"]').waitFor({ state: 'visible' });
-  check('タイトルへ戻る。つづきからは章の結末', (await page.textContent('.g-btn[data-id="continue"]')).includes('章の結末'));
+  await page.locator('.g-btn[data-id="continue:fictional"]').waitFor({ state: 'visible' });
+  check('タイトルへ戻る。つづきからは章の結末', (await page.textContent('.g-btn[data-id="continue:fictional"]')).includes('章の結末'));
 } catch (e) {
   failed++;
   console.log('NG 途中で止まった：', e.message);

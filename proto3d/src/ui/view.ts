@@ -10,9 +10,10 @@
  * 会話・軍議の途中も、右上の「メニュー」（Esc／M）でメニューを開ける。メニューは会話の上に重なり、閉じれば同じ行・同じ選び方に戻る（会話は進まない）。
  */
 import './ui.css';
-import type { ConfirmOptions, GameView, HudInfo, MenuAction, MenuInfo, PromptInfo, ScriptOptions, TitleAction, TitleInfo } from '../campaign/game';
-import type { ChoiceId } from '../campaign/state';
-import { CHAPTER_TITLE, PROVISIONAL_LABEL, type EndingView, type Script } from '../campaign/story';
+import type { ConfirmOptions, EndingOptions, GameView, HudInfo, MenuAction, MenuInfo, PromptInfo, ScriptOptions, TitleAction, TitleInfo, TitleScenarioInfo } from '../campaign/game';
+import type { ScenarioEndingView, ScenarioScript } from '../campaign/scenario';
+import { CHAPTER_TITLE, PROVISIONAL_LABEL } from '../campaign/story';
+import { SCENARIO_TITLE_TEXT } from './scenarioTitles';
 import { el, nowMs, onPress } from './dom';
 import { ADVANCE_GUARD_MS, CHOICE_GUARD_MS, HeldKeys, InputGate } from './guard';
 
@@ -278,7 +279,7 @@ export class DomView implements GameView {
      */
     private buttonRow(
         container: HTMLElement,
-        items: { id: string; label: string; sub?: string; disabled?: boolean }[],
+        items: { id: string; label: string; sub?: string; disabled?: boolean; /** 置く所（省けば container） */ parent?: HTMLElement }[],
         defaultIndex: number,
         onPick: (id: string) => void,
     ): { key(e: KeyboardEvent): boolean; buttons: { id: string; label: string; disabled: boolean }[]; press(id: string): boolean; reexpose(): void } {
@@ -304,7 +305,7 @@ export class DomView implements GameView {
                 if (gate.pointer(nowMs(), startedAt(e))) pick(i);
             });
             btns.push(b);
-            container.appendChild(b);
+            (it.parent ?? container).appendChild(b);
         });
         mark();
         const move = (d: number) => {
@@ -334,6 +335,7 @@ export class DomView implements GameView {
     }
 
     title(info: TitleInfo): Promise<TitleAction> {
+        if (info.scenarios.length > 1) return this.titleMulti(info.scenarios);
         return new Promise((resolve) => {
             const layer = this.open('title', 'solid g-title-layer');
             const box = el('div', 'g-title-box');
@@ -370,13 +372,65 @@ export class DomView implements GameView {
         });
     }
 
-    script(sc: Script, opts: ScriptOptions): Promise<ChoiceId | null> {
+    /**
+     * シナリオを並べたタイトル：シナリオごとの札（名前・札・史実と創作の注記・はじめから／つづきから（それぞれの保存））。
+     * ボタンは 'new:<id>'／'continue:<id>' を返す。低い画面（スマホ横）では札を左右に並べ、はみ出す分は縦に動かせる。
+     */
+    private titleMulti(list: TitleScenarioInfo[]): Promise<TitleAction> {
+        return new Promise((resolve) => {
+            const layer = this.open('title', 'solid g-title-layer');
+            const scroll = el('div', 'g-title-scroll g-scroll');
+            const box = el('div', 'g-title-box multi');
+            box.append(el('p', 'kicker', '戦国探索記 3D'), el('h1', undefined, 'シナリオを選ぶ'));
+            const cards = el('div', 'g-scn-list');
+            box.append(cards);
+            const items: { id: string; label: string; sub?: string; disabled?: boolean; parent: HTMLElement }[] = [];
+            for (const sc of list) {
+                const t = SCENARIO_TITLE_TEXT[sc.id] ?? { name: sc.title, lead: '' };
+                const card = el('section', 'g-scn');
+                card.dataset.scenario = sc.id;
+                const head = el('h2', undefined, t.name);
+                const prov = el('p', 'prov');
+                prov.append(el('span', 'g-tag', sc.label));
+                card.append(head, prov);
+                if (t.lead) card.append(el('p', 'g-scn-lead', t.lead));
+                const btns = el('div', 'g-scn-btns');
+                card.append(btns);
+                items.push(
+                    { id: `new:${sc.id}`, label: 'はじめから', parent: btns },
+                    { id: `continue:${sc.id}`, label: 'つづきから', sub: sc.save ? sc.save.summary : '保存がありません', disabled: !sc.save, parent: btns },
+                );
+                if (sc.problem) card.append(el('p', 'problem', sc.problem));
+                card.append(el('p', 'g-note', sc.note));
+                cards.append(card);
+            }
+            // 最初に選ばれている：保存のある最初のシナリオの「つづきから」。どれにも保存が無ければ最初のシナリオの「はじめから」
+            const firstSave = list.findIndex((x) => !!x.save);
+            const m: Modal = {
+                kind: 'title',
+                layer,
+                key: (e) => void row.key(e),
+                probe: () => ({ kind: 'title', buttons: row.buttons, text: box.textContent ?? '' }),
+                press: (id) => row.press(id),
+                reexpose: () => row.reexpose(),
+            };
+            const row = this.buttonRow(box, items, firstSave >= 0 ? firstSave * 2 + 1 : 0, (id) => {
+                this.close(m);
+                resolve(id as TitleAction);
+            });
+            scroll.append(box);
+            layer.append(scroll);
+            this.push(m);
+        });
+    }
+
+    script(sc: ScenarioScript, opts: ScriptOptions): Promise<string | null> {
         return new Promise((resolve) => {
             const council = opts.mode === 'council';
             const layer = this.open('script', council ? 'council' : '');
             if (council) {
                 const head = el('div', 'g-council-head');
-                head.append(el('h2', undefined, '軍議'), el('p', undefined, `城の広間・${PROVISIONAL_LABEL}`));
+                head.append(el('h2', undefined, '軍議'), el('p', undefined, `城の広間・${opts.label ?? PROVISIONAL_LABEL}`));
                 layer.append(head);
             }
             const box = el('div', 'g-dialog');
@@ -388,7 +442,7 @@ export class DomView implements GameView {
             const choicesEl = el('div', 'g-choices');
             choicesEl.hidden = true;
             layer.append(choicesEl, box);
-            const lines = sc.lines.length ? sc.lines : [{ speaker: 'narration' as const, name: '', text: '……' }];
+            const lines = sc.lines.length ? sc.lines : [{ speaker: 'narration', name: '', text: '……' }];
             const choices = sc.choices ?? [];
             let i = 0;
             let sel = Math.max(0, Math.min(choices.length - 1, sc.defaultChoice ?? 0));
@@ -398,7 +452,7 @@ export class DomView implements GameView {
             let done = false;
             const choiceBtns: HTMLButtonElement[] = [];
             const mark = () => choiceBtns.forEach((b, k) => b.classList.toggle('sel', k === sel));
-            const finish = (v: ChoiceId | null) => {
+            const finish = (v: string | null) => {
                 if (done) return;
                 done = true;
                 this.close(m);
@@ -437,6 +491,7 @@ export class DomView implements GameView {
                 name.classList.toggle('hero', line.speaker === 'hero');
                 text.textContent = line.text;
                 text.classList.toggle('narration', line.speaker === 'narration');
+                box.dataset.speaker = line.speaker;
                 count.textContent = lines.length > 1 ? `${i + 1}/${lines.length}` : '';
                 const atEnd = i === lines.length - 1;
                 more.hidden = atEnd && choices.length > 0;
@@ -576,12 +631,19 @@ export class DomView implements GameView {
         });
     }
 
-    ending(v: EndingView): Promise<void> {
+    ending(v: ScenarioEndingView, opts?: EndingOptions): Promise<void> {
         return new Promise((resolve) => {
             const layer = this.open('ending', 'solid');
             const scroll = el('div', 'g-ending g-scroll');
             const inner = el('div', 'g-ending-inner');
-            inner.append(el('p', 'kicker', `${CHAPTER_TITLE}　結末`), el('h1', undefined, v.title));
+            inner.dataset.scenario = opts?.scenario ?? 'fictional';
+            inner.append(el('p', 'kicker', `${opts?.chapter ?? CHAPTER_TITLE}　結末`));
+            if (opts?.label) {
+                const tag = el('p', 'prov');
+                tag.append(el('span', 'g-tag', opts.label));
+                inner.append(tag);
+            }
+            inner.append(el('h1', undefined, v.title));
             const body = el('div', 'body');
             for (const p of v.body) body.append(el('p', undefined, p));
             inner.append(body);
