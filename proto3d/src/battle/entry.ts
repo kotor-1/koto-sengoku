@@ -1,0 +1,707 @@
+/**
+ * 合戦の画面のつなぎ。import すると app/modes.ts に合戦の始め方（registerBattleRunner）を登録する。
+ *
+ *   const outcome = await getBattleRunner()!(setup);   // 章の進行（campaign）・開発の確認（?dev=battle）から
+ *
+ * 1 回の合戦（BattleRun）でしていること：
+ * - 探索と同じ描画器で、別の場面（view.ts）を描く。場面に入る（enterMode('battle')）と探索の入力・描画は止まる。
+ * - 合戦の計算（sim.ts）を進める。指揮（一時停止）中は進めない（命令は出せる）。速さ ×1・×2。
+ * - 画面の部品（battleUi.ts）：部隊の札・命令のボタン・条件・知らせ・説明・確かめ・結果。
+ * - 入力（docs/design-policy.md の入力の決まりにならう）：
+ *   - 地図：1 本指・左ドラッグで動かす、2 本指・ホイール・ボタンで寄る／引く。押して離す（動かさない）と「押した」扱い。
+ *   - 指を離した・キャンセル・捕捉が外れたら、その指の操作は終わり（触り直すまで再開しない）。
+ *   - 画面を離れた（blur・visibilitychange・pagehide）ら、自動で指揮（一時停止）にして入力を離す。
+ *   - キー：Space 指揮／再開、1〜4 部隊、M 移動・A 攻撃・H 防衛・待機・R 撤退、Esc 取り消し、矢印で地図、+ − 0 で寄る・引く・全体。
+ * - 結果を出し、「続ける」で後片付け（形・材質・画像・DOM・listener）をして探索へ戻り（exitMode）、結果を返す。
+ */
+import { appContext, enterMode, exitMode, registerBattleRunner, type AppContext, type Mode } from '../app/modes';
+import { loadModel } from '../app/models';
+import type { BattleOutcome, BattleSetup, Order } from './types';
+import { canCommand, createBattle, issueOrder, orderAllRetreat, stepBattle, unitById, type BattleEvent, type BattleState } from './sim';
+import { BattleView } from './view';
+import { BattleUi, type CommandKind } from './battleUi';
+import { REASON_TEXT, RESULT_LABEL, eventTone, fmtClock, orderAck, refusalText, resolveTap, resultRows, type Pending, type Selected, type TapTarget } from './control';
+
+/** 木の読み込みを待つ最長（これを過ぎたら円すいの木のまま始められる） */
+const TREE_TIMEOUT_MS = 12000;
+/** 押したとみなす指・マウスの動きの上限（px） */
+const TAP_SLOP = { touch: 12, mouse: 6 };
+
+let current: BattleRun | null = null;
+
+/** 合戦を始めて、「続ける」を押したら結果を返す */
+export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
+    if (current) return Promise.reject(new Error('合戦はすでに始まっています'));
+    return new Promise<BattleOutcome>((resolve, reject) => {
+        try {
+            current = new BattleRun(setup, (o) => {
+                current = null;
+                resolve(o);
+            });
+        } catch (e) {
+            current = null;
+            reject(e);
+        }
+    });
+}
+registerBattleRunner(runBattle);
+
+interface Ptr {
+    id: number;
+    type: string;
+    button: number;
+    sx: number;
+    sy: number;
+    x: number;
+    y: number;
+    moved: boolean;
+}
+
+class BattleRun implements Mode {
+    readonly s: BattleState;
+    readonly view: BattleView;
+    readonly ui: BattleUi;
+    private readonly ctx: AppContext;
+    paused = true;
+    started = false;
+    speed: 1 | 2 = 1;
+    /** 開発時の確認用の早回し（本番では 1 のまま） */
+    devScale = 1;
+    selectedId: string | null = null;
+    pending: Pending = 'none';
+    private realT = 0;
+    /** 利用者がカメラを動かした（画面の大きさが変わっても「全体」に戻さない） */
+    private camTouched = false;
+    private endAt = -1;
+    resultShown = false;
+    private finished = false;
+    private readonly off: (() => void)[] = [];
+    private readonly ptrs = new Map<number, Ptr>();
+    private pinch: { d: number; mx: number; my: number } | null = null;
+    /** 2 本指になった・動かした：指をすべて離すまで「押した」にしない */
+    private gesture = false;
+    private readonly panKeys = new Set<string>();
+    script: ((s: BattleState) => void) | null = null;
+    private scriptAcc = 0;
+    private readonly terrainLabels: { id: string; text: string; x: number; z: number; y: number }[];
+
+    constructor(
+        setup: BattleSetup,
+        private readonly done: (o: BattleOutcome) => void,
+    ) {
+        this.ctx = appContext();
+        this.s = createBattle(setup);
+        this.view = new BattleView(this.s, { low: this.ctx.low });
+        this.ui = new BattleUi(this.ctx.app, this.s, {
+            start: () => this.start(),
+            togglePause: () => this.togglePause(),
+            setSpeed: (k) => (this.speed = k),
+            command: (c) => this.command(c),
+            cancelPending: () => (this.pending = 'none'),
+            allRetreat: () => void this.askAllRetreat(),
+            selectUnit: (id) => this.selectFromCard(id),
+            zoom: (d) => this.zoomButton(d),
+            focusUnit: (id) => this.focusUnit(id),
+            continueAfterResult: () => this.finish(),
+        }, { touch: this.ctx.touch });
+        this.terrainLabels = terrainLabelsFor(this.s);
+
+        enterMode('battle', this);
+        this.bindInput();
+        const c = this.ctx.renderer.domElement;
+        this.resize(c.clientWidth || window.innerWidth, c.clientHeight || window.innerHeight);
+        this.ui.showBriefing(`合戦「${this.s.map.name}」（仮シナリオ）`, setup.briefing, false);
+        this.loadTrees();
+        if (import.meta.env.DEV) exposeDev(this);
+    }
+
+    // ---------------------------------------------------------------- 準備
+
+    private loadTrees(): void {
+        let settled = false;
+        const ready = () => {
+            if (settled || this.finished) return;
+            settled = true;
+            this.ui.setBriefingReady(true);
+        };
+        const timer = window.setTimeout(ready, TREE_TIMEOUT_MS);
+        this.off.push(() => window.clearTimeout(timer));
+        loadModel('tree_pine_far')
+            .then((g) => {
+                if (this.finished) return;
+                this.view.setTrees(g.scene);
+                ready();
+            })
+            .catch((e: unknown) => {
+                // 読めなければ円すいの木のまま（見た目だけの問題。合戦はできる）
+                console.warn('林の木を読み込めませんでした（円すいの木で続けます）', e);
+                ready();
+            });
+    }
+
+    start(): void {
+        if (this.started || this.finished) return;
+        this.started = true;
+        this.paused = false;
+        this.ui.closeModal();
+        this.ui.toast('合戦が始まった。部隊を選んで命令を出す（指揮で一時停止）', 'info');
+    }
+
+    // ---------------------------------------------------------------- 毎フレーム
+
+    frame(dt: number): void {
+        if (this.finished) return;
+        this.realT += dt;
+        if (this.panKeys.size) {
+            const k = this.view.cam.dist * 0.9 * dt;
+            let dx = 0;
+            let dz = 0;
+            if (this.panKeys.has('ArrowLeft')) dx -= k;
+            if (this.panKeys.has('ArrowRight')) dx += k;
+            if (this.panKeys.has('ArrowUp')) dz -= k;
+            if (this.panKeys.has('ArrowDown')) dz += k;
+            this.view.centerOn(this.view.cam.tx + dx, this.view.cam.tz + dz);
+            this.camTouched = true;
+        }
+        if (this.started && !this.paused && !this.s.result) {
+            const sim = dt * this.speed * this.devScale;
+            let events: BattleEvent[];
+            if (this.script) {
+                events = [];
+                this.scriptAcc += sim;
+                while (this.scriptAcc >= 0.1 - 1e-9 && !this.s.result) {
+                    this.scriptAcc -= 0.1;
+                    this.script(this.s);
+                    events.push(...stepBattle(this.s, 0.1));
+                }
+            } else events = stepBattle(this.s, sim);
+            this.onEvents(events);
+        }
+        if (this.s.result && this.endAt < 0) {
+            this.endAt = this.realT;
+            this.pending = 'none';
+        }
+        if (this.endAt >= 0 && !this.resultShown && this.realT - this.endAt > 1.6) this.showResult();
+        // 見えなくなった敵・戦場を離れた部隊の選択は外す
+        const sel = this.selectedId ? unitById(this.s, this.selectedId) : undefined;
+        if (sel && sel.side === 'enemy' && !(sel.present && sel.seenBy.ally)) this.selectedId = null;
+        if (sel && sel.side === 'ally' && !canCommand(this.s, sel)) this.pending = 'none';
+
+        this.view.update(this.s, dt, { selectedId: this.selectedId, pending: this.pending });
+        this.placeLabels();
+        this.ui.update(this.s, { selectedId: this.selectedId, pending: this.pending, paused: this.paused, started: this.started, speed: this.speed });
+        this.view.render(this.ctx.renderer);
+    }
+
+    resize(w: number, h: number): void {
+        if (this.finished) return;
+        this.view.resize(w, h);
+        this.view.fit(this.ui.insets(), this.camTouched);
+        // スマホの縦画面：止めて、横向きの案内（CSS）を出す
+        const portrait = this.ctx.touch && h > w;
+        if (portrait && this.started && !this.paused && !this.s.result) {
+            this.releaseInput();
+            this.paused = true;
+        }
+    }
+
+    private onEvents(events: BattleEvent[]): void {
+        for (const e of events) {
+            const tone = eventTone(this.s, e);
+            if (tone) this.ui.toast(e.text, tone, e.unitId);
+        }
+    }
+
+    private placeLabels(): void {
+        const s = this.s;
+        for (let i = 0; i < s.units.length; i++) {
+            const u = s.units[i];
+            const a = this.view.labelAnchor(i);
+            if (a.shown) {
+                const p = this.view.project(a.x, a.y, a.z);
+                const extra = u.status === 'routed' ? ' 敗走' : ` ${Math.round(u.strength)}`;
+                this.ui.label(u.id, u.name, u.side, p.x, p.y, !p.off, extra);
+            } else if (u.side === 'ally' && !u.arrived && u.status === 'ready') {
+                const p = this.view.project(u.x, 4, u.z);
+                this.ui.label(u.id, u.name, 'ally', p.x, p.y, !p.off, ` 到着まで ${Math.max(0, Math.ceil(u.arriveAt - s.t))} 秒`);
+            } else this.ui.label(u.id, '', u.side, 0, 0, false);
+            this.ui.markLabel(u.id, 'sel', this.selectedId === u.id);
+        }
+        for (const t of this.terrainLabels) {
+            const p = this.view.project(t.x, t.y, t.z);
+            this.ui.label(t.id, t.text, 'terrain', p.x, p.y, !p.off);
+        }
+    }
+
+    // ---------------------------------------------------------------- 命令
+
+    private selected(): Selected | null {
+        const u = this.selectedId ? unitById(this.s, this.selectedId) : undefined;
+        if (!u) return null;
+        return { id: u.id, side: u.side, commandable: u.side === 'ally' && canCommand(this.s, u) };
+    }
+
+    private order(unitId: string, o: Order): boolean {
+        const ok = issueOrder(this.s, unitId, o);
+        this.ui.flash(ok ? orderAck(this.s, unitId, o) : refusalText(this.s, unitId, o));
+        if (ok) this.pending = 'none';
+        return ok;
+    }
+
+    private command(c: CommandKind): void {
+        if (this.s.result) return;
+        const sel = this.selected();
+        if (!sel || sel.side !== 'ally') {
+            this.ui.flash('先に味方の部隊を選んでください');
+            return;
+        }
+        if (!sel.commandable) {
+            this.ui.flash(refusalText(this.s, sel.id, { type: 'hold' }));
+            return;
+        }
+        if (c === 'move' || c === 'attack') this.pending = this.pending === c ? 'none' : c;
+        else this.order(sel.id, { type: c });
+    }
+
+    private selectFromCard(id: string): void {
+        if (this.selectedId === id) {
+            this.focusUnit(id);
+            return;
+        }
+        this.selectedId = id;
+        this.pending = 'none';
+    }
+
+    private focusUnit(id: string): void {
+        const i = this.s.units.findIndex((u) => u.id === id);
+        if (i < 0) return;
+        const u = this.s.units[i];
+        const p = this.view.unitPos(i);
+        if (u.side === 'enemy' && !p.shown) return;
+        this.camTouched = true;
+        this.view.centerOn(p.shown ? p.x : u.x, p.shown ? p.z : u.z);
+    }
+
+    private async askAllRetreat(): Promise<void> {
+        if (this.s.result || !this.started || this.s.allRetreatAt !== null || this.ui.modalOpen) return;
+        const was = this.paused;
+        this.paused = true;
+        const yes = await this.ui.confirm('全軍撤退しますか？', '味方の全部隊が南の退き口へ下がります。戦場を離れると合戦は「撤退」で終わります（兵は残ります）。', '撤退する', 'やめる');
+        if (this.finished) return;
+        if (yes && orderAllRetreat(this.s)) {
+            this.pending = 'none';
+            this.paused = false;
+        } else this.paused = was;
+    }
+
+    togglePause(): void {
+        if (!this.started) {
+            if (this.ui.modalOpen === 'briefing') this.ui.modalKey('primary');
+            return;
+        }
+        if (this.s.result || this.ui.modalOpen) return;
+        this.paused = !this.paused;
+    }
+
+    private autoPause(): void {
+        this.releaseInput();
+        if (this.started && !this.s.result) this.paused = true;
+    }
+
+    private zoomButton(d: 1 | -1 | 0): void {
+        if (d === 0) {
+            this.camTouched = false;
+            this.view.fit(this.ui.insets());
+            return;
+        }
+        this.camTouched = true;
+        const r = this.ctx.renderer.domElement.getBoundingClientRect();
+        this.view.zoomAt(d > 0 ? 0.7 : 1 / 0.7, r.width / 2, r.height / 2);
+    }
+
+    // ---------------------------------------------------------------- 結果
+
+    private showResult(): void {
+        const o = this.s.result!;
+        this.resultShown = true;
+        this.releaseInput();
+        const { rows, lost, start } = resultRows(this.s, o);
+        const notes: Record<string, string> = {
+            victory: '鷲尾勢は国境から兵を引いた。',
+            defeat: '敗れはしたが、若殿は生きている。兵をまとめ直して次に備える。',
+            retreat: '勝敗は決まらなかった。兵を失いすぎないうちに引いた。',
+        };
+        this.ui.showResult({
+            kind: o.result,
+            title: RESULT_LABEL[o.result],
+            reason: REASON_TEXT[o.reason],
+            time: fmtClock(o.elapsedSec),
+            rows,
+            lost,
+            start,
+            note: notes[o.result],
+        });
+    }
+
+    private finish(): void {
+        if (this.finished || !this.s.result) return;
+        this.finished = true;
+        const o = this.s.result;
+        for (const f of this.off) f();
+        this.off.length = 0;
+        this.ui.dispose();
+        this.view.dispose();
+        exitMode();
+        if (import.meta.env.DEV) {
+            const w = window as unknown as { __battle?: { active: boolean } };
+            if (w.__battle) w.__battle.active = false;
+        }
+        this.done(o);
+    }
+
+    // ---------------------------------------------------------------- 入力
+
+    private listen<K extends keyof WindowEventMap>(t: Window, type: K, fn: (e: WindowEventMap[K]) => void, opts?: AddEventListenerOptions): void;
+    private listen<K extends keyof DocumentEventMap>(t: Document, type: K, fn: (e: DocumentEventMap[K]) => void, opts?: AddEventListenerOptions): void;
+    private listen<K extends keyof HTMLElementEventMap>(t: HTMLElement, type: K, fn: (e: HTMLElementEventMap[K]) => void, opts?: AddEventListenerOptions): void;
+    private listen(t: EventTarget, type: string, fn: (e: never) => void, opts?: AddEventListenerOptions): void {
+        const h = fn as unknown as EventListener;
+        t.addEventListener(type, h, opts);
+        this.off.push(() => t.removeEventListener(type, h, opts));
+    }
+
+    /** 指・マウス・キーをすべて離す（その指を動かし続けても、触り直すまで地図は動かない） */
+    releaseInput(): void {
+        for (const p of this.ptrs.values()) {
+            try {
+                if (this.ui.input.hasPointerCapture(p.id)) this.ui.input.releasePointerCapture(p.id);
+            } catch {
+                /* 捕捉が既に外れている */
+            }
+        }
+        this.ptrs.clear();
+        this.pinch = null;
+        this.gesture = false;
+        this.panKeys.clear();
+        this.ui.input.classList.remove('dragging');
+    }
+
+    private local(e: PointerEvent | WheelEvent): [number, number] {
+        const r = this.ctx.renderer.domElement.getBoundingClientRect();
+        return [e.clientX - r.left, e.clientY - r.top];
+    }
+
+    private bindInput(): void {
+        const layer = this.ui.input;
+        this.listen(layer, 'pointerdown', (e) => {
+            if (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 2) return;
+            e.preventDefault();
+            if (this.resultShown || this.ui.modalOpen) return;
+            const [x, y] = this.local(e);
+            try {
+                layer.setPointerCapture(e.pointerId);
+            } catch {
+                /* 捕捉できない場合もそのまま */
+            }
+            this.ptrs.set(e.pointerId, { id: e.pointerId, type: e.pointerType, button: e.button, sx: x, sy: y, x, y, moved: false });
+            if (this.ptrs.size >= 2) {
+                this.gesture = true;
+                const [a, b] = [...this.ptrs.values()];
+                this.pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+            }
+        });
+        this.listen(layer, 'pointermove', (e) => {
+            const p = this.ptrs.get(e.pointerId);
+            const [x, y] = this.local(e);
+            if (!p) {
+                if (e.pointerType === 'mouse') this.hover(x, y);
+                return;
+            }
+            const px = p.x;
+            const py = p.y;
+            p.x = x;
+            p.y = y;
+            if (this.ptrs.size >= 2 && this.pinch) {
+                const [a, b] = [...this.ptrs.values()];
+                const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+                const mx = (a.x + b.x) / 2;
+                const my = (a.y + b.y) / 2;
+                this.camTouched = true;
+                this.view.zoomAt(this.pinch.d / d, mx, my);
+                this.view.panByScreen(this.pinch.mx, this.pinch.my, mx, my);
+                this.pinch = { d, mx, my };
+                return;
+            }
+            if (!p.moved) {
+                const slop = p.type === 'mouse' ? TAP_SLOP.mouse : TAP_SLOP.touch;
+                if (Math.hypot(x - p.sx, y - p.sy) <= slop) return;
+                p.moved = true;
+                this.gesture = true;
+                this.camTouched = true;
+                layer.classList.add('dragging');
+                this.view.panByScreen(p.sx, p.sy, x, y);
+                return;
+            }
+            this.view.panByScreen(px, py, x, y);
+        });
+        const end = (e: PointerEvent, tap: boolean) => {
+            const p = this.ptrs.get(e.pointerId);
+            if (!p) return;
+            this.ptrs.delete(e.pointerId);
+            if (this.ptrs.size < 2) this.pinch = null;
+            const wasGesture = this.gesture;
+            if (this.ptrs.size === 0) {
+                this.gesture = false;
+                layer.classList.remove('dragging');
+            }
+            if (tap && !p.moved && !wasGesture && this.ptrs.size === 0) this.tap(p.x, p.y, p.type === 'mouse' && p.button === 2);
+        };
+        this.listen(layer, 'pointerup', (e) => end(e, true));
+        this.listen(layer, 'pointercancel', (e) => end(e, false));
+        this.listen(layer, 'lostpointercapture', (e) => end(e, false));
+        this.listen(layer, 'contextmenu', (e) => e.preventDefault());
+        this.listen(
+            layer,
+            'wheel',
+            (e) => {
+                e.preventDefault();
+                if (this.ui.modalOpen) return;
+                const [x, y] = this.local(e);
+                this.camTouched = true;
+                const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+                this.view.zoomAt(Math.exp(Math.max(-0.5, Math.min(0.5, dy * 0.0016))), x, y);
+            },
+            { passive: false },
+        );
+        this.listen(window, 'blur', () => this.autoPause());
+        this.listen(window, 'pagehide', () => this.autoPause());
+        this.listen(document, 'visibilitychange', () => {
+            if (document.visibilityState !== 'visible') this.autoPause();
+        });
+        this.listen(window, 'keydown', (e) => this.keyDown(e));
+        this.listen(window, 'keyup', (e) => {
+            this.panKeys.delete(e.code);
+            // Mac で Cmd を押している間の keyup が届かないことがあるので、Cmd を離したら全部離す
+            if (e.key === 'Meta') this.panKeys.clear();
+        });
+    }
+
+    private hover(x: number, y: number): void {
+        if (this.ui.modalOpen) return;
+        const id = this.view.pick(this.s, x, y, 18);
+        const u = id ? unitById(this.s, id) : undefined;
+        const layer = this.ui.input;
+        const sel = this.selected();
+        let cur = '';
+        if (u && u.side === 'ally') cur = 'pointer';
+        else if (u && sel?.commandable) cur = 'crosshair';
+        else if (u) cur = 'help';
+        else if (sel?.commandable) cur = 'cell';
+        if (layer.style.cursor !== cur) layer.style.cursor = cur;
+    }
+
+    /** 地図を押した（動かさずに離した）。command は右クリック（味方を選んでいれば命令だけ） */
+    private tap(x: number, y: number, command: boolean): void {
+        if (this.resultShown || this.ui.modalOpen) return;
+        const id = this.view.pick(this.s, x, y, this.ctx.touch ? 30 : 20);
+        const g = this.view.groundAt(x, y);
+        const u = id ? unitById(this.s, id) : undefined;
+        let target: TapTarget;
+        if (u) target = { kind: 'unit', unitId: u.id, side: u.side, x: g?.x ?? u.x, z: g?.z ?? u.z };
+        else if (g) target = { kind: 'ground', x: g.x, z: g.z };
+        else return;
+        const sel = this.selected();
+        if (command) {
+            // 右クリック：選んでいる味方への命令だけ（選び直しはしない）
+            if (!sel || !sel.commandable) return;
+            if (target.kind === 'unit' && target.side === 'ally') return;
+            const o: Order = target.kind === 'unit' ? { type: 'attack', targetId: target.unitId } : { type: 'move', x: target.x, z: target.z };
+            this.order(sel.id, o);
+            return;
+        }
+        const act = resolveTap(sel, this.pending, target);
+        switch (act.type) {
+            case 'select':
+            case 'inspect':
+                this.selectedId = act.unitId;
+                this.pending = 'none';
+                break;
+            case 'order':
+                this.order(act.unitId, act.order);
+                break;
+            case 'deselect':
+                this.selectedId = null;
+                this.pending = 'none';
+                break;
+            case 'hint':
+                this.ui.flash(act.text);
+                break;
+            case 'none':
+                break;
+        }
+    }
+
+    private keyDown(e: KeyboardEvent): void {
+        if (this.finished) return;
+        const modal = this.ui.modalOpen;
+        const onButton = document.activeElement instanceof HTMLButtonElement && this.ui.root.contains(document.activeElement);
+        if (modal) {
+            if (e.key === 'Enter' && !onButton) {
+                e.preventDefault();
+                this.ui.modalKey('primary');
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                this.ui.modalKey('cancel');
+            } else if (e.code === 'Space' && modal === 'briefing' && !onButton) {
+                e.preventDefault();
+                this.ui.modalKey('primary');
+            }
+            return;
+        }
+        if (e.metaKey || e.ctrlKey || e.altKey) return;
+        if (e.code.startsWith('Arrow')) {
+            e.preventDefault();
+            this.panKeys.add(e.code);
+            return;
+        }
+        if (e.repeat) return;
+        if (e.code === 'Space') {
+            if (onButton) return; // ボタンに合っているときは、そのボタンを押す
+            e.preventDefault();
+            this.togglePause();
+            return;
+        }
+        const allies = this.s.units.filter((u) => u.side === 'ally');
+        const digit = /^(Digit|Numpad)([1-9])$/.exec(e.code);
+        if (digit) {
+            const u = allies[Number(digit[2]) - 1];
+            if (u) this.selectFromCard(u.id);
+            return;
+        }
+        switch (e.code) {
+            case 'Escape':
+                if (this.pending !== 'none') this.pending = 'none';
+                else this.selectedId = null;
+                break;
+            case 'KeyM':
+                this.command('move');
+                break;
+            case 'KeyA':
+                this.command('attack');
+                break;
+            case 'KeyH':
+                this.command('hold');
+                break;
+            case 'KeyR':
+                this.command('retreat');
+                break;
+            case 'Equal':
+            case 'NumpadAdd':
+                this.zoomButton(1);
+                break;
+            case 'Minus':
+            case 'NumpadSubtract':
+                this.zoomButton(-1);
+                break;
+            case 'Digit0':
+            case 'Numpad0':
+                this.zoomButton(0);
+                break;
+            default:
+                return;
+        }
+        e.preventDefault();
+    }
+}
+
+/** 地図の上の地形の名札（丘・林・湿地・退き口） */
+function terrainLabelsFor(s: BattleState): { id: string; text: string; x: number; z: number; y: number }[] {
+    const out: { id: string; text: string; x: number; z: number; y: number }[] = [];
+    const names: Record<string, string> = { hill: '丘', woods: '林（中は敵から見えない）', marsh: '湿地（動きが遅い）' };
+    s.map.terrain.forEach((a, i) => {
+        const name = names[a.kind];
+        if (!name) return;
+        if (a.circle) out.push({ id: `t${i}`, text: name, x: a.circle.cx + a.circle.r * 0.55, z: a.circle.cz + a.circle.r * 0.75, y: 2 });
+        // 四角の区域は真ん中より少し南（別働隊が着く所・通り道の名札と重ならないように）
+        else if (a.rect) out.push({ id: `t${i}`, text: name, x: (a.rect.x0 + a.rect.x1) / 2, z: Math.min((a.rect.z0 + a.rect.z1) / 2 + 30, s.map.depth / 2 - 30), y: 1 });
+    });
+    const ex = s.map.exits;
+    out.push({ id: 'exit-ally', text: '味方の退き口', x: ex.ally.x + 28, z: ex.ally.z - 6, y: 0 });
+    out.push({ id: 'exit-enemy', text: '敵の退き口', x: ex.enemy.x + 26, z: ex.enemy.z + 14, y: 0 });
+    return out;
+}
+
+// ---------------------------------------------------------------- 開発時の確認用（本番には入らない）
+
+function exposeDev(run: BattleRun): void {
+    const api = {
+        active: true,
+        get state() {
+            return run.s;
+        },
+        get ui() {
+            return { selectedId: run.selectedId, pending: run.pending, paused: run.paused, started: run.started, speed: run.speed, resultShown: run.resultShown, modal: run.ui.modalOpen };
+        },
+        get camera() {
+            return { ...run.view.cam, maxDist: run.view.maxDist };
+        },
+        /** 表示（three の場面・カメラ）。確認用 */
+        get view() {
+            return run.view;
+        },
+        /** 合戦の時間を一気に進める（命令の台本 script を刻みごとに呼べる） */
+        fastForward(seconds: number, script?: (s: BattleState) => void) {
+            const end = run.s.t + seconds;
+            const events: BattleEvent[] = [];
+            while (run.s.t < end - 1e-9 && !run.s.result) {
+                script?.(run.s);
+                events.push(...stepBattle(run.s, 0.1));
+            }
+            for (const e of events.slice(-4)) {
+                const tone = eventTone(run.s, e);
+                if (tone) run.ui.toast(e.text, tone, e.unitId);
+            }
+            return { t: run.s.t, result: run.s.result, events: events.length };
+        },
+        order: (unitId: string, o: Order) => issueOrder(run.s, unitId, o),
+        allRetreat: () => orderAllRetreat(run.s),
+        setTimeScale(k: number) {
+            run.devScale = Math.max(0, Math.min(40, k));
+        },
+        pause(p?: boolean) {
+            run.paused = p ?? !run.paused;
+        },
+        start: () => run.start(),
+        select(id: string | null) {
+            run.selectedId = id;
+        },
+        /** 部隊の画面の位置（CSS px、ページの左上から）。実際のクリック・タップの確認に使う */
+        screenOf(unitId: string) {
+            const i = run.s.units.findIndex((u) => u.id === unitId);
+            if (i < 0) return null;
+            const p = run.view.unitPos(i);
+            const u = run.s.units[i];
+            const r = appContext().renderer.domElement.getBoundingClientRect();
+            const q = run.view.project(p.shown ? p.x : u.x, 2, p.shown ? p.z : u.z);
+            return { x: q.x + r.left, y: q.y + r.top, shown: p.shown };
+        },
+        screenOfGround(x: number, z: number) {
+            const r = appContext().renderer.domElement.getBoundingClientRect();
+            const q = run.view.project(x, 0, z);
+            return { x: q.x + r.left, y: q.y + r.top };
+        },
+        centerOn: (x: number, z: number, dist?: number) => {
+            if (dist) run.view.cam.dist = dist;
+            run.view.centerOn(x, z);
+        },
+        /** 台本を実時間の進みに合わせて刻みごとに呼ぶ（null で外す） */
+        setScript(fn: ((s: BattleState) => void) | null) {
+            run.script = fn;
+        },
+        info() {
+            const i = appContext().renderer.info;
+            return { calls: i.render.calls, triangles: i.render.triangles, geometries: i.memory.geometries, textures: i.memory.textures };
+        },
+    };
+    Object.assign(window, { __battle: api });
+}
