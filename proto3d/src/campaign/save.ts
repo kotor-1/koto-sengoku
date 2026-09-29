@@ -367,19 +367,7 @@ export class CampaignSaveStore {
     }
 
     private write(key: string, json: string): SaveFailureReason | null {
-        const s = this.storage!;
-        try {
-            s.setItem(key, json);
-        } catch (e) {
-            return isQuotaError(e) ? 'quota' : isSecurityError(e) ? 'unavailable' : 'unknown';
-        }
-        let back: string | null;
-        try {
-            back = s.getItem(key);
-        } catch {
-            return 'verify';
-        }
-        return back === json ? null : 'verify';
+        return writeVerified(this.storage!, key, json);
     }
 
     private read(key: string): LoadResult {
@@ -395,6 +383,24 @@ export class CampaignSaveStore {
         if (!data) return { status: 'corrupt', message: CORRUPT_MESSAGE };
         return { status: 'ok', data, state: stateFromSave(data) };
     }
+}
+
+/**
+ * 書き込んで、読み戻して一致を確かめる（歴史分岐シナリオの保存も同じ決まりで使う）。確かめられたら null、だめなら理由。
+ */
+export function writeVerified(s: StorageLike, key: string, json: string): SaveFailureReason | null {
+    try {
+        s.setItem(key, json);
+    } catch (e) {
+        return isQuotaError(e) ? 'quota' : isSecurityError(e) ? 'unavailable' : 'unknown';
+    }
+    let back: string | null;
+    try {
+        back = s.getItem(key);
+    } catch {
+        return 'verify';
+    }
+    return back === json ? null : 'verify';
 }
 
 /**

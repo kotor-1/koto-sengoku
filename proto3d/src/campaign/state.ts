@@ -188,11 +188,20 @@ const UNIT_STATUSES: readonly UnitStatus[] = ['ready', 'routed', 'withdrawn', 'd
 export const OUTCOME_MAX_SEC = 3600;
 const MAX_UNITS = 32;
 
+/** parseBattleOutcome の選び（省けば架空の第一章の決まり：家は琴坂・鷲尾・田代・大森だけ、約束・能力の記録は写さない） */
+export interface ParseOutcomeOptions {
+    /** 受け付ける家 */
+    clans?: readonly ClanId[];
+    /** 約束（pledge）と能力の記録（abilitiesUsed）も検査して写す（歴史分岐シナリオ） */
+    extras?: boolean;
+}
+
 /**
  * 合戦の結果を検査して写しを返す。形・値の範囲・結果と理由の組み合わせがおかしければ null。
  * 兵は 0 以上の整数に丸めない（そのまま検査する）：合戦の側は整数で返す約束。
  */
-export function parseBattleOutcome(v: unknown): BattleOutcome | null {
+export function parseBattleOutcome(v: unknown, opts: ParseOutcomeOptions = {}): BattleOutcome | null {
+    const clans = opts.clans ?? CLANS;
     if (!isObject(v)) return null;
     if (!RESULT_KINDS.includes(v.result as BattleResultKind)) return null;
     const result = v.result as BattleResultKind;
@@ -208,7 +217,7 @@ export function parseBattleOutcome(v: unknown): BattleOutcome | null {
         if (typeof u.id !== 'string' || u.id.length === 0 || u.id.length > 64 || ids.has(u.id)) return null;
         ids.add(u.id);
         if (!SIDES.includes(u.side as Side)) return null;
-        if (!CLANS.includes(u.clan as ClanId)) return null;
+        if (!clans.includes(u.clan as ClanId)) return null;
         if (u.leaderId !== undefined && (typeof u.leaderId !== 'string' || u.leaderId.length > 64)) return null;
         if (!isStrength(u.startStrength) || !isStrength(u.endStrength)) return null;
         if ((u.endStrength as number) > (u.startStrength as number)) return null;
@@ -224,7 +233,25 @@ export function parseBattleOutcome(v: unknown): BattleOutcome | null {
         if (typeof u.leaderId === 'string') c.leaderId = u.leaderId;
         units.push(c);
     }
-    return { result, reason, elapsedSec: v.elapsedSec, units };
+    const out: BattleOutcome = { result, reason, elapsedSec: v.elapsedSec, units };
+    if (opts.extras) {
+        if (v.pledge !== undefined) {
+            const p = v.pledge;
+            if (!isObject(p) || typeof p.targetId !== 'string' || !ids.has(p.targetId) || (p.result !== 'kept' && p.result !== 'broken')) return null;
+            out.pledge = { targetId: p.targetId, result: p.result };
+        }
+        if (v.abilitiesUsed !== undefined) {
+            const a = v.abilitiesUsed;
+            if (!isObject(a)) return null;
+            const used: Record<string, number> = {};
+            for (const [k, t] of Object.entries(a)) {
+                if (!ids.has(k) || !isFiniteNumber(t) || t < 0 || t > OUTCOME_MAX_SEC) return null;
+                used[k] = t;
+            }
+            out.abilitiesUsed = used;
+        }
+    }
+    return out;
 }
 
 function isStrength(v: unknown): boolean {
