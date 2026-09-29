@@ -12,6 +12,9 @@
  *   - 指を離した・キャンセル・捕捉が外れたら、その指の操作は終わり（触り直すまで再開しない）。
  *   - 画面を離れた（blur・visibilitychange・pagehide）ら、自動で指揮（一時停止）にして入力を離す。
  *   - キー：Space 指揮／再開、1〜4 部隊、M 移動・A 攻撃・H 防衛・待機・R 撤退、Esc 取り消し、矢印で地図、+ − 0 で寄る・引く・全体。
+ *     特殊能力のある合戦（歴史分岐）は F（または「能力」）で選んだ部隊の能力を使う。援護（対象を選ぶ能力）は、その後で味方の部隊・札を押す。
+ *     不適切な対象は理由を出すだけで回数を減らさない（abilities.ts の useAbility が確かめる）。指揮中（一時停止）も使える。
+ * - 戦前の約束（BattleSetup.pledge）：対象の部隊の名札を目立たせ、南の「味方の陣」を地図に描き、条件の欄に進み具合、結果の画面に勝敗と別に結果を出す。
  * - 結果を出し、「続ける」で後片付け（形・材質・画像・DOM・listener）をして探索へ戻り（exitMode）、結果を返す。
  */
 import { appContext, enterMode, exitMode, registerBattleRunner, type AppContext, type Mode } from '../app/modes';
@@ -20,7 +23,24 @@ import type { BattleOutcome, BattleRunHooks, BattleSetup, Order } from './types'
 import { canCommand, createBattle, issueOrder, orderAllRetreat, stepBattle, unitById, type BattleEvent, type BattleState } from './sim';
 import { BattleView } from './view';
 import { BattleUi, type CommandKind } from './battleUi';
-import { REASON_TEXT, RESULT_LABEL, eventTone, fmtClock, orderAck, refusalText, resolveTap, resultRows, type Pending, type Selected, type TapTarget } from './control';
+import { useAbility } from './abilities';
+import {
+    RESULT_LABEL,
+    abilitiesUsedText,
+    abilityPanelModel,
+    eventTone,
+    fmtClock,
+    orderAck,
+    pledgeResultModel,
+    refusalText,
+    resolveTap,
+    resultRows,
+    scenarioTexts,
+    unitMarksText,
+    type Pending,
+    type Selected,
+    type TapTarget,
+} from './control';
 
 /** 木の読み込みを待つ最長（これを過ぎたら円すいの木のまま始められる） */
 const TREE_TIMEOUT_MS = 12000;
@@ -93,6 +113,8 @@ class BattleRun implements Mode {
     private readonly panKeys = new Set<string>();
     script: ((s: BattleState) => void) | null = null;
     private scriptAcc = 0;
+    /** 知らせに出した出来事の数（止めている間に使った能力の知らせを 1 回だけ出すため） */
+    private seenEvents = 0;
     private readonly terrainLabels: { id: string; text: string; x: number; z: number; y: number }[];
 
     constructor(
@@ -108,6 +130,7 @@ class BattleRun implements Mode {
             togglePause: () => this.togglePause(),
             setSpeed: (k) => (this.speed = k),
             command: (c) => this.command(c),
+            ability: () => this.ability(),
             cancelPending: () => (this.pending = 'none'),
             allRetreat: () => void this.askAllRetreat(),
             selectUnit: (id) => this.selectFromCard(id),
@@ -120,7 +143,7 @@ class BattleRun implements Mode {
         this.bindInput();
         const c = this.ctx.renderer.domElement;
         this.resize(c.clientWidth || window.innerWidth, c.clientHeight || window.innerHeight);
-        this.ui.showBriefing(`合戦「${this.s.map.name}」（仮シナリオ）`, setup.briefing, false);
+        this.ui.showBriefing(`合戦「${this.s.map.name}」（${scenarioTexts(this.s).titleNote}）`, setup.briefing, false);
         this.loadTrees();
         if (import.meta.env.DEV) exposeDev(this);
     }
@@ -197,7 +220,9 @@ class BattleRun implements Mode {
         // 見えなくなった敵・戦場を離れた部隊の選択は外す
         const sel = this.selectedId ? unitById(this.s, this.selectedId) : undefined;
         if (sel && sel.side === 'enemy' && !(sel.present && sel.seenBy.ally)) this.selectedId = null;
-        if (sel && sel.side === 'ally' && !canCommand(this.s, sel)) this.pending = 'none';
+        if (sel && sel.side === 'ally' && this.pending !== 'ability' && !canCommand(this.s, sel)) this.pending = 'none';
+        // 援護の対象選び：選んだ部隊の能力が使えなくなったら（崩れた・合戦が終わった）やめる
+        if (this.pending === 'ability' && !(sel && abilityPanelModel(this.s, sel.id)?.usable)) this.pending = 'none';
 
         this.view.update(this.s, dt, { selectedId: this.selectedId, pending: this.pending });
         this.placeLabels();
@@ -218,6 +243,7 @@ class BattleRun implements Mode {
     }
 
     private onEvents(events: BattleEvent[]): void {
+        this.seenEvents = this.s.events.length;
         for (const e of events) {
             const tone = eventTone(this.s, e);
             if (tone) this.ui.toast(e.text, tone, e.unitId);
@@ -226,18 +252,26 @@ class BattleRun implements Mode {
 
     private placeLabels(): void {
         const s = this.s;
+        const hasAbilities = s.abilityList.length > 0;
+        const pledgeId = s.pledge?.targetId ?? null;
         for (let i = 0; i < s.units.length; i++) {
             const u = s.units[i];
             const a = this.view.labelAnchor(i);
             if (a.shown) {
                 const p = this.view.project(a.x, a.y, a.z);
-                const extra = u.status === 'routed' ? ' 敗走' : ` ${Math.round(u.strength)}`;
+                let extra = u.status === 'routed' ? ' 敗走' : ` ${Math.round(u.strength)}`;
+                // 特殊能力が効いている印（号令・踏みとどまる・退路の守り・援護など）
+                if (hasAbilities) {
+                    const marks = unitMarksText(s, u.id);
+                    if (marks) extra += `［${marks}］`;
+                }
                 this.ui.label(u.id, u.name, u.side, p.x, p.y, !p.off, extra);
             } else if (u.side === 'ally' && !u.arrived && u.status === 'ready') {
                 const p = this.view.project(u.x, 4, u.z);
                 this.ui.label(u.id, u.name, 'ally', p.x, p.y, !p.off, ` 到着まで ${Math.max(0, Math.ceil(u.arriveAt - s.t))} 秒`);
             } else this.ui.label(u.id, '', u.side, 0, 0, false);
             this.ui.markLabel(u.id, 'sel', this.selectedId === u.id);
+            if (pledgeId) this.ui.markLabel(u.id, 'pledge', pledgeId === u.id);
         }
         for (const t of this.terrainLabels) {
             const p = this.view.project(t.x, t.y, t.z);
@@ -275,7 +309,62 @@ class BattleRun implements Mode {
         else this.order(sel.id, { type: c });
     }
 
+    /** 「能力」・F：選んだ味方の部隊の特殊能力を使う（援護は対象選びへ。使えなければ理由を出すだけで回数は減らない） */
+    private ability(): void {
+        if (this.s.result || !this.started) return;
+        const sel = this.selectedId ? unitById(this.s, this.selectedId) : undefined;
+        if (!sel) {
+            this.ui.flash('先に味方の部隊を選んでください');
+            return;
+        }
+        if (sel.side !== 'ally') {
+            const em = abilityPanelModel(this.s, sel.id);
+            this.ui.flash(em ? `「${em.name}」は敵方の武将の能力。操作できない（敵の考えが使う）` : '敵の部隊は操作できない（先に味方の部隊を選んでください）', 2600);
+            return;
+        }
+        const m = abilityPanelModel(this.s, sel.id);
+        if (!m) {
+            this.ui.flash(`${sel.name}には特殊能力がない（率いる武将のいない部隊）`);
+            return;
+        }
+        if (this.pending === 'ability') {
+            // もう一度押すと取り消し
+            this.pending = 'none';
+            this.ui.flash('援護の対象選びをやめた');
+            return;
+        }
+        if (!m.usable) {
+            this.ui.flash(`「${m.name}」は使えない：${m.reason || m.stateText}`, 2600);
+            return;
+        }
+        if (m.info.target === 'ally_unit') {
+            this.pending = 'ability';
+            return;
+        }
+        this.useAbilityOn(undefined);
+    }
+
+    /** 能力を使う（targetId は援護の対象）。断られたら理由を出す（対象選びは続ける） */
+    private useAbilityOn(targetId: string | undefined): void {
+        const sel = this.selectedId ? unitById(this.s, this.selectedId) : undefined;
+        if (!sel) return;
+        const name = abilityPanelModel(this.s, sel.id)?.name ?? '能力';
+        const r = useAbility(this.s, sel.id, targetId);
+        if (r.ok) {
+            this.pending = 'none';
+            const tgt = targetId ? unitById(this.s, targetId)?.name : null;
+            this.ui.flash(`${sel.name}：「${name}」${tgt ? `— ${tgt}を援護` : ''}${this.paused ? '（再開すると時間が進む）' : ''}`, 2400);
+            // 使った知らせ（sim が記録した ability の出来事）をすぐ出す（止めている間も）
+            this.onEvents(this.s.events.slice(this.seenEvents));
+        } else this.ui.flash(`${targetId ? '対象にできない' : '使えない'}：${r.reason ?? ''}`, 2600);
+    }
+
     private selectFromCard(id: string): void {
+        if (this.pending === 'ability' && this.selectedId) {
+            // 援護の対象選びの途中：札（1〜4 キー）でも対象を選べる
+            this.useAbilityOn(id);
+            return;
+        }
         if (this.selectedId === id) {
             this.focusUnit(id);
             return;
@@ -351,21 +440,19 @@ class BattleRun implements Mode {
         this.resultShown = true;
         this.releaseInput();
         const { rows, lost, start } = resultRows(this.s, o);
-        const notes: Record<string, string> = {
-            victory: '鷲尾勢は国境から兵を引いた。',
-            defeat: '敗れはしたが、若殿は生きている。兵をまとめ直して次に備える。',
-            retreat: '勝敗は決まらなかった。兵を失いすぎないうちに引いた。',
-        };
+        const sc = scenarioTexts(this.s);
         this.ui.showResult({
             kind: o.result,
             title: RESULT_LABEL[o.result],
-            reason: REASON_TEXT[o.reason],
+            reason: sc.reasons[o.reason],
             time: fmtClock(o.elapsedSec),
             rows,
             lost,
             start,
-            note: notes[o.result],
+            note: sc.notes[o.result],
             save: this.decidedNote ?? null,
+            pledge: pledgeResultModel(this.s, o),
+            abilities: abilitiesUsedText(this.s, o),
         });
     }
 
@@ -520,7 +607,8 @@ class BattleRun implements Mode {
         const layer = this.ui.input;
         const sel = this.selected();
         let cur = '';
-        if (u && u.side === 'ally') cur = 'pointer';
+        if (u && this.pending === 'ability') cur = 'copy';
+        else if (u && u.side === 'ally') cur = 'pointer';
         else if (u && sel?.commandable) cur = 'crosshair';
         else if (u) cur = 'help';
         else if (sel?.commandable) cur = 'cell';
@@ -565,6 +653,9 @@ class BattleRun implements Mode {
                 break;
             case 'hint':
                 this.ui.flash(act.text);
+                break;
+            case 'abilityTarget':
+                this.useAbilityOn(act.unitId);
                 break;
             case 'none':
                 break;
@@ -625,6 +716,10 @@ class BattleRun implements Mode {
             case 'KeyR':
                 this.command('retreat');
                 break;
+            case 'KeyF':
+                if (this.s.abilityList.length === 0) return;
+                this.ability();
+                break;
             case 'Equal':
             case 'NumpadAdd':
                 this.zoomButton(1);
@@ -659,6 +754,9 @@ function terrainLabelsFor(s: BattleState): { id: string; text: string; x: number
     out.push({ id: 'exit-ally', text: '味方の退き口', x: ex.ally.x + 28, z: ex.ally.z - 6, y: 0 });
     // 敵の退き口は敵本陣・予備隊（丘の上と後ろ）の名札と重ならないよう、東へ離して置く
     out.push({ id: 'exit-enemy', text: '敵の退き口', x: ex.enemy.x + 75, z: ex.enemy.z + 10, y: 0 });
+    // 戦前の約束の安全地点（南の「味方の陣」）。輪（view.ts）の西の縁に名札
+    const pz = s.pledge?.safeZone;
+    if (pz) out.push({ id: 'safe-zone', text: '味方の陣（約束の安全地点）', x: pz.cx - pz.r - 30, z: pz.cz + 4, y: 0 });
     return out;
 }
 
@@ -695,6 +793,8 @@ function exposeDev(run: BattleRun): void {
             return { t: run.s.t, result: run.s.result, events: events.length };
         },
         order: (unitId: string, o: Order) => issueOrder(run.s, unitId, o),
+        /** 状態を直接書き換える確認用（画面の確認では使わず、報告では「直接操作」と書く） */
+        useAbility: (unitId: string, targetId?: string) => useAbility(run.s, unitId, targetId),
         allRetreat: () => orderAllRetreat(run.s),
         setTimeScale(k: number) {
             run.devScale = Math.max(0, Math.min(40, k));

@@ -6,12 +6,27 @@
  * - 右上：指揮（一時停止）／再開・速さ ×1 ×2・全軍撤退（確かめてから）
  * - 右：寄る・引く・全体
  * - 下：味方の部隊の札（兵・士気・今の命令・交戦相手）と、命令のボタン（移動・攻撃・防衛・待機・撤退）
+ * - 特殊能力のある合戦（歴史分岐）だけ：命令のボタンに「能力」、左上に選んだ部隊の能力の欄（能力名・対象・範囲・効果・代償・
+ *   使えるか／使えない理由。ゲーム用の創作と断る）。
+ * - 戦前の約束のある合戦だけ：左上の条件の見出しのすぐ下に約束の行（対象・陣に入った秒数・兵の割合。畳んでも見える）。
  * - 地図の上の名札、合戦の前の説明、全軍撤退の確かめ、結果
  * ボタンは押した瞬間（pointerdown）に反応し、その後の click は無視する（キーボードの Enter／Space の click だけ受ける）。
  * 画面を押して地図を動かす面（input）は一番下に敷き、つなぎがそこへ指・マウスの処理を付ける。
  */
 import type { BattleState } from './sim';
-import { CONDITIONS, armySummary, cardModel, timeText, type CardModel, type Pending, type ResultRow } from './control';
+import {
+    CONDITIONS,
+    abilityPanelModel,
+    armySummary,
+    cardAbilityText,
+    cardModel,
+    pledgeLineModel,
+    scenarioTexts,
+    timeText,
+    type CardModel,
+    type Pending,
+    type ResultRow,
+} from './control';
 import type { Side } from './types';
 
 export type CommandKind = 'move' | 'attack' | 'hold' | 'retreat';
@@ -21,6 +36,8 @@ export interface UiHandlers {
     togglePause(): void;
     setSpeed(k: 1 | 2): void;
     command(c: CommandKind): void;
+    /** 選んだ部隊の特殊能力を使う（対象を選ぶ能力は、この後で味方の部隊を押す） */
+    ability(): void;
     cancelPending(): void;
     allRetreat(): void;
     selectUnit(id: string): void;
@@ -48,6 +65,10 @@ export interface ResultModel {
     note: string;
     /** 結果の保存（章の進行が、勝ち負けが決まった時に保存した結果）。null なら出さない */
     save?: { ok: boolean; text: string } | null;
+    /** 戦前の約束の結果（勝敗とは別の欄）。約束の仕組みのない合戦は null */
+    pledge?: { result: 'kept' | 'broken' | 'declined'; title: string; text: string } | null;
+    /** 使った特殊能力（能力のない合戦は空） */
+    abilities?: string;
 }
 
 type Tone = 'good' | 'bad' | 'warn' | 'info';
@@ -106,6 +127,7 @@ interface CardEls {
     morText: HTMLElement;
     ord: HTMLElement;
     eng: HTMLElement;
+    abl: HTMLElement;
     last: string;
 }
 
@@ -126,6 +148,14 @@ export class BattleUi {
     private readonly allRetBtn: HTMLButtonElement;
     private readonly cards = new Map<string, CardEls>();
     private readonly cmdBtns: Record<CommandKind, HTMLButtonElement>;
+    /** 「能力」のボタン（特殊能力のある合戦だけ） */
+    private readonly abilBtn: HTMLButtonElement | null = null;
+    /** 選んだ部隊の能力の欄 */
+    private readonly abil: HTMLDivElement;
+    /** 条件の見出しの下の、約束の行 */
+    private readonly pledgeEl: HTMLDivElement;
+    private readonly hasAbility: boolean;
+    private readonly tag: string;
     private readonly hintEl: HTMLDivElement;
     private readonly hintText: HTMLElement;
     private readonly hintCancel: HTMLButtonElement;
@@ -155,9 +185,12 @@ export class BattleUi {
         r.append(this.input, this.labels);
 
         // ---- 左上：戦場・残り時間・条件 ----
+        const sc = scenarioTexts(s);
+        this.tag = sc.tag;
+        this.hasAbility = s.abilityList.some((a) => a.side === 'ally');
         const obj = el('div', 'b-obj');
         this.objHead = button('b-obj-head', '', '勝ち負けの条件を開く／閉じる');
-        this.objHead.append(el('b', 'b-obj-name', s.map.name), el('span', 'b-tag', '仮シナリオ'));
+        this.objHead.append(el('b', 'b-obj-name', s.map.name), el('span', 'b-tag', sc.tag));
         this.objTime = el('span', 'b-time');
         this.objHead.append(this.objTime, el('span', 'b-caret', '条件'));
         const body = el('div', 'b-obj-body');
@@ -168,13 +201,18 @@ export class BattleUi {
         }
         this.objArmy = { enemy: el('div', 'b-army enemy'), ally: el('div', 'b-army ally') };
         body.append(this.objArmy.enemy, this.objArmy.ally);
-        obj.append(this.objHead, body);
+        // 約束の行（畳んでも見える。約束のない合戦では出さない）
+        this.pledgeEl = el('div', 'b-pledge');
+        this.pledgeEl.hidden = true;
+        obj.append(this.objHead, this.pledgeEl, body);
         if (opts.touch) obj.classList.add('closed');
         press(this.objHead, () => obj.classList.toggle('closed'));
         this.inspect = el('div', 'b-inspect');
         this.inspect.hidden = true;
+        this.abil = el('div', 'b-abil');
+        this.abil.hidden = true;
         const left = el('div', 'b-topleft');
-        left.append(obj, this.inspect);
+        left.append(obj, this.inspect, this.abil);
 
         // ---- 上の真ん中：一時停止の印・知らせ ----
         const mid = el('div', 'b-topmid');
@@ -227,6 +265,13 @@ export class BattleUi {
             press(this.cmdBtns[k], () => h.command(k));
             cmds.append(this.cmdBtns[k]);
         }
+        if (this.hasAbility) {
+            // 特殊能力のある合戦だけ（架空の第一章の命令のボタンは今までどおり 4 つ）
+            cmds.classList.add('with-ability');
+            this.abilBtn = button('b-btn b-cmd b-abil-btn', '能力', '選んだ部隊の特殊能力を使う');
+            press(this.abilBtn, () => h.ability());
+            cmds.insertBefore(this.abilBtn, this.cmdBtns.hold);
+        }
         bottom.append(cards, cmds);
 
         // ---- 命令の途中の案内 ----
@@ -260,9 +305,12 @@ export class BattleUi {
         mor.append(morBar, morText);
         const ord = el('div', 'b-ord');
         const eng = el('div', 'b-eng');
-        root.append(head, str, mor, ord, eng);
+        const abl = el('span', 'b-abl');
+        const line = el('div', 'b-card-l');
+        line.append(ord, eng, abl);
+        root.append(head, str, mor, line);
         press(root, () => this.h.selectUnit(id));
-        const c: CardEls = { root, badge, strBar, strText, morBar, morText, ord, eng, last: '' };
+        const c: CardEls = { root, badge, strBar, strText, morBar, morText, ord, eng, abl, last: '' };
         (kind as HTMLElement).dataset.kind = '';
         this.cards.set(id, c);
         return c;
@@ -281,8 +329,9 @@ export class BattleUi {
             if (u.side !== 'ally') continue;
             const c = this.cards.get(u.id)!;
             const m = cardModel(s, u);
-            this.fillCard(c, m, st.selectedId === u.id);
+            this.fillCard(c, m, st.selectedId === u.id, this.hasAbility ? cardAbilityText(s, u.id) : '');
         }
+        this.updatePledge(s);
         // 敵を調べている
         const sel = st.selectedId ? s.units.find((u) => u.id === st.selectedId) : undefined;
         if (sel && sel.side === 'enemy') {
@@ -294,6 +343,7 @@ export class BattleUi {
                 this.inspect.innerHTML = html;
             }
         } else if (!this.inspect.hidden) this.inspect.hidden = true;
+        this.updateAbility(s, sel?.id ?? null, st.pending);
 
         // ボタン
         const ended = !!s.result;
@@ -309,27 +359,41 @@ export class BattleUi {
             setClass(this.cmdBtns[k], 'off', !can);
             setClass(this.cmdBtns[k], 'on', can && st.pending === k);
         }
+        if (this.abilBtn) {
+            // 押せる：選んだ味方の能力が今使える（使えない時も押すと理由を出すので、見た目だけ薄くする）
+            const pm = sel && sel.side === 'ally' ? abilityPanelModel(s, sel.id) : null;
+            setClass(this.abilBtn, 'dim', !(pm && pm.usable));
+            setClass(this.abilBtn, 'on', st.pending === 'ability');
+            // 敵を調べているときも押せる（押すと「敵方の能力は操作できない」と出す）
+            setClass(this.abilBtn, 'off', ended || !st.started || !sel);
+        }
         setClass(this.root, 'paused', st.paused && st.started && !ended);
         setClass(this.root, 'pending-attack', st.pending === 'attack');
         setClass(this.root, 'pending-move', st.pending === 'move');
+        setClass(this.root, 'pending-ability', st.pending === 'ability');
         this.pausePill.hidden = !(st.paused && st.started && !ended);
 
         // 命令の途中の案内（または短い知らせ）
         let hint = '';
         if (st.pending === 'move') hint = `${sel?.name ?? ''}：移動先の地面を押してください`;
         else if (st.pending === 'attack') hint = `${sel?.name ?? ''}：攻撃する敵の部隊を押してください`;
+        else if (st.pending === 'ability') hint = `${sel?.name ?? ''}：援護する味方の部隊を押してください（札でも選べる）`;
         const now = performance.now();
         const flash = now < this.flashTimer ? this.flashText : '';
-        const text = hint || flash;
+        // 短い知らせ（断った理由など）は、命令の途中の案内より先に出す（案内の「やめる」は残す）
+        const text = flash || hint;
         this.hintEl.hidden = !text;
         this.hintCancel.hidden = !hint;
         setText(this.hintText, text);
     }
 
-    private fillCard(c: CardEls, m: CardModel, selected: boolean): void {
-        const sig = `${m.strength}|${m.morale}|${m.orderText}|${m.engageText}|${m.badge}|${selected}|${m.commandable}`;
+    private fillCard(c: CardEls, m: CardModel, selected: boolean, abl: string): void {
+        const sig = `${m.strength}|${m.morale}|${m.orderText}|${m.engageText}|${m.badge}|${selected}|${m.commandable}|${abl}`;
         if (sig === c.last) return;
         c.last = sig;
+        setText(c.abl, abl);
+        c.abl.hidden = !abl;
+        c.abl.dataset.state = abl.endsWith('可') ? 'ready' : abl.endsWith('秒') ? 'active' : 'spent';
         const kindEl = c.root.querySelector('.b-kind') as HTMLElement;
         setText(kindEl, m.kind);
         setText(c.badge, m.badge);
@@ -345,6 +409,57 @@ export class BattleUi {
         setClass(c.root, 'gone', !m.commandable && m.badge !== '' && m.badge !== '到着待ち');
         setClass(c.root, 'waiting', m.badge === '到着待ち');
         c.root.setAttribute('aria-pressed', String(selected));
+    }
+
+    /** 約束の行（約束のない合戦は隠す） */
+    private updatePledge(s: BattleState): void {
+        const p = pledgeLineModel(s);
+        if (!p) {
+            if (!this.pledgeEl.hidden) this.pledgeEl.hidden = true;
+            return;
+        }
+        this.pledgeEl.hidden = false;
+        const html = `<b>${escapeHtml(p.title)}</b><span>${escapeHtml(p.status)}</span>`;
+        if (this.pledgeEl.dataset.html !== html) {
+            this.pledgeEl.dataset.html = html;
+            this.pledgeEl.innerHTML = html;
+        }
+        if (this.pledgeEl.dataset.tone !== p.tone) this.pledgeEl.dataset.tone = p.tone;
+    }
+
+    /** 選んだ部隊の能力の欄（能力名・対象・範囲・効果・代償・使えるか） */
+    private updateAbility(s: BattleState, selId: string | null, pending: Pending): void {
+        const u = selId ? s.units.find((x) => x.id === selId) : undefined;
+        const m = u ? abilityPanelModel(s, u.id) : null;
+        let html = '';
+        let side = '';
+        if (m) {
+            side = m.info.side;
+            const rows: string[] = [];
+            rows.push(`<div class="b-ab-h"><b>能力「${escapeHtml(m.name)}」</b><span class="b-ab-st ${m.tone}">${escapeHtml(m.stateText)}</span></div>`);
+            if (m.reason && (m.tone === 'blocked' || m.tone === 'enemy')) rows.push(`<div class="b-ab-why">${escapeHtml(m.info.controllable ? `使えない：${m.reason}` : m.reason)}</div>`);
+            if (pending === 'ability' && m.usable) rows.push(`<div class="b-ab-why go">援護する味方を押す（${m.info.range} m 以内・${m.info.validTargets.length} 部隊）</div>`);
+            rows.push(`<div class="b-ab-r"><i>対象</i>${escapeHtml(m.short.target)}（範囲 ${m.info.range} m）</div>`);
+            rows.push(`<div class="b-ab-r"><i>効果</i>${escapeHtml(m.short.effect)}</div>`);
+            rows.push(`<div class="b-ab-r"><i>代償</i>${escapeHtml(m.short.cost)}</div>`);
+            rows.push(`<div class="b-ab-r b-ab-uses"><i>回数</i>${escapeHtml(m.uses)}${m.info.controllable ? '' : '・プレイヤーは操作できない'}</div>`);
+            rows.push(`<div class="b-ab-long">${escapeHtml(m.effectText)}／代償：${escapeHtml(m.costText)}</div>`);
+            rows.push(`<div class="b-ab-note">${escapeHtml(m.note)}</div>`);
+            html = rows.join('');
+        } else if (u && u.side === 'ally' && this.hasAbility) {
+            html = `<div class="b-ab-h"><b>特殊能力なし</b></div><div class="b-ab-r">率いる武将（能力を持つ人物）のいない部隊は、特殊能力を使えない</div>`;
+            side = 'ally';
+        }
+        if (!html) {
+            if (!this.abil.hidden) this.abil.hidden = true;
+            return;
+        }
+        this.abil.hidden = false;
+        if (this.abil.dataset.html !== html) {
+            this.abil.dataset.html = html;
+            this.abil.innerHTML = html;
+        }
+        if (this.abil.dataset.side !== side) this.abil.dataset.side = side;
     }
 
     // ---------------------------------------------------------------- 名札
@@ -376,6 +491,7 @@ export class BattleUi {
 
     /** 選んだ名札を目立たせる */
     markLabel(id: string, cls: string, on: boolean): void {
+        if (!this.labelEls.has(id)) return;
         const l = this.labelEls.get(id);
         if (l) setClass(l.e, cls, on);
     }
@@ -470,6 +586,10 @@ export class BattleUi {
             'ドラッグで地図を動かす、ホイールで寄る・引く。M 移動・A 攻撃・H 防衛・待機・R 撤退・Esc 取り消し。',
             'Space で指揮（一時停止）／再開。止めたまま命令を出せる。',
         ];
+        if (this.hasAbility) {
+            touchLines.push('部隊を選ぶと左上に特殊能力（ゲーム用の創作）が出る。「能力」で使う（援護は、その後で味方の部隊を押す）。指揮中も使える。');
+            pcLines.push('部隊を選ぶと左上に特殊能力（ゲーム用の創作）が出る。「能力」ボタンか F で使う（援護は、その後で味方の部隊をクリック。Esc で取り消し）。');
+        }
         for (const l of this.opts.touch ? touchLines : pcLines) how.append(el('p', '', l));
         box.append(how);
         const b = button('b-btn b-primary', ready ? '合戦を始める' : '準備中…', '合戦を始める');
@@ -513,8 +633,14 @@ export class BattleUi {
     showResult(m: ResultModel): void {
         const box = this.openModal('result', `b-result ${m.kind}`);
         const head = el('div', 'b-result-head');
-        head.append(el('h2', '', m.title), el('span', 'b-tag', '仮シナリオ'));
+        head.append(el('h2', '', m.title), el('span', 'b-tag', this.tag));
         box.append(head, el('p', 'b-reason', m.reason));
+        if (m.pledge) {
+            // 約束の結果は勝敗とは別の欄に出す（勝っても守れない・撤退しても守れた、がある）
+            const pl = el('div', `b-rpledge ${m.pledge.result}`);
+            pl.append(el('b', '', m.pledge.title), el('span', '', m.pledge.text));
+            box.append(pl);
+        }
         box.append(el('p', 'b-rtime', `合戦の時間 ${m.time}・味方の失った兵 ${m.lost.ally} / ${m.start.ally}・敵の失った兵 ${m.lost.enemy} / ${m.start.enemy}`));
         const table = el('table', 'b-rtable');
         const thead = el('tr');
@@ -536,6 +662,7 @@ export class BattleUi {
         wrap.append(table);
         box.append(wrap);
         if (m.note) box.append(el('p', 'b-note', m.note));
+        if (m.abilities) box.append(el('p', 'b-note b-rabil', m.abilities));
         if (m.save) {
             const sv = el('p', `b-rsave ${m.save.ok ? 'ok' : 'ng'}`, m.save.text);
             sv.setAttribute('role', m.save.ok ? 'status' : 'alert');

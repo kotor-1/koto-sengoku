@@ -7,6 +7,9 @@
  *   兵が減ると人形が抜け、敗走すると散って逃げる。家の色と紋の旗（のぼり）・陣営の輪（前の向きの印つき）・選んだ部隊の輪。
  * - 命令の線（移動・攻撃・撤退）と矢の線、斬り合いの印（正面は白・側面は橙・背後は赤）。
  * - 見えない敵（林の中で味方から見えていない）は描かない。
+ * - 特殊能力（歴史分岐）：効果中の範囲の輪（持つ部隊について動く）、選んだ部隊のまだ使っていない能力の範囲（薄く点滅）、
+ *   援護の結びの線（効いている間は実線、離れて外れている間は灰色の破線）、援護の対象を選んでいる間は選べる味方の輪を明るく。
+ * - 戦前の約束：南の「味方の陣」（安全地点）の輪と、対象の部隊を囲む輪（同じ色）。
  * 描画命令はおよそ 30 前後（部隊 8 のとき）。影・画面の仕上げは使わない。
  * 状態は読むだけ（sim.ts の BattleState を書き換えない）。
  */
@@ -15,6 +18,12 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { BattleMap, ClanId, Side } from './types';
 import { attackArc, elevationAt, exitPointFor, inTerrain, unitById, type BattleState, type UnitState } from './sim';
 import { CAM, clampCam, clashShift, figureCount, formationExtent, formationSlots, hash01, keepOrder, type CamState, type Pending, type Slot } from './control';
+import { ABILITY_DATA, abilityInfo } from './abilities';
+
+/** 特殊能力の範囲の輪の色（敵方の能力は赤みの色） */
+const ABILITY_COLOR: Record<string, string> = { ieyasu_rally: '#ffd76a', tadakatsu_rearguard: '#b8f36b', nagamasa_support: '#c9a7ff', enemy: '#ff8a7a' };
+/** 約束の安全地点と対象の輪の色 */
+const PLEDGE_COLOR = '#5fe0c0';
 
 /** 家の色（旗・兵の鎧） */
 export const CLAN_COLOR: Record<ClanId, string> = {
@@ -98,6 +107,11 @@ export class BattleView {
     private readonly clashSprites: THREE.Sprite[] = [];
     private readonly clashMats: Record<'front' | 'flank' | 'rear', THREE.SpriteMaterial>;
     private trees: THREE.Object3D | null = null;
+    /** 特殊能力の範囲の輪（s.abilityList の順） */
+    private readonly abilRings: { ring: THREE.Mesh; fill: THREE.Mesh; ringMat: THREE.MeshBasicMaterial; fillMat: THREE.MeshBasicMaterial }[] = [];
+    /** 約束の安全地点（輪と塗り）と、対象を囲む輪 */
+    private safeZone: { ring: THREE.Mesh; fill: THREE.Mesh } | null = null;
+    private pledgeRing: THREE.Mesh | null = null;
     private time = 0;
     private readonly m4 = new THREE.Matrix4();
     private readonly q = new THREE.Quaternion();
@@ -214,6 +228,8 @@ export class BattleView {
         this.selRing.visible = false;
         this.scene.add(this.selRing);
 
+        this.buildAbilityRings(s);
+
         this.ribbon = new Ribbon(this.map, 9000);
         this.own(this.ribbon);
         this.scene.add(this.ribbon.mesh);
@@ -232,6 +248,111 @@ export class BattleView {
             this.scene.add(sp);
         }
         this.applyCam();
+    }
+
+    /** 特殊能力の範囲の輪（能力ごと）・約束の安全地点と対象の輪。能力も約束もない合戦（架空の第一章）では何も作らない */
+    private buildAbilityRings(s: BattleState): void {
+        const flat = (geo: THREE.BufferGeometry) => {
+            geo.rotateX(-Math.PI / 2);
+            return geo;
+        };
+        for (const r of s.abilityList) {
+            const rad = ABILITY_DATA[r.id].radius;
+            const col = r.side === 'ally' ? ABILITY_COLOR[r.id] : ABILITY_COLOR.enemy;
+            const ringMat = this.own(new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.85, depthTest: false, depthWrite: false, toneMapped: false }));
+            const fillMat = this.own(new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.1, depthTest: false, depthWrite: false, toneMapped: false }));
+            const ring = new THREE.Mesh(this.own(flat(new THREE.RingGeometry(rad - 2.2, rad, 72, 1))), ringMat);
+            const fill = new THREE.Mesh(this.own(flat(new THREE.CircleGeometry(rad - 2.2, 72))), fillMat);
+            ring.renderOrder = 8;
+            fill.renderOrder = 7;
+            ring.visible = fill.visible = false;
+            ring.frustumCulled = fill.frustumCulled = false;
+            this.scene.add(fill, ring);
+            this.abilRings.push({ ring, fill, ringMat, fillMat });
+        }
+        const pl = s.pledge;
+        if (pl) {
+            const z = pl.safeZone;
+            const y = elevationAt(this.map, z.cx, z.cz) + 0.35;
+            const ringMat = this.own(new THREE.MeshBasicMaterial({ color: PLEDGE_COLOR, transparent: true, opacity: 0.8, depthTest: false, depthWrite: false, toneMapped: false }));
+            const fillMat = this.own(new THREE.MeshBasicMaterial({ color: PLEDGE_COLOR, transparent: true, opacity: 0.13, depthTest: false, depthWrite: false, toneMapped: false }));
+            const ring = new THREE.Mesh(this.own(flat(new THREE.RingGeometry(z.r - 1.6, z.r, 64, 1))), ringMat);
+            const fill = new THREE.Mesh(this.own(flat(new THREE.CircleGeometry(z.r - 1.6, 64))), fillMat);
+            ring.position.set(z.cx, y, z.cz);
+            fill.position.set(z.cx, y - 0.05, z.cz);
+            ring.renderOrder = 7;
+            fill.renderOrder = 6;
+            this.scene.add(fill, ring);
+            this.safeZone = { ring, fill };
+            const pm = this.own(new THREE.MeshBasicMaterial({ color: PLEDGE_COLOR, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false, toneMapped: false }));
+            this.pledgeRing = new THREE.Mesh(this.own(makeRingGeometry(0.9, 1.0, false)), pm);
+            this.pledgeRing.renderOrder = 11;
+            this.pledgeRing.visible = false;
+            this.scene.add(this.pledgeRing);
+        }
+    }
+
+    /** 毎フレーム：能力の輪・援護の結び・約束の輪 */
+    private updateAbilityMarks(s: BattleState, ui: { selectedId: string | null; pending: Pending }, t: number): void {
+        for (let k = 0; k < s.abilityList.length; k++) {
+            const r = s.abilityList[k];
+            const g = this.abilRings[k];
+            const i = s.units.findIndex((u) => u.id === r.unitId);
+            const v = i >= 0 ? this.vis[i] : null;
+            const u = i >= 0 ? s.units[i] : null;
+            const info = abilityInfo(s, r.unitId);
+            let mode: 'off' | 'active' | 'preview' = 'off';
+            if (v && u && v.shown && info) {
+                if (info.state === 'active') mode = 'active';
+                else if (info.state === 'unused' && ui.selectedId === r.unitId && u.status === 'ready') mode = 'preview';
+            }
+            g.ring.visible = g.fill.visible = mode !== 'off';
+            if (mode === 'off' || !v) continue;
+            const x = v.px + v.sx * 0.5;
+            const z = v.pz + v.sz * 0.5;
+            const y = elevationAt(this.map, x, z) + 0.4;
+            g.ring.position.set(x, y, z);
+            g.fill.position.set(x, y - 0.05, z);
+            if (mode === 'active') {
+                g.ringMat.opacity = 0.75 + Math.sin(t * 3) * 0.15;
+                g.fillMat.opacity = 0.11;
+            } else {
+                // 使う前の範囲の見本（選んだ部隊）。援護の対象選びの間は少し濃く
+                const choose = ui.pending === 'ability';
+                g.ringMat.opacity = (choose ? 0.6 : 0.35) + Math.sin(t * 4) * 0.12;
+                g.fillMat.opacity = choose ? 0.08 : 0.04;
+            }
+            // 援護の結び（効いている：実線／離れて外れている：灰色の破線）
+            if (mode === 'active' && info && info.target === 'ally_unit' && info.targetId) {
+                const j = s.units.findIndex((o) => o.id === info.targetId);
+                const e = j >= 0 ? this.vis[j] : null;
+                if (e && e.shown) {
+                    const col = info.linked ? (r.side === 'ally' ? [0.85, 0.72, 1, 0.95] : [1, 0.55, 0.48, 0.9]) : [0.7, 0.7, 0.7, 0.75];
+                    this.ribbon.path([[v.px, v.pz], [e.px, e.pz]], info.linked ? 1.6 : 1.1, col, info.linked ? null : { on: 3, off: 4, offset: 0 }, false, v.halfD + 1, e.halfD + 1);
+                }
+            }
+        }
+        // 約束：対象を囲む輪（戦える間）
+        if (this.pledgeRing && s.pledge) {
+            const i = s.units.findIndex((u) => u.id === s.pledge!.targetId);
+            const v = i >= 0 ? this.vis[i] : null;
+            const u = i >= 0 ? s.units[i] : null;
+            if (v && u && v.shown && u.status === 'ready') {
+                const x = v.px + v.sx * 0.5;
+                const z = v.pz + v.sz * 0.5;
+                const pulse = 1 + Math.sin(t * 2.5) * 0.05;
+                this.pledgeRing.position.set(x, elevationAt(this.map, x, z) + 0.55, z);
+                this.pledgeRing.rotation.set(0, -v.face, 0);
+                this.pledgeRing.scale.set((v.halfW + 9) * pulse, 1, (v.halfD + 9) * pulse);
+                this.pledgeRing.visible = true;
+            } else this.pledgeRing.visible = false;
+            // 対象が陣の中にいる間は、陣の塗りを少し濃く（数えている印）
+            if (this.safeZone && u) {
+                const z = s.pledge.safeZone;
+                const inside = u.present && u.status === 'ready' && Math.hypot(u.x - z.cx, u.z - z.cz) <= z.r;
+                (this.safeZone.fill.material as THREE.MeshBasicMaterial).opacity = inside ? 0.2 + Math.sin(t * 4) * 0.06 : 0.12;
+            }
+        }
     }
 
     /** 後片付け（dispose）するものとして覚える。最初のものを返す */
@@ -577,6 +698,8 @@ export class BattleView {
         let clashN = 0;
         const seenPairs = new Set<string>();
         const tmpC = new THREE.Color();
+        // 援護の対象を選んでいる間：選べる味方の輪を明るく点滅
+        const validTargets = ui.pending === 'ability' && ui.selectedId ? (abilityInfo(s, ui.selectedId)?.validTargets ?? null) : null;
 
         for (let i = 0; i < this.vis.length; i++) {
             const v = this.vis[i];
@@ -656,6 +779,7 @@ export class BattleView {
                 this.ringMesh.setMatrixAt(i, this.m4);
                 let k = 1;
                 if (ui.pending === 'attack' && u.side === 'enemy') k = 1.25 + Math.sin(t * 7) * 0.35;
+                if (validTargets && validTargets.includes(u.id)) k = 1.3 + Math.sin(t * 7) * 0.4;
                 tmpC.set(SIDE_COLOR[u.side]).multiplyScalar(k);
                 this.ringMesh.setColorAt(i, tmpC);
             } else if (!u.arrived && u.status === 'ready' && u.side === 'ally') {
@@ -700,6 +824,7 @@ export class BattleView {
             this.selRing.visible = true;
         } else this.selRing.visible = false;
 
+        if (this.abilRings.length || this.pledgeRing) this.updateAbilityMarks(s, ui, t);
         this.ribbon.end();
     }
 
