@@ -1,5 +1,6 @@
 /**
  * 戦場の地図と、開発・テスト用の標準の布陣（仮シナリオ）。純粋な TypeScript。
+ * 戦場（地形・配置の枠・退き口・日没）は fields/border_field.ts のデータ（BORDER_FIELD_DEF）から作る。
  *
  * > 仮シナリオ：部隊名・人物・家は架空の仮の設定（docs/chapter1-spec.md §0）。
  *
@@ -17,57 +18,44 @@
  */
 import type { BattleMap, BattleSetup, UnitDef } from './types';
 import { RULES } from './sim';
+import { BORDER_FIELD_DEF, borderSlot } from './fields/border_field';
+import { buildBattleSetup, fieldMap } from './fields/build';
 
 /** 協力陣営の選択 */
 export type Alliance = 'tashiro' | 'omori' | 'alone';
 
 /**
- * 戦場「国境の原」。
+ * 戦場「国境の原」（fields/border_field.ts のデータから作る地図）。
  * - 北の中央に丘（敵本陣。中心 (0,-100)、半径 70 m、高さ 12 m）。
  * - 西に林（山道の続き。x -180〜-85）。中の部隊は相手から見えない（60 m 以内に来るまで）。
  * - 東に川沿いの湿地（x 122〜180、z -45〜150）。とても遅い。その西側（x 90〜120）は乾いた川沿いの道筋。
  * - 中央を南北に道。
  * - 退き口：味方は南の端、敵は北の端。
  */
-export const BORDER_FIELD: BattleMap = {
-    id: 'border_field',
-    name: '国境の原',
-    width: 360,
-    depth: 300,
-    terrain: [
-        { kind: 'road', rect: { x0: -7, x1: 7, z0: -150, z1: 150 } },
-        { kind: 'hill', circle: { cx: 0, cz: -100, r: 70 }, height: 12 },
-        { kind: 'woods', rect: { x0: -180, x1: -85, z0: -150, z1: 95 } },
-        { kind: 'marsh', rect: { x0: 122, x1: 180, z0: -45, z1: 150 } },
-    ],
-    exits: { ally: { x: 0, z: 150 }, enemy: { x: 0, z: -150 } },
-};
+export const BORDER_FIELD: BattleMap = fieldMap(BORDER_FIELD_DEF);
 
-const N = 0; // 北向き
-const S = Math.PI; // 南向き
-
-/** 布陣の位置（x, z, 向き） */
+/** 布陣の位置（x, z, 向き。fields/border_field.ts の配置の枠） */
 export const BORDER_FIELD_POS = {
     /** 味方 */
-    allyHq: { x: 0, z: 110, facing: N },
-    allyFront: { x: 0, z: 50, facing: N },
-    allyRight: { x: 45, z: 70, facing: N },
+    allyHq: borderSlot('ally', 'allyHq'),
+    allyFront: borderSlot('ally', 'allyFront'),
+    allyRight: borderSlot('ally', 'allyRight'),
     /** 右翼（大森勢と組んだとき） */
-    allyRightWing: { x: 85, z: 55, facing: N },
+    allyRightWing: borderSlot('ally', 'allyRightWing'),
     /** 左の林（山道から着く別働隊） */
-    allyWoods: { x: -140, z: 80, facing: N },
+    allyWoods: borderSlot('ally', 'allyWoods'),
     /** 本陣の後ろ（予備隊） */
-    allyReserve: { x: 0, z: 135, facing: N },
+    allyReserve: borderSlot('ally', 'allyReserve'),
     /** 敵 */
-    enemyHq: { x: 0, z: -105, facing: S },
-    enemyFront: { x: 0, z: -50, facing: S },
-    enemyRight: { x: 45, z: -70, facing: S },
+    enemyHq: borderSlot('enemy', 'enemyHq'),
+    enemyFront: borderSlot('enemy', 'enemyFront'),
+    enemyRight: borderSlot('enemy', 'enemyRight'),
     /** 東の湿地の北（右から回り込む） */
-    enemyEast: { x: 110, z: -95, facing: S },
+    enemyEast: borderSlot('enemy', 'enemyEast'),
     /** 西の林（左から回り込む） */
-    enemyWoods: { x: -135, z: -60, facing: S },
+    enemyWoods: borderSlot('enemy', 'enemyWoods'),
     /** 丘の後ろ（予備隊） */
-    enemyReserve: { x: 0, z: -138, facing: S },
+    enemyReserve: borderSlot('enemy', 'enemyReserve'),
 } as const;
 
 /** 田代の別働隊が林に着く時刻（秒） */
@@ -122,7 +110,7 @@ export function demoUnits(alliance: Alliance, opts: DemoOptions = {}): UnitDef[]
 }
 
 /** 日没までの秒数（8 分） */
-export const BORDER_FIELD_TIME_LIMIT = 480;
+export const BORDER_FIELD_TIME_LIMIT = BORDER_FIELD_DEF.timeLimitSec;
 
 /** 勝ち負けの条件の説明（画面に出す。章の進行が自分の文に差し替えてもよい） */
 export function standardBriefing(alliance: Alliance): string[] {
@@ -145,12 +133,8 @@ export function standardBriefing(alliance: Alliance): string[] {
 
 /** 開発・確認用の合戦の設定一式 */
 export function demoSetup(alliance: Alliance, opts: DemoOptions = {}): BattleSetup {
-    return {
-        map: BORDER_FIELD,
-        units: demoUnits(alliance, opts),
-        timeLimitSec: BORDER_FIELD_TIME_LIMIT,
-        briefing: standardBriefing(alliance),
-    };
+    // 目標は付けない（今までの勝ち負け）。国境の原には地形の上書き・特殊ルールが無いので fieldRules も付かない
+    return buildBattleSetup(BORDER_FIELD_DEF, demoUnits(alliance, opts), { objectives: 'none', timeLimitSec: BORDER_FIELD_TIME_LIMIT, briefing: standardBriefing(alliance) });
 }
 
 // ================================================================ 歴史分岐「元亀元年・家康」（docs/ieyasu1570-design.md §3〜§5）
@@ -197,16 +181,16 @@ export const IEYASU_SAFE_ZONE = { cx: 0, cz: 125, r: 30 } as const;
 export const IEYASU_PLEDGE_HOLD_SEC = 20;
 export const IEYASU_PLEDGE_MIN_RATIO = 0.4;
 
-/** 方針ごとの布陣の位置（x, z, 向き） */
+/** 方針ごとの布陣の位置（x, z, 向き。fields/border_field.ts の配置の枠） */
 export const IEYASU_POS = {
     /** A：前に突出した織田援軍（右前。浅井弓隊の矢が届き、東から朝倉勢が回り込む） */
-    odaForward: { x: 60, z: 5, facing: N },
+    odaForward: borderSlot('ally', 'odaForward'),
     /** B：前に出た浅井長政隊（左前。西の林から織田騎馬が回り込む） */
-    nagamasaForward: { x: -45, z: -5, facing: N },
+    nagamasaForward: borderSlot('ally', 'nagamasaForward'),
     /** C：国境の砦に孤立した岡崎の守備隊（左前。浪人衆の弓が届く） */
-    fort: { x: -75, z: 5, facing: N },
+    fort: borderSlot('ally', 'fort'),
     /** C：浪人衆の弓（丘の西の肩） */
-    enemyLeft: { x: -45, z: -70, facing: S },
+    enemyLeft: borderSlot('enemy', 'enemyLeft'),
 } as const;
 
 export interface IeyasuSetupOptions {
@@ -324,14 +308,13 @@ export function ieyasuBriefing(policy: IeyasuPolicy, pledgeAccepted: boolean): s
 
 /** 歴史分岐「元亀元年・家康」の合戦の設定一式（国境の原を流用。約束を引き受けたときだけ pledge を付ける） */
 export function ieyasu1570Setup(policy: IeyasuPolicy, opts: IeyasuSetupOptions): BattleSetup {
-    const setup: BattleSetup = {
-        map: BORDER_FIELD,
-        units: ieyasuUnits(policy, opts.troops),
+    const setup: BattleSetup = buildBattleSetup(BORDER_FIELD_DEF, ieyasuUnits(policy, opts.troops), {
+        objectives: 'none',
         timeLimitSec: BORDER_FIELD_TIME_LIMIT,
         briefing: ieyasuBriefing(policy, opts.pledgeAccepted),
         // 退く部隊への追い討ち（歴史分岐の合戦だけ。退路の守護・約束の退路に意味を持たせる）
         pursuit: true,
-    };
+    });
     // 約束は、対象の部隊が合戦に出るときだけ（兵のいない部隊は出ない）
     if (opts.pledgeAccepted && setup.units.some((u) => u.id === IEYASU_PLEDGE_TARGET[policy])) {
         setup.pledge = {
