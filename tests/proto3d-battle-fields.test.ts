@@ -115,6 +115,40 @@ describe('検査が問題を見つける（validateField）', () => {
         m.objectives.primary = { id: 's', type: 'survive_until', label: 'x', reinforcementId: 'none' };
         expect(validateField(m).some((t) => t.includes('援軍 none'))).toBe(true);
     });
+
+    it('崖で囲われた島の目標の区域・敵の考えの地点、陣営の違う目標の部隊、0 以下の速さ・倍率・日没、知らない武将を見つける（20 戦場へ広げるときの誤り）', () => {
+        const f = clone(getField('plains')!);
+        // 南東の角を崖で囲う（島）。確保の区域と、敵の assault の行き先をその中に置く
+        f.terrain.push({ kind: 'cliff', rect: { x0: 120, x1: 200, z0: 80, z1: 90 } }, { kind: 'cliff', rect: { x0: 120, x1: 130, z0: 80, z1: 160 } });
+        f.objectives.primary = { id: 'isle', type: 'hold_point', label: '島', zone: { circle: { cx: 165, cz: 125, r: 20 } }, sec: 30 };
+        const units = f.presets[0]!.units;
+        const sente = units.find((u) => u.aiRole === 'assault')!;
+        sente.aiTarget = { x: 165, z: 125, r: 20 };
+        // 救出の相手を敵の部隊に、崩す相手を味方の家康に
+        const enemyId = units.find((u) => u.side === 'enemy')!.id;
+        f.objectives.secondary = [
+            { id: 'res', type: 'rescue', label: 'x', unitId: enemyId, zone: { circle: { cx: 0, cz: 120, r: 30 } } },
+            { id: 'brk', type: 'break_unit', label: 'x', unitId: 'a_ieyasu' },
+        ];
+        f.terrainRules = { woods: { speed: 0 }, road: { speed: -1 } };
+        f.highGround = { defenseVsLower: -3 };
+        f.timeLimitSec = -5;
+        units.find((u) => u.id === 'a_tadakatsu')!.generalId = 'nobody';
+        const out = validateField(f);
+        const has = (...words: string[]) => out.some((t) => words.every((w) => t.includes(w)));
+        expect(has('目標 isle', '味方の退き口から道がない')).toBe(true);
+        expect(has(sente.id, '敵の考えの地点', '退き口から道がない')).toBe(true);
+        expect(has('目標 res', enemyId, 'ally の部隊')).toBe(true);
+        expect(has('目標 brk', 'a_ieyasu', 'enemy の部隊')).toBe(true);
+        expect(has('woods', 'speed')).toBe(true);
+        expect(has('road', 'speed')).toBe(true);
+        expect(has('defenseVsLower')).toBe(true);
+        expect(has('timeLimitSec')).toBe(true);
+        expect(has('a_tadakatsu', 'nobody')).toBe(true);
+        // 合戦の始めにも、陣営の違う目標の部隊は断る
+        expect(() => createBattle(buildBattleSetup(getField('plains')!, 'standard', { objectives: { secondary: [{ id: 'b', type: 'break_unit', label: 'x', unitId: 'a_ieyasu' }] } }))).toThrow();
+        expect(() => createBattle(buildBattleSetup(getField('plains')!, 'standard', { objectives: { secondary: [{ id: 'k', type: 'preserve_unit', label: 'x', unitId: enemyId, minRatio: 0.5 }] } }))).toThrow();
+    });
 });
 
 describe('組み立て（buildBattleSetup）', () => {

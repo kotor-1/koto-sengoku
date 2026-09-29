@@ -102,16 +102,19 @@ function zoneHolders(s: BattleState, zone: Zone): { allyIn: boolean; enemyIn: bo
 
 // ---------------------------------------------------------------- 作る
 
-/** 合戦の始めに作る（目標の無い合戦は null）。目標の指す部隊・援軍が無ければ投げる */
+/** 合戦の始めに作る（目標の無い合戦は null）。目標の指す部隊・援軍が無い、部隊の陣営が違う（救出・部隊を残すは味方、崩すは敵）なら投げる */
 export function createObjectiveTrack(setup: BattleSetup): ObjectiveTrack | null {
     const o = setup.objectives;
     if (!o) return null;
     const ids = new Set(setup.units.map((u) => u.id));
+    const sideOf = new Map(setup.units.map((u) => [u.id, u.side]));
     const seen = new Set<string>();
     const mk = (def: ObjectiveDef, role: ObjectiveRole): ObjectiveRun => {
         if (seen.has(def.id)) throw new Error(`目標の id が重なっています: ${def.id}`);
         seen.add(def.id);
         if ('unitId' in def && !ids.has(def.unitId)) throw new Error(`目標 ${def.id} の部隊がありません: ${def.unitId}`);
+        const want = def.type === 'break_unit' ? 'enemy' : def.type === 'rescue' || def.type === 'preserve_unit' ? 'ally' : null;
+        if (want && 'unitId' in def && sideOf.get(def.unitId) !== want) throw new Error(`目標 ${def.id}（${def.type}）の部隊 ${def.unitId} は ${want} の部隊ではありません`);
         if (def.type === 'survive_until' && !setup.reinforcements?.some((r) => r.id === def.reinforcementId)) {
             throw new Error(`目標 ${def.id} の援軍がありません: ${def.reinforcementId}`);
         }

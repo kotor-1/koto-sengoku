@@ -11,10 +11,12 @@
  * - 目標は opts.objectives：'field'（既定。戦場の主目標・副目標）／'none'（付けない＝今までの勝ち負け）／自分で渡す。
  * - 援軍：編成の部隊が reinforcement を指せば、その出現地点・時刻（arriveAt）に置き、BattleSetup.reinforcements に入れる。
  */
-import type { BattleMap, BattleSetup, FieldRules, ObjectiveDef, Side, UnitDef } from '../types';
+import type { BattleMap, BattleSetup, FieldRules, ObjectiveDef, Side, TerrainKind, UnitDef } from '../types';
 import { RULES, elevationAt } from '../sim';
 import { createFieldEnv, inZone, zoneCenter } from '../fieldRules';
 import { isPassable, reachable } from '../pathfind';
+import { generalById } from '../generals';
+import { ABILITY_DATA } from '../abilities';
 import type { BattlefieldDef, FieldPreset, PresetUnit } from './types';
 
 export interface BuildOptions {
@@ -128,12 +130,55 @@ function objectiveZone(o: ObjectiveDef) {
     return 'zone' in o && o.zone ? o.zone : null;
 }
 
+/** 味方が入って果たす目標の区域（地点の確保・区域の防衛・突破・救出の陣） */
+function allyZoneObjective(o: ObjectiveDef): boolean {
+    return o.type === 'hold_point' || o.type === 'breakthrough' || o.type === 'rescue' || (o.type === 'defend_time' && !!o.zone);
+}
+
+/** 目標の指す部隊が、どちらの陣営でなければならないか（部隊を指さない目標は null） */
+function objectiveUnitSide(o: ObjectiveDef): Side | null {
+    if (o.type === 'rescue' || o.type === 'preserve_unit') return 'ally';
+    if (o.type === 'break_unit') return 'enemy';
+    return null;
+}
+
+/** 正の有限の数か */
+const positive = (v: number | undefined) => v === undefined || (Number.isFinite(v) && v > 0);
+/** 0 以上の有限の数か */
+const nonNegative = (v: number | undefined) => v === undefined || (Number.isFinite(v) && v >= 0);
+
+/** 地形の決まり・高所の決まり・日没の数値の検査（通れない地形の川・崖は速さを見ない） */
+function validateRules(field: BattlefieldDef): string[] {
+    const out: string[] = [];
+    if (!(Number.isFinite(field.timeLimitSec) && field.timeLimitSec > 0)) out.push('日没までの秒数（timeLimitSec）は 0 より大きい数');
+    for (const [k, r] of Object.entries(field.terrainRules ?? {}) as [TerrainKind, NonNullable<BattlefieldDef['terrainRules']>[TerrainKind]][]) {
+        if (!r) continue;
+        const blocked = k === 'river' || k === 'cliff';
+        if (!blocked && !positive(r.speed)) out.push(`地形の決まり ${k} の speed は 0 より大きい数（部隊が動けなくなる）`);
+        for (const [uk, v] of Object.entries(r.kindSpeed ?? {})) if (!blocked && !positive(v)) out.push(`地形の決まり ${k} の kindSpeed.${uk} は 0 より大きい数`);
+        if (!positive(r.dealMul)) out.push(`地形の決まり ${k} の dealMul は 0 より大きい数`);
+        if (!positive(r.takeMul)) out.push(`地形の決まり ${k} の takeMul は 0 より大きい数`);
+        if (!positive(r.arrowTakeMul)) out.push(`地形の決まり ${k} の arrowTakeMul は 0 より大きい数`);
+        if (!nonNegative(r.hideSight)) out.push(`地形の決まり ${k} の hideSight は 0 以上の数`);
+    }
+    const hg = field.highGround;
+    if (hg) {
+        if (!positive(hg.defenseVsLower)) out.push('高所の defenseVsLower は 0 より大きい数');
+        if (!nonNegative(hg.minDiff)) out.push('高所の minDiff は 0 以上の数');
+        if (!nonNegative(hg.rangeBonus)) out.push('高所の rangeBonus は 0 以上の数');
+        if (!nonNegative(hg.sightBonus)) out.push('高所の sightBonus は 0 以上の数');
+    }
+    return out;
+}
+
 /**
  * 戦場のデータを検査する（問題の文の並び。空なら問題なし）：
  * - 広さ・退き口・配置の枠・援軍の地点・目標の区域の中心・敵の考えの地点が、戦場の中の通れる所にある
- * - 味方・敵の配置の枠から、それぞれの退き口へ道がある
+ * - 味方・敵の配置の枠から、それぞれの退き口へ道がある。味方が入る目標の区域・援軍の出現地点・敵の考えの地点へも、その陣営の退き口から道がある
+ *   （崖・川で囲われた島に置いていない）
+ * - 地形の決まりの速さ・倍率は 0 より大きい（川・崖の速さは見ない）、高所の数値・日没の秒数が正しい
  * - 編成ごとに：部隊の id が重ならない・陣営ごとの部隊数が上限（RULES.maxUnitsPerSide）以下・本陣が陣営に 1 つ以上・
- *   枠／援軍が有る・目標の指す部隊が有る（敵本陣の撃破なら敵の本陣）
+ *   枠／援軍が有る・目標の指す部隊が有る（救出・部隊を残すは味方、崩すは敵の部隊）・武将（generalId）と能力（ability）が有る
  * - 目標の id が重ならない・援軍の目標の援軍が有る
  */
 export function validateField(field: BattlefieldDef): string[] {
@@ -143,7 +188,13 @@ export function validateField(field: BattlefieldDef): string[] {
     const nav = env.nav!;
     const inside = (x: number, z: number) => Math.abs(x) <= field.width / 2 && Math.abs(z) <= field.depth / 2;
     const ok = (x: number, z: number) => inside(x, z) && isPassable(nav, x, z);
+    /** その陣営の退き口から (x, z) へ道がある（退き口が通れない所にあるときは、そちらの問題として別に出す） */
+    const fromExit = (side: Side, x: number, z: number) => {
+        const e = field.exits[side];
+        return !ok(e.x, e.z) || reachable(nav, 'yari', e.x, e.z, x, z);
+    };
     if (!(field.width > 0 && field.depth > 0)) out.push('広さが正しくない');
+    out.push(...validateRules(field));
     for (const side of ['ally', 'enemy'] as Side[]) {
         const e = field.exits[side];
         if (!ok(e.x, e.z)) out.push(`${side} の退き口が通れる所にない`);
@@ -160,6 +211,7 @@ export function validateField(field: BattlefieldDef): string[] {
         if (rids.has(r.id)) out.push(`援軍 ${r.id} が重なっている`);
         rids.add(r.id);
         if (!ok(r.point.x, r.point.z)) out.push(`援軍 ${r.id} の出現地点が通れる所にない`);
+        else if (!fromExit(r.side, r.point.x, r.point.z)) out.push(`援軍 ${r.id} の出現地点へ ${r.side} の退き口から道がない`);
     }
     const objs = [field.objectives.primary, ...field.objectives.secondary];
     const oids = new Set<string>();
@@ -171,7 +223,13 @@ export function validateField(field: BattlefieldDef): string[] {
             const c = zoneCenter(z);
             if (!ok(c.x, c.z)) out.push(`目標 ${o.id} の区域の中心が通れる所にない`);
             else if (!inZone(z, c.x, c.z)) out.push(`目標 ${o.id} の区域が正しくない`);
+            else if (allyZoneObjective(o) && !fromExit('ally', c.x, c.z)) out.push(`目標 ${o.id} の区域へ味方の退き口から道がない`);
         }
+        if (o.type === 'hold_point' && !(o.sec > 0)) out.push(`目標 ${o.id} の確保の秒数は 0 より大きい数`);
+        if (o.type === 'defend_time' && !(o.sec > 0)) out.push(`目標 ${o.id} の守る秒数は 0 より大きい数`);
+        if ((o.type === 'retreat_success' || o.type === 'preserve_unit') && !(o.minRatio > 0 && o.minRatio <= 1)) out.push(`目標 ${o.id} の minRatio は 0 より大きく 1 以下`);
+        if (o.type === 'limit_losses' && !(o.maxRatio >= 0 && o.maxRatio < 1)) out.push(`目標 ${o.id} の maxRatio は 0 以上 1 未満`);
+        if (o.type === 'breakthrough' && !(o.count >= 1)) out.push(`目標 ${o.id} の突破の部隊数は 1 以上`);
         if (o.type === 'survive_until' && !rids.has(o.reinforcementId)) out.push(`目標 ${o.id} の援軍 ${o.reinforcementId} がない`);
     }
     for (const r of field.specialRules ?? []) {
@@ -188,12 +246,18 @@ export function validateField(field: BattlefieldDef): string[] {
     for (const pr of field.presets) {
         if (pids.has(pr.id)) out.push(`編成 ${pr.id} が重なっている`);
         pids.add(pr.id);
-        out.push(...validatePreset(field, pr, objs, ok));
+        out.push(...validatePreset(field, pr, objs, ok, fromExit));
     }
     return out;
 }
 
-function validatePreset(field: BattlefieldDef, pr: FieldPreset, objs: ObjectiveDef[], ok: (x: number, z: number) => boolean): string[] {
+function validatePreset(
+    field: BattlefieldDef,
+    pr: FieldPreset,
+    objs: ObjectiveDef[],
+    ok: (x: number, z: number) => boolean,
+    fromExit: (side: Side, x: number, z: number) => boolean,
+): string[] {
     const out: string[] = [];
     const tag = `編成 ${pr.id}`;
     const ids = new Set<string>();
@@ -204,6 +268,10 @@ function validatePreset(field: BattlefieldDef, pr: FieldPreset, objs: ObjectiveD
         if (u.slot && !field.deployments[u.side].some((d) => d.id === u.slot)) out.push(`${tag}：部隊 ${u.id} の枠 ${u.slot} が ${u.side} の配置にない`);
         if (u.reinforcement && !field.reinforcements?.some((r) => r.id === u.reinforcement && r.side === u.side)) out.push(`${tag}：部隊 ${u.id} の援軍 ${u.reinforcement} がない`);
         if (u.aiTarget && !ok(u.aiTarget.x, u.aiTarget.z)) out.push(`${tag}：部隊 ${u.id} の敵の考えの地点が通れる所にない`);
+        else if (u.aiTarget && !fromExit(u.side, u.aiTarget.x, u.aiTarget.z)) out.push(`${tag}：部隊 ${u.id} の敵の考えの地点へ ${u.side} の退き口から道がない`);
+        if (u.generalId !== undefined && !generalById(u.generalId)) out.push(`${tag}：部隊 ${u.id} の武将 ${u.generalId} がいない（generals.ts）`);
+        if (u.ability !== undefined && !(u.ability in ABILITY_DATA)) out.push(`${tag}：部隊 ${u.id} の能力 ${u.ability} がない（abilities.ts）`);
+        if (u.arriveAt !== undefined && !(Number.isFinite(u.arriveAt) && u.arriveAt >= 0)) out.push(`${tag}：部隊 ${u.id} の arriveAt は 0 以上の数`);
         if (!(u.strength > 0) || !(u.morale > 0 && u.morale <= 100)) out.push(`${tag}：部隊 ${u.id} の兵・士気が正しくない`);
     }
     // 同じ枠に 2 部隊を置かない
@@ -220,7 +288,11 @@ function validatePreset(field: BattlefieldDef, pr: FieldPreset, objs: ObjectiveD
         if (!us.some((u) => u.kind === 'honjin')) out.push(`${tag}：${side} に本陣がない`);
     }
     for (const o of objs) {
-        if ('unitId' in o && !ids.has(o.unitId)) out.push(`${tag}：目標 ${o.id} の部隊 ${o.unitId} がない`);
+        if (!('unitId' in o)) continue;
+        const target = pr.units.find((u) => u.id === o.unitId);
+        const want = objectiveUnitSide(o);
+        if (!target) out.push(`${tag}：目標 ${o.id} の部隊 ${o.unitId} がない`);
+        else if (want && target.side !== want) out.push(`${tag}：目標 ${o.id}（${o.type}）の部隊 ${o.unitId} は ${want} の部隊でなければならない`);
     }
     // 部隊の置き場所が戦場の高さの計算を壊していないか（数であること）
     for (const u of pr.units) {
