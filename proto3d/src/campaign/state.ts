@@ -104,6 +104,13 @@ export interface CampaignState {
     talked: Partial<Record<TalkFlag, boolean>>;
     /** 合戦の結果（戦後から） */
     battle: BattleOutcome | null;
+    /**
+     * 今の（最後の）合戦の id。出陣（muster → battle）のときに付ける。出陣の前は null。
+     * 合戦の結果はこの id に対して 1 回だけ反映する（applyBattleOutcomeOnce）。
+     */
+    battleId: string | null;
+    /** 結果を反映し終えた合戦の id（反映の済み印。戦後・結末では battleId と同じ。それまでは null） */
+    appliedBattleId: string | null;
     /** 結末（ending の段階だけ） */
     ending: EndingId | null;
     /** 探索の位置と向き（null は、その段階の最初の位置から） */
@@ -149,11 +156,18 @@ export function cloneState(s: CampaignState): CampaignState {
         characters: { ...s.characters },
         talked: { ...s.talked },
         battle: s.battle ? cloneOutcome(s.battle) : null,
+        battleId: s.battleId,
+        appliedBattleId: s.appliedBattleId,
         ending: s.ending,
         explore: s.explore ? { ...s.explore } : null,
         playTimeSec: s.playTimeSec,
         savedAt: s.savedAt,
     };
+}
+
+/** 合戦の id として受け付ける形（英数字と - _ . @ :、1〜80 文字） */
+export function isBattleId(v: unknown): v is string {
+    return typeof v === 'string' && /^[A-Za-z0-9_.@:-]{1,80}$/.test(v);
 }
 
 // ---- 合戦の結果の検査（flow.ts の applyBattleOutcome と save.ts の読み込みで共用） ----

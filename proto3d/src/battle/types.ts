@@ -128,3 +128,12 @@ export interface BattleOutcome {
         status: UnitStatus;
     }[];
 }
+
+/** 合戦の画面を呼ぶ側（章の進行）への知らせ */
+export interface BattleRunHooks {
+    /**
+     * 勝ち負けが決まった時に 1 回だけ呼ぶ（結果の画面を出す前）。章の進行はここで結果を反映して保存する。
+     * 返した文（保存できた／できなかった）を結果の画面に出す。null なら何も出さない。
+     */
+    onDecided?(outcome: BattleOutcome): { ok: boolean; text: string } | null;
+}

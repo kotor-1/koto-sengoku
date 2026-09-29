@@ -11,11 +11,12 @@
  *
  * 仮シナリオ：人物・家・出来事はすべて架空の仮の設定（story.ts の先頭の注記）。
  */
-import type { BattleOutcome, BattleResultKind, BattleSetup } from '../battle/types';
+import type { BattleOutcome, BattleResultKind, BattleRunHooks, BattleSetup } from '../battle/types';
 import { castFor, inGateZone, nearestInteractable, safePose, type CastMember } from '../explore/cast';
 import {
     addPlayTime,
     applyBattleOutcome,
+    applyBattleOutcomeOnce,
     battleSetupFor,
     canSaveManually,
     canTalk,
@@ -24,6 +25,7 @@ import {
     outcomeFromSetup,
     setExplorePose,
     talk,
+    withBattleId,
 } from './flow';
 import { CampaignSaveStore, SAVE_POINT_LABELS, describeSave, saveFailureMessage, type SavePoint } from './save';
 import { KOTOSAKA_UNIT_IDS, type Alliance, type CampaignState, type ChoiceId, type ExplorePose, type TalkId } from './state';
@@ -112,6 +114,8 @@ export interface GameView {
     prompt(p: PromptInfo | null): void;
     intro(title: string, text: string): void;
     toast(text: string, kind: 'ok' | 'error' | 'info'): void;
+    /** 開いている画面（会話・確認など）を、答えを返さずにすべて閉じる（会話の途中にメニューから「タイトルへ」を選んだとき） */
+    abandon(): void;
 }
 
 /** 探索の場面（explore/world.ts） */
@@ -127,7 +131,8 @@ export interface GameWorld {
     walls(): Rect[];
 }
 
-export type BattleRunnerLike = (setup: BattleSetup) => Promise<BattleOutcome>;
+/** 合戦を 1 回（hooks.onDecided：勝ち負けが決まった時＝結果の画面の前に呼ぶ。ここで結果を反映して保存する） */
+export type BattleRunnerLike = (setup: BattleSetup, hooks?: BattleRunHooks) => Promise<BattleOutcome>;
 
 export interface GameDeps {
     view: GameView;
@@ -154,6 +159,12 @@ export class ChapterGame {
     /** まだ状態に足していない遊んだ時間（秒） */
     private playAcc = 0;
     private readonly now: () => number;
+    /** メニューを開いている（会話の途中に開いたときも） */
+    private menuOpen = false;
+    /** 画面の流れの世代（会話の途中にタイトルへ戻ったら進める。捨てた流れの後始末が、新しい流れの busy を消さないように） */
+    private epoch = 0;
+    /** 出陣ごとの合戦の id の通し番号 */
+    private battleSeq = 0;
     /** 確認用：最後に起きた誤り */
     lastError: string | null = null;
 
@@ -177,7 +188,9 @@ export class ChapterGame {
 
     /** 確認用：待っている画面の流れを捨てる（開発ビルドの __game.setPhase だけ。画面は先に閉じておく） */
     devAbandon(): void {
+        this.epoch++;
         this.busy = false;
+        this.menuOpen = false;
     }
 
     /** 起動：タイトルへ */
@@ -383,6 +396,8 @@ export class ChapterGame {
         const { view, store } = this.deps;
         const before = this._state!;
         let next = finishTalk(before, 'gate', 'depart');
+        // この出陣だけの合戦の id（結果の反映を 1 回だけにする鍵。保存にも入る）
+        next = withBattleId(next, `ch1-${Math.floor(this.now()).toString(36)}-${++this.battleSeq}`);
         next = this.foldPlay(next);
         // 出陣前の保存は、開始の位置から（読み込むと出陣の確認の前から再開する）
         next = setExplorePose(next, null);
@@ -418,12 +433,37 @@ export class ChapterGame {
         view.hud(null);
         world.setControl(false);
         const setup = battleSetupFor(this._state!);
+        const battleId = this._state!.battleId!;
+        let t0 = this.now();
+        /** 合戦の時間を遊んだ時間へ足す（ここまでの分） */
+        const addBattleTime = () => {
+            const t = this.now();
+            const sec = (t - t0) / 1000;
+            t0 = t;
+            if (Number.isFinite(sec) && sec > 0) this.playAcc += Math.min(sec, 7200);
+        };
+        let saved: { ok: boolean; text: string } | null = null;
+        /** 勝ち負けが決まった：結果を 1 回だけ反映し、戦後の自動保存（読み戻して確かめる）。2 回目からは何もしない */
+        const record = (o: BattleOutcome): { ok: boolean; text: string } => {
+            if (this._state!.appliedBattleId === battleId && saved) return saved;
+            addBattleTime();
+            const r = applyBattleOutcomeOnce(this._state!, battleId, o);
+            this._state = r.state;
+            saved = this.autoSave('aftermath', true)!;
+            return saved;
+        };
+        const hooks: BattleRunHooks = { onDecided: (o) => record(o) };
         let outcome: BattleOutcome | null = null;
         while (!outcome) {
-            const t0 = this.now();
+            t0 = this.now();
             try {
-                outcome = await this.fight(setup);
+                outcome = await this.fight(setup, hooks);
             } catch (e) {
+                // 結果を反映した後の失敗（結果の画面の後片付けなど）なら、合戦はやり直さずに戦後へ
+                if (this._state!.appliedBattleId === battleId && this._state!.battle) {
+                    outcome = this._state!.battle;
+                    break;
+                }
                 const c = await view.confirm({
                     title: '合戦を始められませんでした',
                     lines: [errorText(e), '出陣前の自動保存があれば、タイトルの「つづきから」で出陣の前から遊べます。'],
@@ -439,21 +479,20 @@ export class ChapterGame {
                 }
                 continue;
             } finally {
-                const sec = (this.now() - t0) / 1000;
-                if (Number.isFinite(sec) && sec > 0) this.playAcc += Math.min(sec, 7200);
+                addBattleTime();
             }
         }
-        this._state = applyBattleOutcome(this._state!, outcome);
-        const saved = this.autoSave('aftermath');
+        // 合戦の画面が勝ち負けの知らせ（onDecided）を送らなかったときも、ここで 1 回だけ反映する（済んでいれば何もしない）
+        const note = record(outcome);
         this.enterField(null);
-        if (saved) view.toast(saved.text, saved.ok ? 'ok' : 'error');
+        view.toast(note.ok ? `保存しました：${SAVE_POINT_LABELS.aftermath}` : note.text, note.ok ? 'ok' : 'error');
     }
 
     /** 合戦を 1 回（部隊を指揮する本物の画面。仮の結果の選択は無い） */
-    private async fight(setup: BattleSetup): Promise<BattleOutcome> {
+    private async fight(setup: BattleSetup, hooks: BattleRunHooks): Promise<BattleOutcome> {
         const runner = await this.deps.battleRunner();
         if (!runner) throw new Error('合戦の画面を読み込めませんでした。');
-        return runner(setup);
+        return runner(setup, hooks);
     }
 
     // ---------------- 結末 ----------------
@@ -477,16 +516,54 @@ export class ChapterGame {
 
     // ---------------- メニュー・保存 ----------------
 
-    /** メニュー（状態・保存・タイトルへ）。探索中だけ開ける */
+    /**
+     * メニュー（状態・保存・タイトルへ）。探索中と、会話・軍議の途中に開ける。
+     * 会話の途中に開いたときは、会話の画面をそのまま下に残す（閉じれば同じ行・同じ選択肢の選び方のまま。会話は進まない）。
+     */
     async openMenu(): Promise<void> {
-        if (this.busy || this._screen !== 'explore' || !this._state) return;
+        if (!this._state || this.menuOpen) return;
+        if (this._screen === 'talk' || this._screen === 'council') {
+            await this.menuOverScript();
+            return;
+        }
+        if (this.busy || this._screen !== 'explore') return;
         const after = { title: false };
         await this.exclusive(async () => {
             this._screen = 'menu';
+            after.title = (await this.menuLoop()) === 'title';
+            if (!after.title) this._screen = 'explore';
+        });
+        if (after.title) void this.title();
+    }
+
+    /** 会話・軍議の途中のメニュー（会話の流れは待たせたまま） */
+    private async menuOverScript(): Promise<void> {
+        const back = this._screen;
+        this._screen = 'menu';
+        let act: 'close' | 'title';
+        try {
+            act = await this.menuLoop();
+        } finally {
+            this.menuOpen = false;
+        }
+        if (act !== 'title') {
+            this._screen = back;
+            return;
+        }
+        // 会話を捨ててタイトルへ（待っている会話の流れは、答えを返さずに閉じる）
+        this.deps.view.abandon();
+        this.epoch++;
+        this.busy = false;
+        await this.title();
+    }
+
+    private async menuLoop(): Promise<'close' | 'title'> {
+        this.menuOpen = true;
+        try {
             let message: MenuInfo['message'] = null;
             for (;;) {
                 const act = await this.deps.view.menu(this.menuInfo(message));
-                if (act === 'close') break;
+                if (act === 'close') return 'close';
                 if (act === 'save') {
                     message = this.saveManual();
                     continue;
@@ -501,14 +578,11 @@ export class ChapterGame {
                     defaultIndex: 1,
                     cancelId: 'back',
                 });
-                if (c === 'title') {
-                    after.title = true;
-                    break;
-                }
+                if (c === 'title') return 'title';
             }
-            if (!after.title) this._screen = 'explore';
-        });
-        if (after.title) void this.title();
+        } finally {
+            this.menuOpen = false;
+        }
     }
 
     menuInfo(message: MenuInfo['message'] = null): MenuInfo {
@@ -535,13 +609,19 @@ export class ChapterGame {
         return { ok: true, text: `保存しました（${formatTime(r.savedAt)}・${PHASE_LABELS[s.phase]}）。書き込んだ内容を読み戻して確かめました。` };
     }
 
-    private autoSave(point: SavePoint): { ok: boolean; text: string } | null {
+    /** 自動保存（書いた後に読み戻して確かめる）。detail は合戦の結果の画面に出す長めの文 */
+    private autoSave(point: SavePoint, detail = false): { ok: boolean; text: string } | null {
         const s = this.foldPlay(this._state!);
         this._state = s;
         const r = this.deps.store.save(s, point);
-        if (!r.ok) return { ok: false, text: `保存できませんでした（${SAVE_POINT_LABELS[point]}）：${r.message}` };
+        if (!r.ok) {
+            const text = `保存できませんでした（${SAVE_POINT_LABELS[point]}）：${r.message}`;
+            if (!detail) return { ok: false, text };
+            return { ok: false, text: `${text}このまま続けて遊べます（戦後にメニューから保存し直せます）。今ページを閉じると、前の保存（出陣前）から始まります。` };
+        }
         this._state = r.state;
-        return { ok: true, text: `保存しました：${SAVE_POINT_LABELS[point]}` };
+        if (!detail) return { ok: true, text: `保存しました：${SAVE_POINT_LABELS[point]}` };
+        return { ok: true, text: `この結果を保存しました（${SAVE_POINT_LABELS[point]}。書き込んだ内容を読み戻して確かめました）。ここで閉じても、この結果の後（戦後）から続けられます。` };
     }
 
     private foldPlay(s: CampaignState): CampaignState {
@@ -556,18 +636,23 @@ export class ChapterGame {
     private async exclusive(fn: () => Promise<void>): Promise<void> {
         if (this.busy) return;
         this.busy = true;
+        const epoch = this.epoch;
         this.setPrompt(null);
         this.deps.world.setControl(false);
         try {
             await fn();
         } catch (e) {
+            if (epoch !== this.epoch) return;
             this.lastError = errorText(e);
             console.error(e);
             this.deps.view.toast(`進められませんでした：${this.lastError}`, 'error');
             if (this._state && (this._screen === 'talk' || this._screen === 'menu')) this._screen = 'explore';
         } finally {
-            this.busy = false;
-            if (this._screen === 'explore') this.deps.world.setControl(true);
+            // 捨てた流れ（会話の途中にタイトルへ戻った）の後始末では、新しい流れの状態に触れない
+            if (epoch === this.epoch) {
+                this.busy = false;
+                if (this._screen === 'explore') this.deps.world.setControl(true);
+            }
         }
     }
 }

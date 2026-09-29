@@ -174,7 +174,8 @@ body.mode-battle #build { display: none !important; }
 .b-pausepill[hidden] { display: none; }
 .b-toasts { display: flex; flex-direction: column; gap: 5px; }
 .b-toast {
-    pointer-events: auto;
+    /* 知らせは読むだけ。下の地図のタップ・ドラッグを奪わない */
+    pointer-events: none;
     background: rgba(15, 14, 12, 0.8);
     border-radius: 10px;
     border-left: 3px solid #cfc6ab;
@@ -184,7 +185,6 @@ body.mode-battle #build { display: none !important; }
     transition: opacity 0.5s;
     touch-action: none;
 }
-.b-toast.link { cursor: pointer; }
 .b-toast.good { border-left-color: #8ed57a; }
 .b-toast.bad { border-left-color: #ff6a58; }
 .b-toast.warn { border-left-color: #f0c050; }
@@ -378,6 +378,8 @@ body.mode-battle #build { display: none !important; }
 .b-result.retreat h2 { color: #cfd6de; }
 .b-reason { margin: 6px 0 2px; font-size: 14px; }
 .b-rtime, .b-note { margin: 2px 0; font-size: 12px; color: var(--ink-soft); }
+.b-rsave { margin: 6px 0 2px; padding: 5px 9px; border-radius: 8px; font-size: 12px; line-height: 1.45; border: 1px solid rgba(160, 200, 150, 0.6); }
+.b-rsave.ng { border-color: rgba(224, 144, 127, 0.9); color: #f3c9bf; }
 .b-rtable-wrap { margin-top: 8px; }
 .b-rtable { width: 100%; border-collapse: collapse; font-size: 12px; }
 .b-rtable th { text-align: left; font-weight: 500; color: var(--ink-soft); padding: 2px 6px; border-bottom: 1px solid var(--hairline); }
@@ -432,11 +434,12 @@ body.mode-battle #build { display: none !important; }
     .b-modal-row { margin-top: 6px; }
     .b-primary { padding: 8px 20px; }
     .b-result { display: grid; grid-template-columns: 1fr 1.1fr; column-gap: 14px; max-width: 820px; }
-    .b-result > .b-result-head, .b-result > .b-reason, .b-result > .b-rtime, .b-result > .b-note, .b-result > .b-modal-row { grid-column: 1; }
+    .b-result > .b-result-head, .b-result > .b-reason, .b-result > .b-rtime, .b-result > .b-note, .b-result > .b-rsave, .b-result > .b-modal-row { grid-column: 1; }
     .b-result > .b-rtable-wrap { grid-column: 2; grid-row: 1 / span 6; margin-top: 0; }
     .b-result-head h2 { font-size: 20px; }
     .b-reason { font-size: 12.5px; }
     .b-rtime, .b-note { font-size: 11px; }
+    .b-rsave { font-size: 11px; padding: 3px 8px; margin-top: 4px; }
     .b-rtable { font-size: 11px; }
     .b-rtable td, .b-rtable th { padding: 1px 4px; }
 }

@@ -5,12 +5,14 @@
  * - 書き込んだ後に読み戻して一致を確かめ、確かめられたときだけ ok: true を返す。失敗は理由つきで返す（成功したように見せない）。
  * - 読み込み時は形・値の範囲・段階との食い違いを検査し、壊れたデータでは始めない（壊れたデータを勝手に消しもしない）。
  * - 保存先のキーは 'koto-sengoku/3d-chapter1'。2D 版の 'koto-sengoku/save' には読みも書きも消しもしない。
- * - 形式の版：1。
+ * - 形式の版：2（合戦の id と、結果を反映した済み印 battleId・appliedBattleId を足した）。版 1 の保存もそのまま読める（読むときに版 2 の形へ直す）。
  *
  * いつ保存するか：
  * - 自動保存（出陣前）：城門で「出陣する」を選んだ直後（phase は battle、合戦の結果はまだ無い）。point 'departure'。
  *   これを読み込むと、出陣の確認の前（muster）から再開する（合戦の途中からは再開しない）。
- * - 自動保存（戦後）：合戦の結果を反映した直後（phase は aftermath）。point 'aftermath'。
+ * - 自動保存（戦後）：合戦の勝ち負けが決まった時（結果の画面を出す前）に、結果を反映して保存する（phase は aftermath）。point 'aftermath'。
+ *   結果の画面で閉じて開き直しても、この結果から（戦後の城下から）続く。合戦をやり直すことも、兵・関係を二重に動かすことも無い
+ *   （反映は合戦の id ごとに 1 回だけ：flow.ts の applyBattleOutcomeOnce と、保存の appliedBattleId）。
  * - 手動保存：探索中（explore・muster・aftermath）のメニューから。point 'manual'。
  * - 結末（任意）：章の結末に入った後（phase は ending）。point 'ending'。
  */
@@ -29,6 +31,7 @@ import {
     TROOPS_MAX,
     cloneOutcome,
     cloneState,
+    isBattleId,
     isFiniteNumber,
     isObject,
     parseBattleOutcome,
@@ -51,7 +54,11 @@ export const CAMPAIGN_SAVE_KEY = 'koto-sengoku/3d-chapter1';
 export const CAMPAIGN_SAVE_ARCHIVE_KEY = 'koto-sengoku/3d-chapter1/previous';
 /** 2D 版の保存のキー。ここには決して触れない（テストで確かめる） */
 export const LEGACY_2D_SAVE_KEY = 'koto-sengoku/save';
-export const CAMPAIGN_SAVE_VERSION = 1;
+export const CAMPAIGN_SAVE_VERSION = 2;
+/** 読める古い版（読み込むときに今の版の形へ直す） */
+export const CAMPAIGN_SAVE_LEGACY_VERSIONS: readonly number[] = [1];
+/** 版 1 の保存（合戦の id が無い）を読み込んだときに付ける合戦の id */
+export const LEGACY_BATTLE_ID = 'v1-legacy';
 
 /** localStorage と同じ形の最小のもの（テストで差し替える） */
 export interface StorageLike {
@@ -83,6 +90,10 @@ export interface CampaignSaveData {
     characters: Record<CharacterId, CharacterStatus>;
     talked: Partial<Record<TalkFlag, boolean>>;
     battle: BattleOutcome | null;
+    /** 合戦の id（出陣前の自動保存・戦後・結末。探索・支度では null） */
+    battleId: string | null;
+    /** 結果を反映し終えた合戦の id（戦後・結末では battleId と同じ。それまでは null） */
+    appliedBattleId: string | null;
     ending: EndingId | null;
     explore: ExplorePose | null;
 }
@@ -139,6 +150,8 @@ export function toSaveData(state: CampaignState, point: SavePoint, now: Date): C
         characters: { ...state.characters },
         talked: pickTalked(state.talked),
         battle: state.battle ? cloneOutcome(state.battle) : null,
+        battleId: state.phase === 'explore' || state.phase === 'muster' ? null : state.battleId,
+        appliedBattleId: state.phase === 'explore' || state.phase === 'muster' ? null : state.appliedBattleId,
         ending: state.ending,
         explore: state.explore ? { ...state.explore } : null,
     };
@@ -162,7 +175,8 @@ export function parseSaveData(json: string): CampaignSaveData | null {
         return null;
     }
     if (!isObject(v)) return null;
-    if (v.version !== CAMPAIGN_SAVE_VERSION) return null;
+    const legacy = CAMPAIGN_SAVE_LEGACY_VERSIONS.includes(v.version as number);
+    if (v.version !== CAMPAIGN_SAVE_VERSION && !legacy) return null;
     if (typeof v.savedAt !== 'string' || Number.isNaN(Date.parse(v.savedAt))) return null;
     if (!SAVE_POINTS.includes(v.point as SavePoint)) return null;
     const point = v.point as SavePoint;
@@ -217,11 +231,30 @@ export function parseSaveData(json: string): CampaignSaveData | null {
         explore = { x: e.x, z: e.z, heading: e.heading };
     }
 
+    // 合戦の id と反映の済み印（版 1 には無いので、段階から決める）
+    const inField = phase === 'explore' || phase === 'muster';
+    let battleId: string | null;
+    let appliedBattleId: string | null;
+    if (legacy) {
+        if (v.battleId !== undefined || v.appliedBattleId !== undefined) return null;
+        battleId = inField ? null : LEGACY_BATTLE_ID;
+        appliedBattleId = phase === 'aftermath' || phase === 'ending' ? LEGACY_BATTLE_ID : null;
+    } else {
+        if (v.battleId !== null && !isBattleId(v.battleId)) return null;
+        if (v.appliedBattleId !== null && !isBattleId(v.appliedBattleId)) return null;
+        battleId = v.battleId as string | null;
+        appliedBattleId = v.appliedBattleId as string | null;
+    }
+
     // 段階との食い違い
     const beforeBattle = phase === 'explore' || phase === 'muster' || phase === 'battle';
     if (phase === 'explore' ? alliance !== null : alliance === null) return null;
     if (beforeBattle ? battle !== null : battle === null) return null;
     if (phase === 'ending' ? ending === null : ending !== null) return null;
+    // 探索・支度：合戦の id なし。出陣前：id あり・未反映。戦後・結末：その id を反映済み
+    if (inField ? battleId !== null || appliedBattleId !== null : battleId === null) return null;
+    if (phase === 'battle' && appliedBattleId !== null) return null;
+    if ((phase === 'aftermath' || phase === 'ending') && appliedBattleId !== battleId) return null;
     const data: CampaignSaveData = {
         version: CAMPAIGN_SAVE_VERSION,
         savedAt: v.savedAt,
@@ -234,6 +267,8 @@ export function parseSaveData(json: string): CampaignSaveData | null {
         characters,
         talked,
         battle,
+        battleId,
+        appliedBattleId,
         ending,
         explore,
     };
@@ -251,6 +286,8 @@ function stateOf(d: CampaignSaveData): CampaignState {
         characters: { ...d.characters },
         talked: { ...d.talked },
         battle: d.battle ? cloneOutcome(d.battle) : null,
+        battleId: d.battleId,
+        appliedBattleId: d.appliedBattleId,
         ending: d.ending,
         explore: d.explore ? { ...d.explore } : null,
         playTimeSec: d.playTimeSec,
@@ -260,11 +297,15 @@ function stateOf(d: CampaignSaveData): CampaignState {
 
 /**
  * 読み込んだ保存から、続きを遊ぶ状態を作る。
- * battle の段階（出陣前の自動保存）は、出陣の確認の前（muster）から再開する（合戦の途中からは再開しない）。
+ * battle の段階（出陣前の自動保存）は、出陣の確認の前（muster）から再開する（合戦の途中からは再開しない。合戦の id も外し、出陣し直すと新しい id）。
  */
 export function stateFromSave(d: CampaignSaveData): CampaignState {
     const s = stateOf(d);
-    if (s.phase === 'battle') s.phase = 'muster';
+    if (s.phase === 'battle') {
+        s.phase = 'muster';
+        s.battleId = null;
+        s.appliedBattleId = null;
+    }
     return s;
 }
 

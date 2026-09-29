@@ -4,7 +4,7 @@
  * 合戦の画面（battle/）はここに自分を登録し、章の進行（campaign/）はここを通して合戦を始める。互いの中身は直接 import しない。
  */
 import type * as THREE from 'three';
-import type { BattleOutcome, BattleSetup } from '../battle/types';
+import type { BattleOutcome, BattleRunHooks, BattleSetup } from '../battle/types';
 
 /** 探索以外の場面（合戦など）。入っている間は main.ts の代わりに毎フレーム呼ばれる */
 export interface Mode {
@@ -68,8 +68,8 @@ export function onModeChange(fn: (name: string | null) => void): () => void {
     return () => listeners.delete(fn);
 }
 
-/** 合戦を始めて、終わったら結果を返す（battle/ が登録する） */
-export type BattleRunner = (setup: BattleSetup) => Promise<BattleOutcome>;
+/** 合戦を始めて、終わったら結果を返す（battle/ が登録する）。hooks.onDecided は勝ち負けが決まった時（結果の画面の前）に呼ぶ */
+export type BattleRunner = (setup: BattleSetup, hooks?: BattleRunHooks) => Promise<BattleOutcome>;
 let battleRunner: BattleRunner | null = null;
 export function registerBattleRunner(fn: BattleRunner): void {
     battleRunner = fn;

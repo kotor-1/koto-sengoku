@@ -23,9 +23,9 @@ async function loadBattleRunner(): Promise<BattleRunnerLike | null> {
     if (!getBattleRunner()) await import('../battle/entry');
     const runner = getBattleRunner();
     if (!runner) return null;
-    return async (setup) => {
+    return async (setup, hooks) => {
         try {
-            return await runner(setup);
+            return await runner(setup, hooks);
         } finally {
             // 合戦の画面が場面を出ていなければ、探索へ戻す
             if (activeModeName()) exitMode();

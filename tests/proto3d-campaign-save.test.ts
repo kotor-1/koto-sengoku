@@ -15,6 +15,9 @@ import {
 } from '../proto3d/src/campaign/save';
 import type { CampaignState } from '../proto3d/src/campaign/state';
 import { MemoryStorage, toAftermath, toBattle, toMuster } from './proto3d-campaign-helpers';
+import { V1_AFTERMATH_OMORI_DEFEAT, V1_DEPARTURE_TASHIRO } from './proto3d-save-v1-fixtures';
+import { LEGACY_BATTLE_ID, CAMPAIGN_SAVE_VERSION } from '../proto3d/src/campaign/save';
+import { applyBattleOutcomeOnce, outcomeFromSetup } from '../proto3d/src/campaign/flow';
 
 const now = new Date('2026-09-29T03:04:05Z');
 const LEGACY_2D_DATA = JSON.stringify({ version: 2, savedAt: '2026-09-24T12:00:00.000Z', playTimeSec: 99, player: { x: 1, y: 2, facing: 'down' } });
@@ -178,7 +181,10 @@ describe('形・値の範囲・段階との食い違いの検査', () => {
     });
 
     it('版・日時・保存の種類・遊んだ時間がおかしい', () => {
-        expect(bad((d) => (d.version = 2))).toBeNull();
+        expect(bad((d) => (d.version = 3))).toBeNull();
+        expect(bad((d) => (d.version = 0))).toBeNull();
+        // 版 1 と名乗りながら版 2 の中身（合戦の id）を持つ
+        expect(bad((d) => (d.version = 1))).toBeNull();
         expect(bad((d) => delete d.version)).toBeNull();
         expect(bad((d) => (d.savedAt = 'yesterday'))).toBeNull();
         expect(bad((d) => (d.point = 'battle'))).toBeNull();
@@ -233,6 +239,114 @@ describe('形・値の範囲・段階との食い違いの検査', () => {
         expect(parseSaveData(JSON.stringify(ending()))).not.toBeNull();
         expect(bad((d) => (d.ending = null), ending)).toBeNull();
         expect(bad((d) => (d.ending = 'bad_end'), ending)).toBeNull();
+    });
+});
+
+describe('合戦の id と反映の済み印（版 2）', () => {
+    const base = () => validJson(toAftermath('tashiro', 'victory'), 'aftermath');
+    const bad = (patch: (d: Record<string, unknown>) => void, from: () => Record<string, unknown> = base) => {
+        const d = from();
+        patch(d);
+        return parseSaveData(JSON.stringify(d));
+    };
+    it('今の版は 2。出陣前は id あり・未反映、戦後・結末は反映済み、探索・支度は id なし', () => {
+        expect(CAMPAIGN_SAVE_VERSION).toBe(2);
+        const dep = validJson(toBattle('omori'), 'departure');
+        expect(dep.version).toBe(2);
+        expect(dep.battleId).toBe('ch1-border_field');
+        expect(dep.appliedBattleId).toBeNull();
+        const aft = base();
+        expect(aft.appliedBattleId).toBe(aft.battleId);
+        const mus = validJson(toMuster('alone'), 'manual');
+        expect([mus.battleId, mus.appliedBattleId]).toEqual([null, null]);
+    });
+    it('食い違い・形のおかしい id は読まない', () => {
+        expect(bad((d) => delete d.battleId)).toBeNull();
+        expect(bad((d) => delete d.appliedBattleId)).toBeNull();
+        expect(bad((d) => (d.appliedBattleId = null))).toBeNull(); // 戦後なのに未反映
+        expect(bad((d) => (d.appliedBattleId = 'other'))).toBeNull(); // 別の合戦の済み印
+        expect(bad((d) => (d.battleId = null))).toBeNull();
+        expect(bad((d) => ((d.battleId = 'a b'), (d.appliedBattleId = 'a b')))).toBeNull();
+        expect(bad((d) => ((d.battleId = 'x'.repeat(81)), (d.appliedBattleId = 'x'.repeat(81))))).toBeNull();
+        const dep = () => validJson(toBattle('omori'), 'departure');
+        expect(bad((d) => (d.appliedBattleId = d.battleId), dep)).toBeNull(); // 出陣前なのに反映済み
+        expect(bad((d) => (d.battleId = null), dep)).toBeNull();
+        const mus = () => validJson(toMuster('alone'), 'manual');
+        expect(bad((d) => (d.battleId = 'ch1-x'), mus)).toBeNull();
+    });
+    it('出陣前の保存を読み込むと支度から（合戦の id は外す。出陣し直すと新しい合戦）', () => {
+        const store = new CampaignSaveStore(new MemoryStorage());
+        expect(store.save(toBattle('tashiro'), 'departure', now).ok).toBe(true);
+        const l = store.load();
+        expect(l.status === 'ok' && [l.state.phase, l.state.battleId, l.state.appliedBattleId]).toEqual(['muster', null, null]);
+    });
+    it('戦後の保存を何度読み込んでも、同じ合戦の結果はもう反映されない（関係・兵は 1 回分）', () => {
+        const storage = new MemoryStorage();
+        const store = new CampaignSaveStore(storage);
+        const battle = toBattle('tashiro');
+        const o = outcomeFromSetup(battleSetupFor(battle), 'victory');
+        const first = applyBattleOutcomeOnce(battle, battle.battleId!, o);
+        expect(first.applied).toBe(true);
+        expect(store.save(first.state, 'aftermath', now).ok).toBe(true);
+        for (let n = 0; n < 3; n++) {
+            const l = store.load();
+            if (l.status !== 'ok') throw new Error('読めない');
+            const again = applyBattleOutcomeOnce(l.state, battle.battleId!, o);
+            expect(again.applied).toBe(false);
+            expect(again.state.relations).toEqual(first.state.relations);
+            expect(again.state.troops).toEqual(first.state.troops);
+            expect(again.state.characters).toEqual(first.state.characters);
+            expect(store.save(again.state, 'manual', now).ok).toBe(true);
+        }
+    });
+});
+
+describe('版 1 の保存（変更前のコードが書いたもの）も読める', () => {
+    it('戦後の自動保存（版 1）：段階・結果・関係・兵・人物がそのまま。反映済みとして扱い、二重にはかからない', () => {
+        const d = parseSaveData(V1_AFTERMATH_OMORI_DEFEAT);
+        expect(d).not.toBeNull();
+        expect(d!.version).toBe(2);
+        expect(d!.phase).toBe('aftermath');
+        expect(d!.battle?.result).toBe('defeat');
+        expect(d!.relations).toEqual({ tashiro: -20, omori: 0, washio: -60 });
+        expect([d!.battleId, d!.appliedBattleId]).toEqual([LEGACY_BATTLE_ID, LEGACY_BATTLE_ID]);
+        const storage = new MemoryStorage();
+        storage.data.set(CAMPAIGN_SAVE_KEY, V1_AFTERMATH_OMORI_DEFEAT);
+        const store = new CampaignSaveStore(storage);
+        const l = store.load();
+        if (l.status !== 'ok') throw new Error('版 1 が読めない');
+        expect(l.state.characters.genzo).toBe('wounded');
+        const o = outcomeFromSetup(battleSetupFor(toBattle('omori')), 'defeat');
+        expect(applyBattleOutcomeOnce(l.state, LEGACY_BATTLE_ID, o).applied).toBe(false);
+        expect(() => applyBattleOutcomeOnce(l.state, 'ch1-other', o)).toThrow();
+        // 読んだだけでは書き換えない（版 1 のまま残る）
+        expect(storage.data.get(CAMPAIGN_SAVE_KEY)).toBe(V1_AFTERMATH_OMORI_DEFEAT);
+        // 続きから遊んで保存すると版 2 になる
+        const r = store.save(finishTalk(l.state, 'genzo', 'end_chapter'), 'ending', now);
+        expect(r.ok).toBe(true);
+        const v2 = JSON.parse(storage.data.get(CAMPAIGN_SAVE_KEY)!);
+        expect([v2.version, v2.battleId, v2.appliedBattleId, v2.ending]).toEqual([2, LEGACY_BATTLE_ID, LEGACY_BATTLE_ID, 'defeat_sheltered']);
+        expect(store.load().status).toBe('ok');
+    });
+    it('出陣前の自動保存（版 1）：支度から再開（合戦の id なし）', () => {
+        const storage = new MemoryStorage();
+        storage.data.set(CAMPAIGN_SAVE_KEY, V1_DEPARTURE_TASHIRO);
+        const l = new CampaignSaveStore(storage).load();
+        expect(l.status === 'ok' && [l.state.phase, l.state.alliance, l.state.battleId, l.state.appliedBattleId]).toEqual(['muster', 'tashiro', null, null]);
+    });
+    it('版 1 の手動保存（探索）・結末も読める', () => {
+        const ex = validJson(newGame(), 'manual');
+        delete ex.battleId;
+        delete ex.appliedBattleId;
+        ex.version = 1;
+        expect(parseSaveData(JSON.stringify(ex))?.phase).toBe('explore');
+        const en = validJson(finishTalk(toAftermath('alone', 'retreat'), 'genzo', 'end_chapter'), 'ending');
+        delete en.battleId;
+        delete en.appliedBattleId;
+        en.version = 1;
+        const d = parseSaveData(JSON.stringify(en));
+        expect(d?.ending).toBe('retreat');
+        expect(d?.appliedBattleId).toBe(LEGACY_BATTLE_ID);
     });
 });
 

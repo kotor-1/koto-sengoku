@@ -5,18 +5,23 @@
  * campaign/game.ts の GameView を満たす。状態は持たない（見せて、押されたものを返すだけ）。
  * 入力の決まり（docs/design-policy.md §2）：ボタンは押した瞬間（pointerdown）に反応し、
  * 出たばかりの選択肢・ボタンはしばらく押しても決まらない（連打で次の選択まで進まないように）。
+ * さらに、出た後に始まった入力（出た後の pointerdown・出た後に押し直したキー。キーの自動の繰り返しは無視）だけで決まる（ui/guard.ts）。
  * キーボード：会話は Enter／Space／E で進む、選択肢は ↑↓（W／S）で選んで Enter、数字でも選べる。Esc はメニュー・やめる。
+ * 会話・軍議の途中も、右上の「メニュー」（Esc／M）でメニューを開ける。メニューは会話の上に重なり、閉じれば同じ行・同じ選び方に戻る（会話は進まない）。
  */
 import './ui.css';
 import type { ConfirmOptions, GameView, HudInfo, MenuAction, MenuInfo, PromptInfo, ScriptOptions, TitleAction, TitleInfo } from '../campaign/game';
 import type { ChoiceId } from '../campaign/state';
 import { CHAPTER_TITLE, PROVISIONAL_LABEL, type EndingView, type Script } from '../campaign/story';
 import { el, nowMs, onPress } from './dom';
+import { ADVANCE_GUARD_MS, CHOICE_GUARD_MS, HeldKeys, InputGate } from './guard';
 
-/** 出たばかりの選択肢・ボタンを押しても決まらない時間（ミリ秒） */
-const CHOICE_GUARD_MS = 350;
-/** 会話を続けて進めるときの最短の間（ミリ秒。二度押しで 2 行進まないように） */
-const ADVANCE_GUARD_MS = 140;
+/** 押し始めの時刻（イベントの timeStamp。performance.now() と同じ時計。おかしな値なら今） */
+function startedAt(e: Event): number {
+    const now = nowMs();
+    const t = e.timeStamp;
+    return Number.isFinite(t) && t > 0 && t <= now + 1000 ? t : now;
+}
 
 type ModalKind = 'title' | 'script' | 'confirm' | 'menu' | 'ending';
 
@@ -44,6 +49,8 @@ interface Modal {
     advance?(): void;
     /** 確認用：押す（選択肢・ボタンの id）。押せなければ false */
     press(id: string): boolean;
+    /** 上に重なった画面が閉じて、また一番上に戻った（出たばかりと同じ見張りにする） */
+    reexpose?(): void;
 }
 
 const isGo = (e: KeyboardEvent) => e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space' || e.code === 'KeyE';
@@ -63,6 +70,8 @@ export class DomView implements GameView {
     private readonly introEl: HTMLElement;
     private readonly toastEl: HTMLElement;
     private readonly modals: Modal[] = [];
+    /** 押さえているキー（出たばかりの選択肢を、出る前から押さえていたキーで決めないように） */
+    private readonly keys = new HeldKeys();
     private introTimers: number[] = [];
     private toastTimer = 0;
     /** 「話す」ボタン・E／Enter／Space */
@@ -87,7 +96,10 @@ export class DomView implements GameView {
         this.menuBtn.type = 'button';
         this.menuBtn.hidden = true;
         this.menuBtn.setAttribute('aria-label', 'メニュー（状態・保存・タイトルへ）');
-        onPress(this.menuBtn, () => this.onMenu());
+        // 会話の上にも出す（押しても会話は進まない）。会話以外の画面（メニュー・確認など）が開いている間は押せない
+        onPress(this.menuBtn, () => {
+            if (this.menuReachable()) this.onMenu();
+        });
         // 話す（右下）
         this.talkBtn = el('button', 'g-talk');
         this.talkBtn.type = 'button';
@@ -102,11 +114,25 @@ export class DomView implements GameView {
         this.introEl.hidden = true;
         this.toastEl = el('div', 'g-toast');
         this.toastEl.hidden = true;
+        // 知らせは読むだけ（pointer-events: none。下のスティック・見回し・ボタンへの押し始めを奪わない）
         this.toastEl.setAttribute('role', 'status');
-        this.toastEl.addEventListener('pointerdown', () => (this.toastEl.hidden = true));
         this.root.append(this.hudEl, this.menuBtn, this.talkBtn, this.introEl, this.toastEl);
         app.appendChild(this.root);
         window.addEventListener('keydown', this.onKey);
+        window.addEventListener('keyup', (e) => this.keys.up(e.code));
+        window.addEventListener('blur', () => this.keys.clear());
+    }
+
+    /** メニューのボタンを押せるか（何も開いていない・一番上が会話） */
+    private menuReachable(): boolean {
+        if (this.menuBtn.hidden) return false;
+        const top = this.modals[this.modals.length - 1];
+        return !top || top.kind === 'script';
+    }
+    private syncMenuBtn(): void {
+        // 会話の上では押せる（前に出す）。メニュー・確認などが開いている間は、その下に隠す
+        this.menuBtn.classList.toggle('over', this.modals.length > 0 && this.menuReachable());
+        this.menuBtn.classList.toggle('under', !this.menuReachable());
     }
 
     // ---------------- 常に出ているもの ----------------
@@ -168,6 +194,7 @@ export class DomView implements GameView {
     private push(m: Modal): void {
         this.modals.push(m);
         this.updateCover();
+        this.syncMenuBtn();
     }
 
     private covered = false;
@@ -180,16 +207,28 @@ export class DomView implements GameView {
 
     private close(m: Modal): void {
         const i = this.modals.indexOf(m);
+        const wasTop = i >= 0 && i === this.modals.length - 1;
         if (i >= 0) this.modals.splice(i, 1);
         m.layer.remove();
         this.updateCover();
         if (this.modals.length === 0) document.body.classList.remove('g-modal');
         if (!this.modals.some((x) => x.kind === 'title')) document.body.classList.remove('g-title');
+        // 下の画面がまた一番上になった：出たばかりと同じに見張る（メニューを閉じた指・キーで会話が進まないように）
+        const top = this.modals[this.modals.length - 1];
+        if (wasTop && top) top.reexpose?.();
+        this.syncMenuBtn();
     }
 
     private onKey = (e: KeyboardEvent): void => {
+        this.keys.down(e.code, e.repeat);
         if (e.metaKey || e.ctrlKey || e.altKey) return;
         const top = this.modals[this.modals.length - 1];
+        // 会話・軍議の途中の Esc／M：メニューを重ねて開く（会話は進めない）
+        if (top?.kind === 'script' && (e.code === 'Escape' || e.code === 'KeyM')) {
+            e.preventDefault();
+            if (!e.repeat && this.menuReachable()) this.onMenu();
+            return;
+        }
         if (top) {
             top.key(e);
             return;
@@ -211,9 +250,13 @@ export class DomView implements GameView {
         const top = this.modals[this.modals.length - 1];
         return top ? top.probe() : null;
     }
-    /** 確認用：開いている画面をすべて閉じる（待っている流れは捨てる。開発ビルドの __game.setPhase だけ） */
+    /** 開いている画面をすべて閉じる（答えは返さない。待っている流れは捨てる） */
+    abandon(): void {
+        for (const m of [...this.modals].reverse()) this.close(m);
+    }
+    /** 確認用：開いている画面をすべて閉じる（開発ビルドの __game.setPhase だけ） */
     devReset(): void {
-        for (const m of [...this.modals]) this.close(m);
+        this.abandon();
     }
     /** 確認用：会話を 1 行進める */
     devAdvance(): boolean {
@@ -230,27 +273,23 @@ export class DomView implements GameView {
 
     /**
      * ボタンの並び（確認・メニュー・タイトル・結末で共用）。
-     * ↑↓←→ で選び Enter／Space で押す。出たばかりは押しても決まらない（選ぶだけ）。
+     * ↑↓←→ で選び Enter／Space で押す。出たばかり（CHOICE_GUARD_MS）は押しても何も起きない。
+     * 出た後に始まった入力（pointerdown・押し直したキー）だけで決まる。
      */
     private buttonRow(
         container: HTMLElement,
         items: { id: string; label: string; sub?: string; disabled?: boolean }[],
         defaultIndex: number,
         onPick: (id: string) => void,
-    ): { key(e: KeyboardEvent): boolean; buttons: { id: string; label: string; disabled: boolean }[]; press(id: string): boolean } {
-        const shownAt = nowMs();
+    ): { key(e: KeyboardEvent): boolean; buttons: { id: string; label: string; disabled: boolean }[]; press(id: string): boolean; reexpose(): void } {
+        const gate = new InputGate(this.keys, nowMs(), CHOICE_GUARD_MS);
         const btns: HTMLButtonElement[] = [];
         let sel = Math.max(0, Math.min(items.length - 1, defaultIndex));
         if (items[sel]?.disabled) sel = Math.max(0, items.findIndex((i) => !i.disabled));
         const mark = () => btns.forEach((b, i) => b.classList.toggle('sel', i === sel));
         let done = false;
-        const pick = (i: number, force = false) => {
+        const pick = (i: number) => {
             if (done || items[i]!.disabled) return false;
-            if (!force && nowMs() - shownAt < CHOICE_GUARD_MS) {
-                sel = i;
-                mark();
-                return false;
-            }
             done = true;
             onPick(items[i]!.id);
             return true;
@@ -261,7 +300,9 @@ export class DomView implements GameView {
             b.dataset.id = it.id;
             if (it.sub) b.append(el('small', undefined, it.sub));
             b.disabled = !!it.disabled;
-            onPress(b, () => pick(i));
+            onPress(b, (e) => {
+                if (gate.pointer(nowMs(), startedAt(e))) pick(i);
+            });
             btns.push(b);
             container.appendChild(b);
         });
@@ -278,7 +319,7 @@ export class DomView implements GameView {
                 if (isUp(e)) move(-1);
                 else if (isDown(e)) move(1);
                 else if (isGo(e)) {
-                    if (!e.repeat) pick(sel);
+                    if (gate.key(e.code, e.repeat, nowMs())) pick(sel);
                 } else return false;
                 e.preventDefault();
                 return true;
@@ -286,8 +327,9 @@ export class DomView implements GameView {
             buttons: items.map((i) => ({ id: i.id, label: i.label, disabled: !!i.disabled })),
             press: (id) => {
                 const i = items.findIndex((x) => x.id === id);
-                return i >= 0 && pick(i, true);
+                return i >= 0 && pick(i);
             },
+            reexpose: () => gate.reset(nowMs()),
         };
     }
 
@@ -316,6 +358,7 @@ export class DomView implements GameView {
                 key: (e) => void row.key(e),
                 probe: () => ({ kind: 'title', buttons: row.buttons, text: box.textContent ?? '' }),
                 press: (id) => row.press(id),
+                reexpose: () => row.reexpose(),
             };
             const row = this.buttonRow(btnBox, items, info.save ? 1 : 0, (id) => {
                 this.close(m);
@@ -349,8 +392,9 @@ export class DomView implements GameView {
             const choices = sc.choices ?? [];
             let i = 0;
             let sel = Math.max(0, Math.min(choices.length - 1, sc.defaultChoice ?? 0));
-            let choicesAt = 0;
-            let last = nowMs();
+            // 行を進める見張り（二度押しで 2 行進まない・話しかけたキーを押さえたままでは進まない）と、選択肢の見張り
+            const lineGate = new InputGate(this.keys, nowMs(), ADVANCE_GUARD_MS);
+            const choiceGate = new InputGate(this.keys, nowMs(), CHOICE_GUARD_MS);
             let done = false;
             const choiceBtns: HTMLButtonElement[] = [];
             const mark = () => choiceBtns.forEach((b, k) => b.classList.toggle('sel', k === sel));
@@ -360,13 +404,8 @@ export class DomView implements GameView {
                 this.close(m);
                 resolve(v);
             };
-            const pick = (k: number, force = false) => {
+            const pick = (k: number) => {
                 if (done || choicesEl.hidden || !choices[k]) return false;
-                if (!force && nowMs() - choicesAt < CHOICE_GUARD_MS) {
-                    sel = k;
-                    mark();
-                    return false;
-                }
                 finish(choices[k]!.id);
                 return true;
             };
@@ -379,12 +418,17 @@ export class DomView implements GameView {
                     b.dataset.id = c.id;
                     b.append(el('span', 'n', String(k + 1)), document.createTextNode(c.label));
                     if (c.detail) b.append(el('span', 'd', c.detail));
-                    onPress(b, () => pick(k));
+                    if (c.summary) b.append(el('span', 's', c.summary));
+                    // 出たばかり・出る前に始まった押し方では決まらない（選んだ印も動かさない）
+                    onPress(b, (e) => {
+                        if (choiceGate.pointer(nowMs(), startedAt(e))) pick(k);
+                    });
                     choiceBtns.push(b);
                     choicesEl.append(b);
                 });
+                choicesEl.classList.toggle('has-summary', choices.some((c) => !!c.summary));
                 choicesEl.hidden = false;
-                choicesAt = nowMs();
+                choiceGate.reset(nowMs(), CHOICE_GUARD_MS);
                 mark();
             };
             const render = () => {
@@ -398,10 +442,9 @@ export class DomView implements GameView {
                 more.hidden = atEnd && choices.length > 0;
                 if (atEnd && choices.length > 0 && choicesEl.hidden) showChoices();
             };
-            const advance = (force = false) => {
+            const advance = () => {
                 if (done) return;
-                if (!force && nowMs() - last < ADVANCE_GUARD_MS) return;
-                last = nowMs();
+                lineGate.reset(nowMs(), ADVANCE_GUARD_MS);
                 if (i < lines.length - 1) {
                     i++;
                     render();
@@ -412,7 +455,7 @@ export class DomView implements GameView {
             // 画面のどこを押しても進む（選択肢が出ている間は、選択肢を押す）
             layer.addEventListener('pointerdown', (e) => {
                 if (e.pointerType === 'mouse' && e.button !== 0) return;
-                advance();
+                if (lineGate.pointer(nowMs(), startedAt(e))) advance();
             });
             const m: Modal = {
                 kind: 'script',
@@ -422,10 +465,10 @@ export class DomView implements GameView {
                         if (isUp(e)) sel = (sel + choices.length - 1) % choices.length;
                         else if (isDown(e)) sel = (sel + 1) % choices.length;
                         else if (isGo(e)) {
-                            if (!e.repeat) pick(sel);
+                            if (choiceGate.key(e.code, e.repeat, nowMs())) pick(sel);
                         } else if (/^Digit[1-9]$/.test(e.code)) {
                             const k = Number(e.code.slice(5)) - 1;
-                            if (k < choices.length && !e.repeat) pick(k);
+                            if (k < choices.length && choiceGate.key(e.code, e.repeat, nowMs())) pick(k);
                         } else return;
                         mark();
                         e.preventDefault();
@@ -433,7 +476,7 @@ export class DomView implements GameView {
                     }
                     if (isGo(e)) {
                         e.preventDefault();
-                        if (!e.repeat) advance();
+                        if (lineGate.key(e.code, e.repeat, nowMs())) advance();
                     }
                 },
                 probe: () => ({
@@ -445,10 +488,15 @@ export class DomView implements GameView {
                     choices: choicesEl.hidden ? [] : choices.map((c) => c.id),
                     selected: choicesEl.hidden ? null : (choices[sel]?.id ?? null),
                 }),
-                advance: () => advance(true),
+                advance: () => advance(),
                 press: (id) => {
                     const k = choices.findIndex((c) => c.id === id);
-                    return k >= 0 && pick(k, true);
+                    return k >= 0 && pick(k);
+                },
+                // メニューなどを閉じて会話に戻った：同じ行・同じ選び方のまま、閉じた入力では進まない・決まらない
+                reexpose: () => {
+                    lineGate.reset(nowMs(), CHOICE_GUARD_MS);
+                    if (!choicesEl.hidden) choiceGate.reset(nowMs(), CHOICE_GUARD_MS);
                 },
             };
             this.push(m);
@@ -477,6 +525,7 @@ export class DomView implements GameView {
                 },
                 probe: () => ({ kind: 'confirm', buttons: row.buttons, text: panel.textContent ?? '' }),
                 press: (id) => row.press(id),
+                reexpose: () => row.reexpose(),
             };
             const row = this.buttonRow(btns, o.buttons, o.defaultIndex ?? 0, (id) => {
                 this.close(m);
@@ -508,15 +557,16 @@ export class DomView implements GameView {
                 kind: 'menu',
                 layer,
                 key: (e) => {
-                    if (e.code === 'Escape' || (e.code === 'KeyM' && !e.repeat)) {
+                    if (e.code === 'Escape' || e.code === 'KeyM') {
                         e.preventDefault();
-                        row.press('close');
+                        if (!e.repeat) row.press('close');
                         return;
                     }
                     row.key(e);
                 },
                 probe: () => ({ kind: 'menu', buttons: row.buttons, text: panel.textContent ?? '' }),
                 press: (id) => row.press(id),
+                reexpose: () => row.reexpose(),
             };
             const row = this.buttonRow(btns, items, info.message ? 2 : info.canSave ? 0 : 2, (id) => {
                 this.close(m);

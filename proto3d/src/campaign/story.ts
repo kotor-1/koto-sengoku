@@ -43,6 +43,8 @@ export interface Choice {
     label: string;
     /** 選ぶ前に添える説明（何が変わるか） */
     detail?: string;
+    /** 1 行の要点（低い画面＝スマホ横で、説明の代わりにどの選択肢にも出して見比べられるようにする） */
+    summary?: string;
 }
 export interface Script {
     /** 確認用の名前（例：'explore.genzo'、'council.confirm'） */
@@ -188,9 +190,9 @@ function exploreScript(state: CampaignState, id: TalkId): Script {
 // ================= 軍議 =================
 
 const ALLIANCE_CHOICES: Choice[] = [
-    { id: 'ally_tashiro', label: '田代家と組む', detail: '田代の騎馬隊が、合戦の途中で左の林から別働隊として現れる。大森は鷲尾に付き、右の川沿いから回り込んでくる。' },
-    { id: 'ally_omori', label: '大森家と組む', detail: '大森の槍隊が、はじめから右翼に布陣する。田代は鷲尾に付き、左の林から騎馬で回り込んでくる。' },
-    { id: 'ally_alone', label: '独力で戦う', detail: '琴坂の予備隊を本陣の後ろに置く。田代・大森はどちらも静観する。鷲尾も丘の後ろに予備隊を置く。' },
+    { id: 'ally_tashiro', label: '田代家と組む', detail: '田代の騎馬隊が、合戦の途中で左の林から別働隊として現れる。大森は鷲尾に付き、右の川沿いから回り込んでくる。', summary: '味方に田代騎馬（途中で左の林から）・敵に大森槍（右の川沿い）' },
+    { id: 'ally_omori', label: '大森家と組む', detail: '大森の槍隊が、はじめから右翼に布陣する。田代は鷲尾に付き、左の林から騎馬で回り込んでくる。', summary: '味方に大森槍（はじめから右翼）・敵に田代騎馬（左の林から）' },
+    { id: 'ally_alone', label: '独力で戦う', detail: '琴坂の予備隊を本陣の後ろに置く。田代・大森はどちらも静観する。鷲尾も丘の後ろに予備隊を置く。', summary: '味方に琴坂の予備（本陣の後ろ）・敵に鷲尾の予備・国衆は静観' },
 ];
 
 function councilScript(state: CampaignState): Script {

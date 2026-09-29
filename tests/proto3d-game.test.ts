@@ -26,6 +26,7 @@ import type { EndingView, Script } from '../proto3d/src/campaign/story';
 import type { CastMember } from '../proto3d/src/explore/cast';
 import { START, colliders, type Rect } from '../proto3d/src/layout';
 import { MemoryStorage } from './proto3d-campaign-helpers';
+import { V1_AFTERMATH_OMORI_DEFEAT, V1_DEPARTURE_TASHIRO } from './proto3d-save-v1-fixtures';
 import { createBattle, runToEnd } from '../proto3d/src/battle/sim';
 import { hqAloneScript, planScript, retreatAt } from '../proto3d/src/battle/scripts';
 
@@ -70,6 +71,11 @@ class FakeView implements GameView {
     }
     toast(text: string, kind: string) {
         this.toasts.push({ text, kind });
+    }
+    abandoned = 0;
+    abandon() {
+        this.abandoned++;
+        this.reqs = [];
     }
 }
 
@@ -416,6 +422,35 @@ describe('保存して開き直す', () => {
         await h2.talkTo('genzo', 'end_chapter');
         expect((await h2.next('ending')).view.id).toBe('retreat');
     });
+    it('版 1 の保存（変更前に書いたもの）から続きを遊べる：戦後は結末まで、出陣前は支度から合戦へ', async () => {
+        const storage = new MemoryStorage();
+        storage.data.set(CAMPAIGN_SAVE_KEY, V1_AFTERMATH_OMORI_DEFEAT);
+        const h = new Harness(storage, { runner: async () => { throw new Error('合戦をやり直してはいけない'); } });
+        void h.game.start();
+        const t = await h.next('title');
+        expect(t.info.save?.summary).toContain('戦後');
+        t.answer('continue');
+        await flush();
+        expect(h.game.state?.phase).toBe('aftermath');
+        expect(h.game.state?.relations).toEqual({ tashiro: -20, omori: 0, washio: -60 });
+        await h.talkTo('genzo', 'end_chapter');
+        expect((await h.next('ending')).view.id).toBe('defeat_sheltered');
+        const sv = h.saved();
+        expect(sv.status === 'ok' && sv.data.version).toBe(2);
+
+        const s2 = new MemoryStorage();
+        s2.data.set(CAMPAIGN_SAVE_KEY, V1_DEPARTURE_TASHIRO);
+        const h2 = new Harness(s2, { result: 'victory' });
+        void h2.game.start();
+        (await h2.next('title')).answer('continue');
+        await flush();
+        expect(h2.game.state?.phase).toBe('muster');
+        (await h2.walkIntoGate()).answer('depart');
+        await flush(60);
+        expect(h2.battles).toHaveLength(1);
+        expect(h2.game.state?.phase).toBe('aftermath');
+        expect(h2.game.state?.relations.tashiro).toBe(40);
+    });
     it('結末の後で開き直すと、結末の画面から', async () => {
         const storage = new MemoryStorage();
         const h = new Harness(storage, { result: 'victory' });
@@ -543,16 +578,26 @@ describe('失敗と例外', () => {
         expect(h.game.state?.phase).toBe('aftermath');
         expect(h.game.state?.battle?.result).toBe('defeat');
     });
-    it('メニューからタイトルへ（確かめてから）。会話中はメニューも話しかけも開かない', async () => {
+    it('メニューからタイトルへ（確かめてから）。会話中は話しかけを受け付けず、メニューは会話の上に重なる（閉じれば同じ会話のまま）', async () => {
         const h = new Harness(new MemoryStorage());
         await h.newGame();
         h.world.walkTo('genzo');
         h.game.tick(1 / 30);
         void h.game.interact();
         const g = await h.next('script');
-        void h.game.openMenu();
         void h.game.interact('shinpachi');
         await h.none();
+        // 会話の途中のメニュー：会話はそのまま待っている（新しい会話も、答えも出ない）
+        void h.game.openMenu();
+        const m = await h.next('menu');
+        expect(h.game.screen).toBe('menu');
+        void h.game.openMenu(); // 二重には開かない
+        await h.none();
+        m.answer('close');
+        await h.none();
+        expect(h.game.screen).toBe('talk');
+        expect(h.game.state?.talked['explore.genzo']).toBeUndefined();
+        expect(h.world.control).toBe(false);
         g.answer('not_yet');
         await flush();
         expect(h.game.state?.phase).toBe('explore');
@@ -564,6 +609,49 @@ describe('失敗と例外', () => {
         await h.next('title');
         expect(h.world.control).toBe(false);
         expect(h.view.hudInfo).toBeNull();
+    });
+    it('会話の途中のメニューで保存でき、タイトルへ戻ると会話は捨てる（次の流れは普通に動く）', async () => {
+        const storage = new MemoryStorage();
+        const h = new Harness(storage);
+        await playToMuster(h, 'omori');
+        h.world.walkTo('genzo');
+        h.game.tick(1 / 30);
+        void h.game.interact();
+        await h.next('script');
+        void h.game.openMenu();
+        (await h.next('menu')).answer('save');
+        const m2 = await h.next('menu');
+        expect(m2.info.message?.ok).toBe(true);
+        const sv = h.saved();
+        expect(sv.status === 'ok' && sv.data.phase).toBe('muster');
+        m2.answer('title');
+        (await h.next('confirm')).answer('title');
+        const t = await h.next('title');
+        expect(h.view.abandoned).toBe(1);
+        expect(h.game.state).toBeNull();
+        t.answer('continue');
+        await flush();
+        expect(h.game.state?.phase).toBe('muster');
+        expect(h.world.control).toBe(true);
+        await h.talkTo('shinpachi');
+        expect(h.game.screen).toBe('explore');
+    });
+    it('軍議の途中のメニュー：保存はできない（理由つき）。閉じれば同じ軍議の選択のまま', async () => {
+        const h = new Harness(new MemoryStorage());
+        await h.newGame();
+        await h.talkTo('genzo', 'open_council');
+        const c = await h.next('script');
+        expect(c.mode).toBe('council');
+        void h.game.openMenu();
+        const m = await h.next('menu');
+        expect(m.info.canSave).toBe(false);
+        expect(m.info.saveNote).toContain('軍議');
+        m.answer('close');
+        await h.none();
+        expect(h.game.screen).toBe('council');
+        c.answer('ally_alone');
+        const conf = await h.next('script');
+        expect(conf.script.id).toBe('council.confirm.alone');
     });
     it('遊んだ時間を足して保存する（合戦の間の時間も）', async () => {
         const storage = new MemoryStorage();
@@ -615,6 +703,137 @@ describe('本物の合戦の計算でつなぐ（3 つの経路）', () => {
             expect(e.view.footer).toContain('仮シナリオ');
         });
     }
+});
+
+describe('合戦の結果は、勝ち負けが決まった時（結果の画面の前）に保存する', () => {
+    /** 合戦の画面の代わり：勝ち負けが決まったら onDecided を呼び、「続ける」（release）まで結果を返さない */
+    function panelRunner(result: BattleResultKind, opts: { decideTimes?: number } = {}) {
+        const st: { notes: ({ ok: boolean; text: string } | null)[]; release: () => void; reached: boolean } = { notes: [], release: () => {}, reached: false };
+        const runner: BattleRunnerLike = (setup, hooks) =>
+            new Promise((resolve) => {
+                const o = outcomeFromSetup(setup, result);
+                for (let i = 0; i < (opts.decideTimes ?? 1); i++) st.notes.push(hooks?.onDecided?.(o) ?? null);
+                st.reached = true;
+                st.release = () => resolve(o);
+            });
+        return { runner, st };
+    }
+    it('結果の画面の時点で戦後の保存がある：開き直すと戦後から（合戦をやり直さず、関係・兵は 1 回分だけ）', async () => {
+        const storage = new MemoryStorage();
+        const { runner, st } = panelRunner('retreat');
+        const h = new Harness(storage, { runner });
+        await playToMuster(h, 'tashiro');
+        const before = h.game.state!;
+        (await h.walkIntoGate()).answer('depart');
+        await flush(60);
+        expect(st.reached).toBe(true);
+        // 結果の画面：保存できたこと（読み戻して確かめた）を出す
+        expect(st.notes[0]?.ok).toBe(true);
+        expect(st.notes[0]?.text).toContain('読み戻して確かめました');
+        const sv = h.saved();
+        expect(sv.status).toBe('ok');
+        if (sv.status !== 'ok') return;
+        expect(sv.data.point).toBe('aftermath');
+        expect(sv.data.phase).toBe('aftermath');
+        expect(sv.data.battle?.result).toBe('retreat');
+        expect(sv.data.battleId).toMatch(/^ch1-/);
+        expect(sv.data.appliedBattleId).toBe(sv.data.battleId);
+        const want = { ...before.relations, tashiro: before.relations.tashiro + 5, omori: before.relations.omori - 30 };
+        expect(sv.data.relations).toEqual(want);
+        // ここで閉じて開き直す（結果の画面の「続ける」を押さない）
+        for (let n = 0; n < 2; n++) {
+            const h2 = new Harness(storage, { runner: async () => { throw new Error('合戦をやり直してはいけない'); } });
+            void h2.game.start();
+            (await h2.next('title')).answer('continue');
+            await flush();
+            expect(h2.game.state?.phase).toBe('aftermath');
+            expect(h2.game.state?.battle?.result).toBe('retreat');
+            expect(h2.game.state?.relations).toEqual(want);
+            expect(h2.game.screen).toBe('explore');
+            // 戦後の手動保存で上書きしても、反映の済み印はそのまま
+            void h2.game.openMenu();
+            (await h2.next('menu')).answer('save');
+            (await h2.next('menu')).answer('close');
+            await flush();
+        }
+        const again = h.saved();
+        expect(again.status === 'ok' && again.data.relations).toEqual(want);
+        expect(again.status === 'ok' && again.data.appliedBattleId).toBe(sv.data.battleId);
+        // 元のページで「続ける」を押しても、二重にはかからない（保存も書き直さない）
+        const writes = storage.touched.filter((t) => t.op === 'set' && t.key === CAMPAIGN_SAVE_KEY).length;
+        st.release();
+        await flush(40);
+        expect(h.game.state?.phase).toBe('aftermath');
+        expect(h.game.state?.relations).toEqual(want);
+        expect(storage.touched.filter((t) => t.op === 'set' && t.key === CAMPAIGN_SAVE_KEY).length).toBe(writes);
+        expect(h.view.toasts.some((t) => t.kind === 'ok' && t.text.includes('戦後'))).toBe(true);
+    });
+    it('勝ち負けの知らせが 2 回来ても、結果の反映と保存は 1 回だけ', async () => {
+        const storage = new MemoryStorage();
+        const { runner, st } = panelRunner('victory', { decideTimes: 3 });
+        const h = new Harness(storage, { runner });
+        await playToMuster(h, 'omori');
+        const before = h.game.state!;
+        const writes0 = storage.touched.filter((t) => t.op === 'set' && t.key === CAMPAIGN_SAVE_KEY).length;
+        (await h.walkIntoGate()).answer('depart');
+        await flush(60);
+        st.release();
+        await flush(40);
+        expect(st.notes).toHaveLength(3);
+        expect(st.notes.every((n) => n?.ok)).toBe(true);
+        expect(h.game.state?.relations.omori).toBe(before.relations.omori + 30);
+        expect(h.game.state?.relations.tashiro).toBe(before.relations.tashiro - 30);
+        // 出陣前 1 回 + 戦後 1 回
+        expect(storage.touched.filter((t) => t.op === 'set' && t.key === CAMPAIGN_SAVE_KEY).length - writes0).toBe(2);
+    });
+    it('結果の保存に失敗：結果の画面に失敗の理由を出し（成功とは言わない）、続けて遊べる（手元の状態は戦後）', async () => {
+        const storage = new MemoryStorage();
+        const { runner, st } = panelRunner('defeat');
+        const h = new Harness(storage, { runner });
+        await playToMuster(h, 'alone');
+        // 出陣前の保存は書ける。戦後（結果）の保存だけ、容量不足で失敗させる
+        const origSet = storage.setItem.bind(storage);
+        storage.setItem = (k, v) => {
+            if (k === CAMPAIGN_SAVE_KEY && v.includes('"point":"aftermath"')) throw Object.assign(new Error('full'), { name: 'QuotaExceededError' });
+            origSet(k, v);
+        };
+        (await h.walkIntoGate()).answer('depart');
+        await flush(60);
+        expect(st.reached).toBe(true);
+        expect(st.notes[0]?.ok).toBe(false);
+        expect(st.notes[0]?.text).toContain('保存できませんでした');
+        expect(st.notes[0]?.text).toContain('いっぱい');
+        expect(st.notes[0]?.text).not.toContain('保存しました');
+        expect(st.notes[0]?.text).toContain('出陣前');
+        st.release();
+        await flush(40);
+        expect(h.game.state?.phase).toBe('aftermath');
+        expect(h.game.state?.battle?.result).toBe('defeat');
+        expect(h.game.screen).toBe('explore');
+        expect(h.view.toasts.some((t) => t.kind === 'error' && t.text.includes('保存できませんでした'))).toBe(true);
+        expect(h.view.toasts.some((t) => t.kind === 'ok' && t.text.includes('戦後'))).toBe(false);
+        // 保存に残っているのは出陣前（開き直すと出陣前から＝合戦をやり直す。二重にはかからない）
+        const sv = h.saved();
+        expect(sv.status === 'ok' && sv.data.point).toBe('departure');
+        // 保存先が戻れば、戦後にメニューから保存し直せる
+        storage.setItem = origSet;
+        void h.game.openMenu();
+        (await h.next('menu')).answer('save');
+        const m = await h.next('menu');
+        expect(m.info.message?.ok).toBe(true);
+        m.answer('close');
+        const sv2 = h.saved();
+        expect(sv2.status === 'ok' && sv2.data.phase).toBe('aftermath');
+        expect(sv2.status === 'ok' && sv2.data.appliedBattleId).toBe(h.game.state?.battleId);
+    });
+    it('合戦の画面が知らせを送らなくても（古い呼び方）、結果は 1 回だけ反映して保存する', async () => {
+        const storage = new MemoryStorage();
+        const h = new Harness(storage, { result: 'victory' });
+        await playToAftermath(h, 'tashiro');
+        const sv = h.saved();
+        expect(sv.status === 'ok' && sv.data.point).toBe('aftermath');
+        expect(h.game.state?.appliedBattleId).toBe(h.game.state?.battleId);
+    });
 });
 
 describe('確認用の状態作り', () => {

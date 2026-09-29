@@ -26,7 +26,6 @@ export interface UiHandlers {
     selectUnit(id: string): void;
     /** 1 寄る・-1 引く・0 全体 */
     zoom(dir: 1 | -1 | 0): void;
-    focusUnit(id: string): void;
     continueAfterResult(): void;
 }
 
@@ -47,6 +46,8 @@ export interface ResultModel {
     lost: Record<Side, number>;
     start: Record<Side, number>;
     note: string;
+    /** 結果の保存（章の進行が、勝ち負けが決まった時に保存した結果）。null なら出さない */
+    save?: { ok: boolean; text: string } | null;
 }
 
 type Tone = 'good' | 'bad' | 'warn' | 'info';
@@ -382,11 +383,9 @@ export class BattleUi {
     // ---------------------------------------------------------------- 知らせ
 
     toast(text: string, tone: Tone, unitId?: string): void {
+        // 知らせは読むだけ（押しても何も起きない。pointer-events: none で、下の地図のタップ・ドラッグを奪わない）
         const t = el('div', `b-toast ${tone}`, text);
-        if (unitId) {
-            t.classList.add('link');
-            press(t, () => this.h.focusUnit(unitId));
-        }
+        if (unitId) t.dataset.unit = unitId;
         this.toasts.prepend(t);
         while (this.toasts.children.length > this.maxToasts) this.toasts.lastElementChild?.remove();
         const id1 = window.setTimeout(() => {
@@ -537,6 +536,11 @@ export class BattleUi {
         wrap.append(table);
         box.append(wrap);
         if (m.note) box.append(el('p', 'b-note', m.note));
+        if (m.save) {
+            const sv = el('p', `b-rsave ${m.save.ok ? 'ok' : 'ng'}`, m.save.text);
+            sv.setAttribute('role', m.save.ok ? 'status' : 'alert');
+            box.append(sv);
+        }
         const row = el('div', 'b-modal-row');
         const b = button('b-btn b-primary', '続ける', '続ける');
         press(b, () => this.h.continueAfterResult());

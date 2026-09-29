@@ -22,6 +22,7 @@ import {
     clampRelation,
     cloneOutcome,
     cloneState,
+    isBattleId,
     parseBattleOutcome,
     talkFlag,
     type CampaignPhase,
@@ -66,6 +67,8 @@ export function newGame(): CampaignState {
         characters,
         talked: {},
         battle: null,
+        battleId: null,
+        appliedBattleId: null,
         ending: null,
         explore: null,
         playTimeSec: 0,
@@ -222,10 +225,25 @@ export function choose(state: CampaignState, choiceId: ChoiceId): CampaignState 
 
 // ================= 出陣・合戦 =================
 
-/** 出陣する（muster → battle）。この直後の状態を「出陣前の自動保存」として保存する */
+/** 合戦の id の既定（純粋な関数の中で付ける。画面の流れ（game.ts）は withBattleId で出陣ごとに別の id に替える） */
+export const DEFAULT_BATTLE_ID = 'ch1-border_field';
+
+/** 出陣する（muster → battle）。合戦の id を付ける。この直後の状態を「出陣前の自動保存」として保存する */
 export function departure(state: CampaignState): CampaignState {
     if (state.phase !== 'muster') throw new FlowError(`今（${state.phase}）は出陣できません`);
-    return advanceTo(state, 'battle');
+    const s = advanceTo(state, 'battle');
+    s.battleId = DEFAULT_BATTLE_ID;
+    s.appliedBattleId = null;
+    return s;
+}
+
+/** 出陣した直後（結果の反映の前）の合戦に、この出陣だけの id を付け直す */
+export function withBattleId(state: CampaignState, id: string): CampaignState {
+    if (state.phase !== 'battle' || state.appliedBattleId !== null) throw new FlowError('合戦の id を付けられるのは、出陣した直後だけです');
+    if (!isBattleId(id)) throw new FlowError(`合戦の id の形が正しくありません：${id}`);
+    const s = cloneState(state);
+    s.battleId = id;
+    return s;
 }
 
 /**
@@ -335,6 +353,7 @@ const broken = (s: UnitStatus) => s === 'routed' || s === 'destroyed';
  */
 export function applyBattleOutcome(state: CampaignState, outcome: BattleOutcome): CampaignState {
     if (state.phase !== 'battle') throw new FlowError(`今（${state.phase}）は合戦の結果を受け取れません`);
+    if (!state.battleId || state.appliedBattleId !== null) throw new FlowError('この合戦の結果は、すでに反映したか、合戦の id がありません');
     const o = parseBattleOutcome(outcome);
     if (!o) throw new FlowError('合戦の結果の形が正しくありません');
     const hq = o.units.find((u) => u.id === UNIT_IDS.allyHonjin);
@@ -372,9 +391,22 @@ export function applyBattleOutcome(state: CampaignState, outcome: BattleOutcome)
     s.relations.washio = clampRelation(s.relations.washio + RELATION_DELTA.washio[o.result]);
 
     const next = advanceTo(s, 'aftermath');
+    next.appliedBattleId = next.battleId;
     // 戦後は城下の最初の位置から
     next.explore = null;
     return next;
+}
+
+/**
+ * 合戦の結果を、その合戦（battleId）に対して 1 回だけ反映する。
+ * - まだなら反映して { applied: true }。
+ * - すでに同じ合戦の結果を反映済み（戦後・結末。保存から読み込んだ状態でも）なら、状態はそのままで { applied: false }（兵・関係を二重に動かさない）。
+ * - 別の合戦の id・合戦の前の段階なら FlowError。
+ */
+export function applyBattleOutcomeOnce(state: CampaignState, battleId: string, outcome: BattleOutcome): { state: CampaignState; applied: boolean } {
+    if (state.appliedBattleId !== null && state.appliedBattleId === battleId && state.battle) return { state, applied: false };
+    if (state.phase !== 'battle' || state.battleId !== battleId) throw new FlowError(`合戦 ${battleId} の結果を今の状態（${state.phase}・${state.battleId ?? 'なし'}）へは反映できません`);
+    return { state: applyBattleOutcome(state, outcome), applied: true };
 }
 
 // ================= 結末 =================

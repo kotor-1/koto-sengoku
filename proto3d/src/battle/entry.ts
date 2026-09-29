@@ -16,7 +16,7 @@
  */
 import { appContext, enterMode, exitMode, registerBattleRunner, type AppContext, type Mode } from '../app/modes';
 import { loadModel } from '../app/models';
-import type { BattleOutcome, BattleSetup, Order } from './types';
+import type { BattleOutcome, BattleRunHooks, BattleSetup, Order } from './types';
 import { canCommand, createBattle, issueOrder, orderAllRetreat, stepBattle, unitById, type BattleEvent, type BattleState } from './sim';
 import { BattleView } from './view';
 import { BattleUi, type CommandKind } from './battleUi';
@@ -34,12 +34,15 @@ const TAP_EXACT_PX = { touch: 16, mouse: 10 };
 
 let current: BattleRun | null = null;
 
-/** 合戦を始めて、「続ける」を押したら結果を返す */
-export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
+/**
+ * 合戦を始めて、「続ける」を押したら結果を返す。
+ * 勝ち負けが決まった時（結果の画面を出す前）に hooks.onDecided を 1 回だけ呼び、返った文（保存の結果）を結果の画面に出す。
+ */
+export function runBattle(setup: BattleSetup, hooks: BattleRunHooks = {}): Promise<BattleOutcome> {
     if (current) return Promise.reject(new Error('合戦はすでに始まっています'));
     return new Promise<BattleOutcome>((resolve, reject) => {
         try {
-            current = new BattleRun(setup, (o) => {
+            current = new BattleRun(setup, hooks, (o) => {
                 current = null;
                 resolve(o);
             });
@@ -79,6 +82,8 @@ class BattleRun implements Mode {
     private camTouched = false;
     private endAt = -1;
     resultShown = false;
+    /** 勝ち負けが決まった知らせ（hooks.onDecided）を送った後の、その返事（保存の結果）。まだ送っていなければ undefined */
+    decidedNote: { ok: boolean; text: string } | null | undefined = undefined;
     private finished = false;
     private readonly off: (() => void)[] = [];
     private readonly ptrs = new Map<number, Ptr>();
@@ -92,6 +97,7 @@ class BattleRun implements Mode {
 
     constructor(
         setup: BattleSetup,
+        private readonly hooks: BattleRunHooks,
         private readonly done: (o: BattleOutcome) => void,
     ) {
         this.ctx = appContext();
@@ -106,7 +112,6 @@ class BattleRun implements Mode {
             allRetreat: () => void this.askAllRetreat(),
             selectUnit: (id) => this.selectFromCard(id),
             zoom: (d) => this.zoomButton(d),
-            focusUnit: (id) => this.focusUnit(id),
             continueAfterResult: () => this.finish(),
         }, { touch: this.ctx.touch });
         this.terrainLabels = terrainLabelsFor(this.s);
@@ -185,6 +190,8 @@ class BattleRun implements Mode {
         if (this.s.result && this.endAt < 0) {
             this.endAt = this.realT;
             this.pending = 'none';
+            // 勝ち負けが決まった：すぐに章の進行へ知らせる（結果の反映と戦後の自動保存。結果の画面を出す前）
+            this.decide();
         }
         if (this.endAt >= 0 && !this.resultShown && this.realT - this.endAt > 1.6) this.showResult();
         // 見えなくなった敵・戦場を離れた部隊の選択は外す
@@ -326,8 +333,21 @@ class BattleRun implements Mode {
 
     // ---------------------------------------------------------------- 結果
 
+    /** 勝ち負けが決まったことを 1 回だけ知らせる（章の進行が結果を反映して保存する）。保存の結果は結果の画面に出す */
+    private decide(): void {
+        if (this.decidedNote !== undefined || !this.s.result) return;
+        this.decidedNote = null;
+        try {
+            this.decidedNote = this.hooks.onDecided?.(this.s.result) ?? null;
+        } catch (e) {
+            console.error(e);
+            this.decidedNote = { ok: false, text: `結果を保存できませんでした：${e instanceof Error ? e.message : String(e)}` };
+        }
+    }
+
     private showResult(): void {
         const o = this.s.result!;
+        this.decide();
         this.resultShown = true;
         this.releaseInput();
         const { rows, lost, start } = resultRows(this.s, o);
@@ -345,11 +365,13 @@ class BattleRun implements Mode {
             lost,
             start,
             note: notes[o.result],
+            save: this.decidedNote ?? null,
         });
     }
 
     private finish(): void {
         if (this.finished || !this.s.result) return;
+        this.decide();
         this.finished = true;
         const o = this.s.result;
         for (const f of this.off) f();
@@ -649,7 +671,7 @@ function exposeDev(run: BattleRun): void {
             return run.s;
         },
         get ui() {
-            return { selectedId: run.selectedId, pending: run.pending, paused: run.paused, started: run.started, speed: run.speed, resultShown: run.resultShown, modal: run.ui.modalOpen };
+            return { selectedId: run.selectedId, pending: run.pending, paused: run.paused, started: run.started, speed: run.speed, resultShown: run.resultShown, modal: run.ui.modalOpen, decided: run.decidedNote };
         },
         get camera() {
             return { ...run.view.cam, maxDist: run.view.maxDist };
