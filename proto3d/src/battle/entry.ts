@@ -11,10 +11,14 @@
  *   - 地図：1 本指・左ドラッグで動かす、2 本指・ホイール・ボタンで寄る／引く。押して離す（動かさない）と「押した」扱い。
  *   - 指を離した・キャンセル・捕捉が外れたら、その指の操作は終わり（触り直すまで再開しない）。
  *   - 画面を離れた（blur・visibilitychange・pagehide）ら、自動で指揮（一時停止）にして入力を離す。
- *   - キー：Space 指揮／再開、1〜4 部隊、M 移動・A 攻撃・H 防衛・待機・R 撤退、Esc 取り消し、矢印で地図、+ − 0 で寄る・引く・全体。
+ *   - キー：Space 指揮／再開、1〜8 部隊（札の順）、M 移動・A 攻撃・H 防衛・待機・R 撤退、Esc 取り消し、矢印で地図、+ − 0 で寄る・引く・全体。
+ * - 選んでいる部隊は id の並び（selection。今は 0 か 1 部隊）で持ち、命令は control.ts の orderUnits で並びの部隊へ出す
+ *   （複数の選択・部隊のまとまりは、この並びを広げれば足せる）。
  *     特殊能力のある合戦（歴史分岐）は F（または「能力」）で選んだ部隊の能力を使う。援護（対象を選ぶ能力）は、その後で味方の部隊・札を押す。
  *     不適切な対象は理由を出すだけで回数を減らさない（abilities.ts の useAbility が確かめる）。指揮中（一時停止）も使える。
  * - 戦前の約束（BattleSetup.pledge）：対象の部隊の名札を目立たせ、南の「味方の陣」を地図に描き、条件の欄に進み具合、結果の画面に勝敗と別に結果を出す。
+ * - 合戦場のデータの戦場（fields/ の buildBattleSetup）：目標の区域・援軍の出る所・狭い正面を地図に描き（view.ts）、名札（control.ts の mapLabels）、
+ *   目標の欄に進み具合、結果の画面に主目標・副目標を勝敗・約束と別の行で出す。
  * - 結果を出し、「続ける」で後片付け（形・材質・画像・DOM・listener）をして探索へ戻り（exitMode）、結果を返す。
  */
 import { appContext, enterMode, exitMode, registerBattleRunner, type AppContext, type Mode } from '../app/modes';
@@ -28,15 +32,25 @@ import {
     RESULT_LABEL,
     abilitiesUsedText,
     abilityPanelModel,
+    commandableIds,
     eventTone,
     fmtClock,
-    orderAck,
+    leadOf,
+    mapLabels,
+    objectiveResultModel,
+    objectiveUnitMarks,
+    orderUnits,
+    orderUnitsText,
     pledgeResultModel,
+    pruneSelection,
     refusalText,
     resolveTap,
     resultRows,
     scenarioTexts,
+    selectOnly,
+    selectedOf,
     unitMarksText,
+    type MapLabel,
     type Pending,
     type Selected,
     type TapTarget,
@@ -95,7 +109,8 @@ class BattleRun implements Mode {
     speed: 1 | 2 = 1;
     /** 開発時の確認用の早回し（本番では 1 のまま） */
     devScale = 1;
-    selectedId: string | null = null;
+    /** 選んでいる部隊（id の並び。今は 0 か 1 部隊） */
+    selection: string[] = [];
     pending: Pending = 'none';
     private realT = 0;
     /** 利用者がカメラを動かした（画面の大きさが変わっても「全体」に戻さない） */
@@ -115,7 +130,9 @@ class BattleRun implements Mode {
     private scriptAcc = 0;
     /** 知らせに出した出来事の数（止めている間に使った能力の知らせを 1 回だけ出すため） */
     private seenEvents = 0;
-    private readonly terrainLabels: { id: string; text: string; x: number; z: number; y: number }[];
+    private readonly terrainLabels: MapLabel[];
+    /** 目標が指す部隊の名札の印（救出・守る・崩す） */
+    private readonly unitMarks: Map<string, string>;
 
     constructor(
         setup: BattleSetup,
@@ -137,7 +154,8 @@ class BattleRun implements Mode {
             zoom: (d) => this.zoomButton(d),
             continueAfterResult: () => this.finish(),
         }, { touch: this.ctx.touch });
-        this.terrainLabels = terrainLabelsFor(this.s);
+        this.terrainLabels = mapLabels(this.s);
+        this.unitMarks = objectiveUnitMarks(this.s);
 
         enterMode('battle', this);
         this.bindInput();
@@ -170,6 +188,16 @@ class BattleRun implements Mode {
                 console.warn('林の木を読み込めませんでした（円すいの木で続けます）', e);
                 ready();
             });
+    }
+
+    /** 主に選んでいる部隊（selection の先頭） */
+    get selectedId(): string | null {
+        return leadOf(this.selection);
+    }
+
+    /** 1 部隊だけを選ぶ（null で外す） */
+    select(id: string | null): void {
+        this.selection = selectOnly(id);
     }
 
     start(): void {
@@ -217,16 +245,17 @@ class BattleRun implements Mode {
             this.decide();
         }
         if (this.endAt >= 0 && !this.resultShown && this.realT - this.endAt > 1.6) this.showResult();
-        // 見えなくなった敵・戦場を離れた部隊の選択は外す
+        // 見えなくなった敵・戦場を離れた敵の選択は外す
+        const pruned = pruneSelection(this.s, this.selection);
+        if (pruned !== this.selection) this.selection = [...pruned];
         const sel = this.selectedId ? unitById(this.s, this.selectedId) : undefined;
-        if (sel && sel.side === 'enemy' && !(sel.present && sel.seenBy.ally)) this.selectedId = null;
         if (sel && sel.side === 'ally' && this.pending !== 'ability' && !canCommand(this.s, sel)) this.pending = 'none';
         // 援護の対象選び：選んだ部隊の能力が使えなくなったら（崩れた・合戦が終わった）やめる
         if (this.pending === 'ability' && !(sel && abilityPanelModel(this.s, sel.id)?.usable)) this.pending = 'none';
 
         this.view.update(this.s, dt, { selectedId: this.selectedId, pending: this.pending });
         this.placeLabels();
-        this.ui.update(this.s, { selectedId: this.selectedId, pending: this.pending, paused: this.paused, started: this.started, speed: this.speed });
+        this.ui.update(this.s, { selectedId: this.selectedId, selection: this.selection, pending: this.pending, paused: this.paused, started: this.started, speed: this.speed });
         this.view.render(this.ctx.renderer);
     }
 
@@ -254,6 +283,8 @@ class BattleRun implements Mode {
         const s = this.s;
         const hasAbilities = s.abilityList.length > 0;
         const pledgeId = s.pledge?.targetId ?? null;
+        // 同じ所で着くのを待つ味方（援軍）の名札は、上へ積んで重ならないように
+        const waitingAt = new Map<string, number>();
         for (let i = 0; i < s.units.length; i++) {
             const u = s.units[i];
             const a = this.view.labelAnchor(i);
@@ -268,10 +299,14 @@ class BattleRun implements Mode {
                 this.ui.label(u.id, u.name, u.side, p.x, p.y, !p.off, extra);
             } else if (u.side === 'ally' && !u.arrived && u.status === 'ready') {
                 const p = this.view.project(u.x, 4, u.z);
-                this.ui.label(u.id, u.name, 'ally', p.x, p.y, !p.off, ` 到着まで ${Math.max(0, Math.ceil(u.arriveAt - s.t))} 秒`);
+                const key = `${Math.round(u.x)},${Math.round(u.z)}`;
+                const k = waitingAt.get(key) ?? 0;
+                waitingAt.set(key, k + 1);
+                this.ui.label(u.id, u.name, 'ally', p.x, p.y - k * 18, !p.off, ` 到着まで ${Math.max(0, Math.ceil(u.arriveAt - s.t))} 秒`);
             } else this.ui.label(u.id, '', u.side, 0, 0, false);
-            this.ui.markLabel(u.id, 'sel', this.selectedId === u.id);
+            this.ui.markLabel(u.id, 'sel', this.selection.includes(u.id));
             if (pledgeId) this.ui.markLabel(u.id, 'pledge', pledgeId === u.id);
+            if (this.unitMarks.size) this.ui.labelMark(u.id, u.status === 'ready' ? (this.unitMarks.get(u.id) ?? '') : '');
         }
         for (const t of this.terrainLabels) {
             const p = this.view.project(t.x, t.y, t.z);
@@ -282,16 +317,22 @@ class BattleRun implements Mode {
     // ---------------------------------------------------------------- 命令
 
     private selected(): Selected | null {
-        const u = this.selectedId ? unitById(this.s, this.selectedId) : undefined;
-        if (!u) return null;
-        return { id: u.id, side: u.side, commandable: u.side === 'ally' && canCommand(this.s, u) };
+        return selectedOf(this.s, this.selection);
     }
 
-    private order(unitId: string, o: Order): boolean {
-        const ok = issueOrder(this.s, unitId, o);
-        this.ui.flash(ok ? orderAck(this.s, unitId, o) : refusalText(this.s, unitId, o));
+    /** 命令を部隊の並びへ出す（今は選んでいる 1 部隊）。1 部隊でも出せたら命令の途中（移動・攻撃）を終える */
+    private order(unitIds: readonly string[], o: Order): boolean {
+        const r = orderUnits(this.s, unitIds, o);
+        this.ui.flash(orderUnitsText(this.s, o, r));
+        const ok = r.issued.length > 0;
         if (ok) this.pending = 'none';
         return ok;
+    }
+
+    /** 選んでいる部隊のうち命令を出せるもの（今は 1 部隊。命令できなければ先頭の部隊＝断る理由を出すため） */
+    private orderTargets(): string[] {
+        const ids = commandableIds(this.s, this.selection);
+        return ids.length ? ids : this.selection.slice(0, 1);
     }
 
     private command(c: CommandKind): void {
@@ -306,7 +347,7 @@ class BattleRun implements Mode {
             return;
         }
         if (c === 'move' || c === 'attack') this.pending = this.pending === c ? 'none' : c;
-        else this.order(sel.id, { type: c });
+        else this.order(this.orderTargets(), { type: c });
     }
 
     /** 「能力」・F：選んだ味方の部隊の特殊能力を使う（援護は対象選びへ。使えなければ理由を出すだけで回数は減らない） */
@@ -369,7 +410,7 @@ class BattleRun implements Mode {
             this.focusUnit(id);
             return;
         }
-        this.selectedId = id;
+        this.select(id);
         this.pending = 'none';
     }
 
@@ -453,6 +494,7 @@ class BattleRun implements Mode {
             save: this.decidedNote ?? null,
             pledge: pledgeResultModel(this.s, o),
             abilities: abilitiesUsedText(this.s, o),
+            objectives: objectiveResultModel(o),
         });
     }
 
@@ -634,21 +676,22 @@ class BattleRun implements Mode {
             if (target.kind === 'unit' && target.side === 'ally' && !target.near) return;
             if (target.kind === 'unit' && target.side === 'ally') target = { kind: 'ground', x: target.x, z: target.z };
             const o: Order = target.kind === 'unit' ? { type: 'attack', targetId: target.unitId } : { type: 'move', x: target.x, z: target.z };
-            this.order(sel.id, o);
+            this.order(this.orderTargets(), o);
             return;
         }
         const act = resolveTap(sel, this.pending, target);
         switch (act.type) {
             case 'select':
             case 'inspect':
-                this.selectedId = act.unitId;
+                this.select(act.unitId);
                 this.pending = 'none';
                 break;
             case 'order':
-                this.order(act.unitId, act.order);
+                // act.unitId は先頭の部隊。命令は選んでいる並びの部隊へ出す（今は同じ 1 部隊）
+                this.order(this.selection.includes(act.unitId) ? this.orderTargets() : [act.unitId], act.order);
                 break;
             case 'deselect':
-                this.selectedId = null;
+                this.select(null);
                 this.pending = 'none';
                 break;
             case 'hint':
@@ -692,8 +735,9 @@ class BattleRun implements Mode {
             this.togglePause();
             return;
         }
+        // 1〜8：札の順の味方（味方は最大 8 部隊）
         const allies = this.s.units.filter((u) => u.side === 'ally');
-        const digit = /^(Digit|Numpad)([1-9])$/.exec(e.code);
+        const digit = /^(Digit|Numpad)([1-8])$/.exec(e.code);
         if (digit) {
             const u = allies[Number(digit[2]) - 1];
             if (u) this.selectFromCard(u.id);
@@ -702,7 +746,7 @@ class BattleRun implements Mode {
         switch (e.code) {
             case 'Escape':
                 if (this.pending !== 'none') this.pending = 'none';
-                else this.selectedId = null;
+                else this.select(null);
                 break;
             case 'KeyM':
                 this.command('move');
@@ -739,27 +783,6 @@ class BattleRun implements Mode {
     }
 }
 
-/** 地図の上の地形の名札（丘・林・湿地・退き口） */
-function terrainLabelsFor(s: BattleState): { id: string; text: string; x: number; z: number; y: number }[] {
-    const out: { id: string; text: string; x: number; z: number; y: number }[] = [];
-    const names: Record<string, string> = { hill: '丘', woods: '林（中は敵から見えない）', marsh: '湿地（動きが遅い）' };
-    s.map.terrain.forEach((a, i) => {
-        const name = names[a.kind];
-        if (!name) return;
-        if (a.circle) out.push({ id: `t${i}`, text: name, x: a.circle.cx + a.circle.r * 0.55, z: a.circle.cz + a.circle.r * 0.75, y: 2 });
-        // 四角の区域は真ん中より少し南（別働隊が着く所・通り道の名札と重ならないように）
-        else if (a.rect) out.push({ id: `t${i}`, text: name, x: (a.rect.x0 + a.rect.x1) / 2, z: Math.min((a.rect.z0 + a.rect.z1) / 2 + 30, s.map.depth / 2 - 30), y: 1 });
-    });
-    const ex = s.map.exits;
-    out.push({ id: 'exit-ally', text: '味方の退き口', x: ex.ally.x + 28, z: ex.ally.z - 6, y: 0 });
-    // 敵の退き口は敵本陣・予備隊（丘の上と後ろ）の名札と重ならないよう、東へ離して置く
-    out.push({ id: 'exit-enemy', text: '敵の退き口', x: ex.enemy.x + 75, z: ex.enemy.z + 10, y: 0 });
-    // 戦前の約束の安全地点（南の「味方の陣」）。輪（view.ts）の西の縁に名札
-    const pz = s.pledge?.safeZone;
-    if (pz) out.push({ id: 'safe-zone', text: '味方の陣（約束の安全地点）', x: pz.cx - pz.r - 30, z: pz.cz + 4, y: 0 });
-    return out;
-}
-
 // ---------------------------------------------------------------- 開発時の確認用（本番には入らない）
 
 function exposeDev(run: BattleRun): void {
@@ -769,7 +792,7 @@ function exposeDev(run: BattleRun): void {
             return run.s;
         },
         get ui() {
-            return { selectedId: run.selectedId, pending: run.pending, paused: run.paused, started: run.started, speed: run.speed, resultShown: run.resultShown, modal: run.ui.modalOpen, decided: run.decidedNote };
+            return { selectedId: run.selectedId, selection: [...run.selection], pending: run.pending, paused: run.paused, started: run.started, speed: run.speed, resultShown: run.resultShown, modal: run.ui.modalOpen, decided: run.decidedNote };
         },
         get camera() {
             return { ...run.view.cam, maxDist: run.view.maxDist };
@@ -804,7 +827,7 @@ function exposeDev(run: BattleRun): void {
         },
         start: () => run.start(),
         select(id: string | null) {
-            run.selectedId = id;
+            run.select(id);
         },
         /** 部隊の画面の位置（CSS px、ページの左上から）。実際のクリック・タップの確認に使う */
         screenOf(unitId: string) {

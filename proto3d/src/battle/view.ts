@@ -10,18 +10,51 @@
  * - 特殊能力（歴史分岐）：効果中の範囲の輪（持つ部隊について動く）、選んだ部隊のまだ使っていない能力の範囲（薄く点滅）、
  *   援護の結びの線（効いている間は実線、離れて外れている間は灰色の破線）、援護の対象を選んでいる間は選べる味方の輪を明るく。
  * - 戦前の約束：南の「味方の陣」（安全地点）の輪と、対象の部隊を囲む輪（同じ色）。
- * 描画命令はおよそ 30 前後（部隊 8 のとき）。影・画面の仕上げは使わない。
+ * - 合戦場のデータの地形（簡単な形と色だけ）：深い川（水の面）・浅瀬（浅い色の水と石）・崖（暗い岩の盛り上がり）。
+ *   通れる範囲（fieldRules.passable）の外は暗くする。
+ * - 目標の区域（確保する地点・守る地点・救出の地点・突破する地点）の輪（主目標は金・副目標は水色。果たしたら緑、果たせなければ灰）、
+ *   援軍の出る所の小さな印、狭い正面の区域の縁。名札（短い名前）は battleUi.ts が control.ts の mapLabels で出す。
+ * 描画命令はおよそ 30 前後（部隊 8 のとき）。戦場の地形・印が増えると 10 ほど増える。影・画面の仕上げは使わない。
  * 状態は読むだけ（sim.ts の BattleState を書き換えない）。
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import type { BattleMap, ClanId, Side } from './types';
+import type { BattleMap, ClanId, Side, Zone } from './types';
 import { attackArc, elevationAt, exitPointFor, inTerrain, unitById, type BattleState, type UnitState } from './sim';
-import { CAM, clampCam, clashShift, figureCount, formationExtent, formationSlots, hash01, keepOrder, type CamState, type Pending, type Slot } from './control';
+import {
+    CAM,
+    clampCam,
+    clashShift,
+    figureCount,
+    formationExtent,
+    formationSlots,
+    hash01,
+    keepOrder,
+    objectiveStateOf,
+    objectiveZoneMarks,
+    reinforcementMarks,
+    type CamState,
+    type Pending,
+    type Slot,
+} from './control';
 import { ABILITY_DATA, abilityInfo } from './abilities';
 
 /** 特殊能力の範囲の輪の色（敵方の能力は赤みの色） */
-const ABILITY_COLOR: Record<string, string> = { ieyasu_rally: '#ffd76a', tadakatsu_rearguard: '#b8f36b', nagamasa_support: '#c9a7ff', enemy: '#ff8a7a' };
+const ABILITY_COLOR: Record<string, string> = {
+    ieyasu_rally: '#ffd76a',
+    tadakatsu_rearguard: '#b8f36b',
+    nagamasa_support: '#c9a7ff',
+    sakai_flank: '#ffae5c',
+    ishikawa_reserve: '#7fd6ff',
+    sakakibara_vanguard: '#ff8fc0',
+    enemy: '#ff8a7a',
+};
+/** 自分だけに効く能力（範囲 0 m）の輪の半径（部隊を囲む大きさ） */
+const SELF_RING_R = 14;
+/** 目標の区域の色：主目標・副目標・果たした・果たせない */
+const OBJ_COLOR = { primary: '#ffd76a', secondary: '#9fd0ff', done: '#8ed57a', failed: '#8a8a8a' };
+/** 狭い正面の区域の縁の色 */
+const NARROW_COLOR = '#f0a040';
 /** 約束の安全地点と対象の輪の色 */
 const PLEDGE_COLOR = '#5fe0c0';
 
@@ -113,6 +146,12 @@ export class BattleView {
     /** 約束の安全地点（輪と塗り）と、対象を囲む輪 */
     private safeZone: { ring: THREE.Mesh; fill: THREE.Mesh } | null = null;
     private pledgeRing: THREE.Mesh | null = null;
+    /** 目標の区域の輪（主目標 → 副目標） */
+    private readonly objZones: { id: string; role: 'primary' | 'secondary'; ringMat: THREE.MeshBasicMaterial; fillMat: THREE.MeshBasicMaterial; state: string }[] = [];
+    /** 援軍の出る所の印（着いたら薄く） */
+    private readonly reinfMarks: { at: number; mat: THREE.MeshBasicMaterial }[] = [];
+    /** 通れる範囲（fieldRules.passable。無ければ null） */
+    private readonly passable: { x0: number; x1: number; z0: number; z1: number } | null;
     private time = 0;
     private readonly m4 = new THREE.Matrix4();
     private readonly q = new THREE.Quaternion();
@@ -125,6 +164,7 @@ export class BattleView {
     constructor(s: BattleState, opts: ViewOptions) {
         this.map = s.map;
         this.low = opts.low;
+        this.passable = s.setup.fieldRules?.passable ?? null;
         const bg = new THREE.Color('#56653f');
         this.scene.background = bg;
         this.scene.fog = new THREE.Fog(bg, 600, 1400);
@@ -139,7 +179,10 @@ export class BattleView {
         this.buildGround();
         this.buildRoad();
         this.buildMarsh();
+        this.buildWater();
+        this.buildCliffs();
         this.buildEdges();
+        this.buildFieldMarks(s);
         this.setTrees(null);
 
         // ---- 部隊 ----
@@ -241,7 +284,8 @@ export class BattleView {
             flank: this.own(new THREE.SpriteMaterial({ map: clashTex, color: '#ffae3a', depthTest: false, depthWrite: false, toneMapped: false })),
             rear: this.own(new THREE.SpriteMaterial({ map: clashTex, color: '#ff4b3a', depthTest: false, depthWrite: false, toneMapped: false })),
         };
-        for (let i = 0; i < 8; i++) {
+        // 斬り合いの印（組ごとに 1 つ。味方 8・敵 10 部隊まで）
+        for (let i = 0; i < 12; i++) {
             const sp = new THREE.Sprite(this.clashMats.front);
             sp.renderOrder = 12;
             sp.visible = false;
@@ -258,8 +302,8 @@ export class BattleView {
             return geo;
         };
         for (const r of s.abilityList) {
-            const rad = ABILITY_DATA[r.id].radius;
-            const col = r.side === 'ally' ? ABILITY_COLOR[r.id] : ABILITY_COLOR.enemy;
+            const rad = Math.max(ABILITY_DATA[r.id].radius, SELF_RING_R);
+            const col = r.side === 'ally' ? (ABILITY_COLOR[r.id] ?? ABILITY_COLOR.ieyasu_rally) : ABILITY_COLOR.enemy;
             const ringMat = this.own(new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.85, depthTest: false, depthWrite: false, toneMapped: false }));
             const fillMat = this.own(new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.1, depthTest: false, depthWrite: false, toneMapped: false }));
             const ring = new THREE.Mesh(this.own(flat(new THREE.RingGeometry(rad - 2.2, rad, 72, 1))), ringMat);
@@ -390,7 +434,7 @@ export class BattleView {
             const z = pos.getZ(i);
             const y = elevationAt(map, x, z);
             pos.setY(i, y);
-            groundColor(map, x, z, y, c);
+            groundColor(map, this.passable, x, z, y, c);
             col[i * 3] = c.r;
             col[i * 3 + 1] = c.g;
             col[i * 3 + 2] = c.b;
@@ -485,6 +529,199 @@ export class BattleView {
             });
             this.scene.add(m);
         }
+    }
+
+    /** 深い川（水の面）と浅瀬（浅い色の水と石）。川・浅瀬のない戦場では何も作らない */
+    private buildWater(): void {
+        const flatRect = (r: { x0: number; x1: number; z0: number; z1: number }, y: number): THREE.BufferGeometry => {
+            const g = new THREE.PlaneGeometry(r.x1 - r.x0, r.z1 - r.z0);
+            g.rotateX(-Math.PI / 2);
+            g.translate((r.x0 + r.x1) / 2, y, (r.z0 + r.z1) / 2);
+            g.deleteAttribute('uv');
+            return g;
+        };
+        const add = (kind: 'river' | 'ford', color: string, opacity: number, y: number, order: number) => {
+            const parts = this.map.terrain.filter((a) => a.kind === kind && a.rect).map((a) => flatRect(a.rect!, y));
+            if (!parts.length) return;
+            const geo = mergeGeometries(parts)!;
+            for (const p of parts) p.dispose();
+            const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
+            this.own(geo, mat);
+            const m = new THREE.Mesh(geo, mat);
+            m.renderOrder = order;
+            this.scene.add(m);
+        };
+        add('river', '#3f6f8c', 0.88, 0.22, 1);
+        add('ford', '#9cc3c8', 0.55, 0.3, 2);
+        // 浅瀬の石（平たい多面体を決まった位置に散らす）
+        const stones: [number, number, number, number][] = [];
+        let k = 0;
+        for (const a of this.map.terrain) {
+            if (a.kind !== 'ford' || !a.rect) continue;
+            const { x0, x1, z0, z1 } = a.rect;
+            const n = Math.round(((x1 - x0) * (z1 - z0)) / 45);
+            for (let i = 0; i < n; i++, k++) {
+                stones.push([x0 + 1.5 + hash01('stone', k) * (x1 - x0 - 3), z0 + 1.5 + hash01('stone', k + 700) * (z1 - z0 - 3), 0.6 + hash01('stone', k + 1400) * 1.1, hash01('stone', k + 2100) * Math.PI]);
+            }
+        }
+        if (stones.length) {
+            const g = new THREE.IcosahedronGeometry(1, 0);
+            g.scale(1.3, 0.45, 1);
+            const mat = new THREE.MeshLambertMaterial({ color: '#8d8a80', flatShading: true });
+            this.own(g, mat);
+            const m = new THREE.InstancedMesh(g, mat, stones.length);
+            stones.forEach(([x, z, sc, rot], i) => {
+                this.q.setFromAxisAngle(this.yAxis, rot);
+                this.m4.compose(this.v3.set(x, 0.25, z), this.q, this.s3.setScalar(sc));
+                m.setMatrixAt(i, this.m4);
+            });
+            m.computeBoundingSphere();
+            this.scene.add(m);
+        }
+    }
+
+    /** 崖・岩（暗い岩の盛り上がり）：区域を 8 m ほどの升に分け、高さの違う箱を並べる（1 つの形にまとめる） */
+    private buildCliffs(): void {
+        const parts: THREE.BufferGeometry[] = [];
+        let k = 0;
+        for (const a of this.map.terrain) {
+            if (a.kind !== 'cliff' || !a.rect) continue;
+            const { x0, x1, z0, z1 } = a.rect;
+            const nx = Math.max(1, Math.round((x1 - x0) / 8));
+            const nz = Math.max(1, Math.round((z1 - z0) / 8));
+            const cw = (x1 - x0) / nx;
+            const cd = (z1 - z0) / nz;
+            for (let i = 0; i < nx; i++) {
+                for (let j = 0; j < nz; j++, k++) {
+                    // 高さ 3〜8 m（通り道の部隊を隠しすぎないように低めに）。色は升ごとに少し明暗を変える
+                    const h = 3 + hash01('cliff', k) * 5;
+                    const g = new THREE.BoxGeometry(cw * 1.02, h, cd * 1.02);
+                    g.translate(x0 + (i + 0.5) * cw, h / 2, z0 + (j + 0.5) * cd);
+                    const shade = 0.34 + hash01('cliff', k + 500) * 0.12;
+                    parts.push(part(g, shade, 0, 0, 0));
+                }
+            }
+        }
+        if (!parts.length) return;
+        const geo = merge(parts);
+        geo.computeVertexNormals();
+        const mat = new THREE.MeshLambertMaterial({ vertexColors: true, color: '#b0a590', flatShading: true });
+        this.own(geo, mat);
+        this.scene.add(new THREE.Mesh(geo, mat));
+    }
+
+    /**
+     * 目標の区域の輪（地面の起伏に沿わせる）・援軍の出る所の印・狭い正面の区域の縁。
+     * 目標も援軍も特殊ルールもない合戦（国境の原・歴史分岐の章）では何も作らない。
+     */
+    private buildFieldMarks(s: BattleState): void {
+        for (const m of objectiveZoneMarks(s)) {
+            const col = OBJ_COLOR[m.role];
+            const ringMat = this.own(new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.85, depthTest: false, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
+            const fillMat = this.own(new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.1, depthTest: false, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
+            const { ring, fill } = this.zoneShapes(m.zone, 2);
+            const rm = new THREE.Mesh(this.own(ring), ringMat);
+            const fm = new THREE.Mesh(this.own(fill), fillMat);
+            rm.renderOrder = 7;
+            fm.renderOrder = 6;
+            this.scene.add(fm, rm);
+            this.objZones.push({ id: m.id, role: m.role, ringMat, fillMat, state: 'active' });
+        }
+        for (const r of s.setup.fieldRules?.specialRules ?? []) {
+            if (r.type !== 'narrow_frontage') continue;
+            const mat = this.own(new THREE.MeshBasicMaterial({ color: NARROW_COLOR, transparent: true, opacity: 0.45, depthTest: false, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
+            const { ring, fill } = this.zoneShapes(r.zone, 1.2);
+            fill.dispose();
+            const rm = new THREE.Mesh(this.own(ring), mat);
+            rm.renderOrder = 5;
+            this.scene.add(rm);
+        }
+        // 援軍の出る所：地面の菱形と、細い竿の小旗（陣営の色）
+        for (const r of reinforcementMarks(s)) {
+            const mat = this.own(new THREE.MeshBasicMaterial({ color: SIDE_COLOR[r.side], transparent: true, opacity: 0.85, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
+            const y = elevationAt(this.map, r.x, r.z);
+            const dia = new THREE.CircleGeometry(6, 4);
+            dia.rotateX(-Math.PI / 2);
+            dia.translate(r.x, y + 0.35, r.z);
+            const pole = new THREE.CylinderGeometry(0.25, 0.25, 9, 5);
+            pole.translate(r.x, y + 4.5, r.z);
+            const flag = new THREE.BufferGeometry();
+            flag.setAttribute('position', new THREE.Float32BufferAttribute([r.x, y + 9, r.z, r.x + 4.5, y + 7.8, r.z, r.x, y + 6.6, r.z], 3));
+            flag.setAttribute('normal', new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 0, 0, 1], 3));
+            for (const g of [dia, pole]) g.deleteAttribute('uv');
+            const geo = mergeGeometries([dia.toNonIndexed(), pole.toNonIndexed(), flag])!;
+            dia.dispose();
+            pole.dispose();
+            flag.dispose();
+            this.own(geo);
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.renderOrder = 4;
+            this.scene.add(mesh);
+            this.reinfMarks.push({ at: r.at, mat });
+        }
+    }
+
+    /** 区域の縁の帯（幅 w）と塗り。地面の起伏（丘）に沿わせる */
+    private zoneShapes(z: Zone, w: number): { ring: THREE.BufferGeometry; fill: THREE.BufferGeometry } {
+        let ring: THREE.BufferGeometry;
+        let fill: THREE.BufferGeometry;
+        if (z.circle) {
+            const { cx, cz, r } = z.circle;
+            ring = new THREE.RingGeometry(Math.max(0.5, r - w), r, 72, 1);
+            fill = new THREE.RingGeometry(0.01, Math.max(0.5, r - w), 48, 6);
+            for (const g of [ring, fill]) {
+                g.rotateX(-Math.PI / 2);
+                g.translate(cx, 0, cz);
+            }
+        } else if (z.rect) {
+            const { x0, x1, z0, z1 } = z.rect;
+            const strip = (ax: number, az: number, bx: number, bz: number) => {
+                const len = Math.hypot(bx - ax, bz - az);
+                const g = new THREE.PlaneGeometry(len, w, Math.max(1, Math.round(len / 6)), 1);
+                g.rotateX(-Math.PI / 2);
+                g.rotateY(-Math.atan2(bz - az, bx - ax));
+                g.translate((ax + bx) / 2, 0, (az + bz) / 2);
+                g.deleteAttribute('uv');
+                const out = g.toNonIndexed();
+                g.dispose();
+                return out;
+            };
+            const h = w / 2;
+            const sides = [strip(x0, z0 + h, x1, z0 + h), strip(x0, z1 - h, x1, z1 - h), strip(x0 + h, z0 + w, x0 + h, z1 - w), strip(x1 - h, z0 + w, x1 - h, z1 - w)];
+            ring = mergeGeometries(sides)!;
+            for (const g of sides) g.dispose();
+            fill = new THREE.PlaneGeometry(x1 - x0, z1 - z0, Math.max(1, Math.round((x1 - x0) / 8)), Math.max(1, Math.round((z1 - z0) / 8)));
+            fill.rotateX(-Math.PI / 2);
+            fill.translate((x0 + x1) / 2, 0, (z0 + z1) / 2);
+        } else {
+            ring = new THREE.BufferGeometry();
+            fill = new THREE.BufferGeometry();
+        }
+        for (const g of [ring, fill]) {
+            const pos = g.getAttribute('position') as THREE.BufferAttribute | undefined;
+            if (!pos) continue;
+            for (let i = 0; i < pos.count; i++) pos.setY(i, elevationAt(this.map, pos.getX(i), pos.getZ(i)) + 0.45);
+            pos.needsUpdate = true;
+        }
+        return { ring, fill };
+    }
+
+    /** 毎フレーム：目標の区域の色（果たした・果たせない）、確保を数えている間は塗りを濃く。援軍が着いたら印を薄く */
+    private updateFieldMarks(s: BattleState, t: number): void {
+        for (const z of this.objZones) {
+            const st = objectiveStateOf(s, z.id);
+            if (st !== z.state) {
+                z.state = st;
+                const col = st === 'done' ? OBJ_COLOR.done : st === 'failed' ? OBJ_COLOR.failed : OBJ_COLOR[z.role];
+                z.ringMat.color.set(col);
+                z.fillMat.color.set(col);
+            }
+            const run = s.objectives?.list.find((r) => r.def.id === z.id);
+            const counting = st === 'active' && !!run && run.sec > 0;
+            z.ringMat.opacity = st === 'active' ? (counting ? 0.8 + Math.sin(t * 5) * 0.15 : 0.8) : 0.55;
+            z.fillMat.opacity = counting ? 0.16 + Math.sin(t * 5) * 0.05 : st === 'active' ? 0.08 : 0.05;
+        }
+        for (const r of this.reinfMarks) r.mat.opacity = s.t >= r.at ? 0.35 : 0.65 + Math.sin(t * 3) * 0.2;
     }
 
     /** 戦場の縁の線と、退き口の印（味方は水色・敵は赤の山形） */
@@ -826,6 +1063,7 @@ export class BattleView {
         } else this.selRing.visible = false;
 
         if (this.abilRings.length || this.pledgeRing) this.updateAbilityMarks(s, ui, t);
+        if (this.objZones.length || this.reinfMarks.length) this.updateFieldMarks(s, t);
         this.ribbon.end();
     }
 
@@ -880,7 +1118,7 @@ export class BattleView {
         }
     }
 
-    /** 命令の線：移動は白っぽい水色、攻撃は橙、撤退は灰色。着く所に矢じり */
+    /** 命令の線：移動は白っぽい水色、攻撃は橙、撤退は灰色。着く所に矢じり。道探しの戦場では、たどる道（川・崖を回る）に沿って引く */
     private orderLine(s: BattleState, u: UnitState, v: UnitVis, selected: boolean): void {
         const from: [number, number] = v.shown ? [v.px, v.pz] : [u.x, u.z];
         const w = selected ? 2.0 : 1.2;
@@ -888,7 +1126,7 @@ export class BattleView {
         const o = u.order;
         if (o.type === 'move') {
             if (Math.hypot(o.x - from[0], o.z - from[1]) < 4) return;
-            this.ribbon.path([from, [o.x, o.z]], w, [0.75, 0.95, 1, a], null, true, v.halfD, 0);
+            this.ribbon.polyline(this.routeTo(u, from, o.x, o.z), w, [0.75, 0.95, 1, a], null, true, v.halfD, 0);
         } else if (o.type === 'attack') {
             const j = s.units.findIndex((x) => x.id === o.targetId);
             const e = j >= 0 ? this.vis[j] : null;
@@ -896,8 +1134,19 @@ export class BattleView {
             this.ribbon.path([from, [e.px, e.pz]], w, [1, 0.55, 0.25, a], null, true, v.halfD, e.halfD + 2);
         } else if (o.type === 'retreat') {
             const ex = exitPointFor(s, u);
-            this.ribbon.path([from, [ex.x, ex.z]], w, [0.8, 0.8, 0.8, a * 0.8], { on: 6, off: 4, offset: 0 }, true, v.halfD, 0);
+            this.ribbon.polyline(this.routeTo(u, from, ex.x, ex.z), w, [0.8, 0.8, 0.8, a * 0.8], { on: 6, off: 4, offset: 0 }, true, v.halfD, 0);
         }
+    }
+
+    /** from から (x, z) までの線の点：その行き先の道（sim の道探し）があれば、まだ通っていない点を通る。無ければまっすぐ */
+    private routeTo(u: UnitState, from: [number, number], x: number, z: number): [number, number][] {
+        const p = u.path;
+        if (!p || p.idx >= p.pts.length || Math.hypot(p.goalX - x, p.goalZ - z) > 6) return [from, [x, z]];
+        const pts: [number, number][] = [from];
+        for (let i = p.idx; i < p.pts.length; i++) pts.push([p.pts[i].x, p.pts[i].z]);
+        const last = pts[pts.length - 1];
+        if (Math.hypot(last[0] - x, last[1] - z) > 1) pts.push([x, z]);
+        return pts;
     }
 
     render(renderer: THREE.WebGLRenderer): void {
@@ -1100,11 +1349,14 @@ function angleDelta(from: number, to: number): number {
     return d;
 }
 
-/** 地面の色（草・林の下草・湿地・丘の乾いた草。戦場の外は暗く） */
-function groundColor(map: BattleMap, x: number, z: number, y: number, out: THREE.Color): void {
+/** 地面の色（草・林の下草・湿地・丘の乾いた草・川底・浅瀬の砂・崖の岩。戦場の外・通れる範囲の外は暗く） */
+function groundColor(map: BattleMap, passable: { x0: number; x1: number; z0: number; z1: number } | null, x: number, z: number, y: number, out: THREE.Color): void {
     const n = Math.sin(x * 0.047 + 0.3) * 0.5 + Math.sin(z * 0.039 + 1.1) * 0.5 + Math.sin((x + z) * 0.021) * 0.6 + Math.sin(x * 0.19 - z * 0.13) * 0.25;
     out.set('#7a8f4c');
-    if (inTerrain(map, 'woods', x, z)) out.set('#465f33');
+    if (inTerrain(map, 'cliff', x, z)) out.set('#4a463f');
+    else if (inTerrain(map, 'ford', x, z)) out.set('#9a916c');
+    else if (inTerrain(map, 'river', x, z)) out.set('#35505c');
+    else if (inTerrain(map, 'woods', x, z)) out.set('#465f33');
     else if (inTerrain(map, 'marsh', x, z)) out.set('#5b7359');
     else if (y > 0.05) {
         const k = Math.min(1, y / 12);
@@ -1115,6 +1367,9 @@ function groundColor(map: BattleMap, x: number, z: number, y: number, out: THREE
     if (!inside) {
         const d = Math.max(Math.abs(x) - map.width / 2, Math.abs(z) - map.depth / 2);
         out.lerp(new THREE.Color('#56653f'), Math.min(1, 0.45 + d / 200));
+    } else if (passable && (x < passable.x0 || x > passable.x1 || z < passable.z0 || z > passable.z1)) {
+        // 通れる範囲の外（戦場の中）：暗くする
+        out.lerp(new THREE.Color('#252a1e'), 0.55);
     }
 }
 
@@ -1387,6 +1642,18 @@ class Ribbon {
             this.vert(bx - hwx, bz - hwz, color);
             this.vert(bx + hwx, bz + hwz, color);
             this.vert(tx, tz, color);
+        }
+    }
+
+    /** 折れ線の帯（最初の区間だけ startCut、最後の区間だけ endCut と矢じり）。点が 2 つなら path と同じ */
+    polyline(pts: [number, number][], width: number, color: number[], dash: { on: number; off: number; offset: number } | null, arrow: boolean, startCut: number, endCut: number): void {
+        if (pts.length <= 2) {
+            this.path(pts, width, color, dash, arrow, startCut, endCut);
+            return;
+        }
+        for (let i = 0; i + 1 < pts.length; i++) {
+            const lastSeg = i + 2 === pts.length;
+            this.path([pts[i], pts[i + 1]], width, color, dash, arrow && lastSeg, i === 0 ? startCut : 0, lastSeg ? endCut : 0);
         }
     }
 

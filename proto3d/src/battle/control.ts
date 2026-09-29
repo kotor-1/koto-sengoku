@@ -273,7 +273,11 @@ export interface OrderUnitsResult {
  */
 export function orderUnits(s: BattleState, ids: Selection, order: Order, issue: (s: BattleState, id: string, o: Order) => boolean = issueOrder): OrderUnitsResult {
     const r: OrderUnitsResult = { issued: [], refused: [] };
-    for (const id of ids) (issue(s, id, order) ? r.issued : r.refused).push(id);
+    for (const id of ids) {
+        // 敵の部隊には命令を出さない（sim の issueOrder は敵の考えも使うので陣営を見ない）
+        const ok = unitById(s, id)?.side !== 'enemy' && issue(s, id, order);
+        (ok ? r.issued : r.refused).push(id);
+    }
     return r;
 }
 
@@ -1003,7 +1007,10 @@ export function mapLabels(s: BattleState): MapLabel[] {
     for (const m of objectiveZoneMarks(s)) {
         const c = zoneCenter(m.zone);
         const south = m.zone.circle ? c.z + m.zone.circle.r : m.zone.rect ? m.zone.rect.z1 : c.z;
-        out.push({ id: `obj-${m.id}`, text: `${m.role === 'primary' ? '主目標' : '副目標'}：${m.name}`, x: c.x, z: south + 4, y: 0.5 });
+        const north = m.zone.circle ? c.z - m.zone.circle.r : m.zone.rect ? m.zone.rect.z0 : c.z;
+        // 南の縁が戦場の外（南の端の陣など）なら、北の縁の内側に
+        const z = south + 4 <= s.map.depth / 2 - 6 ? south + 4 : north + 12;
+        out.push({ id: `obj-${m.id}`, text: `${m.role === 'primary' ? '主目標' : '副目標'}：${m.name}`, x: c.x, z, y: 0.5 });
     }
     // 援軍の出る所（部隊の名札と重ならないよう西へずらす）
     for (const r of reinforcementMarks(s)) out.push({ id: `reinf-${r.id}`, text: `援軍の出る所（開始 ${fmtClock(r.at)}）`, x: r.x - 40, z: r.z - 4, y: 0 });

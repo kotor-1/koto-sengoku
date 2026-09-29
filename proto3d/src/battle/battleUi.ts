@@ -5,25 +5,34 @@
  * - 上の真ん中：指揮中（一時停止）の印と、出来事の知らせ（押すとその部隊へカメラを寄せる）
  * - 右上：指揮（一時停止）／再開・速さ ×1 ×2・全軍撤退（確かめてから）
  * - 右：寄る・引く・全体
- * - 下：味方の部隊の札（兵・士気・今の命令・交戦相手）と、命令のボタン（移動・攻撃・防衛・待機・撤退）
+ * - 左上（目標のある合戦＝合戦場の演習だけ）：目標の欄（主目標と副目標を分けて進み具合・戦場の特殊ルール。約束の行とは別。スマホでは畳める）
+ * - 下：味方の部隊の札（兵・士気・今の命令・交戦相手。最大 8 部隊。PC は並べて 1〜8 キー、スマホは小さくして横になぞってずらす）と、
+ *   命令のボタン（移動・攻撃・防衛・待機・撤退）
+ * - 部隊を選ぶと、左上の能力の欄の先頭に率いる武将（名前・役割・固有能力。仮の能力は「仮」の印）
  * - 特殊能力のある合戦（歴史分岐）だけ：命令のボタンに「能力」、左上に選んだ部隊の能力の欄（能力名・対象・範囲・効果・代償・
  *   使えるか／使えない理由。ゲーム用の創作と断る）。
  * - 戦前の約束のある合戦だけ：左上の条件の見出しのすぐ下に約束の行（対象・陣に入った秒数・兵の割合。畳んでも見える）。
- * - 地図の上の名札、合戦の前の説明、全軍撤退の確かめ、結果
+ * - 地図の上の名札、合戦の前の説明、全軍撤退の確かめ、結果（勝敗・主目標・副目標・約束を別々の行に）
+ * e2e が使える印：.b-root[data-field]（戦場 id）・.b-card[data-id][data-key]・.b-cards[data-count]・.b-goals の .b-goal[data-id][data-role][data-state]・
+ *   .b-gen[data-general]・結果の .b-robj の行 [data-role][data-achieved]・名札 .b-label[data-mark]（救出・守る・崩す）。
  * ボタンは押した瞬間（pointerdown）に反応し、その後の click は無視する（キーボードの Enter／Space の click だけ受ける）。
  * 画面を押して地図を動かす面（input）は一番下に敷き、つなぎがそこへ指・マウスの処理を付ける。
  */
 import type { BattleState } from './sim';
 import {
-    CONDITIONS,
     abilityPanelModel,
     armySummary,
     cardAbilityText,
     cardModel,
+    conditionsFor,
+    generalLineModel,
+    objectivePanelModel,
     pledgeLineModel,
     scenarioTexts,
     timeText,
     type CardModel,
+    type ObjectiveResultModel,
+    type ObjectiveRowModel,
     type Pending,
     type ResultRow,
 } from './control';
@@ -47,7 +56,10 @@ export interface UiHandlers {
 }
 
 export interface UiState {
+    /** 主に選んでいる部隊（selection の先頭） */
     selectedId: string | null;
+    /** 選んでいる部隊の並び（今は 0 か 1 部隊。札の印はこの並びで付ける） */
+    selection: readonly string[];
     pending: Pending;
     paused: boolean;
     started: boolean;
@@ -69,6 +81,8 @@ export interface ResultModel {
     pledge?: { result: 'kept' | 'broken' | 'declined'; title: string; text: string } | null;
     /** 使った特殊能力（能力のない合戦は空） */
     abilities?: string;
+    /** 主目標・副目標の結果（勝敗・約束とは別の行）。目標の無い合戦は null */
+    objectives?: ObjectiveResultModel | null;
 }
 
 type Tone = 'good' | 'bad' | 'warn' | 'info';
@@ -147,6 +161,14 @@ export class BattleUi {
     private readonly speedBtns: Record<1 | 2, HTMLButtonElement>;
     private readonly allRetBtn: HTMLButtonElement;
     private readonly cards = new Map<string, CardEls>();
+    /** 札の列（スマホでは横になぞってずらす） */
+    private readonly cardsEl: HTMLDivElement;
+    /** 札の列を最後にずらして見せた部隊（選び直したときだけ、その札が見えるようにずらす） */
+    private shownCardId: string | null = null;
+    /** 目標の欄（目標のある合戦だけ） */
+    private readonly goals: HTMLDivElement | null = null;
+    private readonly goalSum: HTMLElement | null = null;
+    private readonly goalRows = new Map<string, { e: HTMLElement; text: HTMLElement; last: string }>();
     private readonly cmdBtns: Record<CommandKind, HTMLButtonElement>;
     /** 「能力」のボタン（特殊能力のある合戦だけ） */
     private readonly abilBtn: HTMLButtonElement | null = null;
@@ -176,6 +198,7 @@ export class BattleUi {
     ) {
         const r = el('div', 'b-root');
         r.id = 'battle-ui';
+        r.dataset.field = s.map.id;
         this.root = r;
         if (opts.touch) r.classList.add('b-touch');
         this.maxToasts = opts.touch ? 3 : 4;
@@ -194,7 +217,7 @@ export class BattleUi {
         this.objTime = el('span', 'b-time');
         this.objHead.append(this.objTime, el('span', 'b-caret', '条件'));
         const body = el('div', 'b-obj-body');
-        for (const c of CONDITIONS) {
+        for (const c of conditionsFor(s)) {
             const row = el('div', `b-cond ${c.tone}`);
             row.append(el('b', '', c.label), el('span', '', c.text));
             body.append(row);
@@ -212,7 +235,36 @@ export class BattleUi {
         this.abil = el('div', 'b-abil');
         this.abil.hidden = true;
         const left = el('div', 'b-topleft');
-        left.append(obj, this.inspect, this.abil);
+        left.append(obj);
+        // 目標の欄（主目標・副目標・戦場の特殊ルール）。約束の行とは別の欄。スマホでは畳んで主目標の一行だけ
+        const om = objectivePanelModel(s);
+        if (om) {
+            const g = el('div', 'b-goals');
+            const head = button('b-goals-head', '', '目標を開く／閉じる');
+            this.goalSum = el('span', 'b-goals-sum');
+            head.append(el('b', '', '目標'), this.goalSum, el('span', 'b-caret', ''));
+            const gb = el('div', 'b-goals-body');
+            for (const row of [...(om.primary ? [om.primary] : []), ...om.secondary]) {
+                const e = el('div', `b-goal ${row.role}`);
+                e.dataset.id = row.id;
+                e.dataset.role = row.role;
+                const text = el('span', 'b-goal-p');
+                e.append(el('i', '', row.role === 'primary' ? '主目標' : '副目標'), el('b', '', row.label), text);
+                gb.append(e);
+                this.goalRows.set(row.id, { e, text, last: '' });
+            }
+            if (om.rules.length) {
+                const rules = el('div', 'b-goal-rules');
+                for (const t of om.rules) rules.append(el('div', '', t));
+                gb.append(rules);
+            }
+            g.append(head, gb);
+            if (opts.touch) g.classList.add('closed');
+            press(head, () => g.classList.toggle('closed'));
+            this.goals = g;
+            left.append(g);
+        }
+        left.append(this.inspect, this.abil);
 
         // ---- 上の真ん中：一時停止の印・知らせ ----
         const mid = el('div', 'b-topmid');
@@ -248,12 +300,20 @@ export class BattleUi {
         // ---- 下：部隊の札・命令 ----
         const bottom = el('div', 'b-bottom');
         const cards = el('div', 'b-cards');
+        this.cardsEl = cards;
         let key = 1;
         for (const u of s.units) {
             if (u.side !== 'ally') continue;
             const c = this.makeCard(u.id, u.name, key++);
             cards.append(c.root);
         }
+        // 札が 5 部隊以上なら小さな札にする（PC は 8 部隊まで並べる。スマホは横になぞってずらす）
+        cards.dataset.count = String(key - 1);
+        if (key - 1 > 4) {
+            cards.classList.add('many');
+            bottom.classList.add('many');
+        }
+        this.bindCardList(cards);
         const cmds = el('div', 'b-cmds');
         this.cmdBtns = {
             move: button('b-btn b-cmd', '移動', '移動（この後で地面を押す）'),
@@ -309,11 +369,92 @@ export class BattleUi {
         const line = el('div', 'b-card-l');
         line.append(ord, eng, abl);
         root.append(head, str, mor, line);
-        press(root, () => this.h.selectUnit(id));
+        root.dataset.key = String(key);
         const c: CardEls = { root, badge, strBar, strText, morBar, morText, ord, eng, abl, last: '' };
         (kind as HTMLElement).dataset.kind = '';
         this.cards.set(id, c);
         return c;
+    }
+
+    /**
+     * 札の列の押し方：マウスは押した瞬間に選ぶ（今までどおり）。指は、離したときに選ぶ（横になぞったら選ばずに列をずらす）。
+     * キーボード（Enter・Space）の click でも選ぶ。PC でホイールを回すと、はみ出した列を横にずらす。
+     */
+    private bindCardList(list: HTMLDivElement): void {
+        let drag: { id: number; x: number; sl: number; moved: boolean; card: string | null } | null = null;
+        let downAt = -1e9;
+        const cardOf = (t: EventTarget | null) => ((t as HTMLElement | null)?.closest?.('.b-card') as HTMLElement | null)?.dataset.id ?? null;
+        list.addEventListener('pointerdown', (e) => {
+            if (e.pointerType === 'mouse' && e.button !== 0) return;
+            e.preventDefault();
+            e.stopPropagation();
+            downAt = performance.now();
+            const id = cardOf(e.target);
+            if (e.pointerType === 'mouse') {
+                if (id) this.h.selectUnit(id);
+                return;
+            }
+            drag = { id: e.pointerId, x: e.clientX, sl: list.scrollLeft, moved: false, card: id };
+            try {
+                list.setPointerCapture(e.pointerId);
+            } catch {
+                /* 捕捉できない場合もそのまま */
+            }
+        });
+        list.addEventListener('pointermove', (e) => {
+            if (!drag || e.pointerId !== drag.id) return;
+            const dx = e.clientX - drag.x;
+            if (!drag.moved && Math.abs(dx) > 10) drag.moved = true;
+            if (drag.moved) list.scrollLeft = drag.sl - dx;
+        });
+        const end = (e: PointerEvent, tap: boolean) => {
+            if (!drag || e.pointerId !== drag.id) return;
+            const d = drag;
+            drag = null;
+            if (tap && !d.moved && d.card) this.h.selectUnit(d.card);
+        };
+        list.addEventListener('pointerup', (e) => end(e, true));
+        list.addEventListener('pointercancel', (e) => end(e, false));
+        list.addEventListener('lostpointercapture', (e) => end(e, false));
+        list.addEventListener('click', (e) => {
+            e.preventDefault();
+            const pt = (e as PointerEvent).pointerType;
+            if (pt || performance.now() - downAt < 1500) return;
+            const id = cardOf(e.target);
+            if (id) this.h.selectUnit(id);
+        });
+        list.addEventListener(
+            'wheel',
+            (e) => {
+                if (list.scrollWidth <= list.clientWidth + 1) return;
+                e.preventDefault();
+                list.scrollLeft += Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+            },
+            { passive: false },
+        );
+        // 指でなぞる間、ページ全体の touchmove の抑止（main.ts）まで届かせない
+        list.addEventListener('touchmove', (e) => e.stopPropagation(), { passive: true });
+        list.addEventListener('scroll', () => this.updateCardEdges(), { passive: true });
+    }
+
+    /** 札の列の左右に、まだ札があることの影（はみ出していなければ付けない） */
+    private updateCardEdges(): void {
+        const l = this.cardsEl;
+        setClass(l, 'more-l', l.scrollLeft > 2);
+        setClass(l, 'more-r', l.scrollLeft + l.clientWidth < l.scrollWidth - 2);
+    }
+
+    /** 選んだ部隊の札が列の外なら、見える所までずらす（選び直したときだけ） */
+    private revealCard(id: string | null): void {
+        if (id === this.shownCardId) return;
+        this.shownCardId = id;
+        const c = id ? this.cards.get(id) : undefined;
+        const l = this.cardsEl;
+        if (!c || l.scrollWidth <= l.clientWidth + 1) return;
+        const a = c.root.offsetLeft - l.offsetLeft;
+        const b = a + c.root.offsetWidth;
+        if (a < l.scrollLeft) l.scrollLeft = a - 6;
+        else if (b > l.scrollLeft + l.clientWidth) l.scrollLeft = b - l.clientWidth + 6;
     }
 
     // ---------------------------------------------------------------- 毎フレーム
@@ -329,9 +470,12 @@ export class BattleUi {
             if (u.side !== 'ally') continue;
             const c = this.cards.get(u.id)!;
             const m = cardModel(s, u);
-            this.fillCard(c, m, st.selectedId === u.id, this.hasAbility ? cardAbilityText(s, u.id) : '');
+            this.fillCard(c, m, st.selection.includes(u.id), this.hasAbility ? cardAbilityText(s, u.id) : '');
         }
+        this.revealCard(st.selectedId && this.cards.has(st.selectedId) ? st.selectedId : null);
+        this.updateCardEdges();
         this.updatePledge(s);
+        this.updateGoals(s);
         // 敵を調べている
         const sel = st.selectedId ? s.units.find((u) => u.id === st.selectedId) : undefined;
         if (sel && sel.side === 'enemy') {
@@ -427,10 +571,40 @@ export class BattleUi {
         if (this.pledgeEl.dataset.tone !== p.tone) this.pledgeEl.dataset.tone = p.tone;
     }
 
-    /** 選んだ部隊の能力の欄（能力名・対象・範囲・効果・代償・使えるか） */
+    /** 目標の欄（主目標・副目標の進み具合。畳んでいるときは見出しに主目標の短い進み） */
+    private updateGoals(s: BattleState): void {
+        if (!this.goals) return;
+        const m = objectivePanelModel(s);
+        if (!m) return;
+        const rows: ObjectiveRowModel[] = [...(m.primary ? [m.primary] : []), ...m.secondary];
+        for (const r of rows) {
+            const g = this.goalRows.get(r.id);
+            if (!g) continue;
+            const sig = `${r.state}|${r.progressText}`;
+            if (sig === g.last) continue;
+            g.last = sig;
+            g.e.dataset.state = r.state;
+            g.e.dataset.tone = r.tone;
+            setText(g.text, r.state === 'done' ? '✓ 達成' : r.state === 'failed' ? '✗ 果たせない' : r.progressText);
+        }
+        const p = m.primary;
+        // 見出しの短い進み（括弧の中の説明は省く）
+        const sum = p ? (p.state === 'done' ? '主目標 ✓ 達成' : p.state === 'failed' ? '主目標 ✗' : p.progressText.replace(/（[^）]*）/g, '')) : '';
+        if (this.goalSum) setText(this.goalSum, sum);
+        if (p && this.goals.dataset.state !== p.state) this.goals.dataset.state = p.state;
+    }
+
+    /** 選んだ部隊の能力の欄（先頭に率いる武将。能力名・対象・範囲・効果・代償・使えるか） */
     private updateAbility(s: BattleState, selId: string | null, pending: Pending): void {
         const u = selId ? s.units.find((x) => x.id === selId) : undefined;
         const m = u ? abilityPanelModel(s, u.id) : null;
+        const gm = u ? generalLineModel(s, u.id) : null;
+        // 率いる武将の行（名前・役割・固有能力。仮の能力は「仮」の印）
+        const gen = gm
+            ? `<div class="b-gen" data-general="${escapeHtml(gm.generalId)}"><b>${escapeHtml(gm.name)}</b><span class="b-gen-role">${escapeHtml(gm.roleLabel)}</span>${
+                  gm.abilityName ? `<span class="b-gen-ab">固有能力「${escapeHtml(gm.abilityName)}」${gm.provisional ? '<em class="b-prov">仮</em>' : ''}</span>` : ''
+              }</div>`
+            : '';
         let html = '';
         let side = '';
         if (m) {
@@ -445,10 +619,13 @@ export class BattleUi {
             rows.push(`<div class="b-ab-r b-ab-uses"><i>回数</i>${escapeHtml(m.uses)}${m.info.controllable ? '' : '・プレイヤーは操作できない'}</div>`);
             rows.push(`<div class="b-ab-long">${escapeHtml(m.effectText)}／代償：${escapeHtml(m.costText)}</div>`);
             rows.push(`<div class="b-ab-note">${escapeHtml(m.note)}</div>`);
-            html = rows.join('');
+            html = gen + rows.join('');
         } else if (u && u.side === 'ally' && this.hasAbility) {
-            html = `<div class="b-ab-h"><b>特殊能力なし</b></div><div class="b-ab-r">率いる武将（能力を持つ人物）のいない部隊は、特殊能力を使えない</div>`;
+            html = `${gen}<div class="b-ab-h"><b>特殊能力なし</b></div><div class="b-ab-r">率いる武将（能力を持つ人物）のいない部隊は、特殊能力を使えない</div>`;
             side = 'ally';
+        } else if (gen) {
+            html = gen;
+            side = u!.side;
         }
         if (!html) {
             if (!this.abil.hidden) this.abil.hidden = true;
@@ -486,6 +663,16 @@ export class BattleUi {
             l.x = x;
             l.y = y;
             l.e.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`;
+        }
+    }
+
+    /** 名札に目標の印を添える（例：救出・守る・崩す。空なら外す）。CSS が data-mark を前に出す */
+    labelMark(id: string, mark: string): void {
+        const l = this.labelEls.get(id);
+        if (!l) return;
+        if ((l.e.dataset.mark ?? '') !== mark) {
+            if (mark) l.e.dataset.mark = mark;
+            else delete l.e.dataset.mark;
         }
     }
 
@@ -578,11 +765,13 @@ export class BattleUi {
         how.append(el('b', '', '操作'));
         const touchLines = [
             '部隊（または下の札）を押して選ぶ → 地面を押すと移動、敵を押すと攻撃。選んだ部隊をもう一度押すと選択を外す（敵を調べられる）。',
+            ...(this.cards.size > 4 ? ['下の札は横になぞるとずらせる（隠れている部隊の札が出る）。'] : []),
             '「防衛・待機」「撤退」はボタン。1 本指で地図を動かす、2 本指で寄る・引く。',
             '「指揮（一時停止）」で時を止めて命令を出せる。',
         ];
+        const nCards = this.cards.size;
         const pcLines = [
-            'クリック（または下の札・1〜4 キー）で部隊を選ぶ → 地面をクリックで移動、敵をクリックで攻撃（右クリックでも命令）。',
+            `クリック（または下の札・1〜${Math.max(1, Math.min(8, nCards))} キー）で部隊を選ぶ → 地面をクリックで移動、敵をクリックで攻撃（右クリックでも命令）。`,
             'ドラッグで地図を動かす、ホイールで寄る・引く。M 移動・A 攻撃・H 防衛・待機・R 撤退・Esc 取り消し。',
             'Space で指揮（一時停止）／再開。止めたまま命令を出せる。',
         ];
@@ -642,6 +831,20 @@ export class BattleUi {
         const head = el('div', 'b-result-head');
         head.append(el('h2', '', m.title), el('span', 'b-tag', this.tag));
         box.append(head, el('p', 'b-reason', m.reason));
+        if (m.objectives) {
+            // 主目標・副目標の結果（勝敗・約束とは別の行）
+            const ob = el('div', 'b-robj');
+            const line = (role: 'primary' | 'secondary', label: string, achieved: boolean) => {
+                const r = el('div', `b-robj-row ${achieved ? 'ok' : 'ng'}`);
+                r.dataset.role = role;
+                r.dataset.achieved = String(achieved);
+                r.append(el('i', '', role === 'primary' ? '主目標' : '副目標'), el('b', '', label), el('span', '', achieved ? '達成' : '未達成'));
+                ob.append(r);
+            };
+            if (m.objectives.primary) line('primary', m.objectives.primary.label, m.objectives.primary.achieved);
+            for (const r of m.objectives.secondary) line('secondary', r.label, r.achieved);
+            box.append(ob);
+        }
         if (m.pledge) {
             // 約束の結果は勝敗とは別の欄に出す（勝っても守れない・撤退しても守れた、がある）
             const pl = el('div', `b-rpledge ${m.pledge.result}`);

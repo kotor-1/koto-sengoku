@@ -1,5 +1,6 @@
 /* 合戦の画面（battle/battleUi.ts）。探索の画面（style.css）の色・板・ボタンの形にそろえる。
-   PC（1280×720 前後）とスマホ横向き（844×390 前後）で重ならないように置く。 */
+   PC（1280×720 前後）とスマホ横向き（844×390 前後）で重ならないように置く。
+   味方が 5 部隊以上（.b-cards.many）：PC は小さな札を 8 部隊まで並べ、命令のボタンを 2 段にする。スマホは札を横になぞってずらす。 */
 
 /* 合戦の間は探索の操作・表示を隠す */
 body.mode-battle #hud,
@@ -58,6 +59,8 @@ body.mode-battle #build { display: none !important; }
 .b-label.sel { background: rgba(255, 215, 106, 0.92); color: #1a150e; }
 .b-label.pledge { box-shadow: inset 0 0 0 1px #5fe0c0; }
 .b-label.pledge::before { content: "約束"; margin-right: 4px; padding: 0 4px; border-radius: 3px; background: #5fe0c0; color: #0d2420; font-size: 9.5px; }
+/* 目標が指す部隊の印（救出・守る・崩す） */
+.b-label[data-mark]::before { content: attr(data-mark); margin-right: 4px; padding: 0 4px; border-radius: 3px; background: #ffd76a; color: #2a1d05; font-size: 9.5px; }
 .b-label.terrain {
     background: none;
     border: none;
@@ -171,6 +174,61 @@ body.mode-battle #build { display: none !important; }
 .b-pledge[data-tone="bad"] { border-left-color: #ff6a58; background: rgba(255, 106, 88, 0.14); }
 .b-pledge[data-tone="bad"] b { color: #ffc2ba; }
 
+/* 目標の欄（主目標・副目標・戦場の特殊ルール。約束の行とは別の欄。スマホでは畳める） */
+.b-goals {
+    pointer-events: auto;
+    background: var(--panel);
+    border: 1px solid var(--hairline);
+    border-left: 3px solid #ffd76a;
+    border-radius: 12px;
+    overflow: hidden;
+}
+.b-goals[data-state="done"] { border-left-color: #8ed57a; }
+.b-goals[data-state="failed"] { border-left-color: #ff6a58; }
+.b-goals-head {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    width: 100%;
+    padding: 6px 12px;
+    background: none;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    text-align: left;
+    touch-action: none;
+}
+.b-goals-head > b { color: var(--gold); letter-spacing: 0.1em; white-space: nowrap; font-weight: 600; }
+.b-goals-sum { flex: 1 1 auto; min-width: 0; font-size: 11.5px; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.b-goals .b-caret { margin-left: auto; }
+.b-goals .b-caret::after { content: "▴"; }
+.b-goals.closed .b-caret::after { content: "▾"; }
+.b-goals:not(.closed) .b-goals-sum { visibility: hidden; }
+.b-goals.closed .b-goals-body { display: none; }
+.b-goals-body { padding: 0 9px 8px; display: flex; flex-direction: column; gap: 4px; }
+.b-goal {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: 6px;
+    padding: 3px 7px;
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.05);
+    font-size: 12px;
+    line-height: 1.4;
+}
+.b-goal i { font-style: normal; font-size: 10px; padding: 0 5px; border-radius: 4px; align-self: start; margin-top: 2px; white-space: nowrap; }
+.b-goal.primary i { background: rgba(255, 215, 106, 0.3); color: #fff0c2; }
+.b-goal.secondary i { background: rgba(159, 208, 255, 0.22); color: #d6ecff; }
+.b-goal b { font-weight: 600; }
+.b-goal .b-goal-p { grid-column: 2; font-size: 11px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.b-goal[data-state="done"] { background: rgba(142, 213, 122, 0.14); }
+.b-goal[data-state="done"] .b-goal-p { color: #c9f0b9; }
+.b-goal[data-state="failed"] { background: rgba(255, 106, 88, 0.12); }
+.b-goal[data-state="failed"] .b-goal-p { color: #ffc2ba; }
+.b-goal-rules { margin-top: 2px; padding-top: 4px; border-top: 1px solid var(--hairline); font-size: 10.5px; line-height: 1.4; color: var(--ink-soft); }
+.b-goal-rules div::before { content: "・"; }
+
 /* 選んだ部隊の特殊能力（ゲーム用の創作） */
 .b-abil {
     pointer-events: none;
@@ -198,6 +256,14 @@ body.mode-battle #build { display: none !important; }
 .b-ab-long { font-size: 10.5px; color: var(--ink-soft); margin-top: 2px; }
 .b-ab-note { font-size: 10px; color: var(--ink-soft); opacity: 0.85; margin-top: 2px; }
 .b-inspect .b-kind { margin-left: 8px; }
+/* 率いる武将の行（能力の欄の先頭） */
+.b-gen { display: flex; flex-wrap: wrap; align-items: baseline; gap: 1px 8px; }
+.b-gen + div { margin-top: 3px; padding-top: 3px; border-top: 1px solid var(--hairline); }
+.b-gen b { color: #f4efe2; font-weight: 600; }
+.b-gen-role { font-size: 10.5px; padding: 0 6px; border-radius: 999px; background: rgba(143, 220, 255, 0.18); color: #c4ebff; white-space: nowrap; }
+.b-abil[data-side="enemy"] .b-gen-role { background: rgba(255, 91, 76, 0.2); color: #ffc2ba; }
+.b-gen-ab { font-size: 11px; color: var(--ink-soft); }
+.b-prov { font-style: normal; margin-left: 4px; padding: 0 4px; border-radius: 3px; background: #f0c050; color: #2a1d05; font-size: 9.5px; }
 
 /* ---- 上の真ん中：一時停止・知らせ ---- */
 .b-topmid {
@@ -346,6 +412,26 @@ body.mode-battle #build { display: none !important; }
 .b-eng { color: #ffc9a3; }
 .b-cmds { display: grid; grid-template-columns: repeat(4, auto); gap: 6px; pointer-events: auto; }
 .b-cmds.with-ability { grid-template-columns: repeat(5, auto); }
+/* 味方が 5 部隊以上：小さな札を並べ（はみ出したら横にずらす）、命令のボタンは 2 段 */
+.b-bottom.many { --card-h: 88px; }
+.b-cards.many {
+    flex: 1 1 auto;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    padding: 2px 1px;
+    gap: 6px;
+}
+.b-cards.many::-webkit-scrollbar { display: none; }
+.b-cards.many .b-card { flex: 1 0 116px; width: auto; max-width: 178px; height: var(--card-h); padding: 5px 8px; gap: 2px; }
+.b-cards.many .b-card-h { font-size: 12px; gap: 4px; }
+.b-cards.more-r { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 30px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 30px), transparent); }
+.b-cards.more-l { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 30px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 30px), transparent); }
+.b-cards.more-l.more-r { -webkit-mask-image: linear-gradient(to right, transparent, #000 30px, #000 calc(100% - 30px), transparent); mask-image: linear-gradient(to right, transparent, #000 30px, #000 calc(100% - 30px), transparent); }
+.b-bottom.many .b-cmds { flex: none; grid-template-columns: repeat(2, auto); }
+.b-bottom.many .b-cmds.with-ability { grid-template-columns: repeat(3, auto); }
+.b-bottom.many .b-cmd { padding: 9px 12px; font-size: 13px; }
+.b-bottom.many ~ .b-hint { bottom: calc(var(--safe-b) + 108px); }
 .b-abil-btn { color: #ffe6a0; border-color: rgba(255, 215, 106, 0.55); }
 .b-abil-btn.dim { opacity: 0.55; }
 .b-root.pending-ability .b-input { cursor: copy; }
@@ -462,6 +548,14 @@ body.mode-battle #build { display: none !important; }
 .b-rpledge.broken { border-left-color: #ff6a58; background: rgba(255, 106, 88, 0.14); }
 .b-rpledge.broken b { color: #ffc2ba; }
 .b-rpledge.declined { border-left-color: #cfc6ab; background: rgba(255, 255, 255, 0.06); }
+/* 主目標・副目標の結果（勝敗・約束とは別の行） */
+.b-robj { margin: 6px 0 2px; display: flex; flex-direction: column; gap: 3px; }
+.b-robj-row { display: grid; grid-template-columns: auto 1fr auto; column-gap: 8px; align-items: baseline; padding: 3px 9px; border-radius: 8px; border-left: 3px solid #8ed57a; background: rgba(142, 213, 122, 0.12); font-size: 12px; line-height: 1.4; }
+.b-robj-row.ng { border-left-color: #ff6a58; background: rgba(255, 106, 88, 0.12); }
+.b-robj-row i { font-style: normal; font-size: 10.5px; color: var(--ink-soft); white-space: nowrap; }
+.b-robj-row span { font-weight: 600; white-space: nowrap; }
+.b-robj-row.ok span { color: #c9f0b9; }
+.b-robj-row.ng span { color: #ffc2ba; }
 .b-rtable-wrap { margin-top: 8px; }
 .b-rtable { width: 100%; border-collapse: collapse; font-size: 12px; }
 .b-rtable th { text-align: left; font-weight: 500; color: var(--ink-soft); padding: 2px 6px; border-bottom: 1px solid var(--hairline); }
@@ -538,4 +632,28 @@ body.mode-battle #build { display: none !important; }
     .b-rsave { font-size: 11px; padding: 3px 8px; margin-top: 4px; }
     .b-rtable { font-size: 11px; }
     .b-rtable td, .b-rtable th { padding: 1px 4px; }
+    .b-result > .b-robj { grid-column: 1; }
+    .b-robj { margin-top: 4px; gap: 2px; }
+    .b-robj-row { font-size: 11px; padding: 2px 7px; }
+    /* 目標の欄（畳めば主目標の一行だけ） */
+    .b-goals-head { padding: 4px 9px; gap: 6px; font-size: 12px; }
+    .b-goals-sum { font-size: 10.5px; }
+    .b-goals-body { padding: 0 6px 6px; gap: 3px; max-height: 150px; overflow-y: auto; }
+    .b-goal { font-size: 11px; padding: 2px 6px; line-height: 1.35; }
+    .b-goal i { font-size: 9px; padding: 0 3px; }
+    .b-goal .b-goal-p { font-size: 10px; }
+    .b-goal-rules { font-size: 9.5px; }
+    .b-gen { gap: 0 6px; }
+    .b-gen-role { font-size: 9.5px; padding: 0 4px; }
+    .b-gen-ab { font-size: 10px; }
+    /* 札が 5 部隊以上：小さな札を横に流す（指でなぞってずらす） */
+    .b-bottom.many { --card-h: 66px; }
+    .b-cards.many { gap: 5px; padding: 1px; }
+    .b-cards.many .b-card { flex: 0 0 116px; max-width: none; padding: 4px 7px; }
+    .b-cards.many .b-card-h { font-size: 11.5px; }
+    .b-bottom.many .b-cmds { grid-template-columns: repeat(2, auto); }
+    .b-bottom.many .b-cmds.with-ability { grid-template-columns: repeat(3, auto); }
+    .b-bottom.many .b-cmd { padding: 7px 8px; font-size: 12.5px; }
+    .b-bottom.many .b-cmds.with-ability .b-cmd { min-width: 58px; padding: 7px 6px; }
+    .b-bottom.many ~ .b-hint { bottom: calc(var(--safe-b) + var(--card-h) + 14px); }
 }
