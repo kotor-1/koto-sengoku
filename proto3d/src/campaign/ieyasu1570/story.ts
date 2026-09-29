@@ -685,7 +685,7 @@ export function ieyasuEndingView(state: IeyasuState): IeyasuEndingView {
         { label: '支援', value: supportRecordText(state) },
         { label: '信頼', value: (['oda', 'asai', 'tadakatsu'] as const).map((c) => `${TRUST_NAMES[c]} ${signed(state.trust[c])}`).join('・') },
         { label: '人物', value: people.map((c) => `${IEYASU_CHARACTER_NAMES[c]} ${IEYASU_STATUS_LABELS[state.characters[c]]}`).join('・') },
-        { label: '特殊能力', value: used > 0 ? `${used} 回使った（能力はゲーム用の創作）` : '使わなかった' },
+        { label: '特殊能力', value: `${used > 0 ? `${used} 回使った` : '使わなかった'}（能力はゲーム用の創作）` },
         { label: '史実と創作', value: '開始の情勢（1570年、織田・徳川と浅井・朝倉の対立）は資料に合わせた。会話・分岐・戦場・結末は創作。' },
     ];
     return { id, title: IEYASU_ENDING_TITLES[id], body: endingBody(state, id), record, footer: IEYASU_END_LABEL };
