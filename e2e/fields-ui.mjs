@@ -8,8 +8,11 @@
  * - 結果の画面：全軍撤退で終え、勝敗・主目標・副目標の行が別々に出る（約束は演習に無い）。
  * - スマホ（goals）：5 戦場で、部隊の札をタップ → 目標の見出しを開く（能力の欄は隠れ、左上の列が札の列に重ならない）→ 別の部隊を選ぶ
  *   （目標の欄を畳み、能力の欄が戻る。左上の列の下端が札の列より上）。
+ * - PC（orders）：河川・浅瀬で、中央を弓で開ける作戦の命令をすべて札と地図のクリックで出し、丘の守りと斬り合う味方がいる丘の輪の端へ
+ *   四隊を移して勝つ（目標の欄の進みの文が、数えていない理由を出す）。森林で、物見隊を選んで輪の真ん中（家康本陣）を押すと本陣が選び直され、
+ *   輪の中の空いた地面を押すと物見隊が動く（説明・進みの文どおり）。
  * 待つ時間だけは開発用の早送り（window.__battle.fastForward）を使う。命令は画面のクリック・タップ・キーで出す。状態は window.__battle から読むだけ。
- * PARTS=shots,desktop,phone,goals で一部だけ（既定はすべて）。
+ * PARTS=shots,desktop,phone,goals,orders で一部だけ（既定はすべて）。
  */
 import { launchBrowser, BASE } from './lib.mjs';
 import { mkdirSync } from 'node:fs';
@@ -22,7 +25,7 @@ function check(ok, what, extra = '') {
     log(`${ok ? '  ok ' : '  NG '} ${what}${extra ? `  ${extra}` : ''}`);
     if (!ok) failures.push(what);
 }
-const PARTS = (process.env.PARTS || 'shots,desktop,phone,goals').split(',');
+const PARTS = (process.env.PARTS || 'shots,desktop,phone,goals,orders').split(',');
 const FIELD_IDS = ['plains', 'river_ford', 'hills', 'forest', 'mountain_pass'];
 
 const b = await launchBrowser();
@@ -275,6 +278,106 @@ if (PARTS.includes('goals')) {
         check(gap > 0, `${id}：左上の列の下端が札の列より上`, `${Math.round(gap)} px`);
         await overlapCheck(page, `${id}（スマホ・選び直した）`);
         await page.screenshot({ path: `${OUT}/${id}-phone-goals-reselect.png` });
+        await p.ctx.close();
+    }
+}
+
+// ================================================================ PC：丘の確保（河川・浅瀬）と救出（森林）を画面のクリックだけで
+if (PARTS.includes('orders')) {
+    const unitOrder = (page, id) => page.evaluate((u) => window.__battle.state.units.find((x) => x.id === u).order, id);
+    const tNow = (page) => page.evaluate(() => window.__battle.state.t);
+    const ffTo = (page, t) => page.evaluate((to) => window.__battle.fastForward(Math.max(0, to - window.__battle.state.t)), t);
+    const goalText = (page, role) => page.evaluate((r) => document.querySelector(`.b-goal[data-role="${r}"] .b-goal-p`)?.textContent ?? '', role);
+    const clickCard = async (page, id) => {
+        await page.click(`.b-card[data-id="${id}"]`);
+        await page.waitForTimeout(120);
+    };
+    const clickUnit = async (page, id) => {
+        const u = await page.evaluate((x) => window.__battle.state.units.find((v) => v.id === x), id);
+        await page.evaluate(([x, z]) => window.__battle.centerOn(x, z), [u.x, u.z]);
+        await page.waitForTimeout(150);
+        const q = await page.evaluate((x) => window.__battle.screenOf(x), id);
+        await page.mouse.click(q.x, q.y);
+        await page.waitForTimeout(150);
+    };
+    const clickGround = async (page, x, z) => {
+        await page.evaluate(([gx, gz]) => window.__battle.centerOn(gx, gz), [x, z]);
+        await page.waitForTimeout(150);
+        const q = await page.evaluate(([gx, gz]) => window.__battle.screenOfGround(gx, gz), [x, z]);
+        await page.mouse.click(q.x, q.y);
+        await page.waitForTimeout(150);
+    };
+
+    log('== PC：河川・浅瀬の丘の確保（クリックだけで命令）');
+    {
+        const p = await openPage('desktop', 'river_ford');
+        const { page } = p;
+        await start(p);
+        await clickCard(page, 'a_yumi');
+        await clickUnit(page, 'e_yumi');
+        await clickCard(page, 'a_tadakatsu');
+        await clickGround(page, 5, 10);
+        check((await unitOrder(page, 'a_yumi')).targetId === 'e_yumi' && (await unitOrder(page, 'a_tadakatsu')).type === 'move', '0 秒：弓は敵の弓を攻撃・忠勝隊は岸の弓の前へ移動');
+        await ffTo(page, 120);
+        await clickCard(page, 'a_tadakatsu');
+        await clickUnit(page, 'e_kiba');
+        await clickCard(page, 'a_yumi');
+        await clickUnit(page, 'e_sente');
+        await ffTo(page, 150);
+        for (const id of ['a_sakakibara', 'a_sakai']) {
+            await clickCard(page, id);
+            await clickUnit(page, 'e_sente');
+        }
+        await clickCard(page, 'a_ishikawa');
+        await clickGround(page, 0, 10);
+        await ffTo(page, 220);
+        // 丘の輪（中心 (-70,-85)・半径 30 m）の中の端へ四隊を移す（丘の守りのいない所）
+        const pts = { a_tadakatsu: [-50, -75], a_sakakibara: [-48, -90], a_sakai: [-65, -65], a_ishikawa: [-55, -67] };
+        const got = [];
+        for (const [id, [x, z]] of Object.entries(pts)) {
+            const alive = await page.evaluate((u) => window.__battle.state.units.find((v) => v.id === u).status === 'ready', id);
+            if (!alive) {
+                got.push(`${id}:戦えない`);
+                continue;
+            }
+            await clickCard(page, id);
+            await clickGround(page, x, z);
+            const o = await unitOrder(page, id);
+            got.push(`${id}:${o.type}`);
+        }
+        await clickCard(page, 'a_yumi');
+        await clickUnit(page, 'e_hill_yumi');
+        log('   220 秒の命令', got.join(' '));
+        check(got.every((g) => g.endsWith(':move') || g.endsWith(':戦えない')), '220 秒：丘の輪の端をクリックすると移動の命令になる', got.join(' '));
+        const txt = await goalText(page, 'primary');
+        check(/区域に敵がいる|区域に味方がいない/.test(txt), '目標の欄：確保を数えていない理由が出る', txt);
+        await page.screenshot({ path: `${OUT}/river_ford-desktop-hill-orders.png` });
+        await ffTo(page, 480);
+        const r = await page.evaluate(() => window.__battle.state.result);
+        check(r?.result === 'victory' && r?.reason === 'objective_done', '丘の輪の端へ移した四隊で確保して勝つ', `${r?.result} ${r?.reason} ${r?.elapsedSec}`);
+        await p.ctx.close();
+    }
+
+    log('== PC：森林の救出（輪の真ん中の本陣と、空いた地面）');
+    {
+        const p = await openPage('desktop', 'forest');
+        const { page } = p;
+        await start(p);
+        await clickCard(page, 'a_lost');
+        const txt = await goalText(page, 'secondary');
+        check(txt.includes('空いた地面'), '目標の欄：救出の進みの文が「輪の中の空いた地面を押す」を示す', txt);
+        // 輪の真ん中（家康本陣）をクリック：本陣が選び直され、物見隊は動かない（今の決まり。説明・進みの文で知らせる）
+        await clickUnit(page, 'a_ieyasu');
+        check((await ui(page)).selectedId === 'a_ieyasu' && (await unitOrder(page, 'a_lost')).type !== 'move', '輪の真ん中の本陣を押すと本陣が選び直される（物見隊は動かない）');
+        // 物見隊を選び直し、輪の中の空いた地面（本陣の南西）を押す
+        await clickCard(page, 'a_lost');
+        await clickGround(page, -20, 155);
+        const o = await unitOrder(page, 'a_lost');
+        check(o.type === 'move' && Math.hypot(o.x + 20, o.z - 155) < 8, '輪の中の空いた地面を押すと物見隊がそこへ移動する', JSON.stringify(o));
+        await ffTo(page, 200);
+        const st = await page.evaluate(() => [...document.querySelectorAll('.b-goal[data-role="secondary"]')].map((g) => g.dataset.state).join(','));
+        log('   200 秒の副目標（救出）', st);
+        check(st === 'done', '物見隊を林の中を通して輪まで連れ帰る（副目標：救出）', st);
         await p.ctx.close();
     }
 }
