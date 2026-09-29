@@ -30,6 +30,8 @@ export interface ExploreHost {
     setHeroPose(p: ExplorePose): void;
     /** 探索の操作を許す／止める（止めるときは入力を離す） */
     setControl(enabled: boolean): void;
+    /** 探索の描画を止める／戻す（画面を覆うものが開いている間） */
+    setRenderPaused(paused: boolean): void;
     /** 歩きの当たり判定に足す四角形（人物・高札） */
     setExtraColliders(r: Rect[]): void;
     /** 毎フレーム（探索の間だけ。カメラを置いた後・描く前） */
@@ -333,9 +335,9 @@ const SIT = {
     lowerLeg: qx(Math.PI / 2 - 0.02),
     spine: qx(0.16),
     neck: qx(0.18),
-    upperArmL: qx(-0.55).multiply(qz(0.12)),
-    upperArmR: qx(-0.55).multiply(qz(-0.12)),
-    foreArm: qx(-0.5),
+    upperArmL: qx(-0.45).multiply(qz(-0.22)),
+    upperArmR: qx(-0.45).multiply(qz(0.22)),
+    foreArm: qx(-0.75),
 };
 function sitPose(b: Map<string, THREE.Bone>): void {
     const hips = b.get('Hips');

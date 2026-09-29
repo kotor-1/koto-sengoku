@@ -24,7 +24,8 @@ type ModalKind = 'title' | 'script' | 'confirm' | 'menu' | 'ending' | 'devBattle
 /** 確認用（開発ビルドの __game）：今の画面の中身と、押す操作 */
 export interface ModalProbe {
     kind: ModalKind;
-    /** 会話：今の行・全部の行・選択肢 */
+    /** 会話：台詞の id（story.ts の Script.id）・今の行・全部の行・選択肢 */
+    id?: string;
     line?: { name: string; text: string };
     index?: number;
     count?: number;
@@ -69,6 +70,8 @@ export class DomView implements GameView {
     onTalk: () => void = () => {};
     /** メニューのボタン・Esc／M */
     onMenu: () => void = () => {};
+    /** 探索の場面を覆う画面（会話以外：タイトル・軍議・確認・メニュー・結末）が開いた／閉じた。覆っている間は探索の描画を止めてよい */
+    onCover: (covered: boolean) => void = () => {};
 
     constructor(app: HTMLElement) {
         this.root = el('div');
@@ -165,12 +168,22 @@ export class DomView implements GameView {
 
     private push(m: Modal): void {
         this.modals.push(m);
+        this.updateCover();
+    }
+
+    private covered = false;
+    private updateCover(): void {
+        const c = this.modals.some((m) => m.kind !== 'script' || m.layer.classList.contains('council'));
+        if (c === this.covered) return;
+        this.covered = c;
+        this.onCover(c);
     }
 
     private close(m: Modal): void {
         const i = this.modals.indexOf(m);
         if (i >= 0) this.modals.splice(i, 1);
         m.layer.remove();
+        this.updateCover();
         if (this.modals.length === 0) document.body.classList.remove('g-modal');
         if (!this.modals.some((x) => x.kind === 'title')) document.body.classList.remove('g-title');
     }
@@ -422,6 +435,7 @@ export class DomView implements GameView {
                 },
                 probe: () => ({
                     kind: 'script',
+                    id: sc.id,
                     line: { name: lines[i]!.name, text: lines[i]!.text },
                     index: i,
                     count: lines.length,
@@ -543,8 +557,11 @@ export class DomView implements GameView {
         });
     }
 
-    /** 開発ビルドだけ：合戦の画面がまだ無いときの、テスト用の結果の選択（本番では使わない） */
-    devBattle(setup: BattleSetup): Promise<BattleResultKind> {
+    /** 開発ビルドだけ：合戦の画面がまだ無いときの、テスト用の結果の選択（本番のビルドには入らない） */
+    readonly devBattle = import.meta.env.DEV ? (setup: BattleSetup): Promise<BattleResultKind> => this.devBattleScreen(setup) : undefined;
+
+    private devBattleScreen(setup: BattleSetup): Promise<BattleResultKind> {
+        if (!import.meta.env.DEV) return Promise.reject(new Error('開発ビルドだけ'));
         return new Promise((resolve) => {
             const layer = this.open('devBattle', 'solid');
             const panel = el('div', 'g-panel g-scroll');

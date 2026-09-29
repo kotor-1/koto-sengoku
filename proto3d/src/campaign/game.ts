@@ -393,7 +393,7 @@ export class ChapterGame {
         const r = store.save(next, 'departure');
         if (r.ok) {
             next = r.state;
-            view.toast(`保存しました（${SAVE_POINT_LABELS.departure}）。`, 'ok');
+            view.toast(`保存しました：${SAVE_POINT_LABELS.departure}`, 'ok');
         } else {
             const c = await view.confirm({
                 title: '保存できませんでした',
@@ -547,9 +547,9 @@ export class ChapterGame {
         const s = this.foldPlay(this._state!);
         this._state = s;
         const r = this.deps.store.save(s, point);
-        if (!r.ok) return { ok: false, text: `自動保存（${SAVE_POINT_LABELS[point]}）ができませんでした：${r.message}` };
+        if (!r.ok) return { ok: false, text: `保存できませんでした（${SAVE_POINT_LABELS[point]}）：${r.message}` };
         this._state = r.state;
-        return { ok: true, text: `保存しました（${SAVE_POINT_LABELS[point]}）。` };
+        return { ok: true, text: `保存しました：${SAVE_POINT_LABELS[point]}` };
     }
 
     private foldPlay(s: CampaignState): CampaignState {

@@ -40,6 +40,11 @@ const tps = (params.get('view') ?? hashParams.get('view')) !== 'top';
 document.body.classList.toggle('tps', tps);
 const low = params.get('q') === 'low';
 const showFps = params.has('fps') || location.hash === '#fps';
+/**
+ * 開発時の確認用（?render=manual）：探索を毎フレームは描かず、__p3.renderNow() を呼んだときだけ描く（動き・入力・画面の部品はふだんどおり進む）。
+ * ソフトウェア描画の検証環境で、通しの操作の確認（e2e）を現実的な時間で終えるため。本番では使えない。
+ */
+const manualRender = import.meta.env.DEV && params.get('render') === 'manual';
 const touch = matchMedia('(any-pointer: coarse)').matches || (navigator.maxTouchPoints ?? 0) > 0;
 document.body.classList.toggle('touch', touch);
 
@@ -104,6 +109,8 @@ const orbit = createOrbit(START.yaw, START.pitch);
 /** 画面の仕上げ（物の陰・色の整え）。画質「低」では使わない */
 const post: Post | null = low ? null : createPost(renderer, scene, camera);
 
+/** 探索の描画を止めるか（第一章のタイトル・軍議・メニュー・結末など、画面を覆うものが開いている間。最後のコマのまま） */
+let renderPaused = false;
 function resize(): void {
     const w = view.clientWidth || window.innerWidth;
     const h = view.clientHeight || window.innerHeight;
@@ -114,6 +121,8 @@ function resize(): void {
     camera.fov = (tps ? TPS_FOV : CAMERA.fov) * (w / h < 1.6 ? 1.12 : 1);
     camera.updateProjectionMatrix();
     activeMode()?.resize?.(w, h);
+    // 描画を止めている間（章の画面が探索を覆っている）も、大きさが変わったら 1 コマ描き直す（背景が空にならないように）
+    if (renderPaused && !activeMode()) renderNow();
 }
 window.addEventListener('resize', resize);
 resize();
@@ -595,6 +604,7 @@ function frame(): void {
         mode.frame(Math.min(raw, 0.1));
         return;
     }
+    if (renderPaused) return;
     const [ix, iy] = readInput();
     advance(Math.min(raw, 0.1), raw, ix, iy);
 }
@@ -623,7 +633,7 @@ function advance(dt: number, raw: number, ix: number, iy: number): void {
     placeCamera(1 - Math.exp(-6 * dt), dt);
     fadeOccluders(dt);
     for (const f of frameHooks) f(dt);
-    renderNow();
+    if (!manualRender) renderNow();
     if (showFps) {
         // 表示する fps は実際の時間で数える（1 フレームの上限 0.1 秒で切り詰めた時間ではなく）
         fpsTime += raw;
@@ -684,6 +694,9 @@ const exploreHost: ExploreHost = {
             releaseAll();
             releaseLook();
         }
+    },
+    setRenderPaused(paused) {
+        renderPaused = paused;
     },
     setExtraColliders(r) {
         walkRects = r.length ? [...WALK_RECTS, ...r] : WALK_RECTS;

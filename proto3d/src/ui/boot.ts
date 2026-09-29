@@ -57,6 +57,8 @@ export function bootChapter(host: ExploreHost): ChapterGame {
     const game = new ChapterGame({ view, world, store, battleRunner: loadBattleRunner, dev: import.meta.env.DEV });
     view.onTalk = () => void game.interact();
     view.onMenu = () => void game.openMenu();
+    // タイトル・軍議・メニュー・結末などが探索を覆っている間は、探索の描画を止める（見えない所の描画で電池と処理を使わない）
+    view.onCover = (covered) => host.setRenderPaused(covered);
     host.onFrame((dt) => {
         world.frame(dt);
         game.tick(dt);

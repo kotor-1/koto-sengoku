@@ -313,3 +313,15 @@ body.touch .g-choice { padding: 12px 16px; }
 body.g-modal #npc-labels { display: none; }
 /* 主人公の見た目の比較のボタンは開発の確認用（?dev のときだけ出す） */
 #hero-btn[hidden] { display: none; }
+
+/* 低い画面（スマホ横）：メニュー・確認の板を詰め、ボタンの並びは板の下に留める（中身が長ければ中だけ動く） */
+.g-panel .btns { position: sticky; bottom: -18px; margin-bottom: -18px; padding: 10px 0 18px; background: rgba(20, 18, 15, 0.97); }
+@media (max-height: 430px) {
+    .g-panel { padding: 10px 16px 12px; }
+    .g-panel h2 { font-size: 15px; margin-bottom: 4px; }
+    .g-panel p { margin: 4px 0; font-size: 13px; line-height: 1.5; }
+    .g-panel .btns { margin-top: 8px; bottom: -12px; margin-bottom: -12px; padding: 8px 0 12px; gap: 8px; }
+    .g-panel .g-btn { min-height: 40px; padding: 7px 12px; font-size: 14px; }
+    .g-status { font-size: 12px; line-height: 1.35; gap: 2px 10px; margin-top: 4px; }
+    .g-msg { margin-top: 6px; padding: 6px 10px; font-size: 12px; }
+}

@@ -11,6 +11,9 @@ import { launchBrowser, outDir } from './lib.mjs';
 const OUT = outDir(process.argv[2] || 'e2e-out/chapter1/flow');
 const BASE = process.env.BASE3D || 'http://localhost:8097';
 const ONLY = process.env.ONLY || 'ABC';
+// 検証コンテナのソフトウェア描画では 1 コマに数秒かかるので、既定では探索を撮影のときだけ描く（?render=manual。動き・入力・画面の部品はふだんどおり）。
+// REALTIME=1 で毎フレーム描く（遅い）。
+const MANUAL = !process.env.REALTIME;
 const browser = await launchBrowser();
 let failed = 0;
 const T0 = Date.now();
@@ -33,7 +36,7 @@ async function open(opts = {}) {
   return { ctx, page };
 }
 async function gotoTitle(page, first = false) {
-  if (first) await page.goto(BASE + '/?q=low');
+  if (first) await page.goto(BASE + '/?q=low' + (MANUAL ? '&render=manual' : ''));
   else await page.reload();
   await page.waitForFunction(() => window.__game?.ui?.kind === 'title', null, { timeout: 240000 });
 }
@@ -45,8 +48,10 @@ const st = (page) => page.evaluate(() => {
 });
 const waitUi = (page, kind) => page.waitForFunction((k) => window.__game.ui?.kind === k, kind, { timeout: 240000 });
 const waitScreen = (page, s) => page.waitForFunction((k) => window.__game.screen === k, s, { timeout: 240000 });
-const shot = (page, name) => {
+const shot = async (page, name) => {
   console.log(`   撮影 ${name}  [${secs()}]`);
+  // 探索の場面を今のカメラで描いてから撮る（合戦の場面は合戦の側が毎フレーム描く）
+  if (MANUAL) await page.evaluate(() => { if (!document.body.classList.contains('mode-battle')) window.__p3.renderNow(); });
   return page.screenshot({ path: `${OUT}/${name}.png`, timeout: 240000 });
 };
 const castOf = (page) => page.evaluate(() => window.__game.cast);
@@ -127,6 +132,32 @@ async function runA() {
   let s = await st(page);
   check('はじめから：城下の探索、目的は源蔵と話す', s.phase === 'explore' && (await page.textContent('.g-hud')).includes('源蔵と話す'));
   await shot(page, 'A02-explore');
+  // これまでの探索の操作がそのまま使える：マウスのドラッグで見回す、Shift で走る、歩く／走るのボタン
+  {
+    const y0 = await page.evaluate(() => window.__p3.orbit.yaw);
+    await page.mouse.move(640, 300);
+    await page.mouse.down();
+    await page.mouse.move(700, 300, { steps: 3 });
+    await page.mouse.move(760, 300, { steps: 3 });
+    await page.mouse.up();
+    const y1 = await page.evaluate(() => window.__p3.orbit.yaw);
+    await page.mouse.move(640, 300);
+    await page.mouse.down();
+    await page.mouse.move(580, 300, { steps: 3 });
+    await page.mouse.move(520, 300, { steps: 3 });
+    await page.mouse.up();
+    const y2 = await page.evaluate(() => window.__p3.orbit.yaw);
+    check('探索：ドラッグで見回せる（右へ・左へ）', y1 < y0 - 0.3 && Math.abs(y2 - y0) < 0.05, `${y0.toFixed(2)} → ${y1.toFixed(2)} → ${y2.toFixed(2)}`);
+    await page.keyboard.down('Shift');
+    const ran = await page.evaluate(() => window.__p3.anim.running);
+    await page.keyboard.up('Shift');
+    await page.click('#run-btn');
+    const btnRun = await page.evaluate(() => window.__p3.anim.runMode);
+    await page.click('#run-btn');
+    const btnWalk = await page.evaluate(() => window.__p3.anim.runMode);
+    check('探索：Shift で走る・歩く／走るのボタンで切り替わる', ran && btnRun && !btnWalk);
+    check('探索：主人公の見た目の比較のボタンは出ていない（?dev のときだけ）', !(await page.isVisible('#hero-btn')));
+  }
   // 源蔵へ歩く（W などの本物のキー）
   const genzo = (await castOf(page)).find((c) => c.id === 'genzo');
   const p0 = await pose(page);
@@ -153,7 +184,7 @@ async function runA() {
   check('軍議：田代・大森・独力の 3 つ', u.choices.join() === 'ally_tashiro,ally_omori,ally_alone');
   await sleep(400);
   await page.keyboard.press('Enter'); // 田代（最初に選ばれている）
-  await page.waitForFunction(() => window.__game.ui?.choices?.includes('confirm_alliance'));
+  await page.waitForFunction(() => window.__game.ui?.id?.startsWith('council.confirm'));
   u = await readThrough(page, () => page.keyboard.press('Enter'));
   await sleep(400);
   await page.keyboard.press('Enter');
@@ -318,7 +349,7 @@ async function runB() {
   u = await readThrough(page, () => page.mouse.click(640, 200));
   await sleep(400);
   await page.click('.g-choice[data-id="ally_omori"]');
-  await page.waitForFunction(() => window.__game.ui?.choices?.includes('confirm_alliance'));
+  await page.waitForFunction(() => window.__game.ui?.id?.startsWith('council.confirm'));
   await readThrough(page, () => page.mouse.click(640, 200));
   await sleep(400);
   await page.click('.g-choice[data-id="confirm_alliance"]');
@@ -389,7 +420,7 @@ async function runC() {
   await shot(page, 'C05-council-choices');
   await sleep(400);
   await tap('.g-choice[data-id="ally_alone"]');
-  await page.waitForFunction(() => window.__game.ui?.choices?.includes('confirm_alliance'));
+  await page.waitForFunction(() => window.__game.ui?.id?.startsWith('council.confirm'));
   await readThrough(page, tapScreen);
   await sleep(400);
   await tap('.g-choice[data-id="confirm_alliance"]');
