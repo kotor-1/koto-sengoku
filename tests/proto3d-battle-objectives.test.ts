@@ -205,6 +205,32 @@ describe('副目標は勝ち負けに影響せず、終わりに判定して記�
         ]);
     });
 
+    it('preserve_unit・limit_losses は、全軍撤退で終えたら果たせない（戦わずに退いても達成にしない）。日没まで戦えば果たせる', () => {
+        const obj = (): BattleSetup['objectives'] => ({
+            primary: { id: 'p', type: 'destroy_hq', label: '敵本陣を崩す' },
+            secondary: [
+                { id: 'keep', type: 'preserve_unit', label: '崩さない', unitId: 'a2', minRatio: 0.5 },
+                { id: 'loss', type: 'limit_losses', label: '損害 3 割以内', maxRatio: 0.3 },
+            ],
+        });
+        const ret = createBattle(setup(obj()));
+        advance(ret, 5);
+        orderAllRetreat(ret);
+        const rr = runToEnd(ret);
+        expect([rr.result, rr.reason]).toEqual(['retreat', 'ordered_retreat']);
+        expect(rr.objectives!.secondary.map((o) => [o.id, o.achieved])).toEqual([
+            ['keep', false],
+            ['loss', false],
+        ]);
+        const night = createBattle(setup(obj(), baseUnits(), { timeLimitSec: 20 }));
+        const rn = runToEnd(night);
+        expect([rn.result, rn.reason]).toEqual(['retreat', 'nightfall']);
+        expect(rn.objectives!.secondary.map((o) => [o.id, o.achieved])).toEqual([
+            ['keep', true],
+            ['loss', true],
+        ]);
+    });
+
     it('主目標を省いて副目標だけ：勝ち負けは今までの決まり（敵本陣の敗走で勝利）。結果には副目標だけ', () => {
         const s = createBattle(setup({ secondary: [{ id: 'keep', type: 'preserve_unit', label: '崩さない', unitId: 'a1', minRatio: 0.5 }] }));
         rout(s, 'e_hq');
@@ -229,7 +255,7 @@ describe('副目標は勝ち負けに影響せず、終わりに判定して記�
         const s = createBattle(setup({ primary: { id: 'p', type: 'destroy_hq', label: '敵本陣を崩す' }, secondary: [{ id: 'l', type: 'limit_losses', label: '損害 3 割以内', maxRatio: 0.3 }] }));
         expect(objectiveProgress(s)).toEqual([
             { id: 'p', label: '敵本陣を崩す', role: 'primary', state: 'active', progressText: 'e_hqを崩す' },
-            { id: 'l', label: '損害 3 割以内', role: 'secondary', state: 'active', progressText: '損害 0％（30％ 以内で終える）' },
+            { id: 'l', label: '損害 3 割以内', role: 'secondary', state: 'active', progressText: '損害 0％（30％ 以内で終える・撤退は不可）' },
         ]);
     });
 });

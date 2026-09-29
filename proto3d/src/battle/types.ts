@@ -164,8 +164,8 @@ export interface FieldRules {
  * - breakthrough：味方 count 部隊が zone に入る（抜ける）
  * - retreat_success：本陣が撤退で戦場を離れ、味方の兵の minRatio 以上が撤退で戦場を離れる
  * - survive_until：援軍 reinforcementId が着いて、さらに holdSec 秒（省けば 0）耐える
- * - preserve_unit：部隊 unitId を崩さず、兵を最初の minRatio 以上残して終える（副目標向け）
- * - limit_losses：味方の兵の損害を maxRatio 以内で終える（副目標向け）
+ * - preserve_unit：部隊 unitId を崩さず、兵を最初の minRatio 以上残して終える（副目標向け。全軍撤退で終えたら果たせない）
+ * - limit_losses：味方の兵の損害を maxRatio 以内で終える（副目標向け。全軍撤退で終えたら果たせない）
  * - break_unit：敵の部隊 unitId を崩す（敗走・全滅・撤退させる）
  */
 export type ObjectiveDef = { id: string; label: string } & (

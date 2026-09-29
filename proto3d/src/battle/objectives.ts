@@ -10,7 +10,7 @@
  * 目標の種類を足すときは：types.ts の ObjectiveDef に型を 1 つ足し、このファイルの update・finalAchieved・progressText に分岐を足す。
  * sim.ts を実行時に import しない（sim.ts がこのファイルを import するため）。
  */
-import type { BattleResultKind, BattleSetup, ObjectiveDef, ObjectiveResult, Side } from './types';
+import type { BattleEndReason, BattleResultKind, BattleSetup, ObjectiveDef, ObjectiveResult, Side } from './types';
 import type { BattleState, UnitState } from './sim';
 import { inZone } from './fieldRules';
 
@@ -219,13 +219,22 @@ export function trackObjectives(s: BattleState, dt: number, log: (text: string) 
 
 // ---------------------------------------------------------------- 終わり
 
+/**
+ * 損害を抑える・部隊を残す目標（preserve_unit・limit_losses）は、戦い抜いて（勝利・敗北・日没で）終えたときだけ果たせる。
+ * 全軍撤退（ordered_retreat）で終えたときは、戦わずに退いても「果たした」と読めてしまうので、果たせなかったことにする。
+ */
+function needsFoughtThrough(d: ObjectiveDef): boolean {
+    return d.type === 'preserve_unit' || d.type === 'limit_losses';
+}
+
 /** 終わりに：その目標を果たしたか */
-function finalAchieved(s: BattleState, r: ObjectiveRun, result: BattleResultKind): boolean {
+function finalAchieved(s: BattleState, r: ObjectiveRun, result: BattleResultKind, reason?: BattleEndReason): boolean {
     // 主目標は勝敗と同じ（勝利＝果たした）
     if (r.role === 'primary') return result === 'victory';
     if (r.state === 'done') return true;
     if (r.state === 'failed') return false;
     const d = r.def;
+    if (reason === 'ordered_retreat' && needsFoughtThrough(d)) return false;
     switch (d.type) {
         case 'defend_time':
             // 勝って終えたなら、守り切った
@@ -246,11 +255,15 @@ function finalAchieved(s: BattleState, r: ObjectiveRun, result: BattleResultKind
 }
 
 /** BattleOutcome.objectives を作る（目標の無い合戦は undefined）。終わりの状態も done／failed に決める */
-export function finalObjectives(s: BattleState, result: BattleResultKind): { primary?: ObjectiveResult; secondary: ObjectiveResult[] } | undefined {
+export function finalObjectives(
+    s: BattleState,
+    result: BattleResultKind,
+    reason?: BattleEndReason,
+): { primary?: ObjectiveResult; secondary: ObjectiveResult[] } | undefined {
     const tr = s.objectives;
     if (!tr) return undefined;
     const row = (r: ObjectiveRun): ObjectiveResult => {
-        const achieved = finalAchieved(s, r, result);
+        const achieved = finalAchieved(s, r, result, reason);
         r.state = achieved ? 'done' : 'failed';
         if (r.settledT === null) r.settledT = s.t;
         return { id: r.def.id, type: r.def.type, label: r.def.label, achieved };
@@ -292,10 +305,10 @@ function progressText(s: BattleState, r: ObjectiveRun): string {
         }
         case 'preserve_unit': {
             const u = byId(s, d.unitId);
-            return u ? `${u.name}：兵 ${Math.round(u.startStrength > 0 ? (u.strength / u.startStrength) * 100 : 0)}％（${Math.round(d.minRatio * 100)}％ 以上で終える）` : '';
+            return u ? `${u.name}：兵 ${Math.round(u.startStrength > 0 ? (u.strength / u.startStrength) * 100 : 0)}％（${Math.round(d.minRatio * 100)}％ 以上で終える・撤退は不可）` : '';
         }
         case 'limit_losses':
-            return `損害 ${Math.round(allyLossRatio(s) * 100)}％（${Math.round(d.maxRatio * 100)}％ 以内で終える）`;
+            return `損害 ${Math.round(allyLossRatio(s) * 100)}％（${Math.round(d.maxRatio * 100)}％ 以内で終える・撤退は不可）`;
         case 'break_unit': {
             const u = byId(s, d.unitId);
             return u ? `${u.name}を崩す` : '';

@@ -1548,7 +1548,7 @@ function finish(s: BattleState, result: BattleResultKind, reason: BattleEndReaso
         })),
     };
     if (s.abilityList.length > 0) s.result.abilitiesUsed = abilitiesUsedRecord(s);
-    const objs = finalObjectives(s, result);
+    const objs = finalObjectives(s, result, reason);
     if (objs) s.result.objectives = objs;
     if (s.pledge) {
         const p = pledgeProgress(s)!;
