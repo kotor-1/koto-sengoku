@@ -41,6 +41,7 @@ import {
     ieyasuPhaseIntro,
     ieyasuReasonLabel,
     pledgeRecordText,
+    sideObjectiveRecordText,
     supportRecordText,
 } from './story';
 import type { StorageLike } from '../save';
@@ -149,6 +150,7 @@ export function ieyasuStatusLines(s: IeyasuState, extraPlaySec = 0): StatusLine[
         { label: '人物', value: people.map((c) => `${IEYASU_CHARACTER_NAMES[c]} ${IEYASU_STATUS_LABELS[s.characters[c]]}`).join('・') },
     ];
     if (s.policy) lines.push({ label: '約束', value: pledgeRecordText(s) });
+    if (s.policy) lines.push({ label: '副目標', value: sideObjectiveRecordText(s) });
     if (s.battle && s.policy) lines.push({ label: '合戦', value: `${IEYASU_RESULT_LABELS[s.battle.result]}（${ieyasuReasonLabel(s.policy, s.battle.reason)}）` });
     if (s.support) lines.push({ label: '支援', value: supportRecordText(s) });
     const sec = Math.floor(s.playTimeSec + extraPlaySec);

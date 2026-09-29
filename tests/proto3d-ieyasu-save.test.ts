@@ -1,7 +1,9 @@
 /**
  * 歴史分岐シナリオ「元亀元年・家康」の保存（proto3d/src/campaign/ieyasu1570/save.ts）：
- * キーは 'koto-sengoku/3d-ieyasu1570'（版 2・シナリオの id 入り。版 1 も読む）。書いた後に読み戻して確かめる。
- * 版 1（信頼に家臣の酒井・石川・榊原が無い形）は、足りない信頼を初期値で補って読み、読み直して版 2 で保存しても既存の値は変わらない。
+ * キーは 'koto-sengoku/3d-ieyasu1570'（版 3・シナリオの id 入り。版 1・2 も読む）。書いた後に読み戻して確かめる。
+ * 版 1（信頼に家臣の酒井・石川・榊原が無い形）は、足りない信頼を初期値で補って読み、読み直して版 3 で保存しても既存の値は変わらない。
+ * 版 2（副目標の欄が無い形）は、副目標を「記録なし」（null）として読み、読み直して版 3 で保存しても既存の値は変わらない。
+ * 版 3 は、勝敗（battle）・副目標（sideObjectives）・約束（pledge）を別々の欄に持ち、読み直しても残る。
  * 出陣前の保存は支度から再開（約束の返事は残る）。戦後は勝敗・約束・支援・信頼が残り、同じ合戦を二重に反映しない。
  * 壊れたデータ・食い違いは読み込まない。架空の第一章の保存（'koto-sengoku/3d-chapter1'、版 1・2）と 2D 版の保存には触れない。
  */
@@ -30,6 +32,7 @@ import { MemoryStorage, snapshot, toAftermath } from './proto3d-campaign-helpers
 import { V1_AFTERMATH_OMORI_DEFEAT } from './proto3d-save-v1-fixtures';
 import { ieyasuToAftermath, ieyasuToBattle, ieyasuToMuster } from './proto3d-ieyasu-helpers';
 import { IEYASU_V1_AFTERMATH_ASAI, IEYASU_V1_DEPARTURE_HOME, IEYASU_V1_ENDING_ASAI, IEYASU_V1_MUSTER_ODA } from './proto3d-ieyasu-save-v1-fixtures';
+import { IEYASU_V2_AFTERMATH_ODA, IEYASU_V2_ENDING_HOME, IEYASU_V2_MUSTER_HOME } from './proto3d-ieyasu-save-v2-fixtures';
 
 const now = new Date('2026-09-29T03:04:05Z');
 const LEGACY_2D_DATA = JSON.stringify({ version: 2, savedAt: '2026-09-24T12:00:00.000Z', playTimeSec: 99, player: { x: 1, y: 2, facing: 'down' } });
@@ -62,8 +65,8 @@ describe('保存と読み込み', () => {
         const raw = JSON.parse(storage.data.get(IEYASU_SAVE_KEY)!) as Record<string, unknown>;
         expect(raw.scenario).toBe('ieyasu1570');
         expect(raw.version).toBe(IEYASU_SAVE_VERSION);
-        expect(IEYASU_SAVE_VERSION).toBe(2);
-        // 版 2 の信頼は 6 人（家臣の酒井・石川・榊原を含む）
+        expect(IEYASU_SAVE_VERSION).toBe(3);
+        // 版 2 からの信頼は 6 人（家臣の酒井・石川・榊原を含む）
         expect(Object.keys(raw.trust as object)).toEqual([...TRUST_IDS]);
         // 書いた後に読み戻して確かめた（set の後に get）
         const ops = storage.touched.filter((t) => t.key === IEYASU_SAVE_KEY).map((t) => t.op);
@@ -169,7 +172,7 @@ describe('壊れたデータ・食い違い', () => {
     });
     it.each([
         ['シナリオの id が違う', (v: Record<string, unknown>) => (v.scenario = 'fictional')],
-        ['版が違う（まだ無い版 3）', (v: Record<string, unknown>) => (v.version = 3)],
+        ['版が違う（まだ無い版 4）', (v: Record<string, unknown>) => (v.version = 4)],
         ['版が 0', (v: Record<string, unknown>) => (v.version = 0)],
         ['版 2 なのに家臣の信頼が無い', (v: Record<string, unknown>) => delete (v.trust as Record<string, number>).sakai],
         ['家臣の信頼が範囲外', (v: Record<string, unknown>) => ((v.trust as Record<string, number>).ishikawa = -101)],
@@ -178,6 +181,11 @@ describe('壊れたデータ・食い違い', () => {
         ['兵が負', (v: Record<string, unknown>) => ((v.troops as Record<string, number>).yumi = -1)],
         ['約束の対象が方針と違う', (v: Record<string, unknown>) => ((v.pledge as Record<string, unknown>).targetId = 'a_nagamasa')],
         ['約束の結果が合戦の結果と違う', (v: Record<string, unknown>) => ((v.pledge as Record<string, unknown>).result = 'broken')],
+        ['版 3 なのに副目標の欄が無い', (v: Record<string, unknown>) => delete v.sideObjectives],
+        ['副目標がその方針の副目標でない', (v: Record<string, unknown>) => ((v.sideObjectives as Record<string, unknown>[])[0].id = 'home_limit_losses')],
+        ['副目標の達成が真偽でない', (v: Record<string, unknown>) => ((v.sideObjectives as Record<string, unknown>[])[0].achieved = 'yes')],
+        ['副目標の種類が違う', (v: Record<string, unknown>) => ((v.sideObjectives as Record<string, unknown>[])[0].type = 'limit_losses')],
+        ['副目標が並びでない', (v: Record<string, unknown>) => (v.sideObjectives = { achieved: true })],
         ['守ったのに援兵が無い', (v: Record<string, unknown>) => ((v.support as Record<string, unknown>).reinforcement = false)],
         ['反映の済み印が合戦の id と違う', (v: Record<string, unknown>) => (v.appliedBattleId = 'other')],
         ['合戦の結果が無い', (v: Record<string, unknown>) => (v.battle = null)],
@@ -255,12 +263,14 @@ describe('版 1 の保存（信頼に家臣の 3 人が無い形）を読む', (
         const d = parseIeyasuSaveData(text);
         expect(d).not.toBeNull();
         if (!d) return;
-        expect(d.version).toBe(2);
+        expect(d.version).toBe(IEYASU_SAVE_VERSION);
         expect(d.trust).toEqual({ ...(raw.trust as Record<string, number>), ...ADDED });
+        // 版 1 には副目標の欄が無い：記録なし
+        expect(d.sideObjectives).toBeNull();
         for (const [k, v] of Object.entries(raw)) if (k !== 'version' && k !== 'trust') expect(d[k as keyof typeof d]).toEqual(v);
     });
 
-    it.each(V1)('%s：版 1 を読んで版 2 で保存し直しても、既存の値が変わらない（読み直しても同じ）', (_name, text) => {
+    it.each(V1)('%s：版 1 を読んで版 3 で保存し直しても、既存の値が変わらない（読み直しても同じ）', (_name, text) => {
         const raw = JSON.parse(text) as Record<string, unknown>;
         const storage = new MemoryStorage();
         storage.data.set(IEYASU_SAVE_KEY, text);
@@ -275,8 +285,9 @@ describe('版 1 の保存（信頼に家臣の 3 人が無い形）を読む', (
         const r = store.save(l.state, point, now);
         expect(r.ok).toBe(true);
         const v2 = JSON.parse(storage.data.get(IEYASU_SAVE_KEY)!) as Record<string, unknown>;
-        expect(v2.version).toBe(2);
+        expect(v2.version).toBe(IEYASU_SAVE_VERSION);
         expect(v2.trust).toEqual({ ...(raw.trust as Record<string, number>), ...ADDED });
+        expect(v2.sideObjectives).toBeNull();
         const same = ['scenario', 'playTimeSec', 'policy', 'troops', 'characters', 'talked', 'pledge', 'battle', 'support', 'ending', 'explore'];
         for (const k of same) expect(v2[k]).toEqual(raw[k]);
         if (raw.point === 'departure') {
@@ -285,7 +296,7 @@ describe('版 1 の保存（信頼に家臣の 3 人が無い形）を読む', (
         } else {
             for (const k of ['point', 'phase', 'battleId', 'appliedBattleId']) expect(v2[k]).toEqual(raw[k]);
         }
-        // 版 2 を読み直すと、版 1 を読んだときと同じ状態（保存の時刻だけ違う）
+        // 版 3 を読み直すと、版 1 を読んだときと同じ状態（保存の時刻だけ違う）
         const again = store.load();
         expect(again.status).toBe('ok');
         if (again.status !== 'ok') return;
@@ -330,5 +341,98 @@ describe('版 1 の保存（信頼に家臣の 3 人が無い形）を読む', (
             const f = new CampaignSaveStore(storage).load();
             expect(f.status === 'ok' && Object.keys(f.data.relations).sort()).toEqual(['omori', 'tashiro', 'washio']);
         }
+    });
+});
+
+describe('版 2 の保存（副目標の欄が無い形）を読む', () => {
+    const V2 = [
+        ['支度（C・メニューから保存）', IEYASU_V2_MUSTER_HOME],
+        ['戦後（A・勝利・約束を守った）', IEYASU_V2_AFTERMATH_ODA],
+        ['結末（C・撤退・約束を引き受けない）', IEYASU_V2_ENDING_HOME],
+    ] as const;
+
+    it.each(V2)('%s：読めて、版 2 にあった値はそのまま・副目標は記録なし（null）', (_name, text) => {
+        const raw = JSON.parse(text) as Record<string, unknown>;
+        expect(raw.version).toBe(2);
+        expect('sideObjectives' in raw).toBe(false);
+        const d = parseIeyasuSaveData(text);
+        expect(d).not.toBeNull();
+        if (!d) return;
+        expect(d.version).toBe(IEYASU_SAVE_VERSION);
+        expect(d.sideObjectives).toBeNull();
+        for (const [k, v] of Object.entries(raw)) if (k !== 'version') expect(d[k as keyof typeof d]).toEqual(v);
+    });
+
+    it.each(V2)('%s：版 2 を読んで版 3 で保存し直しても、既存の値が変わらない（読み直しても同じ）', (_name, text) => {
+        const raw = JSON.parse(text) as Record<string, unknown>;
+        const storage = new MemoryStorage();
+        storage.data.set(IEYASU_SAVE_KEY, text);
+        const store = new IeyasuSaveStore(storage);
+        const l = store.load();
+        expect(l.status).toBe('ok');
+        if (l.status !== 'ok') return;
+        expect(storage.data.get(IEYASU_SAVE_KEY)).toBe(text);
+        const r = store.save(l.state, raw.point as 'manual' | 'aftermath' | 'ending', now);
+        expect(r.ok).toBe(true);
+        const v3 = JSON.parse(storage.data.get(IEYASU_SAVE_KEY)!) as Record<string, unknown>;
+        expect(v3.version).toBe(3);
+        expect(v3.sideObjectives).toBeNull();
+        for (const k of Object.keys(raw)) if (k !== 'version' && k !== 'savedAt') expect(v3[k]).toEqual(raw[k]);
+        const again = store.load();
+        expect(again.status === 'ok' && { ...again.state, savedAt: null }).toEqual({ ...l.state, savedAt: null });
+    });
+
+    it('版 2 の戦後を読んで続けても、同じ合戦を二重に反映しない・結末へ進める（副目標は記録なしのまま）', () => {
+        const s = ieyasuStateFromSave(parseIeyasuSaveData(IEYASU_V2_AFTERMATH_ODA)!);
+        expect(applyIeyasuOutcomeOnce(s, s.battleId!, s.battle!).applied).toBe(false);
+        const e = finishTalkIeyasu(s, 'tadakatsu', 'end_chapter');
+        expect(e.phase).toBe('ending');
+        expect(e.sideObjectives).toBeNull();
+        expect(e.battle!.result).toBe('victory');
+        expect(e.pledge!.result).toBe('kept');
+    });
+});
+
+describe('版 3：勝敗・副目標・約束を別々に保存する', () => {
+    function aftermathWith(policy: 'oda' | 'asai' | 'home', result: 'victory' | 'retreat' | 'defeat', side: boolean, pledge: 'kept' | 'broken'): IeyasuState {
+        const s = withIeyasuBattleId(ieyasuToBattle(policy, 'accept'), 'ieyasu1570-v3test');
+        const o = ieyasuOutcomeFromSetup(ieyasuBattleSetup(s), result, { pledge, sideObjective: side });
+        return applyIeyasuOutcomeOnce(s, 'ieyasu1570-v3test', o).state;
+    }
+    it.each([
+        ['oda', 'victory', true, 'broken'],
+        ['asai', 'retreat', false, 'kept'],
+        ['home', 'defeat', true, 'kept'],
+    ] as const)('%s・%s・副目標 %s・約束 %s：保存して読み直しても、3 つの欄がそれぞれ残る', (policy, result, side, pledge) => {
+        const storage = new MemoryStorage();
+        const store = new IeyasuSaveStore(storage);
+        const s = aftermathWith(policy, result, side, pledge);
+        expect(s.sideObjectives).toHaveLength(1);
+        expect(s.sideObjectives![0].achieved).toBe(side);
+        expect(store.save(s, 'aftermath', now).ok).toBe(true);
+        const raw = JSON.parse(storage.data.get(IEYASU_SAVE_KEY)!) as Record<string, any>;
+        expect(raw.version).toBe(3);
+        expect(raw.battle.result).toBe(result);
+        expect(raw.battle.objectives).toBeUndefined(); // 副目標は合戦の結果の中ではなく、別の欄
+        expect(raw.sideObjectives).toEqual([{ id: s.sideObjectives![0].id, type: s.sideObjectives![0].type, label: s.sideObjectives![0].label, achieved: side }]);
+        expect(raw.pledge.result).toBe(pledge);
+        const l = store.load();
+        expect(l.status).toBe('ok');
+        if (l.status !== 'ok') return;
+        expect(l.state.battle!.result).toBe(result);
+        expect(l.state.sideObjectives).toEqual(s.sideObjectives);
+        expect(l.state.pledge!.result).toBe(pledge);
+        // 結末まで進めて保存し直しても残る
+        const e = finishTalkIeyasu(l.state, 'tadakatsu', 'end_chapter');
+        expect(store.save(e, 'ending', now).ok).toBe(true);
+        const l2 = store.load();
+        expect(l2.status === 'ok' && [l2.state.battle!.result, l2.state.sideObjectives, l2.state.pledge!.result]).toEqual([result, s.sideObjectives, pledge]);
+    });
+    it('合戦の前（支度・出陣前）の保存には副目標の欄が null で入り、null 以外なら読まない', () => {
+        const d = json(ieyasuToBattle('oda', 'accept'), 'departure');
+        expect(d.sideObjectives).toBeNull();
+        expect(parseIeyasuSaveData(JSON.stringify(d))).not.toBeNull();
+        d.sideObjectives = [];
+        expect(parseIeyasuSaveData(JSON.stringify(d))).toBeNull();
     });
 });

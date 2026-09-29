@@ -1,9 +1,11 @@
 /**
  * 歴史分岐シナリオ「元亀元年・家康」の保存と読み込み（端末内の localStorage）。設計：docs/ieyasu1570-design.md §7。
  *
- * - 保存先のキーは 'koto-sengoku/3d-ieyasu1570'（今は版 2）。データにシナリオの id（'ieyasu1570'）を入れる。
+ * - 保存先のキーは 'koto-sengoku/3d-ieyasu1570'（今は版 3）。データにシナリオの id（'ieyasu1570'）を入れる。
  *   版 2：信頼（trust）に家臣の酒井忠次・石川数正・榊原康政を足した（docs/battlefields-design.md §1）。キーは同じ。
- *   版 1 も読む（足りない信頼は初期値で補う。ほかの値はそのまま）。書くときは版 2。版 1 のデータを勝手に書き換えない。
+ *   版 3：合戦の副目標の達成（sideObjectives）を、勝敗（battle）・約束（pledge）とは別の欄に足した（docs/battlefields-design.md §4）。
+ *   版 1・2 も読む（版 1 は足りない信頼を初期値で補う。副目標は「記録なし」＝ null。ほかの値はそのまま）。
+ *   書くときは版 3。古い版のデータを勝手に書き換えない（利用者が保存したときだけ、その時の版で書く）。
  * - 架空の第一章のキー 'koto-sengoku/3d-chapter1' と、2D 版のキー 'koto-sengoku/save' には、読みも書きも消しもしない。
  * - 書き込んだ後に読み戻して一致を確かめ、確かめられたときだけ ok: true（失敗は理由つき。成功したように見せない）。
  * - 読み込み時は形・値の範囲・段階との食い違いを検査し、壊れたデータでは始めない（勝手に消しもしない）。
@@ -35,6 +37,7 @@ import {
     cloneIeyasuOutcome,
     cloneIeyasuState,
     parseIeyasuOutcome,
+    parseSideObjectives,
     type CampaignPhase,
     type CarryFlag,
     type ExplorePose,
@@ -52,13 +55,13 @@ import {
     type TrustId,
 } from './state';
 import { IEYASU_PHASE_LABELS, POLICY_DONE_LABELS } from './story';
-import type { BattleOutcome } from '../../battle/types';
+import type { BattleOutcome, ObjectiveResult } from '../../battle/types';
 
 export const IEYASU_SAVE_KEY = 'koto-sengoku/3d-ieyasu1570';
 export const IEYASU_SAVE_ARCHIVE_KEY = 'koto-sengoku/3d-ieyasu1570/previous';
-export const IEYASU_SAVE_VERSION = 2;
-/** 読める版（1 は信頼に家臣の 3 人が無い形） */
-export const IEYASU_SAVE_READABLE_VERSIONS: readonly number[] = [1, 2];
+export const IEYASU_SAVE_VERSION = 3;
+/** 読める版（1 は信頼に家臣の 3 人が無い形。1・2 は副目標の欄が無い形） */
+export const IEYASU_SAVE_READABLE_VERSIONS: readonly number[] = [1, 2, 3];
 
 type SavedPhase = Exclude<CampaignPhase, 'council'>;
 
@@ -79,6 +82,8 @@ export interface IeyasuSaveData {
     battleId: string | null;
     appliedBattleId: string | null;
     support: SupportState | null;
+    /** 副目標の達成（版 3 から。合戦の前・版 1・2 から続けた戦後は null） */
+    sideObjectives: ObjectiveResult[] | null;
     ending: IeyasuEndingId | null;
     explore: ExplorePose | null;
 }
@@ -117,6 +122,7 @@ export function toIeyasuSaveData(state: IeyasuState, point: SavePoint, now: Date
         battleId: inField ? null : state.battleId,
         appliedBattleId: inField ? null : state.appliedBattleId,
         support: state.support ? { ...state.support, carryOver: [...state.support.carryOver] } : null,
+        sideObjectives: state.sideObjectives ? state.sideObjectives.map((r) => ({ ...r })) : null,
         ending: state.ending,
         explore: state.explore ? { ...state.explore } : null,
     };
@@ -173,7 +179,7 @@ function parseTrust(v: unknown, version: number): Record<TrustId, number> | null
     return trust;
 }
 
-/** JSON 文字列を検査して保存データにする（版 1 も版 2 の形にして返す）。形・範囲・段階との食い違いがあれば null */
+/** JSON 文字列を検査して保存データにする（版 1・2 も版 3 の形にして返す）。形・範囲・段階との食い違いがあれば null */
 export function parseIeyasuSaveData(json: string): IeyasuSaveData | null {
     let v: unknown;
     try {
@@ -223,6 +229,14 @@ export function parseIeyasuSaveData(json: string): IeyasuSaveData | null {
     }
     const support = parseSupport(v.support);
     if (support === undefined) return null;
+    // 副目標（版 3 は欄が要る。版 1・2 には無いので「記録なし」）
+    let sideObjectives: ObjectiveResult[] | null = null;
+    if (version >= 3) {
+        if (!('sideObjectives' in v)) return null;
+        const so = parseSideObjectives(v.sideObjectives, policy);
+        if (so === undefined) return null;
+        sideObjectives = so;
+    }
     if (v.ending !== null && !IEYASU_ENDING_IDS.includes(v.ending as IeyasuEndingId)) return null;
     const ending = v.ending as IeyasuEndingId | null;
     let explore: ExplorePose | null = null;
@@ -242,6 +256,8 @@ export function parseIeyasuSaveData(json: string): IeyasuSaveData | null {
     const beforeBattle = inField || phase === 'battle';
     if (phase === 'explore' ? policy !== null : policy === null) return null;
     if (beforeBattle ? battle !== null || support !== null : battle === null || support === null) return null;
+    // 副目標は戦後だけ（戦後でも null＝古い版から続けた記録なし、はありうる）
+    if (beforeBattle && sideObjectives !== null) return null;
     if (phase === 'ending' ? ending === null : ending !== null) return null;
     if (phase === 'explore' && pledge !== null) return null;
     if (phase === 'battle' && pledge === null) return null;
@@ -274,6 +290,7 @@ export function parseIeyasuSaveData(json: string): IeyasuSaveData | null {
         battleId,
         appliedBattleId,
         support,
+        sideObjectives,
         ending,
         explore,
     };
@@ -296,6 +313,7 @@ function stateOf(d: IeyasuSaveData): IeyasuState {
         battleId: d.battleId,
         appliedBattleId: d.appliedBattleId,
         support: d.support,
+        sideObjectives: d.sideObjectives,
         ending: d.ending,
         explore: d.explore,
         playTimeSec: d.playTimeSec,

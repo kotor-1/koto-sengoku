@@ -8,7 +8,7 @@
  * 架空の第一章（campaign/state.ts の CampaignState）とは別の形で持つ（架空のセーブの田代家・大森家を書き換えない）。
  * 状態は値として扱う（flow.ts の関数は受け取った状態を書き換えず、新しい状態を返す）。
  */
-import type { BattleOutcome, ClanId } from '../../battle/types';
+import type { BattleOutcome, ClanId, ObjectiveDef, ObjectiveResult, ObjectiveType } from '../../battle/types';
 import { IEYASU_INITIAL_TROOPS, IEYASU_PLEDGE_TARGET, type IeyasuPolicy, type IeyasuTroopKey } from '../../battle/maps';
 import { CAMPAIGN_PHASES, parseBattleOutcome, type CampaignPhase, type ExplorePose } from '../state';
 
@@ -170,6 +170,11 @@ export interface IeyasuState {
     appliedBattleId: string | null;
     /** 戦後の支援（戦後から） */
     support: SupportState | null;
+    /**
+     * 副目標の達成（戦後から。合戦の勝敗 battle.result・約束 pledge.result とは別の欄）。
+     * 合戦の前は null。戦後でも、副目標を記録していなかった版（保存の版 1・2）から続けたときは null（記録なし）。
+     */
+    sideObjectives: ObjectiveResult[] | null;
     ending: IeyasuEndingId | null;
     explore: ExplorePose | null;
     playTimeSec: number;
@@ -227,6 +232,7 @@ export function cloneIeyasuState(s: IeyasuState): IeyasuState {
         battleId: s.battleId,
         appliedBattleId: s.appliedBattleId,
         support: s.support ? { ...s.support, carryOver: [...s.support.carryOver] } : null,
+        sideObjectives: s.sideObjectives ? s.sideObjectives.map((r) => ({ ...r })) : null,
         ending: s.ending,
         explore: s.explore ? { ...s.explore } : null,
         playTimeSec: s.playTimeSec,
@@ -246,3 +252,50 @@ export const PLEDGE_SPECS: Readonly<Record<Policy, PledgeSpec>> = {
     asai: { partner: 'asai', giver: 'asai_envoy', targetId: IEYASU_PLEDGE_TARGET.asai, targetName: '浅井長政隊' },
     home: { partner: 'tadakatsu', giver: 'tadakatsu', targetId: IEYASU_PLEDGE_TARGET.home, targetName: '岡崎の守備隊' },
 };
+
+/**
+ * 方針ごとの副目標（合戦の BattleSetup.objectives.secondary に 1 つ入れる。主目標は入れない＝勝ち負けは今の決まりのまま）。
+ * ゲーム用の創作の目安（史実の戦いの目的ではない）。勝敗・約束とは別に判定し、別の欄（IeyasuState.sideObjectives）に残す。
+ * - oda：東から回り込む朝倉勢（織田援軍の横を突く）を崩す。
+ * - asai：西の林から回り込む織田騎馬（浅井の退き口を脅かす）を崩す。
+ * - home：徳川の兵の損害を 3 割以内に抑える（自領の守りに兵を残す）。
+ */
+export const IEYASU_SIDE_OBJECTIVES: Readonly<Record<Policy, ObjectiveDef>> = {
+    oda: { id: 'oda_break_asakura', type: 'break_unit', unitId: 'e_asakura', label: '東から回り込む朝倉勢を崩す' },
+    asai: { id: 'asai_break_oda_kiba', type: 'break_unit', unitId: 'e_oda_kiba', label: '西の林から回り込む織田騎馬を崩す' },
+    home: { id: 'home_limit_losses', type: 'limit_losses', maxRatio: 0.3, label: '徳川の兵の損害を 3 割以内に抑える' },
+};
+
+/** 副目標の記録の 1 行の上限（保存の検査） */
+const SIDE_OBJECTIVE_LABEL_MAX = 120;
+const OBJECTIVE_TYPES: readonly ObjectiveType[] = ['destroy_hq', 'hold_point', 'defend_time', 'rescue', 'breakthrough', 'retreat_success', 'survive_until', 'preserve_unit', 'limit_losses', 'break_unit'];
+
+/**
+ * 合戦の結果（BattleOutcome.objectives.secondary）から、その方針の副目標の記録を作る。
+ * 結果に副目標が無ければ空の並び（記録なし）。名前・種類は方針のデータから取る（結果の文をそのまま信じない）。
+ */
+export function sideObjectivesFromOutcome(policy: Policy, o: BattleOutcome): ObjectiveResult[] {
+    const def = IEYASU_SIDE_OBJECTIVES[policy];
+    const sec: unknown = o.objectives?.secondary;
+    const row = Array.isArray(sec) ? (sec as unknown[]).find((r): r is ObjectiveResult => typeof r === 'object' && r !== null && (r as ObjectiveResult).id === def.id) : undefined;
+    if (!row || typeof row.achieved !== 'boolean') return [];
+    return [{ id: def.id, type: def.type, label: def.label, achieved: row.achieved }];
+}
+
+/** 保存の副目標の記録を検査して写す（null はそのまま）。形・その方針の副目標でない行があれば undefined */
+export function parseSideObjectives(v: unknown, policy: Policy | null): ObjectiveResult[] | null | undefined {
+    if (v === null) return null;
+    if (!Array.isArray(v) || !policy || v.length > 4) return undefined;
+    const def = IEYASU_SIDE_OBJECTIVES[policy];
+    const out: ObjectiveResult[] = [];
+    for (const r of v as unknown[]) {
+        if (typeof r !== 'object' || r === null || Array.isArray(r)) return undefined;
+        const x = r as Record<string, unknown>;
+        if (x.id !== def.id || out.some((o) => o.id === x.id)) return undefined;
+        if (!OBJECTIVE_TYPES.includes(x.type as ObjectiveType) || x.type !== def.type) return undefined;
+        if (typeof x.label !== 'string' || x.label.length === 0 || x.label.length > SIDE_OBJECTIVE_LABEL_MAX) return undefined;
+        if (typeof x.achieved !== 'boolean') return undefined;
+        out.push({ id: def.id, type: def.type, label: x.label, achieved: x.achieved });
+    }
+    return out;
+}

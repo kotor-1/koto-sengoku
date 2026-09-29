@@ -19,6 +19,7 @@ import { RULES } from '../../battle/sim';
 import { generalById, type GeneralId } from '../../battle/generals';
 import type { ScenarioChoice, ScenarioLine, ScenarioScript } from '../scenario';
 import {
+    IEYASU_SIDE_OBJECTIVES,
     INITIAL_TRUST,
     PLEDGE_SPECS,
     TOKUGAWA_UNIT_IDS,
@@ -616,7 +617,9 @@ export function ieyasuPhaseIntro(state: IeyasuState): { title: string; text: str
                 retreat: { title: '城へ引いた夜', text: '兵をまとめて城へ戻った。皆の様子を見て、忠勝と話そう。' },
                 defeat: { title: '落ち延びた夜', text: '本陣は崩れたが、家康は城へ落ち延びた。皆の様子を見て、忠勝と話そう。' },
             };
-            return t[r];
+            // 副目標の達成を 1 文添える（勝敗・約束とは別。記録の無い古い保存からは添えない）
+            const side = sideObjectiveSentence(state);
+            return side ? { title: t[r].title, text: `${t[r].text}${side}` } : t[r];
         }
         case 'ending':
             return { title: state.ending ? IEYASU_ENDING_TITLES[state.ending] : '章の結末', text: '' };
@@ -742,6 +745,27 @@ export function retainerTrustLine(state: IeyasuState): string {
 
 const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
 
+/**
+ * 副目標の記録（メニューの状態・結末の記録の 1 行。勝敗・約束とは別の欄）。
+ * 合戦の前は方針の副目標と「合戦の前」、戦後は果たしたか。記録の無い古い保存（版 1・2）から続けたときは「記録なし」。
+ */
+export function sideObjectiveRecordText(state: IeyasuState): string {
+    const p = state.policy;
+    if (!p) return 'まだ無い（方針を決めると決まる）';
+    const rows = state.sideObjectives;
+    if (!state.battle) return `${IEYASU_SIDE_OBJECTIVES[p].label}：合戦の前`;
+    if (rows === null) return '記録なし（副目標を記録していなかった版の保存から続けた）';
+    if (rows.length === 0) return '記録なし';
+    return rows.map((r) => `${r.label}：${r.achieved ? '果たした' : '果たせなかった'}`).join('・');
+}
+
+/** 戦後の案内に添える副目標の 1 文（記録が無ければ空） */
+export function sideObjectiveSentence(state: IeyasuState): string {
+    const rows = state.sideObjectives;
+    if (!state.battle || !rows || rows.length === 0) return '';
+    return rows.map((r) => `（副目標「${r.label}」は${r.achieved ? '果たした' : '果たせなかった'}）`).join('');
+}
+
 export function pledgeRecordText(state: IeyasuState): string {
     const p = state.policy;
     const pl = state.pledge;
@@ -807,6 +831,7 @@ export function ieyasuEndingView(state: IeyasuState): IeyasuEndingView {
         { label: '合戦の結果', value: `${IEYASU_RESULT_LABELS[o.result]}：${ieyasuReasonLabel(state.policy, o.reason)}` },
         { label: '合戦の時間', value: `${min} 分 ${String(sec).padStart(2, '0')} 秒` },
         { label: '約束', value: pledgeRecordText(state) },
+        { label: '副目標', value: sideObjectiveRecordText(state) },
         { label: '徳川の兵', value: `${t.after.toLocaleString('ja-JP')}（出陣前 ${t.before.toLocaleString('ja-JP')}）` },
         { label: '部隊ごとの兵', value: TOKUGAWA_UNIT_IDS.map((k) => `${TOKUGAWA_UNIT_NAMES[k]} ${state.troops[k]}`).join('・') },
         { label: '支援', value: supportRecordText(state) },

@@ -19,6 +19,7 @@ import type { ScenarioScript } from '../scenario';
 import {
     IEYASU_CHARACTER_IDS,
     IEYASU_SCENARIO_ID,
+    IEYASU_SIDE_OBJECTIVES,
     IEYASU_TROOPS_MAX,
     INITIAL_TOKUGAWA_TROOPS,
     INITIAL_TRUST,
@@ -29,6 +30,7 @@ import {
     cloneIeyasuState,
     ieyasuTalkFlag,
     parseIeyasuOutcome,
+    sideObjectivesFromOutcome,
     type CampaignPhase,
     type CarryFlag,
     type ExplorePose,
@@ -73,6 +75,7 @@ export function newIeyasuGame(): IeyasuState {
         battleId: null,
         appliedBattleId: null,
         support: null,
+        sideObjectives: null,
         ending: null,
         explore: null,
         playTimeSec: 0,
@@ -242,12 +245,26 @@ export function withIeyasuBattleId(state: IeyasuState, id: string): IeyasuState 
     return s;
 }
 
-/** 合戦の設定（phase が battle のときだけ）。battle/maps.ts の ieyasu1570Setup に、方針・今の徳川の兵・約束を渡す */
+/**
+ * 合戦の設定（phase が battle のときだけ）。battle/maps.ts の ieyasu1570Setup に、方針・今の徳川の兵・約束を渡し、
+ * 方針の副目標（IEYASU_SIDE_OBJECTIVES）を objectives.secondary に 1 つ入れる。主目標は入れない（勝ち負けは Version 11 の決まりのまま。
+ * 副目標は判定して記録するだけなので、同じ命令なら同じ勝敗・同じ動き）。説明には副目標の 1 行を約束の行の前に足す。
+ */
 export function ieyasuBattleSetup(state: IeyasuState): BattleSetup {
     if (state.phase !== 'battle') throw new FlowError(`今（${state.phase}）は合戦を始められません`);
     if (!state.policy) throw new FlowError('方針が決まっていません');
     if (!state.pledge) throw new FlowError('約束の返事をしていません');
-    return ieyasu1570Setup(state.policy, { troops: { ...state.troops }, pledgeAccepted: state.pledge.accepted });
+    return withIeyasuSideObjective(ieyasu1570Setup(state.policy, { troops: { ...state.troops }, pledgeAccepted: state.pledge.accepted }), state.policy);
+}
+
+/** 合戦の設定に、方針の副目標と、その説明の 1 行を足す（設定は写して返す） */
+export function withIeyasuSideObjective(setup: BattleSetup, policy: Policy): BattleSetup {
+    const def = IEYASU_SIDE_OBJECTIVES[policy];
+    const briefing = [...setup.briefing];
+    const at = briefing.findIndex((l) => l.startsWith('約束'));
+    const line = `副目標：${def.label}（勝ち負けには関わらない。勝敗・約束とは別に記録する）。`;
+    briefing.splice(at >= 0 ? at : briefing.length, 0, line);
+    return { ...setup, briefing, objectives: { secondary: [{ ...def }] } };
 }
 
 /** 合戦の部隊 id → 徳川の部隊（兵を持ち越す単位） */
@@ -378,6 +395,9 @@ export function applyIeyasuOutcome(state: IeyasuState, outcome: BattleOutcome): 
     }
     s.support = support;
 
+    // 副目標（勝敗・約束とは別の欄）
+    s.sideObjectives = sideObjectivesFromOutcome(p, outcome);
+
     const next = advanceTo(s, 'aftermath');
     next.appliedBattleId = next.battleId;
     next.explore = null;
@@ -461,6 +481,8 @@ export function ieyasuOutcomeFromSetup(
         units?: Record<string, { end?: number; status?: UnitStatus }>;
         pledge?: 'kept' | 'broken';
         abilitiesUsed?: Record<string, number>;
+        /** 副目標（設定の objectives.secondary）を果たしたことにするか（省けば果たせなかった） */
+        sideObjective?: boolean;
     } = {},
 ): BattleOutcome {
     const reason: BattleEndReason = opts.reason ?? (result === 'victory' ? 'enemy_hq_routed' : result === 'defeat' ? 'ally_hq_routed' : 'ordered_retreat');
@@ -479,6 +501,8 @@ export function ieyasuOutcomeFromSetup(
     const out: BattleOutcome = { result, reason, elapsedSec: opts.elapsedSec ?? 300, units };
     if (setup.pledge && opts.pledge) out.pledge = { targetId: setup.pledge.targetId, result: opts.pledge };
     if (opts.abilitiesUsed) out.abilitiesUsed = { ...opts.abilitiesUsed };
+    const sec = setup.objectives?.secondary ?? [];
+    if (sec.length) out.objectives = { secondary: sec.map((d) => ({ id: d.id, type: d.type, label: d.label, achieved: opts.sideObjective ?? false })) };
     return out;
 }
 

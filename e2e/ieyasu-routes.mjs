@@ -14,7 +14,7 @@
 //   3（スマホ横 844×390・タッチ）：C 自領 × 約束を引き受けない（中立）× 勝利。号令をタップで。戦後に開き直す → 続きから（同じ）。
 //   4（PC）：A × 勝利・約束を守れなかった（経路 1 の支度の保存から続きから。合戦は台本で早送り）。
 //   F（PC）：架空の第一章の古い保存（版 1・版 2）がそのまま読める（田代・大森のまま。書き換えない）。
-//   H（PC）：歴史分岐の古い保存（版 1。信頼に家臣の酒井・石川・榊原が無い形）が読める → メニューから保存し直すと版 2（既存の値はそのまま）。
+//   H（PC）：歴史分岐の古い保存（版 1。信頼に家臣の酒井・石川・榊原が無い形）が読める → メニューから保存し直すと版 3（既存の値はそのまま。副目標は記録なし）。
 //
 // 使い方：自動再読み込みなしの開発サーバーを起動して
 //   (PORT=8154 nohup npx vite --config proto3d/blender/tools/vite.nohmr.mjs > /tmp/vite-8154.log 2>&1 &)
@@ -477,6 +477,10 @@ async function checkDecidedSave(page, prefix, out) {
   check(`${prefix} 結果の画面の時点で戦後の自動保存が済んでいる（勝敗・約束の結果・反映済みの合戦の id）`,
     sv?.point === 'aftermath' && sv.phase === 'aftermath' && sv.battle?.result === out.result && sv.appliedBattleId === sv.battleId && (out.pledge ? sv.pledge?.result === out.pledge.result : true),
     JSON.stringify({ point: sv?.point, result: sv?.battle?.result, pledge: sv?.pledge?.result, applied: sv?.appliedBattleId === sv?.battleId }));
+  const side = out.objectives?.secondary?.[0];
+  check(`${prefix} 副目標は勝敗・約束とは別の欄に保存（版 3・合戦の結果と同じ達成）`,
+    sv?.version === 3 && Array.isArray(sv.sideObjectives) && sv.sideObjectives.length === 1 && !!side && sv.sideObjectives[0].id === side.id && sv.sideObjectives[0].achieved === side.achieved && sv.battle?.objectives === undefined,
+    JSON.stringify({ version: sv?.version, side: sv?.sideObjectives, fromBattle: side }));
   return sv;
 }
 function checkEnding(prefix, u) {
@@ -886,7 +890,7 @@ async function routeF() {
 
 // ================================================================ H：歴史分岐の古い保存（版 1）
 async function routeH() {
-  console.log('--- H：歴史分岐の古い保存（版 1。家臣の信頼が無い形）を読む → メニューから保存し直すと版 2');
+  console.log('--- H：歴史分岐の古い保存（版 1。家臣の信頼が無い形）を読む → メニューから保存し直すと版 3');
   const { ctx, page } = await open();
   const io = desktopIO(page);
   const f = await raw(page, FKEY);
@@ -905,6 +909,7 @@ async function routeH() {
   await waitUi(page, 'menu');
   const menu = (await ui(page)).text;
   check('H メニューの状態：信頼に酒井忠次・石川数正が出る（榊原康政はこの章に出ないので出さない）', menu.includes('酒井忠次') && menu.includes('石川数正') && !menu.includes('榊原'), menu.slice(0, 160));
+  check('H メニューの状態：副目標は「記録なし」（副目標の無かった版 1 から続けた）', menu.includes('副目標') && menu.includes('記録なし'));
   await io.btn('save');
   await page.waitForFunction(() => window.__game.ui?.kind === 'menu' && window.__game.ui.text.includes('保存しました'), null, POLL);
   await io.btn('close');
@@ -912,12 +917,12 @@ async function routeH() {
   const v2 = await saved(page);
   const v1 = JSON.parse(V1_IEYASU_AFTERMATH);
   const same = ['scenario', 'phase', 'policy', 'troops', 'characters', 'pledge', 'battle', 'battleId', 'appliedBattleId', 'support', 'ending'].filter((k) => JSON.stringify(v2?.[k]) !== JSON.stringify(v1[k]));
-  check('H メニューの保存で版 2 になる（信頼に家臣の 3 人・ほかの値は版 1 のまま）', v2?.version === 2 && JSON.stringify(v2.trust) === WANT && same.length === 0, same.length ? `違う：${same.join('、')}` : '');
+  check('H メニューの保存で版 3 になる（信頼に家臣の 3 人・副目標は記録なし・ほかの値は版 1 のまま）', v2?.version === 3 && v2.sideObjectives === null && JSON.stringify(v2.trust) === WANT && same.length === 0, same.length ? `違う：${same.join('、')}` : '');
   await reloadToTitle(page);
   await io.btn('continue:ieyasu1570');
   await waitScreen(page, 'explore');
   s = await st(page);
-  check('H 版 2 の保存から続ける（同じ戦後・信頼・兵。二重に反映しない）', s.phase === 'aftermath' && s.result === 'retreat' && JSON.stringify(s.trust) === WANT && JSON.stringify(s.troops) === JSON.stringify(v1.troops) && s.applied === s.battleId, JSON.stringify({ trust: s.trust, troops: s.troops }));
+  check('H 版 3 の保存から続ける（同じ戦後・信頼・兵。二重に反映しない）', s.phase === 'aftermath' && s.result === 'retreat' && JSON.stringify(s.trust) === WANT && JSON.stringify(s.troops) === JSON.stringify(v1.troops) && s.applied === s.battleId, JSON.stringify({ trust: s.trust, troops: s.troops }));
   // 戦後の忠勝と話して結末へ：結末の本文に家臣の信頼の 1 行（版 1 から続けたので動いていない）
   const { e } = await toEnding(page, io, 'H');
   check('H 結末の本文に、酒井・石川の信頼の 1 行（版 1 から続けたので ±0）', e.text.includes('酒井 ±0・石川 ±0'), '');
