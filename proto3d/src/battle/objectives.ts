@@ -304,7 +304,8 @@ function progressText(s: BattleState, r: ObjectiveRun): string {
             return `残り ${Math.max(0, Math.ceil(d.sec - s.t))} 秒` + (d.zone && r.sec > 0 ? `（区域を敵に奪われている：${Math.floor(r.sec)}／${d.loseSec ?? 10} 秒）` : '');
         case 'rescue': {
             const u = byId(s, d.unitId);
-            return u ? `${u.name}を味方の陣まで連れ帰る` : '救出';
+            // 輪の真ん中に味方の部隊が立っていることがある（押すとその部隊が選び直される）ので、空いた所を押すよう添える
+            return u ? `${u.name}を輪の中まで連れ帰る（輪の中の空いた地面を押す）` : '救出';
         }
         case 'breakthrough':
             return `突破 ${r.entered.length}／${d.count} 部隊`;
