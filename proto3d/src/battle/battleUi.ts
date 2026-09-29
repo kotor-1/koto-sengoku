@@ -58,18 +58,24 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''):
     return e;
 }
 
-/** 押した瞬間に反応するボタン（その後の click は無視。キーボードの click（detail 0）は受ける） */
+/**
+ * 押した瞬間（pointerdown）に反応するボタン。その後の click は無視し、キーボード（Enter・Space）の click だけ受ける。
+ * 指・マウスの click は pointerType を持つか、直前にこのボタンの pointerdown がある（click の detail は環境によって 0 のことがあるので使わない）。
+ */
 function press(target: HTMLElement, fn: () => void): void {
+    let downAt = -1e9;
     target.addEventListener('pointerdown', (e) => {
         if (e.pointerType === 'mouse' && e.button !== 0) return;
         e.preventDefault();
         e.stopPropagation();
+        downAt = performance.now();
         if (target.classList.contains('off')) return;
         fn();
     });
     target.addEventListener('click', (e) => {
         e.preventDefault();
-        if (e.detail !== 0 || target.classList.contains('off')) return;
+        const pt = (e as PointerEvent).pointerType;
+        if (pt || performance.now() - downAt < 1500 || target.classList.contains('off')) return;
         fn();
     });
 }
@@ -456,7 +462,7 @@ export class BattleUi {
         const how = el('div', 'b-how');
         how.append(el('b', '', '操作'));
         const touchLines = [
-            '部隊（または下の札）を押して選ぶ → 地面を押すと移動、敵を押すと攻撃。',
+            '部隊（または下の札）を押して選ぶ → 地面を押すと移動、敵を押すと攻撃。選んだ部隊をもう一度押すと選択を外す（敵を調べられる）。',
             '「防衛・待機」「撤退」はボタン。1 本指で地図を動かす、2 本指で寄る・引く。',
             '「指揮（一時停止）」で時を止めて命令を出せる。',
         ];

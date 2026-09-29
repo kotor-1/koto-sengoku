@@ -133,14 +133,15 @@ export type TapAction =
 
 /**
  * 地図を押したときに何をするか（docs/chapter1-spec.md §4 表示と操作）。
- * - 味方の部隊を押す：その部隊を選ぶ（「移動」「攻撃」の途中でも、選び直しになる）。
+ * - 味方の部隊を押す：その部隊を選ぶ（「移動」「攻撃」の途中でも、選び直しになる）。選んでいる部隊をもう一度押すと選択を外す
+ *   （タッチでは Esc が無いので、これで外して敵を調べられる）。
  * - 味方を選んでいて敵を押す：攻撃（「移動」の途中なら、その地点へ移動）。味方を選んでいなければ、敵を調べる。
  * - 味方を選んでいて地面を押す：移動（「攻撃」の途中なら、敵を押すよう案内）。
  * - 命令できない味方（敗走・撤退済みなど）や敵を選んでいて地面を押す：選択を外す。
  */
 export function resolveTap(sel: Selected | null, pending: Pending, tap: TapTarget): TapAction {
     const ally = sel && sel.side === 'ally' ? sel : null;
-    if (tap.kind === 'unit' && tap.side === 'ally') return { type: 'select', unitId: tap.unitId };
+    if (tap.kind === 'unit' && tap.side === 'ally') return sel && sel.id === tap.unitId && pending === 'none' ? { type: 'deselect' } : { type: 'select', unitId: tap.unitId };
     if (tap.kind === 'unit') {
         if (ally && ally.commandable) {
             if (pending === 'move') return { type: 'order', unitId: ally.id, order: { type: 'move', x: tap.x, z: tap.z } };

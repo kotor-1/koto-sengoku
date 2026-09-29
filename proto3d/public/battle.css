@@ -423,6 +423,7 @@ body.mode-battle #build { display: none !important; }
     .b-label small { font-size: 9px; }
     .b-label.terrain { font-size: 10px; }
     .b-modal { padding: 10px 14px; max-width: 800px; line-height: 1.5; }
+    .b-modal.b-confirm { max-width: 460px; }
     .b-modal h2 { font-size: 15px; margin-bottom: 4px; }
     .b-brief { display: grid; grid-template-columns: 1.25fr 1fr; column-gap: 16px; }
     .b-brief h2, .b-brief .b-modal-row { grid-column: 1 / -1; }

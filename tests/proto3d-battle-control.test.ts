@@ -106,9 +106,12 @@ describe('地図を押したとき', () => {
     const enemy = { kind: 'unit' as const, unitId: 'e_sente', side: 'enemy' as const, x: 3, z: -50 };
     const friend = { kind: 'unit' as const, unitId: 'a_hq', side: 'ally' as const, x: 0, z: 110 };
     const ground = { kind: 'ground' as const, x: 12, z: 34 };
-    it('味方を押すと選ぶ（命令の途中でも選び直し）', () => {
+    it('味方を押すと選ぶ（命令の途中でも選び直し）。選んでいる部隊をもう一度押すと外す', () => {
         expect(resolveTap(null, 'none', friend)).toEqual({ type: 'select', unitId: 'a_hq' });
         expect(resolveTap(ally, 'attack', friend)).toEqual({ type: 'select', unitId: 'a_hq' });
+        const hqSel: Selected = { id: 'a_hq', side: 'ally', commandable: true };
+        expect(resolveTap(hqSel, 'none', friend)).toEqual({ type: 'deselect' });
+        expect(resolveTap(hqSel, 'move', friend)).toEqual({ type: 'select', unitId: 'a_hq' });
     });
     it('味方を選んで敵を押すと攻撃。「移動」の途中ならその地点へ移動', () => {
         expect(resolveTap(ally, 'none', enemy)).toEqual({ type: 'order', unitId: 'a_genzo', order: { type: 'attack', targetId: 'e_sente' } });

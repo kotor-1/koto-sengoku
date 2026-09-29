@@ -86,13 +86,27 @@ async function hitEl(page, phone, locator) {
     else await locator.click();
     await page.waitForTimeout(250);
 }
+/** その画面の点が地図（UI に隠れていない所）か */
+const onMap = (page, p) => page.evaluate(([x, y]) => !!document.elementFromPoint(x, y)?.classList.contains('b-input'), [p.x, p.y]);
 async function hitUnit(page, phone, id) {
     await page.waitForTimeout(600); // 表示の位置が落ち着くまで
-    const p = await screenOf(page, id);
+    let p = await screenOf(page, id);
+    if (!(await onMap(page, p))) {
+        // UI（札・ボタン）に隠れているときは、その部隊へカメラを寄せてから押す（遊ぶ人も地図を動かして押す）
+        const u = await unit(page, id);
+        await center(page, u.x, u.z);
+        await page.waitForTimeout(600);
+        p = await screenOf(page, id);
+    }
     await hit(page, phone, p.x, p.y);
 }
 async function hitGround(page, phone, x, z) {
-    const p = await groundXY(page, x, z);
+    let p = await groundXY(page, x, z);
+    if (!(await onMap(page, p))) {
+        await center(page, x, z);
+        await page.waitForTimeout(400);
+        p = await groundXY(page, x, z);
+    }
     await hit(page, phone, p.x, p.y);
 }
 const cmd = (page, text) => page.locator('.b-cmd', { hasText: text });
@@ -189,6 +203,11 @@ async function basics(page, phone, tag) {
         check(g.order.type === 'move' && Math.hypot(g.order.x + 20, g.order.z - 60) < 8, `${tag}: 右クリックで移動`);
         await page.keyboard.press('Escape');
         check((await ui(page)).selectedId === null, `${tag}: Esc で選択を外す`);
+    }
+    // スマホ：選んでいる味方（新八隊）をもう一度押すと選択が外れる（タッチには Esc が無いので、これで外して敵を調べる）
+    if (phone) {
+        await hitUnit(page, phone, 'a_shinpachi');
+        check((await ui(page)).selectedId === null, `${tag}: 選んでいる部隊をもう一度押すと選択が外れる`);
     }
     // 敵を調べる（味方を選んでいないとき）
     await hitUnit(page, phone, 'e_sente');
