@@ -15,11 +15,21 @@
 | 会話を進める | Enter／Space／E、またはクリック | 画面のどこかをタップ |
 | 選択肢 | ↑↓（W／S）で選んで Enter、数字キー、クリック | タップ |
 | メニュー（状態・保存・タイトルへ） | Esc／M、右上の「メニュー」 | 右上の「メニュー」 |
+| 合戦：部隊を選ぶ | 部隊・下の札をクリック、1〜4 キー | 部隊・下の札をタップ（選んだ部隊をもう一度で外す） |
+| 合戦：命令 | 味方を選んで地面をクリック＝移動、敵をクリック＝攻撃（右クリックでも）。M 移動・A 攻撃・H 防衛・待機・R 撤退・Esc 取り消し | 地面をタップ＝移動、敵をタップ＝攻撃。「移動」「攻撃」「防衛・待機」「撤退」のボタン |
+| 合戦：指揮（一時停止）・速さ・全軍撤退 | Space、「指揮」、×1／×2、「全軍撤退」（確かめてから） | 同じボタンをタップ |
+| 合戦：地図 | ドラッグで動かす、ホイールで寄る・引く、矢印キー、「全体」 | 1 本指で動かす、2 本指で寄る・引く、「全体」 |
 
 流れ：城下で**源蔵**（◆の印）と話す → **軍議**で協力陣営（田代家・大森家・独力）を選んで決める →
 出陣の支度（選んだ陣営の使者が城下に来る）→ **城門**の金の輪へ入ると出陣の確認（最初は「まだ支度をする」が選ばれている）→
-**合戦**（別の地図で部隊を指揮。battle/ の画面）→ **戦後**（結果で人物・会話・関係が変わる。負傷した人物は床几に座り、捕らわれた人物は居ない）→
+**合戦**（別の地図「国境の原」で、味方 4 部隊・敵 4 部隊を部隊単位で指揮。主人公を直接動かして斬る方式ではない。勝ち負けの条件は合戦の前の説明と左上の欄）→ **戦後**（結果で人物・会話・関係が変わる。負傷した人物は床几に座り、捕らわれた人物は居ない）→
 源蔵と話して「この章を締めくくる」→ **結末**（選択 × 結果の 6 通り。記録つき）→ タイトルへ。
+
+合戦の勝ち方の例（仮シナリオ）：
+- 田代と組んだ：田代騎馬隊（40 秒ほどで西の林に着く）を林の中で北へ動かし、源蔵隊で鷲尾先手を正面から押さえてから、騎馬で敵本陣の横を突く。
+- 大森と組んだ：左の林から来る田代騎馬隊（鷲尾方）を源蔵隊で受け、大森槍隊で先手の横へ回る。何もしないと騎馬に本陣を突かれて負ける。
+- 独力：新八隊（弓）で先手を丘から誘い出し、源蔵隊と予備隊で両側から挟む。
+- 正面から丘を押すだけ・本陣だけで突っ込むと負けやすい。敗北しても若殿は落ち延びる（死亡ではない）。
 
 保存：
 - 自動：出陣を決めた時（出陣前）・合戦の後（戦後）・結末に入った時。画面の上に結果を出す。
@@ -35,20 +45,38 @@
 | 城下に置く人物・高札・城門の出陣の場所（段階と状態から決める。純粋） | `proto3d/src/explore/cast.ts` |
 | 城下の人物の表示（`hero_v2` の複製・色・座る姿勢・名前の札・高札・城門の輪） | `proto3d/src/explore/world.ts` |
 | 画面（タイトル・会話と選択肢・軍議・確認・メニュー・結末・知らせ） | `proto3d/src/ui/view.ts`・`ui.css`・`dom.ts` |
-| 起動（main.ts から呼ぶ。合戦の画面 `battle/entry.ts` は出陣の時に読み込む） | `proto3d/src/ui/boot.ts` |
+| 起動（main.ts から呼ぶ。合戦の画面 `battle/entry.ts` は出陣の時に読み込む。本番のビルドでは別の塊 `entry-*.js`） | `proto3d/src/ui/boot.ts` |
+| 合戦（ルール `sim.ts`・敵の考え `ai.ts`・戦場と布陣 `maps.ts`・表示 `view.ts`・画面の部品 `battleUi.ts`・つなぎ `entry.ts`） | `proto3d/src/battle/` |
 | 探索側の口（`ExploreHost`：主人公の位置・操作の止め／戻し・人物の当たり判定・毎フレーム・描画の停止） | `proto3d/src/main.ts` の `exploreHost` |
 
 素材の差し替え：人物は `explore/world.ts` の `NPC_MODEL`・`LOOKS`、高札・床几・城門の輪は同じファイルの簡単な形。読み込みは main.ts の `load`（GLB／公開用の JSON）をそのまま使う。
 
 ## 確認
 
-- 自動テスト：`npx vitest run`（`tests/proto3d-game.test.ts`：偽の画面で章を最後まで・6 つの結末・保存と再開・失敗、`tests/proto3d-cast.test.ts`：人物の置き場所・歩いて話しかけられるか・城門へ抜けられるか）。
-- ブラウザの通し（本物のキー・クリック・タッチ）：自動再読み込みなしの開発サーバーを起動して
-  `BASE3D=http://localhost:8097 node e2e/proto3d-chapter1.mjs e2e-out/chapter1/flow`
-  （A：PC キー・田代 × 勝利・保存して開き直す、B：PC マウス・大森 × 敗北、C：スマホ横タッチ・独力 × 撤退。`ONLY=A` などで絞る）。
-- 開発ビルドだけの確認用：
+- 自動テスト：`npx vitest run`（`tests/proto3d-game.test.ts`：偽の画面で章を最後まで・6 つの結末・保存と再開・失敗・合戦の画面を読み込めないとき、
+  `tests/proto3d-cast.test.ts`：人物の置き場所・歩いて話しかけられるか・城門へ抜けられるか、`tests/proto3d-campaign-*.test.ts`：章の進行・保存、
+  `tests/proto3d-battle-*.test.ts`：合戦のルール・敵の考え・釣り合い・操作の部品）。
+- ブラウザの通し（本物のキー・クリック・タッチ）。自動再読み込みなしの開発サーバーを起動して：
+  ```
+  (PORT=8121 nohup npx vite --config proto3d/blender/tools/vite.nohmr.mjs > /tmp/vite-8121.log 2>&1 &)
+  BASE3D=http://localhost:8121 node e2e/chapter1-routes.mjs e2e-out/chapter1/routes
+  ```
+  - A（PC キーとマウス）：田代 × 勝利（林を抜ける騎馬で敵本陣の横）。支度でメニューから保存 → 開き直し → 出陣（出陣前の自動保存）→ 合戦の説明で開き直し → 支度から → もう一度出陣して勝つ → 戦後の自動保存 → 開き直し → 結末。
+  - B（PC マウス）：大森 × 敗北（本陣だけで突っ込む）。はじめからの上書きの確認と控え、負傷して座る源蔵、敗北の結末。
+  - C（スマホ横 844×390・タッチ）：独力 × 全軍撤退。歩く・話す・会話・選択肢・メニュー・合戦の命令をすべてタップ。
+  - 合戦の命令はすべて画面の操作で出し、待つところだけ開発用の早送り（`window.__battle.fastForward`）で縮める。`ONLY=A` などで絞る。
+  - 探索は既定で撮影のときだけ描く（`?render=manual`）。`REALTIME=1` で毎フレーム描く（検証コンテナでは 1 コマ約 3 秒）。
+- 本番ビルドを公開先に近い決まり（CSP）の下で通す（開発用のフックなし。独力 × 撤退を最後まで・開き直して続きから）：
+  ```
+  VITE_MODEL_EXT=.json npm run proto3d:build
+  rm dist-proto3d/models/*.glb
+  node proto3d/tools/glb-to-gltf.mjs proto3d/public/models dist-proto3d/models ground_v2 gate_v2 walls_v2 keep inner machiya_a machiya_b machiya_d tree_pine tree_sakura tree_pine_far hero_v3_mpfb hero_v2
+  node e2e/chapter1-prod.mjs e2e-out/chapter1/prod
+  ```
+  （`dist-proto3d/` がそのまま公開するファイル一式。素材は 13 個の JSON と画像、合計約 58MB）
+- 合戦の画面だけ：`BASE=http://localhost:8121 node e2e/chapter1-battle.mjs e2e-out/chapter1/battle`（`?dev=battle&ally=tashiro|omori|alone`）。
+- 開発ビルドだけの確認用（本番のビルドには入らない）：
   - `window.__game`：状態・画面・会話の中身の読み取り、`talk(id)`・`advance()`・`choose(id)`・`setPhase(phase, alliance, result)`・`teleport(x, z)`
-  - `?render=manual`：探索を撮影のときだけ描く（検証コンテナのソフトウェア描画は 1 コマ数秒かかるため。動き・入力・画面の部品はふだんどおり）
-  - `?nogame`：章を始めず、これまでの探索だけ
-  - `?dev`：主人公の見た目の比較のボタン（新／旧）を出す
-  - 合戦の画面が登録されていない開発ビルドでは、「テスト用」と明記した結果の選択で先へ進める（本番では出ない）
+  - `window.__battle`（合戦の間）：`state`・`ui`・`fastForward(秒, 台本?)`・`screenOf(部隊)`・`screenOfGround(x, z)`・`centerOn(x, z)` など（`battle/entry.ts` の `exposeDev`）
+  - `window.__p3`：主人公・カメラ・`renderNow()`
+  - `?render=manual`：探索を撮影のときだけ描く、`?nogame`：章を始めず探索だけ、`?dev`：主人公の見た目の比較のボタン、`?dev=battle`：合戦の画面をすぐ始める

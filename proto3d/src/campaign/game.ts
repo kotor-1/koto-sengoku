@@ -108,8 +108,6 @@ export interface GameView {
     confirm(opts: ConfirmOptions): Promise<string>;
     menu(info: MenuInfo): Promise<MenuAction>;
     ending(view: EndingView): Promise<void>;
-    /** 開発ビルドだけ：合戦の画面が無いときの、テスト用の結果の選択 */
-    devBattle?(setup: BattleSetup): Promise<BattleResultKind>;
     hud(info: HudInfo | null): void;
     prompt(p: PromptInfo | null): void;
     intro(title: string, text: string): void;
@@ -135,10 +133,8 @@ export interface GameDeps {
     view: GameView;
     world: GameWorld;
     store: CampaignSaveStore;
-    /** 合戦の画面（読み込みを待つことがあるので Promise）。無ければ null */
+    /** 合戦の画面（読み込みを待つことがあるので Promise）。読み込めなければ null か例外（「もう一度／タイトルへ」を出す） */
     battleRunner: () => Promise<BattleRunnerLike | null>;
-    /** 開発ビルド（合戦の画面が無いときのテスト用の選択を許す） */
-    dev: boolean;
     /** 今の時刻（ミリ秒。合戦にかかった時間を遊んだ時間に足す） */
     now?: () => number;
 }
@@ -453,15 +449,11 @@ export class ChapterGame {
         if (saved) view.toast(saved.text, saved.ok ? 'ok' : 'error');
     }
 
-    /** 合戦を 1 回（本物の画面。開発ビルドで画面が無いときだけ、テスト用の選択） */
+    /** 合戦を 1 回（部隊を指揮する本物の画面。仮の結果の選択は無い） */
     private async fight(setup: BattleSetup): Promise<BattleOutcome> {
         const runner = await this.deps.battleRunner();
-        if (runner) return runner(setup);
-        if (this.deps.dev && this.deps.view.devBattle) {
-            const kind = await this.deps.view.devBattle(setup);
-            return outcomeFromSetup(setup, kind);
-        }
-        throw new Error('合戦の画面を読み込めませんでした。');
+        if (!runner) throw new Error('合戦の画面を読み込めませんでした。');
+        return runner(setup);
     }
 
     // ---------------- 結末 ----------------

@@ -1,6 +1,6 @@
 /**
  * 第一章の画面（DOM）：目的・メニューのボタン・話すボタン・段階の案内・知らせと、
- * 画面を覆うもの（タイトル・会話と選択肢・軍議・確認・メニュー・結末・開発用の合戦の仮の選択）。
+ * 画面を覆うもの（タイトル・会話と選択肢・軍議・確認・メニュー・結末）。
  *
  * campaign/game.ts の GameView を満たす。状態は持たない（見せて、押されたものを返すだけ）。
  * 入力の決まり（docs/design-policy.md §2）：ボタンは押した瞬間（pointerdown）に反応し、
@@ -8,7 +8,6 @@
  * キーボード：会話は Enter／Space／E で進む、選択肢は ↑↓（W／S）で選んで Enter、数字でも選べる。Esc はメニュー・やめる。
  */
 import './ui.css';
-import type { BattleResultKind, BattleSetup } from '../battle/types';
 import type { ConfirmOptions, GameView, HudInfo, MenuAction, MenuInfo, PromptInfo, ScriptOptions, TitleAction, TitleInfo } from '../campaign/game';
 import type { ChoiceId } from '../campaign/state';
 import { CHAPTER_TITLE, PROVISIONAL_LABEL, type EndingView, type Script } from '../campaign/story';
@@ -19,7 +18,7 @@ const CHOICE_GUARD_MS = 350;
 /** 会話を続けて進めるときの最短の間（ミリ秒。二度押しで 2 行進まないように） */
 const ADVANCE_GUARD_MS = 140;
 
-type ModalKind = 'title' | 'script' | 'confirm' | 'menu' | 'ending' | 'devBattle';
+type ModalKind = 'title' | 'script' | 'confirm' | 'menu' | 'ending';
 
 /** 確認用（開発ビルドの __game）：今の画面の中身と、押す操作 */
 export interface ModalProbe {
@@ -230,7 +229,7 @@ export class DomView implements GameView {
     }
 
     /**
-     * ボタンの並び（確認・メニュー・タイトル・結末・合戦の仮の選択で共用）。
+     * ボタンの並び（確認・メニュー・タイトル・結末で共用）。
      * ↑↓←→ で選び Enter／Space で押す。出たばかりは押しても決まらない（選ぶだけ）。
      */
     private buttonRow(
@@ -553,47 +552,6 @@ export class DomView implements GameView {
                 this.close(m);
                 resolve();
             });
-            this.push(m);
-        });
-    }
-
-    /** 開発ビルドだけ：合戦の画面がまだ無いときの、テスト用の結果の選択（本番のビルドには入らない） */
-    readonly devBattle = import.meta.env.DEV ? (setup: BattleSetup): Promise<BattleResultKind> => this.devBattleScreen(setup) : undefined;
-
-    private devBattleScreen(setup: BattleSetup): Promise<BattleResultKind> {
-        if (!import.meta.env.DEV) return Promise.reject(new Error('開発ビルドだけ'));
-        return new Promise((resolve) => {
-            const layer = this.open('devBattle', 'solid');
-            const panel = el('div', 'g-panel g-scroll');
-            panel.append(
-                el('h2', undefined, '合戦（テスト用の仮の画面）'),
-                el('p', 'g-test', '【テスト用・開発ビルドだけ】合戦の画面が登録されていないため、結果を選んで先へ進めます。本番の画面ではこの選択は出ません。'),
-                ...setup.briefing.map((t) => el('p', 'g-note', t)),
-                el('p', 'g-note', `部隊：${setup.units.map((u) => `${u.side === 'ally' ? '味方' : '敵'}・${u.name} ${u.strength}`).join('／')}`),
-            );
-            const btns = el('div', 'btns');
-            panel.append(btns);
-            layer.append(panel);
-            const m: Modal = {
-                kind: 'devBattle',
-                layer,
-                key: (e) => void row.key(e),
-                probe: () => ({ kind: 'devBattle', buttons: row.buttons, text: panel.textContent ?? '' }),
-                press: (id) => row.press(id),
-            };
-            const row = this.buttonRow(
-                btns,
-                [
-                    { id: 'victory', label: '勝利にする' },
-                    { id: 'defeat', label: '敗北にする' },
-                    { id: 'retreat', label: '撤退にする' },
-                ],
-                0,
-                (id) => {
-                    this.close(m);
-                    resolve(id as BattleResultKind);
-                },
-            );
             this.push(m);
         });
     }

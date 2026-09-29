@@ -3,9 +3,9 @@
  * 画面（DomView）・探索の中の人物（ExploreWorld）・保存（CampaignSaveStore）・合戦の画面（battle/entry.ts が登録する）を
  * 章の進行（ChapterGame）につなぐ。
  *
- * 合戦の画面は、必要になったとき（出陣）に読み込む（import.meta.glob なので、battle/entry.ts がまだ無くても組み立てられる）。
- * 読み込むと battle/entry.ts が app/modes.ts の registerBattleRunner で自分を登録する約束。
- * 開発ビルドで合戦の画面が無いときだけ、テスト用の結果の選択（と明記した画面）で先へ進める。本番の画面には出ない。
+ * 合戦の画面（battle/entry.ts）は、必要になったとき（出陣）に読み込む（別の塊 entry-*.js。本番のビルドにも必ず入る）。
+ * 読み込むと battle/entry.ts が app/modes.ts の registerBattleRunner で自分を登録する。
+ * 読み込めなかったとき（通信の失敗など）は、章の進行（game.ts）が「もう一度／タイトルへ」を出す。仮の結果の選択は無い。
  */
 import { activeModeName, exitMode, getBattleRunner } from '../app/modes';
 import { ChapterGame, devStateFor, type BattleRunnerLike } from '../campaign/game';
@@ -17,26 +17,10 @@ import { DomView } from './view';
 
 export type { ExploreHost };
 
-const battleEntry = import.meta.glob('../battle/entry.ts');
-
-/** 合戦の画面を読み込み、登録された実行の関数を返す（無ければ null） */
+/** 合戦の画面を読み込み、登録された実行の関数を返す（登録されなければ null） */
 async function loadBattleRunner(): Promise<BattleRunnerLike | null> {
-    if (!getBattleRunner()) {
-        const load = battleEntry['../battle/entry.ts'];
-        if (load) {
-            const mod = (await load()) as Record<string, unknown>;
-            // 読み込むだけで登録する約束。関数を呼んで登録する形なら、それも受け付ける
-            if (!getBattleRunner()) {
-                for (const k of ['registerBattle', 'install', 'init', 'setup']) {
-                    const f = mod[k];
-                    if (typeof f === 'function') {
-                        (f as () => void)();
-                        break;
-                    }
-                }
-            }
-        }
-    }
+    // 読み込むだけで registerBattleRunner に登録される（2 回目からは読み込み済み）
+    if (!getBattleRunner()) await import('../battle/entry');
     const runner = getBattleRunner();
     if (!runner) return null;
     return async (setup) => {
@@ -54,7 +38,7 @@ export function bootChapter(host: ExploreHost): ChapterGame {
     const view = new DomView(host.overlay);
     const world = new ExploreWorld(host);
     const store = new CampaignSaveStore(getBrowserStorage());
-    const game = new ChapterGame({ view, world, store, battleRunner: loadBattleRunner, dev: import.meta.env.DEV });
+    const game = new ChapterGame({ view, world, store, battleRunner: loadBattleRunner });
     view.onTalk = () => void game.interact();
     view.onMenu = () => void game.openMenu();
     // タイトル・軍議・メニュー・結末などが探索を覆っている間は、探索の描画を止める（見えない所の描画で電池と処理を使わない）

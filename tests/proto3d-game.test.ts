@@ -26,6 +26,8 @@ import type { EndingView, Script } from '../proto3d/src/campaign/story';
 import type { CastMember } from '../proto3d/src/explore/cast';
 import { START, colliders, type Rect } from '../proto3d/src/layout';
 import { MemoryStorage } from './proto3d-campaign-helpers';
+import { createBattle, runToEnd } from '../proto3d/src/battle/sim';
+import { hqAloneScript, planScript, retreatAt } from '../proto3d/src/battle/scripts';
 
 // ---------------- 偽の画面 ----------------
 
@@ -34,8 +36,7 @@ type Req =
     | { kind: 'script'; script: Script; mode: string; answer: (c: ChoiceId | null) => void }
     | { kind: 'confirm'; opts: ConfirmOptions; answer: (id: string) => void }
     | { kind: 'menu'; info: MenuInfo; answer: (a: MenuAction) => void }
-    | { kind: 'ending'; view: EndingView; answer: () => void }
-    | { kind: 'devBattle'; setup: BattleSetup; answer: (k: BattleResultKind) => void };
+    | { kind: 'ending'; view: EndingView; answer: () => void };
 
 class FakeView implements GameView {
     reqs: Req[] = [];
@@ -43,7 +44,6 @@ class FakeView implements GameView {
     promptInfo: PromptInfo | null = null;
     intros: string[] = [];
     toasts: { text: string; kind: string }[] = [];
-    withDevBattle = false;
     title(info: TitleInfo) {
         return new Promise<TitleAction>((answer) => this.reqs.push({ kind: 'title', info, answer }));
     }
@@ -58,9 +58,6 @@ class FakeView implements GameView {
     }
     ending(view: EndingView) {
         return new Promise<void>((answer) => this.reqs.push({ kind: 'ending', view, answer }));
-    }
-    get devBattle() {
-        return this.withDevBattle ? (setup: BattleSetup) => new Promise<BattleResultKind>((answer) => this.reqs.push({ kind: 'devBattle', setup, answer })) : undefined;
     }
     hud(info: HudInfo | null) {
         this.hudInfo = info;
@@ -118,7 +115,13 @@ class Harness {
     game: ChapterGame;
     constructor(
         readonly storage: MemoryStorage,
-        opts: { runner?: BattleRunnerLike | null; dev?: boolean; result?: BattleResultKind; units?: Record<string, { end?: number; status?: UnitStatus }> } = {},
+        opts: {
+            runner?: BattleRunnerLike | null;
+            /** 合戦の画面の読み込み（省略すると runner をそのまま返す） */
+            load?: () => Promise<BattleRunnerLike | null>;
+            result?: BattleResultKind;
+            units?: Record<string, { end?: number; status?: UnitStatus }>;
+        } = {},
     ) {
         const runner: BattleRunnerLike | null =
             opts.runner === undefined
@@ -132,8 +135,7 @@ class Harness {
             view: this.view,
             world: this.world,
             store: new CampaignSaveStore(storage),
-            battleRunner: async () => runner,
-            dev: opts.dev ?? false,
+            battleRunner: opts.load ?? (async () => runner),
             now: () => (t += 1000),
         });
     }
@@ -506,25 +508,38 @@ describe('失敗と例外', () => {
         expect(m.info.message?.text).toContain('確認できなかった');
         m.answer('close');
     });
-    it('本番で合戦の画面が無いとき：テスト用の選択は出さず、やり直すかタイトルへ', async () => {
-        const h = new Harness(new MemoryStorage(), { runner: null, dev: false });
-        h.view.withDevBattle = true;
+    it('合戦の画面が無いとき：仮の結果の選択は無く、やり直すかタイトルへ（出陣前の保存は残る）', async () => {
+        const storage = new MemoryStorage();
+        const h = new Harness(storage, { runner: null });
         await playToMuster(h, 'tashiro');
         (await h.walkIntoGate()).answer('depart');
         const c = await h.next('confirm');
         expect(c.opts.title).toContain('合戦を始められません');
+        expect(c.opts.buttons.map((b) => b.id)).toEqual(['retry', 'title']);
         c.answer('title');
         await h.next('title');
+        const saved = h.saved();
+        expect(saved.status === 'ok' && saved.data.point).toBe('departure');
     });
-    it('開発ビルドで合戦の画面が無いときだけ、テスト用の結果の選択で進める', async () => {
-        const h = new Harness(new MemoryStorage(), { runner: null, dev: true });
-        h.view.withDevBattle = true;
+    it('合戦の画面の読み込みに失敗しても、もう一度で本物の合戦へ進める', async () => {
+        let tries = 0;
+        const battles: BattleSetup[] = [];
+        const h = new Harness(new MemoryStorage(), {
+            load: async () => {
+                if (tries++ === 0) throw new Error('通信が切れました');
+                return async (setup) => {
+                    battles.push(setup);
+                    return outcomeFromSetup(setup, 'defeat');
+                };
+            },
+        });
         await playToMuster(h, 'omori');
         (await h.walkIntoGate()).answer('depart');
-        const d = await h.next('devBattle');
-        expect(d.setup.briefing.join('')).toContain('勝利');
-        d.answer('defeat');
+        const c = await h.next('confirm');
+        expect(c.opts.lines.join('')).toContain('通信が切れました');
+        c.answer('retry');
         await flush(60);
+        expect(battles).toHaveLength(1);
         expect(h.game.state?.phase).toBe('aftermath');
         expect(h.game.state?.battle?.result).toBe('defeat');
     });
@@ -560,6 +575,46 @@ describe('失敗と例外', () => {
         const s = h.saved();
         expect(s.status === 'ok' && s.data.playTimeSec).toBeGreaterThanOrEqual(90);
     });
+});
+
+describe('本物の合戦の計算でつなぐ（3 つの経路）', () => {
+    /** 合戦の画面の代わりに、本物の合戦の計算（sim.ts）を采配の台本で最後まで進める（画面の「続ける」と同じ結果を返す） */
+    const simRunner = (plan: (a: Alliance) => Parameters<typeof runToEnd>[1]): BattleRunnerLike => async (setup) => {
+        const s = createBattle(setup);
+        const a: Alliance = setup.units.some((u) => u.id === 'a_tashiro') ? 'tashiro' : setup.units.some((u) => u.id === 'a_omori') ? 'omori' : 'alone';
+        return runToEnd(s, plan(a));
+    };
+    const cases: { a: Alliance; plan: (a: Alliance) => Parameters<typeof runToEnd>[1]; result: BattleResultKind; ending: string }[] = [
+        { a: 'tashiro', plan: (a) => planScript(a), result: 'victory', ending: 'tashiro_victory' },
+        { a: 'omori', plan: () => hqAloneScript(), result: 'defeat', ending: 'defeat_' },
+        { a: 'alone', plan: () => retreatAt(20), result: 'retreat', ending: 'retreat' },
+    ];
+    for (const c of cases) {
+        it(`${c.a} × ${c.result}：出陣前の保存 → 合戦の計算 → 戦後の保存 → 結末 ${c.ending}`, async () => {
+            const storage = new MemoryStorage();
+            const h = new Harness(storage, { runner: simRunner(c.plan) });
+            await playToMuster(h, c.a);
+            const troopsBefore = { ...h.game.state!.troops };
+            (await h.walkIntoGate()).answer('depart');
+            await flush(80);
+            const s = h.game.state!;
+            expect(s.phase).toBe('aftermath');
+            expect(s.battle?.result).toBe(c.result);
+            // 戦後の自動保存に、結果・兵・関係が入る
+            const saved = h.saved();
+            expect(saved.status === 'ok' && saved.data.point).toBe('aftermath');
+            expect(saved.status === 'ok' && saved.data.battle?.result).toBe(c.result);
+            expect(saved.status === 'ok' && saved.data.relations).toEqual(s.relations);
+            expect(s.troops.genzo).toBeLessThanOrEqual(troopsBefore.genzo);
+            // 協力陣営で関係が変わる（独力は田代・大森とも変わらない）
+            if (c.a === 'alone') expect([s.relations.tashiro, s.relations.omori]).toEqual([10, 10]);
+            else expect(s.relations[c.a === 'tashiro' ? 'omori' : 'tashiro']).toBe(-20);
+            await h.talkTo('genzo', 'end_chapter');
+            const e = await h.next('ending');
+            expect(h.game.state?.ending?.startsWith(c.ending)).toBe(true);
+            expect(e.view.footer).toContain('仮シナリオ');
+        });
+    }
 });
 
 describe('確認用の状態作り', () => {
