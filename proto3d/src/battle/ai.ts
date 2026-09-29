@@ -20,7 +20,8 @@
  * - 立て直しの号令：範囲の中の戦える味方（敵方）が 2 部隊以上で士気 50 未満、または本陣自身が 45 未満になったら使う。
  * - 退路の守護：範囲の中で味方（敵方）が敗走・撤退しているとき、自分が斬り合っていなければ使う。
  */
-import type { AbilityId, Order, UnitDef } from './types';
+import type { Order, UnitDef } from './types';
+import { ABILITY_DATA } from './abilities';
 import type { BattleState, UnitState } from './sim';
 
 export type AiRole = NonNullable<UnitDef['aiRole']>;
@@ -82,8 +83,6 @@ export const AI_ABILITY = {
     rallySelfMorale: 45,
 } as const;
 
-/** 能力の範囲（abilities.ts の ABILITY_DATA と同じ値。ai.ts は abilities.ts を実行時に import しない） */
-const ABILITY_RADIUS: Record<AbilityId, number> = { ieyasu_rally: 90, tadakatsu_rearguard: 70, nagamasa_support: 60 };
 
 export function createAiState(units: readonly UnitState[]): AiState {
     const memo: Record<string, AiMemo> = {};
@@ -312,7 +311,7 @@ function enemyAbilities(s: BattleState, api: AiApi): void {
         if (r.side !== 'enemy' || r.usedAt !== null) continue;
         const u = byId(s, r.unitId);
         if (!active(u)) continue;
-        const R = ABILITY_RADIUS[r.id];
+        const R = ABILITY_DATA[r.id].radius;
         const friends = s.units.filter((o) => o !== u && o.side === 'enemy' && active(o) && d2(o, u) <= R);
         if (r.id === 'nagamasa_support') {
             const need = friends

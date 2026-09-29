@@ -20,6 +20,12 @@
  *   そのため、正面で組み合っている相手の側面・背後へ別の部隊を当てると効く。
  * - 味方どうし：動く部隊は、止まっている味方の部隊（待機・斬り合い中など）を押しのけず、横へよけて通る。
  *   行き先が止まっている味方のすぐ隣なら、その隣で止まる（待機中の本陣が、後ろから来た予備隊に押し出されない）。
+ *
+ * 歴史分岐で加えたもの（能力も約束もない合戦＝架空の第一章では、計算も結果の形も変わらない）：
+ * - 特殊能力（abilities.ts）：損害・士気の低下・敗走の線・動きの速さに倍率をかける。退路の守護の効果中は動く命令を断る。
+ *   結果に abilitiesUsed（部隊 id → 使った時刻）を入れる。
+ * - 戦前の約束（BattleSetup.pledge）：対象が安全地点に続けていた時間・退き口から離れたかを見張り、結果に pledge（kept／broken）を入れる。
+ *   画面は pledgeProgress(s) で見通しを出せる。
  */
 import type {
     AbilityId,
@@ -1225,11 +1231,13 @@ function finish(s: BattleState, result: BattleResultKind, reason: BattleEndReaso
         const p = pledgeProgress(s)!;
         s.result.pledge = { targetId: p.targetId, result: p.onTrack ? 'kept' : 'broken' };
     }
+    // 大将の呼び方（架空の第一章は「若殿」、歴史分岐は「家康」）
+    const lord = hqOf(s, 'ally')?.clan === 'tokugawa' ? '家康' : '若殿';
     const text: Record<BattleEndReason, string> = {
         enemy_hq_routed: '敵の本陣が崩れた。勝利',
         enemy_army_broken: '敵の諸隊が崩れた。勝利',
-        ally_hq_routed: '味方の本陣が崩れた。敗北（若殿は落ち延びる）',
-        ally_army_broken: '味方の諸隊が崩れた。敗北（若殿は落ち延びる）',
+        ally_hq_routed: `味方の本陣が崩れた。敗北（${lord}は落ち延びる）`,
+        ally_army_broken: `味方の諸隊が崩れた。敗北（${lord}は落ち延びる）`,
         ordered_retreat: '兵をまとめて退いた。撤退',
         nightfall: '日が暮れた。両軍が兵を引く（撤退）',
     };

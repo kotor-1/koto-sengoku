@@ -7,6 +7,7 @@
  * - 時間は合戦の時間（sim の時間 s.t）で数える。指揮中（一時停止）は stepBattle を呼ばないので減らない。
  * - 不適切な対象（敵・自分・範囲外・戦えない部隊）や、使えない時（まだ着いていない・敗走・撤退済み・全滅・合戦の後）は、
  *   断るだけで使用回数を減らさない。
+ * - 全軍撤退の命令の後でも、戦場にいて戦える部隊なら使える（退路の守護で殿を務めるなど）。
  * - 武将（leaderId）のいない部隊は能力を持たない。敵方の武将の能力は敵の考え（ai.ts）だけが使う。
  *   プレイヤーの操作（useAbility）は味方の部隊の能力しか使えない。
  *
@@ -172,9 +173,9 @@ function pushEvent(s: BattleState, e: Omit<BattleEvent, 't'>): void {
     s.events.push({ t: r1(s.t), ...e });
 }
 
-/** 効果が続いている能力（使った・終わっていない・時間内） */
+/** 効果が続いている能力（使った・終わっていない・時間内・持つ部隊が戦える） */
 function isLive(s: BattleState, r: AbilityRun): boolean {
-    return r.usedAt !== null && !r.ended && s.t < r.until - 1e-9;
+    return r.usedAt !== null && !r.ended && s.t < r.until - 1e-9 && active(byId(s, r.unitId));
 }
 function liveRuns(s: BattleState): AbilityRun[] {
     const all = s.abilityList;
@@ -185,7 +186,7 @@ function liveRuns(s: BattleState): AbilityRun[] {
 // ---------------------------------------------------------------- 効果の問い合わせ（sim.ts が使う）
 
 /** d が範囲の効果を受けるか（その能力の範囲・対象の決まりで） */
-function inArea(s: BattleState, r: AbilityRun, holder: UnitState, u: UnitState): boolean {
+function inArea(r: AbilityRun, holder: UnitState, u: UnitState): boolean {
     const data = ABILITY_DATA[r.id];
     if (u.side !== r.side || !u.present) return false;
     switch (data.areaFilter) {
@@ -207,7 +208,7 @@ export function abilityTakeMul(s: BattleState, d: UnitState): number {
         if (!holder) continue;
         const data = ABILITY_DATA[r.id];
         if (holder === d) m *= data.selfTakeMul;
-        if (inArea(s, r, holder, d)) m *= data.areaTakeMul;
+        if (inArea(r, holder, d)) m *= data.areaTakeMul;
     }
     return m;
 }
@@ -226,7 +227,7 @@ export function abilityMoraleLossMul(s: BattleState, u: UnitState): number {
     let m = 1;
     for (const r of liveRuns(s)) {
         const holder = byId(s, r.unitId);
-        if (holder && inArea(s, r, holder, u)) m = Math.min(m, ABILITY_DATA[r.id].areaMoraleLossMul);
+        if (holder && inArea(r, holder, u)) m = Math.min(m, ABILITY_DATA[r.id].areaMoraleLossMul);
     }
     return m;
 }
@@ -239,7 +240,7 @@ export function abilityRoutMorale(s: BattleState, u: UnitState, base: number): n
         const data = ABILITY_DATA[r.id];
         if (data.areaRoutMorale === null) continue;
         const holder = byId(s, r.unitId);
-        if (holder && inArea(s, r, holder, u)) line = Math.min(line, data.areaRoutMorale);
+        if (holder && inArea(r, holder, u)) line = Math.min(line, data.areaRoutMorale);
     }
     return line;
 }
@@ -453,7 +454,7 @@ export function abilityMarks(s: BattleState, unitId: string): string[] {
     for (const r of liveRuns(s)) {
         const holder = byId(s, r.unitId);
         if (!holder) continue;
-        const inside = inArea(s, r, holder, u);
+        const inside = inArea(r, holder, u);
         if (r.id === 'ieyasu_rally') {
             if (holder === u) out.push('号令（守りを優先）');
             else if (inside) out.push('号令');
