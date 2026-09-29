@@ -489,6 +489,8 @@ async function route1() {
   await shot(page, '1-01-title');
   await newIeyasu(page, io);
   check('はじめから（歴史分岐）', (await st(page)).scenario === 'ieyasu1570');
+  const tabTitle = await page.title();
+  check('ページの題（タブ）も歴史分岐（「仮シナリオ」と出さない）', tabTitle.includes('元亀元年・家康') && !tabTitle.includes('仮シナリオ'), tabTitle);
   let u = await talkTo(page, 'oda_envoy', io);
   check('城下の織田家の使者（書状の趣旨。実際の書状の引用ではない）', u.seen.some((l) => l.includes('実際の書状の引用ではない')), u.seenId);
   await waitScreen(page, 'explore');
@@ -835,6 +837,7 @@ async function routeF() {
   await waitScreen(page, 'explore');
   const s = await page.evaluate(() => { const x = window.__game.state; return { sc: window.__game.scenario, phase: x.phase, alliance: x.alliance, rel: x.relations, result: x.battle?.result }; });
   check('F 版 1 の保存から続ける：大森・田代のまま（織田・浅井へ書き換えない）', s.sc === 'fictional' && s.alliance === 'omori' && s.rel.tashiro === -20 && s.result === 'defeat', JSON.stringify(s));
+  check('F ページの題（タブ）は架空の第一章（仮シナリオ）', (await page.title()).includes('国境の砦') && (await page.title()).includes('仮シナリオ'), await page.title());
   check('F 読むだけでは保存を書き換えない・歴史分岐の保存に触れない', (await raw(page, FKEY)) === V1_FICTIONAL && (await raw(page, KEY)) === ie);
   await shot(page, 'F-01-fictional-v1');
   // 版 2（今の形）：メニューから保存し直す → 開き直して続きから（大森・田代のまま）

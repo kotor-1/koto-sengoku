@@ -17,6 +17,9 @@ import { SCENARIO_TITLE_TEXT } from './scenarioTitles';
 import { el, nowMs, onPress } from './dom';
 import { ADVANCE_GUARD_MS, CHOICE_GUARD_MS, HeldKeys, InputGate } from './guard';
 
+/** ページの題（タブ）の頭。シナリオが決まったら章の名前と札を足す */
+export const PAGE_TITLE = '戦国探索記 3D';
+
 /** 押し始めの時刻（イベントの timeStamp。performance.now() と同じ時計。おかしな値なら今） */
 function startedAt(e: Event): number {
     const now = nowMs();
@@ -143,6 +146,8 @@ export class DomView implements GameView {
         this.hudEl.hidden = !show;
         this.menuBtn.hidden = !show;
         if (!info) return;
+        // ページの題（タブ）も、遊んでいるシナリオの章の名前と札にする（歴史分岐を遊んでいる間に「仮シナリオ」と出さない）
+        document.title = `${PAGE_TITLE} ${info.chapter}（${info.provisional}）`;
         this.hudChapter.textContent = info.chapter;
         this.hudPhase.textContent = info.phase;
         const tag = el('span', 'g-tag', info.provisional);
@@ -335,6 +340,8 @@ export class DomView implements GameView {
     }
 
     title(info: TitleInfo): Promise<TitleAction> {
+        // ページの題（タブ）：タイトルでは遊ぶシナリオが決まっていないので、シナリオの名前を付けない
+        document.title = info.scenarios.length > 1 ? PAGE_TITLE : `${PAGE_TITLE} ${CHAPTER_TITLE}（${PROVISIONAL_LABEL}）`;
         if (info.scenarios.length > 1) return this.titleMulti(info.scenarios);
         return new Promise((resolve) => {
             const layer = this.open('title', 'solid g-title-layer');
