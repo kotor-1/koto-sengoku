@@ -7,8 +7,7 @@
  * 早送り（台本で最後まで一気に進める）。状態の直接変更はしない。
  */
 import { describe, expect, it } from 'vitest';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import baselineJson from './fixtures/v11-baseline.json';
 import { createBattle, issueOrder, runToEnd, type BattleState } from '../proto3d/src/battle/sim';
 import { IEYASU_INITIAL_TROOPS, demoSetup, ieyasu1570Setup, type Alliance, type IeyasuPolicy } from '../proto3d/src/battle/maps';
 import {
@@ -26,7 +25,9 @@ import {
 } from '../proto3d/src/battle/scripts';
 import type { BattleSetup } from '../proto3d/src/battle/types';
 
-const FIXTURE = resolve(__dirname, 'fixtures/v11-baseline.json');
+/** 基準を書くときだけ使う（型の確かめ tsc に node の型が無いので、実行時に読み込む） */
+const FIXTURE_URL = new URL('./fixtures/v11-baseline.json', import.meta.url);
+const env = (globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
 
 /** FNV-1a（32 bit）。同じ文字列なら同じ値 */
 function fnv(text: string): string {
@@ -143,20 +144,21 @@ function record(c: Case): { outcome: unknown; snaps: string[]; events: string; e
     return { outcome: JSON.parse(JSON.stringify(rest)), snaps, events, eventCount: s.events.length };
 }
 
-const WRITE = process.env.WRITE_V11_BASELINE === '1';
+const WRITE = env.WRITE_V11_BASELINE === '1';
 
 describe('Version 11 の合戦は、同じ命令なら 1 刻みも同じ結果（基準 tests/fixtures/v11-baseline.json）', () => {
     const all = cases();
     if (WRITE) {
-        it('基準を書く', () => {
+        it('基準を書く', async () => {
             const out: Record<string, unknown> = {};
             for (const c of all) out[c.name] = record(c);
-            mkdirSync(dirname(FIXTURE), { recursive: true });
-            writeFileSync(FIXTURE, JSON.stringify(out, null, 1) + '\n');
+            const fsName = 'node:fs';
+            const fs = (await import(/* @vite-ignore */ fsName)) as { writeFileSync(p: URL, text: string): void };
+            fs.writeFileSync(FIXTURE_URL, JSON.stringify(out, null, 1) + '\n');
         });
         return;
     }
-    const base = existsSync(FIXTURE) ? (JSON.parse(readFileSync(FIXTURE, 'utf8')) as Record<string, ReturnType<typeof record>>) : {};
+    const base = baselineJson as unknown as Record<string, ReturnType<typeof record>>;
     it('基準に全部の台本がある', () => {
         expect(Object.keys(base).sort()).toEqual(all.map((c) => c.name).sort());
     });
