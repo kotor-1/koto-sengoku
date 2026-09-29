@@ -260,7 +260,7 @@ async function runA() {
   const kb = { talk: () => page.keyboard.press('KeyE'), next: () => page.keyboard.press('Enter') };
   await shot(page, 'A01-title');
   let u = await ui(page);
-  check('タイトル：シナリオごとに はじめから・つづきから（保存なしで押せない）・仮シナリオ', u.buttons.map((b) => b.id).join() === 'new:ieyasu1570,continue:ieyasu1570,new:fictional,continue:fictional' && u.buttons[3].disabled && u.text.includes('仮シナリオ'));
+  check('タイトル：シナリオごとに はじめから・つづきから（保存なしで押せない）・仮シナリオ', u.buttons.map((b) => b.id).filter((id) => id !== 'practice').join() === 'new:ieyasu1570,continue:ieyasu1570,new:fictional,continue:fictional' && u.buttons[3].disabled && u.text.includes('仮シナリオ'));
   await sleep(400);
   // キーで架空の第一章の「はじめから」へ（押せない「つづきから」は飛ばす）
   await page.keyboard.press('ArrowDown');
