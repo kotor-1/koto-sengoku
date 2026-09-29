@@ -2,19 +2,34 @@
  * 開発時の確認用（本番の画面には出さない）：?dev=field&id=<戦場id>[&preset=<編成id>] で、合戦場のデータ（battle/fields/）から
  * その戦場の合戦をすぐ始める。id を省けば大平原（plains）、preset を省けば 'standard'。
  * - 例：?dev=field&id=river_ford、?dev=field&id=mountain_pass&preset=standard
+ * - &allies=8：味方の部隊が 8 つになるまで、確認用の加勢（武将も能力も無い槍隊）を本陣の横に足す（札 8 枚・キー 8 の確認用。上限は RULES.maxUnitsPerSide）。
  * - 知らない戦場・編成は、画面に理由を出して止める（合戦は始めない）。
  * - 終わったら結果を window.__battleOutcome に置き、探索へ戻る。合戦の最中は window.__battle（battle/entry.ts）で状態を読める。
  * - window.__fieldDev.run(id, preset)：同じページでもう一度合戦を始める（結果を返す）。window.__fieldDev.ids：戦場 id の並び。
  * 本番の入口（演習モード）は、同じく buildBattleSetup(getField(id)!, preset) を runBattle に渡す。
  */
 import { getBattleRunner } from '../app/modes';
-import { FIELDS, buildBattleSetup, getField } from '../battle/fields';
-import type { BattleOutcome } from '../battle/types';
+import { FIELDS, buildBattleSetup, getField, presetUnits } from '../battle/fields';
+import { RULES } from '../battle/sim';
+import type { BattleOutcome, UnitDef } from '../battle/types';
 
-async function run(id: string, preset = 'standard'): Promise<BattleOutcome> {
+/** 確認用の加勢を足して、味方を allies 部隊にする（本陣の東西へ 30 m おきに並べる） */
+function withExtraAllies(units: UnitDef[], allies: number): UnitDef[] {
+    const out = [...units];
+    const hq = units.find((u) => u.side === 'ally' && u.kind === 'honjin') ?? units.find((u) => u.side === 'ally');
+    if (!hq) return out;
+    const want = Math.min(allies, RULES.maxUnitsPerSide.ally);
+    for (let k = 1; out.filter((u) => u.side === 'ally').length < want; k++) {
+        const dx = (k % 2 ? 1 : -1) * 30 * Math.ceil(k / 2);
+        out.push({ id: `a_dev_extra${k}`, side: 'ally', clan: hq.clan, kind: 'yari', name: `確認用の加勢${k}`, strength: 200, morale: 70, x: hq.x + dx, z: hq.z, facing: hq.facing });
+    }
+    return out;
+}
+
+async function run(id: string, preset = 'standard', allies = 0): Promise<BattleOutcome> {
     const field = getField(id);
     if (!field) throw new Error(`戦場がありません: ${id}（${FIELDS.map((f) => f.id).join('・')}）`);
-    const setup = buildBattleSetup(field, preset);
+    const setup = buildBattleSetup(field, allies > 0 ? withExtraAllies(presetUnits(field, preset), allies) : preset);
     await import('../battle/entry');
     const runner = getBattleRunner();
     if (!runner) throw new Error('合戦の画面が登録されていません');
@@ -29,7 +44,7 @@ export async function devStart(): Promise<void> {
     const p = new URLSearchParams(location.search);
     Object.assign(window, { __fieldDev: { run, ids: FIELDS.map((f) => f.id) } });
     try {
-        await run(p.get('id') || 'plains', p.get('preset') || 'standard');
+        await run(p.get('id') || 'plains', p.get('preset') || 'standard', Number(p.get('allies') || 0));
     } catch (e) {
         // 開発用：理由を画面の真ん中に出す（本番には入らない）
         const msg = e instanceof Error ? e.message : String(e);
