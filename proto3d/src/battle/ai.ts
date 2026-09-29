@@ -13,6 +13,11 @@
  * - flank：着いてから 30 秒待ち、自分の側（東なら東、西なら西）を真っすぐ南へ下って相手の横へ出てから、
  *   斬り合っている部隊・弓・本陣・こちらを向いていない部隊を選んで横から当たる。途中で近くに相手が見えたらすぐ当たる。
  * - guard_hq：本陣を守る。本陣そのものは持ち場を動かない。本陣以外なら、本陣の 80 m 以内に来た相手を迎え撃つ。
+ * - hold_zone（データ駆動の戦場）：aiTarget の区域（省けば最初の位置・半径 60 m）を守る。区域（＋10 m）に入ってきた見えている相手に当たり、
+ *   区域から 60 m より離れた相手は追わずに持ち場（区域の中の最初の位置。外にいれば区域の中心）へ戻る。弓隊は持ち場を動かず、届く相手を射る。
+ * - assault（データ駆動の戦場）：aiTarget の地点へ攻め進む。途中で 60 m 以内に見えている相手がいれば当たる（弓隊は届く相手がいれば止まって射る）。
+ *   着いたら、その区域を hold_zone と同じように守る。
+ * 動く命令は sim.ts が道探し（通れない所がある戦場だけ）でたどるので、ここは行き先を決めるだけ。
  *
  * 特殊能力（abilities.ts。敵方に能力を持つ武将がいるときだけ。プレイヤーは敵の能力を操作できない）：
  * - 盟友への援護：範囲（60 m）の中で斬り合っている・矢を浴びて士気の落ちた味方（敵方）の部隊があれば、士気のいちばん低い部隊を支える。
@@ -55,6 +60,15 @@ export const AI = {
     /** 追い討ち（BattleSetup.pursuit の合戦だけ）：退いている相手を追い始める距離（騎馬・ほか） */
     pursuitRangeKiba: 110,
     pursuitRange: 60,
+    /** hold_zone・assault：aiTarget の半径の既定・区域の外のこの距離までに入った相手に当たる・これより離れた相手は追わない */
+    zoneRadius: 60,
+    zoneEngage: 10,
+    zoneLeash: 60,
+    /** assault：攻め進む途中、この距離に見えている相手がいれば当たる・攻撃中の相手がこれより離れたらあきらめる */
+    assaultStrike: 60,
+    assaultLeash: 120,
+    /** assault の弓隊：この距離に見えている相手がいれば止まって射る */
+    assaultShoot: 110,
 } as const;
 
 export interface AiMemo {
@@ -62,11 +76,13 @@ export interface AiMemo {
     homeX: number;
     homeZ: number;
     homeFacing: number;
-    /** reserve：動き出したか。flank：'wait' → 'approach' → 'strike' */
+    /** reserve：動き出したか。flank：'wait' → 'approach' → 'strike'。assault：'approach'（攻め進む）→ 'active'（着いて守る） */
     phase: 'idle' | 'active' | 'wait' | 'approach' | 'strike';
     /** 矢を浴びている時間（秒） */
     arrowSec: number;
     waypoint: { x: number; z: number } | null;
+    /** hold_zone・assault の区域（aiTarget。省けば最初の位置・半径 AI.zoneRadius） */
+    zone: { x: number; z: number; r: number } | null;
 }
 
 export interface AiState {
@@ -97,14 +113,19 @@ export function createAiState(units: readonly UnitState[]): AiState {
     for (const u of units) {
         if (u.side !== 'enemy') continue;
         const role: AiRole = u.aiRole ?? (u.kind === 'honjin' ? 'guard_hq' : 'hold_line');
+        const zoned = role === 'hold_zone' || role === 'assault';
+        const zone = zoned ? { x: u.aiTarget?.x ?? u.x, z: u.aiTarget?.z ?? u.z, r: u.aiTarget?.r ?? AI.zoneRadius } : null;
+        // hold_zone の持ち場：最初の位置が区域の中ならそこ、外なら区域の中心
+        const outside = role === 'hold_zone' && zone && Math.hypot(u.x - zone.x, u.z - zone.z) > zone.r;
         memo[u.id] = {
             role,
-            homeX: u.x,
-            homeZ: u.z,
+            homeX: outside ? zone!.x : u.x,
+            homeZ: outside ? zone!.z : u.z,
             homeFacing: u.facing,
-            phase: role === 'flank' ? 'wait' : 'idle',
+            phase: role === 'flank' ? 'wait' : role === 'assault' ? 'approach' : 'idle',
             arrowSec: 0,
             waypoint: null,
+            zone,
         };
     }
     return { memo };
@@ -175,6 +196,12 @@ export function thinkEnemy(s: BattleState, api: AiApi): void {
             case 'flank':
                 flank(s, api, u, m);
                 break;
+            case 'hold_zone':
+                holdZone(s, api, u, m);
+                break;
+            case 'assault':
+                assault(s, api, u, m);
+                break;
         }
     }
 }
@@ -196,7 +223,10 @@ function mayChase(s: BattleState, u: UnitState, m: AiMemo, o: UnitState): boolea
         case 'reserve':
             return m.phase === 'active';
         case 'flank':
+        case 'assault':
             return true;
+        case 'hold_zone':
+            return d2(o, m.zone!) <= m.zone!.r + AI.zoneLeash;
     }
 }
 
@@ -333,6 +363,8 @@ function flank(s: BattleState, api: AiApi, u: UnitState, m: AiMemo): void {
             const lineZ = zs.length ? zs.reduce((a, b) => a + b, 0) / zs.length : s.map.exits.ally.z - 100;
             m.waypoint = { x: m.homeX, z: lineZ };
             api.issue(u.id, { type: 'move', x: m.waypoint.x, z: m.waypoint.z });
+            // 通れない所へは sim.ts が近くの通れる所へ寄せる：寄せた先を回り込みの点にする（通れない所の無い戦場では同じ点）
+            if (u.order.type === 'move' && (u.order.x !== m.waypoint.x || u.order.z !== m.waypoint.z)) m.waypoint = { x: u.order.x, z: u.order.z };
             if (u.seenBy.ally) api.log(`${u.name}が回り込んでくる`, u.id);
             return;
         } else return;
@@ -364,6 +396,68 @@ function flank(s: BattleState, api: AiApi, u: UnitState, m: AiMemo): void {
     }
     if (best) attack(s, api, u, best, `${u.name}が${best.name}へ横から迫る`);
     else if (u.order.type !== 'move') goHome(api, u, m);
+}
+
+/** 区域（中心と半径）を守る：区域に入ってきた見えている相手に当たる。離れすぎた相手は追わない */
+function guardZone(s: BattleState, api: AiApi, u: UnitState, m: AiMemo, backHome: () => void): void {
+    const Z = m.zone!;
+    const cur = attackTarget(s, u);
+    if (cur) {
+        if (active(cur) && cur.seenBy.enemy && d2(cur, Z) <= Z.r + AI.zoneLeash) return;
+        backHome();
+        return;
+    }
+    const threats = visibleAllies(s)
+        .filter((o) => d2(o, Z) <= Z.r + AI.zoneEngage)
+        .sort((a, b) => d2(a, Z) - d2(b, Z) || d2(a, u) - d2(b, u));
+    if (threats.length) {
+        attack(s, api, u, threats[0]!, `${u.name}が守りの区域に入った${threats[0]!.name}へ当たる`);
+        return;
+    }
+    if (u.order.type !== 'move') backHome();
+}
+
+function holdZone(s: BattleState, api: AiApi, u: UnitState, m: AiMemo): void {
+    if (u.engagedWith) return;
+    if (u.kind === 'yumi') {
+        if (u.order.type !== 'move' || d2(u, home(m)) <= 10) goHome(api, u, m);
+        return;
+    }
+    guardZone(s, api, u, m, () => goHome(api, u, m));
+}
+
+function assault(s: BattleState, api: AiApi, u: UnitState, m: AiMemo): void {
+    if (u.engagedWith) return;
+    const Z = m.zone!;
+    const allies = visibleAllies(s);
+    if (u.kind === 'yumi') {
+        // 届く相手がいれば止まって射る（待機の弓はいちばん近い相手を射る）。いなければ地点へ進む
+        if (allies.some((o) => d2(o, u) <= AI.assaultShoot)) {
+            if (u.order.type !== 'hold') api.issue(u.id, { type: 'hold' });
+            return;
+        }
+        if (d2(u, Z) > Z.r * 0.5) {
+            if (!(u.order.type === 'move' && Math.abs(u.order.x - Z.x) < 6 && Math.abs(u.order.z - Z.z) < 6)) api.issue(u.id, { type: 'move', x: Z.x, z: Z.z });
+        } else if (u.order.type !== 'hold' && u.order.type !== 'move') api.issue(u.id, { type: 'hold' });
+        return;
+    }
+    const cur = attackTarget(s, u);
+    if (cur && active(cur) && cur.seenBy.enemy && d2(cur, u) <= AI.assaultLeash) return;
+    if (m.phase === 'approach') {
+        const near = allies.filter((o) => d2(o, u) <= AI.assaultStrike).sort((a, b) => d2(a, u) - d2(b, u));
+        if (near.length) {
+            attack(s, api, u, near[0]!, `${u.name}が${near[0]!.name}へ襲いかかった`);
+            return;
+        }
+        if (d2(u, Z) > Z.r * 0.5) {
+            if (!(u.order.type === 'move' && Math.abs(u.order.x - Z.x) < 6 && Math.abs(u.order.z - Z.z) < 6)) api.issue(u.id, { type: 'move', x: Z.x, z: Z.z });
+            return;
+        }
+        m.phase = 'active';
+        m.homeX = u.x;
+        m.homeZ = u.z;
+    }
+    guardZone(s, api, u, m, () => goHome(api, u, m));
 }
 
 /** 敵方の武将の能力を、目安に合えば使う（1 合戦 1 回。使えるかの確かめは abilities.ts が行う） */

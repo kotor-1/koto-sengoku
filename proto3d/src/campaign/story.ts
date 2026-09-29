@@ -78,6 +78,7 @@ export const CHARACTER_FULL_NAMES: Readonly<Record<CharacterId, string>> = {
 export const CLAN_NAMES: Readonly<Record<ClanId, string>> = {
     kotosaka: '琴坂家', washio: '鷲尾家', tashiro: '田代家', omori: '大森家',
     tokugawa: '徳川家', oda: '織田家', asai: '浅井家', asakura: '朝倉家', ronin: '浪人衆',
+    rival: '敵勢',
 };
 export const ALLIANCE_LABELS: Readonly<Record<Alliance, string>> = { tashiro: '田代家と組む', omori: '大森家と組む', alone: '独力で戦う' };
 /** 結末・記録で使う（過去形） */
@@ -90,6 +91,8 @@ export const REASON_LABELS: Readonly<Record<BattleEndReason, string>> = {
     ally_army_broken: '味方の本陣以外の部隊が崩れ、戦える部隊がなくなった',
     ordered_retreat: '撤退を命じ、兵をまとめて退いた',
     nightfall: '日没で両軍が兵を引いた',
+    objective_done: '主目標を果たした',
+    objective_failed: '主目標を果たせなかった',
 };
 export const STATUS_LABELS: Readonly<Record<CharacterStatus, string>> = { alive: '無事', wounded: '負傷', captured: '捕らわれ' };
 export const TROOP_UNIT_NAMES: Readonly<Record<KotosakaUnitId, string>> = { honjin: '若殿本陣', genzo: '源蔵隊', shinpachi: '新八隊', reserve: '琴坂予備隊' };

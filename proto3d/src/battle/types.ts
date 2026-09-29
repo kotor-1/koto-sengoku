@@ -33,7 +33,8 @@ export type UnitStatus =
 /** 所属（家）。協力陣営の選択で、同じ家が味方にも敵にもなる */
 export type ClanId =
     | 'kotosaka' | 'washio' | 'tashiro' | 'omori' // 架空の第一章「国境の砦」
-    | 'tokugawa' | 'oda' | 'asai' | 'asakura' | 'ronin'; // 歴史分岐「元亀元年・家康」（ronin は架空の浪人衆）
+    | 'tokugawa' | 'oda' | 'asai' | 'asakura' | 'ronin' // 歴史分岐「元亀元年・家康」（ronin は架空の浪人衆）
+    | 'rival'; // 合戦場の演習の架空の相手「敵勢」（浪人衆とは別の家）
 
 /**
  * 武将固有の特殊能力（ゲーム用の創作。史実の人物の能力ではない）。数値は battle/abilities.ts のデータに置く。
@@ -53,6 +54,8 @@ export interface UnitDef {
     name: string;
     /** 率いる人物の id（章の人物の状態に結びつける。いなければ省く） */
     leaderId?: string;
+    /** 率いる武将の id（battle/generals.ts の武将。leaderId と同じ値を入れる。武将のいない部隊は省く） */
+    generalId?: string;
     /** 兵の数 */
     strength: number;
     /** 士気 0〜100 */
@@ -66,7 +69,9 @@ export interface UnitDef {
     /** 最初の命令（省けば hold） */
     order?: Order;
     /** 敵の考え方の役割（ai.ts が使う。味方の部隊では使わない） */
-    aiRole?: 'hold_line' | 'reserve' | 'flank' | 'guard_hq';
+    aiRole?: 'hold_line' | 'reserve' | 'flank' | 'guard_hq' | 'hold_zone' | 'assault';
+    /** hold_zone（守る区域）・assault（攻め進む先）の地点と半径（m）。省けば最初の位置・半径 60 m */
+    aiTarget?: { x: number; z: number; r?: number };
     /** この部隊を率いる武将の特殊能力（武将がいる部隊だけ。1 合戦 1 回） */
     ability?: AbilityId;
 }
@@ -76,7 +81,10 @@ export type TerrainKind =
     | 'hill' // 丘：上にいる部隊は、下から来る相手に対して守りが強い。遠くまで見通せる
     | 'woods' // 林：動きが遅い。中の部隊は遠くから見えない（敵の考えは気づかない）。弓の効きが弱まる
     | 'marsh' // 湿地・浅い川：動きがとても遅い。中で戦うと不利
-    | 'road'; // 道：動きが少し速い
+    | 'road' // 道：動きが少し速い
+    | 'river' // 深い川：通れない（浅瀬 ford の重なる所だけ渡れる）
+    | 'ford' // 浅瀬：渡れるが、とても遅く、中で戦うと不利
+    | 'cliff'; // 崖・岩：通れない
 export interface TerrainArea {
     kind: TerrainKind;
     /** 四角形（x0〜x1, z0〜z1）か円（cx, cz, r）のどちらか */
@@ -84,6 +92,99 @@ export interface TerrainArea {
     circle?: { cx: number; cz: number; r: number };
     /** 丘の高さ（m。表示と守りの強さの計算に使う） */
     height?: number;
+}
+
+/** 区域（四角形または円のどちらか。目標・特殊ルール・敵の考えの区域に使う） */
+export interface Zone {
+    rect?: { x0: number; x1: number; z0: number; z1: number };
+    circle?: { cx: number; cz: number; r: number };
+}
+
+/**
+ * 地形ごとの決まり（戦場ごとに BattleSetup.fieldRules.terrainRules で上書きする。省いた項目は sim.ts の TERRAIN_DEFAULTS）。
+ * 倍率はどれも 1 で「変えない」。
+ */
+export interface TerrainRule {
+    /** 動きの速さの倍率（重なるときは sim.ts の TERRAIN_PRIORITY の順で 1 つだけ効く） */
+    speed?: number;
+    /** 部隊の種類ごとに、さらに掛ける速さの倍率（例：林の中の騎馬 ×0.5） */
+    kindSpeed?: Partial<Record<UnitKind, number>>;
+    /** 中にいる部隊の与える損害（斬り合い）の倍率 */
+    dealMul?: number;
+    /** 中にいる部隊の受ける損害（斬り合い）の倍率 */
+    takeMul?: number;
+    /** 中にいる部隊が受ける矢の損害の倍率（林 ×0.6 など） */
+    arrowTakeMul?: number;
+    /** 中にいる部隊は、相手の戦える部隊がこの距離（m）に来るまで見えない（省けば隠れない） */
+    hideSight?: number;
+}
+
+/** 高低差の効果（戦場ごとに上書きする。既定は sim.ts の HIGH_GROUND_DEFAULTS） */
+export interface HighGroundRule {
+    /** 下から正面に来る相手の与える損害の倍率（高さの差が minDiff 以上） */
+    defenseVsLower?: number;
+    /** 高いとみなす高さの差（m） */
+    minDiff?: number;
+    /** 射手が相手より minDiff 以上高いとき、弓の届く距離に足す（m） */
+    rangeBonus?: number;
+    /** 高さ minDiff 以上の所にいる部隊は、隠れている相手をこの距離（m）だけ遠くから見つける */
+    sightBonus?: number;
+}
+
+/**
+ * 特殊ルール（判別できる union。種類を足すときは、ここに型を 1 つ足し、sim.ts の該当する所で type を見て効かせる）。
+ * - narrow_frontage：区域の中では、同じ相手へ斬りかかれるのは maxEngaged 部隊まで。あふれた部隊は後ろで待つ（狭い正面）。
+ * - woods_ambush：相手から見えていなかった部隊が斬りかかったとき、最初の sec 秒の損害 ×firstStrikeMul（林の奇襲）。
+ *   「見えていなかった」は、隠れていた部隊が見つかってから windowSec 秒（省けば 30 秒）以内に斬りかかったこと。
+ */
+export type SpecialRule =
+    | { type: 'narrow_frontage'; zone: Zone; maxEngaged: number }
+    | { type: 'woods_ambush'; firstStrikeMul: number; sec: number; windowSec?: number };
+
+/** 戦場ごとの決まり（BattleSetup.fieldRules。省けば今までの決まりのまま） */
+export interface FieldRules {
+    terrainRules?: Partial<Record<TerrainKind, TerrainRule>>;
+    highGround?: HighGroundRule;
+    specialRules?: SpecialRule[];
+    /** 通れる範囲（この四角の外は通れない。省けば戦場の全体） */
+    passable?: { x0: number; x1: number; z0: number; z1: number };
+    /** true なら、通れない所が無くても格子の道探しで動く（道の速さを生かす）。省けば通れない所があるときだけ道探しを使う */
+    pathfinding?: boolean;
+}
+
+/**
+ * 目標（主目標・副目標。判定は battle/objectives.ts）。label は画面に出す短い名前。
+ * - destroy_hq：敵本陣の撃破
+ * - hold_point：区域に、敵がいない状態で味方が続けて sec 秒いる
+ * - defend_time：sec 秒まで守る（zone があれば、その区域を敵に loseSec 秒（省けば 10 秒）続けて奪われない。なければ本陣を守る）
+ * - rescue：味方の unitId を zone まで無事に連れ帰る（撤退の命令で戦場を離れても達成）
+ * - breakthrough：味方 count 部隊が zone に入る（抜ける）
+ * - retreat_success：本陣が撤退で戦場を離れ、味方の兵の minRatio 以上が撤退で戦場を離れる
+ * - survive_until：援軍 reinforcementId が着いて、さらに holdSec 秒（省けば 0）耐える
+ * - preserve_unit：部隊 unitId を崩さず、兵を最初の minRatio 以上残して終える（副目標向け）
+ * - limit_losses：味方の兵の損害を maxRatio 以内で終える（副目標向け）
+ * - break_unit：敵の部隊 unitId を崩す（敗走・全滅・撤退させる）
+ */
+export type ObjectiveDef = { id: string; label: string } & (
+    | { type: 'destroy_hq' }
+    | { type: 'hold_point'; zone: Zone; sec: number }
+    | { type: 'defend_time'; sec: number; zone?: Zone; loseSec?: number }
+    | { type: 'rescue'; unitId: string; zone: Zone }
+    | { type: 'breakthrough'; zone: Zone; count: number }
+    | { type: 'retreat_success'; minRatio: number }
+    | { type: 'survive_until'; reinforcementId: string; holdSec?: number }
+    | { type: 'preserve_unit'; unitId: string; minRatio: number }
+    | { type: 'limit_losses'; maxRatio: number }
+    | { type: 'break_unit'; unitId: string }
+);
+export type ObjectiveType = ObjectiveDef['type'];
+
+/** 目標の結果（BattleOutcome.objectives の 1 行） */
+export interface ObjectiveResult {
+    id: string;
+    type: ObjectiveType;
+    label: string;
+    achieved: boolean;
 }
 
 /** 戦場 */
@@ -122,11 +223,20 @@ export interface BattleSetup {
      * 退く相手を攻める部隊は斬りながら後を追う。退路の守護の効果中は、範囲内で退く味方を追う敵が忠勝隊に阻まれる。
      */
     pursuit?: boolean;
+    /** 戦場ごとの決まり（地形の上書き・高所・特殊ルール・通れる範囲）。省けば今までの決まりのまま（1 刻みも変えない） */
+    fieldRules?: FieldRules;
+    /**
+     * 目標。primary があれば勝ち負けは主目標で決まる（battle/objectives.ts）。primary を省けば今までの決まりのまま。
+     * secondary は勝ち負けに影響せず、終わりに判定して BattleOutcome.objectives に入れる。
+     */
+    objectives?: { primary?: ObjectiveDef; secondary?: ObjectiveDef[] };
+    /** 援軍（survive_until の目標が使う）。部隊は units に arriveAt と出現地点を入れておく */
+    reinforcements?: { id: string; side: Side; unitIds: string[] }[];
 }
 
 /** 合戦の結果の種類 */
 export type BattleResultKind =
-    | 'victory' // 勝利：敵本陣の敗走、または敵の本陣以外の全部隊が戦えなくなった
+    | 'victory' // 勝利：敵本陣の敗走、または敵の本陣以外の全部隊が戦えなくなった（主目標のある合戦は、主目標の達成）
     | 'defeat' // 敗北：味方本陣の敗走（大将は落ち延びる。死亡とは同じにしない）、または味方の全部隊が戦えなくなった
     | 'retreat'; // 撤退：全軍撤退を命じた、または日没で両軍が引いた
 
@@ -137,7 +247,9 @@ export type BattleEndReason =
     | 'ally_hq_routed'
     | 'ally_army_broken'
     | 'ordered_retreat'
-    | 'nightfall';
+    | 'nightfall'
+    | 'objective_done' // 主目標を果たした（勝利）
+    | 'objective_failed'; // 主目標が果たせなくなった（敗北）
 
 /** 合戦の結果（章の進行へ渡す。保存にもこの形で残す） */
 export interface BattleOutcome {
@@ -159,6 +271,8 @@ export interface BattleOutcome {
     pledge?: { targetId: string; result: 'kept' | 'broken' };
     /** 特殊能力を使った記録（部隊 id → 使った時刻・秒） */
     abilitiesUsed?: Record<string, number>;
+    /** 目標の達成（BattleSetup.objectives があったときだけ）。勝敗・約束とは別の欄 */
+    objectives?: { primary?: ObjectiveResult; secondary: ObjectiveResult[] };
 }
 
 /** 合戦の画面を呼ぶ側（章の進行）への知らせ */

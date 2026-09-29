@@ -26,6 +26,15 @@
  *   結果に abilitiesUsed（部隊 id → 使った時刻）を入れる。
  * - 戦前の約束（BattleSetup.pledge）：対象が安全地点に続けていた時間・退き口から離れたかを見張り、結果に pledge（kept／broken）を入れる。
  *   画面は pledgeProgress(s) で見通しを出せる。
+ *
+ * データ駆動の戦場で加えたもの（docs/battlefields-design.md §3・§4。BattleSetup.fieldRules・objectives を省いた合戦＝国境の原・
+ * 歴史分岐の章では、計算も結果の形も変わらない）：
+ * - 地形の決まり（fieldRules.ts）：地形ごとの速さ・与える／受ける損害・矢・隠れる距離・高所の有利を、戦場ごとに上書きできる。
+ *   深い川（浅瀬を除く）・崖・通れる範囲の外には入れない。通れない所がある戦場だけ、格子（5 m）の A*（pathfind.ts）で道を作って
+ *   その点を順にたどる（攻撃の相手が動くときは 1 秒ごと、または相手が 10 m 以上動いたら作り直す）。
+ * - 特殊ルール：narrow_frontage（区域の中で同じ相手へ斬りかかれる部隊の数を絞る。あふれた部隊は後ろで待つ）・
+ *   woods_ambush（見えていなかった部隊の最初の当たりの損害を上げる）。
+ * - 目標（objectives.ts）：主目標があれば、主目標の達成で勝利・果たせなくなれば敗北。副目標は結果に記録するだけ。
  */
 import type {
     AbilityId,
@@ -43,6 +52,19 @@ import type {
     UnitStatus,
 } from './types';
 import { createAiState, thinkEnemy, type AiState } from './ai';
+import {
+    TERRAIN_DEFAULTS,
+    arrowTakeMulIn,
+    createFieldEnv,
+    dealMulIn,
+    hideSightIn,
+    inZone,
+    takeMulIn,
+    terrainSpeedIn,
+    type FieldEnv,
+} from './fieldRules';
+import { findPath, isPassable, nearestPassable } from './pathfind';
+import { createObjectiveTrack, finalObjectives, refreshObjective, trackObjectives, type ObjectiveTrack } from './objectives';
 import {
     abilitiesUsedRecord,
     abilityDealMul,
@@ -138,6 +160,13 @@ export const RULES = {
     avoidLook: 60,
     /** 正面の幅：同じ相手の正面へ 2 部隊目から斬りかかる部隊の損害の倍率 */
     frontCrowdMul: 0.4,
+    /** 1 つの陣営が 1 つの合戦に出せる部隊の数の上限（味方 8・敵 10。戦場データの検査で確かめる） */
+    maxUnitsPerSide: { ally: 8, enemy: 10 },
+    /** 道探し：攻撃の相手へ向かう道を作り直す間隔（秒）・相手がこの距離（m）より動いたらすぐ作り直す */
+    repathSec: 1,
+    repathMove: 10,
+    /** 道探し：通る点にこの距離（m）まで近づいたら次の点へ */
+    waypointReach: 3,
 } as const;
 
 /** 種類ごとの性質 */
@@ -148,8 +177,19 @@ export const KIND_STATS: Record<UnitKind, { speed: number; power: number; defenc
     kiba: { speed: 6, power: 2.0, defence: 1.0, turnDeg: 90, label: '騎馬' },
 };
 
-/** 地形ごとの動きの速さ（重なるときは 湿地 > 林 > 道 の順で 1 つだけ効く） */
-export const TERRAIN_SPEED: Record<TerrainKind, number> = { marsh: 0.35, woods: 0.5, road: 1.2, hill: 1 };
+/**
+ * 地形ごとの動きの速さの既定（重なるときは 湿地 > 浅瀬 > 林 > 道 の順で 1 つだけ効く。深い川・崖は通れない）。
+ * 値は fieldRules.ts の TERRAIN_DEFAULTS。戦場ごとの上書きは BattleSetup.fieldRules.terrainRules
+ */
+export const TERRAIN_SPEED: Record<TerrainKind, number> = {
+    marsh: TERRAIN_DEFAULTS.marsh.speed,
+    woods: TERRAIN_DEFAULTS.woods.speed,
+    road: TERRAIN_DEFAULTS.road.speed,
+    hill: TERRAIN_DEFAULTS.hill.speed,
+    river: TERRAIN_DEFAULTS.river.speed,
+    ford: TERRAIN_DEFAULTS.ford.speed,
+    cliff: TERRAIN_DEFAULTS.cliff.speed,
+};
 
 /** 画面の知らせ（出来事の記録）の種類 */
 export type BattleEventKind =
@@ -172,6 +212,8 @@ export type BattleEventKind =
     | 'ability' // 特殊能力を使った・援護が外れた／戻った（abilities.ts）
     | 'ability_end' // 特殊能力の効果が終わった
     | 'pledge' // 戦前の約束の対象が、安全地点で守りを固めた・退き口から離れた・崩れた
+    | 'ambush' // 見えていなかった部隊が斬りかかった（林の奇襲。特殊ルールのある戦場だけ）
+    | 'objective' // 目標を果たした・果たせなくなった（目標のある合戦だけ）
     | 'end';
 
 export interface BattleEvent {
@@ -194,7 +236,11 @@ export interface UnitState {
     readonly kind: UnitKind;
     readonly name: string;
     readonly leaderId?: string;
+    /** 率いる武将の id（battle/generals.ts。武将のいない部隊は無い） */
+    readonly generalId?: string;
     readonly aiRole?: UnitDef['aiRole'];
+    /** hold_zone・assault の地点（UnitDef.aiTarget） */
+    readonly aiTarget?: UnitDef['aiTarget'];
     /** 率いる武将の特殊能力（abilities.ts。武将のいる部隊だけ） */
     readonly ability?: AbilityId;
     /** その陣営の本陣（その陣営の最初の honjin） */
@@ -246,6 +292,16 @@ export interface UnitState {
     recentLoss: number;
     /** いまよけて通っている味方の部隊と、よける側（-1 左・1 右）。よけ始めたら通り過ぎるまで同じ側を通る */
     avoid: { id: string; side: -1 | 1 } | null;
+    /** 道探しでたどっている道（通れない所がある戦場だけ。goal は作ったときの行き先、pts は通る点、idx は次に向かう点） */
+    path: { goalX: number; goalZ: number; builtT: number; pts: { x: number; z: number }[]; idx: number } | null;
+    /** 戦場にいて相手から隠れていたことがあり、まだ見つかっていない（林の奇襲の判定） */
+    wasHidden: boolean;
+    /** 隠れていた所から相手に見つかった時刻 */
+    revealT: number;
+    /** 林の奇襲が効いている相手と終わりの時刻・倍率 */
+    ambushOn: string | null;
+    ambushUntil: number;
+    ambushMul: number;
 }
 
 export interface BattleState {
@@ -273,6 +329,10 @@ export interface BattleState {
     abilityList: AbilityRun[];
     /** 戦前の約束の見張り（BattleSetup.pledge があるときだけ） */
     pledge: PledgeTrack | null;
+    /** 戦場ごとの決まり（fieldRules.ts。fieldRules を省いた合戦は既定＝今までの決まり） */
+    field: FieldEnv;
+    /** 目標の見張り（BattleSetup.objectives があるときだけ。objectives.ts） */
+    objectives: ObjectiveTrack | null;
 }
 
 /** 戦前の約束の見張り（docs/ieyasu1570-design.md §5） */
@@ -363,9 +423,7 @@ export function attackArc(d: { x: number; z: number; facing: number }, ax: numbe
 // ---------------------------------------------------------------- 地形
 
 function inArea(a: BattleMap['terrain'][number], x: number, z: number): boolean {
-    if (a.rect) return x >= a.rect.x0 && x <= a.rect.x1 && z >= a.rect.z0 && z <= a.rect.z1;
-    if (a.circle) return Math.hypot(x - a.circle.cx, z - a.circle.cz) <= a.circle.r;
-    return false;
+    return inZone(a, x, z);
 }
 /** その地点の地形（重なりあり） */
 export function terrainAt(map: BattleMap, x: number, z: number): TerrainKind[] {
@@ -393,12 +451,21 @@ export function elevationAt(map: BattleMap, x: number, z: number): number {
     }
     return h;
 }
-/** その地点の動きの速さの倍率 */
+/** その地点の動きの速さの倍率（既定の決まり。戦場ごとの上書きと部隊の種類の補正は unitSpeedFactor） */
 export function speedFactorAt(map: BattleMap, x: number, z: number): number {
     if (inTerrain(map, 'marsh', x, z)) return TERRAIN_SPEED.marsh;
+    if (inTerrain(map, 'ford', x, z)) return TERRAIN_SPEED.ford;
     if (inTerrain(map, 'woods', x, z)) return TERRAIN_SPEED.woods;
     if (inTerrain(map, 'road', x, z)) return TERRAIN_SPEED.road;
     return 1;
+}
+/** 部隊の今の位置の動きの速さの倍率（戦場ごとの決まり・部隊の種類の補正を含む） */
+export function unitSpeedFactor(s: BattleState, u: { kind: UnitKind; x: number; z: number }): number {
+    return terrainSpeedIn(s.map, s.field, u.kind, u.x, u.z);
+}
+/** その地点を通れるか（通れない所が無い戦場ではいつも true） */
+export function passableAt(s: BattleState, x: number, z: number): boolean {
+    return !s.field.nav || isPassable(s.field.nav, x, z);
 }
 
 // ---------------------------------------------------------------- 状態の問い合わせ
@@ -429,6 +496,8 @@ export function timeLeft(s: BattleState): number {
 /** 退き口（撤退・敗走で向かう所）。退き口が戦場の端にあれば、その端のうち今の位置の真っすぐ先 */
 export function exitPointFor(s: BattleState, u: { side: Side; x: number }): { x: number; z: number } {
     const e = s.map.exits[u.side];
+    // 通れない所がある戦場では、退き口はいつも決まった 1 点（端の真っすぐ先が崖・川かもしれないので）
+    if (s.field.nav) return nearestPassable(s.field.nav, e.x, e.z);
     const edge = Math.abs(e.z) >= s.map.depth / 2 - 1;
     if (edge) return { x: clamp(u.x, -s.map.width / 2 + 5, s.map.width / 2 - 5), z: e.z };
     return { x: e.x, z: e.z };
@@ -490,7 +559,9 @@ export function createBattle(setup: BattleSetup): BattleState {
             kind: d.kind,
             name: d.name,
             leaderId: d.leaderId,
+            ...(d.generalId ? { generalId: d.generalId } : {}),
             aiRole: d.aiRole,
+            ...(d.aiTarget ? { aiTarget: { ...d.aiTarget } } : {}),
             ...(d.ability ? { ability: d.ability } : {}),
             isHq,
             startStrength: strength,
@@ -519,6 +590,12 @@ export function createBattle(setup: BattleSetup): BattleState {
             shockT: {},
             recentLoss: 0,
             avoid: null,
+            path: null,
+            wasHidden: false,
+            revealT: -999,
+            ambushOn: null,
+            ambushUntil: -1,
+            ambushMul: 1,
         } satisfies UnitState;
     });
     const s: BattleState = {
@@ -537,6 +614,8 @@ export function createBattle(setup: BattleSetup): BattleState {
         abilities: createAbilityRuns(setup.units),
         abilityList: [],
         pledge: null,
+        field: createFieldEnv(setup.map, setup.fieldRules),
+        objectives: createObjectiveTrack(setup),
     };
     s.abilityList = Object.values(s.abilities);
     const pl = setup.pledge;
@@ -573,6 +652,12 @@ export function issueOrder(s: BattleState, unitId: string, order: Order): boolea
                 x: clamp(order.x, -s.map.width / 2 + 2, s.map.width / 2 - 2),
                 z: clamp(order.z, -s.map.depth / 2 + 2, s.map.depth / 2 - 2),
             };
+            // 通れない所（川・崖）への移動は、いちばん近い通れる所へ
+            if (s.field.nav) {
+                const p = nearestPassable(s.field.nav, o.x, o.z);
+                o.x = p.x;
+                o.z = p.z;
+            }
             if (order.face !== undefined && Number.isFinite(order.face)) o.face = norm(order.face);
             u.order = o;
             break;
@@ -587,6 +672,7 @@ export function issueOrder(s: BattleState, unitId: string, order: Order): boolea
             return false;
     }
     u.faceGoal = null;
+    u.path = null;
     return true;
 }
 
@@ -666,6 +752,8 @@ function tick(s: BattleState): void {
         const woods = inTerrain(s.map, 'woods', u.x, u.z);
         if (u.side === 'ally') {
             log(s, 'arrive', woods ? `${u.name}が林に着いた（まだ敵に気づかれていない）` : `${u.name}が戦場に着いた`, u.id);
+        } else if (s.setup.reinforcements?.some((r) => r.side === 'enemy' && r.unitIds.includes(u.id))) {
+            log(s, 'arrive', `敵の援軍（${u.name}）が現れた`, u.id);
         }
     }
 
@@ -690,6 +778,8 @@ function tick(s: BattleState): void {
         if (!u.present) continue;
         plans.set(u, planFor(s, u));
     }
+    // 4b. 狭い正面（特殊ルールのある戦場だけ）
+    if (s.field.narrow.length > 0) narrowFrontage(s, plans);
 
     // 5. 損害
     const n = s.units.length;
@@ -719,6 +809,15 @@ function tick(s: BattleState): void {
             if (d.status === 'ready' && (lastContact === undefined || t - lastContact > 10)) log(s, 'engage', `${a.name}と${d.name}が交戦`, a.id, d.id);
             s.contactT[key] = t;
             const arc = attackArc(d, a.x, a.z);
+            // 林の奇襲（特殊ルールのある戦場だけ）：隠れていて、見つかってから間もない（その後まだ斬り合っていない）部隊の最初の当たり
+            const amb = s.field.ambush;
+            if (amb && !wasInMelee && d.status === 'ready' && (!a.seenBy[d.side] || (a.revealT >= t - (amb.windowSec ?? 30) - 1e-9 && a.lastMeleeT < a.revealT))) {
+                a.ambushOn = d.id;
+                a.ambushUntil = t + amb.sec;
+                a.ambushMul = amb.firstStrikeMul;
+                shock[di] += RULES.flankShock;
+                log(s, 'ambush', `${a.name}が${d.name}へ不意を突いて斬りかかった`, a.id, d.id);
+            }
             // 騎馬の突撃：動いてきて交戦に入った（直前 8 秒は斬り合っていない）
             if (a.kind === 'kiba' && !wasInMelee && a.moving && t - a.lastMeleeT > 8) {
                 const intoPikes = d.kind === 'yari' && arc === 'front';
@@ -843,8 +942,48 @@ function tick(s: BattleState): void {
     // 9b. 戦前の約束：対象が安全地点に続けていた時間
     if (s.pledge) trackPledge(s, dt);
 
+    // 9c. 目標（目標のある合戦だけ）
+    if (s.objectives) trackObjectives(s, dt, (text) => log(s, 'objective', text));
+
     // 10. 勝ち負け
     decide(s);
+}
+
+/**
+ * 狭い正面（特殊ルール narrow_frontage）：区域の中（斬りかかる側か相手のどちらかが区域の中）では、同じ相手へ斬りかかれるのは
+ * maxEngaged 部隊まで。先に数えるのは、前の刻みから斬り合っている部隊、相手が斬り合っている部隊、近い順・並びの順。
+ * あふれた部隊はこの刻みは斬り合わず、その場で待つ（前が空くと入れ替わる）。
+ */
+function narrowFrontage(s: BattleState, plans: Map<UnitState, Plan>): void {
+    for (const rule of s.field.narrow) {
+        const byTarget = new Map<UnitState, UnitState[]>();
+        for (const a of s.units) {
+            const p = plans.get(a);
+            const d = p?.melee;
+            if (!d || a.status !== 'ready' || d.status !== 'ready') continue;
+            if (!inZone(rule.zone, a.x, a.z) && !inZone(rule.zone, d.x, d.z)) continue;
+            const list = byTarget.get(d);
+            if (list) list.push(a);
+            else byTarget.set(d, [a]);
+        }
+        for (const [d, list] of byTarget) {
+            if (list.length <= rule.maxEngaged) continue;
+            const theirs = plans.get(d)?.melee ?? null;
+            const order = (a: UnitState) => s.units.indexOf(a);
+            list.sort(
+                (a, b) =>
+                    Number(b.engagedWith === d.id) - Number(a.engagedWith === d.id) ||
+                    Number(b === theirs) - Number(a === theirs) ||
+                    dist(a, d) - dist(b, d) ||
+                    order(a) - order(b),
+            );
+            for (let k = rule.maxEngaged; k < list.length; k++) {
+                const p = plans.get(list[k]!)!;
+                p.melee = null;
+                p.goal = null;
+            }
+        }
+    }
 }
 
 /**
@@ -874,15 +1013,25 @@ function frontCrowding(s: BattleState, plans: Map<UnitState, Plan>, index: Map<U
 
 /** 見えているか（林の中の部隊は、相手の戦える部隊が 60 m 以内に来るまで見えない） */
 function updateVisibility(s: BattleState, events: BattleEvent[] | null): void {
+    const high = s.field.high;
     for (const u of s.units) {
         const opp = other(u.side);
         let seen: boolean;
+        // 隠れる地形（既定は林 60 m）の中の部隊は、相手の戦える部隊がその距離に来るまで見えない。高所の相手は sightBonus だけ遠くから見つける
+        const hide = u.present ? hideSightIn(s.map, s.field, u.x, u.z) : null;
         if (!u.present) seen = false;
-        else if (!inTerrain(s.map, 'woods', u.x, u.z)) seen = true;
-        else seen = s.units.some((o) => o.side === opp && isActive(o) && dist(o, u) <= RULES.woodsSight);
+        else if (hide === null) seen = true;
+        else if (high.sightBonus > 0) seen = s.units.some((o) => o.side === opp && isActive(o) && dist(o, u) <= hide + (elevationAt(s.map, o.x, o.z) >= high.minDiff ? high.sightBonus : 0));
+        else seen = s.units.some((o) => o.side === opp && isActive(o) && dist(o, u) <= hide);
         const was = u.seenBy[opp];
         u.seenBy[opp] = seen;
         u.seenBy[u.side] = u.present;
+        // 林の奇襲の判定：隠れていた部隊が見つかった時刻
+        if (u.present && !seen) u.wasHidden = true;
+        else if (seen && u.wasHidden) {
+            u.wasHidden = false;
+            u.revealT = s.t;
+        }
         if (!events || !seen || was) continue;
         // 林の縁を出入りして何度も知らせないように、同じ部隊は 15 秒あける
         const key = `seen:${u.id}`;
@@ -983,13 +1132,20 @@ export function isRetreatingUnit(u: UnitState): boolean {
     return u.present && u.status === 'ready' && u.order.type === 'retreat';
 }
 
+/** 弓の届く距離（高所の射程の上乗せがある戦場では、射手が minDiff 以上高いとき rangeBonus を足す） */
+export function bowRangeFor(s: BattleState, a: { x: number; z: number }, d: { x: number; z: number }): number {
+    const h = s.field.high;
+    if (h.rangeBonus > 0 && elevationAt(s.map, a.x, a.z) - elevationAt(s.map, d.x, d.z) >= h.minDiff) return RULES.bowRange + h.rangeBonus;
+    return RULES.bowRange;
+}
+
 function nearestShootable(s: BattleState, u: UnitState): UnitState | null {
     let best: UnitState | null = null;
     let bd = Infinity;
     for (const o of s.units) {
         if (o.side === u.side || !isActive(o) || !o.seenBy[u.side]) continue;
         const d = dist(o, u);
-        if (d <= RULES.bowRange && d < bd) {
+        if (d <= bowRangeFor(s, u, o) && d < bd) {
             bd = d;
             best = o;
         }
@@ -1012,13 +1168,16 @@ export function meleeDamage(s: BattleState, a: UnitState, d: UnitState, arc: 'fr
     // 向き
     if (arc === 'flank') m *= RULES.flankMul;
     else if (arc === 'rear') m *= RULES.rearMul;
-    // 丘の守り（下から正面に来る相手）
-    if (arc === 'front' && elevationAt(s.map, d.x, d.z) - elevationAt(s.map, a.x, a.z) >= RULES.hillDiff) m *= RULES.hillMul;
+    // 丘の守り（下から正面に来る相手。既定は RULES.hillMul・hillDiff と同じ。戦場ごとに fieldRules.highGround で上書き）
+    const high = s.field.high;
+    if (arc === 'front' && elevationAt(s.map, d.x, d.z) - elevationAt(s.map, a.x, a.z) >= high.minDiff) m *= high.defenseVsLower;
     // 防衛・待機
     if (d.status === 'ready' && d.order.type === 'hold' && !d.moving) m *= RULES.holdMul;
-    // 湿地
-    if (inTerrain(s.map, 'marsh', a.x, a.z)) m *= RULES.marshDealMul;
-    if (inTerrain(s.map, 'marsh', d.x, d.z)) m *= RULES.marshTakeMul;
+    // 湿地・浅瀬など（中にいる部隊の与える・受ける損害。既定は湿地 ×0.8・×1.15、浅瀬 ×0.8・×1.2）
+    m *= dealMulIn(s.map, s.field, a.x, a.z);
+    m *= takeMulIn(s.map, s.field, d.x, d.z);
+    // 林の奇襲（特殊ルールのある戦場だけ）
+    if (a.ambushOn === d.id && s.t <= a.ambushUntil) m *= a.ambushMul;
     // 突撃・追い討ち
     if (a.kind === 'kiba' && s.t <= a.chargeUntil) m *= RULES.chargeMul;
     if (d.status === 'routed') m *= RULES.pursuitMul;
@@ -1030,9 +1189,19 @@ export function meleeDamage(s: BattleState, a: UnitState, d: UnitState, arc: 'fr
 /** 弓の損害（1 秒あたり） */
 export function rangedDamage(s: BattleState, a: UnitState, d: UnitState): number {
     const r = dist(a, d);
-    const fall = r <= RULES.bowFullRange ? 1 : 1 - (0.4 * (r - RULES.bowFullRange)) / (RULES.bowRange - RULES.bowFullRange);
+    // 高所の射程の上乗せ（ある戦場だけ）は、減衰の始まりと終わりを同じだけ遠くへずらす
+    const bonus = bowRangeFor(s, a, d) - RULES.bowRange;
+    const fall =
+        bonus > 0
+            ? r <= RULES.bowFullRange + bonus
+                ? 1
+                : 1 - (0.4 * (r - RULES.bowFullRange - bonus)) / (RULES.bowRange - RULES.bowFullRange)
+            : r <= RULES.bowFullRange
+              ? 1
+              : 1 - (0.4 * (r - RULES.bowFullRange)) / (RULES.bowRange - RULES.bowFullRange);
     let m = RULES.rangedRate * KIND_STATS[d.kind].defence * moraleMul(a) * Math.max(0.6, fall);
-    if (inTerrain(s.map, 'woods', d.x, d.z)) m *= RULES.woodsArcheryMul;
+    // 林など（中の相手への矢。既定は林 ×0.6）
+    m *= arrowTakeMulIn(s.map, s.field, d.x, d.z);
     m *= abilityDealMul(s, a) * abilityTakeMul(s, d);
     return a.strength * m;
 }
@@ -1040,24 +1209,27 @@ export function rangedDamage(s: BattleState, a: UnitState, d: UnitState): number
 function moveUnit(s: BattleState, u: UnitState, p: Plan, dt: number): void {
     const st = KIND_STATS[u.kind];
     u.moving = false;
+    if (!p.goal) u.path = null;
     if (p.goal) {
         const d = dist(u, p.goal);
-        const direct = headingTo(u.x, u.z, p.goal.x, p.goal.z);
         let room = d - p.goal.stopAt;
         // 行き先が止まっている味方のすぐ隣で、もうその味方に触れる所まで来た：ここで着いたことにする（押しのけない）
         if (room > 0.05 && u.status === 'ready' && u.order.type === 'move' && friendHoldsGoal(s, u, p.goal)) room = 0;
+        // 通れない所がある戦場では、道探しの道の次の点へ向かう（無い戦場では行き先へまっすぐ）
+        const aim = s.field.nav && room > 0.05 ? pathAim(s, u, p.goal) : p.goal;
+        const direct = headingTo(u.x, u.z, aim.x, aim.z);
         if (room > 0.05) {
             // 少しだけ後ろへ下がるときは、向きを変えずに後ずさりする（半分の速さ）
             const backStep = u.status === 'ready' && u.order.type === 'move' && room < 20 && Math.abs(angleDiff(u.facing, direct)) > 120 * DEG;
             // 止まっている味方の部隊が行く手にあれば、横へよけて通る（戦える部隊だけ。撤退・敗走は味方の間をすり抜ける）
-            const want = backStep || u.status !== 'ready' || u.order.type === 'retreat' ? direct : steerAround(s, u, p.goal, u.order.type === 'attack');
+            const want = backStep || u.status !== 'ready' || u.order.type === 'retreat' ? direct : steerAround(s, u, aim, u.order.type === 'attack');
             let aligned = 0.5;
             if (!backStep) {
                 const turnRate = (u.status === 'routed' ? 180 : st.turnDeg) * DEG * dt;
                 u.facing = turnToward(u.facing, want, turnRate);
                 aligned = Math.abs(angleDiff(u.facing, want)) <= 45 * DEG ? 1 : 0.25;
             }
-            let speed = st.speed * speedFactorAt(s.map, u.x, u.z) * aligned * abilitySpeedMul(s, u);
+            let speed = st.speed * unitSpeedFactor(s, u) * aligned * abilitySpeedMul(s, u);
             if (u.status === 'routed') speed *= 1.2;
             const step = Math.min(speed * dt, room);
             // 相手の部隊の中へは入らない（14 m より近づかない）
@@ -1070,6 +1242,16 @@ function moveUnit(s: BattleState, u: UnitState, p: Plan, dt: number): void {
                     nx = u.x;
                     nz = u.z;
                     break;
+                }
+            }
+            // 通れない所（川・崖）へは入らない：入るなら、壁に沿って横へずれる（どちらもだめならその場）
+            const nav = s.field.nav;
+            if (nav && !isPassable(nav, nx, nz) && isPassable(nav, u.x, u.z)) {
+                if (isPassable(nav, nx, u.z)) nz = u.z;
+                else if (isPassable(nav, u.x, nz)) nx = u.x;
+                else {
+                    nx = u.x;
+                    nz = u.z;
                 }
             }
             nx = clamp(nx, -s.map.width / 2 + 1, s.map.width / 2 - 1);
@@ -1096,6 +1278,27 @@ function moveUnit(s: BattleState, u: UnitState, p: Plan, dt: number): void {
         u.facing = turnToward(u.facing, u.faceGoal, st.turnDeg * DEG * dt);
         if (Math.abs(angleDiff(u.facing, u.faceGoal)) < 1e-6) u.faceGoal = null;
     }
+}
+
+/**
+ * 道探しの道の、次に向かう点（通れない所がある戦場だけ）。行き先が変わった（止まった行き先は 0.5 m、動く相手は RULES.repathMove m）、
+ * または攻撃の相手へ向かう道を作ってから RULES.repathSec 秒たったら、今の位置から作り直す。道が無ければ行き先へまっすぐ。
+ */
+function pathAim(s: BattleState, u: UnitState, goal: { x: number; z: number }): { x: number; z: number } {
+    const nav = s.field.nav!;
+    const chasing = u.status === 'ready' && u.order.type === 'attack';
+    let P = u.path;
+    const moved = P ? Math.hypot(P.goalX - goal.x, P.goalZ - goal.z) : Infinity;
+    const stale = !P || (chasing ? moved >= RULES.repathMove || s.t - P.builtT >= RULES.repathSec - 1e-9 : moved > 0.5);
+    if (stale) {
+        const pts = findPath(nav, u.kind, u.x, u.z, goal.x, goal.z);
+        P = u.path = { goalX: goal.x, goalZ: goal.z, builtT: s.t, pts: pts ?? [{ x: goal.x, z: goal.z }], idx: 0 };
+    }
+    const path = P!;
+    while (path.idx < path.pts.length - 1 && dist(u, path.pts[path.idx]!) <= RULES.waypointReach) path.idx++;
+    if (path.idx < path.pts.length - 1) return path.pts[path.idx]!;
+    // 最後の点：動く相手は今の位置へ（通れる所にいれば）
+    return isPassable(nav, goal.x, goal.z) ? goal : path.pts[path.pts.length - 1]!;
 }
 
 /** 味方の部隊をよける相手（戦えて、撤退中でなく、この刻みに動いていない味方） */
@@ -1185,10 +1388,14 @@ function separate(s: BattleState): void {
     const weight = (u: UnitState) => (u.engagedWith ? 0.1 : u.moving ? 1 : 0.25);
     const tooCloseToFoe = (u: UnitState, x: number, z: number) =>
         us.some((o) => o.side !== u.side && isActive(o) && Math.hypot(o.x - x, o.z - z) < ENEMY_GAP && Math.hypot(o.x - x, o.z - z) < dist(o, u));
+    // 通れない所がある戦場では、押されても川・崖へは入らない（もともと通れない所にいる部隊は出られるように押す）
+    const nav = s.field.nav;
+    const okAt = (u: UnitState, x: number, z: number) => !nav || isPassable(nav, x, z) || !isPassable(nav, u.x, u.z);
     const nudge = (u: UnitState, dx: number, dz: number) => {
         const nx = u.x + dx;
         const nz = u.z + dz;
         if (tooCloseToFoe(u, nx, nz)) return;
+        if (nav && !okAt(u, nx, nz)) return;
         u.x = nx;
         u.z = nz;
     };
@@ -1212,6 +1419,21 @@ function separate(s: BattleState): void {
             }
             const push = gap - d;
             if (b.side !== a.side) {
+                if (nav) {
+                    const ax = a.x - (ux * push) / 2;
+                    const az = a.z - (uz * push) / 2;
+                    const bx = b.x + (ux * push) / 2;
+                    const bz = b.z + (uz * push) / 2;
+                    if (okAt(a, ax, az)) {
+                        a.x = ax;
+                        a.z = az;
+                    }
+                    if (okAt(b, bx, bz)) {
+                        b.x = bx;
+                        b.z = bz;
+                    }
+                    continue;
+                }
                 a.x -= (ux * push) / 2;
                 a.z -= (uz * push) / 2;
                 b.x += (ux * push) / 2;
@@ -1256,6 +1478,8 @@ function finish(s: BattleState, result: BattleResultKind, reason: BattleEndReaso
         })),
     };
     if (s.abilityList.length > 0) s.result.abilitiesUsed = abilitiesUsedRecord(s);
+    const objs = finalObjectives(s, result);
+    if (objs) s.result.objectives = objs;
     if (s.pledge) {
         const p = pledgeProgress(s)!;
         // 勝利・日没（戦場に踏みとどまった）では約束の場面は要らない。撤退・敗北で終わるときは、場面になっていなければ守ったことにならない
@@ -1271,12 +1495,15 @@ function finish(s: BattleState, result: BattleResultKind, reason: BattleEndReaso
         ally_army_broken: `味方の諸隊が崩れた。敗北（${lord}は落ち延びる）`,
         ordered_retreat: '兵をまとめて退いた。撤退',
         nightfall: '日が暮れた。両軍が兵を引く（撤退）',
+        objective_done: `主目標「${s.objectives?.primary?.def.label ?? ''}」を果たした。勝利`,
+        objective_failed: `主目標「${s.objectives?.primary?.def.label ?? ''}」を果たせなかった。敗北（${lord}は落ち延びる）`,
     };
     log(s, reason === 'nightfall' ? 'nightfall' : 'end', text[reason]);
 }
 
 function decide(s: BattleState): void {
     if (s.result) return;
+    if (s.objectives?.primary) return decideByObjective(s);
     const t = s.t;
     // 全軍撤退：味方が戦場を離れ切ったか、待つ時間が過ぎたら終わる（その間は勝ち負けを決めない）
     if (s.allRetreatAt !== null) {
@@ -1315,6 +1542,76 @@ function decide(s: BattleState): void {
         return finish(s, 'defeat', 'ally_army_broken');
     }
     if (s.tick >= Math.round(s.timeLimitSec / RULES.tick)) return finish(s, 'retreat', 'nightfall');
+}
+
+/**
+ * 主目標のある合戦の勝ち負け（docs/battlefields-design.md §4）：
+ * - 味方本陣の敗走・全軍が戦えない（崩れた部隊の方が多い）は今までどおり敗北。全軍撤退・本陣の撤退・日没は撤退。
+ * - 主目標の達成で勝利（敵本陣の撃破は理由 enemy_hq_routed、ほかは objective_done）。果たせなくなれば敗北（objective_failed）。
+ * - 敵の部隊がすべて戦えなくなれば勝利（敵本陣の撃破が主目標なら、今までどおり本陣以外が崩れれば勝利）。
+ * - 撤退の成功（retreat_success）が主目標なら、撤退で終わるとき、果たせていれば勝利・果たせていなければ敗北。
+ */
+function decideByObjective(s: BattleState): void {
+    const P = s.objectives!.primary!;
+    const endRetreat = (reason: BattleEndReason) => {
+        if (P.def.type !== 'retreat_success') return finish(s, 'retreat', reason);
+        return P.state === 'done' ? finish(s, 'victory', 'objective_done') : finish(s, 'defeat', 'objective_failed');
+    };
+    const withdrawAll = () => {
+        for (const u of s.units) {
+            if (u.side !== 'ally' || !isActive(u)) continue;
+            u.status = 'withdrawn';
+            u.present = false;
+            u.engagedWith = null;
+            u.shootingAt = null;
+        }
+    };
+    // 撤退の成功は、兵を離し切ってから判定する（離れた兵を数え直す）
+    const recheck = () => {
+        if (P.def.type === 'retreat_success') refreshObjective(s, P, (text) => log(s, 'objective', text));
+    };
+    if (s.allRetreatAt !== null) {
+        const still = s.units.filter((u) => u.side === 'ally' && isActive(u));
+        if (still.length === 0 || s.t - s.allRetreatAt >= RULES.retreatGraceSec - 1e-9) {
+            for (const u of still) {
+                u.status = 'withdrawn';
+                u.present = false;
+            }
+            recheck();
+            endRetreat('ordered_retreat');
+        }
+        return;
+    }
+    const allyHq = hqOf(s, 'ally');
+    const enemyHq = hqOf(s, 'enemy');
+    if (allyHq && (allyHq.status === 'routed' || allyHq.status === 'destroyed')) return finish(s, 'defeat', 'ally_hq_routed');
+    if (allyHq && allyHq.status === 'withdrawn') {
+        if (P.def.type === 'retreat_success') {
+            withdrawAll();
+            recheck();
+        }
+        return endRetreat('ordered_retreat');
+    }
+    if (P.state === 'done') return finish(s, 'victory', P.def.type === 'destroy_hq' && enemyHq ? 'enemy_hq_routed' : 'objective_done');
+    if (P.state === 'failed') return finish(s, 'defeat', 'objective_failed');
+    if (P.def.type === 'destroy_hq') {
+        const enemyOthers = s.units.filter((u) => u.side === 'enemy' && !u.isHq);
+        if (enemyOthers.length > 0 && !enemyOthers.some(able)) return finish(s, 'victory', 'enemy_army_broken');
+    } else {
+        const enemies = s.units.filter((u) => u.side === 'enemy');
+        if (enemies.length > 0 && !enemies.some(able)) return finish(s, 'victory', 'enemy_army_broken');
+    }
+    const allyOthers = s.units.filter((u) => u.side === 'ally' && !u.isHq);
+    if (allyOthers.length > 0 && !allyOthers.some(able)) {
+        const withdrawn = allyOthers.filter((u) => u.status === 'withdrawn').length;
+        if (withdrawn >= allyOthers.length - withdrawn) {
+            withdrawAll();
+            recheck();
+            return endRetreat('ordered_retreat');
+        }
+        return finish(s, 'defeat', 'ally_army_broken');
+    }
+    if (s.tick >= Math.round(s.timeLimitSec / RULES.tick)) return endRetreat('nightfall');
 }
 
 // ---------------------------------------------------------------- 戦前の約束

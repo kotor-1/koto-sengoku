@@ -291,6 +291,8 @@ export const REASON_TEXT: Record<BattleEndReason, string> = {
     ally_army_broken: '味方の本陣以外の部隊が崩れ、戦える部隊がなくなった。若殿は兵をまとめて落ち延びた',
     ordered_retreat: '撤退を命じ、兵をまとめて戦場を離れた',
     nightfall: '日が暮れ、両軍とも兵を引いた',
+    objective_done: '主目標を果たした',
+    objective_failed: '主目標を果たせなかった',
 };
 
 export interface ResultRow {
@@ -422,6 +424,8 @@ export function scenarioTexts(s: BattleState): ScenarioTexts {
             ally_army_broken: '味方の本陣以外の部隊が崩れ、戦える部隊がなくなった。家康は兵をまとめて落ち延びた',
             ordered_retreat: '撤退を命じ、兵をまとめて戦場を離れた',
             nightfall: '日が暮れ、両軍とも兵を引いた',
+            objective_done: '主目標を果たした',
+            objective_failed: '主目標を果たせなかった',
         },
         notes: {
             victory: 'この局地戦には勝った。一度の勝利で相手の家が滅ぶわけではない。',

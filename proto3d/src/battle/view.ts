@@ -29,9 +29,10 @@ const PLEDGE_COLOR = '#5fe0c0';
 export const CLAN_COLOR: Record<ClanId, string> = {
     kotosaka: '#2f55a8', washio: '#a8322a', tashiro: '#2f7d45', omori: '#c08d22',
     tokugawa: '#2f55a8', oda: '#c9a227', asai: '#3b3f8f', asakura: '#7a3b8f', ronin: '#6b6259',
+    rival: '#8a3a2e',
 };
 /** 家の旗の字（仮） */
-export const CLAN_CHAR: Record<ClanId, string> = { kotosaka: '琴', washio: '鷲', tashiro: '田', omori: '森', tokugawa: '徳', oda: '織', asai: '浅', asakura: '朝', ronin: '浪' };
+export const CLAN_CHAR: Record<ClanId, string> = { kotosaka: '琴', washio: '鷲', tashiro: '田', omori: '森', tokugawa: '徳', oda: '織', asai: '浅', asakura: '朝', ronin: '浪', rival: '敵' };
 /** 陣営の色（輪・名札）。同じ家が味方にも敵にもなるので、敵味方はこちらで見分ける */
 export const SIDE_COLOR: Record<Side, string> = { ally: '#8fdcff', enemy: '#ff5b4c' };
 
