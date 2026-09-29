@@ -31,7 +31,17 @@ export type UnitStatus =
     | 'destroyed'; // 兵がいなくなった
 
 /** 所属（家）。協力陣営の選択で、同じ家が味方にも敵にもなる */
-export type ClanId = 'kotosaka' | 'washio' | 'tashiro' | 'omori';
+export type ClanId =
+    | 'kotosaka' | 'washio' | 'tashiro' | 'omori' // 架空の第一章「国境の砦」
+    | 'tokugawa' | 'oda' | 'asai' | 'asakura' | 'ronin'; // 歴史分岐「元亀元年・家康」（ronin は架空の浪人衆）
+
+/**
+ * 武将固有の特殊能力（ゲーム用の創作。史実の人物の能力ではない）。数値は battle/abilities.ts のデータに置く。
+ * - ieyasu_rally：立て直しの号令（家康本陣）
+ * - tadakatsu_rearguard：退路の守護（本多忠勝隊）
+ * - nagamasa_support：盟友への援護（浅井長政隊。対象の部隊を 1 つ選ぶ）
+ */
+export type AbilityId = 'ieyasu_rally' | 'tadakatsu_rearguard' | 'nagamasa_support';
 
 /** 部隊の初期設定（章の進行が、協力陣営の選択などから作る） */
 export interface UnitDef {
@@ -57,6 +67,8 @@ export interface UnitDef {
     order?: Order;
     /** 敵の考え方の役割（ai.ts が使う。味方の部隊では使わない） */
     aiRole?: 'hold_line' | 'reserve' | 'flank' | 'guard_hq';
+    /** この部隊を率いる武将の特殊能力（武将がいる部隊だけ。1 合戦 1 回） */
+    ability?: AbilityId;
 }
 
 /** 地形の区域（四角形または円） */
@@ -94,6 +106,17 @@ export interface BattleSetup {
     timeLimitSec: number;
     /** 合戦の前に表示する目的・勝ち負けの条件の説明（章の進行が文章を作る） */
     briefing: string[];
+    /**
+     * 戦前の約束（歴史分岐シナリオ。引き受けたときだけ）。合戦の計算が達成を判定して BattleOutcome.pledge に入れる。
+     * 達成：対象が安全地点に holdSec 秒以上いた、または撤退の命令で退き口から離れた、または終わりに戦えている —
+     * そのうえで兵が最初の minStrengthRatio 以上。対象の敗走・全滅は未達成。
+     */
+    pledge?: {
+        targetId: string;
+        safeZone: { cx: number; cz: number; r: number };
+        holdSec: number;
+        minStrengthRatio: number;
+    };
 }
 
 /** 合戦の結果の種類 */
@@ -127,6 +150,10 @@ export interface BattleOutcome {
         endStrength: number;
         status: UnitStatus;
     }[];
+    /** 戦前の約束の達成（BattleSetup.pledge があったときだけ）。勝敗とは別に判定する */
+    pledge?: { targetId: string; result: 'kept' | 'broken' };
+    /** 特殊能力を使った記録（部隊 id → 使った時刻・秒） */
+    abilitiesUsed?: Record<string, number>;
 }
 
 /** 合戦の画面を呼ぶ側（章の進行）への知らせ */

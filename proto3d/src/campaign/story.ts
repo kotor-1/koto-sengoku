@@ -75,7 +75,10 @@ export const CHARACTER_FULL_NAMES: Readonly<Record<CharacterId, string>> = {
     omori_envoy: '大森 弥左衛門（大森家の使者）',
     washio_gen: '鷲尾 玄蕃（鷲尾家の侍大将）',
 };
-export const CLAN_NAMES: Readonly<Record<ClanId, string>> = { kotosaka: '琴坂家', washio: '鷲尾家', tashiro: '田代家', omori: '大森家' };
+export const CLAN_NAMES: Readonly<Record<ClanId, string>> = {
+    kotosaka: '琴坂家', washio: '鷲尾家', tashiro: '田代家', omori: '大森家',
+    tokugawa: '徳川家', oda: '織田家', asai: '浅井家', asakura: '朝倉家', ronin: '浪人衆',
+};
 export const ALLIANCE_LABELS: Readonly<Record<Alliance, string>> = { tashiro: '田代家と組む', omori: '大森家と組む', alone: '独力で戦う' };
 /** 結末・記録で使う（過去形） */
 export const ALLIANCE_DONE_LABELS: Readonly<Record<Alliance, string>> = { tashiro: '田代家と組んだ', omori: '大森家と組んだ', alone: '独力で戦った' };

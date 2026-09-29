@@ -21,7 +21,8 @@ export type Alliance = 'tashiro' | 'omori' | 'alone';
 export const ALLIANCES: readonly Alliance[] = ['tashiro', 'omori', 'alone'];
 
 /** 関係を持つ家（主家の琴坂は除く） */
-export type RelationClan = Exclude<ClanId, 'kotosaka'>;
+// 架空の第一章の家だけ（歴史分岐シナリオの家は別のシナリオの状態で持つ。架空のセーブの形は変えない）
+export type RelationClan = Extract<ClanId, 'tashiro' | 'omori' | 'washio'>;
 export const RELATION_CLANS: readonly RelationClan[] = ['tashiro', 'omori', 'washio'];
 export const RELATION_MIN = -100;
 export const RELATION_MAX = 100;
