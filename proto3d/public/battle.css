@@ -649,6 +649,10 @@ body.mode-battle #build { display: none !important; }
     .b-gen { gap: 0 6px; }
     .b-gen-role { font-size: 9.5px; padding: 0 4px; }
     .b-gen-ab { font-size: 10px; }
+    /* 能力の欄が続くときは、武将の行は名前と役割だけの細い一行（固有能力は下の見出しに出ている）。左上の縦の長さを抑える */
+    .b-gen:has(+ .b-ab-h) { font-size: 10.5px; line-height: 1.2; }
+    .b-gen:has(+ .b-ab-h) .b-gen-ab { display: none; }
+    .b-gen + .b-ab-h { margin-top: 1px; padding-top: 1px; border-top: none; }
     /* 札が 5 部隊以上：小さな札を横に流す（指でなぞってずらす） */
     .b-bottom.many { --card-h: 66px; }
     .b-cards.many { gap: 5px; padding: 1px; }
