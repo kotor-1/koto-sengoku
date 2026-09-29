@@ -9,7 +9,7 @@
 | 既存版への影響 | なし。既存の `npm run dev` / `build` / `test` は 2D 版のまま。3D 版は別のコマンド・別の出力先（`dist-proto3d/`） |
 | 起動 | `npm run proto3d:dev` → http://localhost:8090/ （`?fps` で速さ、`?q=low` で画質「低」、`?view=top` でこれまでの斜め見下ろしの固定カメラ、`?hero=old` で旧の主人公） |
 | 確認用 URL（非公開） | https://claude.ai/artifact/VeuwbhdPeu1oVmXh3TAFJC （本番ビルド。2D 版の URL とは別のページ。以前の https://claude.ai/artifact/SnZ83D396bACUB728hCpp8 は、モデルを読み込めず表示できなかった）。この置き場所は `.glb` を配れず、`data:` の URL も読み込めないため、glTF（JSON 形式）に変換し、質感の画像は別ファイルにして置く（`proto3d/tools/glb-to-gltf.mjs`、`VITE_MODEL_EXT=.json` でビルド。埋め込んだ形のデータはページ側で戻す） |
-| 確認用 URL の版 | Version 7（版 ID 1790399155-950e）＝コミット f280ee4 の本番ビルド（Blender で作った城門前の素材）。前の版（肩越しの探索・コードで作った素材、コミット 85c1099）は版 ID 1790349356-2552 で、公開先の版の履歴から戻せる。置き場所の容量（1 版 64MB）のため、今の画面で読み込む素材だけを置き、中身が同じ画像は変換で 1 つにまとめる（`glb-to-gltf.mjs <入力> <出力> 素材名…`） |
+| 確認用 URL の版 | **Version 8（版 ID 1790671959-425b）＝コミット 1f0f7bd の本番ビルド（第一章を開始から結末まで遊べる版）**。公開したファイルは `dist-proto3d/` 一式 130 個（約 60MB。使わなくなった旧 `hero_v3` の素材と前の版の JS は外した）。公開先の上で開いて遊べるかは、このコンテナからは確かめていない（同じファイルを CSP の下で開く `e2e/chapter1-prod.mjs` は合格）。前の版：Version 7（版 ID 1790399155-950e）＝コミット f280ee4（第一章より前・Blender で作った城門前の素材）、その前は版 ID 1790349356-2552（コミット 85c1099）で、公開先の版の履歴から戻せる。置き場所の容量（1 版 64MB）のため、今の画面で読み込む素材だけを置き、中身が同じ画像は変換で 1 つにまとめる（`glb-to-gltf.mjs <入力> <出力> 素材名…`） |
 
 ## 第一章（一つのゲームとして遊べる版・仮シナリオ）
 
@@ -25,7 +25,7 @@
 | 保存 | 端末内（`localStorage` の `koto-sengoku/3d-chapter1`）。自動（出陣前・戦後・結末）と、探索中のメニューの「保存する」。書いた後に読み戻して確かめる。つづきからで段階・陣営・関係・兵・人物・会話の済み印・位置が戻る（出陣前の保存からは支度の段階の開始の位置から）。合戦の途中の保存はしない。2D 版の保存（`koto-sengoku/save`）には触れない。はじめからの前の保存は `koto-sengoku/3d-chapter1/previous` に控え |
 | 詳しく | 仕様：`docs/chapter1-spec.md`。遊び方・ファイルの役目・確認のしかた・開発用のフック：`docs/chapter1-play.md` |
 | 通しの確認 | `e2e/chapter1-routes.mjs`（開発サーバー。田代 × 勝利・大森 × 敗北・独力 × 撤退、保存して開き直し、スマホのタッチ。合戦の命令は画面の操作）、`e2e/chapter1-prod.mjs`（本番ビルドを CSP の下で。開発用のフックなし） |
-| 公開 | `VITE_MODEL_EXT=.json npm run proto3d:build` の後、`dist-proto3d/models/*.glb` を消して `node proto3d/tools/glb-to-gltf.mjs proto3d/public/models dist-proto3d/models ground_v2 gate_v2 walls_v2 keep inner machiya_a machiya_b machiya_d tree_pine tree_sakura tree_pine_far hero_v3_mpfb hero_v2`（`dist-proto3d/` 一式、約 58MB）。下の「確認用 URL の版」はこの第一章より前の版 |
+| 公開 | `VITE_MODEL_EXT=.json npm run proto3d:build` の後、`dist-proto3d/models/*.glb` を消して `node proto3d/tools/glb-to-gltf.mjs proto3d/public/models dist-proto3d/models ground_v2 gate_v2 walls_v2 keep inner machiya_a machiya_b machiya_d tree_pine tree_sakura tree_pine_far hero_v3_mpfb hero_v2`（`dist-proto3d/` 一式、約 58MB）。公開は `index.html` をページにし、ほかのファイルを同じ相対パスで添える。上の「確認用 URL の版」が今の公開の版 |
 
 ## 方針の更新（2026-09-25）
 
