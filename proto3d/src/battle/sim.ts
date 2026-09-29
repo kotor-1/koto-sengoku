@@ -22,6 +22,7 @@
  *   行き先が止まっている味方のすぐ隣なら、その隣で止まる（待機中の本陣が、後ろから来た予備隊に押し出されない）。
  */
 import type {
+    AbilityId,
     BattleEndReason,
     BattleMap,
     BattleOutcome,
@@ -36,6 +37,19 @@ import type {
     UnitStatus,
 } from './types';
 import { createAiState, thinkEnemy, type AiState } from './ai';
+import {
+    abilitiesUsedRecord,
+    abilityDealMul,
+    abilityMoraleLossMul,
+    abilityRoutMorale,
+    abilitySpeedMul,
+    abilityTakeMul,
+    createAbilityRuns,
+    enemyUseAbility,
+    isRooted,
+    updateAbilities,
+    type AbilityRun,
+} from './abilities';
 
 /** ルールの数値（画面の説明・テストからも読む） */
 export const RULES = {
@@ -142,6 +156,9 @@ export type BattleEventKind =
     | 'ai' // 敵の動き（見えているときだけ）
     | 'retreat_all' // 全軍撤退の命令
     | 'nightfall'
+    | 'ability' // 特殊能力を使った・援護が外れた／戻った（abilities.ts）
+    | 'ability_end' // 特殊能力の効果が終わった
+    | 'pledge' // 戦前の約束の対象が、安全地点で守りを固めた・退き口から離れた・崩れた
     | 'end';
 
 export interface BattleEvent {
@@ -165,6 +182,8 @@ export interface UnitState {
     readonly name: string;
     readonly leaderId?: string;
     readonly aiRole?: UnitDef['aiRole'];
+    /** 率いる武将の特殊能力（abilities.ts。武将のいる部隊だけ） */
+    readonly ability?: AbilityId;
     /** その陣営の本陣（その陣営の最初の honjin） */
     readonly isHq: boolean;
     readonly startStrength: number;
@@ -235,6 +254,49 @@ export interface BattleState {
     ai: AiState;
     /** 部隊の組ごとに、最後に斬り合った時刻（交戦の知らせを繰り返さないため） */
     contactT: Record<string, number>;
+    /** 特殊能力の状態（持つ部隊 id → 状態。abilities.ts）。能力のない合戦では空 */
+    abilities: Record<string, AbilityRun>;
+    /** abilities の並び（部隊の順） */
+    abilityList: AbilityRun[];
+    /** 戦前の約束の見張り（BattleSetup.pledge があるときだけ） */
+    pledge: PledgeTrack | null;
+}
+
+/** 戦前の約束の見張り（docs/ieyasu1570-design.md §5） */
+export interface PledgeTrack {
+    targetId: string;
+    safeZone: { cx: number; cz: number; r: number };
+    holdSec: number;
+    minStrengthRatio: number;
+    /** いま安全地点の中に続けている秒数（戦える状態で中にいる間だけ数える。出ると 0 に戻る） */
+    zoneSec: number;
+    /** 安全地点に holdSec 秒以上いた（一度満たせば消えない） */
+    secured: boolean;
+    /** 撤退の命令で退き口から戦場を離れた */
+    withdrew: boolean;
+    /** 対象が崩れたことを知らせた */
+    failNoted: boolean;
+}
+
+/** 約束の見通し（画面の表示用）。pending＝まだ決まらない（このまま終われば kept になる見込みかは onTrack） */
+export interface PledgeProgress {
+    targetId: string;
+    targetName: string;
+    /** 安全地点に続けている秒数・必要な秒数 */
+    zoneSec: number;
+    holdSec: number;
+    inZone: boolean;
+    secured: boolean;
+    withdrew: boolean;
+    /** 今の兵の割合（最初の兵に対して）と、必要な割合 */
+    strengthRatio: number;
+    minStrengthRatio: number;
+    /** 対象が敗走・全滅した（もう守れない） */
+    failed: boolean;
+    /** 今終わったら「守った」になる */
+    onTrack: boolean;
+    /** 合戦が終わっていれば結果 */
+    result: 'kept' | 'broken' | null;
 }
 
 // ---------------------------------------------------------------- 幾何
@@ -362,7 +424,7 @@ export function orderLabel(s: BattleState, u: UnitState): string {
     if (!u.arrived) return `到着待ち（${Math.max(0, Math.ceil(u.arriveAt - s.t))} 秒）`;
     switch (u.order.type) {
         case 'hold':
-            return '防衛・待機';
+            return isRooted(s, u.id) ? '踏みとどまる（退路の守護）' : '防衛・待機';
         case 'move':
             return '移動';
         case 'attack':
@@ -403,6 +465,7 @@ export function createBattle(setup: BattleSetup): BattleState {
             name: d.name,
             leaderId: d.leaderId,
             aiRole: d.aiRole,
+            ...(d.ability ? { ability: d.ability } : {}),
             isHq,
             startStrength: strength,
             strength,
@@ -445,7 +508,17 @@ export function createBattle(setup: BattleSetup): BattleState {
         result: null,
         ai: createAiState(units),
         contactT: {},
+        abilities: createAbilityRuns(setup.units),
+        abilityList: [],
+        pledge: null,
     };
+    s.abilityList = Object.values(s.abilities);
+    const pl = setup.pledge;
+    if (pl) {
+        const tgt = units.find((u) => u.id === pl.targetId);
+        if (!tgt || tgt.side !== 'ally') throw new Error(`約束の対象が味方の部隊にありません: ${pl.targetId}`);
+        s.pledge = { targetId: pl.targetId, safeZone: { ...pl.safeZone }, holdSec: pl.holdSec, minStrengthRatio: pl.minStrengthRatio, zoneSec: 0, secured: false, withdrew: false, failNoted: false };
+    }
     updateVisibility(s, null);
     s.events.push({ t: 0, kind: 'start', text: `${setup.map.name}の合戦が始まった` });
     return s;
@@ -460,6 +533,8 @@ export function createBattle(setup: BattleSetup): BattleState {
 export function issueOrder(s: BattleState, unitId: string, order: Order): boolean {
     const u = unitById(s, unitId);
     if (!u || !canCommand(s, u)) return false;
+    // 退路の守護で踏みとどまっている間は、動く命令（移動・攻撃・撤退）を受けない
+    if (order.type !== 'hold' && isRooted(s, u.id)) return false;
     switch (order.type) {
         case 'hold':
         case 'retreat':
@@ -495,6 +570,8 @@ export function orderAllRetreat(s: BattleState): boolean {
     s.allRetreatAt = s.t;
     for (const u of s.units) {
         if (u.side !== 'ally' || u.status !== 'ready') continue;
+        // 踏みとどまっている部隊は、効果が終わってから退く（abilities.ts の updateAbilities）
+        if (isRooted(s, u.id)) continue;
         u.order = { type: 'retreat' };
         u.faceGoal = null;
         if (!u.arrived) u.status = 'withdrawn';
@@ -566,6 +643,9 @@ function tick(s: BattleState): void {
         }
     }
 
+    // 1b. 特殊能力の効果の終わり・援護の外れ（能力のない合戦では何もしない）
+    updateAbilities(s);
+
     // 2. 見えているか
     updateVisibility(s, s.events);
 
@@ -574,6 +654,7 @@ function tick(s: BattleState): void {
         thinkEnemy(s, {
             issue: (id, o) => issueOrder(s, id, o),
             log: (text, unitId) => log(s, 'ai', text, unitId),
+            useAbility: (id, targetId) => enemyUseAbility(s, id, targetId).ok,
         });
     }
 
@@ -675,13 +756,15 @@ function tick(s: BattleState): void {
         if (meleeCount[i] >= 2) down += RULES.outnumberedPressure * dt;
         if (u.isHq && meleeCount[i] >= 1) down += RULES.hqUnderAttack * dt;
         down *= aura;
+        down *= abilityMoraleLossMul(s, u);
         let m = u.morale - down;
         if (t - u.lastHitT >= RULES.recoverDelay && !u.engagedWith) {
             m += (RULES.recoverRate + (aura < 1 ? RULES.recoverHqBonus : 0)) * dt;
-            m = Math.min(m, u.maxMorale);
+            // 号令で最初の士気より上がった分は、戻りで削らない
+            m = Math.min(m, Math.max(u.maxMorale, u.morale));
         }
         u.morale = clamp(m, 0, 100);
-        if (u.morale <= RULES.routMorale) routedNow.push(u);
+        if (u.morale <= abilityRoutMorale(s, u, RULES.routMorale)) routedNow.push(u);
     });
 
     // 8. 全滅・敗走
@@ -704,8 +787,9 @@ function tick(s: BattleState): void {
         log(s, 'rout', u.isHq ? `${u.name}が崩れた！` : `${u.name}が敗走した`, u.id);
         for (const o of s.units) {
             if (o === u || o.side !== u.side || !isActive(o)) continue;
-            if (u.isHq) o.morale = Math.max(0, o.morale - RULES.hqRoutShock);
-            else if (dist(o, u) <= RULES.nearbyRoutRadius) o.morale = Math.max(0, o.morale - RULES.nearbyRoutShock);
+            const mul = abilityMoraleLossMul(s, o);
+            if (u.isHq) o.morale = Math.max(0, o.morale - RULES.hqRoutShock * mul);
+            else if (dist(o, u) <= RULES.nearbyRoutRadius) o.morale = Math.max(0, o.morale - RULES.nearbyRoutShock * mul);
         }
     }
 
@@ -723,8 +807,15 @@ function tick(s: BattleState): void {
         else {
             u.status = 'withdrawn';
             log(s, 'withdrawn', `${u.name}が戦場を離れた`, u.id);
+            if (s.pledge && s.pledge.targetId === u.id && !s.pledge.withdrew) {
+                s.pledge.withdrew = true;
+                log(s, 'pledge', `${u.name}が退き口から無事に戦場を離れた（約束：兵が最初の ${Math.round(s.pledge.minStrengthRatio * 100)}% 以上なら守れる）`, u.id);
+            }
         }
     }
+
+    // 9b. 戦前の約束：対象が安全地点に続けていた時間
+    if (s.pledge) trackPledge(s, dt);
 
     // 10. 勝ち負け
     decide(s);
@@ -896,6 +987,8 @@ export function meleeDamage(s: BattleState, a: UnitState, d: UnitState, arc: 'fr
     // 突撃・追い討ち
     if (a.kind === 'kiba' && s.t <= a.chargeUntil) m *= RULES.chargeMul;
     if (d.status === 'routed') m *= RULES.pursuitMul;
+    // 特殊能力（号令・援護の代償、退路の守護・援護の守り。能力がなければ 1）
+    m *= abilityDealMul(s, a) * abilityTakeMul(s, d);
     return a.strength * m;
 }
 
@@ -905,6 +998,7 @@ export function rangedDamage(s: BattleState, a: UnitState, d: UnitState): number
     const fall = r <= RULES.bowFullRange ? 1 : 1 - (0.4 * (r - RULES.bowFullRange)) / (RULES.bowRange - RULES.bowFullRange);
     let m = RULES.rangedRate * KIND_STATS[d.kind].defence * moraleMul(a) * Math.max(0.6, fall);
     if (inTerrain(s.map, 'woods', d.x, d.z)) m *= RULES.woodsArcheryMul;
+    m *= abilityDealMul(s, a) * abilityTakeMul(s, d);
     return a.strength * m;
 }
 
@@ -928,7 +1022,7 @@ function moveUnit(s: BattleState, u: UnitState, p: Plan, dt: number): void {
                 u.facing = turnToward(u.facing, want, turnRate);
                 aligned = Math.abs(angleDiff(u.facing, want)) <= 45 * DEG ? 1 : 0.25;
             }
-            let speed = st.speed * speedFactorAt(s.map, u.x, u.z) * aligned;
+            let speed = st.speed * speedFactorAt(s.map, u.x, u.z) * aligned * abilitySpeedMul(s, u);
             if (u.status === 'routed') speed *= 1.2;
             const step = Math.min(speed * dt, room);
             // 相手の部隊の中へは入らない（14 m より近づかない）
@@ -1126,6 +1220,11 @@ function finish(s: BattleState, result: BattleResultKind, reason: BattleEndReaso
             status: u.status,
         })),
     };
+    if (s.abilityList.length > 0) s.result.abilitiesUsed = abilitiesUsedRecord(s);
+    if (s.pledge) {
+        const p = pledgeProgress(s)!;
+        s.result.pledge = { targetId: p.targetId, result: p.onTrack ? 'kept' : 'broken' };
+    }
     const text: Record<BattleEndReason, string> = {
         enemy_hq_routed: '敵の本陣が崩れた。勝利',
         enemy_army_broken: '敵の諸隊が崩れた。勝利',
@@ -1177,4 +1276,56 @@ function decide(s: BattleState): void {
         return finish(s, 'defeat', 'ally_army_broken');
     }
     if (s.tick >= Math.round(s.timeLimitSec / RULES.tick)) return finish(s, 'retreat', 'nightfall');
+}
+
+// ---------------------------------------------------------------- 戦前の約束
+
+/** 毎刻み：対象が戦える状態で安全地点の中にいる時間を数える（出ると 0 に戻る。一瞬触れただけでは満たさない） */
+function trackPledge(s: BattleState, dt: number): void {
+    const p = s.pledge!;
+    const u = unitById(s, p.targetId);
+    if (!u) return;
+    const inside = u.present && u.status === 'ready' && Math.hypot(u.x - p.safeZone.cx, u.z - p.safeZone.cz) <= p.safeZone.r;
+    p.zoneSec = inside ? p.zoneSec + dt : 0;
+    if (!p.failNoted && (u.status === 'routed' || u.status === 'destroyed')) {
+        p.failNoted = true;
+        log(s, 'pledge', `${u.name}が崩れた。約束（退路を守る）は果たせない`, u.id);
+    }
+    if (!p.secured && p.zoneSec >= p.holdSec - 1e-9) {
+        p.secured = true;
+        log(s, 'pledge', `${u.name}が味方の陣で ${p.holdSec} 秒持ちこたえた（約束：兵が最初の ${Math.round(p.minStrengthRatio * 100)}% 以上なら守れる）`, u.id);
+    }
+}
+
+/**
+ * 約束の見通し（約束のない合戦は null）。判定（docs/ieyasu1570-design.md §5）：
+ * - 守れた：対象が「安全地点に holdSec 秒以上いた、または撤退の命令で退き口から離れた」か「合戦の終わりに戦えている」で、
+ *   兵が最初の minStrengthRatio 以上残っている。
+ * - 守れなかった：対象の敗走・全滅、または兵が足りない。承諾しただけ・安全地点に一瞬触れただけでは満たさない。
+ */
+export function pledgeProgress(s: BattleState): PledgeProgress | null {
+    const p = s.pledge;
+    if (!p) return null;
+    const u = unitById(s, p.targetId)!;
+    const ratio = u.startStrength > 0 ? u.strength / u.startStrength : 0;
+    const failed = u.status === 'routed' || u.status === 'destroyed';
+    const enough = ratio >= p.minStrengthRatio - 1e-9;
+    const reached = p.secured || p.withdrew;
+    const standing = u.status === 'ready' || u.status === 'withdrawn';
+    const onTrack = !failed && enough && (reached || standing);
+    const inZone = u.present && u.status === 'ready' && Math.hypot(u.x - p.safeZone.cx, u.z - p.safeZone.cz) <= p.safeZone.r;
+    return {
+        targetId: p.targetId,
+        targetName: u.name,
+        zoneSec: round1(p.zoneSec),
+        holdSec: p.holdSec,
+        inZone,
+        secured: p.secured,
+        withdrew: p.withdrew,
+        strengthRatio: ratio,
+        minStrengthRatio: p.minStrengthRatio,
+        failed,
+        onTrack,
+        result: s.result ? (s.result.pledge?.result ?? null) : null,
+    };
 }

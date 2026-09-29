@@ -17,8 +17,9 @@ import { isFree } from '../game/motion';
 
 export type CastKind = 'person' | 'notice' | 'gate';
 
-export interface CastMember {
-    id: TalkId;
+/** 置くもの。Id は話しかける相手の id（架空の第一章は TalkId。歴史分岐シナリオは自分の id を使う） */
+export interface CastMember<Id extends string = TalkId> {
+    id: Id;
     kind: CastKind;
     /** 見た目の元（人物のとき。explore/world.ts が色を変える） */
     look?: CharacterId;
@@ -55,8 +56,9 @@ const WEST = -Math.PI / 2;
 const SOUTH = 0;
 
 /** 置き場所（段階ごと）。[x, z, 向き]。向きを省けば開始の位置の方を向く */
-type Spot = [number, number, number?];
-const SPOTS: Record<'explore' | 'muster' | 'aftermath', Partial<Record<TalkId | 'genzo_sit' | 'shinpachi_sit' | 'envoy' | 'envoy_sit', Spot>>> = {
+export type Spot = [number, number, number?];
+/** 置き場所（歴史分岐シナリオの配役も同じ場所を使う：通り道を塞がないことを確かめてある） */
+export const SPOTS: Record<'explore' | 'muster' | 'aftermath', Partial<Record<TalkId | 'genzo_sit' | 'shinpachi_sit' | 'envoy' | 'envoy_sit', Spot>>> = {
     explore: {
         // 源蔵：門の手前、道の西寄り（開始の画面の正面やや左に見える）
         genzo: [-1.5, -7.2],
@@ -149,13 +151,13 @@ export function castFor(state: CampaignState): CastMember[] {
 }
 
 /** 置いたものの当たり判定（探索の歩きの判定に足す） */
-export function castColliders(cast: readonly CastMember[]): Rect[] {
+export function castColliders(cast: readonly CastMember<string>[]): Rect[] {
     return cast.flatMap((c) => (c.solid ? [c.solid] : []));
 }
 
 /** 主人公の位置から、話しかけられる一番近い相手（届く範囲に誰もいなければ null） */
-export function nearestInteractable(cast: readonly CastMember[], x: number, z: number): CastMember | null {
-    let best: CastMember | null = null;
+export function nearestInteractable<C extends CastMember<string>>(cast: readonly C[], x: number, z: number): C | null {
+    let best: C | null = null;
     let bestScore = Infinity;
     for (const c of cast) {
         const d = Math.hypot(c.x - x, c.z - z);
@@ -171,7 +173,7 @@ export function nearestInteractable(cast: readonly CastMember[], x: number, z: n
 }
 
 /** 城門の出陣の場所の中にいるか */
-export function inGateZone(cast: readonly CastMember[], x: number, z: number): boolean {
+export function inGateZone(cast: readonly CastMember<string>[], x: number, z: number): boolean {
     return cast.some((c) => c.kind === 'gate' && Math.hypot(c.x - x, c.z - z) <= c.reach);
 }
 
@@ -182,7 +184,7 @@ export const DEFAULT_POSE = { x: START.x, z: START.z, heading: START.heading } a
  * 保存の位置をそのまま使えるか確かめる（壁・人物の中・歩ける範囲の外なら開始の位置へ。2D 版の「位置が壁の中なら初期位置に戻す」と同じ）。
  * 城門の出陣の場所の中に戻すと、すぐ出陣の確認が出てしまうので、その場合も開始の位置へ。
  */
-export function safePose(pose: { x: number; z: number; heading: number } | null, cast: readonly CastMember[], walls: Rect[]): { x: number; z: number; heading: number } {
+export function safePose(pose: { x: number; z: number; heading: number } | null, cast: readonly CastMember<string>[], walls: Rect[]): { x: number; z: number; heading: number } {
     if (!pose) return { ...DEFAULT_POSE };
     const rects = [...walls, ...castColliders(cast)];
     if (!isFree(pose.x, pose.z, rects) || inGateZone(cast, pose.x, pose.z) || !inBounds(pose.x, pose.z)) return { ...DEFAULT_POSE };

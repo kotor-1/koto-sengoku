@@ -7,59 +7,53 @@
  * - 合戦は app/modes.ts の getBattleRunner()（battle/ が登録する）。部隊単位の指揮の画面で、ここは結果を受け取るだけ。
  * そのため Node 上のテスト（tests/proto3d-game.test.ts）で、偽の画面・場面を差し込んで章を最後まで通せる。
  *
- * 段階の進め方・台詞・保存の中身は flow.ts・story.ts・save.ts のまま使う（ここで勝手に状態を作らない）。
+ * 段階の進め方・台詞・保存の中身はシナリオ（scenario.ts の Scenario）が持つ（ここで勝手に状態を作らない）。
+ * - 架空の第一章「国境の砦」：fictional.ts（flow.ts・story.ts・save.ts のまま）。deps.scenarios を省くと、これだけで動く（今までと同じ）。
+ * - 歴史分岐「元亀元年・家康」：ieyasu1570/。
+ * 会話中のメニュー・知らせ・決着の時点の結果保存・合戦の id ごとに 1 回だけの反映・書いた後に読み戻す保存は、ここで共通に扱う。
  *
  * 仮シナリオ：人物・家・出来事はすべて架空の仮の設定（story.ts の先頭の注記）。
  */
 import type { BattleOutcome, BattleResultKind, BattleRunHooks, BattleSetup } from '../battle/types';
-import { castFor, inGateZone, nearestInteractable, safePose, type CastMember } from '../explore/cast';
-import {
-    addPlayTime,
-    applyBattleOutcome,
-    applyBattleOutcomeOnce,
-    battleSetupFor,
-    canSaveManually,
-    canTalk,
-    finishTalk,
-    newGame,
-    outcomeFromSetup,
-    setExplorePose,
-    talk,
-    withBattleId,
-} from './flow';
-import { CampaignSaveStore, SAVE_POINT_LABELS, describeSave, saveFailureMessage, type SavePoint } from './save';
-import { KOTOSAKA_UNIT_IDS, type Alliance, type CampaignState, type ChoiceId, type ExplorePose, type TalkId } from './state';
-import {
-    ALLIANCE_DONE_LABELS,
-    CHAPTER_TITLE,
-    CHARACTER_NAMES,
-    CLAN_NAMES,
-    PHASE_LABELS,
-    PROVISIONAL_LABEL,
-    PROVISIONAL_NOTE,
-    REASON_LABELS,
-    RESULT_LABELS,
-    STATUS_LABELS,
-    TROOP_UNIT_NAMES,
-    endingView,
-    objectiveText,
-    phaseIntro,
-    type EndingView,
-    type Script,
-} from './story';
+import { inGateZone, nearestInteractable, safePose, type CastMember } from '../explore/cast';
+import { applyBattleOutcome, battleSetupFor, finishTalk, newGame, outcomeFromSetup } from './flow';
+import { fictionalScenario } from './fictional';
+import { CampaignSaveStore, SAVE_POINT_LABELS, saveFailureMessage, type SavePoint } from './save';
+import { formatSavedTime, type AnyScenario, type Scenario, type ScenarioEndingView, type ScenarioId, type ScenarioScript, type ScenarioStateCore, type StatusLine } from './scenario';
+import type { Alliance, CampaignState, ChoiceId, ExplorePose, TalkId } from './state';
 import type { Rect } from '../layout';
+
+export { statusLines } from './fictional';
+export type { StatusLine } from './scenario';
 
 // ================= 画面と場面の約束 =================
 
-export interface TitleInfo {
+/** タイトルに並べるシナリオ 1 つ分 */
+export interface TitleScenarioInfo {
+    id: ScenarioId;
+    /** 章の名前 */
+    title: string;
+    /** 短い札（「仮シナリオ」「歴史分岐・創作を含む」） */
+    label: string;
     /** 続きから遊べる保存（無ければ null） */
     save: { summary: string } | null;
     /** 保存を読めないときの説明（壊れている・保存領域が使えない） */
     problem: string | null;
-    /** 仮シナリオの注記 */
+    /** 史実と創作の区別の注記 */
     note: string;
 }
-export type TitleAction = 'new' | 'continue';
+export interface TitleInfo {
+    /** 続きから遊べる保存（無ければ null）。最初のシナリオ（scenarios[0]）の物 */
+    save: { summary: string } | null;
+    /** 保存を読めないときの説明（壊れている・保存領域が使えない）。最初のシナリオの物 */
+    problem: string | null;
+    /** 最初のシナリオの注記 */
+    note: string;
+    /** 選べるシナリオ（1 つだけのときは、上の 3 つと同じ中身が 1 つ入る） */
+    scenarios: TitleScenarioInfo[];
+}
+/** 'new'／'continue' は最初のシナリオ。'new:ieyasu1570' のようにシナリオを指定もできる */
+export type TitleAction = 'new' | 'continue' | `${'new' | 'continue'}:${ScenarioId}`;
 
 export interface ConfirmOptions {
     title: string;
@@ -71,10 +65,6 @@ export interface ConfirmOptions {
     cancelId?: string;
 }
 
-export interface StatusLine {
-    label: string;
-    value: string;
-}
 export interface MenuInfo {
     status: StatusLine[];
     canSave: boolean;
@@ -92,7 +82,7 @@ export interface HudInfo {
     provisional: string;
 }
 export interface PromptInfo {
-    id: TalkId;
+    id: string;
     verb: string;
     label: string;
 }
@@ -106,10 +96,10 @@ export interface ScriptOptions {
 export interface GameView {
     title(info: TitleInfo): Promise<TitleAction>;
     /** 台詞を順に見せ、選択肢があれば選ばせて、選んだ id を返す（選択肢が無ければ null） */
-    script(script: Script, opts: ScriptOptions): Promise<ChoiceId | null>;
+    script(script: ScenarioScript, opts: ScriptOptions): Promise<string | null>;
     confirm(opts: ConfirmOptions): Promise<string>;
     menu(info: MenuInfo): Promise<MenuAction>;
-    ending(view: EndingView): Promise<void>;
+    ending(view: ScenarioEndingView): Promise<void>;
     hud(info: HudInfo | null): void;
     prompt(p: PromptInfo | null): void;
     intro(title: string, text: string): void;
@@ -120,13 +110,13 @@ export interface GameView {
 
 /** 探索の場面（explore/world.ts） */
 export interface GameWorld {
-    setCast(cast: CastMember[]): void;
+    setCast(cast: CastMember<string>[]): void;
     heroPose(): ExplorePose;
     setHeroPose(p: ExplorePose): void;
     /** 探索の操作（歩く・見回す）を許す／止める。止めるときは押している入力も離す */
     setControl(enabled: boolean): void;
     /** 話す相手と主人公を向き合わせる */
-    faceTalk?(id: TalkId): void;
+    faceTalk?(id: string): void;
     /** 主人公が歩けない所（壁・家。人物の当たり判定は含めない） */
     walls(): Rect[];
 }
@@ -137,7 +127,10 @@ export type BattleRunnerLike = (setup: BattleSetup, hooks?: BattleRunHooks) => P
 export interface GameDeps {
     view: GameView;
     world: GameWorld;
+    /** 架空の第一章の保存（'koto-sengoku/3d-chapter1'）。scenarios を省いたときは、これで架空の第一章だけを動かす */
     store: CampaignSaveStore;
+    /** 並べるシナリオ（タイトルの順）。省けば架空の第一章だけ */
+    scenarios?: AnyScenario[];
     /** 合戦の画面（読み込みを待つことがあるので Promise）。読み込めなければ null か例外（「もう一度／タイトルへ」を出す） */
     battleRunner: () => Promise<BattleRunnerLike | null>;
     /** 今の時刻（ミリ秒。合戦にかかった時間を遊んだ時間に足す） */
@@ -148,12 +141,18 @@ export type GameScreen = 'boot' | 'title' | 'explore' | 'talk' | 'council' | 'me
 
 // ================= 本体 =================
 
-export class ChapterGame {
-    private _state: CampaignState | null = null;
+/** 遊んでいるシナリオと、その状態 */
+type Run = { scenario: AnyScenario; state: ScenarioStateCore };
+
+/**
+ * 章を 1 つのゲームとしてつなぐ。S は state の型（架空の第一章だけなら CampaignState。複数のシナリオを並べるときは呼ぶ側が決める）。
+ */
+export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
+    private run: Run | null = null;
     private _screen: GameScreen = 'boot';
     private busy = false;
-    private cast: CastMember[] = [];
-    private prompted: CastMember | null = null;
+    private cast: CastMember<string>[] = [];
+    private prompted: CastMember<string> | null = null;
     /** 城門の出陣の場所に入ったまま（出てから入り直すまで、もう一度は確認を出さない） */
     private inGate = false;
     /** まだ状態に足していない遊んだ時間（秒） */
@@ -165,25 +164,54 @@ export class ChapterGame {
     private epoch = 0;
     /** 出陣ごとの合戦の id の通し番号 */
     private battleSeq = 0;
+    /** 並べるシナリオ（タイトルの順） */
+    readonly scenarios: readonly AnyScenario[];
     /** 確認用：最後に起きた誤り */
     lastError: string | null = null;
 
     constructor(private readonly deps: GameDeps) {
         this.now = deps.now ?? (() => Date.now());
+        this.scenarios = deps.scenarios && deps.scenarios.length > 0 ? deps.scenarios.slice() : [fictionalScenario(deps.store)];
     }
 
-    get state(): CampaignState | null {
-        return this._state;
+    get state(): S | null {
+        return (this.run?.state as S | undefined) ?? null;
+    }
+    /** 遊んでいるシナリオ（タイトルでは null） */
+    get scenarioId(): ScenarioId | null {
+        return this.run?.scenario.id ?? null;
     }
     get screen(): GameScreen {
         return this._screen;
     }
-    get castNow(): readonly CastMember[] {
+    get castNow(): readonly CastMember<string>[] {
         return this.cast;
     }
     /** 今「話す」ボタンに出ている相手 */
-    get promptTarget(): TalkId | null {
+    get promptTarget(): string | null {
         return this.prompted?.id ?? null;
+    }
+
+    /** 遊んでいるシナリオ（無ければ投げる。画面の流れの中だけで使う） */
+    private get sc(): AnyScenario {
+        if (!this.run) throw new Error('シナリオが始まっていません');
+        return this.run.scenario;
+    }
+    /** 今の状態（無ければ投げる） */
+    private get st(): ScenarioStateCore {
+        if (!this.run) throw new Error('シナリオが始まっていません');
+        return this.run.state;
+    }
+    private set st(s: ScenarioStateCore) {
+        if (!this.run) throw new Error('シナリオが始まっていません');
+        this.run.state = s;
+    }
+
+    private scenarioOf(id: ScenarioId | undefined): AnyScenario {
+        if (id === undefined) return this.scenarios[0]!;
+        const sc = this.scenarios.find((x) => x.id === id);
+        if (!sc) throw new Error(`シナリオ ${id} はありません`);
+        return sc;
     }
 
     /** 確認用：待っている画面の流れを捨てる（開発ビルドの __game.setPhase だけ。画面は先に閉じておく） */
@@ -201,8 +229,8 @@ export class ChapterGame {
     // ---------------- タイトル ----------------
 
     async title(): Promise<void> {
-        const { view, world, store } = this.deps;
-        this._state = null;
+        const { view, world } = this.deps;
+        this.run = null;
         this._screen = 'title';
         this.setPrompt(null);
         view.hud(null);
@@ -210,26 +238,37 @@ export class ChapterGame {
         this.cast = [];
         world.setCast([]);
         for (;;) {
-            const loaded = store.load();
-            const info: TitleInfo = {
-                save: loaded.status === 'ok' ? { summary: describeSave(loaded.data) } : null,
+            const loads = this.scenarios.map((sc) => ({ sc, loaded: sc.store.load() }));
+            const entries: TitleScenarioInfo[] = loads.map(({ sc, loaded }) => ({
+                id: sc.id,
+                title: sc.chapterTitle,
+                label: sc.label,
+                save: loaded.status === 'ok' ? { summary: loaded.summary } : null,
                 problem: loaded.status === 'corrupt' || loaded.status === 'unavailable' ? loaded.message : null,
-                note: PROVISIONAL_NOTE,
-            };
+                note: sc.note,
+            }));
+            const first = entries[0]!;
+            const info: TitleInfo = { save: first.save, problem: first.problem, note: first.note, scenarios: entries };
             const act = await view.title(info);
-            if (act === 'continue') {
+            const [kind, sid] = act.split(':') as ['new' | 'continue', ScenarioId | undefined];
+            const pick = loads.find((l) => l.sc.id === (sid ?? loads[0]!.sc.id));
+            if (!pick) continue;
+            const { sc, loaded } = pick;
+            if (kind === 'continue') {
                 if (loaded.status !== 'ok') continue;
-                this.begin(loaded.state);
+                this.begin(loaded.state, sc.id);
                 return;
             }
             // はじめから：前の保存があれば、上書きのことを知らせて確かめる（前の保存は控えに写して残す）
             if (loaded.status === 'ok' || loaded.status === 'corrupt') {
-                const what = loaded.status === 'ok' ? `今の保存（${describeSave(loaded.data)}）` : '読み込めない保存データ';
+                const what = loaded.status === 'ok' ? `今の保存（${loaded.summary}）` : '読み込めない保存データ';
                 const c = await view.confirm({
                     title: 'はじめから遊ぶ',
                     lines: [
                         `${what}は、この後で保存したときに上書きされます。`,
-                        '念のため、今の保存を控えとして 1 つ残します（前の控えは置き換わります）。2D 版の保存には触れません。',
+                        this.scenarios.length > 1
+                            ? '念のため、今の保存を控えとして 1 つ残します（前の控えは置き換わります）。ほかのシナリオの保存と、2D 版の保存には触れません。'
+                            : '念のため、今の保存を控えとして 1 つ残します（前の控えは置き換わります）。2D 版の保存には触れません。',
                     ],
                     buttons: [
                         { id: 'new', label: 'はじめから遊ぶ' },
@@ -239,7 +278,7 @@ export class ChapterGame {
                     cancelId: 'back',
                 });
                 if (c !== 'new') continue;
-                if (!store.archivePrevious()) {
+                if (!sc.store.archivePrevious()) {
                     const c2 = await view.confirm({
                         title: '控えを作れませんでした',
                         lines: ['今の保存の控えを書き込めませんでした。はじめから遊んで保存すると、今の保存は上書きされます。'],
@@ -255,14 +294,17 @@ export class ChapterGame {
             } else if (loaded.status === 'unavailable') {
                 view.toast(`${loaded.message}このまま遊べますが、保存はできません。`, 'error');
             }
-            this.begin(newGame());
+            this.begin(sc.newGame(), sc.id);
             return;
         }
     }
 
-    /** 状態から遊び始める（はじめから・つづきから・確認用） */
-    begin(state: CampaignState): void {
-        this._state = state;
+    /**
+     * 状態から遊び始める（はじめから・つづきから・確認用）。scenario を省けば架空の第一章（無ければ最初のシナリオ）。
+     */
+    begin(state: S, scenario?: ScenarioId): void {
+        const sc = this.scenarioOf(scenario ?? (this.scenarios.some((x) => x.id === 'fictional') ? 'fictional' : undefined));
+        this.run = { scenario: sc, state };
         this.playAcc = 0;
         if (state.phase === 'ending') {
             void this.showEnding();
@@ -283,9 +325,9 @@ export class ChapterGame {
 
     /** 探索の場面に入る（人物を置き、主人公を立たせ、段階の案内を出す）。pose 'keep' は今の位置のまま */
     private enterField(pose: ExplorePose | null | 'keep'): void {
-        const s = this._state!;
+        const s = this.st;
         const { view, world } = this.deps;
-        this.cast = castFor(s);
+        this.cast = this.sc.cast(s);
         world.setCast(this.cast);
         if (pose !== 'keep') world.setHeroPose(safePose(pose, this.cast, world.walls()));
         const p = world.heroPose();
@@ -294,19 +336,19 @@ export class ChapterGame {
         this._screen = 'explore';
         this.prompted = null;
         view.hud(this.hudInfo());
-        const intro = phaseIntro(s);
+        const intro = this.sc.phaseIntro(s);
         view.intro(intro.title, intro.text);
         world.setControl(!this.busy);
     }
 
     private hudInfo(): HudInfo {
-        const s = this._state!;
-        return { chapter: CHAPTER_TITLE, phase: PHASE_LABELS[s.phase], objective: objectiveText(s), provisional: PROVISIONAL_LABEL };
+        const s = this.st;
+        const sc = this.sc;
+        return { chapter: sc.chapterTitle, phase: sc.phaseLabel(s.phase), objective: sc.objective(s), provisional: sc.label };
     }
 
     private refreshField(): void {
-        const s = this._state!;
-        this.cast = castFor(s);
+        this.cast = this.sc.cast(this.st);
         this.deps.world.setCast(this.cast);
         this.deps.view.hud(this.hudInfo());
     }
@@ -315,21 +357,22 @@ export class ChapterGame {
 
     /** 探索の毎フレーム（main.ts から）。近くの相手の「話す」ボタン、城門の出陣の確認、遊んだ時間 */
     tick(dt: number): void {
-        if (!this._state || this._screen !== 'explore') return;
+        if (!this.run || this._screen !== 'explore') return;
         if (Number.isFinite(dt) && dt > 0) this.playAcc += Math.min(dt, 1);
         if (this.busy) return;
         const p = this.deps.world.heroPose();
         const gate = inGateZone(this.cast, p.x, p.z);
         if (gate && !this.inGate) {
             this.inGate = true;
-            void this.interact('gate');
+            const g = this.cast.find((c) => c.kind === 'gate');
+            if (g) void this.interact(g.id);
             return;
         }
         if (!gate) this.inGate = false;
         this.setPrompt(nearestInteractable(this.cast, p.x, p.z));
     }
 
-    private setPrompt(c: CastMember | null): void {
+    private setPrompt(c: CastMember<string> | null): void {
         if (c === this.prompted) return;
         this.prompted = c;
         this.deps.view.prompt(c ? { id: c.id, verb: c.verb, label: c.label } : null);
@@ -341,22 +384,22 @@ export class ChapterGame {
      * 話しかける（「話す」ボタン・E／Enter／Space）。id を省けば、今ボタンに出ている相手。
      * 確認用（__game.talk）では距離を問わず、今の段階で居る相手と話せる。
      */
-    async interact(id?: TalkId): Promise<void> {
-        if (this.busy || this._screen !== 'explore' || !this._state) return;
+    async interact(id?: string): Promise<void> {
+        if (this.busy || this._screen !== 'explore' || !this.run) return;
         const target = id ?? this.prompted?.id;
-        if (!target || !canTalk(this._state, target)) return;
+        if (!target || !this.sc.canTalk(this.st, target)) return;
         const after = { ending: false };
         await this.exclusive(async () => {
             this._screen = 'talk';
             this.deps.world.faceTalk?.(target);
-            const script = talk(this._state!, target);
+            const script = this.sc.talk(this.st, target);
             const choice = await this.deps.view.script(script, { mode: 'talk' });
-            if (target === 'gate' && choice === 'depart') {
-                await this.depart();
+            if (this.sc.isDeparture(target, choice)) {
+                await this.depart(target, choice!);
                 return;
             }
-            this._state = finishTalk(this._state!, target, choice ?? undefined);
-            const phase = this._state.phase;
+            this.st = this.sc.finishTalk(this.st, target, choice ?? undefined);
+            const phase = this.st.phase;
             if (phase === 'council') {
                 await this.runCouncil();
                 return;
@@ -371,19 +414,19 @@ export class ChapterGame {
         if (after.ending) void this.reachEnding();
     }
 
-    /** 軍議：協力陣営を選び、確かめて決める（考え直すと選び直し）。決めたら出陣の支度（muster）へ */
+    /** 軍議：方針を選び、確かめて決める（考え直すと選び直し）。決めたら出陣の支度（muster）へ */
     private async runCouncil(): Promise<void> {
         const { view } = this.deps;
         this._screen = 'council';
         this.setPrompt(null);
         view.hud(this.hudInfo());
-        const intro = phaseIntro(this._state!);
+        const intro = this.sc.phaseIntro(this.st);
         view.intro(intro.title, intro.text);
-        while (this._state!.phase === 'council') {
-            const script = talk(this._state!, 'council');
+        while (this.st.phase === 'council') {
+            const script = this.sc.talk(this.st, 'council');
             const choice = await view.script(script, { mode: 'council' });
             if (!choice) throw new Error('軍議で選択肢が選ばれませんでした');
-            this._state = finishTalk(this._state!, 'council', choice);
+            this.st = this.sc.finishTalk(this.st, 'council', choice);
         }
         // 軍議の後は、そのままの位置で支度の段階へ
         this.enterField('keep');
@@ -392,16 +435,17 @@ export class ChapterGame {
     // ---------------- 出陣・合戦 ----------------
 
     /** 城門で「出陣する」を選んだ：出陣前の自動保存 → 合戦 → 結果の反映 → 戦後の自動保存 → 戦後の探索 */
-    private async depart(): Promise<void> {
-        const { view, store } = this.deps;
-        const before = this._state!;
-        let next = finishTalk(before, 'gate', 'depart');
+    private async depart(talkId: string, choice: string): Promise<void> {
+        const { view } = this.deps;
+        const sc = this.sc;
+        const before = this.st;
+        let next = sc.depart(before, talkId, choice);
         // この出陣だけの合戦の id（結果の反映を 1 回だけにする鍵。保存にも入る）
-        next = withBattleId(next, `ch1-${Math.floor(this.now()).toString(36)}-${++this.battleSeq}`);
+        next = sc.withBattleId(next, `${sc.battleIdPrefix}-${Math.floor(this.now()).toString(36)}-${++this.battleSeq}`);
         next = this.foldPlay(next);
         // 出陣前の保存は、開始の位置から（読み込むと出陣の確認の前から再開する）
-        next = setExplorePose(next, null);
-        const r = store.save(next, 'departure');
+        next = sc.setExplorePose(next, null);
+        const r = sc.store.save(next, 'departure');
         if (r.ok) {
             next = r.state;
             view.toast(`保存しました：${SAVE_POINT_LABELS.departure}`, 'ok');
@@ -417,23 +461,24 @@ export class ChapterGame {
                 cancelId: 'stay',
             });
             if (c !== 'go') {
-                this._state = before;
+                this.st = before;
                 this._screen = 'explore';
                 return;
             }
         }
-        this._state = next;
+        this.st = next;
         await this.runBattle();
     }
 
     private async runBattle(): Promise<void> {
         const { view, world } = this.deps;
+        const sc = this.sc;
         this._screen = 'battle';
         this.setPrompt(null);
         view.hud(null);
         world.setControl(false);
-        const setup = battleSetupFor(this._state!);
-        const battleId = this._state!.battleId!;
+        const setup = sc.battleSetup(this.st);
+        const battleId = this.st.battleId!;
         let t0 = this.now();
         /** 合戦の時間を遊んだ時間へ足す（ここまでの分） */
         const addBattleTime = () => {
@@ -445,10 +490,10 @@ export class ChapterGame {
         let saved: { ok: boolean; text: string } | null = null;
         /** 勝ち負けが決まった：結果を 1 回だけ反映し、戦後の自動保存（読み戻して確かめる）。2 回目からは何もしない */
         const record = (o: BattleOutcome): { ok: boolean; text: string } => {
-            if (this._state!.appliedBattleId === battleId && saved) return saved;
+            if (this.st.appliedBattleId === battleId && saved) return saved;
             addBattleTime();
-            const r = applyBattleOutcomeOnce(this._state!, battleId, o);
-            this._state = r.state;
+            const r = sc.applyOutcomeOnce(this.st, battleId, o);
+            this.st = r.state;
             saved = this.autoSave('aftermath', true)!;
             return saved;
         };
@@ -460,8 +505,8 @@ export class ChapterGame {
                 outcome = await this.fight(setup, hooks);
             } catch (e) {
                 // 結果を反映した後の失敗（結果の画面の後片付けなど）なら、合戦はやり直さずに戦後へ
-                if (this._state!.appliedBattleId === battleId && this._state!.battle) {
-                    outcome = this._state!.battle;
+                if (this.st.appliedBattleId === battleId && this.st.battle) {
+                    outcome = this.st.battle;
                     break;
                 }
                 const c = await view.confirm({
@@ -497,7 +542,7 @@ export class ChapterGame {
 
     // ---------------- 結末 ----------------
 
-    /** 戦後に源蔵の「この章を締めくくる」を選んだ：結末を保存して、結末の画面へ */
+    /** 戦後に「この章を締めくくる」を選んだ：結末を保存して、結末の画面へ */
     private async reachEnding(): Promise<void> {
         const saved = this.autoSave('ending');
         if (saved && !saved.ok) this.deps.view.toast(saved.text, 'error');
@@ -510,7 +555,7 @@ export class ChapterGame {
         this.setPrompt(null);
         view.hud(null);
         world.setControl(false);
-        await view.ending(endingView(this._state!));
+        await view.ending(this.sc.endingView(this.st));
         await this.title();
     }
 
@@ -521,7 +566,7 @@ export class ChapterGame {
      * 会話の途中に開いたときは、会話の画面をそのまま下に残す（閉じれば同じ行・同じ選択肢の選び方のまま。会話は進まない）。
      */
     async openMenu(): Promise<void> {
-        if (!this._state || this.menuOpen) return;
+        if (!this.run || this.menuOpen) return;
         if (this._screen === 'talk' || this._screen === 'council') {
             await this.menuOverScript();
             return;
@@ -586,48 +631,51 @@ export class ChapterGame {
     }
 
     menuInfo(message: MenuInfo['message'] = null): MenuInfo {
-        const s = this._state!;
-        const can = canSaveManually(s);
+        const s = this.st;
+        const sc = this.sc;
+        const can = sc.canSaveManually(s);
         return {
-            status: statusLines(s, this.playAcc),
-            canSave: can && this.deps.store.available,
-            saveNote: !this.deps.store.available ? saveFailureMessage('unavailable') : can ? null : saveFailureMessage('not_now'),
+            status: sc.statusLines(s, this.playAcc),
+            canSave: can && sc.store.available,
+            saveNote: !sc.store.available ? saveFailureMessage('unavailable') : can ? null : saveFailureMessage('not_now'),
             message,
         };
     }
 
     /** 手動保存（今の位置と向きを入れる）。書いた後に読み戻して確かめた結果を返す */
     saveManual(): { ok: boolean; text: string } {
-        let s = this._state!;
-        if (!canSaveManually(s)) return { ok: false, text: saveFailureMessage('not_now') };
-        s = setExplorePose(s, this.deps.world.heroPose());
+        const sc = this.sc;
+        let s = this.st;
+        if (!sc.canSaveManually(s)) return { ok: false, text: saveFailureMessage('not_now') };
+        s = sc.setExplorePose(s, this.deps.world.heroPose());
         s = this.foldPlay(s);
-        this._state = s;
-        const r = this.deps.store.save(s, 'manual');
+        this.st = s;
+        const r = sc.store.save(s, 'manual');
         if (!r.ok) return { ok: false, text: `保存できませんでした：${r.message}` };
-        this._state = r.state;
-        return { ok: true, text: `保存しました（${formatTime(r.savedAt)}・${PHASE_LABELS[s.phase]}）。書き込んだ内容を読み戻して確かめました。` };
+        this.st = r.state;
+        return { ok: true, text: `保存しました（${formatSavedTime(r.savedAt)}・${sc.phaseLabel(s.phase)}）。書き込んだ内容を読み戻して確かめました。` };
     }
 
     /** 自動保存（書いた後に読み戻して確かめる）。detail は合戦の結果の画面に出す長めの文 */
     private autoSave(point: SavePoint, detail = false): { ok: boolean; text: string } | null {
-        const s = this.foldPlay(this._state!);
-        this._state = s;
-        const r = this.deps.store.save(s, point);
+        const sc = this.sc;
+        const s = this.foldPlay(this.st);
+        this.st = s;
+        const r = sc.store.save(s, point);
         if (!r.ok) {
             const text = `保存できませんでした（${SAVE_POINT_LABELS[point]}）：${r.message}`;
             if (!detail) return { ok: false, text };
             return { ok: false, text: `${text}このまま続けて遊べます（戦後にメニューから保存し直せます）。今ページを閉じると、前の保存（出陣前）から始まります。` };
         }
-        this._state = r.state;
+        this.st = r.state;
         if (!detail) return { ok: true, text: `保存しました：${SAVE_POINT_LABELS[point]}` };
         return { ok: true, text: `この結果を保存しました（${SAVE_POINT_LABELS[point]}。書き込んだ内容を読み戻して確かめました）。ここで閉じても、この結果の後（戦後）から続けられます。` };
     }
 
-    private foldPlay(s: CampaignState): CampaignState {
+    private foldPlay(s: ScenarioStateCore): ScenarioStateCore {
         const add = this.playAcc;
         this.playAcc = 0;
-        return add > 0 ? addPlayTime(s, add) : s;
+        return add > 0 ? this.sc.addPlayTime(s, add) : s;
     }
 
     // ---------------- 共通 ----------------
@@ -646,7 +694,7 @@ export class ChapterGame {
             this.lastError = errorText(e);
             console.error(e);
             this.deps.view.toast(`進められませんでした：${this.lastError}`, 'error');
-            if (this._state && (this._screen === 'talk' || this._screen === 'menu')) this._screen = 'explore';
+            if (this.run && (this._screen === 'talk' || this._screen === 'menu')) this._screen = 'explore';
         } finally {
             // 捨てた流れ（会話の途中にタイトルへ戻った）の後始末では、新しい流れの状態に触れない
             if (epoch === this.epoch) {
@@ -663,46 +711,13 @@ function errorText(e: unknown): string {
     return e instanceof Error ? e.message : String(e);
 }
 
-function formatTime(iso: string | null): string {
-    if (!iso) return 'まだ保存していません';
-    const d = new Date(iso);
-    const p2 = (n: number) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}/${p2(d.getMonth() + 1)}/${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
-}
-
-const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
-
-/** メニューの「状態」（段階・目的・協力陣営・関係・兵・人物・合戦・保存・遊んだ時間） */
-export function statusLines(s: CampaignState, extraPlaySec = 0): StatusLine[] {
-    const lines: StatusLine[] = [
-        { label: '章', value: `${CHAPTER_TITLE}（${PROVISIONAL_LABEL}）` },
-        { label: '今', value: PHASE_LABELS[s.phase] },
-        { label: '目的', value: objectiveText(s) },
-        { label: '協力陣営', value: s.alliance ? ALLIANCE_DONE_LABELS[s.alliance] : 'まだ決めていない' },
-        { label: '関係', value: (['tashiro', 'omori', 'washio'] as const).map((c) => `${CLAN_NAMES[c]} ${signed(s.relations[c])}`).join('・') },
-        { label: '琴坂の兵', value: KOTOSAKA_UNIT_IDS.map((k) => `${TROOP_UNIT_NAMES[k]} ${s.troops[k]}`).join('・') },
-        { label: '人物', value: peopleOf(s.alliance).map((c) => `${CHARACTER_NAMES[c]} ${STATUS_LABELS[s.characters[c]]}`).join('・') },
-    ];
-    if (s.battle) lines.push({ label: '合戦', value: `${RESULT_LABELS[s.battle.result]}（${REASON_LABELS[s.battle.reason]}）` });
-    const sec = Math.floor(s.playTimeSec + extraPlaySec);
-    lines.push({ label: '最後の保存', value: formatTime(s.savedAt) });
-    lines.push({ label: '遊んだ時間', value: `${Math.floor(sec / 60)} 分` });
-    return lines;
-}
-
-function peopleOf(a: Alliance | null): ('hero' | 'genzo' | 'shinpachi' | 'tashiro_envoy' | 'omori_envoy')[] {
-    const p: ('hero' | 'genzo' | 'shinpachi' | 'tashiro_envoy' | 'omori_envoy')[] = ['hero', 'genzo', 'shinpachi'];
-    if (a === 'tashiro') p.push('tashiro_envoy');
-    if (a === 'omori') p.push('omori_envoy');
-    return p;
-}
-
 // ================= 確認用（開発ビルドの __game・テスト） =================
 
 const ALLY_CHOICE: Record<Alliance, ChoiceId> = { tashiro: 'ally_tashiro', omori: 'ally_omori', alone: 'ally_alone' };
 
 /**
  * 確認用：指定の段階の状態を、普通の遊び方と同じ関数の順で作る（テスト・開発の早送り専用。本番の画面の流れでは使わない）。
+ * 架空の第一章の物。歴史分岐シナリオは ieyasu1570/flow.ts の devIeyasuState。
  */
 export function devStateFor(phase: 'explore' | 'muster' | 'aftermath' | 'ending', alliance: Alliance = 'tashiro', result: BattleResultKind = 'victory'): CampaignState {
     let s = newGame();
@@ -716,3 +731,6 @@ export function devStateFor(phase: 'explore' | 'muster' | 'aftermath' | 'ending'
     if (phase === 'aftermath') return s;
     return finishTalk(s, 'genzo', 'end_chapter');
 }
+
+/** 型だけの確認：Scenario<CampaignState> を満たす（fictional.ts） */
+export type FictionalScenario = Scenario<CampaignState>;

@@ -13,8 +13,14 @@
  * - flank：着いてから 30 秒待ち、自分の側（東なら東、西なら西）を真っすぐ南へ下って相手の横へ出てから、
  *   斬り合っている部隊・弓・本陣・こちらを向いていない部隊を選んで横から当たる。途中で近くに相手が見えたらすぐ当たる。
  * - guard_hq：本陣を守る。本陣そのものは持ち場を動かない。本陣以外なら、本陣の 80 m 以内に来た相手を迎え撃つ。
+ *
+ * 特殊能力（abilities.ts。敵方に能力を持つ武将がいるときだけ。プレイヤーは敵の能力を操作できない）：
+ * - 盟友への援護：範囲（60 m）の中で斬り合っている・矢を浴びて士気の落ちた味方（敵方）の部隊があれば、士気のいちばん低い部隊を支える。
+ *   （A の方針の浅井長政隊は、丘の前で持ち場を守る浅井先手が交戦すると支える）
+ * - 立て直しの号令：範囲の中の戦える味方（敵方）が 2 部隊以上で士気 50 未満、または本陣自身が 45 未満になったら使う。
+ * - 退路の守護：範囲の中で味方（敵方）が敗走・撤退しているとき、自分が斬り合っていなければ使う。
  */
-import type { Order, UnitDef } from './types';
+import type { AbilityId, Order, UnitDef } from './types';
 import type { BattleState, UnitState } from './sim';
 
 export type AiRole = NonNullable<UnitDef['aiRole']>;
@@ -63,7 +69,21 @@ export interface AiApi {
     issue(unitId: string, order: Order): boolean;
     /** 知らせ（見えている部隊の動きだけを知らせる） */
     log(text: string, unitId: string): void;
+    /** 敵方の部隊の特殊能力を使う（使えたら true。断られたら使用回数は減らない）。sim.ts が渡す */
+    useAbility?(unitId: string, targetId?: string): boolean;
 }
+
+/** 敵の考えが能力を使う目安 */
+export const AI_ABILITY = {
+    /** 援護：この士気より低い、または斬り合っている部隊を支える */
+    supportMorale: 70,
+    /** 号令：範囲の中でこの士気より低い部隊が 2 つ以上、または本陣自身がこれより低い */
+    rallyMorale: 50,
+    rallySelfMorale: 45,
+} as const;
+
+/** 能力の範囲（abilities.ts の ABILITY_DATA と同じ値。ai.ts は abilities.ts を実行時に import しない） */
+const ABILITY_RADIUS: Record<AbilityId, number> = { ieyasu_rally: 90, tadakatsu_rearguard: 70, nagamasa_support: 60 };
 
 export function createAiState(units: readonly UnitState[]): AiState {
     const memo: Record<string, AiMemo> = {};
@@ -127,6 +147,7 @@ function attack(s: BattleState, api: AiApi, u: UnitState, t: UnitState, text?: s
 
 /** 敵の部隊に命令を出す（0.5 秒ごと） */
 export function thinkEnemy(s: BattleState, api: AiApi): void {
+    if (api.useAbility && s.abilityList.length > 0) enemyAbilities(s, api);
     for (const u of s.units) {
         const m = s.ai.memo[u.id];
         if (!m || !active(u)) continue;
@@ -283,4 +304,28 @@ function flank(s: BattleState, api: AiApi, u: UnitState, m: AiMemo): void {
     }
     if (best) attack(s, api, u, best, `${u.name}が${best.name}へ横から迫る`);
     else if (u.order.type !== 'move') goHome(api, u, m);
+}
+
+/** 敵方の武将の能力を、目安に合えば使う（1 合戦 1 回。使えるかの確かめは abilities.ts が行う） */
+function enemyAbilities(s: BattleState, api: AiApi): void {
+    for (const r of s.abilityList) {
+        if (r.side !== 'enemy' || r.usedAt !== null) continue;
+        const u = byId(s, r.unitId);
+        if (!active(u)) continue;
+        const R = ABILITY_RADIUS[r.id];
+        const friends = s.units.filter((o) => o !== u && o.side === 'enemy' && active(o) && d2(o, u) <= R);
+        if (r.id === 'nagamasa_support') {
+            const need = friends
+                .filter((o) => !!o.engagedWith || (o.attackers.length > 0 && o.morale < AI_ABILITY.supportMorale))
+                .sort((a, b) => a.morale - b.morale || d2(a, u) - d2(b, u));
+            if (need.length && api.useAbility!(u.id, need[0].id) && u.seenBy.ally) api.log(`${u.name}が${need[0].name}を支えに入った`, u.id);
+        } else if (r.id === 'ieyasu_rally') {
+            const low = [u, ...friends].filter((o) => o.morale < AI_ABILITY.rallyMorale).length;
+            if (low >= 2 || u.morale < AI_ABILITY.rallySelfMorale) api.useAbility!(u.id);
+        } else if (r.id === 'tadakatsu_rearguard') {
+            if (u.engagedWith) continue;
+            const fleeing = s.units.some((o) => o !== u && o.side === 'enemy' && o.present && (o.status === 'routed' || o.order.type === 'retreat') && d2(o, u) <= R);
+            if (fleeing) api.useAbility!(u.id);
+        }
+    }
 }
