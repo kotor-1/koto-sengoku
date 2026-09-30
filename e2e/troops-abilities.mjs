@@ -166,6 +166,28 @@ function sameExcept(a, c, except) {
     }
     return bad;
 }
+/** 画面の部品（左上の列・右上・拡大・札・命令のボタン・案内・一時停止の印）が互いに重ならず、画面からはみ出さない（e2e/ieyasu-battle-ui.mjs と同じ確かめ） */
+async function overlapCheck(p, what) {
+    const r = await p.page.evaluate(() => {
+        const q = (s) => {
+            const e = document.querySelector(s);
+            if (!e || e.hidden || getComputedStyle(e).display === 'none') return null;
+            const b = e.getBoundingClientRect();
+            return b.width && b.height ? { s, l: b.left, t: b.top, r: b.right, b: b.bottom } : null;
+        };
+        const boxes = ['.b-topleft', '.b-ctrl', '.b-zoom', '.b-cards', '.b-cmds', '.b-hint', '.b-pausepill'].map(q).filter(Boolean);
+        const hits = [];
+        for (let i = 0; i < boxes.length; i++)
+            for (let j = i + 1; j < boxes.length; j++) {
+                const a = boxes[i];
+                const c = boxes[j];
+                if (a.l < c.r - 1 && c.l < a.r - 1 && a.t < c.b - 1 && c.t < a.b - 1) hits.push(`${a.s}×${c.s}`);
+            }
+        const out = boxes.filter((x) => x.l < -1 || x.t < -1 || x.r > innerWidth + 1 || x.b > innerHeight + 1).map((x) => x.s);
+        return [...hits, ...out];
+    });
+    check(r.length === 0, `[${p.kind}] ${what}：画面の部品が重ならない・はみ出さない`, r.join(' '));
+}
 /** 1 フレームの時間（rAF の間の中央値、ms。コンテナのソフトウェア描画） */
 async function frameMs(page) {
     return page.evaluate(async () => {
@@ -318,6 +340,7 @@ async function inputPart(kind) {
     const marks = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('.b-label[data-id]')].map((e) => [e.dataset.id, e.dataset.ab ?? ''])));
     check(marks.a_kiba === 'target' && marks.e_sente === 'untargetable', `[${kind}] 選べる部隊（騎馬隊）と選べない部隊（敵）の印`, `${marks.a_kiba}/${marks.e_sente}`);
     check((await hintText(page)).length > 0, `[${kind}] 対象選びの案内`, await hintText(page));
+    await overlapCheck(p, '石川の対象選び（能力の欄と案内）');
     await shot(p, 'a6-ishikawa-choose');
     before = await snapshot(page);
     const kb = await screenOf(page, 'a_kiba');
@@ -329,6 +352,7 @@ async function inputPart(kind) {
     const n2 = await noteText(page);
     check(n2.includes('後詰めの差配') && n2.includes('石川数正') && n2.includes('徳川騎馬隊'), `[${kind}] 発動の知らせ：能力名・武将・対象（騎馬隊）`, n2);
     check((await readyLabels(page)).length === 0, `[${kind}] 5 武将を使った後は、点滅する名札が無い（使用済み）`);
+    await overlapCheck(p, '石川の差配の効果中（能力の欄）');
     check((await snapshot(page)).t === tPaused, `[${kind}] 止めている間は合戦の時刻が進まない（${tPaused.toFixed(1)} 秒のまま）`);
 
     // ---- 命令：移動・攻撃・防衛・撤退（兵士を描いた地図の上で） ----
