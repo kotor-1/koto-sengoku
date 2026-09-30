@@ -77,6 +77,8 @@ export const MOUNTAIN_PASS: BattlefieldDef = {
         primary: { id: 'pass_survive', type: 'survive_until', label: '援軍が着いてから 60 秒耐える', reinforcementId: 'relief', holdSec: 60 },
         secondary: [{ id: 'pass_gate', type: 'defend_time', label: '関を失わない', sec: 240, zone: { circle: { cx: 0, cz: 40, r: 22 } }, loseSec: 10 }],
     },
+    // 武将の基本方針による自由な動き（命令を受けていない待機中だけ。演習の戦場だけ入れる）
+    generalInitiative: true,
     timeLimitSec: 360,
     briefing: [
         'ゲーム用の演習（架空の相手）。崖に挟まれた幅 40 m の峠道。途中の関は幅 30 m。崖は通れない。',

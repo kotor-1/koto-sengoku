@@ -75,6 +75,8 @@ export const HILLS: BattlefieldDef = {
         primary: { id: 'hills_center', type: 'hold_point', label: '中央の丘の頂を確保する', zone: { circle: { cx: CREST.x, cz: CREST.z, r: 35 } }, sec: 90 },
         secondary: [{ id: 'hills_archers', type: 'break_unit', label: '東の丘の敵の弓隊を崩す', unitId: 'e_yumi' }],
     },
+    // 武将の基本方針による自由な動き（命令を受けていない待機中だけ。演習の戦場だけ入れる）
+    generalInitiative: true,
     timeLimitSec: 480,
     briefing: [
         'ゲーム用の演習（架空の相手）。中央に大きな丘、東に丘がある。間は谷。中央の丘は頂の近くが急で、頂を取った側が有利になる。',

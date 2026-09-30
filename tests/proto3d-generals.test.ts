@@ -19,17 +19,19 @@ describe('武将のデータ', () => {
         for (const g of GENERALS) expect(generalById(g.id)).toBe(g);
         expect(generalById('genzo')).toBeUndefined();
     });
-    it('表示名・所属・役割・固有能力・AI の方針', () => {
+    // Version 13 候補（docs/troops-abilities-design.md §3）：忠勝の AI の方針を「攻めかかる」から「持ち場を保つ」（前線維持・殿）へ変え、
+    // 味方として待機中の基本方針（initiative）を 4 人に足した（家康本陣・長政隊は持たない）
+    it('表示名・所属・役割・固有能力・AI の方針・味方としての基本方針', () => {
         const row = (id: string) => {
             const g = generalById(id)!;
-            return [g.name, g.clan, g.role, g.abilityId, g.aiPolicy];
+            return [g.name, g.clan, g.role, g.abilityId, g.aiPolicy, g.initiative ?? null];
         };
-        expect(row('ieyasu')).toEqual(['徳川家康', 'tokugawa', 'commander', 'ieyasu_rally', 'cautious']);
-        expect(row('tadakatsu')).toEqual(['本多忠勝', 'tokugawa', 'vanguard', 'tadakatsu_rearguard', 'aggressive']);
-        expect(row('nagamasa')).toEqual(['浅井長政', 'asai', 'ally_lord', 'nagamasa_support', 'steady']);
-        expect(row('sakai')).toEqual(['酒井忠次', 'tokugawa', 'tactician', 'sakai_flank', 'steady']);
-        expect(row('ishikawa')).toEqual(['石川数正', 'tokugawa', 'reserve', 'ishikawa_reserve', 'support']);
-        expect(row('sakakibara')).toEqual(['榊原康政', 'tokugawa', 'vanguard', 'sakakibara_vanguard', 'aggressive']);
+        expect(row('ieyasu')).toEqual(['徳川家康', 'tokugawa', 'commander', 'ieyasu_rally', 'cautious', null]);
+        expect(row('tadakatsu')).toEqual(['本多忠勝', 'tokugawa', 'vanguard', 'tadakatsu_rearguard', 'steady', 'rearguard']);
+        expect(row('nagamasa')).toEqual(['浅井長政', 'asai', 'ally_lord', 'nagamasa_support', 'steady', null]);
+        expect(row('sakai')).toEqual(['酒井忠次', 'tokugawa', 'tactician', 'sakai_flank', 'steady', 'coordinate']);
+        expect(row('ishikawa')).toEqual(['石川数正', 'tokugawa', 'reserve', 'ishikawa_reserve', 'support', 'support']);
+        expect(row('sakakibara')).toEqual(['榊原康政', 'tokugawa', 'vanguard', 'sakakibara_vanguard', 'aggressive', 'pursuit']);
         for (const g of GENERALS) expect(GENERAL_ROLE_LABELS[g.role]).toBeTruthy();
     });
     it('本多忠勝は前線の主将（参謀＝tactician にしない）', () => {

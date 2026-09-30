@@ -13,8 +13,8 @@ import type { BattleOutcome, Order } from '../proto3d/src/battle/types';
 
 const RF = getField('river_ford')!;
 
-/** 台本の 1 行：[開始からの秒, 部隊 id, 命令]。'ability' は固有能力、'nearest' は「見えている一番近い敵へ攻撃」（今の相手が戦えるなら出さない） */
-type Step = [number, string, Order | 'ability' | 'nearest'];
+/** 台本の 1 行：[開始からの秒, 部隊 id, 命令]。'ability' は固有能力（対象の要る能力は { abilityTarget: 対象の部隊 id }）、'nearest' は「見えている一番近い敵へ攻撃」（今の相手が戦えるなら出さない） */
+type Step = [number, string, Order | 'ability' | 'nearest' | { abilityTarget: string }];
 
 const atk = (targetId: string): Order => ({ type: 'attack', targetId });
 const mv = (x: number, z: number): Order => ({ type: 'move', x, z });
@@ -61,6 +61,8 @@ function play(steps: Step[]): Run {
                 if (n && !issueOrder(st, id, n)) refused.push(`${t}:${id}`);
             } else if (ord === 'ability') {
                 if (!useAbility(st, id).ok) refused.push(`${t}:${id}`);
+            } else if (typeof ord === 'object' && 'abilityTarget' in ord) {
+                if (!useAbility(st, id, ord.abilityTarget).ok) refused.push(`${t}:${id}`);
             } else if (!issueOrder(st, id, ord)) refused.push(`${t}:${id}`);
         }
     });
@@ -239,8 +241,12 @@ describe('河川・浅瀬：地形に合った作戦（早送り）', () => {
         }
     }, 60_000);
 
-    it('固有能力を足しても勝つ（西へ回るとき榊原隊の先駆けの号、丘へ向かうとき石川隊の後詰めの差配）', () => {
-        const r = play([...FIT_WEST, [60, 'a_sakakibara', 'ability'], [150, 'a_ishikawa', 'ability']]);
+    it('固有能力を足しても勝つ（見張りへ当たるとき石川隊の後詰めの差配で忠勝隊を急がせ、榊原隊の先駆けの号で斬り込む）', () => {
+        // Version 13 候補で先駆けの号は「動き ×1.8・最初の当たり ×2.0・切れて士気 −15」、後詰めの差配は「味方を 1 つ選ぶ・石川隊は 30 秒動けない」に
+        // 変わった。前の台本（60 秒に先駆けの号、150 秒に後詰めの差配を対象なしで）は、今の数値では 60 秒に榊原隊だけが先に見張りへ着いて
+        // 三隊の当たりがそろわず日没になる（確かめた時：撤退・損害 34％）。見張りへ当たる 60 秒に石川隊が忠勝隊を急がせ（石川隊は 90 秒まで
+        // 西の浅瀬の手前で動けない）、70 秒に榊原隊が先駆ける。見張りは 90.6 秒に崩れ、150 秒に三隊で丘へ向かう
+        const r = play([...FIT_WEST, [60, 'a_ishikawa', { abilityTarget: 'a_tadakatsu' }], [70, 'a_sakakibara', 'ability']]);
         expect(r.refused).toEqual([]);
         expect(r.o.result).toBe('victory');
         expect(Object.keys(r.o.abilitiesUsed ?? {}).sort()).toEqual(['a_ishikawa', 'a_sakakibara']);

@@ -53,7 +53,7 @@ import type {
     UnitKind,
     UnitStatus,
 } from './types';
-import { createAiState, thinkEnemy, type AiState } from './ai';
+import { createAiState, createInitiative, thinkEnemy, thinkGenerals, type AiState, type InitiativeMemo } from './ai';
 import {
     TERRAIN_DEFAULTS,
     arrowTakeMulIn,
@@ -71,16 +71,24 @@ import {
     abilitiesUsedRecord,
     abilityDealMul,
     abilityFlankDealMul,
+    abilityMoraleFloor,
     abilityMoraleLossMul,
     abilityRoutMorale,
     abilitySpeedMul,
     abilityTakeMul,
     createAbilityRuns,
+    encircleLive,
+    encircleMul,
     enemyUseAbility,
+    findEncircled,
+    noteMeleeContact,
     resolveAbilityId,
     isRooted,
+    rootedLabel,
     updateAbilities,
+    vanguardDealMul,
     type AbilityRun,
+    type AttackDir,
 } from './abilities';
 
 /** ルールの数値（画面の説明・テストからも読む） */
@@ -223,6 +231,7 @@ export type BattleEventKind =
     | 'fled' // 敗走して戦場から逃れ去った
     | 'lost' // 目標を見失った・目標が崩れた
     | 'ai' // 敵の動き（見えているときだけ）
+    | 'general' // 味方の武将が基本方針で自分から動いた（命令を受けていない待機中。演習の戦場だけ）
     | 'retreat_all' // 全軍撤退の命令
     | 'nightfall'
     | 'ability' // 特殊能力を使った・援護が外れた／戻った（abilities.ts）
@@ -242,6 +251,8 @@ export interface BattleEvent {
     unitId?: string;
     /** 相手の部隊 */
     targetId?: string;
+    /** 特殊能力の知らせ（ability・ability_end）なら、その能力 */
+    ability?: AbilityId;
 }
 
 /** 合戦中の部隊の状態（画面は読むだけ。書き換えは issueOrder・stepBattle だけ） */
@@ -322,6 +333,11 @@ export interface UnitState {
     ambushOn: string | null;
     ambushUntil: number;
     ambushMul: number;
+    /**
+     * 武将の基本方針による自由な動き（BattleSetup.generalInitiative の合戦の、方針を持つ武将の味方の部隊だけ。ほかは null）。
+     * 命令を受けていない待機中だけ、持ち場の近くで方針ごとに動く（ai.ts の thinkGenerals）。プレイヤーの命令が最優先
+     */
+    initiative: InitiativeMemo | null;
 }
 
 export interface BattleState {
@@ -353,6 +369,8 @@ export interface BattleState {
     field: FieldEnv;
     /** 目標の見張り（BattleSetup.objectives があるときだけ。objectives.ts） */
     objectives: ObjectiveTrack | null;
+    /** この刻みに包囲されている部隊（両翼の采配の効果中だけ。abilities.ts の findEncircled）。ふだんは空 */
+    encircled: string[];
 }
 
 /** 戦前の約束の見張り（docs/ieyasu1570-design.md §5） */
@@ -438,6 +456,30 @@ export function attackArc(d: { x: number; z: number; facing: number }, ax: numbe
     if (a <= RULES.frontArcDeg) return 'front';
     if (a <= RULES.rearArcDeg) return 'flank';
     return 'rear';
+}
+
+/** 攻め手（ax, az）が守り手 d のどの向きから当たっているか（側面は左右を分ける。包囲の判定に使う） */
+export function attackDir(d: { x: number; z: number; facing: number }, ax: number, az: number): AttackDir {
+    const diff = angleDiff(d.facing, headingTo(d.x, d.z, ax, az));
+    const a = Math.abs(diff) / DEG;
+    if (a <= RULES.frontArcDeg) return 'front';
+    if (a > RULES.rearArcDeg) return 'rear';
+    return diff > 0 ? 'right' : 'left';
+}
+
+/**
+ * 武将の自由な動き：移動の命令で着いて待機になった。プレイヤーの命令で動いていたなら、着いた所を新しい持ち場にする
+ * （自分から動いていたなら、持ち場は変えない）。どちらも「命令を受けていない待機中」になる。
+ * プレイヤーの攻撃の相手が崩れて待機になったときは、自由な動きに戻さない（その場で待つ。次の命令を待つ）
+ */
+function settleInitiative(u: UnitState): void {
+    const g = u.initiative!;
+    if (!g.acting) {
+        g.postX = u.x;
+        g.postZ = u.z;
+        g.postFacing = u.faceGoal ?? u.facing;
+    }
+    g.free = true;
 }
 
 // ---------------------------------------------------------------- 地形
@@ -537,13 +579,15 @@ export function orderLabel(s: BattleState, u: UnitState): string {
     if (u.status === 'withdrawn') return '撤退済み';
     if (u.status === 'destroyed') return '―';
     if (!u.arrived) return `到着待ち（${Math.max(0, Math.ceil(u.arriveAt - s.t))} 秒）`;
+    // 武将の基本方針で自分から動いている（命令を受けていない待機中）
+    const own = u.initiative?.free && u.initiative.acting && u.order.type !== 'hold' ? '（武将の判断）' : '';
     switch (u.order.type) {
         case 'hold':
-            return isRooted(s, u.id) ? '踏みとどまる（退路の守護）' : '防衛・待機';
+            return rootedLabel(s, u.id) ?? '防衛・待機';
         case 'move':
-            return '移動';
+            return `移動${own}`;
         case 'attack':
-            return `攻撃：${unitById(s, u.order.targetId)?.name ?? '？'}`;
+            return `攻撃：${unitById(s, u.order.targetId)?.name ?? '？'}${own}`;
         case 'retreat':
             return '撤退';
     }
@@ -620,8 +664,11 @@ export function createBattle(setup: BattleSetup): BattleState {
             ambushOn: null,
             ambushUntil: -1,
             ambushMul: 1,
+            initiative: null,
         } satisfies UnitState;
     });
+    // 武将の基本方針による自由な動き（演習の戦場だけ。ai.ts の createInitiative）
+    if (setup.generalInitiative) for (const u of units) u.initiative = createInitiative(u);
     const s: BattleState = {
         setup,
         map: setup.map,
@@ -640,6 +687,7 @@ export function createBattle(setup: BattleSetup): BattleState {
         pledge: null,
         field: createFieldEnv(setup.map, setup.fieldRules),
         objectives: createObjectiveTrack(setup),
+        encircled: [],
     };
     s.abilityList = Object.values(s.abilities);
     const pl = setup.pledge;
@@ -661,7 +709,18 @@ export function createBattle(setup: BattleSetup): BattleState {
  */
 export function issueOrder(s: BattleState, unitId: string, order: Order): boolean {
     const u = unitById(s, unitId);
-    if (!u || !canCommand(s, u)) return false;
+    if (!u || !applyOrder(s, u, order)) return false;
+    // プレイヤー（または敵の考え）の命令：武将の自由な動きより優先する（防衛・待機を命じた部隊も、持ち場から動かない）
+    if (u.initiative) {
+        u.initiative.free = false;
+        u.initiative.acting = false;
+    }
+    return true;
+}
+
+/** 命令を出す（中の処理。武将の自由な動き（ai.ts の thinkGenerals）もこれで動く＝待機中の印を消さない） */
+function applyOrder(s: BattleState, u: UnitState, order: Order): boolean {
+    if (!canCommand(s, u)) return false;
     // 退路の守護で踏みとどまっている間は、動く命令（移動・攻撃・撤退）を受けない
     if (order.type !== 'hold' && isRooted(s, u.id)) return false;
     switch (order.type) {
@@ -707,6 +766,7 @@ export function orderAllRetreat(s: BattleState): boolean {
     for (const u of s.units) {
         if (u.side !== 'ally' || u.status !== 'ready') continue;
         // 踏みとどまっている部隊は、効果が終わってから退く（abilities.ts の updateAbilities）
+        if (u.initiative) u.initiative.free = false;
         if (isRooted(s, u.id)) continue;
         u.order = { type: 'retreat' };
         u.faceGoal = null;
@@ -794,6 +854,19 @@ function tick(s: BattleState): void {
             log: (text, unitId) => log(s, 'ai', text, unitId),
             useAbility: (id, targetId) => enemyUseAbility(s, id, targetId).ok,
         });
+        // 3b. 武将の基本方針（BattleSetup.generalInitiative の合戦だけ。命令を受けていない待機中の味方の武将の部隊）
+        if (s.setup.generalInitiative) {
+            thinkGenerals(s, {
+                order: (id, o) => {
+                    const g = unitById(s, id);
+                    if (!g?.initiative || !applyOrder(s, g, o)) return false;
+                    g.initiative.acting = true;
+                    return true;
+                },
+                rooted: (id) => isRooted(s, id),
+                log: (text, unitId, targetId) => log(s, 'general', text, unitId, targetId),
+            });
+        }
     }
 
     // 4. 命令の確かめ（攻撃の相手が崩れた・見えなくなった）と、この刻みの動き・交戦相手
@@ -818,6 +891,16 @@ function tick(s: BattleState): void {
         u.attackers = [];
     });
     const crowd = frontCrowding(s, plans, index);
+    // 包囲（両翼の采配の効果中だけ）：同じ相手を別の向きから斬っている味方の組を調べる
+    if (s.encircled.length > 0) s.encircled = [];
+    if (encircleLive(s)) {
+        const hits: { a: UnitState; d: UnitState; dir: AttackDir }[] = [];
+        for (const a of s.units) {
+            const d = plans.get(a)?.melee;
+            if (d && a.status === 'ready') hits.push({ a, d, dir: attackDir(d, a.x, a.z) });
+        }
+        s.encircled = findEncircled(s, hits);
+    }
     for (const a of s.units) {
         const p = plans.get(a);
         if (!p) continue;
@@ -852,6 +935,7 @@ function tick(s: BattleState): void {
                 }
             }
             a.lastMeleeT = t;
+            if (s.abilityList.length > 0) noteMeleeContact(s, a);
             const dmg = meleeDamage(s, a, d, arc) * dt * (crowd.get(a) ?? 1);
             loss[di] += dmg;
             d.attackers.push(a.id);
@@ -906,11 +990,17 @@ function tick(s: BattleState): void {
         if (u.isHq && meleeCount[i] >= 1) down += RULES.hqUnderAttack * dt;
         down *= aura;
         down *= abilityMoraleLossMul(s, u, meleeCount[i] > 0 || !!u.engagedWith);
+        if (s.encircled.length > 0) down *= encircleMul(s, u).morale;
         let m = u.morale - down;
         if (t - u.lastHitT >= RULES.recoverDelay && !u.engagedWith) {
             m += (RULES.recoverRate + (aura < 1 ? RULES.recoverHqBonus : 0)) * dt;
             // 号令で最初の士気より上がった分は、戻りで削らない
             m = Math.min(m, Math.max(u.maxMorale, u.morale));
+        }
+        // 立て直しの号令：士気が決まった値より下がらない（もとから低い部隊は今の値より下がらない）
+        if (s.abilityList.length > 0) {
+            const floor = abilityMoraleFloor(s, u);
+            if (floor > 0) m = Math.max(m, Math.min(u.morale, floor));
         }
         u.morale = clamp(m, 0, 100);
         if (u.morale <= abilityRoutMorale(s, u, RULES.routMorale)) routedNow.push(u);
@@ -937,8 +1027,9 @@ function tick(s: BattleState): void {
         for (const o of s.units) {
             if (o === u || o.side !== u.side || !isActive(o)) continue;
             const mul = abilityMoraleLossMul(s, o, !!o.engagedWith);
-            if (u.isHq) o.morale = Math.max(0, o.morale - RULES.hqRoutShock * mul);
-            else if (dist(o, u) <= RULES.nearbyRoutRadius) o.morale = Math.max(0, o.morale - RULES.nearbyRoutShock * mul);
+            const floor = s.abilityList.length > 0 ? Math.min(o.morale, abilityMoraleFloor(s, o)) : 0;
+            if (u.isHq) o.morale = Math.max(floor, o.morale - RULES.hqRoutShock * mul);
+            else if (dist(o, u) <= RULES.nearbyRoutRadius) o.morale = Math.max(floor, o.morale - RULES.nearbyRoutShock * mul);
         }
     }
 
@@ -1207,8 +1298,12 @@ export function meleeDamage(s: BattleState, a: UnitState, d: UnitState, arc: 'fr
     if (d.status === 'routed') m *= RULES.pursuitMul;
     // 特殊能力（号令・援護の代償、退路の守護・援護の守り。能力がなければ 1）
     m *= abilityDealMul(s, a) * abilityTakeMul(s, d);
-    // 両翼の采配（側面・背後の当たりだけ。能力がなければ掛けない）
-    if (arc !== 'front' && s.abilityList.length > 0) m *= abilityFlankDealMul(s, a, arc);
+    if (s.abilityList.length > 0) {
+        // 両翼の采配（側面・背後の当たりだけ）・包囲（挟まれた相手）・先駆けの号（最初の当たり・弓や退く相手・側背）
+        if (arc !== 'front') m *= abilityFlankDealMul(s, a, arc);
+        if (s.encircled.length > 0) m *= encircleMul(s, d).take;
+        m *= vanguardDealMul(s, a, d, arc);
+    }
     return a.strength * m;
 }
 
@@ -1293,6 +1388,7 @@ function moveUnit(s: BattleState, u: UnitState, p: Plan, dt: number): void {
             u.faceGoal = u.order.face ?? null;
             u.order = { type: 'hold' };
             u.moveProg = null;
+            if (u.initiative) settleInitiative(u);
         }
         if (u.moving) return;
     }

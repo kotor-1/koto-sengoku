@@ -149,14 +149,15 @@ describe('敵の考え：役割を省いた部隊の既定の役割（武将の 
         expect(defaultAiRole({ kind: 'yari' })).toBe('hold_line');
         expect(AI_POLICY_ROLE).toEqual({ aggressive: 'assault', steady: 'hold_line', cautious: 'guard_hq', support: 'reserve' });
         for (const g of GENERALS) expect([g.id, defaultAiRole({ kind: 'yari', generalId: g.id })]).toEqual([g.id, AI_POLICY_ROLE[g.aiPolicy]]);
-        // 同じ部隊でも、率いる武将の方針を変えれば動きが変わる（攻めかかる忠勝＝相手の本陣へ攻め進む／持ち場を保つ酒井＝持ち場に残る）
+        // 同じ部隊でも、率いる武将の方針を変えれば動きが変わる（攻めかかる榊原＝相手の本陣へ攻め進む／持ち場を保つ酒井＝持ち場に残る）。
+        // Version 13 候補で忠勝の方針を「持ち場を保つ」（前線維持・殿）に変えたので、攻めかかる例を忠勝から榊原に替えた
         const run = (generalId: string) => {
             const s = battle([U('e1', 'enemy', 'yari', 0, -100, S, { generalId })]);
             expect(s.ai.memo.e1!.role).toBe(defaultAiRole({ kind: 'yari', generalId }));
             advance(s, 20);
             return get(s, 'e1');
         };
-        const aggressive = run('tadakatsu');
+        const aggressive = run('sakakibara');
         const steady = run('sakai');
         expect(Math.hypot(steady.x - 0, steady.z + 100)).toBeLessThan(1);
         // 相手（味方）の本陣 (190,195) の方へ進む

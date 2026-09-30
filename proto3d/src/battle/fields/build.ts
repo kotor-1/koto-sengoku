@@ -9,6 +9,7 @@
  * - fieldRules は、地形の上書き・高所・特殊ルール・通れる範囲と、新しい動きの決まり（settleMoves）を付ける。
  *   国境の原（keepV11Movement）は、ほかの決まりも無いので付けない（Version 11 の合戦のまま）。
  * - 目標は opts.objectives：'field'（既定。戦場の主目標・副目標）／'none'（付けない＝今までの勝ち負け）／自分で渡す。
+ * - 武将の自由な動き（BattleSetup.generalInitiative）は、戦場の generalInitiative（演習の 5 戦場）を写す。opts で上書きできる。
  * - 援軍：編成の部隊が reinforcement を指せば、その出現地点・時刻（arriveAt）に置き、BattleSetup.reinforcements に入れる。
  */
 import type { BattleMap, BattleSetup, FieldRules, ObjectiveDef, Side, TerrainKind, UnitDef } from '../types';
@@ -28,6 +29,8 @@ export interface BuildOptions {
     briefing?: string[];
     pursuit?: boolean;
     pledge?: BattleSetup['pledge'];
+    /** 武将の自由な動き（省けば戦場の generalInitiative。章が自分で作る合戦で false にすれば使わない） */
+    generalInitiative?: boolean;
 }
 
 const MAPS = new WeakMap<BattlefieldDef, BattleMap>();
@@ -108,6 +111,7 @@ export function buildBattleSetup(field: BattlefieldDef, presetOrUnits: string | 
     };
     if (opts.pursuit) setup.pursuit = true;
     if (opts.pledge) setup.pledge = opts.pledge;
+    if (opts.generalInitiative ?? field.generalInitiative) setup.generalInitiative = true;
     const rules = fieldRulesOf(field);
     if (rules) setup.fieldRules = rules;
     const o = opts.objectives ?? 'field';

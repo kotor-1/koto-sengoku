@@ -74,6 +74,8 @@ export const FOREST: BattlefieldDef = {
         primary: { id: 'forest_hq', type: 'destroy_hq', label: '敵勢の本陣を崩す' },
         secondary: [{ id: 'forest_rescue', type: 'rescue', label: '迷った物見隊を味方の陣まで連れ帰る', unitId: 'a_lost', zone: { circle: { cx: 0, cz: 130, r: 40 } } }],
     },
+    // 武将の基本方針による自由な動き（命令を受けていない待機中だけ。演習の戦場だけ入れる）
+    generalInitiative: true,
     timeLimitSec: 480,
     briefing: [
         'ゲーム用の演習（架空の相手）。西と東に広い林、その間に開けた中央の道。西の林には細い林道と、奥に空き地がある（林道・空き地は見通される）。',

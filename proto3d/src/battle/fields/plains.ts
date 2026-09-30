@@ -55,6 +55,8 @@ export const PLAINS: BattlefieldDef = {
         primary: { id: 'plains_hq', type: 'destroy_hq', label: '敵勢の本陣を崩す' },
         secondary: [{ id: 'plains_reserve', type: 'preserve_unit', label: '予備隊（石川数正隊）を崩さずに終える', unitId: 'a_ishikawa', minRatio: 0.5 }],
     },
+    // 武将の基本方針による自由な動き（命令を受けていない待機中だけ。演習の戦場だけ入れる）
+    generalInitiative: true,
     timeLimitSec: 480,
     briefing: [
         'ゲーム用の演習（架空の相手）。平らな原で、北に陣取る敵勢と戦う。',

@@ -146,4 +146,9 @@ export interface BattlefieldDef {
      * 新しい戦場は省く（行き先の近くで詰まった移動を着いたことにする、など新しい動きの決まりになる）
      */
     keepV11Movement?: boolean;
+    /**
+     * true なら、武将の基本方針による自由な動きを入れる（BattleSetup.generalInitiative。docs/troops-abilities-design.md §3）。
+     * 演習の 5 戦場だけが付ける。国境の原（架空の第一章・歴史分岐の章）は付けない
+     */
+    generalInitiative?: boolean;
 }

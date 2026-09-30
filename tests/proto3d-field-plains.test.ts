@@ -13,8 +13,8 @@ import type { BattleOutcome, Order } from '../proto3d/src/battle/types';
 
 const PLAINS = getField('plains')!;
 
-/** 台本の 1 行：[開始からの秒, 部隊 id, 命令]。'ability' は固有能力、'nearest' は「見えている一番近い敵へ攻撃」（今の相手が戦えるなら出さない） */
-type Step = [number, string, Order | 'ability' | 'nearest'];
+/** 台本の 1 行：[開始からの秒, 部隊 id, 命令]。'ability' は固有能力（対象の要る能力は { abilityTarget: 対象の部隊 id }）、'nearest' は「見えている一番近い敵へ攻撃」（今の相手が戦えるなら出さない） */
+type Step = [number, string, Order | 'ability' | 'nearest' | { abilityTarget: string }];
 
 const atk = (targetId: string): Order => ({ type: 'attack', targetId });
 const mv = (x: number, z: number): Order => ({ type: 'move', x, z });
@@ -57,6 +57,8 @@ function play(steps: Step[]): Run {
                 if (n && !issueOrder(st, id, n)) refused.push(`${t}:${id}`);
             } else if (ord === 'ability') {
                 if (!useAbility(st, id).ok) refused.push(`${t}:${id}`);
+            } else if (typeof ord === 'object' && 'abilityTarget' in ord) {
+                if (!useAbility(st, id, ord.abilityTarget).ok) refused.push(`${t}:${id}`);
             } else if (!issueOrder(st, id, ord)) refused.push(`${t}:${id}`);
         }
     });
@@ -211,8 +213,10 @@ describe('大平原：地形に合った作戦（早送り）', () => {
         expect(wins).toBeGreaterThanOrEqual(14);
     }, 60_000);
 
-    it('固有能力を足しても勝つ（左備を突くとき酒井隊の両翼の采配、本陣へ入れるとき石川隊の後詰めの差配）', () => {
-        const r = play([...FIT, [50, 'a_sakai', 'ability'], [150, 'a_ishikawa', 'ability']]);
+    // Version 13 候補で後詰めの差配は「味方の部隊を 1 つ選ぶ・石川隊は 30 秒動けない」能力に変わった。前は 150 秒（本陣へ入れる時）に
+    // 対象なしで使っていた。今は本陣へ押す 1 秒前（119 秒）に忠勝隊を選んで本陣へ急がせ、石川隊は 150 秒に本陣へ入る
+    it('固有能力を足しても勝つ（左備を突くとき酒井隊の両翼の采配、本陣へ押す前に石川隊の後詰めの差配で忠勝隊を急がせる）', () => {
+        const r = play([...FIT, [50, 'a_sakai', 'ability'], [119, 'a_ishikawa', { abilityTarget: 'a_tadakatsu' }]]);
         expect(r.refused).toEqual([]);
         expect(r.o.result).toBe('victory');
         expect(Object.keys(r.o.abilitiesUsed ?? {}).sort()).toEqual(['a_ishikawa', 'a_sakai']);

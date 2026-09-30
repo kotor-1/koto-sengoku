@@ -18,8 +18,8 @@ const PASS_FIELD = getField('mountain_pass')!;
 const PASS_ZONE = { rect: { x0: -20, x1: 20, z0: -130, z1: 110 } };
 const GATE_ZONE = { circle: { cx: 0, cz: 40, r: 22 } };
 
-/** 台本の 1 行：[開始からの秒, 部隊 id, 命令]。'ability' は固有能力 */
-type Step = [number, string, Order | 'ability'];
+/** 台本の 1 行：[開始からの秒, 部隊 id, 命令]。'ability' は固有能力（対象の要る能力は { abilityTarget: 対象の部隊 id }） */
+type Step = [number, string, Order | 'ability' | { abilityTarget: string }];
 
 const mv = (x: number, z: number): Order => ({ type: 'move', x, z });
 /** 本陣以外の、始めからいる味方の部隊 */
@@ -50,6 +50,8 @@ function play(steps: Step[]): Run {
             const [t, id, ord] = q.shift()!;
             if (ord === 'ability') {
                 if (!useAbility(st, id).ok) refused.push(`${t}:${id}`);
+            } else if (typeof ord === 'object' && 'abilityTarget' in ord) {
+                if (!useAbility(st, id, ord.abilityTarget).ok) refused.push(`${t}:${id}`);
             } else if (!issueOrder(st, id, ord)) refused.push(`${t}:${id}`);
         }
         for (const a of st.units) {
@@ -85,11 +87,16 @@ const HQ_UP: Step[] = [
     [20, 'a_ieyasu', mv(0, 110)],
     [120, 'a_ieyasu', 'ability'],
 ];
-/** 援軍が着いたら関の後ろへ上げ、石川隊の後詰めの差配で足を速める */
+/**
+ * 援軍が着いたら関の後ろへ上げ、石川隊の後詰めの差配で榊原隊（援軍）の足を速める。
+ * Version 13 候補で後詰めの差配は「味方の部隊を 1 つ選ぶ・石川隊は 30 秒動けない」能力に変わった（前は対象なしで、石川隊の周りの足を速めた）。
+ * そのため石川隊は差配が終わってから（212 秒）関の後ろへ上げ直す
+ */
 const RELIEF_UP: Step[] = [
     [180, 'a_sakakibara', mv(-10, 62)],
     [180, 'a_ishikawa', mv(10, 62)],
-    [181, 'a_ishikawa', 'ability'],
+    [181, 'a_ishikawa', { abilityTarget: 'a_sakakibara' }],
+    [212, 'a_ishikawa', mv(10, 62)],
 ];
 
 /** 地形に合った作戦：命令は 9 回（0・20・120・180 秒） */

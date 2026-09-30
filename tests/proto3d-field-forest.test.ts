@@ -15,8 +15,8 @@ import type { BattleOutcome, Order } from '../proto3d/src/battle/types';
 
 const FOREST = getField('forest')!;
 
-/** 台本の 1 行：[開始からの秒, 部隊 id, 命令]。'ability' は固有能力、'nearest' は「見えている一番近い敵へ攻撃」（今の相手が戦えるなら出さない） */
-type Step = [number, string, Order | 'ability' | 'nearest'];
+/** 台本の 1 行：[開始からの秒, 部隊 id, 命令]。'ability' は固有能力（対象の要る能力は { abilityTarget: 対象の部隊 id }）、'nearest' は「見えている一番近い敵へ攻撃」（今の相手が戦えるなら出さない） */
+type Step = [number, string, Order | 'ability' | 'nearest' | { abilityTarget: string }];
 
 const atk = (targetId: string): Order => ({ type: 'attack', targetId });
 const mv = (x: number, z: number): Order => ({ type: 'move', x, z });
@@ -62,6 +62,8 @@ function play(steps: Step[]): Run {
                 if (n && !issueOrder(st, id, n)) refused.push(`${t}:${id}`);
             } else if (ord === 'ability') {
                 if (!useAbility(st, id).ok) refused.push(`${t}:${id}`);
+            } else if (typeof ord === 'object' && 'abilityTarget' in ord) {
+                if (!useAbility(st, id, ord.abilityTarget).ok) refused.push(`${t}:${id}`);
             } else if (!issueOrder(st, id, ord)) refused.push(`${t}:${id}`);
         }
     });
@@ -247,8 +249,9 @@ describe('森林：地形に合った作戦（早送り）', () => {
         expect(wins).toBeGreaterThanOrEqual(15);
     }, 60_000);
 
-    it('固有能力を足しても勝つ（本陣へ斬りかかった後に酒井隊の両翼の采配・石川隊の後詰めの差配）', () => {
-        const r = play([...FIT, [210, 'a_sakai', 'ability'], [210, 'a_ishikawa', 'ability']]);
+    // Version 13 候補で後詰めの差配は「味方の部隊を 1 つ選ぶ・石川隊は 30 秒動けない」能力に変わった（前は対象なし）。本陣へ斬りかかる忠勝隊を選ぶ
+    it('固有能力を足しても勝つ（本陣へ斬りかかった後に酒井隊の両翼の采配・石川隊の後詰めの差配で忠勝隊を立て直す）', () => {
+        const r = play([...FIT, [210, 'a_sakai', 'ability'], [210, 'a_ishikawa', { abilityTarget: 'a_tadakatsu' }]]);
         expect(r.refused).toEqual([]);
         expect(r.o.result).toBe('victory');
         expect(Object.keys(r.o.abilitiesUsed ?? {}).sort()).toEqual(['a_ishikawa', 'a_sakai']);

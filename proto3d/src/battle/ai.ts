@@ -28,7 +28,21 @@
  * - 退路の守護：範囲の中で味方（敵方）が敗走・撤退しているとき、自分が斬り合っていなければ使う。
  * - 仮の能力（新しい武将。敵方が持つとき）：
  *   両翼の采配＝範囲の中で斬り合っている味方（敵方。自分も）が 2 部隊以上／後詰めの差配＝範囲の中に味方（敵方）が 2 部隊以上いて、
- *   自分か範囲の味方が斬り合っている／先駆けの号＝自分が斬り合っていて、士気が 40 以上（切れたときの士気 −10 で崩れないうち）。
+ *   斬り合っている味方があれば、士気のいちばん低い部隊を対象にする／先駆けの号＝自分が斬り合っていて、士気が 40 以上（切れたときの士気 −15 で崩れないうち）。
+ *
+ * 武将の基本方針（thinkGenerals。BattleSetup.generalInitiative の合戦＝演習の戦場だけ。docs/troops-abilities-design.md §3）：
+ * 味方の武将の部隊（generals.ts の initiative を持つ武将。家康本陣・長政隊は持たない）は、命令を受けていない待機中
+ * （最初の待機・移動の命令で着いた後。攻撃の相手が崩れた後の待機は含めない）だけ、持ち場から INITIATIVE.leash m 以内で方針ごとに動き、することが無ければ持ち場へ戻る。
+ * 移動・攻撃・撤退・防衛のどの命令も優先する（命令を受けたら自由な動きをやめる。防衛・待機を命じた部隊は持ち場から動かない）。
+ * 斬り合いの最中・能力で動けない間・全軍撤退の後は動かさない。重要な作戦（敵の本陣へ攻め込む・退く）は決めない。
+ * - coordinate（酒井）：隣（60 m 以内）の味方に斬りかかっている敵に、横・背後から当たれる位置にいれば当たる。
+ * - support（石川）：士気の落ちた（40 未満）・援軍・同盟の味方が攻められていれば、その近く（持ち場の側 30 m 手前）へ寄って構える。
+ *   自分から斬りかかりはしない（間合いに入った相手とは、待機の決まりで斬り合う）。
+ * - rearguard（忠勝）：持ち場を保つ。近く（80 m）で撤退の命令で退く味方がいれば、その味方と追っ手の間へ入る（殿。敗走した部隊は見ない）。
+ * - pursuit（榊原）：近く（80 m）の退く敵・弓隊を追う。
+ *
+ * 引きつけ（退路の守護の効果中だけ。どの合戦でも）：範囲の中で退く味方（撤退の命令・敗走中）を攻める・斬っている敵（弓・本陣を除く）は、
+ * 守護の持ち主（忠勝隊）へ向かう。
  *
  * 追い討ち（BattleSetup.pursuit の合戦＝歴史分岐だけ。架空の第一章では何もしない）：
  * - 弓・本陣以外の部隊は、近く（騎馬 110 m・ほか 60 m）で撤退の命令で退いている見えている味方へ追い討ちをかける
@@ -36,8 +50,8 @@
  * - その味方が「退路の守護」の範囲の中にいれば、追う代わりに守護の持ち主（忠勝隊）へ向かう（追っ手を阻む）。
  */
 import type { Order, UnitDef } from './types';
-import { ABILITY_DATA, rearguardCover } from './abilities';
-import { generalById, type GeneralAiPolicy } from './generals';
+import { ABILITY_DATA, abilityInfo, lureLive, rearguardCover } from './abilities';
+import { generalById, type GeneralAiPolicy, type GeneralInitiative } from './generals';
 import type { BattleState, UnitState } from './sim';
 
 export type AiRole = NonNullable<UnitDef['aiRole']>;
@@ -135,6 +149,49 @@ export const AI_ABILITY = {
 } as const;
 
 
+/** 武将の自由な動きの数値 */
+export const INITIATIVE = {
+    /** 持ち場からこの距離（m）より離れない */
+    leash: 40,
+    /** 攻撃は相手の手前（RULES.meleeRange × 0.8 = 20 m）で止まるので、相手が持ち場から leash + reach 以内なら当たりに行ける */
+    reach: 20,
+    /** 持ち場からこの距離（m）より離れていたら戻る */
+    homeSlack: 4,
+    /** coordinate：隣の味方とみなす距離 */
+    coordinateRadius: 60,
+    /** support：支える味方の士気の線・持ち場から見る距離 */
+    supportMorale: 40,
+    supportRange: 120,
+    /** rearguard：退く味方を見る距離（持ち場から）・味方から追っ手の側へ入る距離 */
+    rearguardRange: 80,
+    rearguardGap: 22,
+    /** pursuit：追う相手を見る距離（自分から） */
+    pursuitRange: 80,
+} as const;
+
+/** 武将の自由な動きの状態（sim.ts の UnitState.initiative） */
+export interface InitiativeMemo {
+    policy: GeneralInitiative;
+    /** 持ち場（最初の位置、またはプレイヤーの移動の命令で着いた所）と、そこでの向き */
+    postX: number;
+    postZ: number;
+    postFacing: number;
+    /** 命令を受けていない待機中（自由に動ける）。プレイヤーの命令を受けると false、その命令が終わって待機になると true */
+    free: boolean;
+    /** いまの命令は自由な動きが出したもの（プレイヤーの命令を受けると false） */
+    acting: boolean;
+    /** 最後に知らせた動き（同じ動きを繰り返し知らせないため） */
+    noted: string | null;
+}
+
+/** 合戦の始めに、方針を持つ武将の味方の部隊（本陣を除く）の自由な動きの状態を作る（無ければ null） */
+export function createInitiative(u: Pick<UnitState, 'side' | 'kind' | 'generalId' | 'x' | 'z' | 'facing' | 'order'>): InitiativeMemo | null {
+    if (u.side !== 'ally' || u.kind === 'honjin' || !u.generalId) return null;
+    const g = generalById(u.generalId);
+    if (!g?.initiative) return null;
+    return { policy: g.initiative, postX: u.x, postZ: u.z, postFacing: u.facing, free: u.order.type === 'hold', acting: false, noted: null };
+}
+
 export function createAiState(units: readonly UnitState[]): AiState {
     const memo: Record<string, AiMemo> = {};
     for (const u of units) {
@@ -205,6 +262,7 @@ function attack(s: BattleState, api: AiApi, u: UnitState, t: UnitState, text?: s
 /** 敵の部隊に命令を出す（0.5 秒ごと） */
 export function thinkEnemy(s: BattleState, api: AiApi): void {
     if (api.useAbility && s.abilityList.length > 0) enemyAbilities(s, api);
+    const luring = lureLive(s);
     for (const u of s.units) {
         const m = s.ai.memo[u.id];
         if (!m || !active(u)) continue;
@@ -212,6 +270,7 @@ export function thinkEnemy(s: BattleState, api: AiApi): void {
         if (s.t - u.lastArrowT < 0.6) m.arrowSec += 0.5;
         else m.arrowSec = Math.max(0, m.arrowSec - 0.25);
         if (s.setup.pursuit && pursue(s, api, u, m)) continue;
+        if (luring && lured(s, api, u)) continue;
         switch (m.role) {
             case 'hold_line':
                 holdLine(s, api, u, m);
@@ -288,6 +347,20 @@ function pursue(s: BattleState, api: AiApi, u: UnitState, m: AiMemo): boolean {
         return true;
     }
     return false;
+}
+
+/**
+ * 引きつけ（退路の守護の効果中だけ）：退く味方（撤退の命令・敗走中）を攻める・斬っている敵は、その味方を守る守護の持ち主へ向かう。
+ * 向かわせたら true（役割の考えは飛ばす）。弓・本陣は引きつけない
+ */
+function lured(s: BattleState, api: AiApi, u: UnitState): boolean {
+    if (u.kind === 'yumi' || u.isHq) return false;
+    const prey = attackTarget(s, u) ?? byId(s, u.engagedWith);
+    if (!prey || prey.side !== 'ally' || !prey.present || !(prey.status === 'routed' || (prey.status === 'ready' && prey.order.type === 'retreat'))) return false;
+    const guard = rearguardCover(s, prey);
+    if (!guard || guard === prey || !guard.seenBy.enemy) return false;
+    attack(s, api, u, guard, `${u.name}が${guard.name}に引きつけられた`);
+    return attackTarget(s, u) === guard;
 }
 
 function holdLine(s: BattleState, api: AiApi, u: UnitState, m: AiMemo): void {
@@ -513,8 +586,11 @@ function enemyAbilities(s: BattleState, api: AiApi): void {
             const engaged = [u, ...friends].filter((o) => !!o.engagedWith).length;
             if (engaged >= AI_ABILITY.flankEngaged) api.useAbility!(u.id);
         } else if (r.id === 'ishikawa_reserve') {
-            const fighting = [u, ...friends].some((o) => !!o.engagedWith || inMelee(s, o));
-            if (friends.length >= AI_ABILITY.reserveFriends && fighting) api.useAbility!(u.id);
+            // 対象の要る能力：斬り合っている（攻められている）味方（敵方）のうち、士気のいちばん低い部隊を立て直す
+            if (friends.length < AI_ABILITY.reserveFriends) continue;
+            const valid = new Set(abilityInfo(s, u.id, 'enemy')?.validTargets ?? []);
+            const need = friends.filter((o) => valid.has(o.id) && (!!o.engagedWith || inMelee(s, o))).sort((a, b) => a.morale - b.morale || d2(a, u) - d2(b, u));
+            if (need.length) api.useAbility!(u.id, need[0]!.id);
         } else if (r.id === 'sakakibara_vanguard') {
             if (u.engagedWith && u.morale >= AI_ABILITY.vanguardMorale) api.useAbility!(u.id);
         }
@@ -524,4 +600,157 @@ function enemyAbilities(s: BattleState, api: AiApi): void {
 /** u に斬りかかっている相手がいる */
 function inMelee(s: BattleState, u: UnitState): boolean {
     return s.units.some((o) => o.side !== u.side && active(o) && o.engagedWith === u.id);
+}
+
+// ---------------------------------------------------------------- 武将の基本方針（味方の武将の自由な動き）
+
+/** 武将の自由な動きが使う、合戦への窓口（sim.ts が渡す） */
+export interface GeneralApi {
+    /** 自由な動きとして命令を出す（待機中の印を消さない）。出せたら true */
+    order(unitId: string, order: Order): boolean;
+    /** 能力の効果で動けない */
+    rooted(unitId: string): boolean;
+    /** 知らせ（新しく動き出したときだけ） */
+    log(text: string, unitId: string, targetId?: string): void;
+}
+
+/** 退いている（撤退の命令・敗走中）、戦場にいる部隊 */
+function fleeing(o: UnitState): boolean {
+    return o.present && (o.status === 'routed' || (o.status === 'ready' && o.order.type === 'retreat'));
+}
+/** p を、持ち場 post から leash 以内へ寄せる */
+function withinLeash(post: { x: number; z: number }, p: { x: number; z: number }): { x: number; z: number } {
+    const d = d2(post, p);
+    if (d <= INITIATIVE.leash) return { x: p.x, z: p.z };
+    const k = INITIATIVE.leash / d;
+    return { x: post.x + (p.x - post.x) * k, z: post.z + (p.z - post.z) * k };
+}
+/** u が相手 e の正面（±50°）の外にいる（横・背後から当たれる） */
+function offFront(e: UnitState, u: UnitState): boolean {
+    return !facesMe(e, u);
+}
+/** 相手 e が持ち場 post から当たりに行ける所にいる */
+function inReach(post: { x: number; z: number }, e: UnitState): boolean {
+    return d2(e, post) <= INITIATIVE.leash + INITIATIVE.reach;
+}
+
+/** 方針ごとの動き（出す命令・知らせの文・知らせの鍵（同じ鍵は繰り返し知らせない））。何もしないなら null */
+function initiativeOrder(s: BattleState, u: UnitState, g: InitiativeMemo): { order: Order; text: string; key: string } | null {
+    const post = { x: g.postX, z: g.postZ };
+    const seenFoe = (e: UnitState) => e.side !== u.side && active(e) && e.seenBy[u.side];
+    switch (g.policy) {
+        case 'coordinate': {
+            // 隣の味方と斬り合っている敵へ、横・背後から当たる
+            const foes = s.units
+                .filter(
+                    (e) =>
+                        seenFoe(e) &&
+                        inReach(post, e) &&
+                        offFront(e, u) &&
+                        s.units.some((f) => f !== u && f.side === u.side && active(f) && d2(f, u) <= INITIATIVE.coordinateRadius && e.engagedWith === f.id),
+                )
+                .sort((a, b) => d2(a, u) - d2(b, u));
+            const e = foes[0];
+            return e ? { order: { type: 'attack', targetId: e.id }, text: `${u.name}が隣の味方と組み、${e.name}の横へ当たる（武将の判断）`, key: `a:${e.id}` } : null;
+        }
+        case 'support': {
+            // 士気の落ちた・援軍・同盟の味方が攻められていれば、その相手に当たるか近くへ寄る
+            const pressed = (f: UnitState) => !!f.engagedWith || f.attackers.length > 0;
+            const needs = s.units
+                .filter(
+                    (f) =>
+                        f !== u &&
+                        f.side === u.side &&
+                        active(f) &&
+                        !f.isHq &&
+                        d2(f, post) <= INITIATIVE.supportRange &&
+                        pressed(f) &&
+                        (f.morale < INITIATIVE.supportMorale || f.arriveAt > 0 || f.clan !== u.clan),
+                )
+                .sort((a, b) => a.morale - b.morale || d2(a, u) - d2(b, u));
+            for (const f of needs) {
+                // 寄って構えるだけ（自分から斬りかからない。間合いに入った相手とは待機の決まりで斬り合う）
+                const d = d2(post, f);
+                if (d < 35) continue;
+                const p = withinLeash(post, { x: post.x + ((f.x - post.x) * (d - 30)) / d, z: post.z + ((f.z - post.z) * (d - 30)) / d });
+                // 寄る先の近く（8 m）にもういれば、そのまま構える（相手が少し動くたびに出し直さない）
+                if (d2(u, p) <= 8) return { order: u.order.type === 'move' ? u.order : { type: 'hold' }, text: '', key: `m:${f.id}` };
+                return { order: { type: 'move', x: p.x, z: p.z }, text: `${u.name}が${f.name}を支えに寄る（武将の判断）`, key: `m:${f.id}` };
+            }
+            return null;
+        }
+        case 'rearguard': {
+            // 近くで（撤退の命令で）退く味方と、その追っ手の間へ入る。敗走した部隊の立て直しは作戦の判断なので、ここではしない
+            const runs = s.units.filter((f) => f !== u && f.side === u.side && active(f) && f.order.type === 'retreat' && d2(f, post) <= INITIATIVE.rearguardRange).sort((a, b) => d2(a, u) - d2(b, u));
+            for (const f of runs) {
+                const e = s.units.filter((o) => seenFoe(o) && d2(o, f) <= 100).sort((a, b) => d2(a, f) - d2(b, f))[0];
+                if (!e) continue;
+                const d = Math.max(1e-6, d2(f, e));
+                const k = Math.min(INITIATIVE.rearguardGap, d / 2) / d;
+                const p = withinLeash(post, { x: f.x + (e.x - f.x) * k, z: f.z + (e.z - f.z) * k });
+                if (d2(u, p) <= 8) return { order: u.order.type === 'move' ? u.order : { type: 'hold' }, text: '', key: `r:${f.id}` };
+                return { order: { type: 'move', x: p.x, z: p.z, face: Math.atan2(e.x - p.x, -(e.z - p.z)) }, text: `${u.name}が退く${f.name}の後ろへ入る（武将の判断）`, key: `r:${f.id}` };
+            }
+            return null;
+        }
+        case 'pursuit': {
+            // 近くの退く敵・弓隊を追う（退く敵を先に）
+            const prey = s.units
+                .filter(
+                    (e) =>
+                        e.side !== u.side &&
+                        e.present &&
+                        e.seenBy[u.side] &&
+                        d2(e, u) <= INITIATIVE.pursuitRange &&
+                        inReach(post, e) &&
+                        (e.status === 'routed' || (e.status === 'ready' && (e.order.type === 'retreat' || e.kind === 'yumi'))),
+                )
+                .sort((a, b) => Number(fleeing(b)) - Number(fleeing(a)) || d2(a, u) - d2(b, u));
+            const e = prey[0];
+            if (!e) return null;
+            const what = fleeing(e) ? `退く${e.name}` : e.name;
+            if (e.status === 'ready') return { order: { type: 'attack', targetId: e.id }, text: `${u.name}が${what}を追う（武将の判断）`, key: `a:${e.id}` };
+            const p = withinLeash(post, e);
+            return { order: { type: 'move', x: p.x, z: p.z }, text: `${u.name}が${what}を追う（武将の判断）`, key: `p:${e.id}` };
+        }
+    }
+}
+
+/** 同じ命令か（移動は行き先が 3 m 以内なら同じとみなす） */
+function sameOrder(a: Order, b: Order): boolean {
+    if (a.type !== b.type) return false;
+    if (a.type === 'attack' && b.type === 'attack') return a.targetId === b.targetId;
+    if (a.type === 'move' && b.type === 'move') return Math.abs(a.x - b.x) < 3 && Math.abs(a.z - b.z) < 3;
+    return true;
+}
+
+/**
+ * 味方の武将の部隊の自由な動き（0.5 秒ごと。BattleSetup.generalInitiative の合戦だけ sim.ts が呼ぶ）。
+ * 命令を受けていない待機中の部隊だけを動かす。プレイヤーの命令を受けた部隊・斬り合いの最中・動けない間・全軍撤退の後は動かさない。
+ */
+export function thinkGenerals(s: BattleState, api: GeneralApi): void {
+    if (s.result || s.allRetreatAt !== null) return;
+    for (const u of s.units) {
+        const g = u.initiative;
+        if (!g || !g.free || !active(u) || u.order.type === 'retreat' || u.engagedWith || api.rooted(u.id)) continue;
+        const post = { x: g.postX, z: g.postZ };
+        // 自分から当たりに行っている相手：持ち場から離れすぎたらやめて戻る
+        const cur = attackTarget(s, u);
+        if (cur && active(cur) && cur.seenBy[u.side] && inReach(post, cur) && d2(u, post) <= INITIATIVE.leash + 8) continue;
+        const want = initiativeOrder(s, u, g);
+        if (want) {
+            // 同じ動きを続けているときは出し直さない。新しく動き出したときだけ知らせる（移動の行き先の小さな出し直しは知らせない）
+            if (!sameOrder(u.order, want.order) && api.order(u.id, want.order) && want.key !== g.noted && want.text) {
+                g.noted = want.key;
+                api.log(want.text, u.id, want.order.type === 'attack' ? want.order.targetId : undefined);
+            }
+            continue;
+        }
+        // することが無い：持ち場へ戻る
+        g.noted = null;
+        if (d2(u, post) > INITIATIVE.homeSlack) {
+            const home: Order = { type: 'move', x: post.x, z: post.z, face: g.postFacing };
+            if (!sameOrder(u.order, home)) api.order(u.id, home);
+        } else if (u.order.type !== 'hold') api.order(u.id, { type: 'hold' });
+    }
 }

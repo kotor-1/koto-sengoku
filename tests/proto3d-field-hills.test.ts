@@ -15,8 +15,8 @@ import type { BattleOutcome, Order } from '../proto3d/src/battle/types';
 
 const HILLS = getField('hills')!;
 
-/** 台本の 1 行：[開始からの秒, 部隊 id, 命令]。'ability' は固有能力 */
-type Step = [number, string, Order | 'ability'];
+/** 台本の 1 行：[開始からの秒, 部隊 id, 命令]。'ability' は固有能力（対象の要る能力は { abilityTarget: 対象の部隊 id }） */
+type Step = [number, string, Order | 'ability' | { abilityTarget: string }];
 
 const atk = (targetId: string): Order => ({ type: 'attack', targetId });
 /** 移動（画面の命令と同じく、着いた後の向きは指定しない） */
@@ -43,6 +43,8 @@ function play(steps: Step[]): Run {
             const [t, id, ord] = q.shift()!;
             if (ord === 'ability') {
                 if (!useAbility(st, id).ok) refused.push(`${t}:${id}`);
+            } else if (typeof ord === 'object' && 'abilityTarget' in ord) {
+                if (!useAbility(st, id, ord.abilityTarget).ok) refused.push(`${t}:${id}`);
             } else if (!issueOrder(st, id, ord)) refused.push(`${t}:${id}`);
         }
     });
@@ -250,7 +252,10 @@ describe('丘陵：地形に合った作戦（早送り）', () => {
 
     it('頂を取られたら、東の丘の弓を崩してから、忠勝隊が南から当たるのに合わせて東から横へ当たる → 勝つ（副目標も達成）', () => {
         const r = play(FLANK);
-        expect(r.refused).toEqual([]);
+        // Version 13 候補の武将の自由な動き（演習の戦場だけ）：酒井隊は東の坂（82 秒の移動の命令）に着いて待機中に、忠勝隊と斬り合う
+        // 敵の後詰めへ自分から横から当たり（125.6 秒）、後詰めは 131.9 秒に崩れる（前は 134 秒の榊原隊の攻撃で 135.4 秒に崩れた）。
+        // そのため 134 秒の榊原隊の攻撃の命令だけは、相手がもう崩れていて断られる（勝ち・副目標・損害は前と同じく満たす）
+        expect(r.refused).toEqual(['134:a_sakakibara']);
         expect(r.o.result).toBe('victory');
         expect(r.o.reason).toBe('objective_done');
         expect(r.o.objectives!.primary!.achieved).toBe(true);
@@ -275,7 +280,8 @@ describe('丘陵：地形に合った作戦（早送り）', () => {
         expect(take.refused).toEqual([]);
         expect(take.o.result).toBe('victory');
         const flank = play([...FLANK, [130, 'a_sakai', 'ability']]);
-        expect(flank.refused).toEqual([]);
+        // 回り込みの作戦と同じく、後詰めは榊原隊の 134 秒の命令より先に崩れる（酒井隊の自由な動き。上のテストの注を見る）
+        expect(flank.refused).toEqual(['134:a_sakakibara']);
         expect(flank.o.result).toBe('victory');
         expect(Object.keys(flank.o.abilitiesUsed ?? {})).toEqual(['a_sakai']);
     });

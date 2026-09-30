@@ -248,6 +248,13 @@ export interface BattleSetup {
      * 省けば出さない（演習・架空の第一章）
      */
     relations?: Record<string, number>;
+    /**
+     * 武将の基本方針による自由な動き（docs/troops-abilities-design.md §3。合戦場の演習の 5 戦場だけ true）。
+     * 方針を持つ武将（generals.ts の initiative）の味方の部隊は、命令を受けていない待機中（最初の待機・命令が終わった後の待機）だけ、
+     * 持ち場から 40 m 以内で方針ごとに動く（ai.ts の thinkGenerals）。移動・攻撃・撤退・防衛のどの命令もこれより優先する。
+     * 省けば使わない（歴史分岐・架空の第一章は今までどおり）
+     */
+    generalInitiative?: boolean;
 }
 
 /** 合戦の結果の種類 */

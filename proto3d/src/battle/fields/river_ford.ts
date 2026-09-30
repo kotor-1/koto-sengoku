@@ -68,6 +68,8 @@ export const RIVER_FORD: BattlefieldDef = {
         primary: { id: 'ford_hill', type: 'hold_point', label: '向こう岸の小高い地点を確保する', zone: { circle: { cx: -70, cz: -85, r: 30 } }, sec: 60 },
         secondary: [{ id: 'ford_losses', type: 'limit_losses', label: '損害を 3 割以内に抑える', maxRatio: 0.3 }],
     },
+    // 武将の基本方針による自由な動き（命令を受けていない待機中だけ。演習の戦場だけ入れる）
+    generalInitiative: true,
     timeLimitSec: 480,
     briefing: [
         'ゲーム用の演習（架空の相手）。東西に流れる深い川は渡れない。渡れるのは中央と西の 2 つの浅瀬だけ。',

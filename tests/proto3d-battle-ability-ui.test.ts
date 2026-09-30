@@ -82,6 +82,7 @@ describe('シナリオの言葉', () => {
 });
 
 describe('能力の欄（abilityPanelModel）', () => {
+    // Version 13 候補で立て直しの号令を強めた（半径 90 → 110 m・30 → 35 秒。docs/troops-abilities-design.md §2）ので、範囲と残り秒の数字を直した
     it('家康本陣：使える → 使うと効果中（残り秒）→ 時間が過ぎると使用済み。回数も出す', () => {
         const s = ieyasu('oda');
         calm(s);
@@ -90,17 +91,17 @@ describe('能力の欄（abilityPanelModel）', () => {
         expect(m0.usable).toBe(true);
         expect(m0.tone).toBe('ready');
         expect(m0.uses).toContain('残り 1 回');
-        expect(m0.short.target).toContain('90 m');
+        expect(m0.short.target).toContain('110 m');
         expect(m0.note).toContain('ゲーム用の創作');
         expect(useAbility(s, 't_honjin').ok).toBe(true);
         const m1 = abilityPanelModel(s, 't_honjin')!;
         expect(m1.tone).toBe('active');
-        expect(m1.stateText).toBe('効果中 残り 30 秒');
+        expect(m1.stateText).toBe('効果中 残り 35 秒');
         expect(m1.usable).toBe(false);
-        expect(cardAbilityText(s, 't_honjin')).toBe('号令 30 秒');
+        expect(cardAbilityText(s, 't_honjin')).toBe('号令 35 秒');
         advance(s, 12);
-        expect(abilityPanelModel(s, 't_honjin')!.stateText).toBe('効果中 残り 18 秒');
-        advance(s, 19);
+        expect(abilityPanelModel(s, 't_honjin')!.stateText).toBe('効果中 残り 23 秒');
+        advance(s, 24);
         const m2 = abilityPanelModel(s, 't_honjin')!;
         expect(m2.tone).toBe('spent');
         expect(m2.uses).toContain('残り 0 回');
@@ -148,11 +149,12 @@ describe('能力の欄（abilityPanelModel）', () => {
         expect(abilityPanelModel(s, 'a_nagamasa')!.stateText).toContain('離れて外れている');
         expect(unitMarksText(s, 't_tadakatsu')).toContain('外れている');
     });
+    // Version 13 候補の数値（号令：士気 +25 → +40・低下 −40% → −60%／守護：−50% → −80%・受ける損害 ×1.15 → ×1.4）
     it('短い説明の数値は ABILITY_DATA から', () => {
-        expect(abilityShort('ieyasu_rally').effect).toContain('+25');
-        expect(abilityShort('ieyasu_rally').effect).toContain('−40%');
-        expect(abilityShort('tadakatsu_rearguard').effect).toContain('−50%');
-        expect(abilityShort('tadakatsu_rearguard').cost).toContain('×1.15');
+        expect(abilityShort('ieyasu_rally').effect).toContain('+40');
+        expect(abilityShort('ieyasu_rally').effect).toContain('−60%');
+        expect(abilityShort('tadakatsu_rearguard').effect).toContain('−80%');
+        expect(abilityShort('tadakatsu_rearguard').cost).toContain('×1.4');
         expect(abilityShort('nagamasa_support').effect).toContain('−30%');
         expect(abilityShort('nagamasa_support').cost).toContain('×0.8');
     });
@@ -165,7 +167,8 @@ describe('踏みとどまる忠勝隊・知らせの色', () => {
         expect(useAbility(s, 't_tadakatsu').ok).toBe(true);
         const o = { type: 'move', x: 0, z: 0 } as const;
         expect(issueOrder(s, 't_tadakatsu', o)).toBe(false);
-        expect(refusalText(s, 't_tadakatsu', o)).toContain('踏みとどまっている（残り 40 秒');
+        // 退路の守護は Version 13 候補で 40 → 50 秒
+        expect(refusalText(s, 't_tadakatsu', o)).toContain('踏みとどまっている（残り 50 秒');
         expect(unitMarksText(s, 't_tadakatsu')).toBe('踏みとどまる');
         expect(issueOrder(s, 't_tadakatsu', { type: 'hold' })).toBe(true);
     });

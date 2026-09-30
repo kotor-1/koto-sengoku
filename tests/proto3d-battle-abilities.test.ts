@@ -2,6 +2,12 @@
  * 特殊能力（battle/abilities.ts）と戦前の約束（sim.ts の pledge）の決まり。
  * 何もない平地で、同じ場面を「能力なし／あり」で比べ、能力が部隊の状態（士気・損害・動き・命令）を変えることを確かめる。
  * 一部は状態を直接変える（士気・兵・位置を書き換える）テスト。その旨をテスト名に書く。
+ *
+ * Version 13 候補（docs/troops-abilities-design.md §2）で家康・忠勝の能力の数値を強めたので、数値を確かめる所を新しい値に直した：
+ * - 立て直しの号令：半径 90 → 110 m、30 → 35 秒、士気 +25（最初の士気まで）→ +40（上限 100）、低下 −40% → −60%、
+ *   敗走の線 15 → 8 → 「士気 20 未満に下がらず、敗走しない」、代償の与える損害 ×0.5 → ×0.3（動き ×0.5 は同じ）。
+ * - 退路の守護：半径 70 → 100 m、40 → 50 秒、退く味方の損害・士気の低下 −50% → −80%、忠勝隊の受ける損害 ×1.15 → ×1.4、引きつけを足した。
+ * 盟友への援護（長政）は変えていない。
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -67,7 +73,7 @@ function rallyScene(): BattleSetup {
 }
 
 describe('立て直しの号令（家康本陣）', () => {
-    it('（状態を直接変更）使った瞬間、半径 90 m の味方の下がった士気 +25（その部隊の最初の士気まで）。範囲外・敗走中の部隊は上がらない', () => {
+    it('（状態を直接変更）使った瞬間、半径 110 m の味方の士気 +40（上限 100）。範囲外の部隊は上がらない', () => {
         const s = createBattle(
             setup([
                 U('a_hq', 'ally', 'honjin', 0, 100, N, { morale: 90, ...withAbility('ieyasu_rally', 'ieyasu') }),
@@ -80,37 +86,38 @@ describe('立て直しの号令（家康本陣）', () => {
         get(s, 'a_out').morale = 50;
         get(s, 'a_hq').morale = 70;
         expect(useAbility(s, 'a_hq')).toEqual({ ok: true, reason: null });
-        expect(get(s, 'a_in').morale).toBe(75);
-        expect(get(s, 'a_out').morale).toBe(50);
-        expect(get(s, 'a_hq').morale).toBe(90); // 70 + 25 → 最初の士気 90 まで
-        expect(get(s, 'a_full').morale).toBe(75); // 下がっていない部隊は上がらない（最初の士気より上へは上げない）
+        expect(get(s, 'a_in').morale).toBe(90);
+        expect(get(s, 'a_out').morale).toBe(50); // 家康本陣から 150 m（110 m の外）
+        expect(get(s, 'a_hq').morale).toBe(100); // 70 + 40 → 上限 100
+        expect(get(s, 'a_full').morale).toBe(100); // 下がっていない部隊も上がる（最初の士気 75 より上へ。上限 100）
         expect(s.events[s.events.length - 1]).toMatchObject({ kind: 'ability', unitId: 'a_hq' });
         expect(abilityMarks(s, 'a_in')).toContain('号令');
         expect(abilityMarks(s, 'a_out')).toEqual([]);
     });
 
-    it('効果中は、範囲内の味方の士気の低下が小さい（同じ場面の能力なしと比べて、30 秒後の士気が高い）', () => {
+    it('効果中は、範囲内の味方の士気の低下が小さい（同じ場面の能力なしと比べて、25 秒後の士気が高い）', () => {
         const a = createBattle(rallyScene());
         const b = createBattle(rallyScene());
         advance(a, 5);
         advance(b, 5);
         expect(get(a, 'a_y').morale).toBe(get(b, 'a_y').morale);
-        // （状態を直接変更）攻められて士気が下がった所（号令は最初の士気 95 までしか戻さない）
+        // （状態を直接変更）攻められて士気が下がった所（号令で 60 → 100）
         for (const x of [a, b]) get(x, 'a_y').morale = 60;
         useAbility(b, 'a_hq');
-        expect(abilityMoraleLossMul(b, get(b, 'a_y'))).toBeCloseTo(0.6);
+        expect(get(b, 'a_y').morale).toBe(100);
+        expect(abilityMoraleLossMul(b, get(b, 'a_y'))).toBeCloseTo(0.4);
         expect(abilityMoraleLossMul(a, get(a, 'a_y'))).toBe(1);
         const before = get(b, 'a_y').morale;
         advance(a, 25);
         advance(b, 25);
         const dropA = get(a, 'a_y').morale; // 能力なし
         const dropB = get(b, 'a_y').morale; // 能力あり
-        expect(dropB).toBeGreaterThan(dropA + 25);
-        // 低下の量そのものも小さい（+25 を差し引いても）
-        expect(before - dropB).toBeLessThan((before - 25 - dropA) * 0.8);
+        expect(dropB).toBeGreaterThan(dropA + 40);
+        // 低下の量そのものも小さい（+40 を差し引いても。能力なしの低下の 6 割より小さい）
+        expect(before - dropB).toBeLessThan((before - 40 - dropA) * 0.6);
     });
 
-    it('（状態を直接変更）範囲内の味方は士気 12 でも敗走しない（線 15 → 8）。能力なしなら敗走する', () => {
+    it('（状態を直接変更）範囲内の味方は士気 12 でも敗走しない（効果中は士気で敗走しない）。能力なしなら敗走する', () => {
         const a = createBattle(rallyScene());
         const b = createBattle(rallyScene());
         useAbility(b, 'a_hq');
@@ -119,18 +126,36 @@ describe('立て直しの号令（家康本陣）', () => {
         advance(b, 0.1);
         expect(get(a, 'a_y').status).toBe('routed');
         expect(get(b, 'a_y').status).toBe('ready');
+        expect(get(b, 'a_y').morale).toBeGreaterThanOrEqual(12);
     });
 
-    it('代償：効果中、家康本陣の与える損害 ×0.5・動き ×0.5', () => {
+    it('効果中は、範囲内の味方の士気が 20 未満に下がらない（攻められ続けても。能力なしなら崩れる）。35 秒で切れる', () => {
+        const a = createBattle(rallyScene());
+        const b = createBattle(rallyScene());
+        // （状態を直接変更）押されて士気が 25 まで落ちた所（号令で 65 へ）
+        for (const x of [a, b]) get(x, 'a_y').morale = 25;
+        useAbility(b, 'a_hq');
+        let low = 100;
+        advance(a, 34);
+        advance(b, 34, (x) => (low = Math.min(low, get(x, 'a_y').morale)));
+        expect(low).toBeGreaterThanOrEqual(20);
+        expect(get(b, 'a_y').status).toBe('ready');
+        expect(get(a, 'a_y').status).toBe('routed');
+        expect(abilityInfo(b, 'a_hq')!.state).toBe('active');
+        advance(b, 1.1);
+        expect(abilityInfo(b, 'a_hq')!.state).toBe('spent');
+    });
+
+    it('代償：効果中、家康本陣の与える損害 ×0.3・動き ×0.5', () => {
         const s = createBattle(rallyScene());
         const hq = get(s, 'a_hq');
         const e = get(s, 'e_y');
-        hq.morale = 100; // （状態を直接変更）号令の士気 +25 で上限 100 になるので、損害の比べを士気 100 にそろえる
+        hq.morale = 100; // （状態を直接変更）号令の士気 +40 で上限 100 になるので、損害の比べを士気 100 にそろえる
         const d0 = meleeDamage(s, hq, e, 'front');
         useAbility(s, 'a_hq');
         expect(hq.morale).toBe(100);
-        expect(abilityDealMul(s, hq)).toBe(0.5);
-        expect(meleeDamage(s, hq, e, 'front') / d0).toBeCloseTo(0.5);
+        expect(abilityDealMul(s, hq)).toBe(0.3);
+        expect(meleeDamage(s, hq, e, 'front') / d0).toBeCloseTo(0.3);
         // 動き：同じ移動の命令で 10 秒に進む距離
         const moved = (use: boolean) => {
             const t = createBattle(setup([U('a_hq', 'ally', 'honjin', 0, 100, N, withAbility('ieyasu_rally', 'ieyasu'))]));
@@ -172,20 +197,20 @@ function rearguardScene(tadaAt: { x: number; z: number } = { x: 30, z: 60 }): Ba
 }
 
 describe('退路の守護（本多忠勝隊）', () => {
-    it('範囲内で退いている味方（撤退の命令・敗走中）の受ける損害 −50%・士気の低下 −50%。退いていない味方・範囲外には効かない', () => {
+    it('範囲内で退いている味方（撤退の命令・敗走中）の受ける損害 −80%・士気の低下 −80%。退いていない味方・範囲外には効かない', () => {
         const s = createBattle(rearguardScene());
         const r = get(s, 'a_r');
         const k = get(s, 'e_k');
         const d0 = meleeDamage(s, k, r, 'rear');
         expect(useAbility(s, 't').ok).toBe(true);
-        expect(abilityTakeMul(s, r)).toBe(0.5);
-        expect(meleeDamage(s, k, r, 'rear') / d0).toBeCloseTo(0.5);
-        expect(abilityMoraleLossMul(s, r)).toBe(0.5);
+        expect(abilityTakeMul(s, r)).toBe(0.2);
+        expect(meleeDamage(s, k, r, 'rear') / d0).toBeCloseTo(0.2);
+        expect(abilityMoraleLossMul(s, r)).toBe(0.2);
         expect(abilityMarks(s, 'a_r')).toContain('退路の守り');
         // 撤退をやめた味方には効かない
         issueOrder(s, 'a_r', { type: 'hold' });
         expect(abilityTakeMul(s, r)).toBe(1);
-        // （状態を直接変更）範囲外（70 m より遠く）へ置くと効かない
+        // （状態を直接変更）範囲外（100 m より遠く）へ置くと効かない
         issueOrder(s, 'a_r', { type: 'retreat' });
         r.x = 150;
         expect(abilityTakeMul(s, r)).toBe(1);
@@ -205,8 +230,11 @@ describe('退路の守護（本多忠勝隊）', () => {
         expect(get(b, 'a_r').status).toBe('ready');
     });
 
-    it('代償：忠勝隊は動けない（移動・攻撃・撤退の命令を断る。待機は受ける）。受ける損害 ×1.15。無敵ではない', () => {
-        const s = createBattle(rearguardScene());
+    it('代償：忠勝隊は動けない（移動・攻撃・撤退の命令を断る。待機は受ける）。受ける損害 ×1.4。無敵ではない', () => {
+        // 騎馬が忠勝隊に引きつけられて崩れても合戦が終わらないように、遠くに敵の槍を 1 つ足す
+        const sc = rearguardScene();
+        sc.units.push(U('e_far', 'enemy', 'yari', -150, -150, S));
+        const s = createBattle(sc);
         const t = get(s, 't');
         const k = get(s, 'e_k');
         const d0 = meleeDamage(s, k, t, 'front');
@@ -219,14 +247,14 @@ describe('退路の守護（本多忠勝隊）', () => {
         expect(issueOrder(s, 't', { type: 'attack', targetId: 'e_k' })).toBe(false);
         expect(issueOrder(s, 't', { type: 'hold' })).toBe(true);
         expect(orderLabel(s, t)).toContain('踏みとどまる');
-        expect(meleeDamage(s, k, t, 'front') / d0).toBeCloseTo(1.15);
+        expect(meleeDamage(s, k, t, 'front') / d0).toBeCloseTo(1.4);
         // 動かない（10 秒たっても同じ所）
         const x0 = t.x;
         const z0 = t.z;
         advance(s, 10);
         expect(Math.hypot(t.x - x0, t.z - z0)).toBeLessThan(3);
-        // 40 秒で効果が終わり、また動ける
-        advance(s, 31);
+        // 50 秒で効果が終わり、また動ける
+        advance(s, 41);
         expect(isRooted(s, 't')).toBe(false);
         expect(s.events.some((e) => e.kind === 'ability_end' && e.unitId === 't')).toBe(true);
         expect(issueOrder(s, 't', { type: 'move', x: 0, z: 0 })).toBe(true);
@@ -363,15 +391,15 @@ describe('能力の共通の決まり', () => {
         advance(s, 5);
         useAbility(s, 'a_hq');
         const t0 = s.t;
-        expect(abilityInfo(s, 'a_hq')!.remainingSec).toBe(30);
+        expect(abilityInfo(s, 'a_hq')!.remainingSec).toBe(35);
         // 指揮中：時間を進めない（0 秒の呼び出しも時間を進めない）
         stepBattle(s, 0);
         expect(s.t).toBe(t0);
-        expect(abilityInfo(s, 'a_hq')!.remainingSec).toBe(30);
+        expect(abilityInfo(s, 'a_hq')!.remainingSec).toBe(35);
         expect(abilityInfo(s, 'a_hq')!.state).toBe('active');
         advance(s, 10);
-        expect(abilityInfo(s, 'a_hq')!.remainingSec).toBeCloseTo(20, 5);
-        advance(s, 20);
+        expect(abilityInfo(s, 'a_hq')!.remainingSec).toBeCloseTo(25, 5);
+        advance(s, 25);
         expect(abilityInfo(s, 'a_hq')!.state).toBe('spent');
         expect(abilityInfo(s, 'a_hq')!.remainingSec).toBe(0);
     });
@@ -387,10 +415,10 @@ describe('能力の共通の決まり', () => {
         expect(again.ok).toBe(false);
         expect(again.reason).toContain('効果中');
         expect(useAbility(s, 'a_hq').ok).toBe(false);
-        expect(get(s, 'a_y').morale).toBe(65);
+        expect(get(s, 'a_y').morale).toBe(80); // 40 + 40（1 回だけ）
         expect(s.abilities.a_hq.usedAt).toBe(usedAt);
         expect(s.events.filter((e) => e.kind === 'ability')).toHaveLength(1);
-        advance(s, 31);
+        advance(s, 36);
         const late = useAbility(s, 'a_hq');
         expect(late.ok).toBe(false);
         expect(late.reason).toContain('もう使った');
@@ -427,14 +455,18 @@ describe('能力の共通の決まり', () => {
     it('説明：能力名・対象・範囲・効果・代償・使えるか・ゲーム用の創作の断り書き', () => {
         const s = createBattle(rearguardScene());
         const info = abilityInfo(s, 't')!;
-        expect(info).toMatchObject({ id: 'tadakatsu_rearguard', name: '退路の守護', target: 'self_area', range: 70, durationSec: 40, controllable: true, usable: true, reason: null, state: 'unused' });
-        expect(info.effectText).toContain('−50%');
+        expect(info).toMatchObject({ id: 'tadakatsu_rearguard', name: '退路の守護', target: 'self_area', needsTarget: false, range: 100, durationSec: 50, controllable: true, usable: true, ready: true, reason: null, state: 'unused' });
+        expect(info.effectText).toContain('−80%');
+        expect(info.rangeText).toContain('100 m');
+        expect(info.generalName).toBe('本多忠勝');
         expect(info.costText).toContain('動けない');
         expect(info.costText).toContain('無敵ではない');
         expect(info.note).toContain('ゲーム用の創作');
         for (const d of Object.values(ABILITY_DATA)) {
             expect(d.name).toBeTruthy();
-            expect(d.targetText && d.effectText && d.costText).toBeTruthy();
+            expect(d.targetText && d.rangeText && d.effectText && d.costText).toBeTruthy();
+            // 能力はゲーム上の創作。説明に「史実」の能力として書かない
+            expect(`${d.targetText}${d.rangeText}${d.effectText}${d.costText}`).not.toContain('史実');
         }
     });
 

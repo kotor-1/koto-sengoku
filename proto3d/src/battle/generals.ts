@@ -10,6 +10,8 @@
  * - AI の基本方針（aiPolicy）は、aiRole を省いた部隊の既定の役割になる（ai.ts の defaultAiRole。攻めかかる＝相手の本陣へ assault、
  *   持ち場を保つ＝hold_line、慎重に守る＝guard_hq、味方を支える＝reserve）。今の戦場・章の部隊はどれも aiRole を持つか generalId を持たないので、
  *   今の合戦の動きは変わらない（新しい戦場で役割を省いた武将の部隊に効く）。
+ * - 味方として指揮下にいるときの基本方針（initiative）は、演習の戦場（BattleSetup.generalInitiative）で、命令を受けていない待機中だけ
+ *   持ち場の近くで動く（ai.ts の thinkGenerals。酒井＝連携・石川＝支援・忠勝＝前線維持と殿・榊原＝機動と追撃）。プレイヤーの命令が最優先。
  * - history は「資料で確かめたこと」「一般に知られる事柄（今回の資料では未確認）」「ゲーム用の解釈」を分けて持つ。
  *   確かめた資料は docs/historical-source-notes.md のメモだけ（ChatGPT が公式ページの本文を確認したもの。Claude は公式ページに到達できなかった）。
  *   役割・能力・AI の方針・台詞はすべてゲーム用の創作で、史実の人物の能力や発言ではない。
@@ -28,6 +30,16 @@ export type GeneralRole =
 export type GeneralAiPolicy = 'aggressive' | 'steady' | 'cautious' | 'support';
 
 export type GeneralId = 'ieyasu' | 'tadakatsu' | 'nagamasa' | 'sakai' | 'ishikawa' | 'sakakibara';
+
+/**
+ * 味方として指揮下にいるときの基本方針（武将の自由な動き。BattleSetup.generalInitiative の合戦だけ。ai.ts の thinkGenerals）。
+ * 命令を受けていない待機中だけ、持ち場の近くで動く。プレイヤーの命令が最優先で、重要な作戦（攻め込む・退く）は決めない。
+ * - coordinate：周りの部隊との連携（隣の味方と斬り合っている敵へ横から当たる）
+ * - support：予備・援軍・同盟の支援（士気の落ちた味方・援軍・同盟の部隊の近くへ寄り、その相手に当たる）
+ * - rearguard：前線維持・殿（持ち場を保ち、近くで退く味方の後ろへ入る）
+ * - pursuit：側面・機動・追撃（近くの退く敵・弓隊を追う）
+ */
+export type GeneralInitiative = 'coordinate' | 'support' | 'rearguard' | 'pursuit';
 
 /** 主人公本人の relationKey（関係状態を持たない） */
 export const RELATION_SELF = 'self';
@@ -54,6 +66,8 @@ export interface GeneralDef {
     abilityId: AbilityId;
     /** AI の基本方針（aiRole を省いた部隊の既定の役割。ai.ts の defaultAiRole） */
     aiPolicy: GeneralAiPolicy;
+    /** 味方として指揮下にいるときの基本方針（待機中の自由な動き。無ければ動かない＝家康本陣・長政隊） */
+    initiative?: GeneralInitiative;
     /** 主人公との関係状態の鍵（歴史分岐では IeyasuState.trust の鍵。主人公本人は RELATION_SELF。合戦の武将の行が BattleSetup.relations から引く） */
     relationKey: string;
     history: GeneralHistory;
@@ -66,6 +80,14 @@ export const GENERAL_ROLE_LABELS: Readonly<Record<GeneralRole, string>> = {
     tactician: '采配・軍議',
     reserve: '後詰め',
     ally_lord: '同盟の大将',
+};
+
+/** 味方の基本方針の呼び方 */
+export const GENERAL_INITIATIVE_LABELS: Readonly<Record<GeneralInitiative, string>> = {
+    coordinate: '周りの部隊と連携',
+    support: '予備・援軍・同盟を支える',
+    rearguard: '前線を保ち殿を務める',
+    pursuit: '側面へ回り追撃する',
 };
 
 /** AI の基本方針の呼び方 */
@@ -110,7 +132,8 @@ export const GENERALS: readonly GeneralDef[] = [
         clan: 'tokugawa',
         role: 'vanguard',
         abilityId: 'tadakatsu_rearguard',
-        aiPolicy: 'aggressive',
+        aiPolicy: 'steady',
+        initiative: 'rearguard',
         relationKey: 'tadakatsu',
         history: {
             verified: ['1560年の初陣以降、家康の旗本として活動した（岡崎市観光協会「徳川十六将」内「本多忠勝」）。特定の合戦での配置や個別の行動までは、この記載では確定しない。'],
@@ -122,7 +145,7 @@ export const GENERALS: readonly GeneralDef[] = [
             interpretation: [
                 '役割：前線の主将。参謀としては扱わない。',
                 '固有能力「退路の守護」（tadakatsu_rearguard）と数値はゲーム用の創作。無敵にはしない（忠勝隊が崩れると負傷する）。',
-                'AI の基本方針：攻めかかる。',
+                'AI の基本方針：持ち場を保つ（前線維持・殿）。味方として待機中は、近くで退く味方の後ろへ入る。',
                 '台詞はすべて創作。',
             ],
             sourceNote: NOTE_SOURCE,
@@ -155,6 +178,7 @@ export const GENERALS: readonly GeneralDef[] = [
         role: 'tactician',
         abilityId: 'sakai_flank',
         aiPolicy: 'steady',
+        initiative: 'coordinate',
         relationKey: 'sakai',
         history: {
             verified: [],
@@ -162,7 +186,7 @@ export const GENERALS: readonly GeneralDef[] = [
             interpretation: [
                 '役割：采配・軍議。歴史分岐の軍議で、方針ごとに戦の段取りの意見を述べる（台詞は創作）。',
                 '仮の能力「両翼の采配」（sakai_flank）：差し替え前提の仮データ（数値は battle/abilities.ts）。',
-                'AI の基本方針：持ち場を保つ。',
+                'AI の基本方針：持ち場を保つ。味方として待機中は、周りの部隊との連携を優先する（隣の味方と斬り合う敵へ横から当たる）。',
                 '歴史分岐の章の合戦には部隊として出ない（Version 11 の釣り合いを守る）。',
             ],
             sourceNote: NOTE_NONE,
@@ -175,6 +199,7 @@ export const GENERALS: readonly GeneralDef[] = [
         role: 'reserve',
         abilityId: 'ishikawa_reserve',
         aiPolicy: 'support',
+        initiative: 'support',
         relationKey: 'ishikawa',
         history: {
             verified: [],
@@ -182,7 +207,7 @@ export const GENERALS: readonly GeneralDef[] = [
             interpretation: [
                 '役割：後詰め。歴史分岐の軍議で、方針ごとに兵と退き口の備えの意見を述べる（台詞は創作）。',
                 '仮の能力「後詰めの差配」（ishikawa_reserve）：差し替え前提の仮データ（数値は battle/abilities.ts）。',
-                'AI の基本方針：味方を支える。',
+                'AI の基本方針：味方を支える。味方として待機中は、予備・援軍・同盟の部隊や士気の落ちた味方を支える。',
                 '歴史分岐の章の合戦には部隊として出ない（Version 11 の釣り合いを守る）。',
             ],
             sourceNote: NOTE_NONE,
@@ -195,6 +220,7 @@ export const GENERALS: readonly GeneralDef[] = [
         role: 'vanguard',
         abilityId: 'sakakibara_vanguard',
         aiPolicy: 'aggressive',
+        initiative: 'pursuit',
         relationKey: 'sakakibara',
         history: {
             verified: [],
@@ -202,7 +228,7 @@ export const GENERALS: readonly GeneralDef[] = [
             interpretation: [
                 '役割：前線の主将。',
                 '仮の能力「先駆けの号」（sakakibara_vanguard）：差し替え前提の仮データ（数値は battle/abilities.ts）。',
-                'AI の基本方針：攻めかかる。',
+                'AI の基本方針：攻めかかる。味方として待機中は、近くの退く敵・弓隊を追う（側面・機動・追撃）。',
                 '歴史分岐の章には登場しない（関係状態の値だけを持つ）。',
             ],
             sourceNote: NOTE_NONE,
