@@ -183,10 +183,18 @@ async function run(kind) {
     {
         const before0 = await snapshot(page);
         const lSk = (await label(page, 'a_sakai')).badge;
-        const dy = (lSk.b - lSk.t) / 2 + (p.phone ? 10 : 6);
-        await pointAt(p, lSk.x, lSk.y - dy);
+        // 印の見た目の外で、ほかの名札に重ならない所（名札の重なりをほどくので、上には別の名札があることがある）：右・上・下の順に探す
+        const off = p.phone ? 10 : 6;
+        const cands = [
+            { x: lSk.r + off, y: lSk.y, what: `右 ${off} px` },
+            { x: lSk.x, y: lSk.t - off, what: `上 ${off} px` },
+            { x: lSk.x, y: lSk.b + off, what: `下 ${off} px` },
+        ];
+        const covers = await page.evaluate(() => window.__battle.labelCovers());
+        const pt = cands.find((c) => !covers.some((k) => c.x >= k.l && c.x <= k.r && c.y >= k.t && c.y <= k.b)) ?? cands[0];
+        await pointAt(p, pt.x, pt.y);
         const after0 = await snapshot(page);
-        check((await ab(page, 'a_sakai')).usedAt !== null, `[${kind}] 何も選んでいない時、酒井の名札の印の ${dy.toFixed(0)} px 上（見た目の外・当たりの中）を押す → 両翼の采配`);
+        check((await ab(page, 'a_sakai')).usedAt !== null, `[${kind}] 何も選んでいない時、酒井の名札の印の${pt.what}（見た目の外・ほかの名札の外・当たりの中）を押す → 両翼の采配`);
         check(sameExcept(before0, after0, []).length === 0 && (await ui(page)).selectedId === null, `[${kind}] 酒井：位置・命令・選択が変わらない`);
     }
 
@@ -259,13 +267,17 @@ async function run(kind) {
     after = await snapshot(page);
     u = await ui(page);
     check(u.pending === 'none' && (await ab(page, 'a_ishikawa')).usedAt === null && sameExcept(before, after, []).length === 0, `[${kind}] 地面を押す → 対象選びをやめる（回数は減らない・移動にならない）`, await hintText(page));
-    // 名札をもう一度でやめる（守りの 0.5 秒より後）
-    await pointAt(p, lIs.x, lIs.y, 900);
+    // 名札をもう一度でやめる（守りの 0.5 秒より後）。対象選びに入ると、持ち主・対象が画面の部品に隠れていれば地図が動くので、印の所は毎回読み直す
+    const isBadge = async () => (await label(page, 'a_ishikawa')).badge;
+    let bIs = await isBadge();
+    await pointAt(p, bIs.x, bIs.y, 900);
     check((await ui(page)).pending === 'ability', `[${kind}] 名札 → 対象選び`);
-    await pointAt(p, lIs.x, lIs.y, 900);
+    bIs = await isBadge();
+    await pointAt(p, bIs.x, bIs.y, 900);
     check((await ui(page)).pending === 'none' && (await ab(page, 'a_ishikawa')).usedAt === null, `[${kind}] 同じ名札をもう一度 → やめる（回数は減らない）`);
     // Esc（スマホは「やめる」）でやめる
-    await pointAt(p, lIs.x, lIs.y, 900);
+    bIs = await isBadge();
+    await pointAt(p, bIs.x, bIs.y, 900);
     if (p.phone) await press(p, '.b-hint-x');
     else {
         await page.keyboard.press('Escape');
@@ -273,7 +285,8 @@ async function run(kind) {
     }
     check((await ui(page)).pending === 'none' && (await ab(page, 'a_ishikawa')).usedAt === null, `[${kind}] ${p.phone ? '「やめる」' : 'Esc'} → やめる（回数は減らない）`);
     // 敵を押す → 理由だけ
-    await pointAt(p, lIs.x, lIs.y, 900);
+    bIs = await isBadge();
+    await pointAt(p, bIs.x, bIs.y, 900);
     before = await snapshot(page);
     const es = await screenOf(page, 'e_sente');
     await pointAt(p, es.x, es.y);
