@@ -12,6 +12,7 @@ import { useAbility } from '../proto3d/src/battle/abilities';
 import { buildBattleSetup, getField } from '../proto3d/src/battle/fields';
 import { ieyasu1570Setup, IEYASU_INITIAL_TROOPS } from '../proto3d/src/battle/maps';
 import {
+    ABILITY_ARM,
     ABILITY_BLINK,
     LABEL_HIT_PX,
     TAP_GUARD_SEC,
@@ -21,14 +22,20 @@ import {
     abilityNoticeModel,
     abilityPanelModel,
     abilityTargetHint,
+    armDecision,
+    armLive,
+    flankStatus,
+    flankStatusText,
     inTapGuard,
     labelAbilityModel,
     labelHit,
     labelTapCandidates,
+    labelTopAt,
     refusalText,
     resolveLabelTap,
     resolveTap,
     type LabelBox,
+    type LabelCover,
     type Pending,
     type TapGuard,
 } from '../proto3d/src/battle/control';
@@ -275,6 +282,84 @@ describe('名札の当たり判定（labelHit）', () => {
         expect(labelHit([box, b2], [], 215, 105, LABEL_HIT_PX.touch)).toBe('a');
         // 2 つの間（どちらの見た目の外）→ 中心の近い b（中心 (215,118) まで 9 px、a の中心まで 18 px）
         expect(labelHit([box, b2], [], 215, 109, LABEL_HIT_PX.touch)).toBe('b');
+    });
+});
+
+describe('名札の重なり（labelHit の covers・labelTopAt。Version 13 候補の確認で直した）', () => {
+    // 確認で見つかった形（スマホの全体表示）：忠勝の名札（印は右端）の上に、後から足した榊原の名札が重なって描かれ、忠勝の印は見えない。
+    // 前は榊原の名札の名前を押すと、下に隠れた忠勝の印の当たりに入り、忠勝の「退路の守護」が発動していた
+    const tadaLabel: LabelCover = { id: 'a_tadakatsu', l: 380, t: 190, r: 470, b: 205, z: 100003 };
+    const tadaBadge: LabelBox = { id: 'a_tadakatsu', l: 432, t: 192, r: 468, b: 203, z: 100003 };
+    const sakaLabel: LabelCover = { id: 'a_sakakibara', l: 420, t: 192, r: 505, b: 207, z: 100005 };
+    const sakaBadge: LabelBox = { id: 'a_sakakibara', l: 470, t: 194, r: 503, b: 205, z: 100005 };
+    const covers = [tadaLabel, sakaLabel];
+    it('上に重なって見えている名札の所は、下に隠れた名札の印に当てない（榊原の名札の名前を押しても忠勝は発動しない）', () => {
+        // (444,199)：忠勝の印の四角の中だが、榊原の名札が上に見えている
+        expect(labelHit([tadaBadge, sakaBadge], [], 444, 199, LABEL_HIT_PX.touch, covers)).toBeNull();
+        expect(labelTopAt(covers, 444, 199)).toBe('a_sakakibara');
+        // 重なりを渡さない（前の判定）と、隠れた忠勝の印に当たっていた
+        expect(labelHit([tadaBadge, sakaBadge], [], 444, 199, LABEL_HIT_PX.touch)).toBe('a_tadakatsu');
+    });
+    it('見えている印は今までどおり当たる（榊原の印・重なっていない忠勝の名札の左の所は忠勝の名前）', () => {
+        expect(labelHit([tadaBadge, sakaBadge], [], 486, 199, LABEL_HIT_PX.touch, covers)).toBe('a_sakakibara');
+        expect(labelTopAt(covers, 400, 197)).toBe('a_tadakatsu');
+        expect(labelHit([tadaBadge, sakaBadge], [], 400, 197, LABEL_HIT_PX.touch, covers)).toBeNull();
+    });
+    it('広げた当たりは、名札の上（自分の名札の名前の所も）では効かない。名札の外なら今までどおり', () => {
+        const label: LabelCover = { id: 'a', l: 140, t: 90, r: 240, b: 110, z: 1 };
+        const badge: LabelBox = { id: 'a', l: 205, t: 93, r: 238, b: 107, z: 1 };
+        // 名前の所（印の左 6 px）：印の広げた当たりの中だが、名札の上なので印には当てない（名前の所＝確かめ）
+        expect(labelHit([badge], [], 199, 100, LABEL_HIT_PX.touch, [label])).toBeNull();
+        expect(labelHit([badge], [], 199, 100, LABEL_HIT_PX.touch)).toBe('a');
+        // 名札の外（印の下 8 px）：広げた当たり
+        expect(labelHit([badge], [], 221, 116, LABEL_HIT_PX.touch, [label])).toBe('a');
+    });
+    it('重なりの順が同じ名札どうしでは、z の大きい方が上（下の名札の中でも、上の名札の外なら当たる）', () => {
+        expect(labelTopAt(covers, 475, 200)).toBe('a_sakakibara');
+        expect(labelTopAt(covers, 385, 200)).toBe('a_tadakatsu');
+        expect(labelTopAt(covers, 300, 200)).toBeNull();
+    });
+});
+
+describe('名札の名前・部隊の体を押したときの確かめ（armDecision）', () => {
+    it('1 回目は確かめ（arm）。3 秒のうちに同じ武将をもう一度押すと使う（fire）。0.25 秒より早い 2 回目は何もしない（wait）', () => {
+        expect(armDecision(null, 'a_ieyasu', 10)).toBe('arm');
+        const arm = { id: 'a_ieyasu', at: 10 };
+        expect(armDecision(arm, 'a_ieyasu', 10.1)).toBe('wait');
+        expect(armDecision(arm, 'a_ieyasu', 10 + ABILITY_ARM.minGapSec)).toBe('fire');
+        expect(armDecision(arm, 'a_ieyasu', 12.9)).toBe('fire');
+        expect(armDecision(arm, 'a_ieyasu', 10 + ABILITY_ARM.windowSec + 0.01)).toBe('arm');
+        // ほかの武将は確かめからやり直し
+        expect(armDecision(arm, 'a_sakai', 11)).toBe('arm');
+    });
+    it('確かめの間は、名札の印が「もう一度で◆号令」になる（点滅は続く）。時間が過ぎれば元の「◆号令」', () => {
+        const s = plains();
+        const arm = { id: 'a_ieyasu', at: 5 };
+        expect(labelAbilityModel(s, 'a_ieyasu', 'none', 'a_ieyasu', armLive(arm, 6))).toEqual({ mode: 'ready', text: 'もう一度で◆号令' });
+        expect(labelAbilityModel(s, 'a_sakai', 'none', 'a_ieyasu', armLive(arm, 6))).toEqual({ mode: 'ready', text: '◆両翼' });
+        expect(armLive(arm, 9)).toBeNull();
+        expect(labelAbilityModel(s, 'a_ieyasu', 'none', 'a_ieyasu', armLive(arm, 9))).toEqual({ mode: 'ready', text: '◆号令' });
+    });
+});
+
+describe('両翼の采配の包囲の条件の表示（flankStatus）', () => {
+    it('効果中だけ。正面だけで斬っている間は「包囲なし」。能力の欄・名札にも出る', () => {
+        const s = plains();
+        expect(flankStatus(s, 'a_sakai')).toBeNull();
+        useAbility(s, 'a_sakai');
+        const f = flankStatus(s, 'a_sakai')!;
+        expect(f).toEqual({ flankers: 0, encircled: 0 });
+        expect(flankStatusText(f)).toBe('包囲なし');
+        expect(abilityPanelModel(s, 'a_sakai')!.stateText).toContain('包囲なし');
+        expect(labelAbilityModel(s, 'a_sakai', 'none', null).text).toMatch(/^残り 25 秒・包囲なし$/);
+        // ほかの能力には出ない
+        useAbility(s, 'a_ieyasu');
+        expect(flankStatus(s, 'a_ieyasu')).toBeNull();
+        expect(labelAbilityModel(s, 'a_ieyasu', 'none', null).text).toBe('残り 35 秒');
+    });
+    it('文：包囲があれば「包囲 N」、側背だけなら「包囲なし・側背 N」', () => {
+        expect(flankStatusText({ flankers: 2, encircled: 1 })).toBe('包囲 1');
+        expect(flankStatusText({ flankers: 1, encircled: 0 })).toBe('包囲なし・側背 1');
     });
 });
 

@@ -10,7 +10,9 @@
  *   使う＝日没で撤退（敗北しない）。90 秒の前線の士気の平均 85（忠勝 99・酒井 80・榊原 59・弓 100）。前線の敗走 0（代わりに崩れずに戦い続けた
  *   榊原隊が 104.4 秒に、弓隊が 184 秒に全滅する＝士気で崩れないので最後まで斬り合う）。
  * - 酒井「両翼の采配」（地形に合った作戦の前半：酒井隊が敵の左備を正面で受け、騎馬が横から当たる 46 秒に使う）：
- *   左備の敗走 63.0 秒 → 59.9 秒。60 秒の左備の士気 34 → 13。左備の兵の残り 220 → 143（挟まれて崩れ、追い討ちでさらに減る）。
+ *   騎馬が背後から当たった 59.9 秒に左備が包囲され（正面＋背後）、その刻みに敗走（使わない時は 63.0 秒）。60 秒の左備の士気 34 → 13。
+ *   左備の兵の残り 220 → 260（Version 13 候補の確認で「包囲を作ること自体が条件」に直した後の値。前は包囲がなくても側面 ×1.8 が効き、
+ *   崩れた後の追い討ちにも掛かって 143 だった。今は崩れた相手は包囲にならないので追い討ちは強くならず、早く崩れた分だけ兵が残る）。
  *   局面：正面から 2 部隊で当たるだけなら、能力の有無で左備の兵・士気は 1 刻みも同じ（20 秒で兵 516・士気 58）。正面＋側面なら包囲になり、
  *   4 秒の左備の損害 37 → 72・士気 65 → 32、5.8 秒に敗走（使わない時は 20 秒でも崩れない。兵 428・士気 17）。
  * - 石川「後詰めの差配」（騎馬を予備に残し、敵の騎馬が林から出た 76 秒に騎馬を当てる。石川隊が騎馬を選んで急がせる）：
@@ -45,6 +47,8 @@ interface Run {
     at: Record<number, Record<string, { str: number; mor: number; st: string }>>;
     /** 出来事の時刻（最初の 1 つ） */
     when: (kind: string, unitId: string) => number | null;
+    /** 包囲された部隊と、最初に包囲された時刻 */
+    encircledAt: Record<string, number>;
 }
 
 /**
@@ -59,6 +63,7 @@ function play(steps: Step[], opts: { trigger?: (s: BattleState) => Step[] | null
     const snaps = [...(opts.snaps ?? [])];
     const at: Run['at'] = {};
     let fired = false;
+    const encircledAt: Record<string, number> = {};
     const maxSec = opts.maxSec ?? 3600;
     while (!s.result && s.t < maxSec) {
         if (opts.trigger && !fired) {
@@ -78,9 +83,10 @@ function play(steps: Step[], opts: { trigger?: (s: BattleState) => Step[] | null
             at[t] = Object.fromEntries(s.units.map((u) => [u.id, { str: Math.round(u.strength), mor: Math.round(u.morale), st: u.status }]));
         }
         stepBattle(s, 0.1);
+        for (const id of s.encircled) encircledAt[id] ??= Math.round(s.t * 10) / 10;
     }
     const when = (kind: string, unitId: string) => s.events.find((e) => e.kind === kind && e.unitId === unitId)?.t ?? null;
-    return { s, o: s.result!, refused, at, when };
+    return { s, o: s.result!, refused, at, when, encircledAt };
 }
 
 const FRONT = ['a_tadakatsu', 'a_sakai', 'a_sakakibara', 'a_yumi'];
@@ -121,14 +127,17 @@ describe('酒井「両翼の采配」：挟み撃ち（大平原）', () => {
     const off = play(FIT_EARLY, { snaps: [60] });
     const on = play([...FIT_EARLY, [46, 'a_sakai', 'ability']], { snaps: [60] });
 
-    it('正面（酒井隊）と側面（騎馬）で挟んだ左備は包囲され、早く崩れ、兵も多く失う', () => {
+    // Version 13 候補の確認で、側面 ×1.8 を包囲の中だけにした（依頼「包囲を作ること自体が条件」）。前は「兵も多く失う（220 → 143）」も確かめていたが、
+    // それは包囲のない側面の当たり・崩れた後の追い討ちに ×1.8 が掛かった分だった。今は包囲が起きたこと・早く崩れること・士気の落ち方を確かめる
+    it('正面（酒井隊）と背後（騎馬）で挟んだ左備は包囲され、その場で崩れる（使わない時より早く、士気も大きく落ちる）。使わない時は包囲にならない', () => {
         expect(on.refused).toEqual([]);
+        expect(on.encircledAt.e_left).toBeDefined();
+        expect(off.encircledAt.e_left).toBeUndefined();
         const routOff = off.when('rout', 'e_left')!;
         const routOn = on.when('rout', 'e_left')!;
         expect(routOn).toBeLessThan(routOff - 2);
+        expect(routOn).toBeLessThanOrEqual(on.encircledAt.e_left! + 0.5);
         expect(on.at[60]!.e_left!.mor).toBeLessThan(off.at[60]!.e_left!.mor - 15);
-        const left = (r: Run) => r.o.units.find((u) => u.id === 'e_left')!.endStrength;
-        expect(left(on)).toBeLessThan(left(off) - 50);
     });
 
     // 局面：大平原の地図に、南を向く敵の槍と、その正面で斬り合う酒井隊・もう 1 部隊（正面か側面）を置く

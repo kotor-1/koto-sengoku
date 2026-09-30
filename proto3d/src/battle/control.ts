@@ -8,7 +8,7 @@
  * - 見下ろしカメラの範囲。
  */
 import type { AbilityId, BattleEndReason, BattleMap, BattleOutcome, BattleResultKind, ObjectiveDef, Order, Side, UnitKind, Zone } from './types';
-import { STATUS_LABEL, canCommand, engagementLabel, hqOf, isActive, issueOrder, orderLabel, pledgeProgress, timeLeft, unitById, type BattleEvent, type BattleState, type UnitState } from './sim';
+import { STATUS_LABEL, attackDir, canCommand, engagementLabel, hqOf, isActive, issueOrder, orderLabel, pledgeProgress, timeLeft, unitById, type BattleEvent, type BattleState, type UnitState } from './sim';
 import { ABILITY_DATA, ABILITY_FICTION_NOTE, abilityInfo, abilityMarks, abilityShortText, isRooted, type AbilityInfo } from './abilities';
 import { objectiveProgress, type ObjectiveRole, type ObjectiveState } from './objectives';
 import { zoneCenter } from './fieldRules';
@@ -638,6 +638,9 @@ export function abilityPanelModel(s: BattleState, unitId: string): AbilityPanelM
         stateText = '使えない';
         tone = 'blocked';
     }
+    // 両翼の采配の効果中：包囲の条件を満たしているか（使ったのに何も起きないように見えないよう、条件の状態を出す）
+    const flank = info.state === 'active' ? flankStatus(s, unitId) : null;
+    if (flank) stateText += `・${flankStatusText(flank)}`;
     if (info.state === 'active' && info.target === 'ally_unit' && info.targetId) {
         const t = unitById(s, info.targetId);
         // 盟友への援護は離れると外れる。後詰めの差配は使った後は離れても効く（linked はいつも true）
@@ -664,6 +667,40 @@ export function abilityPanelModel(s: BattleState, unitId: string): AbilityPanelM
         note: info.note,
         info,
     };
+}
+
+/** 両翼の采配の効果中の、包囲の条件の状態（酒井隊の範囲の味方で、側面・背後から斬っている部隊の数・包囲されている敵の数） */
+export interface FlankStatus {
+    /** 範囲の味方のうち、いま敵の側面・背後から斬っている部隊の数 */
+    flankers: number;
+    /** 包囲されている敵の数（s.encircled） */
+    encircled: number;
+}
+
+/**
+ * 両翼の采配の効果中なら、包囲の条件の状態（ほかの能力・効果中でなければ null）。合戦の状態を読むだけ。
+ * 包囲＝範囲の味方 2 部隊以上が、同じ敵を別の向きから斬っている（abilities.ts の findEncircled）。
+ */
+export function flankStatus(s: BattleState, unitId: string): FlankStatus | null {
+    const info = abilityInfo(s, unitId);
+    if (!info || info.state !== 'active' || !ABILITY_DATA[info.id].encircle) return null;
+    const holder = unitById(s, unitId);
+    if (!holder) return null;
+    const r = ABILITY_DATA[info.id].radius;
+    let flankers = 0;
+    for (const a of s.units) {
+        if (a.side !== holder.side || !a.present || a.status !== 'ready' || !a.engagedWith) continue;
+        if (Math.hypot(a.x - holder.x, a.z - holder.z) > r) continue;
+        const d = unitById(s, a.engagedWith);
+        if (d && attackDir(d, a.x, a.z) !== 'front') flankers++;
+    }
+    return { flankers, encircled: s.encircled.length };
+}
+
+/** 包囲の条件の短い文（名札・能力の欄）。例：「包囲 1」「包囲なし・側背 1」「包囲なし」 */
+export function flankStatusText(f: FlankStatus): string {
+    if (f.encircled > 0) return `包囲 ${f.encircled}`;
+    return f.flankers > 0 ? `包囲なし・側背 ${f.flankers}` : '包囲なし';
 }
 
 /** 部隊の札・名札に添える、能力の短い状態（能力がなければ空）。例：「号令 使える」「踏みとどまる 32 秒」「援護 済」 */
@@ -702,6 +739,33 @@ export const LABEL_HIT_PX = { mouse: 36, touch: 48 };
 export const TAP_GUARD_SEC = 0.5;
 
 /**
+ * 点滅している武将の名札の名前・部隊の体を押したとき（印の外）：その部隊を選び、短い確かめ（名札に「もう一度で◆号令」）を出す。
+ * windowSec のあいだに同じ武将（名札・体）をもう一度押すと使う（対象の要る能力は対象選びへ）。minGapSec より早い 2 回目（指の震え・連打）は何もしない。
+ * 時間は実時間（一時停止中も進む）。印（◆号令）を押せば、今までどおり 1 回で使う。
+ */
+export const ABILITY_ARM = { windowSec: 3, minGapSec: 0.25 };
+
+/** 確かめの状態（押した武将・押した実時間） */
+export interface AbilityArm {
+    id: string;
+    at: number;
+}
+
+/**
+ * 点滅している武将の名札の名前・部隊の体を押した：'fire'＝確かめの中の 2 回目（使う）／'wait'＝早すぎる 2 回目（何もしない）／
+ * 'arm'＝1 回目（選んで確かめを出す）
+ */
+export function armDecision(arm: AbilityArm | null, id: string, now: number): 'fire' | 'wait' | 'arm' {
+    if (!arm || arm.id !== id || now - arm.at > ABILITY_ARM.windowSec) return 'arm';
+    return now - arm.at < ABILITY_ARM.minGapSec ? 'wait' : 'fire';
+}
+
+/** 確かめがまだ効いているか（名札の「もう一度で◆」の表示） */
+export function armLive(arm: AbilityArm | null, now: number): string | null {
+    return arm && now - arm.at <= ABILITY_ARM.windowSec ? arm.id : null;
+}
+
+/**
  * 名札の能力の印：
  * - ready：発動できる（点滅）。wait：対象選びの間の、ほかの発動できる武将（点滅しない）
  * - choosing：対象を選んでいる能力の持ち主。target：選べる対象。untargetable：選べない（薄く）
@@ -720,7 +784,7 @@ export interface LabelAbilityModel {
  * 点滅（ready）は abilityInfo の ready（味方の武将・まだ使っていない・戦える・着いている・対象の要る能力は選べる対象がいる）だけ。
  * 敵方・使用済み・効果中・戦えない・まだ着いていない・対象がいない、では点滅しない。対象選びの間は、選べる・選べないを示す。
  */
-export function labelAbilityModel(s: BattleState, unitId: string, pending: Pending, selectedId: string | null): LabelAbilityModel {
+export function labelAbilityModel(s: BattleState, unitId: string, pending: Pending, selectedId: string | null, armedId: string | null = null): LabelAbilityModel {
     const u = unitById(s, unitId);
     if (!u || s.result) return { mode: '', text: '' };
     const info = s.abilities[unitId] ? abilityInfo(s, unitId) : null;
@@ -732,9 +796,13 @@ export function labelAbilityModel(s: BattleState, unitId: string, pending: Pendi
         return { mode: 'untargetable', text: '' };
     }
     if (!info) return { mode: '', text: '' };
-    if (info.ready) return { mode: 'ready', text: `◆${info.cardLabel}` };
-    // 効果中：残り秒数だけ（能力の名前は名札の効いている印［号令（守りを優先）］などに出ている）
-    if (info.state === 'active' && info.controllable) return { mode: 'active', text: `残り ${Math.ceil(info.remainingSec)} 秒` };
+    // 名札の名前・部隊の体を押した後の確かめ（ABILITY_ARM.windowSec のあいだ）：もう一度押すと使う
+    if (info.ready) return { mode: 'ready', text: armedId === unitId ? `もう一度で◆${info.cardLabel}` : `◆${info.cardLabel}` };
+    // 効果中：残り秒数だけ（能力の名前は名札の効いている印［号令（守りを優先）］などに出ている）。両翼の采配は包囲の条件の状態も
+    if (info.state === 'active' && info.controllable) {
+        const f = flankStatus(s, unitId);
+        return { mode: 'active', text: `残り ${Math.ceil(info.remainingSec)} 秒${f ? `・${flankStatusText(f)}` : ''}` };
+    }
     return { mode: '', text: '' };
 }
 
@@ -745,6 +813,27 @@ export interface LabelBox {
     t: number;
     r: number;
     b: number;
+    /** 描く重なりの順（大きいほど上。LabelCover の z と同じ数え方。省けば 0） */
+    z?: number;
+}
+
+/**
+ * 画面に出ている部隊の名札の四角と、描く重なりの順（z：大きいほど上）。名札の見た目で隠れた所を押しても、隠れた名札には当てない
+ * （上に見えている名札を押したつもりの指を、下の名札の印が奪わない）
+ */
+export interface LabelCover extends LabelBox {
+    z: number;
+}
+
+function inBox(b: { l: number; t: number; r: number; b: number }, x: number, y: number): boolean {
+    return x >= b.l && x <= b.r && y >= b.t && y <= b.b;
+}
+
+/** その点でいちばん上に見えている部隊の名札（どれにも入っていなければ null） */
+export function labelTopAt(covers: readonly LabelCover[], x: number, y: number): string | null {
+    let best: LabelCover | null = null;
+    for (const c of covers) if (inBox(c, x, y) && (!best || c.z > best.z)) best = c;
+    return best ? best.id : null;
 }
 
 /** 画面の点（部隊の体の中心（その部隊自身も）・ほかの名札の中心。名札の広げた当たりが、この点より向こうへ行かないように） */
@@ -756,12 +845,14 @@ export interface ScreenMark {
 
 /**
  * 名札を押したか（押した名札の部隊 id。どれでもなければ null）。
- * - 見た目の名札の中：その名札。
+ * - 見た目の名札の中：その名札。ただし、その点に上から重なって見えている別の名札（covers で z が大きいもの）があれば当てない
+ *   （隠れた印を押したことにしない。Version 13 候補の確認で直した：重なった名札の下の忠勝の印が、上の榊原の名札を押した指を奪っていた）。
  * - 見た目の外で、名札の中心を真ん中に minPx 四方まで広げた中：ほかの部隊の中心・ほかの名札の中心より、この名札の中心に近いときだけ
  *   （隣の部隊を押したつもりの指を奪わない。広げた当たりは隣の部隊の中心より外へ行かない）。
+ *   その点がどれかの名札（自分の名札の名前の所も）の上なら、広げた所としては当てない（見えている名札の方を押したとみなす）。
  * 複数に当たれば、名札の中心に近いもの。
  */
-export function labelHit(boxes: readonly LabelBox[], others: readonly ScreenMark[], x: number, y: number, minPx: number): string | null {
+export function labelHit(boxes: readonly LabelBox[], others: readonly ScreenMark[], x: number, y: number, minPx: number, covers: readonly LabelCover[] = []): string | null {
     let best: string | null = null;
     let bestD = Infinity;
     for (const b of boxes) {
@@ -771,9 +862,15 @@ export function labelHit(boxes: readonly LabelBox[], others: readonly ScreenMark
         const hh = Math.max(b.b - b.t, minPx) / 2;
         if (Math.abs(x - cx) > hw || Math.abs(y - cy) > hh) continue;
         const d = Math.hypot(x - cx, y - cy);
-        const inside = x >= b.l && x <= b.r && y >= b.t && y <= b.b;
-        if (!inside) {
-            // 広げた所：ほかの部隊（の中心・名札の中心）の方が近ければ、その部隊を押したつもりとみなす
+        const inside = inBox(b, x, y);
+        if (inside) {
+            // 上に重なって見えている別の名札：隠れた所は押せない
+            const z = b.z ?? 0;
+            if (covers.some((c) => c.id !== b.id && c.z > z && inBox(c, x, y))) continue;
+        } else {
+            // 広げた所：名札の上（自分の名札の名前の所も）なら、見えている名札を押したとみなす
+            if (covers.some((c) => inBox(c, x, y))) continue;
+            // ほかの部隊（の中心・名札の中心）の方が近ければ、その部隊を押したつもりとみなす
             if (others.some((o) => o.id !== b.id && Math.hypot(x - o.x, y - o.y) <= d)) continue;
         }
         const score = inside ? d * 0.5 : d;

@@ -7,7 +7,7 @@
  * 早送り（stepBattle で進める）。一部は状態を直接変える（士気を書き換える）テスト。その旨をテスト名に書く。
  */
 import { describe, expect, it } from 'vitest';
-import { createBattle, issueOrder, orderAllRetreat, orderLabel, stepBattle, unitById, type BattleState } from '../proto3d/src/battle/sim';
+import { FREE_HOLD_LABEL, createBattle, issueOrder, orderAllRetreat, orderLabel, stepBattle, unitById, type BattleState } from '../proto3d/src/battle/sim';
 import { useAbility } from '../proto3d/src/battle/abilities';
 import { INITIATIVE } from '../proto3d/src/battle/ai';
 import { GENERAL_INITIATIVE_LABELS } from '../proto3d/src/battle/generals';
@@ -67,6 +67,30 @@ describe('どの合戦で使うか', () => {
         expect(get(t, 'a_naga').initiative).toBeNull();
         expect(get(t, 'e_sakai').initiative).toBeNull();
         expect(Object.keys(GENERAL_INITIATIVE_LABELS).sort()).toEqual(['coordinate', 'pursuit', 'rearguard', 'support']);
+    });
+});
+
+describe('札の命令の文：命令を受けていない待機と、命じた「防衛・待機」を分ける（Version 13 候補の確認で直した）', () => {
+    it('最初の待機・移動の命令で着いた後は「待機（武将の判断で動く）」。防衛・待機を命じると「防衛・待機」（動かない）', () => {
+        const s = createBattle(buildBattleSetup(getField('plains')!, 'standard'));
+        expect(orderLabel(s, get(s, 'a_ishikawa'))).toBe(FREE_HOLD_LABEL);
+        // 方針を持たない部隊（弓隊）・家康本陣は今までどおり
+        expect(orderLabel(s, get(s, 'a_yumi'))).toBe('防衛・待機');
+        expect(orderLabel(s, get(s, 'a_ieyasu'))).toBe('防衛・待機');
+        expect(issueOrder(s, 'a_ishikawa', { type: 'hold' })).toBe(true);
+        expect(orderLabel(s, get(s, 'a_ishikawa'))).toBe('防衛・待機');
+        // 移動の命令で着いた後は、また武将の判断で動く待機
+        const u = get(s, 'a_ishikawa');
+        expect(issueOrder(s, 'a_ishikawa', { type: 'move', x: u.x + 6, z: u.z })).toBe(true);
+        expect(orderLabel(s, u)).toBe('移動');
+        for (let i = 0; i < 60 && u.order.type === 'move'; i++) stepBattle(s, 0.1);
+        expect(u.order.type).toBe('hold');
+        expect(orderLabel(s, u)).toBe(FREE_HOLD_LABEL);
+    });
+    it('武将の方針を使わない合戦（歴史分岐）は、待機はいつも「防衛・待機」', () => {
+        const st = ieyasu1570Setup('oda', { troops: { ...IEYASU_INITIAL_TROOPS }, pledgeAccepted: true });
+        const s = createBattle(st);
+        for (const u of s.units) if (u.order.type === 'hold' && u.status === 'ready' && u.arrived) expect(orderLabel(s, u)).toBe('防衛・待機');
     });
 });
 

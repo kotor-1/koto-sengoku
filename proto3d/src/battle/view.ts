@@ -128,6 +128,8 @@ export class BattleView {
     readonly camera: THREE.PerspectiveCamera;
     cam: CamState = { tx: 0, tz: 0, dist: 400 };
     maxDist: number = CAM.maxDistFallback;
+    /** 「全体」（fit）のカメラの距離（名札を小さくする引いた画面の目安。fit の前は既定の上限） */
+    private fitDist: number = CAM.maxDistFallback;
     private width = 1;
     private height = 1;
     private readonly map: BattleMap;
@@ -1189,6 +1191,7 @@ export class BattleView {
         tryDist(hi);
         const fitted = { ...this.cam };
         this.maxDist = Math.max(CAM.minDist * 2, hi * 1.2);
+        this.fitDist = hi;
         // 利用者が動かしたカメラは、画面の大きさが変わっても（スマホのツールバーの出入りなど）そのまま（引ける上限だけ直す）
         this.cam = keepCamera ? prev : fitted;
         this.applyCam();
@@ -1202,6 +1205,11 @@ export class BattleView {
         this.cam.tx += a.x - b.x;
         this.cam.tz += a.z - b.z;
         this.applyCam();
+    }
+
+    /** カメラの距離の、「全体」の距離に対する割合（1 で全体。寄るほど小さい） */
+    zoomRatio(): number {
+        return this.cam.dist / Math.max(1, this.fitDist);
     }
 
     /** 寄る（factor < 1）・引く（> 1）。画面の (sx, sy) の下の地点が動かないように */

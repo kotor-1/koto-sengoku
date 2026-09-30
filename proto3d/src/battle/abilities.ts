@@ -18,9 +18,10 @@
  * 5 能力の強化（docs/troops-abilities-design.md §2。「使った瞬間に戦況が変わった」と分かる強さ）：
  * - 立て直しの号令（家康）：半径 110 m の味方の士気 +40（上限 100）。35 秒のあいだ士気が 20 未満に下がらない（敗走しない）・士気の低下 −60%。
  *   代償：家康本陣の与える損害 ×0.3・動き ×0.5。
- * - 両翼の采配（酒井）：25 秒のあいだ、半径 100 m の味方の側面・背後の当たり ×1.8。範囲の味方 2 部隊以上が同じ敵を別の向き
- *   （正面・左の側面・右の側面・背後のうち 2 つ以上）から斬っているとき、その敵は包囲されている：受ける損害 ×1.3・士気の低下 ×2。
- *   正面だけ（何部隊で当たっても）では強くならない。代償：酒井隊の動き ×0.7。
+ * - 両翼の采配（酒井）：25 秒のあいだ、半径 100 m の味方 2 部隊以上が同じ敵を別の向き
+ *   （正面・左の側面・右の側面・背後のうち 2 つ以上）から斬っているとき、その敵は包囲されている：側面・背後から斬る味方の与える損害 ×1.8、
+ *   その敵の受ける損害 ×1.3・士気の低下 ×2。包囲を作ること自体が条件（1 部隊だけの側面の当たり・正面だけの当たりは強くならない）。
+ *   代償：酒井隊の動き ×0.7。
  * - 後詰めの差配（石川）：味方の部隊を 1 つ選ぶ（180 m 以内。自分は選べない）。30 秒のあいだ、対象の動き ×1.8・士気 +30・士気の低下 −50%・
  *   敗走の線 15 → 5。対象が予備・援軍・同盟（まだ斬り合っていない・後から着いた・別の家）なら、さらに士気の低下 −25%。
  *   代償：石川隊は差配に専念して動けない（与える損害は上がらない）。
@@ -241,7 +242,7 @@ export const ABILITY_DATA: Record<AbilityId, AbilityData> = {
         targetText: '酒井隊を中心に、半径 100 m の味方の部隊（酒井隊自身も。使った後も酒井隊について動く）',
         rangeText: '半径 100 m（酒井隊の周り）',
         effectText:
-            '25 秒のあいだ、範囲内の味方が敵の側面・背後を突いたときの与える損害 ×1.8。範囲内の味方 2 部隊以上が同じ敵を別の向き（正面と側面・左右の側面・側面と背後など）から斬っていると、その敵は包囲され、受ける損害 ×1.3・士気の低下 ×2。正面だけの当たりは何部隊でも強くならない',
+            '25 秒のあいだ、範囲内の味方 2 部隊以上が同じ敵を別の向き（正面と側面・左右の側面・側面と背後など）から斬っていると、その敵は包囲され、側面・背後から斬る味方の与える損害 ×1.8、その敵の受ける損害 ×1.3・士気の低下 ×2。包囲を作ることが条件：1 部隊だけの側面の当たりや、正面だけの当たりは何部隊でも強くならない',
         costText: '効果中、酒井隊の動き ×0.7',
     },
     ishikawa_reserve: {
@@ -349,7 +350,7 @@ export function abilityShortText(id: AbilityId): { target: string; effect: strin
         case 'sakai_flank':
             return {
                 target: `酒井隊の周り ${d.radius} m の味方`,
-                effect: `${d.durationSec} 秒 側面・背後の当たり ×${d.areaFlankDealMul}・挟んだ敵は損害 ×${d.encircle!.takeMul}・士気の低下 ×${d.encircle!.moraleLossMul}（仮）`,
+                effect: `${d.durationSec} 秒 2 部隊以上で別の向きから挟むと（包囲）側背の当たり ×${d.areaFlankDealMul}・その敵は損害 ×${d.encircle!.takeMul}・士気の低下 ×${d.encircle!.moraleLossMul}（仮）`,
                 cost: `酒井隊の動き ×${d.selfSpeedMul}`,
             };
         case 'ishikawa_reserve':
@@ -473,11 +474,12 @@ export function abilityDealMul(s: BattleState, a: UnitState): number {
 }
 
 /**
- * a が側面・背後を突いたときの与える損害の倍率（斬り合い。両翼の采配。範囲の効果が重なるときは、いちばん強い 1 つだけ効く。
- * 正面の当たり・能力がなければ 1）
+ * a が d の側面・背後を突いたときの与える損害の倍率（斬り合い。両翼の采配。範囲の効果が重なるときは、いちばん強い 1 つだけ効く）。
+ * 包囲を作ること自体が条件：d が包囲されている（s.encircled。範囲の味方 2 部隊以上が 2 つ以上の向きから斬っている）ときだけ効く。
+ * 1 部隊だけの側面・背後の当たり（包囲なし）・正面の当たり・能力がなければ 1
  */
-export function abilityFlankDealMul(s: BattleState, a: UnitState, arc: 'front' | 'flank' | 'rear'): number {
-    if (arc === 'front' || s.abilityList.length === 0) return 1;
+export function abilityFlankDealMul(s: BattleState, a: UnitState, d: UnitState, arc: 'front' | 'flank' | 'rear'): number {
+    if (arc === 'front' || s.abilityList.length === 0 || !s.encircled.includes(d.id)) return 1;
     let m = 1;
     for (const r of liveRuns(s)) {
         const data = ABILITY_DATA[r.id];

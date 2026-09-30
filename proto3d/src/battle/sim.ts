@@ -573,7 +573,10 @@ function clamp(v: number, lo: number, hi: number): number {
 
 export const STATUS_LABEL: Record<UnitStatus, string> = { ready: '戦える', routed: '敗走', withdrawn: '撤退済み', destroyed: '全滅' };
 
-/** 今の命令（例：「攻撃：鷲尾先手」「移動」「防衛・待機」「撤退」） */
+/** 命令を受けていない待機の札の文（武将の基本方針で動くことがある。「防衛・待機」を命じれば止まる） */
+export const FREE_HOLD_LABEL = '待機（武将の判断で動く）';
+
+/** 今の命令（例：「攻撃：鷲尾先手」「移動」「防衛・待機」「待機（武将の判断で動く）」「撤退」） */
 export function orderLabel(s: BattleState, u: UnitState): string {
     if (u.status === 'routed') return '敗走中';
     if (u.status === 'withdrawn') return '撤退済み';
@@ -583,7 +586,8 @@ export function orderLabel(s: BattleState, u: UnitState): string {
     const own = u.initiative?.free && u.initiative.acting && u.order.type !== 'hold' ? '（武将の判断）' : '';
     switch (u.order.type) {
         case 'hold':
-            return rootedLabel(s, u.id) ?? '防衛・待機';
+            // 命令を受けていない待機（武将の基本方針で持ち場の近くを自分から動くことがある）は、命じた「防衛・待機」（動かない）と分けて出す
+            return rootedLabel(s, u.id) ?? (u.initiative?.free ? FREE_HOLD_LABEL : '防衛・待機');
         case 'move':
             return `移動${own}`;
         case 'attack':
@@ -1299,8 +1303,8 @@ export function meleeDamage(s: BattleState, a: UnitState, d: UnitState, arc: 'fr
     // 特殊能力（号令・援護の代償、退路の守護・援護の守り。能力がなければ 1）
     m *= abilityDealMul(s, a) * abilityTakeMul(s, d);
     if (s.abilityList.length > 0) {
-        // 両翼の采配（側面・背後の当たりだけ）・包囲（挟まれた相手）・先駆けの号（最初の当たり・弓や退く相手・側背）
-        if (arc !== 'front') m *= abilityFlankDealMul(s, a, arc);
+        // 両翼の采配（包囲した相手への側面・背後の当たりだけ）・包囲（挟まれた相手）・先駆けの号（最初の当たり・弓や退く相手・側背）
+        if (arc !== 'front' && s.encircled.length > 0) m *= abilityFlankDealMul(s, a, d, arc);
         if (s.encircled.length > 0) m *= encircleMul(s, d).take;
         m *= vanguardDealMul(s, a, d, arc);
     }

@@ -31,7 +31,7 @@ import type { BattleOutcome, BattleRunHooks, BattleSetup, Order } from './types'
 import { canCommand, createBattle, elevationAt, issueOrder, orderAllRetreat, stepBattle, unitById, type BattleEvent, type BattleState } from './sim';
 import { BattleView } from './view';
 import { BattleUi, type CommandKind } from './battleUi';
-import { useAbility } from './abilities';
+import { abilityInfo, useAbility } from './abilities';
 import {
     RESULT_LABEL,
     LABEL_HIT_PX,
@@ -41,6 +41,8 @@ import {
     abilityEndText,
     abilityNoticeModel,
     abilityPanelModel,
+    armDecision,
+    armLive,
     commandableIds,
     eventTone,
     fmtClock,
@@ -48,6 +50,7 @@ import {
     labelAbilityModel,
     labelHit,
     labelTapCandidates,
+    labelTopAt,
     leadOf,
     mapLabels,
     objectiveResultModel,
@@ -64,7 +67,9 @@ import {
     selectOnly,
     selectedOf,
     unitMarksText,
+    type AbilityArm,
     type LabelBox,
+    type LabelCover,
     type MapLabel,
     type Pending,
     type ScreenMark,
@@ -82,6 +87,8 @@ const TAP_SLOP = { touch: 12, mouse: 6 };
  * これより外で、押しやすくするための余白（タッチ 30 px・マウス 20 px）の中は「すぐ近く」（control.ts の resolveTap の near）。
  */
 const TAP_EXACT_PX = { touch: 16, mouse: 10 };
+/** カメラの距離が「全体」のこの割合より遠いとき、名札を小さく薄くする（兵士の群れを覆いすぎないように） */
+const LABELS_FAR_RATIO = 0.8;
 
 let current: BattleRun | null = null;
 
@@ -132,6 +139,10 @@ class BattleRun implements Mode {
     private realT = 0;
     /** 利用者がカメラを動かした（画面の大きさが変わっても「全体」に戻さない） */
     private camTouched = false;
+    /** 確認用（開発時の window.__battle.camera） */
+    get camTouchedNow(): boolean {
+        return this.camTouched;
+    }
     private endAt = -1;
     resultShown = false;
     /** 勝ち負けが決まった知らせ（hooks.onDecided）を送った後の、その返事（保存の結果）。まだ送っていなければ undefined */
@@ -152,6 +163,10 @@ class BattleRun implements Mode {
     private readonly unitMarks: Map<string, string>;
     /** 能力を使った・名札を押した直後の守り（この点の近くのタップを少しの間なにもしない。実時間 performance.now() の秒で。realT は 1 フレーム 0.1 秒で頭打ちなので使わない） */
     private tapGuard: TapGuard | null = null;
+    /** 点滅している武将の名札の名前・部隊の体を押した後の確かめ（もう一度押すと使う。実時間の秒。control.ts の ABILITY_ARM） */
+    private arm: AbilityArm | null = null;
+    /** 対象選びに入った：次のフレームで、持ち主と選べる対象が画面の部品に隠れていれば、見える所へ地図を動かす */
+    private frameTargetsFor: string | null = null;
 
     constructor(
         setup: BattleSetup,
@@ -275,6 +290,10 @@ class BattleRun implements Mode {
         this.view.update(this.s, dt, { selectedId: this.selectedId, pending: this.pending });
         this.placeLabels();
         this.ui.update(this.s, { selectedId: this.selectedId, selection: this.selection, pending: this.pending, paused: this.paused, started: this.started, speed: this.speed });
+        if (this.frameTargetsFor) {
+            if (this.pending === 'ability' && this.selectedId === this.frameTargetsFor) this.frameTargets(this.frameTargetsFor);
+            this.frameTargetsFor = null;
+        }
         this.view.render(this.ctx.renderer);
     }
 
@@ -307,6 +326,9 @@ class BattleRun implements Mode {
         const hasAbilities = s.abilityList.length > 0;
         const pledgeId = s.pledge?.targetId ?? null;
         const blink = abilityBlink(this.realT);
+        const armedId = armLive(this.arm, performance.now() / 1000);
+        // 引いた画面（全体に近い）：名札を小さく薄くして、部隊（兵士の群れ）を覆いすぎないように（battle.css の .b-labels.far）
+        this.ui.setLabelsFar(this.view.zoomRatio() > LABELS_FAR_RATIO);
         // 同じ所で着くのを待つ味方（援軍）の名札は、上へ積んで重ならないように
         const waitingAt = new Map<string, number>();
         for (let i = 0; i < s.units.length; i++) {
@@ -330,7 +352,8 @@ class BattleRun implements Mode {
             } else this.ui.label(u.id, '', u.side, 0, 0, false);
             this.ui.markLabel(u.id, 'sel', this.selection.includes(u.id));
             // 能力の印（点滅・効果中の残り秒・対象選びの選べる／選べない）。点滅は表示の時計で（一時停止中も）
-            if (hasAbilities) this.ui.labelAbility(u.id, labelAbilityModel(s, u.id, this.pending, this.selectedId), blink);
+            if (hasAbilities) this.ui.labelAbility(u.id, labelAbilityModel(s, u.id, this.pending, this.selectedId, armedId), blink);
+            this.ui.markLabel(u.id, 'routed', u.status === 'routed');
             if (pledgeId) this.ui.markLabel(u.id, 'pledge', pledgeId === u.id);
             if (this.unitMarks.size) this.ui.labelMark(u.id, u.status === 'ready' ? (this.unitMarks.get(u.id) ?? '') : '');
         }
@@ -406,9 +429,51 @@ class BattleRun implements Mode {
         }
         if (m.info.target === 'ally_unit') {
             this.pending = 'ability';
+            this.frameTargetsFor = sel.id;
             return;
         }
         this.useAbilityOn(sel.id, undefined);
+    }
+
+    /**
+     * 対象選びの持ち主と選べる対象（部隊の体・名札）が、画面の部品（能力の欄・下の案内の帯・札など）に隠れていれば、
+     * それらの真ん中が部品に隠れない所の中心に来るように地図を動かす（寄り・引きは変えない）。隠れていなければ何もしない
+     */
+    private frameTargets(userId: string): void {
+        const info = abilityInfo(this.s, userId);
+        if (!info) return;
+        const c = this.ctx.renderer.domElement.getBoundingClientRect();
+        const W = c.width;
+        const H = c.height;
+        const blockers = this.ui.blockerRects().map((r) => ({ l: r.left - c.left, t: r.top - c.top, r: r.right - c.left, b: r.bottom - c.top }));
+        const hit = (a: { l: number; t: number; r: number; b: number }) => blockers.some((b) => a.l < b.r && a.r > b.l && a.t < b.b && a.b > b.t);
+        const pts: { x: number; y: number }[] = [];
+        let hidden = false;
+        for (const id of [userId, ...info.validTargets]) {
+            const i = this.s.units.findIndex((u) => u.id === id);
+            const m = i >= 0 ? this.view.unitCenter(i) : null;
+            if (!m || !m.shown) continue;
+            const p = this.view.project(m.x, m.y, m.z);
+            pts.push(p);
+            if (p.off || p.x < 0 || p.x > W || p.y < 0 || p.y > H || hit({ l: p.x - 6, t: p.y - 6, r: p.x + 6, b: p.y + 6 })) hidden = true;
+            const r = this.ui.labelRect(id);
+            if (r && hit({ l: r.left - c.left, t: r.top - c.top, r: r.right - c.left, b: r.bottom - c.top })) hidden = true;
+        }
+        if (!hidden || pts.length === 0) return;
+        // 隠れない所：上下右は「全体」と同じ余白。左は左の列（能力の欄など）の右、下は案内の帯の上
+        const ins = this.ui.insets();
+        let left = ins.left;
+        let bottom = H - ins.bottom;
+        for (const b of blockers) {
+            if (b.l < W * 0.4 && b.r < W * 0.6 && b.b > ins.top + 20 && b.t < H * 0.7) left = Math.max(left, b.r + 8);
+            if (b.t > H * 0.5 && b.l < W / 2 && b.r > W / 2) bottom = Math.min(bottom, b.t - 8);
+        }
+        const cx = (left + W - ins.right) / 2;
+        const cy = (ins.top + bottom) / 2;
+        const mx = pts.reduce((a, p) => a + p.x, 0) / pts.length;
+        const my = pts.reduce((a, p) => a + p.y, 0) / pts.length;
+        this.view.panByScreen(mx, my, cx, cy);
+        this.camTouched = true;
     }
 
     /**
@@ -492,9 +557,33 @@ class BattleRun implements Mode {
             this.view.fit(this.ui.insets());
             return;
         }
-        this.camTouched = true;
         const r = this.ctx.renderer.domElement.getBoundingClientRect();
+        // 「全体」のまま寄るとき：両軍の部隊の真ん中（前線のあたり）を画面の真ん中へ動かしてから寄る（空いた原へ寄らないように）
+        if (d > 0 && !this.camTouched) {
+            const f = this.frontPoint();
+            if (f) this.view.panByScreen(f.x, f.y, r.width / 2, r.height / 2);
+        }
+        this.camTouched = true;
         this.view.zoomAt(d > 0 ? 0.7 : 1 / 0.7, r.width / 2, r.height / 2);
+    }
+
+    /** 戦場にいて戦える部隊（敵は見えているものだけ）の画面の点の真ん中（両軍の真ん中＝前線のあたり）。どれも無ければ null */
+    private frontPoint(): { x: number; y: number } | null {
+        let sx = 0;
+        let sy = 0;
+        let n = 0;
+        for (let i = 0; i < this.s.units.length; i++) {
+            const u = this.s.units[i];
+            if (!u.present || u.status !== 'ready' || (u.side === 'enemy' && !u.seenBy.ally)) continue;
+            const m = this.view.unitCenter(i);
+            if (!m.shown) continue;
+            const p = this.view.project(m.x, m.y, m.z);
+            if (p.off) continue;
+            sx += p.x;
+            sy += p.y;
+            n++;
+        }
+        return n ? { x: sx / n, y: sy / n } : null;
     }
 
     // ---------------------------------------------------------------- 結果
@@ -699,20 +788,25 @@ class BattleRun implements Mode {
     }
 
     /**
-     * 押した所の名札（点滅している名札・対象選びの間は味方の名札）。当たりは control.ts の labelHit（見た目より少し広い。隣の部隊の中心を越えない）
+     * 押した所の名札（点滅している名札・対象選びの間は味方の名札）。当たりは control.ts の labelHit（見た目より少し広い。隣の部隊の中心を越えない。
+     * 上に重なって見えている別の名札の下に隠れた所は当てない）。
+     * part：'badge'＝能力の印（対象選びの間は名札全体）＝その場で名札の操作／'name'＝点滅している名札の名前の所（いちばん上に見えている名札）＝確かめ
      */
-    private labelAt(x: number, y: number): string | null {
+    private labelAt(x: number, y: number): { id: string; part: 'badge' | 'name' } | null {
         const ids = labelTapCandidates(this.s, this.pending, this.selectedId);
         if (ids.length === 0) return null;
         const c = this.ctx.renderer.domElement.getBoundingClientRect();
-        // 点滅している武将：能力の印（◆号令）の所だけ（名札の名前・部隊の体は今までどおり選択）。対象選びの間：名札全体（その部隊を対象に）
-        const part = this.pending === 'ability' && this.selectedId ? 'all' : 'badge';
+        // 点滅している武将：能力の印（◆号令）の所は 1 回で使う。対象選びの間：名札全体（その部隊を対象に）
+        const choosing = this.pending === 'ability' && !!this.selectedId;
+        const part = choosing ? 'all' : 'badge';
+        // 名札の重なり（どれが上に見えているか）
+        const covers: LabelCover[] = this.ui.labelCovers().map(({ id, rect, z }) => ({ id, l: rect.left - c.left, t: rect.top - c.top, r: rect.right - c.left, b: rect.bottom - c.top, z }));
+        const zOf = new Map(covers.map((k) => [k.id, k.z]));
         const boxes: LabelBox[] = [];
         for (const id of ids) {
             const r = this.ui.labelRect(id, part);
-            if (r) boxes.push({ id, l: r.left - c.left, t: r.top - c.top, r: r.right - c.left, b: r.bottom - c.top });
+            if (r) boxes.push({ id, l: r.left - c.left, t: r.top - c.top, r: r.right - c.left, b: r.bottom - c.top, z: zOf.get(id) ?? 0 });
         }
-        if (boxes.length === 0) return null;
         // 部隊の体の中心（その部隊自身も）とほかの名札の中心：広げた当たりがこれより向こうへ行かないように
         const others: ScreenMark[] = [];
         for (let i = 0; i < this.s.units.length; i++) {
@@ -721,17 +815,34 @@ class BattleRun implements Mode {
             if (!m.shown) continue;
             const p = this.view.project(m.x, m.y + 1.5, m.z);
             if (!p.off) others.push({ id: `${u.id}#body`, x: p.x, y: p.y });
-            const r = this.ui.labelRect(u.id);
-            if (r) others.push({ id: u.id, x: (r.left + r.right) / 2 - c.left, y: (r.top + r.bottom) / 2 - c.top });
         }
-        return labelHit(boxes, others, x, y, this.ctx.touch ? LABEL_HIT_PX.touch : LABEL_HIT_PX.mouse);
+        for (const k of covers) others.push({ id: k.id, x: (k.l + k.r) / 2, y: (k.t + k.b) / 2 });
+        const hit = boxes.length ? labelHit(boxes, others, x, y, this.ctx.touch ? LABEL_HIT_PX.touch : LABEL_HIT_PX.mouse, covers) : null;
+        if (hit) return { id: hit, part: 'badge' };
+        if (choosing) return null;
+        // 点滅している名札の名前の所（いちばん上に見えている名札が点滅している武将のとき）：確かめ
+        const top = labelTopAt(covers, x, y);
+        return top && ids.includes(top) ? { id: top, part: 'name' } : null;
     }
 
-    /** 名札を押した（能力を使う・対象選びに入る・やめる・対象に選ぶ）。押した操作を使い切ったら true（地図を押した扱いにしない） */
-    private labelTap(x: number, y: number): boolean {
-        if (this.s.abilityList.length === 0 || !this.started) return false;
-        const act = resolveLabelTap(this.s, this.labelAt(x, y), this.pending, this.selectedId);
-        if (!act) return false;
+    /**
+     * 点滅している武将の名札の名前・部隊の体を押した（印の外）：その部隊を選び、短い確かめを出す（名札に「もう一度で◆号令」・下の案内）。
+     * 確かめの中にもう一度押すと使う（control.ts の armDecision）
+     */
+    private armAbility(id: string, now: number): void {
+        const u = unitById(this.s, id);
+        const info = abilityInfo(this.s, id);
+        if (!u || !info) return;
+        this.select(id);
+        this.pending = 'none';
+        this.arm = { id, at: now };
+        const how = info.needsTarget ? 'もう一度押すと「' + info.name + '」の対象選び' : 'もう一度押すと「' + info.name + '」を使う';
+        this.ui.flash(`${u.name}を選んだ。${how}（◆の印なら 1 回で使える）`, 3000);
+    }
+
+    /** 名札の操作（使う・対象選びに入る・やめる・対象に選ぶ）をして、同じ所のタップの守りを付ける */
+    private runLabelAction(x: number, y: number, act: NonNullable<ReturnType<typeof resolveLabelTap>>): void {
+        this.arm = null;
         switch (act.type) {
             case 'use':
                 this.useAbilityOn(act.unitId, undefined);
@@ -740,6 +851,7 @@ class BattleRun implements Mode {
                 // 対象選び：その武将の部隊を選び、選べる部隊に輪（view.ts）・選べない名札は薄く・案内の文
                 this.select(act.unitId);
                 this.pending = 'ability';
+                this.frameTargetsFor = act.unitId;
                 break;
             case 'cancel':
                 this.pending = 'none';
@@ -751,6 +863,28 @@ class BattleRun implements Mode {
         }
         const hitPx = this.ctx.touch ? LABEL_HIT_PX.touch : LABEL_HIT_PX.mouse;
         this.tapGuard = { x, y, until: performance.now() / 1000 + TAP_GUARD_SEC, r: hitPx / 2 };
+    }
+
+    /** 名札を押した（能力を使う・対象選びに入る・やめる・対象に選ぶ・名前の所は確かめ）。押した操作を使い切ったら true（地図を押した扱いにしない） */
+    private labelTap(x: number, y: number, arm: AbilityArm | null): boolean {
+        if (this.s.abilityList.length === 0 || !this.started) return false;
+        const hit = this.labelAt(x, y);
+        if (!hit) return false;
+        if (hit.part === 'name') {
+            const now = performance.now() / 1000;
+            const d = armDecision(arm, hit.id, now);
+            if (d === 'wait') {
+                this.arm = arm;
+                return true;
+            }
+            if (d === 'arm') {
+                this.armAbility(hit.id, now);
+                return true;
+            }
+        }
+        const act = resolveLabelTap(this.s, hit.id, this.pending, this.selectedId);
+        if (!act) return false;
+        this.runLabelAction(x, y, act);
         return true;
     }
 
@@ -762,8 +896,11 @@ class BattleRun implements Mode {
         const gt = guardTap(this.tapGuard, x, y, performance.now() / 1000);
         this.tapGuard = gt.guard;
         if (gt.swallow) return;
+        // 確かめ（もう一度押すと使う）は、同じ武将をもう一度押したときだけ続く。ほかのタップで消える
+        const arm = this.arm;
+        this.arm = null;
         // 点滅している名札（対象選びの間は味方の名札）：部隊の選択・地面の移動より先に、能力の操作として使い切る
-        if (!command && this.labelTap(x, y)) return;
+        if (!command && this.labelTap(x, y, arm)) return;
         // 部隊そのもの（隊列の広がり＋少し）を押したか、押しやすくするための余白（タッチ 30 px・マウス 20 px）を押したか
         const exactId = this.view.pick(this.s, x, y, this.ctx.touch ? TAP_EXACT_PX.touch : TAP_EXACT_PX.mouse);
         const id = exactId ?? this.view.pick(this.s, x, y, this.ctx.touch ? 30 : 20);
@@ -784,6 +921,34 @@ class BattleRun implements Mode {
             return;
         }
         const act = resolveTap(sel, this.pending, target);
+        // 点滅している武将の部隊の体を押した（選ぶ・選び直し）：選んで確かめを出す。確かめの中にもう一度押すと使う
+        // （選んでいる部隊をもう一度押して外す Version 12 の操作は、確かめの中でなければ今までどおり）
+        if (
+            target.kind === 'unit' &&
+            this.pending === 'none' &&
+            this.started &&
+            (act.type === 'select' || act.type === 'deselect') &&
+            target.unitId === (act.type === 'select' ? act.unitId : this.selectedId) &&
+            this.s.abilityList.length > 0 &&
+            abilityInfo(this.s, target.unitId)?.ready
+        ) {
+            const now = performance.now() / 1000;
+            const d = armDecision(arm, target.unitId, now);
+            if (d === 'wait') {
+                this.arm = arm;
+                return;
+            }
+            if (d === 'fire') {
+                const la = resolveLabelTap(this.s, target.unitId, 'none', this.selectedId);
+                if (la) {
+                    this.runLabelAction(x, y, la);
+                    return;
+                }
+            } else if (act.type === 'select') {
+                this.armAbility(target.unitId, now);
+                return;
+            }
+        }
         switch (act.type) {
             case 'select':
             case 'inspect':
@@ -904,8 +1069,12 @@ function exposeDev(run: BattleRun): void {
             return { selectedId: run.selectedId, selection: [...run.selection], pending: run.pending, paused: run.paused, started: run.started, speed: run.speed, resultShown: run.resultShown, modal: run.ui.modalOpen, decided: run.decidedNote };
         },
         get camera() {
-            return { ...run.view.cam, maxDist: run.view.maxDist };
+            return { ...run.view.cam, maxDist: run.view.maxDist, zoomRatio: run.view.zoomRatio(), camTouched: run.camTouchedNow };
         },
+        /** 画面に出ている部隊の名札の四角と重なりの順（z が大きいほど上）。名札の重なりの確認に使う（読むだけ） */
+        labelCovers: () => run.ui.labelCovers().map(({ id, rect, z }) => ({ id, l: rect.left, t: rect.top, r: rect.right, b: rect.bottom, z })),
+        /** 画面の部品（左上の欄・能力の欄・下の札・案内の帯など）の四角（読むだけ） */
+        blockers: () => run.ui.blockerRects().map((r) => ({ l: r.left, t: r.top, r: r.right, b: r.bottom })),
         /** 表示（three の場面・カメラ）。確認用 */
         get view() {
             return run.view;

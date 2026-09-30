@@ -39,7 +39,10 @@ body.mode-battle #build { display: none !important; }
 }
 
 /* ---- 名札 ---- */
-.b-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+/* 名札は地図の上・画面の部品（左上の欄・能力の欄・案内の帯・札）の下に描く（z-index: 0 で名札だけの重なりにまとめる）。
+   見えている部品の下に名札が隠れるので、見えている物と押して当たる物が食い違わない（Version 13 候補の確認で直した：対象選びの持ち主の名札が
+   下の案内の帯の上に描かれて見えているのに、押すと帯が受けていた） */
+.b-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
 .b-label {
     position: absolute;
     left: 0;
@@ -78,6 +81,10 @@ body.mode-battle #build { display: none !important; }
 .b-label[data-ab="untargetable"] { opacity: 0.42; }
 /* 名札が重なるときは、発動できる名札・対象選びの持ち主を上に（点滅する印が隣の名札に隠れないように） */
 .b-label[data-ab="ready"], .b-label[data-ab="choosing"] { z-index: 2; }
+/* 引いた画面（全体に近い。つなぎが .far を付ける）：名札を小さく薄くし、兵の数を省いて短くする（部隊＝兵士の群れを覆いすぎないように）。
+   選んだ名札・点滅している名札・能力の効果中や対象選びの名札・敗走の名札はそのまま */
+.b-labels.far .b-label:not(.sel):not([data-ab]):not(.terrain) { opacity: 0.72; font-size: 9.5px; padding: 0 4px 1px; border-left-width: 2px; }
+.b-labels.far .b-label:not(.sel):not(.routed):not([data-ab]) small { display: none; }
 .b-label.terrain {
     background: none;
     border: none;
@@ -653,6 +660,8 @@ body.mode-battle #build { display: none !important; }
     /* 縦が狭い画面では、見出しの「効果中 残り N 秒」と重なる「残り」の行と、「対象」の行の（範囲 N m）と重なる「範囲」の行を省く
        （左上の列が下の案内の帯まで伸びて重ならないように。Version 12 の行の数に戻す） */
     .b-ab-left, .b-ab-range { display: none; }
+    /* 対象選びの間は、能力の欄を見出しと「対象の味方を押す」の行だけにする（左の列が選べる対象の名札を覆わないように） */
+    .b-root.pending-ability .b-abil .b-ab-r, .b-root.pending-ability .b-abil .b-ab-note, .b-root.pending-ability .b-abil .b-ab-long { display: none; }
     .b-ab-note { font-size: 9px; }
     .b-abl { font-size: 9px; padding: 0 3px; }
     .b-label.pledge::before { font-size: 8.5px; padding: 0 3px; }

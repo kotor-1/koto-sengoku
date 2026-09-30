@@ -770,6 +770,37 @@ export class BattleUi {
     }
 
     /**
+     * 画面に出ている部隊の名札の四角（CSS px。ページの左上から）と、描く重なりの順 z（大きいほど上）。
+     * battle.css と同じ決まり：発動できる名札・対象選びの持ち主（data-ab が ready・choosing。z-index: 2）が上、その中では後から足した名札が上。
+     * つなぎが、隠れた名札の印を押したことにしないために使う（control.ts の labelHit の covers）。
+     */
+    labelCovers(): { id: string; rect: DOMRect; z: number }[] {
+        const out: { id: string; rect: DOMRect; z: number }[] = [];
+        let i = 0;
+        for (const [id, l] of this.labelEls) {
+            i++;
+            if (!l.e.dataset.id || !l.shown || l.e.hidden) continue;
+            const r = l.e.getBoundingClientRect();
+            if (!(r.width > 0 && r.height > 0)) continue;
+            const top = l.abMode === 'ready' || l.abMode === 'choosing';
+            out.push({ id, rect: r, z: (top ? 100000 : 0) + i });
+        }
+        return out;
+    }
+
+    /** 地図を覆っている画面の部品の四角（左上の欄・能力の欄・下の札・案内の帯・右上・右の寄る引く。見えているものだけ） */
+    blockerRects(): DOMRect[] {
+        const out: DOMRect[] = [];
+        for (const sel of ['.b-obj', '.b-goals', '.b-inspect', '.b-abil', '.b-bottom', '.b-hint', '.b-ctrl', '.b-zoom']) {
+            const e = this.root.querySelector(sel) as HTMLElement | null;
+            if (!e || e.hidden) continue;
+            const r = e.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0) out.push(r);
+        }
+        return out;
+    }
+
+    /**
      * 発動の知らせ（上の真ん中。能力名・武将・対象）と、効果が切れた知らせ。ms だけ出して消える（画面全体は光らせない）。
      */
     abilityNotice(kind: 'use' | 'end', title: string, sub: string, ms = kind === 'use' ? 2500 : 1800): void {
@@ -804,6 +835,11 @@ export class BattleUi {
             if (mark) l.e.dataset.mark = mark;
             else delete l.e.dataset.mark;
         }
+    }
+
+    /** 引いた画面の名札（小さく薄く。選んだ・点滅している・敗走の名札はそのまま）。battle.css の .b-labels.far */
+    setLabelsFar(far: boolean): void {
+        setClass(this.labels, 'far', far);
     }
 
     /** 選んだ名札を目立たせる */

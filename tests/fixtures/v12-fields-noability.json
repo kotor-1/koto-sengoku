@@ -1,0 +1,421 @@
+{
+  "plains／何もしない": {
+    "result": "defeat",
+    "reason": "ally_hq_routed",
+    "t": 188.6,
+    "loss": 45.4,
+    "refused": [],
+    "secondary": [
+      "plains_reserve"
+    ],
+    "left": {
+      "a_ieyasu": 181,
+      "a_tadakatsu": 123,
+      "a_sakakibara": 174,
+      "a_sakai": 163,
+      "a_ishikawa": 350,
+      "a_yumi": 124,
+      "a_kiba": 250,
+      "e_hq": 400,
+      "e_sente": 160,
+      "e_left": 311,
+      "e_right": 363,
+      "e_yumi": 400,
+      "e_kiba": 164,
+      "e_reserve": 289
+    }
+  },
+  "plains／地形に合った作戦（FIT）": {
+    "result": "victory",
+    "reason": "enemy_hq_routed",
+    "t": 213.8,
+    "loss": 46,
+    "refused": [],
+    "secondary": [
+      "plains_reserve"
+    ],
+    "left": {
+      "a_ieyasu": 300,
+      "a_tadakatsu": 204,
+      "a_sakakibara": 217,
+      "a_sakai": 146,
+      "a_ishikawa": 280,
+      "a_yumi": 131,
+      "a_kiba": 72,
+      "e_hq": 292,
+      "e_sente": 200,
+      "e_left": 220,
+      "e_right": 285,
+      "e_yumi": 355,
+      "e_kiba": 195,
+      "e_reserve": 210
+    }
+  },
+  "plains／予備隊を始めから右翼へ（RESERVE_EARLY）": {
+    "result": "victory",
+    "reason": "enemy_hq_routed",
+    "t": 204.7,
+    "loss": 37.4,
+    "refused": [],
+    "secondary": [],
+    "left": {
+      "a_ieyasu": 300,
+      "a_tadakatsu": 165,
+      "a_sakakibara": 249,
+      "a_sakai": 200,
+      "a_ishikawa": 228,
+      "a_yumi": 350,
+      "a_kiba": 72,
+      "e_hq": 291,
+      "e_sente": 245,
+      "e_left": 220,
+      "e_right": 336,
+      "e_yumi": 400,
+      "e_kiba": 114,
+      "e_reserve": 152
+    }
+  },
+  "hills／何もしない": {
+    "result": "retreat",
+    "reason": "nightfall",
+    "t": 480,
+    "loss": 17.4,
+    "refused": [],
+    "secondary": [],
+    "left": {
+      "a_ieyasu": 300,
+      "a_tadakatsu": 500,
+      "a_sakai": 0,
+      "a_sakakibara": 350,
+      "a_ishikawa": 400,
+      "a_yumi": 350,
+      "e_hq": 350,
+      "e_sente": 600,
+      "e_yari": 500,
+      "e_yumi": 300,
+      "e_kiba": 250,
+      "e_reserve": 300
+    }
+  },
+  "hills／頂を取る（TAKE）": {
+    "result": "victory",
+    "reason": "objective_done",
+    "t": 196.8,
+    "loss": 17.8,
+    "refused": [],
+    "secondary": [],
+    "left": {
+      "a_ieyasu": 300,
+      "a_tadakatsu": 397,
+      "a_sakai": 281,
+      "a_sakakibara": 170,
+      "a_ishikawa": 393,
+      "a_yumi": 350,
+      "e_hq": 263,
+      "e_sente": 268,
+      "e_yari": 283,
+      "e_yumi": 300,
+      "e_kiba": 119,
+      "e_reserve": 195
+    }
+  },
+  "hills／回り込み（FLANK）": {
+    "result": "victory",
+    "reason": "objective_done",
+    "t": 324.7,
+    "loss": 11.8,
+    "refused": [],
+    "secondary": [
+      "hills_archers"
+    ],
+    "left": {
+      "a_ieyasu": 300,
+      "a_tadakatsu": 416,
+      "a_sakai": 369,
+      "a_sakakibara": 193,
+      "a_ishikawa": 400,
+      "a_yumi": 350,
+      "e_hq": 350,
+      "e_sente": 227,
+      "e_yari": 385,
+      "e_yumi": 147,
+      "e_kiba": 120,
+      "e_reserve": 114
+    }
+  },
+  "hills／回り込み・弓を崩さない（FLANK_NO_ARCHERS）": {
+    "result": "victory",
+    "reason": "objective_done",
+    "t": 279.6,
+    "loss": 34,
+    "refused": [],
+    "secondary": [],
+    "left": {
+      "a_ieyasu": 300,
+      "a_tadakatsu": 385,
+      "a_sakai": 6,
+      "a_sakakibara": 110,
+      "a_ishikawa": 368,
+      "a_yumi": 350,
+      "e_hq": 350,
+      "e_sente": 247,
+      "e_yari": 423,
+      "e_yumi": 300,
+      "e_kiba": 122,
+      "e_reserve": 184
+    }
+  },
+  "hills／正面から・弓を崩す（frontal(true)）": {
+    "result": "victory",
+    "reason": "objective_done",
+    "t": 270.1,
+    "loss": 20.3,
+    "refused": [],
+    "secondary": [
+      "hills_archers"
+    ],
+    "left": {
+      "a_ieyasu": 300,
+      "a_tadakatsu": 419,
+      "a_sakai": 369,
+      "a_sakakibara": 191,
+      "a_ishikawa": 205,
+      "a_yumi": 350,
+      "e_hq": 350,
+      "e_sente": 279,
+      "e_yari": 372,
+      "e_yumi": 147,
+      "e_kiba": 119,
+      "e_reserve": 189
+    }
+  },
+  "hills／正面から・弓を崩さない（frontal(false)）": {
+    "result": "victory",
+    "reason": "objective_done",
+    "t": 394.8,
+    "loss": 34.7,
+    "refused": [],
+    "secondary": [],
+    "left": {
+      "a_ieyasu": 300,
+      "a_tadakatsu": 378,
+      "a_sakai": 97,
+      "a_sakakibara": 215,
+      "a_ishikawa": 162,
+      "a_yumi": 350,
+      "e_hq": 350,
+      "e_sente": 234,
+      "e_yari": 250,
+      "e_yumi": 300,
+      "e_kiba": 125,
+      "e_reserve": 158
+    }
+  },
+  "river_ford／何もしない": {
+    "result": "retreat",
+    "reason": "nightfall",
+    "t": 480,
+    "loss": 17.6,
+    "refused": [],
+    "secondary": [
+      "ford_losses"
+    ],
+    "left": {
+      "a_ieyasu": 300,
+      "a_tadakatsu": 373,
+      "a_sakakibara": 400,
+      "a_sakai": 400,
+      "a_ishikawa": 350,
+      "a_yumi": 32,
+      "e_hq": 350,
+      "e_sente": 154,
+      "e_yumi": 200,
+      "e_hill": 400,
+      "e_hill_yumi": 250,
+      "e_west": 250,
+      "e_kiba": 250
+    }
+  },
+  "river_ford／中央を弓で開ける（FIT_CENTER）": {
+    "result": "victory",
+    "reason": "objective_done",
+    "t": 347.8,
+    "loss": 20.1,
+    "refused": [],
+    "secondary": [
+      "ford_losses"
+    ],
+    "left": {
+      "a_ieyasu": 300,
+      "a_tadakatsu": 382,
+      "a_sakakibara": 87,
+      "a_sakai": 332,
+      "a_ishikawa": 350,
+      "a_yumi": 347,
+      "e_hq": 350,
+      "e_sente": 224,
+      "e_yumi": 48,
+      "e_hill": 289,
+      "e_hill_yumi": 111,
+      "e_west": 250,
+      "e_kiba": 85
+    }
+  },
+  "river_ford／西の浅瀬へ回る（FIT_WEST）": {
+    "result": "victory",
+    "reason": "objective_done",
+    "t": 291.7,
+    "loss": 20.3,
+    "refused": [],
+    "secondary": [
+      "ford_losses"
+    ],
+    "left": {
+      "a_ieyasu": 300,
+      "a_tadakatsu": 232,
+      "a_sakakibara": 208,
+      "a_sakai": 400,
+      "a_ishikawa": 350,
+      "a_yumi": 303,
+      "e_hq": 350,
+      "e_sente": 182,
+      "e_yumi": 48,
+      "e_hill": 264,
+      "e_hill_yumi": 250,
+      "e_west": 139,
+      "e_kiba": 86
+    }
+  },
+  "forest／何もしない": {
+    "result": "retreat",
+    "reason": "nightfall",
+    "t": 480,
+    "loss": 2.8,
+    "refused": [],
+    "secondary": [],
+    "left": {
+      "a_ieyasu": 300,
+      "a_tadakatsu": 450,
+      "a_sakai": 400,
+      "a_sakakibara": 250,
+      "a_ishikawa": 350,
+      "a_yumi": 300,
+      "a_lost": 88,
+      "e_hq": 350,
+      "e_kiba": 250,
+      "e_yumi_l": 250,
+      "e_yumi_r": 250,
+      "e_sente": 450,
+      "e_ambush_w": 300,
+      "e_ambush_e": 350,
+      "e_hunters": 277
+    }
+  },
+  "forest／西の林を抜ける（FIT）": {
+    "result": "victory",
+    "reason": "enemy_hq_routed",
+    "t": 268.8,
+    "loss": 14.9,
+    "refused": [],
+    "secondary": [
+      "forest_rescue"
+    ],
+    "left": {
+      "a_ieyasu": 300,
+      "a_tadakatsu": 239,
+      "a_sakai": 400,
+      "a_sakakibara": 250,
+      "a_ishikawa": 233,
+      "a_yumi": 300,
+      "a_lost": 150,
+      "e_hq": 266,
+      "e_kiba": 114,
+      "e_yumi_l": 196,
+      "e_yumi_r": 250,
+      "e_sente": 450,
+      "e_ambush_w": 300,
+      "e_ambush_e": 350,
+      "e_hunters": 220
+    }
+  },
+  "mountain_pass／何もしない": {
+    "result": "defeat",
+    "reason": "ally_hq_routed",
+    "t": 169.6,
+    "loss": 43.6,
+    "refused": [],
+    "secondary": [],
+    "left": {
+      "a_ieyasu": 183,
+      "a_tadakatsu": 97,
+      "a_sakai": 136,
+      "a_yumi": 103,
+      "a_sakakibara": 400,
+      "a_ishikawa": 350,
+      "e_hq": 350,
+      "e_w1a": 573,
+      "e_w1b": 496,
+      "e_w1c": 172,
+      "e_w2a": 532,
+      "e_w2b": 575,
+      "e_w2c": 575,
+      "e_w3a": 575,
+      "e_w3b": 575,
+      "e_yumi": 290
+    }
+  },
+  "mountain_pass／関の守り（GATE）": {
+    "result": "victory",
+    "reason": "objective_done",
+    "t": 240,
+    "loss": 30.8,
+    "refused": [],
+    "secondary": [],
+    "left": {
+      "a_ieyasu": 300,
+      "a_tadakatsu": 179,
+      "a_sakai": 141,
+      "a_yumi": 186,
+      "a_sakakibara": 400,
+      "a_ishikawa": 350,
+      "e_hq": 350,
+      "e_w1a": 299,
+      "e_w1b": 236,
+      "e_w1c": 250,
+      "e_w2a": 481,
+      "e_w2b": 373,
+      "e_w2c": 575,
+      "e_w3a": 575,
+      "e_w3b": 575,
+      "e_yumi": 290
+    }
+  },
+  "mountain_pass／関の守り＋本陣と援軍を上げる（能力なし）": {
+    "result": "victory",
+    "reason": "objective_done",
+    "t": 240,
+    "loss": 30,
+    "refused": [],
+    "secondary": [
+      "pass_gate"
+    ],
+    "left": {
+      "a_ieyasu": 300,
+      "a_tadakatsu": 125,
+      "a_sakai": 49,
+      "a_yumi": 350,
+      "a_sakakibara": 400,
+      "a_ishikawa": 350,
+      "e_hq": 350,
+      "e_w1a": 298,
+      "e_w1b": 239,
+      "e_w1c": 250,
+      "e_w2a": 452,
+      "e_w2b": 257,
+      "e_w2c": 575,
+      "e_w3a": 575,
+      "e_w3b": 575,
+      "e_yumi": 290
+    }
+  }
+}

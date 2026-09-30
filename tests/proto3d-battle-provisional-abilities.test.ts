@@ -169,22 +169,50 @@ function ringScene(where: ('front' | 'front2' | 'east' | 'west' | 'rear')[], far
 }
 
 describe('両翼の采配（酒井忠次隊・仮）', () => {
-    it('効果中、半径 100 m の味方が側面・背後を突いたときの与える損害 ×1.8（正面は変わらない）。範囲外の味方には効かない', () => {
+    // Version 13 候補の確認で直した（依頼「包囲を作ること自体が条件」）：前は包囲がなくても、範囲の味方 1 部隊が側面・背後を突くだけで ×1.8 だった。
+    // 今は包囲された敵への側面・背後の当たりだけ ×1.8（1 部隊だけの側面の当たりは ×1 のまま）
+    it('包囲がなければ、範囲の味方 1 部隊が側面・背後を突いても強くならない（×1）。印は付く', () => {
         const s = createBattle(sakaiScene());
         const k = get(s, 'a_kiba');
         const f = get(s, 'a_far');
         const d = get(s, 'e_y');
         const before = { flank: meleeDamage(s, k, d, 'flank'), rear: meleeDamage(s, k, d, 'rear'), front: meleeDamage(s, k, d, 'front'), far: meleeDamage(s, f, d, 'flank') };
         expect(useAbility(s, 'a_sakai')).toEqual({ ok: true, reason: null });
-        expect(abilityFlankDealMul(s, k, 'flank')).toBe(1.8);
-        expect(abilityFlankDealMul(s, k, 'front')).toBe(1);
-        expect(abilityFlankDealMul(s, f, 'flank')).toBe(1);
-        expect(meleeDamage(s, k, d, 'flank') / before.flank).toBeCloseTo(1.8, 9);
-        expect(meleeDamage(s, k, d, 'rear') / before.rear).toBeCloseTo(1.8, 9);
+        expect(s.encircled).toEqual([]);
+        expect(abilityFlankDealMul(s, k, d, 'flank')).toBe(1);
+        expect(abilityFlankDealMul(s, k, d, 'rear')).toBe(1);
+        expect(meleeDamage(s, k, d, 'flank')).toBe(before.flank);
+        expect(meleeDamage(s, k, d, 'rear')).toBe(before.rear);
         expect(meleeDamage(s, k, d, 'front')).toBe(before.front);
         expect(meleeDamage(s, f, d, 'flank')).toBe(before.far);
         expect(abilityMarks(s, 'a_kiba')).toContain('両翼の采配');
         expect(abilityMarks(s, 'a_sakai')).toContain('両翼の采配（足が鈍る）');
+    });
+
+    it('包囲がない 1 部隊の側面攻撃は、能力があってもなくても 1 刻みも同じ（10 秒）', () => {
+        const a = createBattle(ringScene(['east']));
+        const b = createBattle(ringScene(['east']));
+        useAbility(b, 'a_sakai');
+        advance(a, 10);
+        advance(b, 10);
+        expect(b.encircled).toEqual([]);
+        expect(get(b, 'e_y').strength).toBe(get(a, 'e_y').strength);
+        expect(get(b, 'e_y').morale).toBe(get(a, 'e_y').morale);
+    });
+
+    it('包囲された敵へは、範囲の味方の側面・背後の当たりが ×1.8（正面の攻め手は ×1。範囲外の味方には効かない）', () => {
+        const s = createBattle(ringScene(['front', 'east']));
+        useAbility(s, 'a_sakai');
+        advance(s, 0.5);
+        const d = get(s, 'e_y');
+        expect(s.encircled).toEqual(['e_y']);
+        expect(abilityFlankDealMul(s, get(s, 'a_east'), d, 'flank')).toBe(1.8);
+        expect(abilityFlankDealMul(s, get(s, 'a_east'), d, 'rear')).toBe(1.8);
+        expect(abilityFlankDealMul(s, get(s, 'a_front'), d, 'front')).toBe(1);
+        const far = createBattle(ringScene(['front', 'east'], true));
+        useAbility(far, 'a_sakai');
+        advance(far, 0.5);
+        expect(abilityFlankDealMul(far, get(far, 'a_east'), get(far, 'e_y'), 'flank')).toBe(1);
     });
 
     it('包囲：範囲の味方 2 部隊が同じ敵を別の向き（正面と側面・左右の側面・側面と背後）から斬ると、その敵は包囲される。能力なしでは包囲にならない', () => {
