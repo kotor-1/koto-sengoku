@@ -46,12 +46,15 @@ function calm(s: BattleState): void {
 
 describe('押したときの決まり：援護の対象選び（pending ability）', () => {
     const ally: Selected = { id: 'a_nagamasa', side: 'ally', commandable: true };
-    it('部隊（味方・敵・すぐ近く）を押すと対象に選ぶ。地面は案内だけ', () => {
+    // Version 13 候補（設計 §4）：地面を押すと対象選びをやめる（前は案内 'hint' を出すだけで対象選びが続いた）。どちらも移動の命令にはしない・回数は減らない
+    it('部隊（味方・敵・すぐ近く）を押すと対象に選ぶ。地面は対象選びをやめる（移動にしない）', () => {
         expect(resolveTap(ally, 'ability', { kind: 'unit', unitId: 't_tadakatsu', side: 'ally', x: 0, z: 0 })).toEqual({ type: 'abilityTarget', unitId: 't_tadakatsu' });
         expect(resolveTap(ally, 'ability', { kind: 'unit', unitId: 't_yumi', side: 'ally', x: 0, z: 0, near: true })).toEqual({ type: 'abilityTarget', unitId: 't_yumi' });
         // 敵を押しても攻撃の命令にはならない（対象として断られる）
         expect(resolveTap(ally, 'ability', { kind: 'unit', unitId: 'e_oda_sente', side: 'enemy', x: 0, z: 0 })).toEqual({ type: 'abilityTarget', unitId: 'e_oda_sente' });
-        expect(resolveTap(ally, 'ability', { kind: 'ground', x: 1, z: 2 }).type).toBe('hint');
+        const g = resolveTap(ally, 'ability', { kind: 'ground', x: 1, z: 2 });
+        expect(g.type).toBe('abilityCancel');
+        expect(g.type === 'abilityCancel' && g.text).toContain('使用回数は減っていない');
     });
     it('対象選びでなければ今までどおり', () => {
         expect(resolveTap(ally, 'none', { kind: 'unit', unitId: 'e_oda_sente', side: 'enemy', x: 0, z: 0 })).toEqual({ type: 'order', unitId: 'a_nagamasa', order: { type: 'attack', targetId: 'e_oda_sente' } });

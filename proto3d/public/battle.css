@@ -61,6 +61,21 @@ body.mode-battle #build { display: none !important; }
 .b-label.pledge::before { content: "約束"; margin-right: 4px; padding: 0 4px; border-radius: 3px; background: #5fe0c0; color: #0d2420; font-size: 9.5px; }
 /* 目標が指す部隊の印（救出・守る・崩す） */
 .b-label[data-mark]::before { content: attr(data-mark); margin-right: 4px; padding: 0 4px; border-radius: 3px; background: #ffd76a; color: #2a1d05; font-size: 9.5px; }
+/* 特殊能力の発動 UI（設計 §4）。色は淡い青緑（選択の黄・陣営の水色・約束の緑とは別）。
+   ready：発動できる武将の名札。明るさ --ab（0.55〜1.0、周期 1.6 秒）はつなぎが表示の時計で毎フレーム渡す（一時停止中も点滅する）。
+   名札の縁と小さな印だけを明るくし、画面全体は光らせない。 */
+.b-label .b-lab-ab { margin-left: 5px; padding: 0 5px; border-radius: 3px; font-size: 9.5px; font-weight: 600; }
+.b-label .b-lab-ab[hidden], .b-label small[hidden] { display: none; }
+.b-label[data-ab="ready"] {
+    box-shadow: 0 0 0 1.5px rgba(126, 240, 222, var(--ab, 1)), 0 0 7px 1px rgba(126, 240, 222, calc(var(--ab, 1) * 0.4));
+}
+.b-label[data-ab="ready"] .b-lab-ab { background: rgba(126, 240, 222, var(--ab, 1)); color: #05231e; }
+.b-label[data-ab="active"] .b-lab-ab { background: rgba(126, 240, 222, 0.16); color: #c4f8ef; font-weight: 500; }
+.b-label[data-ab="choosing"] { box-shadow: 0 0 0 2px #7ef0de; }
+.b-label[data-ab="choosing"] .b-lab-ab { background: #7ef0de; color: #05231e; }
+.b-label[data-ab="target"] { box-shadow: 0 0 0 1.5px rgba(126, 240, 222, 0.85); }
+.b-label[data-ab="target"] .b-lab-ab { background: rgba(126, 240, 222, 0.22); color: #c4f8ef; font-weight: 500; }
+.b-label[data-ab="untargetable"] { opacity: 0.42; }
 .b-label.terrain {
     background: none;
     border: none;
@@ -309,6 +324,29 @@ body.mode-battle #build { display: none !important; }
 .b-toast.bad { border-left-color: #ff6a58; }
 .b-toast.warn { border-left-color: #f0c050; }
 .b-toast.fade { opacity: 0; }
+/* 発動の知らせ（能力名・武将・対象。2.5 秒）・効果が切れた知らせ。押しても何も起きない */
+.b-abnote {
+    pointer-events: none;
+    touch-action: none;
+    align-self: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    padding: 5px 16px 6px;
+    border-radius: 10px;
+    background: rgba(8, 28, 26, 0.86);
+    box-shadow: inset 0 0 0 1px rgba(126, 240, 222, 0.7);
+    color: #e6fffa;
+    transition: opacity 0.3s;
+}
+.b-abnote b { font-size: 14px; font-weight: 600; color: #9ff6e8; }
+.b-abnote span { font-size: 11.5px; color: #cfe9e4; }
+.b-abnote[data-kind="end"] { background: rgba(15, 14, 12, 0.78); box-shadow: inset 0 0 0 1px rgba(207, 198, 171, 0.5); }
+.b-abnote[data-kind="end"] b { font-size: 12.5px; font-weight: 500; color: #e8dfc6; }
+.b-abnote[hidden] { display: none; }
+.b-abnote.fade { opacity: 0; }
+.b-ab-r.b-ab-left { color: #c4f8ef; }
 
 /* ---- 右上：一時停止・速さ・全軍撤退 ---- */
 .b-ctrl {
@@ -582,6 +620,9 @@ body.mode-battle #build { display: none !important; }
     .b-pausepill { font-size: 11.5px; padding: 3px 10px; }
     .b-pausepill span { display: none; }
     .b-toast { font-size: 11px; padding: 4px 9px; }
+    .b-abnote { padding: 3px 12px 4px; }
+    .b-abnote b { font-size: 12.5px; }
+    .b-abnote span { font-size: 10.5px; }
     .b-ctrl { top: calc(var(--safe-t) + 6px); right: calc(var(--safe-r) + 6px); gap: 4px; }
     .b-ctrl .b-btn { padding: 7px 8px; font-size: 12px; }
     .b-pause { min-width: 7.2em; }

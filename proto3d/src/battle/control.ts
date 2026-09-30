@@ -9,7 +9,7 @@
  */
 import type { AbilityId, BattleEndReason, BattleMap, BattleOutcome, BattleResultKind, ObjectiveDef, Order, Side, UnitKind, Zone } from './types';
 import { STATUS_LABEL, canCommand, engagementLabel, hqOf, isActive, issueOrder, orderLabel, pledgeProgress, timeLeft, unitById, type BattleEvent, type BattleState, type UnitState } from './sim';
-import { ABILITY_DATA, ABILITY_FICTION_NOTE, abilityInfo, abilityMarks, isRooted, provisionalAbilityShort, type AbilityInfo } from './abilities';
+import { ABILITY_DATA, ABILITY_FICTION_NOTE, abilityInfo, abilityMarks, abilityShortText, isRooted, type AbilityInfo } from './abilities';
 import { objectiveProgress, type ObjectiveRole, type ObjectiveState } from './objectives';
 import { zoneCenter } from './fieldRules';
 import { GENERAL_ROLE_LABELS, RELATION_SELF, generalById } from './generals';
@@ -112,7 +112,8 @@ export function clashShift(d: number, halfDepthA: number, halfDepthB: number): n
 
 /**
  * 命令の出し方の途中（「移動」「攻撃」のボタンの後で地図を押す）。
- * ability：対象を選ぶ特殊能力（盟友への援護）の「能力」の後で、援護する味方の部隊を押す（Esc・やめるで取り消し）。
+ * ability：対象を選ぶ特殊能力（盟友への援護・後詰めの差配）の対象選び。「能力」・F・点滅している名札の後で、対象の味方の部隊を押す
+ * （Esc・やめる・地面・同じ名札をもう一度で取り消し。選んでいる部隊＝能力を使う部隊）。
  */
 export type Pending = 'none' | 'move' | 'attack' | 'ability';
 
@@ -139,8 +140,10 @@ export type TapAction =
     | { type: 'order'; unitId: string; order: Order }
     | { type: 'deselect' }
     | { type: 'none' }
-    /** 特殊能力（盟友への援護）の対象に、押した部隊を選ぶ（使えるかは useAbility が確かめる。断られても回数は減らない） */
+    /** 特殊能力（盟友への援護・後詰めの差配）の対象に、押した部隊を選ぶ（使えるかは useAbility が確かめる。断られても回数は減らない） */
     | { type: 'abilityTarget'; unitId: string }
+    /** 対象選びをやめる（地面を押した。回数は減らない。押した所へ移動の命令は出さない） */
+    | { type: 'abilityCancel'; text: string }
     /** 何も変えず、案内を出す */
     | { type: 'hint'; text: string };
 
@@ -156,10 +159,11 @@ export type TapAction =
  */
 export function resolveTap(sel: Selected | null, pending: Pending, tap: TapTarget): TapAction {
     const ally = sel && sel.side === 'ally' ? sel : null;
-    // 援護の対象を選んでいる途中：部隊（そのもの・すぐ近く、敵でも）を押したら対象に選ぶ（不適切なら useAbility が理由を返す）。地面は案内だけ
+    // 能力の対象を選んでいる途中：部隊（そのもの・すぐ近く、敵でも）を押したら対象に選ぶ（不適切なら useAbility が理由を返し、対象選びは続く）。
+    // 地面を押したら対象選びをやめる（Version 13 候補。前は案内だけ。移動の命令にはしない）
     if (pending === 'ability' && ally) {
         if (tap.kind === 'unit') return { type: 'abilityTarget', unitId: tap.unitId };
-        return { type: 'hint', text: '援護する味方の部隊を押してください（やめる・Esc で取り消し）' };
+        return { type: 'abilityCancel', text: '能力の対象選びをやめた（使用回数は減っていない）' };
     }
     if (tap.kind === 'unit' && tap.side === 'ally' && tap.near && ally && ally.commandable) return resolveTap(sel, pending, { kind: 'ground', x: tap.x, z: tap.z });
     if (tap.kind === 'unit' && tap.side === 'ally') return sel && sel.id === tap.unitId && pending === 'none' ? { type: 'deselect' } : { type: 'select', unitId: tap.unitId };
@@ -185,8 +189,11 @@ export function refusalText(s: BattleState, unitId: string, order: Order): strin
     if (u.status !== 'ready') return `${u.name}は${STATUS_LABEL[u.status]}のため、命令を聞けません`;
     if (s.allRetreatAt !== null) return '全軍撤退の最中です';
     if (order.type !== 'hold' && isRooted(s, u.id)) {
-        const left = abilityInfo(s, u.id)?.remainingSec ?? 0;
-        return `${u.name}は「${ABILITY_DATA.tadakatsu_rearguard.name}」で踏みとどまっている（残り ${Math.ceil(left)} 秒。防衛・待機だけ受ける）`;
+        // 動けない能力は 2 つ（退路の守護：踏みとどまる／後詰めの差配：差配に専念）。持つ能力の名前で出す
+        const info = abilityInfo(s, u.id);
+        const left = info?.remainingSec ?? 0;
+        const verb = info?.id === 'ishikawa_reserve' ? '差配に専念している' : '踏みとどまっている';
+        return `${u.name}は「${info?.name ?? ABILITY_DATA.tadakatsu_rearguard.name}」で${verb}（残り ${Math.ceil(left)} 秒。防衛・待機だけ受ける）`;
     }
     if (order.type === 'attack') {
         const t = unitById(s, order.targetId);
@@ -573,36 +580,12 @@ export function scenarioTexts(s: BattleState): ScenarioTexts {
 
 // ---------------------------------------------------------------- 特殊能力の表示（ゲーム用の創作）
 
-function pct(mul: number): string {
-    return `${Math.round(Math.abs(1 - mul) * 100)}%`;
-}
-
-/** 能力の短い説明（スマホでも収まる長さ。数値は ABILITY_DATA から） */
+/**
+ * 能力の短い説明（スマホでも収まる長さ。数値は ABILITY_DATA から）。6 能力とも abilities.ts の abilityShortText に任せる
+ * （Version 13 候補で号令の効果が「上限 100・敗走しない」に変わったので、ここで別に書かない）
+ */
 export function abilityShort(id: AbilityId): { target: string; effect: string; cost: string } {
-    const d = ABILITY_DATA[id];
-    switch (id) {
-        case 'ieyasu_rally':
-            return {
-                target: `本陣の周り ${d.radius} m の味方`,
-                effect: `下がった士気 +${d.moraleBoost}（最初の士気まで）・${d.durationSec} 秒 士気の低下 −${pct(d.areaMoraleLossMul)}・崩れにくい`,
-                cost: `本陣の与える損害 ×${d.selfDealMul}・動き ×${d.selfSpeedMul}`,
-            };
-        case 'tadakatsu_rearguard':
-            return {
-                target: `その場で踏みとどまり、周り ${d.radius} m で退く味方`,
-                effect: `${d.durationSec} 秒 退く味方の損害 −${pct(d.areaTakeMul)}・士気の低下 −${pct(d.areaMoraleLossMul)}・追っ手を引き受ける`,
-                cost: `動けない（撤退も不可）・受ける損害 ×${d.selfTakeMul}`,
-            };
-        case 'nagamasa_support':
-            return {
-                target: `${d.radius} m 以内の味方 1 部隊を選ぶ`,
-                effect: `最大 ${d.durationSec} 秒 対象の損害 −${pct(d.areaTakeMul)}・士気の低下 −${pct(d.areaMoraleLossMul)}（${d.radius} m 離れると外れる）`,
-                cost: `長政隊の与える損害 ×${d.selfDealMul}`,
-            };
-        default:
-            // 新しい武将の仮の能力（abilities.ts が短い説明を持つ）
-            return provisionalAbilityShort(id);
-    }
+    return abilityShortText(id);
 }
 
 /** 能力の欄に出すもの（選んだ部隊。能力のない部隊は null） */
@@ -619,6 +602,12 @@ export interface AbilityPanelModel {
     /** 残り使用回数の表示（例：残り 1 回（1 合戦 1 回）） */
     uses: string;
     short: { target: string; effect: string; cost: string };
+    /** 範囲の説明（例：半径 110 m（家康本陣の周り）） */
+    rangeText: string;
+    /** 効果の残り（効果中だけ。例：残り 28 秒。ほかは空） */
+    remainText: string;
+    /** 使い方の短い案内（使えるときだけ。名札を押す・対象を選ぶ） */
+    howTo: string;
     /** 詳しい説明（PC の画面） */
     targetText: string;
     effectText: string;
@@ -651,8 +640,11 @@ export function abilityPanelModel(s: BattleState, unitId: string): AbilityPanelM
     }
     if (info.state === 'active' && info.target === 'ally_unit' && info.targetId) {
         const t = unitById(s, info.targetId);
-        stateText += `・${t?.name ?? ''}${info.linked ? 'を援護中' : 'が離れて外れている'}`;
+        // 盟友への援護は離れると外れる。後詰めの差配は使った後は離れても効く（linked はいつも true）
+        if (info.id === 'nagamasa_support') stateText += `・${t?.name ?? ''}${info.linked ? 'を援護中' : 'が離れて外れている'}`;
+        else stateText += `・${t?.name ?? ''}へ差配中`;
     }
+    const howTo = info.ready ? (info.needsTarget ? '点滅する名札（または「能力」）を押し、輪の付いた味方を押す' : '点滅する名札を押すだけで使える（「能力」・F でも）') : '';
     const uses = info.state === 'unused' ? '残り 1 回（1 合戦 1 回）' : '残り 0 回（1 合戦 1 回）';
     return {
         unitId,
@@ -663,6 +655,9 @@ export function abilityPanelModel(s: BattleState, unitId: string): AbilityPanelM
         reason: info.usable && !enemy ? '' : (info.reason ?? ''),
         uses,
         short: abilityShort(info.id),
+        rangeText: info.rangeText,
+        remainText: info.state === 'active' ? `残り ${Math.ceil(info.remainingSec)} 秒` : '',
+        howTo,
         targetText: info.targetText,
         effectText: info.effectText,
         costText: info.costText,
@@ -688,6 +683,175 @@ export function unitMarksText(s: BattleState, unitId: string): string {
 }
 
 export { ABILITY_FICTION_NOTE };
+
+// ---------------------------------------------------------------- 特殊能力の発動 UI（名札の点滅・ワンクリック・対象選び。設計 §4）
+
+/** 発動できる武将の名札の点滅：明るさ 0.55〜1.0 を周期 1.6 秒で往復（選択の黄とは別の淡い青緑。色は battle.css） */
+export const ABILITY_BLINK = { min: 0.55, max: 1.0, periodSec: 1.6 };
+
+/** 点滅の明るさ（t は表示の時計＝実時間の秒。一時停止中も進むので、止めていても点滅は続く） */
+export function abilityBlink(t: number): number {
+    const k = 0.5 + 0.5 * Math.cos((2 * Math.PI * t) / ABILITY_BLINK.periodSec);
+    return ABILITY_BLINK.min + (ABILITY_BLINK.max - ABILITY_BLINK.min) * k;
+}
+
+/** 名札の当たり判定の最小の大きさ（px 四方。見た目の名札より小さければこの大きさまで広げる） */
+export const LABEL_HIT_PX = { mouse: 36, touch: 48 };
+
+/** 能力を使ったタップの後、同じ所を押しても何もしない時間（秒。連打の 2 回目が地面の移動・別の部隊の選択に漏れないように） */
+export const TAP_GUARD_SEC = 0.5;
+
+/**
+ * 名札の能力の印：
+ * - ready：発動できる（点滅）。wait：対象選びの間の、ほかの発動できる武将（点滅しない）
+ * - choosing：対象を選んでいる能力の持ち主。target：選べる対象。untargetable：選べない（薄く）
+ * - active：効果中（残り秒数）。''：印なし
+ */
+export type LabelAbilityMode = 'ready' | 'choosing' | 'target' | 'untargetable' | 'active' | '';
+
+export interface LabelAbilityModel {
+    mode: LabelAbilityMode;
+    /** 名札に添える短い文（例：◆号令・号令 残り 28 秒・対象を選ぶ）。印なしは空 */
+    text: string;
+}
+
+/**
+ * 名札の能力の印（毎フレーム。pending・selectedId はつなぎの状態）。
+ * 点滅（ready）は abilityInfo の ready（味方の武将・まだ使っていない・戦える・着いている・対象の要る能力は選べる対象がいる）だけ。
+ * 敵方・使用済み・効果中・戦えない・まだ着いていない・対象がいない、では点滅しない。対象選びの間は、選べる・選べないを示す。
+ */
+export function labelAbilityModel(s: BattleState, unitId: string, pending: Pending, selectedId: string | null): LabelAbilityModel {
+    const u = unitById(s, unitId);
+    if (!u || s.result) return { mode: '', text: '' };
+    const info = s.abilities[unitId] ? abilityInfo(s, unitId) : null;
+    if (pending === 'ability' && selectedId) {
+        if (unitId === selectedId) return { mode: 'choosing', text: '対象を選ぶ' };
+        const user = abilityInfo(s, selectedId);
+        if (user && u.side === 'ally') return user.validTargets.includes(unitId) ? { mode: 'target', text: '選べる' } : { mode: 'untargetable', text: '' };
+        return { mode: 'untargetable', text: '' };
+    }
+    if (!info) return { mode: '', text: '' };
+    if (info.ready) return { mode: 'ready', text: `◆${info.cardLabel}` };
+    if (info.state === 'active' && info.controllable) return { mode: 'active', text: `${info.cardLabel} 残り ${Math.ceil(info.remainingSec)} 秒` };
+    return { mode: '', text: '' };
+}
+
+/** 名札の当たり判定に使う四角（CSS px。canvas の左上から） */
+export interface LabelBox {
+    id: string;
+    l: number;
+    t: number;
+    r: number;
+    b: number;
+}
+
+/** 画面の点（部隊の中心・ほかの名札の中心。名札の広げた当たりが、この点より向こうへ行かないように） */
+export interface ScreenMark {
+    id: string;
+    x: number;
+    y: number;
+}
+
+/**
+ * 名札を押したか（押した名札の部隊 id。どれでもなければ null）。
+ * - 見た目の名札の中：その名札。
+ * - 見た目の外で、名札の中心を真ん中に minPx 四方まで広げた中：ほかの部隊の中心・ほかの名札の中心より、この名札の中心に近いときだけ
+ *   （隣の部隊を押したつもりの指を奪わない。広げた当たりは隣の部隊の中心より外へ行かない）。
+ * 複数に当たれば、名札の中心に近いもの。
+ */
+export function labelHit(boxes: readonly LabelBox[], others: readonly ScreenMark[], x: number, y: number, minPx: number): string | null {
+    let best: string | null = null;
+    let bestD = Infinity;
+    for (const b of boxes) {
+        const cx = (b.l + b.r) / 2;
+        const cy = (b.t + b.b) / 2;
+        const hw = Math.max(b.r - b.l, minPx) / 2;
+        const hh = Math.max(b.b - b.t, minPx) / 2;
+        if (Math.abs(x - cx) > hw || Math.abs(y - cy) > hh) continue;
+        const d = Math.hypot(x - cx, y - cy);
+        const inside = x >= b.l && x <= b.r && y >= b.t && y <= b.b;
+        if (!inside) {
+            // 広げた所：ほかの部隊（の中心・名札の中心）の方が近ければ、その部隊を押したつもりとみなす
+            if (others.some((o) => o.id !== b.id && Math.hypot(x - o.x, y - o.y) <= d)) continue;
+        }
+        const score = inside ? d * 0.5 : d;
+        if (score < bestD) {
+            bestD = score;
+            best = b.id;
+        }
+    }
+    return best;
+}
+
+/** 能力を使ったタップの守り（この時刻まで、この点の近くのタップは何もしない） */
+export interface TapGuard {
+    x: number;
+    y: number;
+    until: number;
+    r: number;
+}
+
+export function inTapGuard(g: TapGuard | null, x: number, y: number, now: number): boolean {
+    return !!g && now < g.until && Math.hypot(x - g.x, y - g.y) <= g.r;
+}
+
+/** 名札の当たり判定を付ける部隊：対象選びの間は、持ち主と地図に見えている味方（対象）。そのほかは点滅している名札だけ */
+export function labelTapCandidates(s: BattleState, pending: Pending, selectedId: string | null): string[] {
+    if (s.result) return [];
+    if (pending === 'ability' && selectedId) return s.units.filter((u) => u.side === 'ally' && u.present && isActive(u)).map((u) => u.id);
+    return s.abilityList.filter((r) => r.side === 'ally' && abilityInfo(s, r.unitId)?.ready).map((r) => r.unitId);
+}
+
+/** 名札を押した結果 */
+export type LabelTapAction =
+    /** 対象の要らない能力を、押しただけで使う */
+    | { type: 'use'; unitId: string }
+    /** 対象の要る能力：対象選びを始める（その部隊を選ぶ） */
+    | { type: 'chooseTarget'; unitId: string }
+    /** 対象選びの持ち主の名札をもう一度：やめる */
+    | { type: 'cancel'; unitId: string }
+    /** 対象選びの間に、ほかの味方の名札：その部隊を対象にする */
+    | { type: 'target'; userId: string; targetId: string };
+
+/**
+ * 名札を押したときに何をするか（hitId は labelHit の結果）。名札に当たっていない・点滅していない名札は null（今までどおり地図を押した扱い）。
+ * 対象選びの間は、ほかの武将の名札を押しても、その能力は使わない（対象として選ぶ）。
+ */
+export function resolveLabelTap(s: BattleState, hitId: string | null, pending: Pending, selectedId: string | null): LabelTapAction | null {
+    if (!hitId || s.result) return null;
+    if (pending === 'ability' && selectedId) {
+        if (hitId === selectedId) return { type: 'cancel', unitId: hitId };
+        return { type: 'target', userId: selectedId, targetId: hitId };
+    }
+    const info = abilityInfo(s, hitId);
+    if (!info || !info.ready) return null;
+    return info.needsTarget ? { type: 'chooseTarget', unitId: hitId } : { type: 'use', unitId: hitId };
+}
+
+/** 対象選びの案内（下の案内の欄）。援護は今までどおりの言い方 */
+export function abilityTargetHint(s: BattleState, userId: string | null): string {
+    const u = userId ? unitById(s, userId) : undefined;
+    const info = u ? abilityInfo(s, u.id) : null;
+    const name = u?.name ?? '';
+    if (info?.id === 'nagamasa_support') return `${name}：援護する味方の部隊を押してください（札でも選べる）`;
+    return `${name}：「${info?.name ?? '能力'}」の対象の味方を押してください（輪の付いた部隊・札でも選べる。地面・Esc でやめる）`;
+}
+
+/**
+ * 発動の知らせ（能力名・武将・対象。2.5 秒ほど出す）。対象：選んだ部隊・自隊・範囲の説明
+ */
+export function abilityNoticeModel(s: BattleState, unitId: string): { title: string; general: string; target: string } | null {
+    const info = abilityInfo(s, unitId);
+    const u = unitById(s, unitId);
+    if (!info || !u) return null;
+    const target = info.needsTarget ? (info.targetName ?? '') : info.target === 'self' ? u.name : info.rangeText;
+    return { title: `「${info.name}」`, general: info.generalName, target };
+}
+
+/** 効果が切れた知らせ（短く）。能力のデータの名前で */
+export function abilityEndText(id: AbilityId): string {
+    return `「${ABILITY_DATA[id].name}」の効果が切れた`;
+}
 
 // ---------------------------------------------------------------- 戦前の約束の表示
 

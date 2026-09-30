@@ -9,8 +9,11 @@
  *   部隊の輪・押す判定の広さは Version 12 のまま（control.ts の formationExtent と figureCount。兵士の人数を増やしても押しやすさは変えない）。
  * - 命令の線（移動・攻撃・撤退）と矢の線、斬り合いの印（正面は白・側面は橙・背後は赤）。
  * - 見えない敵（林の中で味方から見えていない）は描かない。
- * - 特殊能力（歴史分岐）：効果中の範囲の輪（持つ部隊について動く）、選んだ部隊のまだ使っていない能力の範囲（薄く点滅）、
- *   援護の結びの線（効いている間は実線、離れて外れている間は灰色の破線）、援護の対象を選んでいる間は選べる味方の輪を明るく。
+ * - 特殊能力（歴史分岐・演習）：効果中の範囲の輪（持つ部隊について動く。後詰めの差配は対象の部隊を囲む）、選んだ部隊のまだ使っていない能力の範囲（薄く点滅）、
+ *   援護の結びの線（効いている間は実線、離れて外れている間は灰色の破線）。
+ *   対象を選んでいる間は、選べる味方の輪を淡い青緑で点滅させ、選べない部隊の輪を薄くする。
+ *   能力を使った瞬間に、持つ部隊（対象の要る能力は対象も）の周りに 0.8 秒の波紋（広がって消える）。効果が切れたときは小さく縮む波紋。
+ *   状態の能力の記録（usedAt・ended）を毎フレーム見て出すので、敵方の能力・早送りの中で使った能力でも出る。
  * - 戦前の約束：南の「味方の陣」（安全地点）の輪と、対象の部隊を囲む輪（同じ色）。
  * - 合戦場のデータの地形（簡単な形と色だけ）：深い川（水の面）・浅瀬（浅い色の水と石）・崖（暗い岩の盛り上がり）。
  *   通れる範囲（fieldRules.passable）の外は暗くする。
@@ -50,6 +53,11 @@ const ABILITY_COLOR: Record<string, string> = {
     sakakibara_vanguard: '#ff8fc0',
     enemy: '#ff8a7a',
 };
+/** 能力の対象選びの輪・名札の印の色（淡い青緑。選択の黄・陣営の水色とは別。battle.css の #7ef0de と同じ） */
+const ABILITY_READY_COLOR = '#7ef0de';
+/** 能力を使ったときの波紋の長さ（秒）と、同時に出せる数 */
+const RIPPLE_SEC = 0.8;
+const RIPPLE_POOL = 6;
 /** 自分だけに効く能力（範囲 0 m）の輪の半径（部隊を囲む大きさ） */
 const SELF_RING_R = 14;
 /** 目標の区域の色：主目標・副目標・果たした・果たせない */
@@ -137,7 +145,11 @@ export class BattleView {
     private readonly clashMats: Record<'front' | 'flank' | 'rear', THREE.SpriteMaterial>;
     private trees: THREE.Object3D | null = null;
     /** 特殊能力の範囲の輪（s.abilityList の順） */
-    private readonly abilRings: { ring: THREE.Mesh; fill: THREE.Mesh; ringMat: THREE.MeshBasicMaterial; fillMat: THREE.MeshBasicMaterial }[] = [];
+    private readonly abilRings: { ring: THREE.Mesh; fill: THREE.Mesh; ringMat: THREE.MeshBasicMaterial; fillMat: THREE.MeshBasicMaterial; rad: number }[] = [];
+    /** 能力の記録の見張り（s.abilityList の順。使った・終わったの変わり目で波紋を出す） */
+    private readonly abilSeen: { usedAt: number | null; ended: boolean }[] = [];
+    /** 波紋（使い回す）。unit は部隊の番号、t0 は表示の時計で出した時刻 */
+    private readonly ripples: { mesh: THREE.Mesh; mat: THREE.MeshBasicMaterial; unit: number; t0: number; kind: 'use' | 'end' }[] = [];
     /** 約束の安全地点（輪と塗り）と、対象を囲む輪 */
     private safeZone: { ring: THREE.Mesh; fill: THREE.Mesh } | null = null;
     private pledgeRing: THREE.Mesh | null = null;
@@ -269,7 +281,21 @@ export class BattleView {
             ring.visible = fill.visible = false;
             ring.frustumCulled = fill.frustumCulled = false;
             this.scene.add(fill, ring);
-            this.abilRings.push({ ring, fill, ringMat, fillMat });
+            this.abilRings.push({ ring, fill, ringMat, fillMat, rad });
+            // 最初の状態を覚える（作った時点で使ってあれば波紋は出さない）
+            this.abilSeen.push({ usedAt: r.usedAt, ended: r.ended });
+        }
+        if (s.abilityList.length) {
+            const geo = this.own(makeRingGeometry(0.84, 1.0, false));
+            for (let k = 0; k < RIPPLE_POOL; k++) {
+                const mat = this.own(new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0, depthTest: false, depthWrite: false, toneMapped: false }));
+                const mesh = new THREE.Mesh(geo, mat);
+                mesh.renderOrder = 9;
+                mesh.visible = false;
+                mesh.frustumCulled = false;
+                this.scene.add(mesh);
+                this.ripples.push({ mesh, mat, unit: -1, t0: -1e9, kind: 'use' });
+            }
         }
         const pl = s.pledge;
         if (pl) {
@@ -307,13 +333,38 @@ export class BattleView {
                 if (info.state === 'active') mode = 'active';
                 else if (info.state === 'unused' && ui.selectedId === r.unitId && u.status === 'ready') mode = 'preview';
             }
+            // 使った・終わったの変わり目：波紋（持つ部隊。対象の要る能力は対象の部隊にも）
+            const seen = this.abilSeen[k];
+            if (seen && i >= 0) {
+                if (seen.usedAt === null && r.usedAt !== null) {
+                    this.startRipple(i, 'use', r.id, r.side, t);
+                    const j = r.targetId ? s.units.findIndex((o) => o.id === r.targetId) : -1;
+                    if (j >= 0) this.startRipple(j, 'use', r.id, r.side, t);
+                }
+                if (!seen.ended && r.ended) this.startRipple(i, 'end', r.id, r.side, t);
+                seen.usedAt = r.usedAt;
+                seen.ended = r.ended;
+            }
             g.ring.visible = g.fill.visible = mode !== 'off';
             if (mode === 'off' || !v) continue;
-            const x = v.px + v.sx * 0.5;
-            const z = v.pz + v.sz * 0.5;
+            let x = v.px + v.sx * 0.5;
+            let z = v.pz + v.sz * 0.5;
+            // 後詰めの差配（対象の要る能力で、離れても効く）：効果中は、選べる距離の輪ではなく、対象の部隊を囲む小さな輪
+            let scale = 1;
+            if (mode === 'active' && info && info.target === 'ally_unit' && !ABILITY_DATA[r.id].leash && info.targetId) {
+                const j = s.units.findIndex((o) => o.id === info.targetId);
+                const e = j >= 0 ? this.vis[j] : null;
+                if (e && e.shown) {
+                    x = e.px + e.sx * 0.5;
+                    z = e.pz + e.sz * 0.5;
+                    scale = (Math.max(e.halfW, e.halfD) + 8) / g.rad;
+                }
+            }
             const y = elevationAt(this.map, x, z) + 0.4;
             g.ring.position.set(x, y, z);
             g.fill.position.set(x, y - 0.05, z);
+            g.ring.scale.set(scale, 1, scale);
+            g.fill.scale.set(scale, 1, scale);
             if (mode === 'active') {
                 g.ringMat.opacity = 0.75 + Math.sin(t * 3) * 0.15;
                 g.fillMat.opacity = 0.11;
@@ -333,6 +384,7 @@ export class BattleView {
                 }
             }
         }
+        this.updateRipples(t);
         // 約束：対象を囲む輪（戦える間）
         if (this.pledgeRing && s.pledge) {
             const i = s.units.findIndex((u) => u.id === s.pledge!.targetId);
@@ -353,6 +405,40 @@ export class BattleView {
                 const inside = u.present && u.status === 'ready' && Math.hypot(u.x - z.cx, u.z - z.cz) <= z.r;
                 (this.safeZone.fill.material as THREE.MeshBasicMaterial).opacity = inside ? 0.2 + Math.sin(t * 4) * 0.06 : 0.12;
             }
+        }
+    }
+
+    /** 波紋を出す（部隊の番号 i の周り）。空きが無ければいちばん古いものを使う */
+    private startRipple(i: number, kind: 'use' | 'end', id: string, side: Side, t: number): void {
+        if (!this.ripples.length) return;
+        let best = this.ripples[0];
+        for (const p of this.ripples) if (p.t0 < best.t0) best = p;
+        best.unit = i;
+        best.t0 = t;
+        best.kind = kind;
+        best.mat.color.set(side === 'ally' ? (ABILITY_COLOR[id] ?? ABILITY_READY_COLOR) : ABILITY_COLOR.enemy);
+        if (kind === 'end') best.mat.color.multiplyScalar(0.75);
+    }
+
+    /** 波紋：使った＝0.8 秒で部隊の輪の大きさから 2.6 倍へ広がって消える。終わった＝2 倍から輪の大きさへ縮んで消える（薄く） */
+    private updateRipples(t: number): void {
+        for (const p of this.ripples) {
+            const age = t - p.t0;
+            const v = p.unit >= 0 ? this.vis[p.unit] : null;
+            if (!v || !v.shown || age < 0 || age > RIPPLE_SEC) {
+                p.mesh.visible = false;
+                continue;
+            }
+            const k = age / RIPPLE_SEC;
+            const ease = 1 - (1 - k) * (1 - k);
+            const r0 = Math.max(v.halfW, v.halfD) + 3;
+            const r = p.kind === 'use' ? r0 * (1 + 1.6 * ease) : r0 * (2 - ease);
+            const x = v.px + v.sx * 0.5;
+            const z = v.pz + v.sz * 0.5;
+            p.mesh.position.set(x, elevationAt(this.map, x, z) + 0.7, z);
+            p.mesh.scale.set(r, 1, r);
+            p.mat.opacity = (p.kind === 'use' ? 0.9 : 0.55) * (1 - k);
+            p.mesh.visible = true;
         }
     }
 
@@ -933,9 +1019,16 @@ export class BattleView {
                 this.m4.compose(this.v3.set(cx, elevationAt(this.map, cx, cz) + 0.5, cz), this.q, this.s3.set(rx, 1, rz));
                 this.ringMesh.setMatrixAt(i, this.m4);
                 let k = 1;
+                let col = SIDE_COLOR[u.side];
                 if (ui.pending === 'attack' && u.side === 'enemy') k = 1.25 + Math.sin(t * 7) * 0.35;
-                if (validTargets && validTargets.includes(u.id)) k = 1.3 + Math.sin(t * 7) * 0.4;
-                tmpC.set(SIDE_COLOR[u.side]).multiplyScalar(k);
+                if (validTargets) {
+                    // 能力の対象選び：選べる部隊は淡い青緑で点滅、選べない部隊（持ち主を除く）は薄く
+                    if (validTargets.includes(u.id)) {
+                        col = ABILITY_READY_COLOR;
+                        k = 1.05 + Math.sin(t * 6) * 0.3;
+                    } else if (u.id !== ui.selectedId) k = 0.3;
+                }
+                tmpC.set(col).multiplyScalar(k);
                 this.ringMesh.setColorAt(i, tmpC);
             } else if (!u.arrived && u.status === 'ready' && u.side === 'ally') {
                 // 着く前の味方：着く所に薄い輪

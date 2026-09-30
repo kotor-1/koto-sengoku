@@ -12,8 +12,12 @@
  *   - 指を離した・キャンセル・捕捉が外れたら、その指の操作は終わり（触り直すまで再開しない）。
  *   - 画面を離れた（blur・visibilitychange・pagehide）ら、自動で指揮（一時停止）にして入力を離す。
  *   - キー：Space 指揮／再開、1〜8 部隊（札の順）、M 移動・A 攻撃・H 防衛・待機・R 撤退、Esc 取り消し、矢印で地図、+ − 0 で寄る・引く・全体。
- *     特殊能力のある合戦（歴史分岐）は F（または「能力」）で選んだ部隊の能力を使う。援護（対象を選ぶ能力）は、その後で味方の部隊・札を押す。
+ *     特殊能力のある合戦（歴史分岐・演習）は F（または「能力」）で選んだ部隊の能力を使う。援護・差配（対象を選ぶ能力）は、その後で味方の部隊・札を押す。
  *     不適切な対象は理由を出すだけで回数を減らさない（abilities.ts の useAbility が確かめる）。指揮中（一時停止）も使える。
+ * - 特殊能力の発動 UI（設計 §4）：発動できる武将の名札を点滅させ（表示の時計 realT。一時停止中も）、点滅している名札を押すと、
+ *   対象の要らない能力はその場で使い、対象の要る能力は対象選びに入る（その後で対象を押す。地面・Esc・同じ名札でやめる）。
+ *   名札の当たり判定は見た目より少し広い（PC 36 px・スマホ 48 px 四方。隣の部隊の中心より外へは広げない。control.ts の labelHit）。
+ *   名札を押した操作はその場で使い切り（地面の移動・部隊の選択に回さない）、使った直後 0.5 秒は同じ所のタップを何もしない（連打の 2 回目も漏らさない）。
  * - 選んでいる部隊は id の並び（selection。今は 0 か 1 部隊）で持ち、命令は control.ts の orderUnits で並びの部隊へ出す
  *   （複数の選択・部隊のまとまりは、この並びを広げれば足せる）。
  * - 戦前の約束（BattleSetup.pledge）：対象の部隊の名札を目立たせ、南の「味方の陣」を地図に描き、条件の欄に進み具合、結果の画面に勝敗と別に結果を出す。
@@ -30,11 +34,20 @@ import { BattleUi, type CommandKind } from './battleUi';
 import { useAbility } from './abilities';
 import {
     RESULT_LABEL,
+    LABEL_HIT_PX,
+    TAP_GUARD_SEC,
     abilitiesUsedText,
+    abilityBlink,
+    abilityEndText,
+    abilityNoticeModel,
     abilityPanelModel,
     commandableIds,
     eventTone,
     fmtClock,
+    inTapGuard,
+    labelAbilityModel,
+    labelHit,
+    labelTapCandidates,
     leadOf,
     mapLabels,
     objectiveResultModel,
@@ -44,15 +57,19 @@ import {
     pledgeResultModel,
     pruneSelection,
     refusalText,
+    resolveLabelTap,
     resolveTap,
     resultRows,
     scenarioTexts,
     selectOnly,
     selectedOf,
     unitMarksText,
+    type LabelBox,
     type MapLabel,
     type Pending,
+    type ScreenMark,
     type Selected,
+    type TapGuard,
     type TapTarget,
 } from './control';
 
@@ -133,6 +150,8 @@ class BattleRun implements Mode {
     private readonly terrainLabels: MapLabel[];
     /** 目標が指す部隊の名札の印（救出・守る・崩す） */
     private readonly unitMarks: Map<string, string>;
+    /** 能力を使った・名札を押した直後の守り（この点の近くのタップを少しの間なにもしない。表示の時計 realT で） */
+    private tapGuard: TapGuard | null = null;
 
     constructor(
         setup: BattleSetup,
@@ -276,6 +295,10 @@ class BattleRun implements Mode {
         for (const e of events) {
             const tone = eventTone(this.s, e);
             if (tone) this.ui.toast(e.text, tone, e.unitId);
+            // 味方の能力の効果が切れた：上の真ん中に短く（「〇〇の効果が切れた」）
+            if (e.kind === 'ability_end' && e.ability && e.unitId && unitById(this.s, e.unitId)?.side === 'ally') {
+                this.ui.abilityNotice('end', abilityEndText(e.ability), unitById(this.s, e.unitId)?.name ?? '');
+            }
         }
     }
 
@@ -283,6 +306,7 @@ class BattleRun implements Mode {
         const s = this.s;
         const hasAbilities = s.abilityList.length > 0;
         const pledgeId = s.pledge?.targetId ?? null;
+        const blink = abilityBlink(this.realT);
         // 同じ所で着くのを待つ味方（援軍）の名札は、上へ積んで重ならないように
         const waitingAt = new Map<string, number>();
         for (let i = 0; i < s.units.length; i++) {
@@ -305,6 +329,8 @@ class BattleRun implements Mode {
                 this.ui.label(u.id, u.name, 'ally', p.x, p.y - k * 18, !p.off, ` 到着まで ${Math.max(0, Math.ceil(u.arriveAt - s.t))} 秒`);
             } else this.ui.label(u.id, '', u.side, 0, 0, false);
             this.ui.markLabel(u.id, 'sel', this.selection.includes(u.id));
+            // 能力の印（点滅・効果中の残り秒・対象選びの選べる／選べない）。点滅は表示の時計で（一時停止中も）
+            if (hasAbilities) this.ui.labelAbility(u.id, labelAbilityModel(s, u.id, this.pending, this.selectedId), blink);
             if (pledgeId) this.ui.markLabel(u.id, 'pledge', pledgeId === u.id);
             if (this.unitMarks.size) this.ui.labelMark(u.id, u.status === 'ready' ? (this.unitMarks.get(u.id) ?? '') : '');
         }
@@ -382,28 +408,38 @@ class BattleRun implements Mode {
             this.pending = 'ability';
             return;
         }
-        this.useAbilityOn(undefined);
+        this.useAbilityOn(sel.id, undefined);
     }
 
-    /** 能力を使う（targetId は援護の対象）。断られたら理由を出す（対象選びは続ける） */
-    private useAbilityOn(targetId: string | undefined): void {
-        const sel = this.selectedId ? unitById(this.s, this.selectedId) : undefined;
-        if (!sel) return;
-        const name = abilityPanelModel(this.s, sel.id)?.name ?? '能力';
-        const r = useAbility(this.s, sel.id, targetId);
+    /**
+     * 能力を使う（userId の部隊の能力。targetId は対象の要る能力の対象）。使えたら、発動の知らせ（能力名・武将・対象）を出す。
+     * 断られたら理由を出す（対象選びは続ける。回数は減らない）。使えたかを返す
+     */
+    private useAbilityOn(userId: string, targetId: string | undefined): boolean {
+        const user = unitById(this.s, userId);
+        if (!user) return false;
+        const pm = abilityPanelModel(this.s, user.id);
+        const name = pm?.name ?? '能力';
+        const r = useAbility(this.s, user.id, targetId);
         if (r.ok) {
             this.pending = 'none';
             const tgt = targetId ? unitById(this.s, targetId)?.name : null;
-            this.ui.flash(`${sel.name}：「${name}」${tgt ? `— ${tgt}を援護` : ''}${this.paused ? '（再開すると時間が進む）' : ''}`, 2400);
+            const how = pm?.info.id === 'nagamasa_support' ? 'を援護' : 'へ差配';
+            this.ui.flash(`${user.name}：「${name}」${tgt ? `— ${tgt}${how}` : ''}${this.paused ? '（再開すると時間が進む）' : ''}`, 2400);
+            const note = abilityNoticeModel(this.s, user.id);
+            if (note) this.ui.abilityNotice('use', `${note.general}${note.title}`, `対象：${note.target}`);
             // 使った知らせ（sim が記録した ability の出来事）をすぐ出す（止めている間も）
             this.onEvents(this.s.events.slice(this.seenEvents));
-        } else this.ui.flash(`${targetId ? '対象にできない' : '使えない'}：${r.reason ?? ''}`, 2600);
+            return true;
+        }
+        this.ui.flash(`${targetId ? '対象にできない' : '使えない'}：${r.reason ?? ''}`, 2600);
+        return false;
     }
 
     private selectFromCard(id: string): void {
         if (this.pending === 'ability' && this.selectedId) {
-            // 援護の対象選びの途中：札（1〜4 キー）でも対象を選べる
-            this.useAbilityOn(id);
+            // 能力の対象選びの途中：札（1〜8 キー）でも対象を選べる
+            this.useAbilityOn(this.selectedId, id);
             return;
         }
         if (this.selectedId === id) {
@@ -644,6 +680,11 @@ class BattleRun implements Mode {
 
     private hover(x: number, y: number): void {
         if (this.ui.modalOpen) return;
+        // 点滅している名札（対象選びの間は対象の名札）の上：押せる印
+        if (this.labelAt(x, y)) {
+            if (this.ui.input.style.cursor !== 'pointer') this.ui.input.style.cursor = 'pointer';
+            return;
+        }
         const id = this.view.pick(this.s, x, y, 18);
         const u = id ? unitById(this.s, id) : undefined;
         const layer = this.ui.input;
@@ -657,9 +698,67 @@ class BattleRun implements Mode {
         if (layer.style.cursor !== cur) layer.style.cursor = cur;
     }
 
+    /**
+     * 押した所の名札（点滅している名札・対象選びの間は味方の名札）。当たりは control.ts の labelHit（見た目より少し広い。隣の部隊の中心を越えない）
+     */
+    private labelAt(x: number, y: number): string | null {
+        const ids = labelTapCandidates(this.s, this.pending, this.selectedId);
+        if (ids.length === 0) return null;
+        const c = this.ctx.renderer.domElement.getBoundingClientRect();
+        const boxes: LabelBox[] = [];
+        for (const id of ids) {
+            const r = this.ui.labelRect(id);
+            if (r) boxes.push({ id, l: r.left - c.left, t: r.top - c.top, r: r.right - c.left, b: r.bottom - c.top });
+        }
+        if (boxes.length === 0) return null;
+        // ほかの部隊の中心と名札の中心（広げた当たりがこれより向こうへ行かないように）
+        const others: ScreenMark[] = [];
+        for (let i = 0; i < this.s.units.length; i++) {
+            const u = this.s.units[i];
+            const m = this.view.unitCenter(i);
+            if (!m.shown) continue;
+            const p = this.view.project(m.x, m.y + 1.5, m.z);
+            if (!p.off) others.push({ id: u.id, x: p.x, y: p.y });
+            const r = this.ui.labelRect(u.id);
+            if (r) others.push({ id: u.id, x: (r.left + r.right) / 2 - c.left, y: (r.top + r.bottom) / 2 - c.top });
+        }
+        return labelHit(boxes, others, x, y, this.ctx.touch ? LABEL_HIT_PX.touch : LABEL_HIT_PX.mouse);
+    }
+
+    /** 名札を押した（能力を使う・対象選びに入る・やめる・対象に選ぶ）。押した操作を使い切ったら true（地図を押した扱いにしない） */
+    private labelTap(x: number, y: number): boolean {
+        if (this.s.abilityList.length === 0 || !this.started) return false;
+        const act = resolveLabelTap(this.s, this.labelAt(x, y), this.pending, this.selectedId);
+        if (!act) return false;
+        switch (act.type) {
+            case 'use':
+                this.useAbilityOn(act.unitId, undefined);
+                break;
+            case 'chooseTarget':
+                // 対象選び：その武将の部隊を選び、選べる部隊に輪（view.ts）・選べない名札は薄く・案内の文
+                this.select(act.unitId);
+                this.pending = 'ability';
+                break;
+            case 'cancel':
+                this.pending = 'none';
+                this.ui.flash('能力の対象選びをやめた（使用回数は減っていない）');
+                break;
+            case 'target':
+                this.useAbilityOn(act.userId, act.targetId);
+                break;
+        }
+        const hitPx = this.ctx.touch ? LABEL_HIT_PX.touch : LABEL_HIT_PX.mouse;
+        this.tapGuard = { x, y, until: this.realT + TAP_GUARD_SEC, r: hitPx / 2 };
+        return true;
+    }
+
     /** 地図を押した（動かさずに離した）。command は右クリック（味方を選んでいれば命令だけ） */
     private tap(x: number, y: number, command: boolean): void {
         if (this.resultShown || this.ui.modalOpen) return;
+        // 能力を使った・名札を押した直後の同じ所（連打の 2 回目）：何もしない（地面の移動・部隊の選択に漏らさない）
+        if (inTapGuard(this.tapGuard, x, y, this.realT)) return;
+        // 点滅している名札（対象選びの間は味方の名札）：部隊の選択・地面の移動より先に、能力の操作として使い切る
+        if (!command && this.labelTap(x, y)) return;
         // 部隊そのもの（隊列の広がり＋少し）を押したか、押しやすくするための余白（タッチ 30 px・マウス 20 px）を押したか
         const exactId = this.view.pick(this.s, x, y, this.ctx.touch ? TAP_EXACT_PX.touch : TAP_EXACT_PX.mouse);
         const id = exactId ?? this.view.pick(this.s, x, y, this.ctx.touch ? 30 : 20);
@@ -698,7 +797,11 @@ class BattleRun implements Mode {
                 this.ui.flash(act.text);
                 break;
             case 'abilityTarget':
-                this.useAbilityOn(act.unitId);
+                if (this.selectedId) this.useAbilityOn(this.selectedId, act.unitId);
+                break;
+            case 'abilityCancel':
+                this.pending = 'none';
+                this.ui.flash(act.text);
                 break;
             case 'none':
                 break;
@@ -745,6 +848,7 @@ class BattleRun implements Mode {
         }
         switch (e.code) {
             case 'Escape':
+                if (this.pending === 'ability') this.ui.flash('能力の対象選びをやめた（使用回数は減っていない）');
                 if (this.pending !== 'none') this.pending = 'none';
                 else this.select(null);
                 break;
@@ -854,6 +958,12 @@ function exposeDev(run: BattleRun): void {
         /** 台本を実時間の進みに合わせて刻みごとに呼ぶ（null で外す） */
         setScript(fn: ((s: BattleState) => void) | null) {
             run.script = fn;
+        },
+        /** 部隊の名札の四角（CSS px、ページの左上から）と能力の印（data-ab）。名札のクリック・タップの確認に使う（読むだけ） */
+        labelOf(unitId: string) {
+            const r = run.ui.labelRect(unitId);
+            const e = document.querySelector(`.b-label[data-id="${unitId}"]`) as HTMLElement | null;
+            return r ? { l: r.left, t: r.top, r: r.right, b: r.bottom, x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2, ab: e?.dataset.ab ?? '', blink: e ? Number(e.style.getPropertyValue('--ab') || 1) : 1 } : null;
         },
         /** 兵士の表示の数え上げ（直前のフレーム）：見えている兵士の数・部隊ごとの人数・描画の呼び出しの数・InstancedMesh ごとの数 */
         troopStats: () => run.view.troopStats(),

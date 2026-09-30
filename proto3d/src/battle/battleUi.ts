@@ -13,14 +13,19 @@
  *   使えるか／使えない理由。ゲーム用の創作と断る）。
  * - 戦前の約束のある合戦だけ：左上の条件の見出しのすぐ下に約束の行（対象・陣に入った秒数・兵の割合。畳んでも見える）。
  * - 地図の上の名札、合戦の前の説明、全軍撤退の確かめ、結果（勝敗・主目標・副目標・約束を別々の行に）
+ * - 特殊能力の発動 UI（設計 §4）：発動できる武将の名札に能力の印（淡い青緑。明るさはつなぎが表示の時計で毎フレーム渡す＝一時停止中も点滅）、
+ *   効果中は名札に残り秒数、対象選びの間は選べる名札・選べない名札（薄く）。発動の知らせ（能力名・武将・対象。2.5 秒）と、効果が切れた知らせ。
+ *   名札そのものは押せない（pointer-events: none）。名札の四角（labelRect）をつなぎが読んで、地図を押した所と比べる。
  * e2e が使える印：.b-root[data-field]（戦場 id）・.b-card[data-id][data-key]・.b-cards[data-count]・.b-goals の .b-goal[data-id][data-role][data-state]・
- *   .b-gen[data-general]・結果の .b-robj の行 [data-role][data-achieved]・名札 .b-label[data-mark]（救出・守る・崩す）。
+ *   .b-gen[data-general]・結果の .b-robj の行 [data-role][data-achieved]・名札 .b-label[data-mark]（救出・守る・崩す）・
+ *   部隊の名札 .b-label[data-id][data-ab]（ready・active・choosing・target・untargetable）・発動の知らせ .b-abnote[data-kind]。
  * ボタンは押した瞬間（pointerdown）に反応し、その後の click は無視する（キーボードの Enter／Space の click だけ受ける）。
  * 画面を押して地図を動かす面（input）は一番下に敷き、つなぎがそこへ指・マウスの処理を付ける。
  */
 import type { BattleState } from './sim';
 import {
     abilityPanelModel,
+    abilityTargetHint,
     armySummary,
     cardAbilityText,
     cardModel,
@@ -31,6 +36,7 @@ import {
     scenarioTexts,
     timeText,
     type CardModel,
+    type LabelAbilityModel,
     type ObjectiveResultModel,
     type ObjectiveRowModel,
     type Pending,
@@ -132,6 +138,20 @@ function setClass(e: HTMLElement, cls: string, on: boolean): void {
     if (e.classList.contains(cls) !== on) e.classList.toggle(cls, on);
 }
 
+interface LabelEls {
+    e: HTMLElement;
+    name: HTMLElement;
+    small: HTMLElement;
+    ab: HTMLElement;
+    x: number;
+    y: number;
+    shown: boolean;
+    text: string;
+    abMode: string;
+    abText: string;
+    blink: number;
+}
+
 interface CardEls {
     root: HTMLButtonElement;
     badge: HTMLElement;
@@ -150,7 +170,10 @@ export class BattleUi {
     /** 地図を押す・動かす面（つなぎが指・マウスの処理を付ける） */
     readonly input: HTMLDivElement;
     private readonly labels: HTMLDivElement;
-    private readonly labelEls = new Map<string, { e: HTMLElement; x: number; y: number; shown: boolean; text: string }>();
+    private readonly labelEls = new Map<string, LabelEls>();
+    /** 発動の知らせ（能力名・武将・対象）と、効果が切れた知らせ */
+    private readonly abNote: HTMLDivElement;
+    private abNoteTimer = 0;
     private readonly objHead: HTMLButtonElement;
     private readonly objTime: HTMLElement;
     private readonly objArmy: Record<Side, HTMLElement>;
@@ -277,7 +300,11 @@ export class BattleUi {
         this.pausePill.innerHTML = '<b>指揮中（一時停止）</b><span>　命令を出せます</span>';
         this.toasts = el('div', 'b-toasts');
         this.toasts.setAttribute('aria-live', 'polite');
-        mid.append(this.pausePill, this.toasts);
+        // 発動の知らせ（押しても何も起きない。pointer-events: none）
+        this.abNote = el('div', 'b-abnote');
+        this.abNote.hidden = true;
+        this.abNote.setAttribute('aria-live', 'polite');
+        mid.append(this.pausePill, this.abNote, this.toasts);
 
         // ---- 右上：一時停止・速さ・全軍撤退 ----
         const ctrl = el('div', 'b-ctrl');
@@ -526,7 +553,7 @@ export class BattleUi {
         let hint = '';
         if (st.pending === 'move') hint = `${sel?.name ?? ''}：移動先の地面を押してください`;
         else if (st.pending === 'attack') hint = `${sel?.name ?? ''}：攻撃する敵の部隊を押してください`;
-        else if (st.pending === 'ability') hint = `${sel?.name ?? ''}：援護する味方の部隊を押してください（札でも選べる）`;
+        else if (st.pending === 'ability') hint = abilityTargetHint(s, sel?.id ?? null);
         const now = performance.now();
         const flash = now < this.flashTimer ? this.flashText : '';
         // 短い知らせ（断った理由など）は、命令の途中の案内より先に出す（案内の「やめる」は残す）
@@ -639,8 +666,12 @@ export class BattleUi {
             const rows: string[] = [];
             rows.push(`<div class="b-ab-h"><b>能力「${escapeHtml(m.name)}」</b><span class="b-ab-st ${m.tone}">${escapeHtml(m.stateText)}</span></div>`);
             if (m.reason && (m.tone === 'blocked' || m.tone === 'enemy')) rows.push(`<div class="b-ab-why">${escapeHtml(m.info.controllable ? `使えない：${m.reason}` : m.reason)}</div>`);
-            if (pending === 'ability' && m.usable) rows.push(`<div class="b-ab-why go">援護する味方を押す（${m.info.range} m 以内・${m.info.validTargets.length} 部隊）</div>`);
+            if (pending === 'ability' && m.usable)
+                rows.push(`<div class="b-ab-why go">${m.info.id === 'nagamasa_support' ? '援護する味方' : '対象の味方'}を押す（${m.info.range} m 以内・${m.info.validTargets.length} 部隊）</div>`);
+            else if (m.howTo && m.info.controllable) rows.push(`<div class="b-ab-why go">${escapeHtml(m.howTo)}</div>`);
+            if (m.remainText) rows.push(`<div class="b-ab-r b-ab-left"><i>残り</i>${escapeHtml(m.remainText)}</div>`);
             rows.push(`<div class="b-ab-r"><i>対象</i>${escapeHtml(m.short.target)}（範囲 ${m.info.range} m）</div>`);
+            rows.push(`<div class="b-ab-r b-ab-range"><i>範囲</i>${escapeHtml(m.rangeText)}</div>`);
             rows.push(`<div class="b-ab-r"><i>効果</i>${escapeHtml(m.short.effect)}</div>`);
             rows.push(`<div class="b-ab-r"><i>代償</i>${escapeHtml(m.short.cost)}</div>`);
             rows.push(`<div class="b-ab-r b-ab-uses"><i>回数</i>${escapeHtml(m.uses)}${m.info.controllable ? '' : '・プレイヤーは操作できない'}</div>`);
@@ -668,13 +699,20 @@ export class BattleUi {
 
     // ---------------------------------------------------------------- 名札
 
-    /** 地図の上の名札（CSS px の位置。shown が false なら隠す） */
+    /** 地図の上の名札（CSS px の位置。shown が false なら隠す）。部隊の名札は data-id に部隊 id（地形の名札は付けない） */
     label(id: string, text: string, side: Side | 'terrain', x: number, y: number, shown: boolean, extra = ''): void {
         let l = this.labelEls.get(id);
         if (!l) {
             const e = el('div', `b-label ${side}`);
+            if (side !== 'terrain') e.dataset.id = id;
+            const name = el('span', 'b-lab-n');
+            const small = el('small');
+            const ab = el('span', 'b-lab-ab');
+            small.hidden = true;
+            ab.hidden = true;
+            e.append(name, small, ab);
             this.labels.append(e);
-            l = { e, x: NaN, y: NaN, shown: true, text: '' };
+            l = { e, name, small, ab, x: NaN, y: NaN, shown: true, text: '', abMode: '', abText: '', blink: -1 };
             this.labelEls.set(id, l);
         }
         if (l.shown !== shown) {
@@ -682,15 +720,76 @@ export class BattleUi {
             l.e.hidden = !shown;
         }
         if (!shown) return;
-        if (l.text !== text + extra) {
-            l.text = text + extra;
-            l.e.innerHTML = extra ? `${escapeHtml(text)}<small>${escapeHtml(extra)}</small>` : escapeHtml(text);
+        if (l.text !== text + '\u0000' + extra) {
+            l.text = text + '\u0000' + extra;
+            setText(l.name, text);
+            setText(l.small, extra);
+            l.small.hidden = !extra;
         }
         if (!(Math.abs(l.x - x) <= 0.4 && Math.abs(l.y - y) <= 0.4)) {
             l.x = x;
             l.y = y;
             l.e.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`;
         }
+    }
+
+    /**
+     * 名札の能力の印（control.ts の labelAbilityModel）。blink は点滅の明るさ（0.55〜1.0。ready のときだけ使う）。
+     * 明るさは CSS の変数 --ab で渡す（表示の時計で毎フレーム。一時停止中も変わる）。
+     */
+    labelAbility(id: string, m: LabelAbilityModel, blink: number): void {
+        const l = this.labelEls.get(id);
+        if (!l) return;
+        if (l.abMode !== m.mode) {
+            l.abMode = m.mode;
+            if (m.mode) l.e.dataset.ab = m.mode;
+            else delete l.e.dataset.ab;
+        }
+        if (l.abText !== m.text) {
+            l.abText = m.text;
+            setText(l.ab, m.text);
+            l.ab.hidden = !m.text;
+        }
+        const k = m.mode === 'ready' ? Math.round(blink * 100) / 100 : 1;
+        if (k !== l.blink) {
+            l.blink = k;
+            l.e.style.setProperty('--ab', String(k));
+        }
+    }
+
+    /** 名札の四角（CSS px。ページの左上から。隠れていれば null） */
+    labelRect(id: string): DOMRect | null {
+        const l = this.labelEls.get(id);
+        if (!l || !l.shown || l.e.hidden) return null;
+        const r = l.e.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 ? r : null;
+    }
+
+    /**
+     * 発動の知らせ（上の真ん中。能力名・武将・対象）と、効果が切れた知らせ。ms だけ出して消える（画面全体は光らせない）。
+     */
+    abilityNotice(kind: 'use' | 'end', title: string, sub: string, ms = kind === 'use' ? 2500 : 1800): void {
+        const e = this.abNote;
+        e.dataset.kind = kind;
+        e.innerHTML = `<b>${escapeHtml(title)}</b>${sub ? `<span>${escapeHtml(sub)}</span>` : ''}`;
+        e.hidden = false;
+        e.classList.remove('fade');
+        if (this.abNoteTimer) {
+            window.clearTimeout(this.abNoteTimer);
+            this.timers.delete(this.abNoteTimer);
+        }
+        const id1 = window.setTimeout(() => {
+            e.classList.add('fade');
+            const id2 = window.setTimeout(() => {
+                if (e.classList.contains('fade')) e.hidden = true;
+                this.timers.delete(id2);
+            }, 300);
+            this.timers.add(id2);
+            this.timers.delete(id1);
+            if (this.abNoteTimer === id1) this.abNoteTimer = 0;
+        }, ms);
+        this.abNoteTimer = id1;
+        this.timers.add(id1);
     }
 
     /** 名札に目標の印を添える（例：救出・守る・崩す。空なら外す）。CSS が data-mark を前に出す */
@@ -803,8 +902,12 @@ export class BattleUi {
             'Space で指揮（一時停止）／再開。止めたまま命令を出せる。',
         ];
         if (this.hasAbility) {
-            touchLines.push('部隊を選ぶと左上に特殊能力（ゲーム用の創作）が出る。「能力」で使う（援護は、その後で味方の部隊を押す）。指揮中も使える。');
-            pcLines.push('部隊を選ぶと左上に特殊能力（ゲーム用の創作）が出る。「能力」ボタンか F で使う（援護は、その後で味方の部隊をクリック。Esc で取り消し）。');
+            touchLines.push(
+                '特殊能力（ゲーム用の創作）：使える武将は地図の名札が青緑に点滅する。名札をタップするだけで使える（対象を選ぶ能力は、その後で輪の付いた味方をタップ）。部隊を選んで「能力」でも使える。指揮中も使える。',
+            );
+            pcLines.push(
+                '特殊能力（ゲーム用の創作）：使える武将は地図の名札が青緑に点滅する。名札をクリックするだけで使える（対象を選ぶ能力は、その後で輪の付いた味方をクリック。Esc で取り消し）。部隊を選んで「能力」ボタンか F で使うこともできる。',
+            );
         }
         for (const l of this.opts.touch ? touchLines : pcLines) how.append(el('p', '', l));
         box.append(how);
