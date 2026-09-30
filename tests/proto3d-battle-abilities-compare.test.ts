@@ -23,7 +23,7 @@
  *   代償：切れた 20 秒に榊原隊の士気 −15（19 秒 72 → 21 秒 56）。
  */
 import { describe, expect, it } from 'vitest';
-import { createBattle, issueOrder, isActive, stepBattle, unitById, type BattleState } from '../proto3d/src/battle/sim';
+import { createBattle, issueOrder, isActive, stepBattle, type BattleState } from '../proto3d/src/battle/sim';
 import { useAbility } from '../proto3d/src/battle/abilities';
 import { buildBattleSetup, getField } from '../proto3d/src/battle/fields';
 import type { BattleOutcome, Order, UnitDef } from '../proto3d/src/battle/types';
