@@ -85,6 +85,9 @@ body.mode-battle #build { display: none !important; }
    選んだ名札・点滅している名札・能力の効果中や対象選びの名札・敗走の名札はそのまま */
 .b-labels.far .b-label:not(.sel):not([data-ab]):not(.terrain) { opacity: 0.72; font-size: 9.5px; padding: 0 4px 1px; border-left-width: 2px; }
 .b-labels.far .b-label:not(.sel):not(.routed):not([data-ab]) small { display: none; }
+/* 引いた画面の発動できる名札も、名前と兵の数を小さくして（印はそのまま）、部隊を覆いすぎないように */
+.b-labels.far .b-label[data-ab="ready"]:not(.sel) { font-size: 9.5px; padding: 0 4px 1px; }
+.b-labels.far .b-label[data-ab="ready"]:not(.sel) small { display: none; }
 .b-label.terrain {
     background: none;
     border: none;
@@ -510,6 +513,8 @@ body.mode-battle #build { display: none !important; }
     max-width: calc(100% - 140px);
 }
 .b-hint[hidden] { display: none; }
+/* 短い知らせだけ（「やめる」の無い案内）の間は、押しを下の地図へ通す（部隊を選んだ確かめの文などが、下の部隊の押しを奪わないように） */
+.b-hint.note-only { pointer-events: none; }
 .b-hint-x { padding: 4px 12px; font-size: 12px; border-radius: 999px; }
 .b-hint-x[hidden] { display: none; }
 

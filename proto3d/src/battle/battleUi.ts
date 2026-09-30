@@ -22,7 +22,7 @@
  * ボタンは押した瞬間（pointerdown）に反応し、その後の click は無視する（キーボードの Enter／Space の click だけ受ける）。
  * 画面を押して地図を動かす面（input）は一番下に敷き、つなぎがそこへ指・マウスの処理を付ける。
  */
-import type { BattleState } from './sim';
+import { FREE_HOLD_LABEL, FREE_HOLD_NOTE, type BattleState } from './sim';
 import {
     abilityPanelModel,
     abilityTargetHint,
@@ -150,6 +150,11 @@ interface LabelEls {
     abMode: string;
     abText: string;
     blink: number;
+    /** 名札の重なりをほどくために上へずらした量（px。0 か負） */
+    dy: number;
+    /** いま書いてある位置（x, y + dy。同じなら transform を書き直さない） */
+    px: number;
+    py: number;
 }
 
 interface CardEls {
@@ -560,6 +565,7 @@ export class BattleUi {
         const text = flash || hint;
         this.hintEl.hidden = !text;
         this.hintCancel.hidden = !hint;
+        setClass(this.hintEl, 'note-only', !hint);
         setText(this.hintText, text);
     }
 
@@ -579,6 +585,9 @@ export class BattleUi {
         c.morBar.dataset.tone = m.moraleTone;
         setText(c.morText, `士気 ${m.morale}`);
         setText(c.ord, m.orderText);
+        // 命令を受けていない待機（武将任せ）は、札の文の上に説明を出す（命じた「防衛・待機」と分ける）
+        const ordTitle = m.orderText === FREE_HOLD_LABEL ? FREE_HOLD_NOTE : '';
+        if (c.ord.title !== ordTitle) c.ord.title = ordTitle;
         setText(c.eng, m.engageText === 'なし' ? '' : `⚔ ${m.engageText}`);
         setClass(c.root, 'sel', selected);
         setClass(c.root, 'engaged', m.engageText !== 'なし');
@@ -712,7 +721,7 @@ export class BattleUi {
             ab.hidden = true;
             e.append(name, small, ab);
             this.labels.append(e);
-            l = { e, name, small, ab, x: NaN, y: NaN, shown: true, text: '', abMode: '', abText: '', blink: -1 };
+            l = { e, name, small, ab, x: NaN, y: NaN, shown: true, text: '', abMode: '', abText: '', blink: -1, dy: 0, px: NaN, py: NaN };
             this.labelEls.set(id, l);
         }
         if (l.shown !== shown) {
@@ -726,10 +735,64 @@ export class BattleUi {
             setText(l.small, extra);
             l.small.hidden = !extra;
         }
-        if (!(Math.abs(l.x - x) <= 0.4 && Math.abs(l.y - y) <= 0.4)) {
-            l.x = x;
-            l.y = y;
-            l.e.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`;
+        l.x = x;
+        l.y = y;
+        this.placeLabel(l);
+    }
+
+    /** 名札を (x, y + dy) に置く（前と 0.4 px 以内なら書き直さない） */
+    private placeLabel(l: LabelEls): void {
+        const y = l.y + l.dy;
+        if (Math.abs(l.px - l.x) <= 0.4 && Math.abs(l.py - y) <= 0.4) return;
+        l.px = l.x;
+        l.py = y;
+        l.e.style.transform = `translate(${l.x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`;
+    }
+
+    /**
+     * 部隊の名札の重なりをほどく（特殊能力のある合戦だけ。つなぎが毎フレーム、名札を置いた後に呼ぶ）。
+     * 発動できる名札・対象選びの持ち主・選んだ名札を先に（その位置のまま）、ほかは画面の下の名札から順に置き、先に置いた名札と重なれば
+     * 上へずらす（最大で名札 4 つ分）。点滅する印が別の名札の下に隠れて押せない・見えないことをなくす（Version 13 候補の確認で直した）。
+     * 名札の大きさは毎フレーム読む（書き込みの後にまとめて読むので、並べ直しは 1 フレーム 1 回）。
+     */
+    declutterLabels(on: boolean): void {
+        const list: { l: LabelEls; w: number; h: number; pr: number }[] = [];
+        for (const l of this.labelEls.values()) {
+            if (!l.e.dataset.id) continue;
+            if (!on || !l.shown) {
+                if (l.dy !== 0) {
+                    l.dy = 0;
+                    if (l.shown) this.placeLabel(l);
+                }
+                continue;
+            }
+            const pr = l.abMode === 'ready' || l.abMode === 'choosing' ? 0 : l.e.classList.contains('sel') ? 1 : 2;
+            list.push({ l, w: 0, h: 0, pr });
+        }
+        if (list.length === 0) return;
+        for (const k of list) {
+            k.w = k.l.e.offsetWidth;
+            k.h = k.l.e.offsetHeight;
+        }
+        list.sort((a, b) => a.pr - b.pr || b.l.y - a.l.y);
+        const placed: { l: number; t: number; r: number; b: number }[] = [];
+        for (const k of list) {
+            const { l, w, h } = k;
+            let dy = 0;
+            const box = () => ({ l: l.x - w / 2, r: l.x + w / 2, t: l.y + dy - h, b: l.y + dy });
+            for (let i = 0; i < 6; i++) {
+                const me = box();
+                const hit = placed.find((p) => me.l < p.r - 1 && me.r > p.l + 1 && me.t < p.b + 1 && me.b > p.t - 1);
+                if (!hit) break;
+                // 先に置いた名札の上の縁から 2 px あける（縦は 1 px 未満の重なり・接しているのも重なりとみなす。高さの端数で重ならないように）
+                dy = hit.t - 2 - l.y;
+            }
+            dy = Math.max(dy, -4 * Math.max(h, 12));
+            placed.push(box());
+            if (Math.abs(l.dy - dy) > 0.4) {
+                l.dy = dy;
+                this.placeLabel(l);
+            }
         }
     }
 

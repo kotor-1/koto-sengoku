@@ -573,10 +573,14 @@ function clamp(v: number, lo: number, hi: number): number {
 
 export const STATUS_LABEL: Record<UnitStatus, string> = { ready: '戦える', routed: '敗走', withdrawn: '撤退済み', destroyed: '全滅' };
 
-/** 命令を受けていない待機の札の文（武将の基本方針で動くことがある。「防衛・待機」を命じれば止まる） */
-export const FREE_HOLD_LABEL = '待機（武将の判断で動く）';
+/**
+ * 命令を受けていない待機の札の文（武将の基本方針で持ち場の近くを動くことがある。「防衛・待機」を命じれば止まる）。
+ * スマホの小さな札でも切れにくい長さにする（詳しい説明は FREE_HOLD_NOTE。札の文の上に指・マウスを置くと出る）
+ */
+export const FREE_HOLD_LABEL = '待機・武将任せ';
+export const FREE_HOLD_NOTE = '命令を受けていない待機：武将の判断で持ち場の近く（40 m ほど）を動くことがある。防衛・待機を命じると持ち場から動かない';
 
-/** 今の命令（例：「攻撃：鷲尾先手」「移動」「防衛・待機」「待機（武将の判断で動く）」「撤退」） */
+/** 今の命令（例：「攻撃：鷲尾先手」「移動」「防衛・待機」「待機・武将任せ」「撤退」） */
 export function orderLabel(s: BattleState, u: UnitState): string {
     if (u.status === 'routed') return '敗走中';
     if (u.status === 'withdrawn') return '撤退済み';

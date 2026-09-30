@@ -71,7 +71,7 @@ describe('どの合戦で使うか', () => {
 });
 
 describe('札の命令の文：命令を受けていない待機と、命じた「防衛・待機」を分ける（Version 13 候補の確認で直した）', () => {
-    it('最初の待機・移動の命令で着いた後は「待機（武将の判断で動く）」。防衛・待機を命じると「防衛・待機」（動かない）', () => {
+    it('最初の待機・移動の命令で着いた後は「待機・武将任せ」（武将の判断で動く）。防衛・待機を命じると「防衛・待機」（動かない）', () => {
         const s = createBattle(buildBattleSetup(getField('plains')!, 'standard'));
         expect(orderLabel(s, get(s, 'a_ishikawa'))).toBe(FREE_HOLD_LABEL);
         // 方針を持たない部隊（弓隊）・家康本陣は今までどおり

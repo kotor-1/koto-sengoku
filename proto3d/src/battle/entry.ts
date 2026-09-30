@@ -361,6 +361,8 @@ class BattleRun implements Mode {
             const p = this.view.project(t.x, t.y, t.z);
             this.ui.label(t.id, t.text, 'terrain', p.x, p.y, !p.off);
         }
+        // 特殊能力のある合戦：部隊の名札の重なりをほどく（点滅する印が別の名札に隠れないように。架空の第一章は Version 12 のまま）
+        this.ui.declutterLabels(hasAbilities);
     }
 
     // ---------------------------------------------------------------- 命令

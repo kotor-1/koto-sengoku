@@ -4,13 +4,14 @@
  *   KINDS=desktop,phone で端末を絞る（既定はどちらも）。
  *
  * ?dev=field&id=<戦場>&render=manual（演習と同じ buildBattleSetup(戦場, 'standard')）。合戦を始めて「指揮」で止め、「全体」で全体表示。すべて止めたまま。
- * 1. 名札の重なり：点滅している名札どうしが重なっている所（下の名札の印の四角の中で、上の名札が見えている所）を押しても、下の武将の能力は発動しない。
+ * 1. 名札の重なり：点滅している名札の印は、どれも別の名札に隠れていない（重なりをほどく）。重なっている所が残っていれば
+ *    （下の名札の印の四角の中で、上の名札が見えている所）、そこを押しても下の武将の能力は発動しない。
  *    確認で見つかった所（スマホ：大平原 (444,199)・丘陵 (404,223)）も同じく押す。
  * 2. 点滅している武将の名札の名前・部隊の体を押す：その部隊を選び、確かめ（名札に「もう一度で◆」・下の案内）を出す。もう一度押すと使う。
  *    素早い 2 回（CDP で続けて送る）は使わない。確かめの時間（3 秒）の後に選んでいる部隊を押すと、Version 12 どおり選択が外れる。
  * 3. 石川の対象選び：持ち主・選べる対象の名札が画面の部品（能力の欄・案内の帯）に隠れない（隠れていれば地図が動く）。持ち主の名札を押してやめられる。
  * 4. 酒井の両翼の采配：効果中の名札に包囲の条件の状態（「包囲なし」など）が出る。
- * 5. 札の命令の文：命令を受けていない待機は「待機（武将の判断で動く）」、防衛・待機を命じると「防衛・待機」。
+ * 5. 札の命令の文：命令を受けていない待機は「待機・武将任せ」（札の文の説明に「武将の判断」）、防衛・待機を命じると「防衛・待機」。
  * 6. 引いた画面：名札を小さく（.b-labels.far）。「＋」で前線（両軍の真ん中）へ寄る。
  *
  * 確認の種類：本物の入力（クリック／タップ・CDP の連打）。カメラ・時刻は動かさない（「全体」「＋」のボタンだけ）。実機は未確認。
@@ -132,6 +133,19 @@ async function run(kind) {
         const p = await openPage(kind, field);
         const { page } = p;
         await shot(p, `${field}-1-start`);
+        // 名札の重なりをほどく：点滅している名札の印は、どれも別の名札の下に隠れていない
+        const hiddenReady = await page.evaluate(() => {
+            const cs = window.__battle.labelCovers();
+            const out = [];
+            for (const c of cs) {
+                const lb = window.__battle.labelOf(c.id);
+                if (!lb?.badge || lb.ab !== 'ready') continue;
+                const g = lb.badge;
+                if (cs.some((o) => o.id !== c.id && o.z > c.z && o.l < g.r && o.r > g.l && o.t < g.b && o.b > g.t)) out.push(c.id);
+            }
+            return out;
+        });
+        check(hiddenReady.length === 0, `[${kind}] ${field}：点滅している名札の印は、どれも別の名札に隠れていない（名札の重なりをほどく）`, hiddenReady.join(','));
         const pts = await hiddenBadgePoints(page);
         log(`    [${kind}] ${field}：隠れた印の上に重なって見えている名札 ${pts.length} か所 ${pts.map((q) => `${q.under}<${q.over}@${Math.round(q.x)},${Math.round(q.y)}`).join(' ')}`);
         for (const q of pts) {
@@ -167,7 +181,8 @@ async function run(kind) {
 
     // ---------------- 5. 札の命令の文 ----------------
     const o1 = await cardOrd(page, 'a_ishikawa');
-    check(o1.includes('武将の判断で動く'), `[${kind}] 命令を受けていない石川隊の札は「待機（武将の判断で動く）」`, o1);
+    const o1t = await page.evaluate(() => document.querySelector('.b-card[data-id="a_ishikawa"] .b-ord')?.title ?? '');
+    check(o1 === '待機・武将任せ' && o1t.includes('武将の判断'), `[${kind}] 命令を受けていない石川隊の札は「待機・武将任せ」（説明に「武将の判断」）`, `${o1} / ${o1t}`);
     check((await cardOrd(page, 'a_yumi')) === '防衛・待機', `[${kind}] 方針を持たない弓隊の札は「防衛・待機」`);
 
     // ---------------- 2. 名札の名前・部隊の体で確かめ → もう一度で使う ----------------
