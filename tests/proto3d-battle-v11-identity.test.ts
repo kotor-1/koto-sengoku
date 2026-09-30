@@ -5,6 +5,17 @@
  * - 結果（BattleOutcome）と、30 秒ごとの全部隊の x・z・兵・士気・向き・命令・状態（丸めない値）のハッシュ、出来事の文のハッシュを比べる。
  * - 基準は tests/fixtures/v11-baseline.json（変更前のコードで WRITE_V11_BASELINE=1 npx vitest run tests/proto3d-battle-v11-identity.test.ts で作った）。
  * 早送り（台本で最後まで一気に進める）。状態の直接変更はしない。
+ *
+ * Version 13 候補（docs/troops-abilities-design.md §2）で家康・忠勝の能力の数値を強めたため、プレイヤーが能力を使う台本だけ基準を作り直した
+ * （REBASED_V13 の 14 台本。ほかの 62 台本の基準は Version 11 のまま 1 字も変えていない）。作り直した台本も、勝敗・終わった理由・約束の結果・
+ * 能力を使った時刻は前と同じ。変わったのは兵・士気・位置と、それに続く出来事。例（前 → 後）：
+ * （退路の守護は忠勝隊の受ける損害 ×1.15 → ×1.4・退く味方の損害 −50% → −80%・追っ手の引きつけ、号令は士気 +25 → +40・与える損害 ×0.5 → ×0.3 など）
+ * - ieyasu:asai:*:retreatSave：忠勝隊の兵 147 → 86、長政隊 359 → 374
+ * - ieyasu:oda:*:retreatSave：忠勝隊 278 → 251、織田援軍 273 → 290
+ * - ieyasu:oda:*:planKeep：勝利の時刻 259.1 → 241.6 秒。敵方の長政の援護の時刻 213.1 → 184.1 秒
+ * - ieyasu:asai:*:planKeep：勝利の時刻 157.7 → 157.4 秒、家康本陣 268 → 209
+ * - ieyasu:home:*:planKeep・planBreak：勝利の時刻 235.6 → 233.8 秒・258.5 → 257.0 秒
+ * - ieyasu:home:*:retreatSave：撤退の時刻 166.5 → 166.9 秒、砦の守備隊 162 → 175
  */
 import { describe, expect, it } from 'vitest';
 import baselineJson from './fixtures/v11-baseline.json';
@@ -146,6 +157,24 @@ function record(c: Case): { outcome: unknown; snaps: string[]; events: string; e
 
 const WRITE = env.WRITE_V11_BASELINE === '1';
 
+/** Version 13 候補で基準を作り直した台本（プレイヤーが家康・忠勝・長政の能力を使う台本だけ） */
+const REBASED_V13 = [
+    'ieyasu:oda:pledge:planKeep',
+    'ieyasu:oda:pledge:retreatSave',
+    'ieyasu:oda:nopledge:planKeep',
+    'ieyasu:oda:nopledge:retreatSave',
+    'ieyasu:asai:pledge:planKeep',
+    'ieyasu:asai:pledge:retreatSave',
+    'ieyasu:asai:nopledge:planKeep',
+    'ieyasu:asai:nopledge:retreatSave',
+    'ieyasu:home:pledge:planKeep',
+    'ieyasu:home:pledge:planBreak',
+    'ieyasu:home:pledge:retreatSave',
+    'ieyasu:home:nopledge:planKeep',
+    'ieyasu:home:nopledge:planBreak',
+    'ieyasu:home:nopledge:retreatSave',
+];
+
 describe('Version 11 の合戦は、同じ命令なら 1 刻みも同じ結果（基準 tests/fixtures/v11-baseline.json）', () => {
     const all = cases();
     if (WRITE) {
@@ -161,6 +190,13 @@ describe('Version 11 の合戦は、同じ命令なら 1 刻みも同じ結果�
     const base = baselineJson as unknown as Record<string, ReturnType<typeof record>>;
     it('基準に全部の台本がある', () => {
         expect(Object.keys(base).sort()).toEqual(all.map((c) => c.name).sort());
+    });
+    it('Version 13 候補で作り直した基準は、プレイヤーが能力を使う台本だけ（能力を使わない台本は Version 11 の基準のまま）', () => {
+        const allyUsed = (name: string) => {
+            const used = (base[name]!.outcome as { abilitiesUsed?: Record<string, number> }).abilitiesUsed ?? {};
+            return Object.keys(used).some((id) => id.startsWith('t_') || id.startsWith('a_'));
+        };
+        expect(all.filter((c) => allyUsed(c.name)).map((c) => c.name).sort()).toEqual([...REBASED_V13].sort());
     });
     for (const c of all) {
         it(c.name, () => {

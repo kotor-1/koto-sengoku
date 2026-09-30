@@ -2621,7 +2621,7 @@
   "outcome": {
    "result": "victory",
    "reason": "enemy_army_broken",
-   "elapsedSec": 259.1,
+   "elapsedSec": 241.6,
    "units": [
     {
      "id": "t_honjin",
@@ -2629,7 +2629,7 @@
      "clan": "tokugawa",
      "leaderId": "ieyasu",
      "startStrength": 300,
-     "endStrength": 167,
+     "endStrength": 178,
      "status": "ready"
     },
     {
@@ -2638,7 +2638,7 @@
      "clan": "tokugawa",
      "leaderId": "tadakatsu",
      "startStrength": 450,
-     "endStrength": 278,
+     "endStrength": 281,
      "status": "ready"
     },
     {
@@ -2646,7 +2646,7 @@
      "side": "ally",
      "clan": "tokugawa",
      "startStrength": 350,
-     "endStrength": 126,
+     "endStrength": 141,
      "status": "ready"
     },
     {
@@ -2671,7 +2671,7 @@
      "side": "enemy",
      "clan": "asai",
      "startStrength": 600,
-     "endStrength": 357,
+     "endStrength": 339,
      "status": "routed"
     },
     {
@@ -2679,7 +2679,7 @@
      "side": "enemy",
      "clan": "asai",
      "startStrength": 300,
-     "endStrength": 100,
+     "endStrength": 146,
      "status": "routed"
     },
     {
@@ -2687,13 +2687,13 @@
      "side": "enemy",
      "clan": "asakura",
      "startStrength": 450,
-     "endStrength": 186,
+     "endStrength": 185,
      "status": "routed"
     }
    ],
    "abilitiesUsed": {
     "t_honjin": 93.5,
-    "e_nagamasa": 213.1
+    "e_nagamasa": 184.1
    },
    "pledge": {
     "targetId": "a_oda",
@@ -2705,14 +2705,14 @@
    "300:cbe4ef56",
    "600:ccc9568c",
    "900:7ebbc624",
-   "1200:cbd35233",
-   "1500:f4bc2ee1",
-   "1800:aa8ac8c9",
-   "2100:901d048d",
-   "2400:be9b0c92",
-   "2591:67744c15"
+   "1200:374a87e4",
+   "1500:a5980063",
+   "1800:1606207a",
+   "2100:2b4b220f",
+   "2400:2760c34c",
+   "2416:57768733"
   ],
-  "events": "f9f6ca3e",
+  "events": "797d6514",
   "eventCount": 32
  },
  "ieyasu:oda:pledge:planBreak": {
@@ -2834,7 +2834,7 @@
      "clan": "tokugawa",
      "leaderId": "tadakatsu",
      "startStrength": 450,
-     "endStrength": 278,
+     "endStrength": 251,
      "status": "routed"
     },
     {
@@ -2850,7 +2850,7 @@
      "side": "ally",
      "clan": "oda",
      "startStrength": 400,
-     "endStrength": 273,
+     "endStrength": 290,
      "status": "withdrawn"
     },
     {
@@ -2883,7 +2883,7 @@
      "side": "enemy",
      "clan": "asakura",
      "startStrength": 450,
-     "endStrength": 236,
+     "endStrength": 241,
      "status": "ready"
     }
    ],
@@ -2899,11 +2899,11 @@
    "0:679cb8c0",
    "300:463a6d3a",
    "600:1c22496a",
-   "900:96f469ad",
-   "1200:8103b41c",
-   "1329:13607b23"
+   "900:193219c4",
+   "1200:63e89228",
+   "1329:e4165372"
   ],
-  "events": "c841d64c",
+  "events": "489abe91",
   "eventCount": 19
  },
  "ieyasu:oda:pledge:retreat90": {
@@ -3366,7 +3366,7 @@
   "outcome": {
    "result": "victory",
    "reason": "enemy_army_broken",
-   "elapsedSec": 259.1,
+   "elapsedSec": 241.6,
    "units": [
     {
      "id": "t_honjin",
@@ -3374,7 +3374,7 @@
      "clan": "tokugawa",
      "leaderId": "ieyasu",
      "startStrength": 300,
-     "endStrength": 167,
+     "endStrength": 178,
      "status": "ready"
     },
     {
@@ -3383,7 +3383,7 @@
      "clan": "tokugawa",
      "leaderId": "tadakatsu",
      "startStrength": 450,
-     "endStrength": 278,
+     "endStrength": 281,
      "status": "ready"
     },
     {
@@ -3391,7 +3391,7 @@
      "side": "ally",
      "clan": "tokugawa",
      "startStrength": 350,
-     "endStrength": 126,
+     "endStrength": 141,
      "status": "ready"
     },
     {
@@ -3416,7 +3416,7 @@
      "side": "enemy",
      "clan": "asai",
      "startStrength": 600,
-     "endStrength": 357,
+     "endStrength": 339,
      "status": "routed"
     },
     {
@@ -3424,7 +3424,7 @@
      "side": "enemy",
      "clan": "asai",
      "startStrength": 300,
-     "endStrength": 100,
+     "endStrength": 146,
      "status": "routed"
     },
     {
@@ -3432,13 +3432,13 @@
      "side": "enemy",
      "clan": "asakura",
      "startStrength": 450,
-     "endStrength": 186,
+     "endStrength": 185,
      "status": "routed"
     }
    ],
    "abilitiesUsed": {
     "t_honjin": 93.5,
-    "e_nagamasa": 213.1
+    "e_nagamasa": 184.1
    }
   },
   "snaps": [
@@ -3446,14 +3446,14 @@
    "300:cbe4ef56",
    "600:ccc9568c",
    "900:7ebbc624",
-   "1200:cbd35233",
-   "1500:f4bc2ee1",
-   "1800:aa8ac8c9",
-   "2100:901d048d",
-   "2400:be9b0c92",
-   "2591:67744c15"
+   "1200:374a87e4",
+   "1500:a5980063",
+   "1800:1606207a",
+   "2100:2b4b220f",
+   "2400:2760c34c",
+   "2416:57768733"
   ],
-  "events": "a28bfc64",
+  "events": "2139bf62",
   "eventCount": 30
  },
  "ieyasu:oda:nopledge:planBreak": {
@@ -3569,7 +3569,7 @@
      "clan": "tokugawa",
      "leaderId": "tadakatsu",
      "startStrength": 450,
-     "endStrength": 278,
+     "endStrength": 251,
      "status": "routed"
     },
     {
@@ -3585,7 +3585,7 @@
      "side": "ally",
      "clan": "oda",
      "startStrength": 400,
-     "endStrength": 273,
+     "endStrength": 290,
      "status": "withdrawn"
     },
     {
@@ -3618,7 +3618,7 @@
      "side": "enemy",
      "clan": "asakura",
      "startStrength": 450,
-     "endStrength": 236,
+     "endStrength": 241,
      "status": "ready"
     }
    ],
@@ -3630,11 +3630,11 @@
    "0:679cb8c0",
    "300:463a6d3a",
    "600:1c22496a",
-   "900:96f469ad",
-   "1200:8103b41c",
-   "1329:13607b23"
+   "900:193219c4",
+   "1200:63e89228",
+   "1329:e4165372"
   ],
-  "events": "8d5e67c6",
+  "events": "372354d7",
   "eventCount": 17
  },
  "ieyasu:oda:nopledge:retreat90": {
@@ -4086,7 +4086,7 @@
   "outcome": {
    "result": "victory",
    "reason": "enemy_army_broken",
-   "elapsedSec": 157.7,
+   "elapsedSec": 157.4,
    "units": [
     {
      "id": "t_honjin",
@@ -4094,7 +4094,7 @@
      "clan": "tokugawa",
      "leaderId": "ieyasu",
      "startStrength": 300,
-     "endStrength": 268,
+     "endStrength": 209,
      "status": "ready"
     },
     {
@@ -4103,7 +4103,7 @@
      "clan": "tokugawa",
      "leaderId": "tadakatsu",
      "startStrength": 450,
-     "endStrength": 199,
+     "endStrength": 262,
      "status": "ready"
     },
     {
@@ -4111,7 +4111,7 @@
      "side": "ally",
      "clan": "tokugawa",
      "startStrength": 350,
-     "endStrength": 336,
+     "endStrength": 350,
      "status": "ready"
     },
     {
@@ -4136,7 +4136,7 @@
      "side": "enemy",
      "clan": "oda",
      "startStrength": 550,
-     "endStrength": 209,
+     "endStrength": 187,
      "status": "routed"
     },
     {
@@ -4144,7 +4144,7 @@
      "side": "enemy",
      "clan": "oda",
      "startStrength": 350,
-     "endStrength": 143,
+     "endStrength": 66,
      "status": "routed"
     },
     {
@@ -4152,7 +4152,7 @@
      "side": "enemy",
      "clan": "oda",
      "startStrength": 250,
-     "endStrength": 100,
+     "endStrength": 115,
      "status": "routed"
     }
    ],
@@ -4167,15 +4167,15 @@
   },
   "snaps": [
    "0:3b6f94f3",
-   "300:d14636d6",
-   "600:6b47515a",
-   "900:e2e8a7d4",
-   "1200:7a249278",
-   "1500:f909c0d1",
-   "1577:200dd120"
+   "300:c7db8c41",
+   "600:9aba1113",
+   "900:a754265b",
+   "1200:a3bc872a",
+   "1500:d01c248e",
+   "1574:4968fc9e"
   ],
-  "events": "64ea4473",
-  "eventCount": 31
+  "events": "21fc65da",
+  "eventCount": 25
  },
  "ieyasu:asai:pledge:planBreak": {
   "outcome": {
@@ -4298,7 +4298,7 @@
      "clan": "tokugawa",
      "leaderId": "tadakatsu",
      "startStrength": 450,
-     "endStrength": 147,
+     "endStrength": 86,
      "status": "routed"
     },
     {
@@ -4315,7 +4315,7 @@
      "clan": "asai",
      "leaderId": "nagamasa",
      "startStrength": 400,
-     "endStrength": 359,
+     "endStrength": 374,
      "status": "withdrawn"
     },
     {
@@ -4331,7 +4331,7 @@
      "side": "enemy",
      "clan": "oda",
      "startStrength": 550,
-     "endStrength": 379,
+     "endStrength": 391,
      "status": "ready"
     },
     {
@@ -4361,12 +4361,12 @@
   },
   "snaps": [
    "0:3b6f94f3",
-   "300:a7868302",
-   "600:dc08deb4",
-   "844:5bc7d6f7"
+   "300:5ff4907b",
+   "600:72fd1342",
+   "844:e91dc2bf"
   ],
-  "events": "8c1822d5",
-  "eventCount": 24
+  "events": "f59faf25",
+  "eventCount": 23
  },
  "ieyasu:asai:pledge:retreat90": {
   "outcome": {
@@ -4822,7 +4822,7 @@
   "outcome": {
    "result": "victory",
    "reason": "enemy_army_broken",
-   "elapsedSec": 157.7,
+   "elapsedSec": 157.4,
    "units": [
     {
      "id": "t_honjin",
@@ -4830,7 +4830,7 @@
      "clan": "tokugawa",
      "leaderId": "ieyasu",
      "startStrength": 300,
-     "endStrength": 268,
+     "endStrength": 209,
      "status": "ready"
     },
     {
@@ -4839,7 +4839,7 @@
      "clan": "tokugawa",
      "leaderId": "tadakatsu",
      "startStrength": 450,
-     "endStrength": 199,
+     "endStrength": 262,
      "status": "ready"
     },
     {
@@ -4847,7 +4847,7 @@
      "side": "ally",
      "clan": "tokugawa",
      "startStrength": 350,
-     "endStrength": 336,
+     "endStrength": 350,
      "status": "ready"
     },
     {
@@ -4872,7 +4872,7 @@
      "side": "enemy",
      "clan": "oda",
      "startStrength": 550,
-     "endStrength": 209,
+     "endStrength": 187,
      "status": "routed"
     },
     {
@@ -4880,7 +4880,7 @@
      "side": "enemy",
      "clan": "oda",
      "startStrength": 350,
-     "endStrength": 143,
+     "endStrength": 66,
      "status": "routed"
     },
     {
@@ -4888,7 +4888,7 @@
      "side": "enemy",
      "clan": "oda",
      "startStrength": 250,
-     "endStrength": 100,
+     "endStrength": 115,
      "status": "routed"
     }
    ],
@@ -4899,15 +4899,15 @@
   },
   "snaps": [
    "0:3b6f94f3",
-   "300:d14636d6",
-   "600:6b47515a",
-   "900:e2e8a7d4",
-   "1200:7a249278",
-   "1500:f909c0d1",
-   "1577:200dd120"
+   "300:c7db8c41",
+   "600:9aba1113",
+   "900:a754265b",
+   "1200:a3bc872a",
+   "1500:d01c248e",
+   "1574:4968fc9e"
   ],
-  "events": "32260182",
-  "eventCount": 30
+  "events": "2bea5695",
+  "eventCount": 24
  },
  "ieyasu:asai:nopledge:planBreak": {
   "outcome": {
@@ -5026,7 +5026,7 @@
      "clan": "tokugawa",
      "leaderId": "tadakatsu",
      "startStrength": 450,
-     "endStrength": 147,
+     "endStrength": 86,
      "status": "routed"
     },
     {
@@ -5043,7 +5043,7 @@
      "clan": "asai",
      "leaderId": "nagamasa",
      "startStrength": 400,
-     "endStrength": 359,
+     "endStrength": 374,
      "status": "withdrawn"
     },
     {
@@ -5059,7 +5059,7 @@
      "side": "enemy",
      "clan": "oda",
      "startStrength": 550,
-     "endStrength": 379,
+     "endStrength": 391,
      "status": "ready"
     },
     {
@@ -5085,12 +5085,12 @@
   },
   "snaps": [
    "0:3b6f94f3",
-   "300:a7868302",
-   "600:dc08deb4",
-   "844:5bc7d6f7"
+   "300:5ff4907b",
+   "600:72fd1342",
+   "844:e91dc2bf"
   ],
-  "events": "4947ff41",
-  "eventCount": 22
+  "events": "a9d74a59",
+  "eventCount": 21
  },
  "ieyasu:asai:nopledge:retreat90": {
   "outcome": {
@@ -5559,7 +5559,7 @@
   "outcome": {
    "result": "victory",
    "reason": "enemy_army_broken",
-   "elapsedSec": 235.6,
+   "elapsedSec": 233.8,
    "units": [
     {
      "id": "t_honjin",
@@ -5576,7 +5576,7 @@
      "clan": "tokugawa",
      "leaderId": "tadakatsu",
      "startStrength": 450,
-     "endStrength": 338,
+     "endStrength": 341,
      "status": "ready"
     },
     {
@@ -5584,7 +5584,7 @@
      "side": "ally",
      "clan": "tokugawa",
      "startStrength": 350,
-     "endStrength": 197,
+     "endStrength": 205,
      "status": "ready"
     },
     {
@@ -5608,7 +5608,7 @@
      "side": "enemy",
      "clan": "ronin",
      "startStrength": 550,
-     "endStrength": 350,
+     "endStrength": 339,
      "status": "routed"
     },
     {
@@ -5616,7 +5616,7 @@
      "side": "enemy",
      "clan": "ronin",
      "startStrength": 300,
-     "endStrength": 146,
+     "endStrength": 139,
      "status": "routed"
     },
     {
@@ -5642,19 +5642,19 @@
    "600:2215fa4f",
    "900:83ba3c3b",
    "1200:072ba5be",
-   "1500:a39e2258",
-   "1800:bb564daa",
-   "2100:771f6e2a",
-   "2356:35a9c925"
+   "1500:de09dd58",
+   "1800:ac5f73cf",
+   "2100:eb8b8cb2",
+   "2338:d002f56d"
   ],
-  "events": "af38917d",
+  "events": "2db7840a",
   "eventCount": 26
  },
  "ieyasu:home:pledge:planBreak": {
   "outcome": {
    "result": "victory",
    "reason": "enemy_army_broken",
-   "elapsedSec": 258.5,
+   "elapsedSec": 257,
    "units": [
     {
      "id": "t_honjin",
@@ -5662,7 +5662,7 @@
      "clan": "tokugawa",
      "leaderId": "ieyasu",
      "startStrength": 300,
-     "endStrength": 218,
+     "endStrength": 222,
      "status": "ready"
     },
     {
@@ -5671,7 +5671,7 @@
      "clan": "tokugawa",
      "leaderId": "tadakatsu",
      "startStrength": 450,
-     "endStrength": 401,
+     "endStrength": 398,
      "status": "ready"
     },
     {
@@ -5679,7 +5679,7 @@
      "side": "ally",
      "clan": "tokugawa",
      "startStrength": 350,
-     "endStrength": 113,
+     "endStrength": 119,
      "status": "ready"
     },
     {
@@ -5703,7 +5703,7 @@
      "side": "enemy",
      "clan": "ronin",
      "startStrength": 550,
-     "endStrength": 328,
+     "endStrength": 310,
      "status": "routed"
     },
     {
@@ -5711,7 +5711,7 @@
      "side": "enemy",
      "clan": "ronin",
      "startStrength": 300,
-     "endStrength": 140,
+     "endStrength": 136,
      "status": "routed"
     },
     {
@@ -5737,20 +5737,20 @@
    "600:88e6a554",
    "900:24e03f2d",
    "1200:658d3d3f",
-   "1500:7a277fcd",
-   "1800:7f97060b",
-   "2100:6290766e",
-   "2400:9f02c9d9",
-   "2585:d61d84f0"
+   "1500:d5f7bc7b",
+   "1800:6af5e60d",
+   "2100:f55dbdfd",
+   "2400:53a9d7aa",
+   "2570:681fe199"
   ],
-  "events": "33221c38",
+  "events": "d31d4c48",
   "eventCount": 29
  },
  "ieyasu:home:pledge:retreatSave": {
   "outcome": {
    "result": "retreat",
    "reason": "ordered_retreat",
-   "elapsedSec": 166.5,
+   "elapsedSec": 166.9,
    "units": [
     {
      "id": "t_honjin",
@@ -5767,7 +5767,7 @@
      "clan": "tokugawa",
      "leaderId": "tadakatsu",
      "startStrength": 450,
-     "endStrength": 415,
+     "endStrength": 406,
      "status": "withdrawn"
     },
     {
@@ -5783,7 +5783,7 @@
      "side": "ally",
      "clan": "tokugawa",
      "startStrength": 300,
-     "endStrength": 162,
+     "endStrength": 175,
      "status": "withdrawn"
     },
     {
@@ -5831,12 +5831,12 @@
    "0:1727e4b6",
    "300:393e1b3b",
    "600:474b2e5f",
-   "900:b45dee9c",
-   "1200:b36c5a43",
-   "1500:f19971f5",
-   "1665:33984d0a"
+   "900:88929d3a",
+   "1200:59ad782d",
+   "1500:7825a925",
+   "1669:f8b83b7b"
   ],
-  "events": "43c4feb2",
+  "events": "83923f2b",
   "eventCount": 17
  },
  "ieyasu:home:pledge:retreat90": {
@@ -6289,7 +6289,7 @@
   "outcome": {
    "result": "victory",
    "reason": "enemy_army_broken",
-   "elapsedSec": 235.6,
+   "elapsedSec": 233.8,
    "units": [
     {
      "id": "t_honjin",
@@ -6306,7 +6306,7 @@
      "clan": "tokugawa",
      "leaderId": "tadakatsu",
      "startStrength": 450,
-     "endStrength": 338,
+     "endStrength": 341,
      "status": "ready"
     },
     {
@@ -6314,7 +6314,7 @@
      "side": "ally",
      "clan": "tokugawa",
      "startStrength": 350,
-     "endStrength": 197,
+     "endStrength": 205,
      "status": "ready"
     },
     {
@@ -6338,7 +6338,7 @@
      "side": "enemy",
      "clan": "ronin",
      "startStrength": 550,
-     "endStrength": 350,
+     "endStrength": 339,
      "status": "routed"
     },
     {
@@ -6346,7 +6346,7 @@
      "side": "enemy",
      "clan": "ronin",
      "startStrength": 300,
-     "endStrength": 146,
+     "endStrength": 139,
      "status": "routed"
     },
     {
@@ -6368,19 +6368,19 @@
    "600:2215fa4f",
    "900:83ba3c3b",
    "1200:072ba5be",
-   "1500:a39e2258",
-   "1800:bb564daa",
-   "2100:771f6e2a",
-   "2356:35a9c925"
+   "1500:de09dd58",
+   "1800:ac5f73cf",
+   "2100:eb8b8cb2",
+   "2338:d002f56d"
   ],
-  "events": "1283cddf",
+  "events": "cad293b4",
   "eventCount": 24
  },
  "ieyasu:home:nopledge:planBreak": {
   "outcome": {
    "result": "victory",
    "reason": "enemy_army_broken",
-   "elapsedSec": 258.5,
+   "elapsedSec": 257,
    "units": [
     {
      "id": "t_honjin",
@@ -6388,7 +6388,7 @@
      "clan": "tokugawa",
      "leaderId": "ieyasu",
      "startStrength": 300,
-     "endStrength": 218,
+     "endStrength": 222,
      "status": "ready"
     },
     {
@@ -6397,7 +6397,7 @@
      "clan": "tokugawa",
      "leaderId": "tadakatsu",
      "startStrength": 450,
-     "endStrength": 401,
+     "endStrength": 398,
      "status": "ready"
     },
     {
@@ -6405,7 +6405,7 @@
      "side": "ally",
      "clan": "tokugawa",
      "startStrength": 350,
-     "endStrength": 113,
+     "endStrength": 119,
      "status": "ready"
     },
     {
@@ -6429,7 +6429,7 @@
      "side": "enemy",
      "clan": "ronin",
      "startStrength": 550,
-     "endStrength": 328,
+     "endStrength": 310,
      "status": "routed"
     },
     {
@@ -6437,7 +6437,7 @@
      "side": "enemy",
      "clan": "ronin",
      "startStrength": 300,
-     "endStrength": 140,
+     "endStrength": 136,
      "status": "routed"
     },
     {
@@ -6459,20 +6459,20 @@
    "600:88e6a554",
    "900:24e03f2d",
    "1200:658d3d3f",
-   "1500:7a277fcd",
-   "1800:7f97060b",
-   "2100:6290766e",
-   "2400:9f02c9d9",
-   "2585:d61d84f0"
+   "1500:d5f7bc7b",
+   "1800:6af5e60d",
+   "2100:f55dbdfd",
+   "2400:53a9d7aa",
+   "2570:681fe199"
   ],
-  "events": "c42e6177",
+  "events": "73af4053",
   "eventCount": 27
  },
  "ieyasu:home:nopledge:retreatSave": {
   "outcome": {
    "result": "retreat",
    "reason": "ordered_retreat",
-   "elapsedSec": 166.5,
+   "elapsedSec": 166.9,
    "units": [
     {
      "id": "t_honjin",
@@ -6489,7 +6489,7 @@
      "clan": "tokugawa",
      "leaderId": "tadakatsu",
      "startStrength": 450,
-     "endStrength": 415,
+     "endStrength": 406,
      "status": "withdrawn"
     },
     {
@@ -6505,7 +6505,7 @@
      "side": "ally",
      "clan": "tokugawa",
      "startStrength": 300,
-     "endStrength": 162,
+     "endStrength": 175,
      "status": "withdrawn"
     },
     {
@@ -6549,12 +6549,12 @@
    "0:1727e4b6",
    "300:393e1b3b",
    "600:474b2e5f",
-   "900:b45dee9c",
-   "1200:b36c5a43",
-   "1500:f19971f5",
-   "1665:33984d0a"
+   "900:88929d3a",
+   "1200:59ad782d",
+   "1500:7825a925",
+   "1669:f8b83b7b"
   ],
-  "events": "f6008c01",
+  "events": "6d6a0848",
   "eventCount": 15
  },
  "ieyasu:home:nopledge:retreat90": {
