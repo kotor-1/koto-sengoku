@@ -198,13 +198,15 @@ async function run(kind) {
     };
     let before = await snapshot(page);
     let np = await namePoint('a_ieyasu');
-    await pointAt(p, np.x, np.y, 500);
+    await pointAt(p, np.x, np.y, 0);
+    // 名札が「もう一度で◆号令」に変わって描き直されるまで待つ（重いコンテナでは 1 フレームが長い）
+    await page.waitForFunction(() => (document.querySelector('.b-label[data-id="a_ieyasu"]')?.textContent ?? '').includes('もう一度'), null, { timeout: 10000, polling: 50 });
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
     let u = await ui(page);
     const t1 = await labelText(page, 'a_ieyasu');
     const h1 = await hintText(page);
     const ab1 = (await label(page, 'a_ieyasu')).ab;
-    // 確かめの 3 秒のうちに、もう一度（名札は「もう一度で◆号令」で長くなるので、名前の所を読み直す）
-    np = await namePoint('a_ieyasu');
+    // 確かめの 3 秒のうちに、同じ所をもう一度（名札は「もう一度で◆号令」で長くなって動くことがあるが、1 回目と同じ所の 2 回目は同じ武将とみなす）
     await pointAt(p, np.x, np.y, 700);
     const usedIe = (await used(page)).a_ieyasu;
     check(u.selectedId === 'a_ieyasu' && t1.includes('もう一度で◆号令'), `[${kind}] 家康の名札の名前を押す → 家康本陣を選び、まだ使わない（確かめ）`, `選択 ${u.selectedId}`);

@@ -745,10 +745,12 @@ export const TAP_GUARD_SEC = 0.5;
  */
 export const ABILITY_ARM = { windowSec: 3, minGapSec: 0.25 };
 
-/** 確かめの状態（押した武将・押した実時間） */
+/** 確かめの状態（押した武将・押した実時間・押した所の画面の点） */
 export interface AbilityArm {
     id: string;
     at: number;
+    x?: number;
+    y?: number;
 }
 
 /**

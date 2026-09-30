@@ -831,13 +831,13 @@ class BattleRun implements Mode {
      * 点滅している武将の名札の名前・部隊の体を押した（印の外）：その部隊を選び、短い確かめを出す（名札に「もう一度で◆号令」・下の案内）。
      * 確かめの中にもう一度押すと使う（control.ts の armDecision）
      */
-    private armAbility(id: string, now: number): void {
+    private armAbility(id: string, now: number, x: number, y: number): void {
         const u = unitById(this.s, id);
         const info = abilityInfo(this.s, id);
         if (!u || !info) return;
         this.select(id);
         this.pending = 'none';
-        this.arm = { id, at: now };
+        this.arm = { id, at: now, x, y };
         const how = info.needsTarget ? 'もう一度押すと「' + info.name + '」の対象選び' : 'もう一度押すと「' + info.name + '」を使う';
         this.ui.flash(`${u.name}を選んだ。${how}（◆の印なら 1 回で使える）`, 3000);
     }
@@ -880,7 +880,7 @@ class BattleRun implements Mode {
                 return true;
             }
             if (d === 'arm') {
-                this.armAbility(hit.id, now);
+                this.armAbility(hit.id, now, x, y);
                 return true;
             }
         }
@@ -901,6 +901,25 @@ class BattleRun implements Mode {
         // 確かめ（もう一度押すと使う）は、同じ武将をもう一度押したときだけ続く。ほかのタップで消える
         const arm = this.arm;
         this.arm = null;
+        // 確かめの中に、1 回目と同じ所（当たりの半分の半径）をもう一度押した：名札が長くなって動いていても、その武将の 2 回目とみなす
+        // （名札の動いた後の地面の移動に漏らさない）
+        if (!command && arm && arm.x !== undefined && arm.y !== undefined && this.pending === 'none' && this.s.abilityList.length > 0) {
+            const hitPx = this.ctx.touch ? LABEL_HIT_PX.touch : LABEL_HIT_PX.mouse;
+            if (Math.hypot(x - arm.x, y - arm.y) <= hitPx / 2 && abilityInfo(this.s, arm.id)?.ready) {
+                const d = armDecision(arm, arm.id, performance.now() / 1000);
+                if (d === 'wait') {
+                    this.arm = arm;
+                    return;
+                }
+                if (d === 'fire') {
+                    const la = resolveLabelTap(this.s, arm.id, 'none', this.selectedId);
+                    if (la) {
+                        this.runLabelAction(x, y, la);
+                        return;
+                    }
+                }
+            }
+        }
         // 点滅している名札（対象選びの間は味方の名札）：部隊の選択・地面の移動より先に、能力の操作として使い切る
         if (!command && this.labelTap(x, y, arm)) return;
         // 部隊そのもの（隊列の広がり＋少し）を押したか、押しやすくするための余白（タッチ 30 px・マウス 20 px）を押したか
@@ -947,7 +966,7 @@ class BattleRun implements Mode {
                     return;
                 }
             } else if (act.type === 'select') {
-                this.armAbility(target.unitId, now);
+                this.armAbility(target.unitId, now, x, y);
                 return;
             }
         }
