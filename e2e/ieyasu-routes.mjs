@@ -551,7 +551,7 @@ async function route1() {
   // 家康本陣を選ぶと、能力の欄に名前・対象・範囲・効果・代償・使えるか
   await B.select('t_honjin');
   const panel = await page.textContent('.b-abil');
-  check('1 家康本陣を選ぶ → 能力の欄（立て直しの号令・対象・範囲・効果・代償・使える・創作の断り）', ['立て直しの号令', '対象', '範囲 90 m', '効果', '代償', '使える', 'ゲーム用の創作'].every((w) => panel.includes(w)), panel.slice(0, 90));
+  check('1 家康本陣を選ぶ → 能力の欄（立て直しの号令・対象・範囲・効果・代償・使える・創作の断り）', ['立て直しの号令', '対象', '範囲 110 m', '効果', '代償', '使える', 'ゲーム用の創作'].every((w) => panel.includes(w)), panel.slice(0, 90));
   await shot(page, '1-03-ability-panel');
   let rallyShot = false;
   const sallied = `alive('e_asai_sente') && U('e_asai_sente').engagedWith === 't_yumi'`;

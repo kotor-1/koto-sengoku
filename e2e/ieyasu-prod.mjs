@@ -221,7 +221,7 @@ try {
   await page.locator('.b-abil-btn').click();
   await sleep(1200);
   const abil1 = await page.textContent('.b-abil');
-  check('「能力」ボタンで号令（指揮の間は残りが減らない：残り 30 秒）', abil1.includes('効果中') && abil1.includes('残り 30 秒'), abil1.slice(0, 60));
+  check('「能力」ボタンで号令（指揮の間は残りが減らない：残り 35 秒）', abil1.includes('効果中') && abil1.includes('残り 35 秒'), abil1.slice(0, 60));
   await page.locator('.b-abil-btn').click();
   await sleep(600);
   check('もう一度押しても重ねて発動しない（理由が出る）', (await page.textContent('.b-hint')).includes('いま効果中'));
