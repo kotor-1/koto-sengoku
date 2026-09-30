@@ -819,7 +819,12 @@ class BattleRun implements Mode {
             if (!p.off) others.push({ id: `${u.id}#body`, x: p.x, y: p.y });
         }
         for (const k of covers) others.push({ id: k.id, x: (k.l + k.r) / 2, y: (k.t + k.b) / 2 });
-        const hit = boxes.length ? labelHit(boxes, others, x, y, this.ctx.touch ? LABEL_HIT_PX.touch : LABEL_HIT_PX.mouse, covers) : null;
+        // 当たりを見た目より広げるのは、命令を出せる味方を選んでいない時だけ（選んでいる時は、印のすぐ外の地面は移動のつもりの押しなので、
+        // 1 合戦 1 回の能力を曖昧な押しで使わない。印そのものは今までどおり 1 回で使う）
+        const sel = this.selected();
+        const ordering = !choosing && !!sel && sel.side === 'ally' && sel.commandable;
+        const minPx = ordering ? 0 : this.ctx.touch ? LABEL_HIT_PX.touch : LABEL_HIT_PX.mouse;
+        const hit = boxes.length ? labelHit(boxes, others, x, y, minPx, covers) : null;
         if (hit) return { id: hit, part: 'badge' };
         if (choosing) return null;
         // 点滅している名札の名前の所（いちばん上に見えている名札が点滅している武将のとき）：確かめ
@@ -873,7 +878,11 @@ class BattleRun implements Mode {
         const hit = this.labelAt(x, y);
         if (!hit) return false;
         if (hit.part === 'name') {
+            // 命令を出せる味方を選んでいる間は、名札の名前の所は今までどおり地図を押した扱い（地面の移動・部隊の選択。
+            // 引いた画面では名札が地面・部隊に重なるので、移動のつもりの指を奪わない）。確かめの中のその武将の名札だけは 2 回目として使う
             const now = performance.now() / 1000;
+            const sel = this.selected();
+            if (sel && sel.side === 'ally' && sel.commandable && armLive(arm, now) !== hit.id) return false;
             const d = armDecision(arm, hit.id, now);
             if (d === 'wait') {
                 this.arm = arm;

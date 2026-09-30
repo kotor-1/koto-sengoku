@@ -9,7 +9,9 @@
  *     発動の知らせ（能力名・武将・対象）が出る。家康の名札の点滅が止まり、残り秒数が出る。
  *   - 忠勝の名札を素早く 4 回押す（連打。CDP で返事を待たずに続けて送る）→ 退路の守護は 1 回だけ。ほかの部隊の命令・選択は変わらない。
  *   - スマホは始めに 1 本指で地図を少し上へずらす（全体表示では南の石川隊の名札が下の案内の帯に隠れるため）。
- *   - 押すのは名札の能力の印（◆号令など）。酒井は、印の見た目の少し外（PC は上へ +6 px、スマホは +10 px。当たりは 36／48 px 四方）を押して使う。榊原は印の真ん中。
+ *   - 押すのは名札の能力の印（◆号令など）。酒井は、何も選んでいない時に、印の見た目の少し外（PC は上へ +6 px、スマホは +10 px。当たりは 36／48 px 四方）を押して使う。
+ *     榊原は印の真ん中。騎馬隊を選んでいる時は、印の見た目の少し外は地面の移動になり、能力は使わない（Version 13 候補の確認で直した：
+ *     命令を出せる味方を選んでいる時は、当たりを広げない）。
  *   - 点滅している武将でも、部隊の体を押せば今までどおり選択（能力は使わない）。
  *   - 石川（対象の要る能力）：名札 → 対象選び（持ち主・選べる・選べないの印、案内の文）→ 地面でやめる → 名札 → 名札をもう一度でやめる →
  *     名札 → Esc（スマホは「やめる」）でやめる → 名札 → 敵を押す（理由だけ・回数は減らない・対象選びは続く）→ 騎馬隊を押して使う。
@@ -168,10 +170,25 @@ async function run(kind) {
     check((await label(page, 'a_yumi')).blink === 1 && (await label(page, 'a_yumi')).ab === '', `[${kind}] 弓隊の名札は明るさが変わらない（印なし）`);
     await shot(p, '01-ready-paused');
 
-    // ---- 点滅している武将でも、部隊の体（名札の印の外）を押せば今までどおり選択（能力は使わない） ----
+    // ---- 点滅している武将でも、部隊の体（名札の印の外）を押せば選択（能力は使わない。確かめを出す） ----
     const sb = await screenOf(page, 'a_sakai');
     await pointAt(p, sb.x, sb.y);
     check((await ui(page)).selectedId === 'a_sakai' && (await ab(page, 'a_sakai')).usedAt === null, `[${kind}] 酒井隊の体を押す → 選択（能力は使わない）`);
+    // 確かめの 3 秒の後に、選んでいる酒井隊をもう一度押す → Version 12 どおり選択が外れる（使わない）
+    await page.waitForTimeout(3300);
+    await pointAt(p, sb.x, sb.y);
+    check((await ui(page)).selectedId === null && (await ab(page, 'a_sakai')).usedAt === null, `[${kind}] 3 秒の後に酒井隊をもう一度 → 選択が外れる（能力は使わない）`, `選択 ${(await ui(page)).selectedId}`);
+
+    // ---- 酒井：何も選んでいない時に、見た目の名札の少し外（広げた当たり） ----
+    {
+        const before0 = await snapshot(page);
+        const lSk = (await label(page, 'a_sakai')).badge;
+        const dy = (lSk.b - lSk.t) / 2 + (p.phone ? 10 : 6);
+        await pointAt(p, lSk.x, lSk.y - dy);
+        const after0 = await snapshot(page);
+        check((await ab(page, 'a_sakai')).usedAt !== null, `[${kind}] 何も選んでいない時、酒井の名札の印の ${dy.toFixed(0)} px 上（見た目の外・当たりの中）を押す → 両翼の采配`);
+        check(sameExcept(before0, after0, []).length === 0 && (await ui(page)).selectedId === null, `[${kind}] 酒井：位置・命令・選択が変わらない`);
+    }
 
     // ---- 騎馬隊を選んでおく（漏れれば地面の移動になる状態） ----
     await press(p, '.b-card[data-id="a_kiba"]');
@@ -208,18 +225,17 @@ async function run(kind) {
     check(td.x === td0.x && td.z === td0.z, `[${kind}] 忠勝隊の位置も変わらない（命令は守護の「防衛・待機」）`, td.order);
     check((await ui(page)).selectedId === 'a_kiba', `[${kind}] 連打でも選択は騎馬隊のまま`);
 
-    // ---- 酒井：見た目の名札の少し外（広げた当たり） ----
-    before = await snapshot(page);
-    const lSk = (await label(page, 'a_sakai')).badge;
-    const dy = (lSk.b - lSk.t) / 2 + (p.phone ? 10 : 6);
-    await pointAt(p, lSk.x, lSk.y - dy);
-    after = await snapshot(page);
-    check((await ab(page, 'a_sakai')).usedAt !== null, `[${kind}] 酒井の名札の印の ${dy.toFixed(0)} px 上（見た目の外・当たりの中）を押す → 両翼の采配`);
-    check(sameExcept(before, after, []).length === 0 && (await ui(page)).selectedId === 'a_kiba', `[${kind}] 酒井：位置・命令・選択が変わらない`);
-
-    // ---- 榊原：名札の真ん中 ----
-    before = await snapshot(page);
+    // ---- 榊原：騎馬隊を選んでいる時、印の見た目の少し外 → 地面の移動（能力は使わない）。その後、印の真ん中 → 先駆けの号 ----
     const lSb = (await label(page, 'a_sakakibara')).badge;
+    {
+        const dy = (lSb.b - lSb.t) / 2 + (p.phone ? 10 : 6);
+        await pointAt(p, lSb.x, lSb.y - dy);
+        const kibaOrder = (await snapshot(page)).units.find((u) => u.id === 'a_kiba').order;
+        check((await ab(page, 'a_sakakibara')).usedAt === null && JSON.parse(kibaOrder).type === 'move', `[${kind}] 騎馬隊を選んでいる時、榊原の印の ${dy.toFixed(0)} px 上を押す → 騎馬隊の移動（能力は使わない）`, kibaOrder);
+        // 騎馬隊を元の待機に戻す（「防衛・待機」のボタン。止めているので位置は変わっていない）
+        await press(p, '.b-cmd:has-text("防衛・待機")');
+    }
+    before = await snapshot(page);
     await pointAt(p, lSb.x, lSb.y);
     after = await snapshot(page);
     check((await ab(page, 'a_sakakibara')).usedAt !== null, `[${kind}] 榊原の名札を 1 回押す → 先駆けの号`);

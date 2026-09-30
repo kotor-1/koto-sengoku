@@ -196,20 +196,30 @@ async function run(kind) {
         for (let x = lb.l + 4; x < (lb.badge?.l ?? lb.r) - 2; x += 2) if (!others.some((o) => inBox(o, x, lb.y))) return { x, y: lb.y };
         return null;
     };
+    // 何も選んでいない所から：名札の名前を押す → 確かめ（名札・案内を 1 回で読む）→ すぐ同じ所をもう一度 → 使う
+    // （命令を出せる味方を選んでいる間は、名札の名前は地図を押した扱いなので、選んでいない所から始める。重いコンテナでは読み取りに時間がかかるので、
+    //   確かめの 3 秒のうちに 2 回目を押せるよう、読むのは 1 回だけ）
     let before = await snapshot(page);
-    let np = await namePoint('a_ieyasu');
+    const np = await namePoint('a_ieyasu');
     await pointAt(p, np.x, np.y, 0);
-    // 名札が「もう一度で◆号令」に変わって描き直されるまで待つ（重いコンテナでは 1 フレームが長い）
-    await page.waitForFunction(() => (document.querySelector('.b-label[data-id="a_ieyasu"]')?.textContent ?? '').includes('もう一度'), null, { timeout: 10000, polling: 50 });
-    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-    let u = await ui(page);
-    const t1 = await labelText(page, 'a_ieyasu');
-    const h1 = await hintText(page);
-    const ab1 = (await label(page, 'a_ieyasu')).ab;
-    // 確かめの 3 秒のうちに、同じ所をもう一度（名札は「もう一度で◆号令」で長くなって動くことがあるが、1 回目と同じ所の 2 回目は同じ武将とみなす）
+    const shown1 = await (
+        await page.waitForFunction(
+            () => {
+                const l = document.querySelector('.b-label[data-id="a_ieyasu"]');
+                if (!(l?.textContent ?? '').includes('もう一度')) return null;
+                const h = document.querySelector('.b-hint');
+                return { t1: l.textContent, h1: h && !h.hidden ? h.textContent : '', ab1: l.dataset.ab ?? '', sel: window.__battle.ui.selectedId, used: window.__battle.state.abilities.a_ieyasu.usedAt };
+            },
+            null,
+            { timeout: 10000, polling: 50 },
+        )
+    ).jsonValue();
+    // 名札は「もう一度で◆号令」で長くなって動くことがあるが、1 回目と同じ所の 2 回目は同じ武将とみなす
     await pointAt(p, np.x, np.y, 700);
     const usedIe = (await used(page)).a_ieyasu;
-    check(u.selectedId === 'a_ieyasu' && t1.includes('もう一度で◆号令'), `[${kind}] 家康の名札の名前を押す → 家康本陣を選び、まだ使わない（確かめ）`, `選択 ${u.selectedId}`);
+    const { t1, h1, ab1 } = shown1;
+    let u = { selectedId: shown1.sel };
+    check(u.selectedId === 'a_ieyasu' && shown1.used === null && t1.includes('もう一度で◆号令'), `[${kind}] 家康の名札の名前を押す → 家康本陣を選び、まだ使わない（確かめ）`, `選択 ${u.selectedId}`);
     check(t1.includes('もう一度で◆号令') && h1.includes('もう一度'), `[${kind}] 確かめの表示：名札「もう一度で◆号令」・案内`, `${t1} / ${h1}`);
     check(ab1 === 'ready', `[${kind}] 確かめの間も点滅は続く`);
     check(usedIe !== null, `[${kind}] もう一度押す → 立て直しの号令を使う`);
@@ -219,11 +229,21 @@ async function run(kind) {
     // 榊原：部隊の体
     let q = await screenOf(page, 'a_sakakibara');
     before = await snapshot(page);
+    await pointAt(p, q.x, q.y, 0);
+    // 確かめの表示を 1 回で読み、すぐ同じ所をもう一度（確かめは 3 秒）
+    const shown2 = await (
+        await page.waitForFunction(
+            () => {
+                const l = document.querySelector('.b-label[data-id="a_sakakibara"]');
+                if (!(l?.textContent ?? '').includes('もう一度')) return null;
+                return { t2: l.textContent, sel: window.__battle.ui.selectedId, used: window.__battle.state.abilities.a_sakakibara.usedAt };
+            },
+            null,
+            { timeout: 10000, polling: 50 },
+        )
+    ).jsonValue();
     await pointAt(p, q.x, q.y, 700);
-    u = await ui(page);
-    const t2 = await labelText(page, 'a_sakakibara');
-    check(u.selectedId === 'a_sakakibara' && (await used(page)).a_sakakibara === null && t2.includes('もう一度で◆'), `[${kind}] 榊原隊の体を押す → 選ぶ・確かめ（まだ使わない）`, t2);
-    await pointAt(p, q.x, q.y, 700);
+    check(shown2.sel === 'a_sakakibara' && shown2.used === null && shown2.t2.includes('もう一度で◆'), `[${kind}] 榊原隊の体を押す → 選ぶ・確かめ（まだ使わない）`, shown2.t2);
     check((await used(page)).a_sakakibara !== null, `[${kind}] 榊原隊の体をもう一度 → 先駆けの号を使う`);
     check(before === (await snapshot(page)), `[${kind}] 体の 2 回の押しは、位置・命令に漏れない`);
     await shot(p, 'c-body-fire');
