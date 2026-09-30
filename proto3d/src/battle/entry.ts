@@ -141,7 +141,7 @@ class BattleRun implements Mode {
     ) {
         this.ctx = appContext();
         this.s = createBattle(setup);
-        this.view = new BattleView(this.s, { low: this.ctx.low });
+        this.view = new BattleView(this.s, { low: this.ctx.low, touch: this.ctx.touch });
         this.ui = new BattleUi(this.ctx.app, this.s, {
             start: () => this.start(),
             togglePause: () => this.togglePause(),
@@ -855,6 +855,8 @@ function exposeDev(run: BattleRun): void {
         setScript(fn: ((s: BattleState) => void) | null) {
             run.script = fn;
         },
+        /** 兵士の表示の数え上げ（直前のフレーム）：見えている兵士の数・部隊ごとの人数・描画の呼び出しの数・InstancedMesh ごとの数 */
+        troopStats: () => run.view.troopStats(),
         info() {
             const i = appContext().renderer.info;
             return { calls: i.render.calls, triangles: i.render.triangles, geometries: i.memory.geometries, textures: i.memory.textures };

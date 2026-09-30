@@ -3,8 +3,10 @@
  * 見た目は暫定で安く作る（新しい高精細の素材は作らない）：
  * - 地面：丘（sim.ts の elevationAt と同じ式で盛り上げる）・林（既存の松 tree_pine_far を小さくして並べる。読めなければ円すい）・
  *   湿地（水たまりと葦）・道・戦場の縁・退き口の印。
- * - 部隊：簡単な形の兵の人形（兵 25 人ごとに 1 体、最大 30 体）を InstancedMesh でまとめて描き、隊列を組んで向きに合わせて回す。
- *   兵が減ると人形が抜け、敗走すると散って逃げる。家の色と紋の旗（のぼり）・陣営の輪（前の向きの印つき）・選んだ部隊の輪。
+ * - 部隊：1 部隊を 20〜40 人の兵士の軍勢として描く（人数・隊列・LOD の決まりは troops.ts、描画は troopsView.ts の TroopLayer）。
+ *   種類×部品ごとに 1 つの InstancedMesh にまとめ、画面外の部隊は描かない。兵が減ると後ろの列から 1 人ずつ抜け、敗走すると散って逃げる。
+ *   家の色と紋の旗（のぼり。これも InstancedMesh）・陣営の輪（前の向きの印つき）・選んだ部隊の輪（輪は兵士より手前に描く）。
+ *   部隊の輪・押す判定の広さは Version 12 のまま（control.ts の formationExtent と figureCount。兵士の人数を増やしても押しやすさは変えない）。
  * - 命令の線（移動・攻撃・撤退）と矢の線、斬り合いの印（正面は白・側面は橙・背後は赤）。
  * - 見えない敵（林の中で味方から見えていない）は描かない。
  * - 特殊能力（歴史分岐）：効果中の範囲の輪（持つ部隊について動く）、選んだ部隊のまだ使っていない能力の範囲（薄く点滅）、
@@ -14,30 +16,29 @@
  *   通れる範囲（fieldRules.passable）の外は暗くする。
  * - 目標の区域（確保する地点・守る地点・救出の地点・突破する地点）の輪（主目標は金・副目標は水色。果たしたら緑、果たせなければ灰）、
  *   援軍の出る所の小さな印、狭い正面の区域の縁。名札（短い名前）は battleUi.ts が control.ts の mapLabels で出す。
- * 描画命令はおよそ 30 前後（部隊 8 のとき）。戦場の地形・印が増えると 10 ほど増える。影・画面の仕上げは使わない。
+ * 描画命令は部隊の数では増えない（兵士・旗で 7〜10。のぼりは合戦に出る家の数 × 大きさ）。戦場の地形・印が増えると 10 ほど増える。影・画面の仕上げは使わない。
  * 状態は読むだけ（sim.ts の BattleState を書き換えない）。
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { BattleMap, ClanId, Side, Zone } from './types';
-import { attackArc, elevationAt, exitPointFor, inTerrain, unitById, type BattleState, type UnitState } from './sim';
+import { attackArc, elevationAt, exitPointFor, inTerrain, type BattleState, type UnitState } from './sim';
 import {
     CAM,
     clampCam,
     clashShift,
     figureCount,
     formationExtent,
-    formationSlots,
     hash01,
-    keepOrder,
     objectiveStateOf,
     objectiveZoneMarks,
     reinforcementMarks,
     type CamState,
     type Pending,
-    type Slot,
 } from './control';
 import { ABILITY_DATA, abilityInfo } from './abilities';
+import { troopTier } from './troops';
+import { POLE_H, TroopLayer, type TroopStats } from './troopsView';
 
 /** 特殊能力の範囲の輪の色（敵方の能力は赤みの色） */
 const ABILITY_COLOR: Record<string, string> = {
@@ -69,34 +70,24 @@ export const CLAN_CHAR: Record<ClanId, string> = { kotosaka: '琴', washio: '鷲
 /** 陣営の色（輪・名札）。同じ家が味方にも敵にもなるので、敵味方はこちらで見分ける */
 export const SIDE_COLOR: Record<Side, string> = { ally: '#8fdcff', enemy: '#ff5b4c' };
 
-/** 人形の大きさ（実寸の約 1.6 倍。遠くから見ても隊列が読めるように） */
-const FIG = 1.6;
-/** 旗の高さ（m） */
-const POLE_H = 10;
 /** 地面の外側の余白（m） */
 const MARGIN = 300;
 
 export interface ViewOptions {
-    /** 画質「低」：木を減らし、地面を粗くする */
+    /** 画質「低」：木を減らし、地面を粗くする。兵士の上限と LOD も一段下げる */
     low: boolean;
+    /** 触る端末（スマホ）：兵士の上限と LOD を一段下げる */
+    touch?: boolean;
 }
 
-interface Range {
-    start: number;
-    n: number;
-}
 interface UnitVis {
     id: string;
     side: Side;
     kind: UnitState['kind'];
-    slots: Slot[];
-    keep: number[];
+    /** 部隊の輪・押す判定・斬り合いの寄せの広さ（Version 12 のまま） */
     halfW: number;
     halfD: number;
-    body: Range;
-    spear: Range | null;
-    bow: Range | null;
-    horse: Range | null;
+    hq: boolean;
     /** 表示の位置と向き（計算の刻みの間をなめらかに） */
     px: number;
     pz: number;
@@ -107,8 +98,12 @@ interface UnitVis {
     /** 敗走してからの時間（秒。-1 は敗走していない） */
     routT: number;
     shown: boolean;
-    flag: THREE.Group;
-    banner: THREE.Mesh;
+    /** 旗の根元（地面）・敗走で傾く角度・のぼりのはためき（描くのは TroopLayer） */
+    flagX: number;
+    flagY: number;
+    flagZ: number;
+    flagTilt: number;
+    bannerYaw: number;
     seed: number;
 }
 
@@ -131,10 +126,10 @@ export class BattleView {
     private readonly low: boolean;
     private readonly owned: { dispose(): void }[] = [];
     private readonly vis: UnitVis[] = [];
-    private readonly bodyMesh: THREE.InstancedMesh;
-    private readonly spearMesh: THREE.InstancedMesh;
-    private readonly bowMesh: THREE.InstancedMesh;
-    private readonly horseMesh: THREE.InstancedMesh;
+    /** 兵士と旗（種類×部品ごとの InstancedMesh） */
+    private readonly troops: TroopLayer;
+    /** 直前のフレームの描画の呼び出しの数（開発用の数え上げ） */
+    private lastCalls = 0;
     private readonly ringMesh: THREE.InstancedMesh;
     private readonly selRing: THREE.Mesh;
     private readonly ribbon: Ribbon;
@@ -186,44 +181,16 @@ export class BattleView {
         this.setTrees(null);
 
         // ---- 部隊 ----
-        let nBody = 0;
-        let nSpear = 0;
-        let nBow = 0;
-        let nHorse = 0;
         for (const u of s.units) {
-            const n = figureCount(u.startStrength);
-            const slots = formationSlots(u.kind, n);
-            const ext = formationExtent(u.kind, n);
-            const body = { start: nBody, n };
-            nBody += n;
-            let spear: Range | null = null;
-            let bow: Range | null = null;
-            let horse: Range | null = null;
-            if (u.kind === 'yumi') {
-                bow = { start: nBow, n };
-                nBow += n;
-            } else {
-                spear = { start: nSpear, n };
-                nSpear += n;
-            }
-            if (u.kind === 'kiba') {
-                horse = { start: nHorse, n };
-                nHorse += n;
-            }
-            const { flag, banner } = this.makeFlag(u.clan, u.isHq);
-            this.scene.add(flag);
+            // 部隊の輪・押す判定の広さは Version 12 と同じ（兵士の人数によらない）
+            const ext = formationExtent(u.kind, figureCount(u.startStrength));
             this.vis.push({
                 id: u.id,
                 side: u.side,
                 kind: u.kind,
-                slots,
-                keep: keepOrder(slots, u.id),
                 halfW: ext.halfW,
                 halfD: ext.halfD,
-                body,
-                spear,
-                bow,
-                horse,
+                hq: u.isHq,
                 px: u.x,
                 pz: u.z,
                 face: u.facing,
@@ -231,31 +198,20 @@ export class BattleView {
                 sz: 0,
                 routT: -1,
                 shown: false,
-                flag,
-                banner,
+                flagX: u.x,
+                flagY: 0,
+                flagZ: u.z,
+                flagTilt: 0,
+                bannerYaw: 0,
                 seed: hash01(u.id, 7) * 100,
             });
         }
-        const figs = makeFigureGeometries();
-        this.own(figs.body, figs.spear, figs.bow, figs.horse);
-        const tinted = this.own(new THREE.MeshLambertMaterial({ color: '#ffffff' }));
-        const neutral = this.own(new THREE.MeshLambertMaterial({ vertexColors: true }));
-        this.bodyMesh = this.instanced(figs.body, tinted, nBody);
-        this.spearMesh = this.instanced(figs.spear, neutral, nSpear);
-        this.bowMesh = this.instanced(figs.bow, neutral, nBow);
-        this.horseMesh = this.instanced(figs.horse, neutral, nHorse);
-        // 鎧の色（家の色。1 体ずつ少し明暗を変える）
-        const c = new THREE.Color();
-        for (const v of this.vis) {
-            const u = unitById(s, v.id)!;
-            const base = new THREE.Color(CLAN_COLOR[u.clan]);
-            for (let i = 0; i < v.body.n; i++) {
-                const k = 0.86 + hash01(v.id, i + 31) * 0.24;
-                c.copy(base).multiplyScalar(k);
-                this.bodyMesh.setColorAt(v.body.start + i, c);
-            }
-        }
-        if (this.bodyMesh.instanceColor) this.bodyMesh.instanceColor.needsUpdate = true;
+        this.troops = new TroopLayer(
+            s,
+            this.vis.map((v) => ({ halfW: v.halfW, halfD: v.halfD })),
+            { tier: troopTier(opts), clanColor: (c) => CLAN_COLOR[c], bannerMaterial: (c) => this.bannerMaterial(c) },
+        );
+        this.scene.add(this.troops.group);
 
         // 陣営の輪（前の向きの印つき）・選んだ部隊の輪
         const ringGeo = this.own(makeRingGeometry(0.9, 1.0, true));
@@ -404,16 +360,6 @@ export class BattleView {
     private own<T extends { dispose(): void }>(first: T, ...rest: { dispose(): void }[]): T {
         this.owned.push(first, ...rest);
         return first;
-    }
-
-    private instanced(geo: THREE.BufferGeometry, mat: THREE.Material, n: number): THREE.InstancedMesh {
-        const m = new THREE.InstancedMesh(geo, mat, Math.max(1, n));
-        m.count = n;
-        m.frustumCulled = false;
-        m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-        for (let i = 0; i < n; i++) m.setMatrixAt(i, this.zero);
-        this.scene.add(m);
-        return m;
     }
 
     // ---------------------------------------------------------------- 地面
@@ -881,44 +827,16 @@ export class BattleView {
     // ---------------------------------------------------------------- 旗
 
     private flagMats = new Map<string, THREE.Material>();
-    private flagGeos: { pole: THREE.BufferGeometry; banner: THREE.BufferGeometry; big: THREE.BufferGeometry; top: THREE.BufferGeometry } | null = null;
-    private poleMat: THREE.Material | null = null;
-    private topMat: THREE.Material | null = null;
 
-    private makeFlag(clan: ClanId, hq: boolean): { flag: THREE.Group; banner: THREE.Mesh } {
-        if (!this.flagGeos) {
-            const pole = new THREE.CylinderGeometry(0.13, 0.16, POLE_H, 5);
-            pole.translate(0, POLE_H / 2, 0);
-            const banner = new THREE.PlaneGeometry(2.4, 5.6);
-            banner.translate(1.3, 0, 0);
-            const big = new THREE.PlaneGeometry(3.4, 7.2);
-            big.translate(1.8, 0, 0);
-            const top = new THREE.SphereGeometry(0.75, 10, 8);
-            this.flagGeos = { pole, banner, big, top };
-            this.own(pole, banner, big, top);
-            this.poleMat = this.own(new THREE.MeshLambertMaterial({ color: '#3b2c1c' }));
-            this.topMat = this.own(new THREE.MeshLambertMaterial({ color: '#d8b24a', emissive: '#4a3a10' }));
-        }
+    /** のぼりの材質（家ごとに 1 つ。紋の画像） */
+    private bannerMaterial(clan: ClanId): THREE.Material {
         let mat = this.flagMats.get(clan);
         if (!mat) {
             const tex = this.own(makeBannerTexture(clan));
             mat = this.own(new THREE.MeshLambertMaterial({ map: tex, side: THREE.DoubleSide, emissive: '#222222', emissiveMap: tex }));
             this.flagMats.set(clan, mat);
         }
-        const g = this.flagGeos;
-        const flag = new THREE.Group();
-        const pole = new THREE.Mesh(g.pole, this.poleMat!);
-        pole.scale.y = hq ? 1.3 : 1;
-        const banner = new THREE.Mesh(hq ? g.big : g.banner, mat);
-        banner.position.y = hq ? POLE_H * 1.3 - 3.9 : POLE_H - 3.0;
-        flag.add(pole, banner);
-        if (hq) {
-            const top = new THREE.Mesh(g.top, this.topMat!);
-            top.position.y = POLE_H * 1.3 + 0.4;
-            flag.add(top);
-        }
-        flag.visible = false;
-        return { flag, banner };
+        return mat;
     }
 
     // ---------------------------------------------------------------- 毎フレーム
@@ -992,18 +910,17 @@ export class BattleView {
             v.sx += (wantX - v.sx) * kShift;
             v.sz += (wantZ - v.sz) * kShift;
 
-            this.placeFigures(u, v, t);
-
-            // 旗
-            v.flag.visible = visible;
+            // 旗の位置（描くのは TroopLayer）
             if (visible) {
                 // 隊列の後ろ（向きの反対）に立てる。本陣は真ん中
                 const back = u.isHq ? 0 : v.halfD + 1.5;
                 const bx = v.px + v.sx - Math.sin(v.face) * back;
                 const bz = v.pz + v.sz + Math.cos(v.face) * back;
-                v.flag.position.set(bx, elevationAt(this.map, bx, bz), bz);
-                v.banner.rotation.y = Math.sin(t * 1.7 + v.seed) * 0.18;
-                v.flag.rotation.z = u.status === 'routed' ? Math.min(0.55, v.routT * 0.4) : 0;
+                v.flagX = bx;
+                v.flagY = elevationAt(this.map, bx, bz);
+                v.flagZ = bz;
+                v.bannerYaw = Math.sin(t * 1.7 + v.seed) * 0.18;
+                v.flagTilt = u.status === 'routed' ? Math.min(0.55, v.routT * 0.4) : 0;
             }
 
             // 陣営の輪（前の向きの印つき）
@@ -1045,7 +962,8 @@ export class BattleView {
         }
         this.ringMesh.instanceMatrix.needsUpdate = true;
         if (this.ringMesh.instanceColor) this.ringMesh.instanceColor.needsUpdate = true;
-        for (const m of [this.bodyMesh, this.spearMesh, this.bowMesh, this.horseMesh]) m.instanceMatrix.needsUpdate = true;
+        // 兵士と旗（画面外の部隊は書かない。カメラの行列は applyCam で今のもの）
+        this.troops.update(s, this.vis, this.camera, t, dt);
         for (let i = clashN; i < this.clashSprites.length; i++) this.clashSprites[i].visible = false;
 
         // 選んだ部隊の輪
@@ -1065,57 +983,6 @@ export class BattleView {
         if (this.abilRings.length || this.pledgeRing) this.updateAbilityMarks(s, ui, t);
         if (this.objZones.length || this.reinfMarks.length) this.updateFieldMarks(s, t);
         this.ribbon.end();
-    }
-
-    /** 人形を隊列に並べる（兵が減ると抜け、敗走すると散って逃げる） */
-    private placeFigures(u: UnitState, v: UnitVis, t: number): void {
-        const n = v.shown ? Math.min(v.slots.length, figureCount(u.strength)) : 0;
-        const routed = u.status === 'routed';
-        const scatter = routed ? Math.min(1, v.routT / 2.5) : 0;
-        const fwdX = Math.sin(v.face);
-        const fwdZ = -Math.cos(v.face);
-        const rgtX = Math.cos(v.face);
-        const rgtZ = Math.sin(v.face);
-        const moving = u.moving || routed;
-        const melee = !!u.engagedWith;
-        const yawBase = -v.face;
-        const cav = u.kind === 'kiba';
-        for (let k = 0; k < v.slots.length; k++) {
-            const idx = v.keep[k];
-            const bodyI = v.body.start + idx;
-            const gear = v.spear ? this.spearMesh : this.bowMesh;
-            const gearI = (v.spear ?? v.bow)!.start + idx;
-            if (k >= n) {
-                this.bodyMesh.setMatrixAt(bodyI, this.zero);
-                gear.setMatrixAt(gearI, this.zero);
-                if (v.horse) this.horseMesh.setMatrixAt(v.horse.start + idx, this.zero);
-                continue;
-            }
-            const sl = v.slots[idx];
-            const h1 = hash01(v.id, idx);
-            const h2 = hash01(v.id, idx + 500);
-            let lx = sl.x + (h1 - 0.5) * 0.6;
-            let lz = sl.z + (h2 - 0.5) * 0.6;
-            if (scatter > 0) {
-                lx = lx * (1 + scatter * 1.6) + (h1 - 0.5) * 10 * scatter;
-                lz = lz * (1 + scatter * 1.2) + (h2 - 0.5) * 8 * scatter;
-            }
-            if (melee && sl.row <= 1) lz += Math.sin(t * 7 + idx * 1.7) * 0.45 - 0.3;
-            const wx = v.px + v.sx + rgtX * lx - fwdX * lz;
-            const wz = v.pz + v.sz + rgtZ * lx - fwdZ * lz;
-            let y = elevationAt(this.map, wx, wz);
-            if (moving) y += Math.abs(Math.sin(t * (cav ? 7 : 9) + idx * 1.3)) * (cav ? 0.35 : 0.22);
-            const yaw = yawBase + (h1 - 0.5) * 0.25 + (scatter > 0 ? (h2 - 0.5) * 1.2 * scatter : 0);
-            this.q.setFromAxisAngle(this.yAxis, yaw);
-            const riderY = cav ? 0.8 * FIG : 0;
-            this.m4.compose(this.v3.set(wx, y + riderY, wz), this.q, this.s3.setScalar(FIG));
-            this.bodyMesh.setMatrixAt(bodyI, this.m4);
-            gear.setMatrixAt(gearI, this.m4);
-            if (v.horse) {
-                this.m4.compose(this.v3.set(wx, y, wz), this.q, this.s3.setScalar(FIG));
-                this.horseMesh.setMatrixAt(v.horse.start + idx, this.m4);
-            }
-        }
     }
 
     /** 命令の線：移動は白っぽい水色、攻撃は橙、撤退は灰色。着く所に矢じり。道探しの戦場では、たどる道（川・崖を回る）に沿って引く */
@@ -1152,6 +1019,12 @@ export class BattleView {
     render(renderer: THREE.WebGLRenderer): void {
         renderer.setRenderTarget(null);
         renderer.render(this.scene, this.camera);
+        this.lastCalls = renderer.info.render.calls;
+    }
+
+    /** 開発用の数え上げ：見えている兵士の数・部隊ごとの人数・描画の呼び出しの数（直前のフレーム）・InstancedMesh ごとの数 */
+    troopStats(): TroopStats & { drawCalls: number } {
+        return { ...this.troops.stats(), drawCalls: this.lastCalls };
     }
 
     // ---------------------------------------------------------------- カメラ
@@ -1298,7 +1171,7 @@ export class BattleView {
             const edge = this.project(v.px + v.sx * 0.5 + Math.max(v.halfW, v.halfD) + 2, y + 1.5, v.pz + v.sz * 0.5);
             const r = Math.max(tolPx, Math.hypot(edge.x - c.x, edge.y - c.y));
             // 旗のあたりも部隊の一部として押せる
-            const fl = this.project(v.flag.position.x, v.flag.position.y + POLE_H * 0.7, v.flag.position.z);
+            const fl = this.project(v.flagX, v.flagY + POLE_H * 0.7, v.flagZ);
             const d = Math.min(Math.hypot(sx - c.x, sy - c.y), Math.hypot(sx - fl.x, sy - fl.y) * 1.3);
             const score = d / r;
             if (score < bestScore) {
@@ -1309,11 +1182,28 @@ export class BattleView {
         return best;
     }
 
-    /** 部隊の名札の位置（旗の上） */
+    /** 部隊の名札の位置（旗の上。本陣は旗が高い）。能力の印の点滅も、この位置の名札で出す */
     labelAnchor(i: number): { x: number; y: number; z: number; shown: boolean } {
         const v = this.vis[i];
-        const top = v.flag.position.y + POLE_H * (v.flag.children.length > 2 ? 1.3 : 1) + 1.5;
-        return { x: v.flag.position.x, y: top, z: v.flag.position.z, shown: v.shown };
+        const top = v.flagY + POLE_H * (v.hq ? 1.3 : 1) + 1.5;
+        return { x: v.flagX, y: top, z: v.flagZ, shown: v.shown };
+    }
+
+    /** 旗の根元（地面）の位置。旗の周りの光・波紋を出すときに使う */
+    flagBase(i: number): { x: number; y: number; z: number; shown: boolean } {
+        const v = this.vis[i];
+        return { x: v.flagX, y: v.flagY, z: v.flagZ, shown: v.shown };
+    }
+
+    /**
+     * 部隊の輪の中心（なめらかにした位置に斬り合いの寄せの半分を足す。陣営の輪・選んだ輪と同じ所）と、輪の半径（広い方の半分 + 3 m）。
+     * 能力の波紋・範囲の輪を部隊の周りに出すときに使う。
+     */
+    unitCenter(i: number): { x: number; y: number; z: number; r: number; shown: boolean } {
+        const v = this.vis[i];
+        const x = v.px + v.sx * 0.5;
+        const z = v.pz + v.sz * 0.5;
+        return { x, y: elevationAt(this.map, x, z), z, r: Math.max(v.halfW, v.halfD) + 3, shown: v.shown };
     }
 
     /** 部隊の表示の位置（なめらかにした中心） */
@@ -1326,7 +1216,8 @@ export class BattleView {
         this.setTreesDisposeOnly();
         for (const o of this.owned) o.dispose();
         this.owned.length = 0;
-        for (const m of [this.bodyMesh, this.spearMesh, this.bowMesh, this.horseMesh, this.ringMesh]) m.dispose();
+        this.troops.dispose();
+        this.ringMesh.dispose();
         this.scene.clear();
     }
 
@@ -1396,44 +1287,6 @@ function merge(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
     const g = mergeGeometries(parts.map((p) => (p.index ? p.toNonIndexed() : p)))!;
     for (const p of parts) p.dispose();
     return g;
-}
-
-/**
- * 兵の人形（前は -z）。1 体の大きさは 1 m 単位で作り、置くときに FIG 倍にする。
- * - body：足・胴・袖・陣笠・背中の小旗（家の色に染める。明暗だけ頂点の色で付ける）
- * - spear：頭と槍（槍・本陣・騎馬）、bow：頭と弓と矢筒（弓）
- * - horse：馬（騎馬。乗り手は body を高くして置く）
- */
-function makeFigureGeometries(): { body: THREE.BufferGeometry; spear: THREE.BufferGeometry; bow: THREE.BufferGeometry; horse: THREE.BufferGeometry } {
-    const body = merge([
-        part(new THREE.BoxGeometry(0.42, 0.8, 0.28), 0.42, 0, 0.4, 0),
-        part(new THREE.BoxGeometry(0.62, 0.72, 0.38), 1.0, 0, 1.16, 0),
-        part(new THREE.BoxGeometry(0.9, 0.16, 0.42), 0.78, 0, 1.46, 0),
-        part(new THREE.ConeGeometry(0.44, 0.24, 8), 0.9, 0, 1.94, 0),
-        part(new THREE.BoxGeometry(0.05, 0.62, 0.36), 1.15, 0, 2.02, 0.26),
-    ]);
-    const head = () => part(new THREE.SphereGeometry(0.19, 8, 6), '#d8b28a', 0, 1.72, 0);
-    const spear = merge([
-        head(),
-        part(new THREE.BoxGeometry(0.06, 4.4, 0.06), '#6e5436', 0.36, 2.0, -0.2, -0.22),
-        part(new THREE.ConeGeometry(0.1, 0.45, 4), '#e2e2e2', 0.36, 2.0 + 2.2 * Math.cos(0.22) + 0.2, -0.2 - 2.2 * Math.sin(0.22) - 0.05, -0.22),
-    ]);
-    const bow = merge([
-        head(),
-        part(new THREE.BoxGeometry(0.06, 1.9, 0.08), '#3a2a18', -0.4, 1.35, -0.1, 0, 0.12),
-        part(new THREE.BoxGeometry(0.16, 0.55, 0.16), '#5c3b22', 0.18, 1.3, 0.28, 0.3),
-    ]);
-    const horse = merge([
-        part(new THREE.BoxGeometry(0.56, 0.62, 1.8), '#6b4a2e', 0, 1.15, 0),
-        part(new THREE.BoxGeometry(0.3, 0.75, 0.36), '#5e3f26', 0, 1.62, -0.82, -0.55),
-        part(new THREE.BoxGeometry(0.26, 0.28, 0.62), '#5e3f26', 0, 1.98, -1.18),
-        part(new THREE.BoxGeometry(0.14, 0.86, 0.14), '#4a321e', -0.2, 0.43, -0.7),
-        part(new THREE.BoxGeometry(0.14, 0.86, 0.14), '#4a321e', 0.2, 0.43, -0.7),
-        part(new THREE.BoxGeometry(0.14, 0.86, 0.14), '#4a321e', -0.2, 0.43, 0.7),
-        part(new THREE.BoxGeometry(0.14, 0.86, 0.14), '#4a321e', 0.2, 0.43, 0.7),
-        part(new THREE.BoxGeometry(0.62, 0.1, 0.8), '#b8a27a', 0, 1.5, 0.05),
-    ]);
-    return { body, spear, bow, horse };
 }
 
 /** 平らな輪（半径 1。withTick なら前（-z）に向きの印の三角） */
