@@ -832,6 +832,11 @@ class BattleRun implements Mode {
         return top && ids.includes(top) ? { id: top, part: 'name' } : null;
     }
 
+    /** 確認用（開発時の window.__battle.labelHitAt） */
+    labelHitForDev(x: number, y: number): { id: string; part: 'badge' | 'name' } | null {
+        return this.labelAt(x, y);
+    }
+
     /**
      * 点滅している武将の名札の名前・部隊の体を押した（印の外）：その部隊を選び、短い確かめを出す（名札に「もう一度で◆号令」・下の案内）。
      * 確かめの中にもう一度押すと使う（control.ts の armDecision）
@@ -1103,6 +1108,11 @@ function exposeDev(run: BattleRun): void {
         },
         /** 画面に出ている部隊の名札の四角と重なりの順（z が大きいほど上）。名札の重なりの確認に使う（読むだけ） */
         labelCovers: () => run.ui.labelCovers().map(({ id, rect, z }) => ({ id, l: rect.left, t: rect.top, r: rect.right, b: rect.bottom, z })),
+        /** その点（CSS px、ページの左上から）を押したら、どの名札のどこに当たるか（読むだけ。e2e が広げた当たりの点を探すのに使う） */
+        labelHitAt(x: number, y: number) {
+            const r = appContext().renderer.domElement.getBoundingClientRect();
+            return run.labelHitForDev(x - r.left, y - r.top);
+        },
         /** 画面の部品（左上の欄・能力の欄・下の札・案内の帯など）の四角（読むだけ） */
         blockers: () => run.ui.blockerRects().map((r) => ({ l: r.left, t: r.top, r: r.right, b: r.bottom })),
         /** 表示（three の場面・カメラ）。確認用 */

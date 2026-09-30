@@ -183,15 +183,25 @@ async function run(kind) {
     {
         const before0 = await snapshot(page);
         const lSk = (await label(page, 'a_sakai')).badge;
-        // 印の見た目の外で、ほかの名札に重ならない所（名札の重なりをほどくので、上には別の名札があることがある）：右・上・下の順に探す
-        const off = p.phone ? 10 : 6;
-        const cands = [
-            { x: lSk.r + off, y: lSk.y, what: `右 ${off} px` },
-            { x: lSk.x, y: lSk.t - off, what: `上 ${off} px` },
-            { x: lSk.x, y: lSk.b + off, what: `下 ${off} px` },
-        ];
+        // 印の見た目の外で、ほかの名札に重ならず、アプリの当たり（__battle.labelHitAt。読むだけ）が酒井の印になる所を、印の周りから探す
+        // （名札の重なりをほどくので、上や横に別の名札・部隊があることがある。押すのは本物のクリック／タップ）
         const covers = await page.evaluate(() => window.__battle.labelCovers());
-        const pt = cands.find((c) => !covers.some((k) => c.x >= k.l && c.x <= k.r && c.y >= k.t && c.y <= k.b)) ?? cands[0];
+        let pt = null;
+        for (const r of p.phone ? [10, 14, 18, 8, 6] : [6, 9, 12, 4]) {
+            for (const [dx, dy, what] of [[1, 0, '右'], [0, -1, '上'], [0, 1, '下'], [-1, 0, '左']]) {
+                const x = dx > 0 ? lSk.r + r : dx < 0 ? lSk.l - r : lSk.x;
+                const y = dy > 0 ? lSk.b + r : dy < 0 ? lSk.t - r : lSk.y;
+                if (covers.some((k) => x >= k.l && x <= k.r && y >= k.t && y <= k.b)) continue;
+                const h = await page.evaluate(([x, y]) => window.__battle.labelHitAt(x, y), [x, y]);
+                if (h && h.id === 'a_sakai' && h.part === 'badge') {
+                    pt = { x, y, what: `${what} ${r} px` };
+                    break;
+                }
+            }
+            if (pt) break;
+        }
+        check(!!pt, `[${kind}] 酒井の印の見た目の外に、広げた当たりの所がある`);
+        pt ??= { x: lSk.r + 6, y: lSk.y, what: '右 6 px' };
         await pointAt(p, pt.x, pt.y);
         const after0 = await snapshot(page);
         check((await ab(page, 'a_sakai')).usedAt !== null, `[${kind}] 何も選んでいない時、酒井の名札の印の${pt.what}（見た目の外・ほかの名札の外・当たりの中）を押す → 両翼の采配`);
