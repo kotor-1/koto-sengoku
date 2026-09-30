@@ -2,7 +2,7 @@
  * 合戦の兵士の表示（大軍感。docs/troops-abilities-design.md §1）を、実際のブラウザで確かめて撮る。
  *   BASE3D=http://localhost:8181 node e2e/troops.mjs [出力先]   （開発サーバー：proto3d/blender/tools/vite.nohmr.mjs。既定の出力先 e2e-out/troops）
  * - 大平原（?dev=field&id=plains&allies=8。味方 8／敵 7）を PC（1280×720）とスマホ横（844×390、タッチ）で開き、
- *   開始時・交戦中・兵が減った後を、全体と寄りで撮る（<kind>-start.png・<kind>-engaged.png・<kind>-engaged-close.png・<kind>-losses.png・<kind>-losses-close.png）。
+ *   開始時・交戦中・兵が減った後を、全体と寄りで撮る（<kind>-start.png・<kind>-start-mid.png・<kind>-engaged.png・<kind>-engaged-close.png・<kind>-losses.png・<kind>-losses-close.png）。
  * - 見えている兵士（window.__battle.troopStats().visibleSoldiers）が全体表示で 300 人以上。
  * - 部隊の選択と命令：味方 8 部隊を、部隊の画面の位置の本物のクリック／タップで 1 つずつ選べる。選んだ部隊で地面を押すと移動の命令になる。
  * - 兵が減った後：止めた状態で、部隊ごとの描く人数が ceil(最初の人数 × 今の兵 ÷ 最初の兵) に落ち着く（全体表示は LOD 100%）。
@@ -10,10 +10,13 @@
  * - 1 フレームの時間（requestAnimationFrame の間の中央値）と描画の呼び出しの数を記録する。コンテナはソフトウェア描画なので実機の性能ではない。
  * 待つ時間だけは開発用の早送り（window.__battle.fastForward）と、寄りの撮影のカメラ（centerOn）を使う。選択・命令・開始・一時停止は本物のクリック・タップ。
  *
- * 記録（コンテナ・SwiftShader のソフトウェア描画。実機は未確認）：
- * - 変更前（Version 12。兵 25 人ごとに 1 体・最大 30 体、旗は部隊ごとの別の形）：
- *   PC 開始時 183 ms・描画の呼び出し 44／交戦中 217 ms・45。スマホ相当 開始時 150 ms・44／交戦中 167 ms・45。
- * - 変更後：このスクリプトの出力（frameMs・drawCalls）を見る。
+ * 記録（コンテナ・SwiftShader のソフトウェア描画。ほかの作業のブラウザと CPU を取り合うので、1 フレームの時間は ±2 倍ほど揺れる。実機は未確認）：
+ *   大平原・味方 8／敵 7、開始して止めた全体表示（開始時）と 45 秒早送りの後（交戦中）。rAF の間の中央値。変更前と後を交互に測った。
+ * - 変更前（Version 12。兵 25 人ごとに 1 体・最大 30 体、旗は部隊ごとの別の形）：描画の呼び出し 開始時 44・交戦中 45、三角 約 15.7 万。
+ *   1 フレーム：PC 開始時 183／383／217 ms・交戦中 217／367／217 ms、スマホ相当 開始時 150／267／167 ms・交戦中 167／200／183 ms（3 回）。
+ * - 変更後（兵士 PC 407 人・スマホ相当 341 人）：描画の呼び出し 開始時 18・交戦中 21、三角 約 15.5〜16.9 万。
+ *   1 フレーム：PC 開始時 383／233 ms・交戦中 400／217 ms、スマホ相当 開始時 283／200 ms・交戦中 300／200 ms（2 回）。
+ *   同じ頃に測った組（変更前の 3 回目と変更後の 2 回目）では、PC 217 → 233・217 → 217 ms、スマホ相当 167 → 200・183 → 200 ms。
  */
 import { launchBrowser } from './lib.mjs';
 import { mkdirSync } from 'node:fs';
@@ -103,6 +106,14 @@ for (const kind of ['desktop', 'phone']) {
     check(allyIds.length === 8, `${kind}：味方 8 部隊`, String(allyIds.length));
     for (const id of allyIds) check(s0.perUnit[id] >= (kind === 'phone' ? 18 : 20) && s0.perUnit[id] <= 40, `${kind}：${id} の表示の人数`, String(s0.perUnit[id]));
     await page.screenshot({ path: `${OUT}/${kind}-start.png` });
+    // 中くらいの寄り（両軍の前の列が画面に入る所）でも撮って数える（記録のみ）
+    await page.evaluate(() => window.__battle.centerOn(0, 20, 240));
+    await page.waitForTimeout(800);
+    const sMid = await stats(page);
+    record[kind].mid = { visible: sMid.visibleSoldiers, culled: sMid.culledUnits.length, drawCalls: sMid.drawCalls };
+    log(`    中くらいの寄り：見えている兵士 ${sMid.visibleSoldiers} 人（画面外 ${sMid.culledUnits.length} 部隊）`);
+    await page.screenshot({ path: `${OUT}/${kind}-start-mid.png` });
+    await fitAll(p);
 
     // 部隊の選択（部隊の画面の位置を本物のクリック／タップ）
     let pickOk = 0;
