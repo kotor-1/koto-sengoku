@@ -15,7 +15,7 @@
  * - 地図の上の名札、合戦の前の説明、全軍撤退の確かめ、結果（勝敗・主目標・副目標・約束を別々の行に）
  * - 特殊能力の発動 UI（設計 §4）：発動できる武将の名札に能力の印（淡い青緑。明るさはつなぎが表示の時計で毎フレーム渡す＝一時停止中も点滅）、
  *   効果中は名札に残り秒数、対象選びの間は選べる名札・選べない名札（薄く）。発動の知らせ（能力名・武将・対象。2.5 秒）と、効果が切れた知らせ。
- *   名札そのものは押せない（pointer-events: none）。名札の四角（labelRect）をつなぎが読んで、地図を押した所と比べる。
+ *   名札そのものは押せない（pointer-events: none）。名札・能力の印の四角（labelRect）をつなぎが読んで、地図を押した所と比べる。
  * e2e が使える印：.b-root[data-field]（戦場 id）・.b-card[data-id][data-key]・.b-cards[data-count]・.b-goals の .b-goal[data-id][data-role][data-state]・
  *   .b-gen[data-general]・結果の .b-robj の行 [data-role][data-achieved]・名札 .b-label[data-mark]（救出・守る・崩す）・
  *   部隊の名札 .b-label[data-id][data-ab]（ready・active・choosing・target・untargetable）・発動の知らせ .b-abnote[data-kind]。
@@ -757,11 +757,15 @@ export class BattleUi {
         }
     }
 
-    /** 名札の四角（CSS px。ページの左上から。隠れていれば null） */
-    labelRect(id: string): DOMRect | null {
+    /**
+     * 名札の四角（CSS px。ページの左上から。隠れていれば null）。part：'all' は名札全体、'badge' は能力の印（◆号令・対象を選ぶ）だけ
+     * （印が無ければ null）。ワンクリック発動の当たりは印の方（名札の名前の所は、今までどおり部隊の選択）。
+     */
+    labelRect(id: string, part: 'all' | 'badge' = 'all'): DOMRect | null {
         const l = this.labelEls.get(id);
         if (!l || !l.shown || l.e.hidden) return null;
-        const r = l.e.getBoundingClientRect();
+        if (part === 'badge' && l.ab.hidden) return null;
+        const r = (part === 'badge' ? l.ab : l.e).getBoundingClientRect();
         return r.width > 0 && r.height > 0 ? r : null;
     }
 
@@ -903,10 +907,10 @@ export class BattleUi {
         ];
         if (this.hasAbility) {
             touchLines.push(
-                '特殊能力（ゲーム用の創作）：使える武将は地図の名札が青緑に点滅する。名札をタップするだけで使える（対象を選ぶ能力は、その後で輪の付いた味方をタップ）。部隊を選んで「能力」でも使える。指揮中も使える。',
+                '特殊能力（ゲーム用の創作）：使える武将は地図の名札の印（◆）が青緑に点滅する。印をタップするだけで使える（対象を選ぶ能力は、その後で輪の付いた味方をタップ）。部隊を選んで「能力」でも使える。指揮中も使える。',
             );
             pcLines.push(
-                '特殊能力（ゲーム用の創作）：使える武将は地図の名札が青緑に点滅する。名札をクリックするだけで使える（対象を選ぶ能力は、その後で輪の付いた味方をクリック。Esc で取り消し）。部隊を選んで「能力」ボタンか F で使うこともできる。',
+                '特殊能力（ゲーム用の創作）：使える武将は地図の名札の印（◆）が青緑に点滅する。印をクリックするだけで使える（対象を選ぶ能力は、その後で輪の付いた味方をクリック。Esc で取り消し）。部隊を選んで「能力」ボタンか F で使うこともできる。',
             );
         }
         for (const l of this.opts.touch ? touchLines : pcLines) how.append(el('p', '', l));

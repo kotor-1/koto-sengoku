@@ -76,6 +76,8 @@ body.mode-battle #build { display: none !important; }
 .b-label[data-ab="target"] { box-shadow: 0 0 0 1.5px rgba(126, 240, 222, 0.85); }
 .b-label[data-ab="target"] .b-lab-ab { background: rgba(126, 240, 222, 0.22); color: #c4f8ef; font-weight: 500; }
 .b-label[data-ab="untargetable"] { opacity: 0.42; }
+/* 名札が重なるときは、発動できる名札・対象選びの持ち主を上に（点滅する印が隣の名札に隠れないように） */
+.b-label[data-ab="ready"], .b-label[data-ab="choosing"] { z-index: 2; }
 .b-label.terrain {
     background: none;
     border: none;

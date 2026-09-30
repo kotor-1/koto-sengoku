@@ -644,7 +644,7 @@ export function abilityPanelModel(s: BattleState, unitId: string): AbilityPanelM
         if (info.id === 'nagamasa_support') stateText += `・${t?.name ?? ''}${info.linked ? 'を援護中' : 'が離れて外れている'}`;
         else stateText += `・${t?.name ?? ''}へ差配中`;
     }
-    const howTo = info.ready ? (info.needsTarget ? '点滅する名札（または「能力」）を押し、輪の付いた味方を押す' : '点滅する名札を押すだけで使える（「能力」・F でも）') : '';
+    const howTo = info.ready ? (info.needsTarget ? '地図の名札の点滅する印（◆）か「能力」を押し、輪の付いた味方を押す' : '地図の名札の点滅する印（◆）を押すだけで使える（「能力」・F でも）') : '';
     const uses = info.state === 'unused' ? '残り 1 回（1 合戦 1 回）' : '残り 0 回（1 合戦 1 回）';
     return {
         unitId,
@@ -711,7 +711,7 @@ export type LabelAbilityMode = 'ready' | 'choosing' | 'target' | 'untargetable' 
 
 export interface LabelAbilityModel {
     mode: LabelAbilityMode;
-    /** 名札に添える短い文（例：◆号令・号令 残り 28 秒・対象を選ぶ）。印なしは空 */
+    /** 名札に添える短い文（例：◆号令・残り 28 秒・対象を選ぶ）。印なし・選べる対象（縁だけ）は空 */
     text: string;
 }
 
@@ -727,16 +727,18 @@ export function labelAbilityModel(s: BattleState, unitId: string, pending: Pendi
     if (pending === 'ability' && selectedId) {
         if (unitId === selectedId) return { mode: 'choosing', text: '対象を選ぶ' };
         const user = abilityInfo(s, selectedId);
-        if (user && u.side === 'ally') return user.validTargets.includes(unitId) ? { mode: 'target', text: '選べる' } : { mode: 'untargetable', text: '' };
+        // 選べる名札は縁だけ（文を足すと名札が長くなり、隣の名札と重なる）
+        if (user && u.side === 'ally') return user.validTargets.includes(unitId) ? { mode: 'target', text: '' } : { mode: 'untargetable', text: '' };
         return { mode: 'untargetable', text: '' };
     }
     if (!info) return { mode: '', text: '' };
     if (info.ready) return { mode: 'ready', text: `◆${info.cardLabel}` };
-    if (info.state === 'active' && info.controllable) return { mode: 'active', text: `${info.cardLabel} 残り ${Math.ceil(info.remainingSec)} 秒` };
+    // 効果中：残り秒数だけ（能力の名前は名札の効いている印［号令（守りを優先）］などに出ている）
+    if (info.state === 'active' && info.controllable) return { mode: 'active', text: `残り ${Math.ceil(info.remainingSec)} 秒` };
     return { mode: '', text: '' };
 }
 
-/** 名札の当たり判定に使う四角（CSS px。canvas の左上から） */
+/** 名札の当たり判定に使う四角（CSS px。canvas の左上から。ワンクリック発動は名札の能力の印（◆号令）の四角、対象選びは名札全体） */
 export interface LabelBox {
     id: string;
     l: number;
@@ -745,7 +747,7 @@ export interface LabelBox {
     b: number;
 }
 
-/** 画面の点（部隊の中心・ほかの名札の中心。名札の広げた当たりが、この点より向こうへ行かないように） */
+/** 画面の点（部隊の体の中心（その部隊自身も）・ほかの名札の中心。名札の広げた当たりが、この点より向こうへ行かないように） */
 export interface ScreenMark {
     id: string;
     x: number;
@@ -793,6 +795,15 @@ export interface TapGuard {
 
 export function inTapGuard(g: TapGuard | null, x: number, y: number, now: number): boolean {
     return !!g && now < g.until && Math.hypot(x - g.x, y - g.y) <= g.r;
+}
+
+/**
+ * タップを守りに通す：守りの中なら何もしない（swallow）で、守りをその時刻から TAP_GUARD_SEC だけ延ばす
+ * （連打が続く間は、何回押しても地面の移動・部隊の選択に漏らさない。0.5 秒あけて押し直せば、ふつうのタップ）。
+ */
+export function guardTap(g: TapGuard | null, x: number, y: number, now: number): { swallow: boolean; guard: TapGuard | null } {
+    if (!g || !inTapGuard(g, x, y, now)) return { swallow: false, guard: g };
+    return { swallow: true, guard: { ...g, until: now + TAP_GUARD_SEC } };
 }
 
 /** 名札の当たり判定を付ける部隊：対象選びの間は、持ち主と地図に見えている味方（対象）。そのほかは点滅している名札だけ */

@@ -16,6 +16,7 @@ import {
     LABEL_HIT_PX,
     TAP_GUARD_SEC,
     abilityBlink,
+    guardTap,
     abilityEndText,
     abilityNoticeModel,
     abilityPanelModel,
@@ -81,12 +82,12 @@ describe('名札の点滅の条件（labelAbilityModel）', () => {
         expect(useAbility(s, 'a_ieyasu').ok).toBe(true);
         const m = labelAbilityModel(s, 'a_ieyasu', 'none', null);
         expect(m.mode).toBe('active');
-        expect(m.text).toBe('号令 残り 35 秒');
+        expect(m.text).toBe('残り 35 秒');
         expect(readyIds(s)).not.toContain('a_ieyasu');
         // 止めている間（刻みを進めない）は同じ
-        expect(labelAbilityModel(s, 'a_ieyasu', 'none', null).text).toBe('号令 残り 35 秒');
+        expect(labelAbilityModel(s, 'a_ieyasu', 'none', null).text).toBe('残り 35 秒');
         advance(s, 10);
-        expect(labelAbilityModel(s, 'a_ieyasu', 'none', null).text).toBe('号令 残り 25 秒');
+        expect(labelAbilityModel(s, 'a_ieyasu', 'none', null).text).toBe('残り 25 秒');
         advance(s, 26);
         expect(labelAbilityModel(s, 'a_ieyasu', 'none', null).mode).toBe('');
     });
@@ -188,7 +189,7 @@ describe('名札を押したときの決まり（resolveLabelTap）', () => {
         expect(useAbility(s, 'a_ishikawa', 'a_kiba').ok).toBe(true);
         expect(s.abilities.a_ishikawa.targetId).toBe('a_kiba');
         // 使った後は点滅しない・名札に残り秒数
-        expect(labelAbilityModel(s, 'a_ishikawa', 'none', sel)).toEqual({ mode: 'active', text: '後詰め 残り 30 秒' });
+        expect(labelAbilityModel(s, 'a_ishikawa', 'none', sel)).toEqual({ mode: 'active', text: '残り 30 秒' });
     });
     it('連打：1 回目で使い、2 回目以降は守り（0.5 秒）で何もしない。守りの後も、使った名札は点滅しないので能力は 2 回目を使わない', () => {
         const s = plains();
@@ -210,6 +211,19 @@ describe('名札を押したときの決まり（resolveLabelTap）', () => {
         expect(resolveLabelTap(s, 'a_tadakatsu', 'none', null)).toBeNull();
         expect(useAbility(s, 'a_tadakatsu').ok).toBe(false);
         expect(s.abilities.a_tadakatsu.usedAt).toBe(usedAt);
+    });
+    it('連打が続く間は守りを延ばす（0.4 秒ごとに 5 回押しても、すべて何もしない）。0.5 秒あければ、ふつうのタップ', () => {
+        let g: TapGuard | null = { x: 100, y: 100, until: 1 + TAP_GUARD_SEC, r: 18 };
+        for (let k = 1; k <= 5; k++) {
+            const r = guardTap(g, 101, 99, 1 + 0.4 * k);
+            expect(r.swallow).toBe(true);
+            g = r.guard;
+        }
+        expect(g!.until).toBeCloseTo(1 + 0.4 * 5 + TAP_GUARD_SEC, 9);
+        expect(guardTap(g, 101, 99, 1 + 0.4 * 5 + 0.51).swallow).toBe(false);
+        // 離れた所は延ばさない
+        expect(guardTap(g, 160, 99, 1 + 0.4 * 5 + 0.1)).toEqual({ swallow: false, guard: g });
+        expect(guardTap(null, 0, 0, 0)).toEqual({ swallow: false, guard: null });
     });
     it('ワンクリックで使っても、ほかの部隊の命令・位置・選択は変わらない（名札の操作は地図の決まりを通らない）', () => {
         const s = plains();
@@ -294,7 +308,7 @@ describe('当たり判定を付ける名札・知らせの文', () => {
         const m0 = abilityPanelModel(s, 'a_ieyasu')!;
         expect(m0.rangeText).toBe('半径 110 m（家康本陣の周り）');
         expect(m0.remainText).toBe('');
-        expect(m0.howTo).toContain('名札を押すだけ');
+        expect(m0.howTo).toContain('印（◆）を押すだけ');
         expect(abilityPanelModel(s, 'a_ishikawa')!.howTo).toContain('輪の付いた味方');
         expect(abilityTargetHint(s, 'a_ishikawa')).toContain('対象の味方を押してください');
         useAbility(s, 'a_ishikawa', 'a_kiba');
