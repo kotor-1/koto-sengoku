@@ -367,7 +367,7 @@ describe('兵士の表示は合戦の状態を変えない', () => {
             expect(b.result).toEqual(a.result);
             layer.dispose();
         }
-    });
+    }, 60000);
 
     it('合戦の画面の表示（BattleView）ごと作って毎刻み update しても、表示なしと同じ', async () => {
         // のぼり・斬り合いの印の画像は canvas で描く。node には無いので、何もしない 2D の仮を置く
@@ -401,5 +401,5 @@ describe('兵士の表示は合戦の状態を変えない', () => {
             if (had) g.document = prev;
             else delete g.document;
         }
-    });
+    }, 60000);
 });

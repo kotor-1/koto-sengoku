@@ -398,10 +398,11 @@ function makeTroopGeometries(): Record<'body' | 'spear' | 'bow' | 'horse' | 'pol
         part(new THREE.BoxGeometry(0.42, 0.8, 0.28), 0.42, 0, 0.4, 0),
         part(new THREE.BoxGeometry(0.62, 0.72, 0.38), 1.0, 0, 1.16, 0),
         part(new THREE.BoxGeometry(0.9, 0.16, 0.42), 0.78, 0, 1.46, 0),
-        part(new THREE.ConeGeometry(0.44, 0.24, 8), 0.9, 0, 1.94, 0),
+        part(new THREE.ConeGeometry(0.44, 0.24, 6), 0.9, 0, 1.94, 0),
         part(new THREE.BoxGeometry(0.05, 0.62, 0.36), 1.15, 0, 2.02, 0.26),
     ]);
-    const head = () => part(new THREE.SphereGeometry(0.19, 8, 6), '#d8b28a', 0, 1.72, 0);
+    // 頭は角の少ない球（数百人を描くので、1 人あたりの三角を少なく。体・槍で約 130）
+    const head = () => part(new THREE.SphereGeometry(0.19, 6, 4), '#d8b28a', 0, 1.72, 0);
     const spear = merge([
         head(),
         part(new THREE.BoxGeometry(0.06, 4.4, 0.06), '#6e5436', 0.36, 2.0, -0.2, -0.22),
