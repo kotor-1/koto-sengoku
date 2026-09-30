@@ -751,6 +751,9 @@ export interface AbilityArm {
     at: number;
     x?: number;
     y?: number;
+    /** 押した所の下の地面（地図が動いたかを見る） */
+    gx?: number;
+    gz?: number;
 }
 
 /**

@@ -87,6 +87,8 @@ const TAP_SLOP = { touch: 12, mouse: 6 };
  * これより外で、押しやすくするための余白（タッチ 30 px・マウス 20 px）の中は「すぐ近く」（control.ts の resolveTap の near）。
  */
 const TAP_EXACT_PX = { touch: 16, mouse: 10 };
+/** 確かめの 2 回目を「同じ所」とみなす、押した所の下の地面のずれの上限（m）。地図を動かした後の同じ画面の点は別の所として扱う */
+const ARM_SAME_GROUND_M = 4;
 /** カメラの距離が「全体」のこの割合より遠いとき、名札を小さく薄くする（兵士の群れを覆いすぎないように） */
 const LABELS_FAR_RATIO = 0.8;
 
@@ -232,6 +234,8 @@ class BattleRun implements Mode {
     /** 1 部隊だけを選ぶ（null で外す） */
     select(id: string | null): void {
         this.selection = selectOnly(id);
+        // 確かめ（もう一度押すと使う）は、その武将を選んでいる間だけ。札・キーなどでほかを選び直したら消す
+        if (this.arm && this.arm.id !== id) this.arm = null;
     }
 
     start(): void {
@@ -847,7 +851,8 @@ class BattleRun implements Mode {
         if (!u || !info) return;
         this.select(id);
         this.pending = 'none';
-        this.arm = { id, at: now, x, y };
+        const g = this.view.groundAt(x, y);
+        this.arm = { id, at: now, x, y, ...(g ? { gx: g.x, gz: g.z } : {}) };
         const how = info.needsTarget ? 'もう一度押すと「' + info.name + '」の対象選び' : 'もう一度押すと「' + info.name + '」を使う';
         this.ui.flash(`${u.name}を選んだ。${how}（◆の印なら 1 回で使える）`, 3000);
     }
@@ -917,9 +922,12 @@ class BattleRun implements Mode {
         this.arm = null;
         // 確かめの中に、1 回目と同じ所（当たりの半分の半径）をもう一度押した：名札が長くなって動いていても、その武将の 2 回目とみなす
         // （名札の動いた後の地面の移動に漏らさない）
-        if (!command && arm && arm.x !== undefined && arm.y !== undefined && this.pending === 'none' && this.s.abilityList.length > 0) {
+        // その武将を選んだままで、地図が動いていない（同じ画面の点の下が同じ地面）ときだけ。地図を動かした後の同じ画面の点は別の所
+        if (!command && arm && arm.x !== undefined && arm.y !== undefined && this.pending === 'none' && this.s.abilityList.length > 0 && this.selectedId === arm.id) {
             const hitPx = this.ctx.touch ? LABEL_HIT_PX.touch : LABEL_HIT_PX.mouse;
-            if (Math.hypot(x - arm.x, y - arm.y) <= hitPx / 2 && abilityInfo(this.s, arm.id)?.ready) {
+            const g = this.view.groundAt(x, y);
+            const sameGround = arm.gx === undefined || arm.gz === undefined || (g !== null && Math.hypot(g.x - arm.gx, g.z - arm.gz) <= ARM_SAME_GROUND_M);
+            if (Math.hypot(x - arm.x, y - arm.y) <= hitPx / 2 && sameGround && abilityInfo(this.s, arm.id)?.ready) {
                 const d = armDecision(arm, arm.id, performance.now() / 1000);
                 if (d === 'wait') {
                     this.arm = arm;

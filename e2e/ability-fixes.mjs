@@ -263,6 +263,25 @@ async function run(kind) {
     u = await ui(page);
     check(u.selectedId === null && (await used(page)).a_sakai === null, `[${kind}] 確かめの 3 秒の後に選んでいる酒井隊を押す → 選択が外れる（使わない）`, `選択 ${u.selectedId}`);
 
+    // 確かめの中に札でほかの部隊を選び直したら、確かめは消える（同じ所をもう一度押しても使わない）。
+    // 直す前は、札で選び直した後の同じ画面の点の地面の押し（移動のつもり）が、忠勝の退路の守護になっていた（e2e/fields-ui.mjs の orders で見つかった）
+    q = await screenOf(page, 'a_tadakatsu');
+    {
+        const cs = await covers(page);
+        for (let dy = 0; dy <= 12 && cs.some((c) => inBox(c, q.x, q.y)); dy += 3) q = { ...q, y: q.y + 3 };
+    }
+    await pointAt(p, q.x, q.y, 400);
+    u = await ui(page);
+    const armedT = await page.evaluate(() => document.querySelector('.b-label[data-id="a_tadakatsu"]')?.textContent ?? '');
+    check(u.selectedId === 'a_tadakatsu' && armedT.includes('もう一度'), `[${kind}] 忠勝隊の体を押す → 選ぶ・確かめ`, `選択 ${u.selectedId}・${armedT}`);
+    await press(p, '.b-card[data-id="a_yumi"]', 300);
+    u = await ui(page);
+    const armedT2 = await page.evaluate(() => document.querySelector('.b-label[data-id="a_tadakatsu"]')?.textContent ?? '');
+    check(u.selectedId === 'a_yumi' && !armedT2.includes('もう一度'), `[${kind}] 確かめの中に札で弓隊を選び直す → 確かめが消える`, `選択 ${u.selectedId}・${armedT2}`);
+    await pointAt(p, q.x, q.y, 700);
+    check((await used(page)).a_tadakatsu === null, `[${kind}] 選び直した後に同じ所を押しても、忠勝の退路の守護は使わない`, `選択 ${(await ui(page)).selectedId}`);
+    await page.waitForTimeout(3300);
+
     // ---------------- 4. 酒井の両翼の采配：包囲の条件の状態 ----------------
     const bs = (await label(page, 'a_sakai')).badge;
     await pointAt(p, bs.x, bs.y, 700);
