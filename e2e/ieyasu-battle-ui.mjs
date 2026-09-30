@@ -139,7 +139,7 @@ if (PARTS.includes('desktop')) {
     await page.keyboard.press('KeyF');
     await page.waitForTimeout(300);
     const r1 = await ab(page, 't_honjin');
-    check(r1.usedAt !== null && Math.abs(r1.until - r1.t - 30) < 0.01, 'F で号令を使った（指揮中）');
+    check(r1.usedAt !== null && Math.abs(r1.until - r1.t - 35) < 0.01, 'F で号令を使った（指揮中）');
     check((await text(page, '.b-abil')).includes('効果中 残り 35 秒'), '能力の欄：効果中 残り 35 秒');
     check(await page.evaluate(() => [...document.querySelectorAll('.b-toast')].some((t) => t.textContent.includes('立て直しの号令'))), '知らせに号令が出る（止めている間も）');
     check(await page.evaluate(() => getComputedStyle(document.querySelector('.b-toast')).pointerEvents === 'none'), '知らせは押せない（pointer-events: none）');
@@ -177,7 +177,7 @@ if (PARTS.includes('desktop')) {
     await page.keyboard.press('Space');
     check((await ui(page)).paused, 'もう一度指揮（一時停止）');
     const rally = await ab(page, 't_honjin');
-    check(rally.until - rally.t < 30 && rally.until - rally.t > 0, '再開して進むと号令の残りが減る', `残り ${(rally.until - rally.t).toFixed(1)} 秒`);
+    check(rally.until - rally.t < 35 && rally.until - rally.t > 0, '再開して進むと号令の残りが減る', `残り ${(rally.until - rally.t).toFixed(1)} 秒`);
 
     // 援護の対象選び
     await press(p, card(4));
