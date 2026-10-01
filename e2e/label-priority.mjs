@@ -148,20 +148,50 @@ async function run(kind, field) {
         let np = null;
         for (let x = lb.l + 4; x < (lb.badge?.l ?? lb.r) - 2 && !np; x += 2) if (!c3.some((o) => o.id !== g2.id && o.z > me.z && inBox(o, x, lb.y))) np = { x, y: lb.y };
         check(!!np, `[${kind}] ${field}：${g2.id}の名札の名前の所が見えている`);
-        if (np) {
-            const before = await snapshot(page);
+        // 確かめ（もう一度押すと使う）は実時間 3 秒（control.ts の ABILITY_ARM。重い端末で確かめが延びて能力を誤って使わないよう、実時間のまま）。
+        // 負荷の高い時は 1 回目の後の読み取りだけで 3 秒を過ぎることがある（2 回目が確かめの外になり、選んだ部隊の名前の所＝地面の移動になる）。
+        // そのときは 2 回目を押さずに、確かめが切れるのを待って選択を外し（PC は Esc、スマホは部隊の体）、最初からやり直す（3 回まで）
+        let s1 = null;
+        let before = null;
+        for (let attempt = 1; np && attempt <= 3; attempt++) {
+            before = await snapshot(page);
+            const t1 = await page.evaluate(() => performance.now());
             await pointAt(p, np.x, np.y, 0);
-            const s1 = await (
+            const r1 = await (
                 await page.waitForFunction(
-                    (id) => {
+                    ([id, t1]) => {
                         const l = document.querySelector(`.b-label[data-id="${id}"]`);
                         if (!(l?.textContent ?? '').includes('もう一度')) return null;
-                        return { text: l.textContent, sel: window.__battle.ui.selectedId, used: window.__battle.state.abilities[id].usedAt, fit: window.__battle.labelFits().find((f) => f.id === id)?.fit };
+                        return { text: l.textContent, sel: window.__battle.ui.selectedId, used: window.__battle.state.abilities[id].usedAt, fit: window.__battle.labelFits().find((f) => f.id === id)?.fit, age: (performance.now() - t1) / 1000 };
                     },
-                    g2.id,
+                    [g2.id, t1],
                     { timeout: 10000, polling: 50 },
                 )
             ).jsonValue();
+            if (r1.age <= 2.2) {
+                s1 = r1;
+                break;
+            }
+            log(`    [${kind}] ${field}：1 回目から確かめを読めるまで ${r1.age.toFixed(1)} 秒（負荷）。2 回目を押さずにやり直す（${attempt} 回目）`);
+            await page.waitForTimeout(Math.max(0, (3.4 - r1.age) * 1000));
+            if (p.phone) {
+                // 部隊の体の、名札に覆われていない所（名札の印を押すと能力を使ってしまう）
+                let bq = await screenOf(page, g2.id);
+                const cs = await covers(page);
+                for (let dy = 0; dy <= 24 && cs.some((c) => inBox(c, bq.x, bq.y)); dy += 3) bq = { ...bq, y: bq.y + 3 };
+                await pointAt(p, bq.x, bq.y, 700);
+            } else {
+                await page.keyboard.press('Escape');
+                await page.waitForTimeout(400);
+            }
+            const u3 = await ui(page);
+            if (u3.selectedId !== null) {
+                log(`    [${kind}] ${field}：選択が外れない（${u3.selectedId}）。やり直しをやめる`);
+                break;
+            }
+        }
+        check(!np || !!s1, `[${kind}] ${field}：${g2.id}の名札の名前を押して、確かめの 3 秒のうちに 2 回目を押せる（3 回まで）`);
+        if (np && s1) {
             await pointAt(p, np.x, np.y, 800);
             check(s1.sel === g2.id && s1.used === null && s1.fit === 'full', `[${kind}] ${field}：${g2.id}の名札の名前を押す → 選んで確かめ（まだ使わない・名札はそのまま）`, s1.text);
             check((await used(page))[g2.id] !== null, `[${kind}] ${field}：もう一度押す → ${g2.id}の能力を使う`);
