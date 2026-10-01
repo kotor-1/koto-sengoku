@@ -186,7 +186,7 @@ describe('一本橋のデータ', () => {
             const d = SB.deployments.enemy.find((x) => x.id === id)!;
             expect(inZone(p.zone, d.x, d.z)).toBe(true);
         }
-        // 橋の守りは狭い正面の区域の外（北の口の先）に構える：橋を渡って来る相手は区域の中（北の口）で一隊ずつ迎えられる
+        // 橋の守りは狭い正面の区域の外（北の口の先）に構える：橋を渡って来る相手とは区域の中（橋の上・北の口）で一隊ずつ当たる
         const g = SB.deployments.enemy.find((x) => x.id === 'bridgehead')!;
         const rule = SB.specialRules![0]!;
         if (rule.type !== 'narrow_frontage') throw new Error('narrow_frontage のはず');
@@ -211,7 +211,7 @@ describe('一本橋：地形に合わない作戦（早送り）', () => {
         expect(r.o.objectives!.primary!.achieved).toBe(false);
     });
 
-    it('全部隊で橋頭へ押し込む（弓は橋の守りを射る）→ 橋の上で一隊ずつ当たり、北の口で迎えられ、両の弓に射られて日没（損害 4 割を超える。作った時 47％）', () => {
+    it('全部隊で橋頭へ押し込む（弓は橋の守りを射る）→ 橋の上で守りに一隊ずつ当たり、両の弓に射られて負けるか日没（損害 4 割を超える。作った時 235 秒で負け・48％）', () => {
         const r = play(PUSH);
         expect(r.o.result).not.toBe('victory');
         expect(r.o.objectives!.primary!.achieved).toBe(false);
@@ -239,7 +239,7 @@ describe('一本橋：地形に合わない作戦（早送り）', () => {
         expect(r2.loss).toBeGreaterThan(0.4);
     });
 
-    it('60 秒ごとに橋頭へ向かい直す（崩れた隊の命令は断られる）→ 日没（損害 4 割を超える。作った時 46％）', () => {
+    it('60 秒ごとに橋頭へ向かい直す（崩れた隊の命令は断られる）→ 負けるか日没（損害 4 割を超える。作った時 283 秒で負け・54％）', () => {
         const re = [60, 120, 180, 240, 300].flatMap((t) => MELEE.map((id) => [t, id, HEAD] as Step));
         const r = play([...PUSH, ...re]);
         expect(r.o.result).not.toBe('victory');
