@@ -194,6 +194,17 @@ export const RULES = {
      */
     settleNear: 45,
     settleSec: 6,
+    /**
+     * 橋の詰まり（橋のある戦場だけ）：橋の上・橋の口（橋の区域から squeezeNear m 以内）で、動こうとしているのに squeezeSec 秒の
+     * あいだ squeezeMove m も進めず、近く（spacing + 2 m 以内）に味方がいる部隊は、味方の中をすり抜ける（橋の幅は部隊の間隔
+     * ほどしかなく、止まっている味方をよけようとすると左右とも水に塞がれ、味方の押し離しで押し戻されて動けなくなるのを防ぐ）。
+     * すり抜けは、すり抜け始めた所から squeezeClear m 進み、spacing m 以内に味方がいなくなるか、動くのをやめたら終わる。
+     * 橋の無い戦場（Version 14 までの 5 戦場など）では何も変わらない
+     */
+    squeezeSec: 3,
+    squeezeMove: 2,
+    squeezeNear: 8,
+    squeezeClear: 6,
 } as const;
 
 /** 種類ごとの性質 */
@@ -328,6 +339,11 @@ export interface UnitState {
     avoid: { id: string; side: -1 | 1 } | null;
     /** この刻みにすり抜けている味方の部隊（通れない所がある戦場で、横をよける幅が無いとき。押し離さない） */
     passThrough: string | null;
+    /**
+     * 橋の詰まり（RULES.squeezeSec）：進みを数え始めた位置・時刻・最後に見た時刻。on なら味方の中をすり抜けている
+     * （味方をよけず、味方と押し離さない）。動こうとしていない刻みには null
+     */
+    squeeze: { x: number; z: number; t: number; seen: number; on: boolean } | null;
     /** 道探しでたどっている道（通れない所がある戦場だけ。goal は作ったときの行き先、pts は通る点、idx は次に向かう点） */
     path: { goalX: number; goalZ: number; builtT: number; pts: { x: number; z: number }[]; idx: number } | null;
     /** 移動の進み（新しい動きの決まりの戦場だけ）：行き先・それまでに近づいた一番近い距離・その距離を 1 m 縮めた時刻・最後に見た時刻 */
@@ -677,6 +693,7 @@ export function createBattle(setup: BattleSetup): BattleState {
             recentLoss: 0,
             avoid: null,
             passThrough: null,
+            squeeze: null,
             path: null,
             moveProg: null,
             wasHidden: false,
@@ -1364,7 +1381,10 @@ function moveUnit(s: BattleState, u: UnitState, p: Plan, dt: number): void {
     const st = KIND_STATS[u.kind];
     u.moving = false;
     u.passThrough = null;
-    if (!p.goal) u.path = null;
+    if (!p.goal) {
+        u.path = null;
+        u.squeeze = null;
+    }
     if (p.goal) {
         const d = dist(u, p.goal);
         let room = d - p.goal.stopAt;
@@ -1378,6 +1398,9 @@ function moveUnit(s: BattleState, u: UnitState, p: Plan, dt: number): void {
         if (room > 0.05) {
             // 少しだけ後ろへ下がるときは、向きを変えずに後ずさりする（半分の速さ）
             const backStep = u.status === 'ready' && u.order.type === 'move' && room < 20 && Math.abs(angleDiff(u.facing, direct)) > 120 * DEG;
+            // 橋の上・橋の口で味方に挟まれて進めない：味方の中をすり抜ける（戦える部隊だけ。撤退・敗走はもとから味方の間をすり抜ける）
+            if (s.field.nav && hasBridge(s.map) && u.status === 'ready' && u.order.type !== 'retreat') trackSqueeze(s, u);
+            else u.squeeze = null;
             // 止まっている味方の部隊が行く手にあれば、横へよけて通る（戦える部隊だけ。撤退・敗走は味方の間をすり抜ける）
             const want = backStep || u.status !== 'ready' || u.order.type === 'retreat' ? direct : steerAround(s, u, aim, u.order.type === 'attack', p.goal);
             let aligned = 0.5;
@@ -1423,6 +1446,7 @@ function moveUnit(s: BattleState, u: UnitState, p: Plan, dt: number): void {
             u.moveProg = null;
             if (u.initiative) settleInitiative(u);
         }
+        if (room <= 0.05) u.squeeze = null;
         if (u.moving) return;
     }
     // 動いていないときの向き
@@ -1437,6 +1461,61 @@ function moveUnit(s: BattleState, u: UnitState, p: Plan, dt: number): void {
         u.facing = turnToward(u.facing, u.faceGoal, st.turnDeg * DEG * dt);
         if (Math.abs(angleDiff(u.facing, u.faceGoal)) < 1e-6) u.faceGoal = null;
     }
+}
+
+/**
+ * 橋の詰まり（RULES.squeezeSec）を数える。動こうとしている刻みに毎回呼ぶ（橋のある戦場の、戦える部隊だけ）。
+ * - 進みを数え始めた位置から squeezeMove m 動いたら、今の位置・時刻から数え直す。
+ * - squeezeSec 秒のあいだ進めず、spacing + 2 m 以内に味方がいて、橋の区域から squeezeNear m 以内にいれば、すり抜けを始める。
+ * - すり抜けは、始めた所から squeezeClear m 進み、spacing m 以内に味方がいなくなったら終わる。
+ * 続けて呼ばれなかった（止まった・斬り合った）ときは数え直す。広い所や、味方がいない所（敵に塞がれている）では始めない
+ */
+function trackSqueeze(s: BattleState, u: UnitState): void {
+    const q = u.squeeze;
+    if (!q || s.t - q.seen > RULES.tick * 1.5) {
+        u.squeeze = { x: u.x, z: u.z, t: s.t, seen: s.t, on: false };
+        return;
+    }
+    q.seen = s.t;
+    const moved = Math.hypot(u.x - q.x, u.z - q.z);
+    const friendNear = (r: number) => s.units.some((o) => o !== u && o.side === u.side && isActive(o) && o.order.type !== 'retreat' && dist(o, u) < r);
+    if (q.on) {
+        if (moved >= RULES.squeezeClear && !friendNear(RULES.spacing)) u.squeeze = { x: u.x, z: u.z, t: s.t, seen: s.t, on: false };
+        return;
+    }
+    if (moved >= RULES.squeezeMove) {
+        q.x = u.x;
+        q.z = u.z;
+        q.t = s.t;
+        return;
+    }
+    if (s.t - q.t < RULES.squeezeSec - 1e-9 || !friendNear(RULES.spacing + 2) || !nearBridge(s.map, u)) return;
+    q.on = true;
+    q.x = u.x;
+    q.z = u.z;
+    q.t = s.t;
+}
+
+/** 橋のある戦場か（地図ごとに 1 回だけ数える） */
+const bridgeMaps = new WeakMap<BattleMap, boolean>();
+function hasBridge(map: BattleMap): boolean {
+    let v = bridgeMaps.get(map);
+    if (v === undefined) bridgeMaps.set(map, (v = map.terrain.some((a) => a.kind === 'bridge')));
+    return v;
+}
+
+/** u が橋の上か、橋の区域から RULES.squeezeNear m 以内（その地点と、まわりの 8 方向の squeezeNear m・その半分の距離で見る） */
+function nearBridge(map: BattleMap, u: { x: number; z: number }): boolean {
+    const bridges = map.terrain.filter((a) => a.kind === 'bridge');
+    const on = (x: number, z: number) => bridges.some((a) => inArea(a, x, z));
+    if (on(u.x, u.z)) return true;
+    for (const r of [RULES.squeezeNear / 2, RULES.squeezeNear]) {
+        for (let k = 0; k < 8; k++) {
+            const a = (k * Math.PI) / 4;
+            if (on(u.x + Math.sin(a) * r, u.z - Math.cos(a) * r)) return true;
+        }
+    }
+    return false;
 }
 
 /**
@@ -1572,6 +1651,11 @@ function stuckNearGoal(s: BattleState, u: UnitState, goal: { x: number; z: numbe
  */
 function steerAround(s: BattleState, u: UnitState, goal: { x: number; z: number }, attacking: boolean, final: { x: number; z: number } = goal): number {
     const direct = headingTo(u.x, u.z, goal.x, goal.z);
+    // 橋の詰まりで味方の中をすり抜けている（trackSqueeze）：よけずに進む
+    if (u.squeeze?.on) {
+        u.avoid = null;
+        return direct;
+    }
     const fx = Math.sin(direct);
     const fz = -Math.cos(direct);
     // 右手の向き
@@ -1678,6 +1762,8 @@ function separate(s: BattleState): void {
             const gap = b.side === a.side ? RULES.spacing : ENEMY_GAP;
             if (d >= gap) continue;
             if (a.passThrough === b.id || b.passThrough === a.id) continue;
+            // 橋の詰まりで味方の中をすり抜けている部隊（trackSqueeze）は、味方と押し離さない
+            if (b.side === a.side && (a.squeeze?.on || b.squeeze?.on)) continue;
             let ux: number;
             let uz: number;
             if (d < 1e-6) {

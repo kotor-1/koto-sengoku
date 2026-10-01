@@ -228,10 +228,15 @@ describe('一本橋：地形に合わない作戦（早送り）', () => {
         expect(r.o.elapsedSec).toBeLessThan(240);
     });
 
-    it('全部隊で橋の守りへ攻めかかる（弓も）→ 負ける。30 秒ごとに近い敵へ当て直しても負ける', () => {
+    it('全部隊で橋の守りへ攻めかかる（弓も）→ 勝てない（橋頭を取れず、損害 4 割超）。30 秒ごとに近い敵へ当て直しても負ける', () => {
         const all: Step[] = [...MELEE, 'a_yumi'].map((id) => [0, id, atk('e_guard')] as Step);
         const r = play(all);
-        expect(r.o.result).toBe('defeat');
+        // 橋の詰まりの直し（sim.ts の trackSqueeze：橋の口で止まっている味方に挟まれた部隊は、味方の中をすり抜ける）で数字が変わった：
+        // 直す前 192.3 秒で負け（全軍の崩れ）・損害 47.8％ → 直した後 日没（480 秒・撤退）・損害 43.4％。詰まっていた隊が橋を渡り切って
+        // 橋の守りを 58.5 秒に崩すが、狭い正面で一隊ずつ削られ、弓以外の五隊は敗走し、橋頭は取れない（主目標は未達成）
+        expect(r.o.result).not.toBe('victory');
+        expect(r.o.objectives!.primary!.achieved).toBe(false);
+        expect(r.loss).toBeGreaterThan(0.4);
         const again = [30, 60, 90, 120, 150, 180, 210, 240, 270, 300].flatMap((t) => MELEE.map((id) => [t, id, 'nearest'] as Step));
         const r2 = play([...all, ...again]);
         expect(r2.o.result).not.toBe('victory');
