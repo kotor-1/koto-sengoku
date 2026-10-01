@@ -1140,9 +1140,21 @@ export function fieldRuleTexts(s: BattleState): string[] {
         if (hg.defenseVsLower !== undefined) parts.push(`下から攻める相手の損害 ×${hg.defenseVsLower}`);
         if (hg.rangeBonus) parts.push(`弓の射程 +${hg.rangeBonus} m`);
         if (hg.sightBonus) parts.push(`見通し +${hg.sightBonus} m`);
+        if (hg.arrowDealVsLower !== undefined && hg.arrowDealVsLower !== 1) parts.push(`低い相手へ射る矢 ×${hg.arrowDealVsLower}`);
         if (parts.length) out.push(`高所：${parts.join('・')}`);
     }
-    if (s.map.terrain.some((a) => a.kind === 'river')) out.push('深い川は渡れない（浅瀬だけ渡れる）');
+    // 水田（動きは部隊の種類で違う。値は合戦の決まり（既定＋戦場の上書き）から読む）
+    if (s.map.terrain.some((a) => a.kind === 'paddy')) {
+        const p = s.field.terrain.paddy;
+        const sp = (k: 'yari' | 'kiba' | 'yumi') => Math.round(p.speed * (p.kindSpeed[k] ?? 1) * 100) / 100;
+        out.push(`水田：動き 槍・本陣 ×${sp('yari')}・騎馬 ×${sp('kiba')}・弓 ×${sp('yumi')}、中で斬り合うと与える損害 ×${p.dealMul}・受ける損害 ×${p.takeMul}（街道・畦道は速い）`);
+    }
+    if (s.map.terrain.some((a) => a.kind === 'bridge')) out.push('橋：深い川の上を渡れる細い道（動きは道と同じ）');
+    if (s.map.terrain.some((a) => a.kind === 'river')) {
+        const ford = s.map.terrain.some((a) => a.kind === 'ford');
+        const bridge = s.map.terrain.some((a) => a.kind === 'bridge');
+        out.push(bridge ? `深い川は渡れない（${ford ? '浅瀬と橋' : '橋'}だけ渡れる）` : '深い川は渡れない（浅瀬だけ渡れる）');
+    }
     if (s.map.terrain.some((a) => a.kind === 'cliff')) out.push('崖は通れない');
     return out;
 }
@@ -1247,6 +1259,8 @@ const TERRAIN_LABEL: Record<string, string> = {
     river: '深い川（渡れない）',
     ford: '浅瀬（遅い・戦うと不利）',
     cliff: '崖（通れない）',
+    bridge: '橋',
+    paddy: '水田（とても遅い）',
 };
 
 /** 四角の区域（川）の名札の置き場所：中心の行で、浅瀬と重ならない所 */
@@ -1267,8 +1281,25 @@ export function mapLabels(s: BattleState): MapLabel[] {
         const name = TERRAIN_LABEL[a.kind];
         if (!name) return;
         if (a.circle) out.push({ id: `t${i}`, text: name, x: a.circle.cx + a.circle.r * 0.55, z: a.circle.cz + a.circle.r * 0.75, y: 2 });
-        else if (a.rect) {
+        else if (a.capsule) {
+            // 尾根（カプセルの丘）：線分の中点から南へ幅の 7 割
+            const c = a.capsule;
+            out.push({ id: `t${i}`, text: '尾根', x: (c.ax + c.bx) / 2, z: Math.min((c.az + c.bz) / 2 + c.r * 0.7, s.map.depth / 2 - 20), y: 2 });
+        } else if (a.rect) {
             const r = a.rect;
+            if (a.kind === 'bridge') {
+                // 橋は東の欄干の外
+                out.push({ id: `t${i}`, text: name, x: Math.min(r.x1 + 12, s.map.width / 2 - 20), z: (r.z0 + r.z1) / 2, y: 1 });
+                return;
+            }
+            if (a.kind === 'paddy') {
+                // 水田は区画が多いので、ほかの水田の名札から 150 m 以内には付けない
+                const cx = (r.x0 + r.x1) / 2;
+                const cz = (r.z0 + r.z1) / 2;
+                if (out.some((l) => l.text === name && Math.hypot(l.x - cx, l.z - cz) < 150)) return;
+                out.push({ id: `t${i}`, text: name, x: cx, z: cz, y: 1 });
+                return;
+            }
             if (a.kind === 'river') {
                 const p = rectLabelPoint(s, r, fords);
                 out.push({ id: `t${i}`, text: name, x: p.x, z: p.z, y: 0.5 });

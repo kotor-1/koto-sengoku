@@ -87,12 +87,18 @@ export type TerrainKind =
     | 'road' // 道：動きが少し速い
     | 'river' // 深い川：通れない（浅瀬 ford の重なる所だけ渡れる）
     | 'ford' // 浅瀬：渡れるが、とても遅く、中で戦うと不利
-    | 'cliff'; // 崖・岩：通れない
+    | 'cliff' // 崖・岩：通れない
+    | 'bridge' // 橋：深い川の上の通れる細い帯（動きは道と同じ）。狭い正面（narrow_frontage）と組み合わせて、同時に戦える部隊の数を絞る
+    | 'paddy'; // 水田：動きがとても遅い（部隊の種類ごとに違う）。中で斬り合うと不利。畦道・街道は道（road）として田の間に通す
 export interface TerrainArea {
     kind: TerrainKind;
-    /** 四角形（x0〜x1, z0〜z1）か円（cx, cz, r）のどちらか */
+    /**
+     * 形は四角形（x0〜x1, z0〜z1）・円（cx, cz, r）・カプセル（線分 (ax,az)〜(bx,bz) から r 以内。細長い丘＝尾根）のどれか 1 つ。
+     * カプセルの丘の高さは、線分からの距離 d で height × (1 − (d/r)²)（円の丘と同じ丸い頂を、線分に沿って伸ばした形）
+     */
     rect?: { x0: number; x1: number; z0: number; z1: number };
     circle?: { cx: number; cz: number; r: number };
+    capsule?: { ax: number; az: number; bx: number; bz: number; r: number };
     /** 丘の高さ（m。表示と守りの強さの計算に使う） */
     height?: number;
 }
@@ -132,6 +138,8 @@ export interface HighGroundRule {
     rangeBonus?: number;
     /** 高さ minDiff 以上の所にいる部隊は、隠れている相手をこの距離（m）だけ遠くから見つける */
     sightBonus?: number;
+    /** 射手が相手より minDiff 以上高いとき、矢の損害に掛ける倍率（谷の両側の高所から谷底を射る。既定 1＝変えない） */
+    arrowDealVsLower?: number;
 }
 
 /**

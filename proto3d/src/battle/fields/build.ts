@@ -14,8 +14,8 @@
  */
 import type { BattleMap, BattleSetup, FieldRules, ObjectiveDef, Side, TerrainKind, UnitDef } from '../types';
 import { RULES, elevationAt } from '../sim';
-import { createFieldEnv, inZone, zoneCenter } from '../fieldRules';
-import { isPassable, reachable } from '../pathfind';
+import { areaCenter, createFieldEnv, inZone, zoneCenter } from '../fieldRules';
+import { NAV_CELL, isPassable, reachable } from '../pathfind';
 import { generalById } from '../generals';
 import { ABILITY_DATA } from '../abilities';
 import type { BattlefieldDef, FieldPreset, PresetUnit } from './types';
@@ -52,6 +52,7 @@ export function fieldRulesOf(field: BattlefieldDef): FieldRules | undefined {
     if (field.highGround) r.highGround = field.highGround;
     if (field.specialRules && field.specialRules.length) r.specialRules = field.specialRules;
     if (field.passable) r.passable = field.passable;
+    if (field.pathfinding) r.pathfinding = true;
     if (!field.keepV11Movement) r.settleMoves = true;
     return Object.keys(r).length ? r : undefined;
 }
@@ -171,7 +172,76 @@ function validateRules(field: BattlefieldDef): string[] {
         if (!nonNegative(hg.minDiff)) out.push('高所の minDiff は 0 以上の数');
         if (!nonNegative(hg.rangeBonus)) out.push('高所の rangeBonus は 0 以上の数');
         if (!nonNegative(hg.sightBonus)) out.push('高所の sightBonus は 0 以上の数');
+        if (!positive(hg.arrowDealVsLower)) out.push('高所の arrowDealVsLower は 0 より大きい数');
     }
+    return out;
+}
+
+/**
+ * 地形の形の検査：形（四角・円・カプセル）がちょうど 1 つ、大きさが正しい。橋は四角で、深い川の上を渡っている
+ * （真ん中が川の中、長い向きの両端の先が川の外の通れる所で、両端の間を橋の上でまっすぐ通れる）。
+ * 丘（尾根）の頂へ、味方の退き口から登る道がある（頂が崖・川の中にない）。
+ */
+function validateTerrain(
+    field: BattlefieldDef,
+    ok: (x: number, z: number) => boolean,
+    fromExit: (side: Side, x: number, z: number) => boolean,
+): string[] {
+    const out: string[] = [];
+    const rivers = field.terrain.filter((a) => a.kind === 'river');
+    field.terrain.forEach((a, i) => {
+        const tag = `地形 ${i}（${a.kind}）`;
+        const shapes = [a.rect, a.circle, a.capsule].filter(Boolean).length;
+        if (shapes !== 1) {
+            out.push(`${tag} の形（rect・circle・capsule）はちょうど 1 つ`);
+            return;
+        }
+        if (a.rect && !(a.rect.x1 > a.rect.x0 && a.rect.z1 > a.rect.z0)) out.push(`${tag} の四角が正しくない`);
+        if (a.circle && !(a.circle.r > 0)) out.push(`${tag} の円の半径は 0 より大きい数`);
+        if (a.capsule && !(a.capsule.r > 0)) out.push(`${tag} のカプセルの幅 r は 0 より大きい数`);
+        if (a.kind === 'hill' && a.height !== undefined && !(a.height > 0)) out.push(`${tag} の高さは 0 より大きい数`);
+        if (a.kind === 'bridge') {
+            if (!a.rect) {
+                out.push(`${tag} の橋は四角で書く`);
+                return;
+            }
+            const r = a.rect;
+            const cx = (r.x0 + r.x1) / 2;
+            const cz = (r.z0 + r.z1) / 2;
+            if (!rivers.some((v) => inZone(v, cx, cz))) out.push(`${tag} の橋の真ん中が深い川の上にない`);
+            // 長い向きの両端の、少し先（格子 1 つ分）
+            const alongZ = r.z1 - r.z0 >= r.x1 - r.x0;
+            const step = NAV_CELL;
+            const ends = alongZ
+                ? [
+                      { x: cx, z: r.z0 - step },
+                      { x: cx, z: r.z1 + step },
+                  ]
+                : [
+                      { x: r.x0 - step, z: cz },
+                      { x: r.x1 + step, z: cz },
+                  ];
+            const endsOk = ends.every((p) => ok(p.x, p.z) && !rivers.some((v) => inZone(v, p.x, p.z)));
+            if (!endsOk) out.push(`${tag} の橋の両端の先が通れる岸にない（川を渡り切っていない）`);
+            // 橋の上の真ん中の筋が、端から端まで通れる（格子より細い橋・崖で塞いだ橋を見つける）
+            const len = alongZ ? r.z1 - r.z0 : r.x1 - r.x0;
+            const n = Math.max(2, Math.ceil(len / (step * 0.5)));
+            for (let k = 0; k <= n; k++) {
+                const t = k / n;
+                const x = alongZ ? cx : r.x0 + (r.x1 - r.x0) * t;
+                const z = alongZ ? r.z0 + (r.z1 - r.z0) * t : cz;
+                if (!ok(x, z)) {
+                    out.push(`${tag} の橋の上に通れない所がある（細すぎるか、崖で塞がれている）`);
+                    break;
+                }
+            }
+        }
+        if (a.kind === 'hill') {
+            const c = areaCenter(a);
+            if (!ok(c.x, c.z)) out.push(`${tag} の丘の頂が通れる所にない`);
+            else if (!fromExit('ally', c.x, c.z)) out.push(`${tag} の丘の頂へ味方の退き口から登る道がない`);
+        }
+    });
     return out;
 }
 
@@ -181,6 +251,7 @@ function validateRules(field: BattlefieldDef): string[] {
  * - 味方・敵の配置の枠から、それぞれの退き口へ道がある。味方が入る目標の区域・援軍の出現地点・敵の考えの地点へも、その陣営の退き口から道がある
  *   （崖・川で囲われた島に置いていない）
  * - 地形の決まりの速さ・倍率は 0 より大きい（川・崖の速さは見ない）、高所の数値・日没の秒数が正しい
+ * - 地形の形が 1 つで正しい。橋は深い川を渡っている（両端の先が通れる岸）。丘・尾根の頂へ味方の退き口から登る道がある
  * - 編成ごとに：部隊の id が重ならない・陣営ごとの部隊数が上限（RULES.maxUnitsPerSide）以下・本陣が陣営に 1 つ以上・
  *   枠／援軍が有る・目標の指す部隊が有る（救出・部隊を残すは味方、崩すは敵の部隊）・武将（generalId）と能力（ability）が有る
  * - 目標の id が重ならない・援軍の目標の援軍が有る
@@ -199,6 +270,7 @@ export function validateField(field: BattlefieldDef): string[] {
     };
     if (!(field.width > 0 && field.depth > 0)) out.push('広さが正しくない');
     out.push(...validateRules(field));
+    out.push(...validateTerrain(field, ok, fromExit));
     for (const side of ['ally', 'enemy'] as Side[]) {
         const e = field.exits[side];
         if (!ok(e.x, e.z)) out.push(`${side} の退き口が通れる所にない`);

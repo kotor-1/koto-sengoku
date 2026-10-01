@@ -119,6 +119,11 @@ export interface BattlefieldDef {
     terrain: TerrainArea[];
     /** 通行可能範囲（省けば全体。深い川・崖の区域は別に通れない） */
     passable?: { x0: number; x1: number; z0: number; z1: number };
+    /**
+     * true なら、通れない所（川・崖）が無くても格子の道探しで動く（FieldRules.pathfinding）。水田のように遅い地形の間に速い道がある戦場で、
+     * 部隊が道を選んで進むように付ける。川・崖のある戦場はいつも道探しをするので要らない
+     */
+    pathfinding?: boolean;
     /** 移動速度補正・損害・視界への影響（地形ごとの上書き。省いた地形は既定） */
     terrainRules?: Partial<Record<TerrainKind, TerrainRule>>;
     /** 高低差・有利地点の効果（省けば既定） */

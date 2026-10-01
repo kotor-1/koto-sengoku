@@ -4,8 +4,11 @@
  *
  * - 既定（TERRAIN_DEFAULTS・HIGH_GROUND_DEFAULTS）は Version 11 の決まりと同じ値（sim.ts の RULES・TERRAIN_SPEED と揃える）。
  *   BattleSetup.fieldRules を省いた合戦（国境の原・歴史分岐の章）は、既定だけで今までと 1 刻みも同じ計算になる。
- * - 地形が重なるときの速さは TERRAIN_PRIORITY の順で最初に当たった 1 つ（湿地 > 浅瀬 > 林 > 道 > 丘）。損害・矢の倍率は、重なる地形の分を掛ける。
- * - 通れない所：深い川（浅瀬の重なる所を除く）・崖・fieldRules.passable の外。通れない所がある戦場（または pathfinding: true）だけ、
+ * - 地形が重なるときの速さは TERRAIN_PRIORITY の順で最初に当たった 1 つ（橋 > 湿地 > 浅瀬 > 林 > 道 > 水田 > 丘）。損害・矢の倍率は、重なる地形の分を掛ける。
+ *   水田の中に通す畦道・街道（道）は、道が水田より先に当たるので速い（ただし斬り合いの倍率は重なる分を掛けるので、街道は水田の区域に重ねず、
+ *   水田を街道で分けて置く）。
+ * - 通れない所：深い川（浅瀬・橋の重なる所を除く）・崖・fieldRules.passable の外。
+ * - 区域の形は四角・円・カプセル（線分＋幅。細長い丘＝尾根）。通れない所がある戦場（または pathfinding: true）だけ、
  *   格子の道探し（pathfind.ts）を作る。
  *
  * sim.ts を実行時に import しない（sim.ts がこのファイルを import するため）。
@@ -28,6 +31,9 @@ export interface ResolvedTerrainRule {
  * 地形の既定（Version 11 と同じ値。浅瀬は設計 docs/battlefields-design.md §3 の既定）。
  * 林：遅い・矢 ×0.6・60 m まで見えない（RULES.woodsSight・woodsArcheryMul）。湿地：とても遅い・与える ×0.8・受ける ×1.15（RULES.marsh*）。
  * 深い川・崖は通れない（速さ 0）。
+ * 橋（第2群で足した）：動きは道と同じ ×1.2、ほかは変えない（狭い正面は特殊ルール narrow_frontage で別に付ける）。
+ * 水田（第2群で足した）：動き ×0.3。部隊の種類ごとに kindSpeed を掛ける（騎馬 ×2/3 で合わせて ×0.2、弓 ×7/6 で合わせて ×0.35。
+ * 槍・本陣は ×0.3 のまま）。中で斬り合うと与える ×0.85・受ける ×1.1（湿地の ×0.8・×1.15 より少し軽い）。戦場ごとに terrainRules.paddy で上書きできる。
  */
 export const TERRAIN_DEFAULTS: Readonly<Record<TerrainKind, Readonly<ResolvedTerrainRule>>> = {
     hill: { speed: 1, kindSpeed: {}, dealMul: 1, takeMul: 1, arrowTakeMul: 1, hideSight: null },
@@ -37,13 +43,18 @@ export const TERRAIN_DEFAULTS: Readonly<Record<TerrainKind, Readonly<ResolvedTer
     river: { speed: 0, kindSpeed: {}, dealMul: 1, takeMul: 1, arrowTakeMul: 1, hideSight: null },
     ford: { speed: 0.4, kindSpeed: {}, dealMul: 0.8, takeMul: 1.2, arrowTakeMul: 1, hideSight: null },
     cliff: { speed: 0, kindSpeed: {}, dealMul: 1, takeMul: 1, arrowTakeMul: 1, hideSight: null },
+    bridge: { speed: 1.2, kindSpeed: {}, dealMul: 1, takeMul: 1, arrowTakeMul: 1, hideSight: null },
+    paddy: { speed: 0.3, kindSpeed: { kiba: 2 / 3, yumi: 7 / 6 }, dealMul: 0.85, takeMul: 1.1, arrowTakeMul: 1, hideSight: null },
 };
 
-/** 速さを決める地形の順（重なるときは最初に当たった 1 つ）。深い川・崖は通れないので速さの順には入れない */
-export const TERRAIN_PRIORITY: readonly TerrainKind[] = ['marsh', 'ford', 'woods', 'road', 'hill'];
+/**
+ * 速さを決める地形の順（重なるときは最初に当たった 1 つ）。深い川・崖は通れないので速さの順には入れない。
+ * 橋は川の上でいつも橋の速さ。道は水田より先（田の中の畦道・街道は速い）。橋・水田の無い戦場では、今までの順（湿地 > 浅瀬 > 林 > 道 > 丘）と同じ
+ */
+export const TERRAIN_PRIORITY: readonly TerrainKind[] = ['bridge', 'marsh', 'ford', 'woods', 'road', 'paddy', 'hill'];
 
-/** 高低差の既定（Version 11：下から正面に来る相手 ×0.7、高さの差 2 m 以上。射程・視界の上乗せなし） */
-export const HIGH_GROUND_DEFAULTS: Readonly<Required<HighGroundRule>> = { defenseVsLower: 0.7, minDiff: 2, rangeBonus: 0, sightBonus: 0 };
+/** 高低差の既定（Version 11：下から正面に来る相手 ×0.7、高さの差 2 m 以上。射程・視界の上乗せなし。高所から射る矢の倍率なし） */
+export const HIGH_GROUND_DEFAULTS: Readonly<Required<HighGroundRule>> = { defenseVsLower: 0.7, minDiff: 2, rangeBonus: 0, sightBonus: 0, arrowDealVsLower: 1 };
 
 /** 合戦の計算で使う、戦場ごとの決まり */
 export interface FieldEnv {
@@ -69,7 +80,24 @@ export interface FieldEnv {
 export function inZone(a: Zone | TerrainArea, x: number, z: number): boolean {
     if (a.rect) return x >= a.rect.x0 && x <= a.rect.x1 && z >= a.rect.z0 && z <= a.rect.z1;
     if (a.circle) return Math.hypot(x - a.circle.cx, z - a.circle.cz) <= a.circle.r;
+    const c = 'capsule' in a ? a.capsule : undefined;
+    if (c) return capsuleDist(c, x, z) <= c.r;
     return false;
+}
+
+/** カプセル（線分 (ax,az)〜(bx,bz)）の線分から (x, z) までの距離（m） */
+export function capsuleDist(c: { ax: number; az: number; bx: number; bz: number }, x: number, z: number): number {
+    const dx = c.bx - c.ax;
+    const dz = c.bz - c.az;
+    const len2 = dx * dx + dz * dz;
+    const t = len2 > 0 ? Math.max(0, Math.min(1, ((x - c.ax) * dx + (z - c.az) * dz) / len2)) : 0;
+    return Math.hypot(x - (c.ax + dx * t), z - (c.az + dz * t));
+}
+
+/** 地形の区域の中心（カプセルは線分の中点。丘の頂・名札の置き場所に使う） */
+export function areaCenter(a: TerrainArea): { x: number; z: number } {
+    if (a.capsule) return { x: (a.capsule.ax + a.capsule.bx) / 2, z: (a.capsule.az + a.capsule.bz) / 2 };
+    return zoneCenter(a);
 }
 /** 区域の中心（目標の印・敵の考えの行き先に使う） */
 export function zoneCenter(a: Zone): { x: number; z: number } {
@@ -87,12 +115,12 @@ export function hasBlockingTerrain(map: BattleMap): boolean {
     return map.terrain.some((a) => a.kind === 'river' || a.kind === 'cliff');
 }
 
-/** その地点を通れるか（戦場の外・深い川（浅瀬を除く）・崖・通れる範囲の外は通れない） */
+/** その地点を通れるか（戦場の外・深い川（浅瀬・橋を除く）・崖・通れる範囲の外は通れない） */
 export function passableIn(map: BattleMap, passable: FieldEnv['passable'], x: number, z: number): boolean {
     if (Math.abs(x) > map.width / 2 || Math.abs(z) > map.depth / 2) return false;
     if (passable && (x < passable.x0 || x > passable.x1 || z < passable.z0 || z > passable.z1)) return false;
     if (inKind(map, 'cliff', x, z)) return false;
-    if (inKind(map, 'river', x, z) && !inKind(map, 'ford', x, z)) return false;
+    if (inKind(map, 'river', x, z) && !inKind(map, 'ford', x, z) && !inKind(map, 'bridge', x, z)) return false;
     return true;
 }
 

@@ -57,6 +57,7 @@ import { createAiState, createInitiative, thinkEnemy, thinkGenerals, type AiStat
 import {
     TERRAIN_DEFAULTS,
     arrowTakeMulIn,
+    capsuleDist,
     createFieldEnv,
     dealMulIn,
     hideSightIn,
@@ -215,6 +216,8 @@ export const TERRAIN_SPEED: Record<TerrainKind, number> = {
     river: TERRAIN_DEFAULTS.river.speed,
     ford: TERRAIN_DEFAULTS.ford.speed,
     cliff: TERRAIN_DEFAULTS.cliff.speed,
+    bridge: TERRAIN_DEFAULTS.bridge.speed,
+    paddy: TERRAIN_DEFAULTS.paddy.speed,
 };
 
 /** 画面の知らせ（出来事の記録）の種類 */
@@ -326,7 +329,7 @@ export interface UnitState {
     /** 道探しでたどっている道（通れない所がある戦場だけ。goal は作ったときの行き先、pts は通る点、idx は次に向かう点） */
     path: { goalX: number; goalZ: number; builtT: number; pts: { x: number; z: number }[]; idx: number } | null;
     /** 移動の進み（新しい動きの決まりの戦場だけ）：行き先・それまでに近づいた一番近い距離・その距離を 1 m 縮めた時刻・最後に見た時刻 */
-    moveProg: { gx: number; gz: number; best: number; t: number; seen: number } | null;
+    moveProg: { gx: number; gz: number; best: number; bestLeft: number; t: number; seen: number } | null;
     /** 戦場にいて相手から隠れていたことがあり、まだ見つかっていない（林の奇襲の判定） */
     wasHidden: boolean;
     /** 隠れていた所から相手に見つかった時刻 */
@@ -501,6 +504,7 @@ export function inTerrain(map: BattleMap, kind: TerrainKind, x: number, z: numbe
 }
 /**
  * 地面の高さ（m）。丘は円で、中心が height、縁が 0 の丸い頂（1 − (d/r)²）。四角の丘は一様な高さ。
+ * カプセルの丘（尾根）は、線分からの距離 d で同じ式（線分の上が height、幅 r の所で 0）。
  * 表示（view）も同じ式で地面を盛り上げると、見た目と守りの計算が合う。
  */
 export function elevationAt(map: BattleMap, x: number, z: number): number {
@@ -510,6 +514,9 @@ export function elevationAt(map: BattleMap, x: number, z: number): number {
         const H = a.height ?? 10;
         if (a.circle) {
             const d = Math.hypot(x - a.circle.cx, z - a.circle.cz) / a.circle.r;
+            if (d < 1) h = Math.max(h, H * (1 - d * d));
+        } else if (a.capsule) {
+            const d = capsuleDist(a.capsule, x, z) / a.capsule.r;
             if (d < 1) h = Math.max(h, H * (1 - d * d));
         } else if (a.rect && inArea(a, x, z)) h = Math.max(h, H);
     }
@@ -1343,6 +1350,9 @@ export function rangedDamage(s: BattleState, a: UnitState, d: UnitState): number
     let m = RULES.rangedRate * KIND_STATS[d.kind].defence * moraleMul(a) * Math.max(0.6, fall);
     // 林など（中の相手への矢。既定は林 ×0.6）
     m *= arrowTakeMulIn(s.map, s.field, d.x, d.z);
+    // 高所から低所へ射る矢（谷の両側から谷底など。既定 1 の戦場では計算しない）
+    const hg = s.field.high;
+    if (hg.arrowDealVsLower !== 1 && elevationAt(s.map, a.x, a.z) - elevationAt(s.map, d.x, d.z) >= hg.minDiff) m *= hg.arrowDealVsLower;
     m *= abilityDealMul(s, a) * abilityTakeMul(s, d);
     return a.strength * m;
 }
@@ -1358,7 +1368,7 @@ function moveUnit(s: BattleState, u: UnitState, p: Plan, dt: number): void {
         // 行き先が止まっている味方のすぐ隣で、もうその味方に触れる所まで来た：ここで着いたことにする（押しのけない）
         if (room > 0.05 && u.status === 'ready' && u.order.type === 'move' && friendHoldsGoal(s, u, p.goal)) room = 0;
         // 新しい動きの決まりの戦場：行き先の近くで進めなくなった移動は、着いたことにする
-        if (room > 0.05 && s.field.settleMoves && u.status === 'ready' && u.order.type === 'move' && stuckNearGoal(s, u, p.goal, d)) room = 0;
+        if (room > 0.05 && s.field.settleMoves && u.status === 'ready' && u.order.type === 'move' && stuckNearGoal(s, u, p.goal, d, pathLeft(u, p.goal, d))) room = 0;
         // 通れない所がある戦場では、道探しの道の次の点へ向かう（無い戦場では行き先へまっすぐ）
         const aim = s.field.nav && room > 0.05 ? pathAim(s, u, p.goal) : p.goal;
         const direct = headingTo(u.x, u.z, aim.x, aim.z);
@@ -1497,22 +1507,40 @@ function entersObjectiveZone(s: BattleState, u: UnitState, goal: { x: number; z:
 }
 
 /**
+ * 行き先までの残りの道のり（m）。道探しの道があれば、今の位置から次の点・残りの点を順にたどった長さ（道が行き先から遠ざかる回り道
+ * ＝橋や水田の街道へ回る間も、道のりは減っていく）。道が無ければ（まっすぐ進む）行き先までの距離 d のまま
+ */
+function pathLeft(u: UnitState, goal: { x: number; z: number }, d: number): number {
+    const P = u.path;
+    if (!P || Math.abs(P.goalX - goal.x) > 0.5 || Math.abs(P.goalZ - goal.z) > 0.5 || P.idx >= P.pts.length) return d;
+    let len = dist(u, P.pts[P.idx]!);
+    for (let i = P.idx + 1; i < P.pts.length; i++) len += Math.hypot(P.pts[i]!.x - P.pts[i - 1]!.x, P.pts[i]!.z - P.pts[i - 1]!.z);
+    return Math.max(len, d);
+}
+
+/**
  * 移動の行き先の近く（RULES.settleNear m 以内）で、RULES.settleSec 秒（近くの味方が動いていれば 3 倍）のあいだ行き先へ 1 m も近づけていない。
  * 遠くても、2 倍の時間近づけず、近くの味方がみな止まっている（動く・斬り合う味方がいない＝行き詰まっている）。近く（36 m）に戦える敵が
  * いる間は数えない（新しい動きの決まりの戦場だけ。
- * 毎刻み呼んで進みを覚える。行き先が変わった・続けて呼ばれなかったときは数え直す）
+ * 毎刻み呼んで進みを覚える。行き先が変わった・続けて呼ばれなかったときは数え直す）。
+ * 「近づいた」は、行き先までの距離 d が縮んだか、道探しの道が回り道（残りの道のり left が d より長い）の間は残りの道のりが縮んだか
+ * （第2群：橋・水田の街道へ回る間に、行き先から遠ざかっても止まらない。まっすぐの道では left と d は同じなので、今までと 1 刻みも同じ）
  */
-function stuckNearGoal(s: BattleState, u: UnitState, goal: { x: number; z: number }, d: number): boolean {
+function stuckNearGoal(s: BattleState, u: UnitState, goal: { x: number; z: number }, d: number, left: number = d): boolean {
     const m = u.moveProg;
     // 初め・行き先が変わった・途中で見ていない刻みがあった（斬り合い・命令の出し直し）：今から数え直す
     if (!m || Math.abs(m.gx - goal.x) > 0.5 || Math.abs(m.gz - goal.z) > 0.5 || s.t - m.seen > RULES.tick * 1.5) {
-        u.moveProg = { gx: goal.x, gz: goal.z, best: d, t: s.t, seen: s.t };
+        // 残りの道のりは、道探しの道ができてから数える（最初の刻みは道がまだ無く、まっすぐの距離になっている）
+        u.moveProg = { gx: goal.x, gz: goal.z, best: d, bestLeft: Infinity, t: s.t, seen: s.t };
         return false;
     }
     m.seen = s.t;
     // 行く手を敵に塞がれている（近くに戦える敵がいる）間は数えない（敵がどけば、また進む）
     const foeNear = s.units.some((o) => o.side !== u.side && isActive(o) && dist(o, u) < RULES.spacing * 2);
-    if (d <= m.best - 1 || foeNear) {
+    // 近づいたかは、行き先までの距離か、残りの道のり（道探しの回り道の間）のどちらかが 1 m 縮んだかで見る
+    const pathGain = left > d + 1 && left <= m.bestLeft - 1;
+    if (pathGain) m.bestLeft = left;
+    if (d <= m.best - 1 || pathGain || foeNear) {
         m.best = Math.min(m.best, d);
         m.t = s.t;
         return false;

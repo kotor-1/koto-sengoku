@@ -1,6 +1,6 @@
 /**
  * 合戦場のデータ（proto3d/src/battle/fields/）：20 種の分類・全戦場の検査（validateField）・組み立て（buildBattleSetup）・
- * 国境の原のデータ化・5 戦場の最初の案が動いて決着がつくこと。
+ * 国境の原のデータ化・演習の 10 戦場（第1群・第2群）の案が動いて決着がつくこと。
  * 検査はデータを読むだけ。合戦は「早送り」（runToEnd で一気に進める）。釣り合いの調整はここでは確かめない（戦場ごとに後で行う）。
  */
 import { describe, expect, it } from 'vitest';
@@ -12,13 +12,14 @@ import { BORDER_FIELD_DEF } from '../proto3d/src/battle/fields/border_field';
 const clone = (f: BattlefieldDef): BattlefieldDef => structuredClone(f);
 
 describe('20 種の分類と一覧', () => {
-    it('分類は 20 種で重ならない。印の付いた 5 種（と国境の原の plains）だけ戦場データがある', () => {
+    it('分類は 20 種で重ならない。印の付いた 10 種（第1群 5・第2群 5。国境の原は plains）だけ戦場データがある', () => {
         expect(FIELD_KINDS).toHaveLength(20);
         expect(new Set(FIELD_KINDS.map((k) => k.kind)).size).toBe(20);
         const implemented = FIELD_KINDS.filter((k) => k.implemented).map((k) => k.kind).sort();
-        expect(implemented).toEqual(['forest', 'hills', 'mountain_pass', 'plains', 'river_ford']);
+        expect(implemented).toEqual(['forest', 'hills', 'mountain_pass', 'multi_bridge', 'paddy', 'plains', 'ridge', 'river_ford', 'single_bridge', 'valley']);
         for (const f of FIELDS) expect(implemented).toContain(f.kind);
-        expect(PRACTICE_ORDER).toEqual(['plains', 'river_ford', 'hills', 'forest', 'mountain_pass']);
+        // 演習は第1群の 5 戦場の後に第2群の 5 戦場（第1群の順は変えない）
+        expect(PRACTICE_ORDER).toEqual(['plains', 'river_ford', 'hills', 'forest', 'mountain_pass', 'single_bridge', 'multi_bridge', 'ridge', 'valley', 'paddy']);
         expect(practiceFields().map((f) => f.id)).toEqual([...PRACTICE_ORDER]);
         expect(new Set(FIELDS.map((f) => f.id)).size).toBe(FIELDS.length);
         expect(getField('nowhere')).toBeUndefined();
@@ -191,7 +192,7 @@ describe('組み立て（buildBattleSetup）', () => {
     });
 });
 
-describe('5 戦場の最初の案が動いて、決着がつく（早送り。釣り合いは後で戦場ごとに調整する）', () => {
+describe('演習の 10 戦場（第1群・第2群）の案が動いて、決着がつく（早送り。釣り合いは後で戦場ごとに調整する）', () => {
     for (const id of PRACTICE_ORDER) {
         it(`${id}：何もしない・全軍で近い敵へ攻めかかる、のどちらでも最後まで進み、主目標・副目標が結果に入る`, () => {
             const f = getField(id)!;

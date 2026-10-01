@@ -15,7 +15,8 @@
  *   能力を使った瞬間に、持つ部隊（対象の要る能力は対象も）の周りに 0.8 秒の波紋（広がって消える）。効果が切れたときは小さく縮む波紋。
  *   状態の能力の記録（usedAt・ended）を毎フレーム見て出すので、敵方の能力・早送りの中で使った能力でも出る。
  * - 戦前の約束：南の「味方の陣」（安全地点）の輪と、対象の部隊を囲む輪（同じ色）。
- * - 合戦場のデータの地形（簡単な形と色だけ）：深い川（水の面）・浅瀬（浅い色の水と石）・崖（暗い岩の盛り上がり）。
+ * - 合戦場のデータの地形（簡単な形と色だけ）：深い川（水の面）・浅瀬（浅い色の水と石）・崖（暗い岩の盛り上がり）・
+ *   橋（板の床・継ぎ目・欄干・橋脚）・水田（水を張った区画・畦・苗の列）・尾根（カプセルの丘。sim.ts の elevationAt で盛り上げ、等高線を引く）。
  *   通れる範囲（fieldRules.passable）の外は暗くする。
  * - 目標の区域（確保する地点・守る地点・救出の地点・突破する地点）の輪（主目標は金・副目標は水色。果たしたら緑、果たせなければ灰）、
  *   援軍の出る所の小さな印、狭い正面の区域の縁。名札（短い名前）は battleUi.ts が control.ts の mapLabels で出す。
@@ -189,6 +190,8 @@ export class BattleView {
         this.buildRoad();
         this.buildMarsh();
         this.buildWater();
+        this.buildPaddies();
+        this.buildBridges();
         this.buildCliffs();
         this.buildEdges();
         this.buildFieldMarks(s);
@@ -480,25 +483,38 @@ export class BattleView {
         this.scene.add(new THREE.Mesh(geo, mat));
     }
 
+    /**
+     * 道（四角の道の区域ごとに 1 本の帯。南北に長い道は南北に、東西に長い道（水田の畦道・街道）は東西に引く）。
+     * 戦場の端に触れる道は、戦場の外まで伸ばす。道の区域が 1 つの戦場（Version 14 までの戦場）は、今までと同じ形
+     */
     private buildRoad(): void {
-        const road = this.map.terrain.find((a) => a.kind === 'road' && a.rect);
-        if (!road || !road.rect) return;
-        const r = road.rect;
-        const z0 = r.z0 <= -this.map.depth / 2 + 1 ? -this.map.depth / 2 - MARGIN : r.z0;
-        const z1 = r.z1 >= this.map.depth / 2 - 1 ? this.map.depth / 2 + MARGIN : r.z1;
-        const cx = (r.x0 + r.x1) / 2;
-        const hw = ((r.x1 - r.x0) / 2) * 0.8;
+        const roads = this.map.terrain.filter((a) => a.kind === 'road' && a.rect);
+        if (!roads.length) return;
+        const hd = this.map.depth / 2;
+        const hwMap = this.map.width / 2;
         const pts: number[] = [];
         const idx: number[] = [];
         let n = 0;
-        for (let z = z0; z <= z1 + 0.01; z += 4) {
-            const wob = Math.sin(z * 0.03) * 1.2;
-            for (const sx of [-1, 1]) {
-                const x = cx + wob + sx * hw;
-                pts.push(x, elevationAt(this.map, x, z) + 0.12, z);
+        for (const road of roads) {
+            const r = road.rect!;
+            const alongZ = r.z1 - r.z0 >= r.x1 - r.x0;
+            // 道の長い向き（a0〜a1）と、横の真ん中・半分の幅
+            const a0 = alongZ ? (r.z0 <= -hd + 1 ? -hd - MARGIN : r.z0) : r.x0 <= -hwMap + 1 ? -hwMap - MARGIN : r.x0;
+            const a1 = alongZ ? (r.z1 >= hd - 1 ? hd + MARGIN : r.z1) : r.x1 >= hwMap - 1 ? hwMap + MARGIN : r.x1;
+            const c = alongZ ? (r.x0 + r.x1) / 2 : (r.z0 + r.z1) / 2;
+            const hw = (alongZ ? (r.x1 - r.x0) / 2 : (r.z1 - r.z0) / 2) * 0.8;
+            let first = true;
+            for (let a = a0; a <= a1 + 0.01; a += 4) {
+                const wob = Math.sin(a * 0.03) * 1.2;
+                for (const sx of [-1, 1]) {
+                    const x = alongZ ? c + wob + sx * hw : a;
+                    const z = alongZ ? a : c + wob + sx * hw;
+                    pts.push(x, elevationAt(this.map, x, z) + 0.12, z);
+                }
+                if (!first) idx.push((n - 1) * 2, n * 2, (n - 1) * 2 + 1, (n - 1) * 2 + 1, n * 2, n * 2 + 1);
+                first = false;
+                n++;
             }
-            if (n > 0) idx.push((n - 1) * 2, n * 2, (n - 1) * 2 + 1, (n - 1) * 2 + 1, n * 2, n * 2 + 1);
-            n++;
         }
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
@@ -507,6 +523,131 @@ export class BattleView {
         const mat = new THREE.MeshLambertMaterial({ color: '#a48c63', polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
         this.own(geo, mat);
         this.scene.add(new THREE.Mesh(geo, mat));
+    }
+
+    /**
+     * 水田：水を張った田の面（区域ごとに少し内側へ縮めた薄い水色の面を、15〜20 m の区画に分ける）と、区画の間の畦（低い土の盛り上がり）、
+     * 苗の列（細い円すいを決まった位置に。軽い表示では間を広く）。田の中の速さ・斬り合いの不利は sim.ts の地形の決まり
+     */
+    private buildPaddies(): void {
+        const water: THREE.BufferGeometry[] = [];
+        const levees: THREE.BufferGeometry[] = [];
+        const sprouts: [number, number][] = [];
+        const sp = this.low ? 9 : 6;
+        let k = 0;
+        for (const a of this.map.terrain) {
+            if (a.kind !== 'paddy' || !a.rect) continue;
+            const { x0, x1, z0, z1 } = a.rect;
+            const nx = Math.max(1, Math.round((x1 - x0) / 18));
+            const nz = Math.max(1, Math.round((z1 - z0) / 18));
+            const cw = (x1 - x0) / nx;
+            const cd = (z1 - z0) / nz;
+            for (let i = 0; i < nx; i++) {
+                for (let j = 0; j < nz; j++, k++) {
+                    const g = new THREE.PlaneGeometry(cw - 1.6, cd - 1.6);
+                    g.rotateX(-Math.PI / 2);
+                    g.translate(x0 + (i + 0.5) * cw, 0.16, z0 + (j + 0.5) * cd);
+                    g.deleteAttribute('uv');
+                    water.push(g);
+                }
+            }
+            // 畦：区画の境目（外周を含む）に、幅 1.4 m・高さ 0.5 m の土の帯
+            for (let i = 0; i <= nx; i++) {
+                const g = new THREE.BoxGeometry(1.4, 0.5, z1 - z0);
+                levees.push(part(g, '#7d6a48', x0 + i * cw, 0.25, (z0 + z1) / 2));
+            }
+            for (let j = 0; j <= nz; j++) {
+                const g = new THREE.BoxGeometry(x1 - x0, 0.5, 1.4);
+                levees.push(part(g, '#7d6a48', (x0 + x1) / 2, 0.25, z0 + j * cd));
+            }
+            for (let z = z0 + sp / 2; z < z1; z += sp) {
+                for (let x = x0 + sp / 2; x < x1; x += sp) {
+                    if (hash01('sprout', sprouts.length + k) < 0.25) continue;
+                    sprouts.push([x + (hash01('spx', sprouts.length) - 0.5) * 1.5, z + (hash01('spz', sprouts.length) - 0.5) * 1.5]);
+                }
+            }
+        }
+        if (water.length) {
+            const geo = mergeGeometries(water)!;
+            for (const g of water) g.dispose();
+            const mat = new THREE.MeshBasicMaterial({ color: '#8fb3ad', transparent: true, opacity: 0.7, depthWrite: false });
+            this.own(geo, mat);
+            const m = new THREE.Mesh(geo, mat);
+            m.renderOrder = 1;
+            this.scene.add(m);
+        }
+        if (levees.length) {
+            const geo = merge(levees);
+            geo.computeVertexNormals();
+            const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+            this.own(geo, mat);
+            this.scene.add(new THREE.Mesh(geo, mat));
+        }
+        if (sprouts.length) {
+            const g = new THREE.ConeGeometry(0.35, 1.1, 4);
+            g.translate(0, 0.55, 0);
+            const mat = new THREE.MeshLambertMaterial({ color: '#7fa04a' });
+            this.own(g, mat);
+            const m = new THREE.InstancedMesh(g, mat, sprouts.length);
+            sprouts.forEach(([x, z], i) => {
+                this.m4.compose(this.v3.set(x, 0.1, z), this.q.identity(), this.s3.setScalar(0.8 + hash01('sps', i) * 0.5));
+                m.setMatrixAt(i, this.m4);
+            });
+            m.computeBoundingSphere();
+            this.scene.add(m);
+        }
+    }
+
+    /**
+     * 橋：板の橋（区域の長い向きに渡した床板と、横に並ぶ板の継ぎ目・両側の欄干と柱）。床は川の水面より上。
+     * 部隊の兵士は地面の高さ（橋の上も 0）に立つので、床は低め（0.35 m）にして兵士の足が埋もれないようにする
+     */
+    private buildBridges(): void {
+        const parts: THREE.BufferGeometry[] = [];
+        for (const a of this.map.terrain) {
+            if (a.kind !== 'bridge' || !a.rect) continue;
+            const { x0, x1, z0, z1 } = a.rect;
+            const alongZ = z1 - z0 >= x1 - x0;
+            const len = alongZ ? z1 - z0 : x1 - x0;
+            const wid = alongZ ? x1 - x0 : z1 - z0;
+            const cx = (x0 + x1) / 2;
+            const cz = (z0 + z1) / 2;
+            // 床（少し岸へはみ出す）
+            const deck = alongZ ? new THREE.BoxGeometry(wid, 0.3, len + 4) : new THREE.BoxGeometry(len + 4, 0.3, wid);
+            parts.push(part(deck, '#8a6a44', cx, 0.2, cz));
+            // 板の継ぎ目（2 m ごとの暗い細い帯）
+            for (let t = -len / 2; t <= len / 2; t += 2) {
+                const g = alongZ ? new THREE.BoxGeometry(wid * 0.98, 0.05, 0.18) : new THREE.BoxGeometry(0.18, 0.05, wid * 0.98);
+                parts.push(part(g, '#5e4630', alongZ ? cx : cx + t, 0.37, alongZ ? cz + t : cz));
+            }
+            // 欄干（両側の横木）と柱（6 m ごと）
+            for (const side of [-1, 1]) {
+                const off = side * (wid / 2 - 0.3);
+                const rail = alongZ ? new THREE.BoxGeometry(0.3, 0.25, len + 4) : new THREE.BoxGeometry(len + 4, 0.25, 0.3);
+                parts.push(part(rail, '#6b4f33', alongZ ? cx + off : cx, 1.3, alongZ ? cz : cz + off));
+                for (let t = -len / 2 - 2; t <= len / 2 + 2.01; t += 6) {
+                    const post = new THREE.BoxGeometry(0.4, 1.4, 0.4);
+                    parts.push(part(post, '#5a4128', alongZ ? cx + off : cx + t, 0.85, alongZ ? cz + t : cz + off));
+                }
+            }
+            // 橋脚（川の中に、床の下の太い柱を 8 m ごと）
+            for (let t = -len / 2 + 4; t <= len / 2 - 4; t += 8) {
+                for (const side of [-1, 1]) {
+                    const off = side * (wid / 2 - 1);
+                    const pier = new THREE.CylinderGeometry(0.5, 0.6, 2.4, 6);
+                    parts.push(part(pier, '#4d3a26', alongZ ? cx + off : cx + t, -0.9, alongZ ? cz + t : cz + off));
+                }
+            }
+        }
+        if (!parts.length) return;
+        const geo = merge(parts);
+        geo.computeVertexNormals();
+        const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+        this.own(geo, mat);
+        const m = new THREE.Mesh(geo, mat);
+        // 水面（透ける面）より後に描く
+        m.renderOrder = 3;
+        this.scene.add(m);
     }
 
     private buildMarsh(): void {
@@ -629,8 +770,19 @@ export class BattleView {
                 for (let j = 0; j < nz; j++, k++) {
                     // 高さ 3〜8 m（通り道の部隊を隠しすぎないように低めに）。色は升ごとに少し明暗を変える
                     const h = 3 + hash01('cliff', k) * 5;
-                    const g = new THREE.BoxGeometry(cw * 1.02, h, cd * 1.02);
-                    g.translate(x0 + (i + 0.5) * cw, h / 2, z0 + (j + 0.5) * cd);
+                    // 丘・尾根の面にある崖は、升のいちばん低い所から、いちばん高い所の上 h まで（地面に埋もれない・浮かない）
+                    const mx = x0 + (i + 0.5) * cw;
+                    const mz = z0 + (j + 0.5) * cd;
+                    let lo = Infinity;
+                    let hi = -Infinity;
+                    for (const [px, pz] of [[mx, mz], [mx - cw / 2, mz - cd / 2], [mx + cw / 2, mz - cd / 2], [mx - cw / 2, mz + cd / 2], [mx + cw / 2, mz + cd / 2]] as const) {
+                        const e = elevationAt(this.map, px, pz);
+                        lo = Math.min(lo, e);
+                        hi = Math.max(hi, e);
+                    }
+                    const tall = h + (hi - lo);
+                    const g = new THREE.BoxGeometry(cw * 1.02, tall, cd * 1.02);
+                    g.translate(mx, lo + tall / 2, mz);
                     const shade = 0.34 + hash01('cliff', k + 500) * 0.12;
                     parts.push(part(g, shade, 0, 0, 0));
                 }
@@ -785,6 +937,33 @@ export class BattleView {
                     const t0 = (i / n) * Math.PI * 2;
                     const t1 = ((i + 1) / n) * Math.PI * 2;
                     seg.push(a.circle.cx + Math.cos(t0) * r, h + 0.25, a.circle.cz + Math.sin(t0) * r, a.circle.cx + Math.cos(t1) * r, h + 0.25, a.circle.cz + Math.sin(t1) * r);
+                }
+            }
+        }
+        // カプセルの丘（尾根）の等高線：線分の両側の直線と、両端の半円（線分から同じ距離の輪）
+        for (const a of this.map.terrain) {
+            if (a.kind !== 'hill' || !a.capsule) continue;
+            const { ax, az, bx, bz } = a.capsule;
+            const H = a.height ?? 10;
+            const ang = Math.atan2(bz - az, bx - ax);
+            for (let h = 0.4; h < H; h += 3) {
+                const r = a.capsule.r * Math.sqrt(1 - h / H);
+                const y = h + 0.25;
+                const n = 24;
+                // 輪の点：b の端の半円（ang−90°〜ang+90°）→ a の端の半円（ang+90°〜ang+270°）
+                const ring: [number, number][] = [];
+                for (let i = 0; i <= n; i++) {
+                    const t = ang - Math.PI / 2 + (i / n) * Math.PI;
+                    ring.push([bx + Math.cos(t) * r, bz + Math.sin(t) * r]);
+                }
+                for (let i = 0; i <= n; i++) {
+                    const t = ang + Math.PI / 2 + (i / n) * Math.PI;
+                    ring.push([ax + Math.cos(t) * r, az + Math.sin(t) * r]);
+                }
+                for (let i = 0; i < ring.length; i++) {
+                    const p0 = ring[i]!;
+                    const p1 = ring[(i + 1) % ring.length]!;
+                    seg.push(p0[0], y, p0[1], p1[0], y, p1[1]);
                 }
             }
         }
@@ -1347,6 +1526,7 @@ function groundColor(map: BattleMap, passable: { x0: number; x1: number; z0: num
     out.set('#7a8f4c');
     if (inTerrain(map, 'cliff', x, z)) out.set('#4a463f');
     else if (inTerrain(map, 'ford', x, z)) out.set('#9a916c');
+    else if (inTerrain(map, 'paddy', x, z)) out.set('#6c7a4e');
     else if (inTerrain(map, 'river', x, z)) out.set('#35505c');
     else if (inTerrain(map, 'woods', x, z)) out.set('#465f33');
     else if (inTerrain(map, 'marsh', x, z)) out.set('#5b7359');
