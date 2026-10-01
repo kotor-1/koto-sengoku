@@ -3,7 +3,9 @@
  *
  * - 戦場を 5 m の格子に分け、格子の中心で「通れるか」と「動きの速さ」を決める。
  * - 道は A*（8 方向。斜めは角を削らない）。1 マスの重みは「距離 ÷ 速さ」（速い道・遅い浅瀬を地形の速さで比べる）。
- * - 見つけた道は、まっすぐ行ける所（通れて、途中の速さが元の道より遅くならない所）を飛ばして短くする。
+ * - 見つけた道は、まっすぐ行ける所（通れて、途中の速さが元の道より遅くならず、かかる時間が元の道の SMOOTH_SLACK 倍を超えない所）を飛ばして短くする。
+ * - 行き先へまっすぐ行ける（途中に出発点・行き先より遅い所が無い）ときも、まっすぐの方がかかる時間で A* の道より
+ *   STRAIGHT_SLACK 倍より遅ければ、A* の道を使う（行き先が水田の中でも、街道・畦道を回る方がずっと早ければ回る）。
  * - 行き先が通れない所なら、いちばん近い通れる格子の中心へ向かう。
  *
  * sim.ts から：buildNav（合戦の始めに 1 回）・findPath（部隊が道を作り直すとき）・isPassable・nearestPassable。
@@ -13,6 +15,19 @@ import type { UnitKind } from './types';
 
 /** 格子の 1 マスの大きさ（m） */
 export const NAV_CELL = 5;
+/**
+ * 行き先へまっすぐ行く（道探しを飛ばす）のを使ってよい、かかる時間の上限（A* の道の時間に対する倍率）。
+ * 格子の道は 8 方向の折れ線なので、同じ地形ならまっすぐの方が短い。地形の境目をかすめる程度の差では今までどおりまっすぐ
+ * （1.1 倍まで）。道・畦道を回る方がはっきり早いときだけ回り道になる。
+ */
+export const STRAIGHT_SLACK = 1.1;
+/**
+ * 道を短くする（途中の点を飛ばす）区間の、かかる時間の上限（元の道の時間に対する倍率）。
+ * 2 倍：遅い所（浅瀬・水田）に立っている部隊が、そこから遅い所をまっすぐ突っ切る区間を、速い道を回るより 2 倍以上遅いときだけ外す
+ * （例：水田の中から田を突っ切るより、畦道・街道を回る方が早い）。河川・浅瀬の浅瀬の中から岸へ斜めに出る区間（元の道の 1.66 倍まで）は
+ * 今までどおり飛ばす（第1群の戦場の動きを 1 刻みも変えないため）。
+ */
+export const SMOOTH_SLACK = 2;
 
 export interface NavGrid {
     readonly cell: number;
@@ -161,6 +176,25 @@ function straight(nav: NavGrid, spd: Float32Array, ax: number, az: number, bx: n
 }
 
 /**
+ * a から b へまっすぐ行くときのかかる時間（straight と同じ点で速さを見て、点と点の間は両端の速さの半分ずつで足す）。
+ * 通れるかは呼ぶ側が straight で確かめておく
+ */
+function straightTime(nav: NavGrid, spd: Float32Array, ax: number, az: number, bx: number, bz: number): number {
+    const d = Math.hypot(bx - ax, bz - az);
+    const steps = Math.max(1, Math.ceil(d / (nav.cell * 0.4)));
+    const half = d / steps / 2;
+    let t = 0;
+    let prev = 1 / Math.max(0.05, spd[cellOf(nav, ax, az)]!);
+    for (let k = 1; k <= steps; k++) {
+        const f = k / steps;
+        const cur = 1 / Math.max(0.05, spd[cellOf(nav, ax + (bx - ax) * f, az + (bz - az) * f)]!);
+        t += half * (prev + cur);
+        prev = cur;
+    }
+    return t;
+}
+
+/**
  * from から to への道（通る点の並び。最後の点が行き先。from は含まない）。道が無ければ null。
  * 行き先が通れない所なら、いちばん近い通れる所を行き先にする。
  */
@@ -173,8 +207,16 @@ export function findPath(nav: NavGrid, kind: UnitKind, fx: number, fz: number, t
         start = cellOf(nav, p.x, p.z);
     }
     const goal = cellOf(nav, goalPt.x, goalPt.z);
-    // まっすぐ行けて、途中に行き先より遅い所が無ければ、道探しは要らない
-    if (start === goal || straight(nav, spd, fx, fz, goalPt.x, goalPt.z, Math.min(spd[start]!, spd[goal]!))) return [goalPt];
+    if (start === goal) return [goalPt];
+    // まっすぐ行けて、途中に出発点・行き先より遅い所が無ければ、まっすぐ行く候補。途中がどこも格子でいちばん速い所なら、それより早い道は無い。
+    // そうでなければ A* の道と、かかる時間で比べる（下の straightT）
+    let straightT = Infinity;
+    if (straight(nav, spd, fx, fz, goalPt.x, goalPt.z, Math.min(spd[start]!, spd[goal]!))) {
+        if (straight(nav, spd, fx, fz, goalPt.x, goalPt.z, nav.maxSpeed)) return [goalPt];
+        const s0 = centerOf(nav, start);
+        const g0 = centerOf(nav, goal);
+        straightT = straightTime(nav, spd, s0.x, s0.z, g0.x, g0.z);
+    }
 
     nav.gen++;
     if (nav.gen >= 0xffffffff) {
@@ -268,21 +310,25 @@ export function findPath(nav: NavGrid, kind: UnitKind, fx: number, fz: number, t
             stamp[ni] = gen;
             g[ni] = ng;
             from[ni] = cur;
-            if (hn >= heap.length) return null;
+            if (hn >= heap.length) return straightT < Infinity ? [goalPt] : null;
             push(ni, ng + h(ni));
         }
     }
-    if (!found) return null;
+    if (!found) return straightT < Infinity ? [goalPt] : null;
+    // まっすぐの方が、A* の道（格子の中心から中心まで）の STRAIGHT_SLACK 倍より早ければ、まっすぐ行く（今までと同じ）
+    if (straightT <= g[goal]! * STRAIGHT_SLACK) return [goalPt];
     // 格子の並び（行き先 → 出発）を逆にして、点の並びにする
     const cells: number[] = [];
     for (let i = goal; i !== -1 && i !== start; i = from[i]!) cells.push(i);
     cells.reverse();
     const pts = cells.map((i) => centerOf(nav, i));
     pts[pts.length - 1] = goalPt;
-    // まっすぐ行ける所を飛ばす（途中の速さが、飛ばす区間の元の道のいちばん遅い速さより遅くならないときだけ）
+    // まっすぐ行ける所を飛ばす（途中の速さが、飛ばす区間の元の道のいちばん遅い速さより遅くならず、
+    // かかる時間が元の道（格子の中心から中心までの A* の時間 g）の SMOOTH_SLACK 倍を超えないときだけ）
     const out: { x: number; z: number }[] = [];
     let ax = fx;
     let az = fz;
+    let g0 = 0; // 今の点（出発点、または前の格子の中心）までの元の道の時間
     let k = 0;
     const minTo = new Float64Array(pts.length);
     while (k < pts.length) {
@@ -294,11 +340,16 @@ export function findPath(nav: NavGrid, kind: UnitKind, fx: number, fz: number, t
         }
         let j = pts.length - 1;
         for (; j > k; j--) {
-            if (straight(nav, spd, ax, az, pts[j]!.x, pts[j]!.z, minTo[j]!)) break;
+            if (!straight(nav, spd, ax, az, pts[j]!.x, pts[j]!.z, minTo[j]!)) continue;
+            // 元の道が同じ速さだけなら、まっすぐの方が早い（時間を比べるまでもない）
+            if (minTo[j]! >= nav.maxSpeed - 1e-6) break;
+            const c = centerOf(nav, cells[j]!);
+            if (straightTime(nav, spd, ax, az, c.x, c.z) <= (g[cells[j]!]! - g0) * SMOOTH_SLACK + 1e-9) break;
         }
         out.push(pts[j]!);
         ax = pts[j]!.x;
         az = pts[j]!.z;
+        g0 = g[cells[j]!]!;
         k = j + 1;
     }
     return out;
