@@ -4,6 +4,8 @@
  *   （行き先・出発点が水田の中でも、街道・畦道を回る方がずっと早ければ回る）。
  * - 敵の考え（ai.ts）：追う距離の上限 UnitDef.aiLeash（hold_line は持ち場から・hold_zone は区域の縁から）。
  * - 目標（objectives.ts）：defend_zones（区域 N 個のうち M 個以上を最後まで守り抜く。複数橋の「3 本の橋のうち 2 本以上」）。
+ * - 地図の名札（control.ts の mapLabels）：尾根（カプセルの丘）の名札を、部隊の最初の位置から離して置く（谷間の高地の弓の名札と重なっていた）。
+ * - 地図を押したとき（control.ts の resolveTap）：敵のすぐ近くの地面を押して攻撃になったら、脇へ動かすやり方を案内に添える（一本橋の担当の気づき）。
  *
  * 既存の戦場（国境の原・第1群の 5 戦場・第2群の 5 戦場）の台本が 1 刻みも変わらないことは、tests/proto3d-battle-v11-identity.test.ts・
  * tests/proto3d-fields-initiative-record.test.ts と各戦場のテストがそのまま通ることで確かめる。
@@ -13,7 +15,8 @@ import { describe, expect, it } from 'vitest';
 import { buildNav, findPath, type NavGrid } from '../proto3d/src/battle/pathfind';
 import { createBattle, issueOrder, RULES, runToEnd, stepBattle, unitById, type BattleState } from '../proto3d/src/battle/sim';
 import { activeObjectiveZones, objectiveProgress } from '../proto3d/src/battle/objectives';
-import { objectiveStateOf, objectiveZoneCounting, objectiveZoneMarks } from '../proto3d/src/battle/control';
+import { mapLabels, NEAR_ENEMY_NOTE, objectiveStateOf, objectiveZoneCounting, objectiveZoneMarks, resolveTap } from '../proto3d/src/battle/control';
+import { buildBattleSetup, getField } from '../proto3d/src/battle/fields';
 import type { BattleSetup, Side, UnitDef, UnitKind } from '../proto3d/src/battle/types';
 
 function field(units: UnitDef[], extra: Partial<BattleSetup> = {}): BattleSetup {
@@ -277,5 +280,39 @@ describe('目標 defend_zones：区域 N 個のうち M 個以上を最後まで
     it('minHeld が 1〜区域の数の整数でなければ、合戦を作るときに投げる', () => {
         expect(() => mk([], 4)).toThrow(/minHeld/);
         expect(() => mk([], 0)).toThrow(/minHeld/);
+    });
+});
+
+// ---------------------------------------------------------------- 地図の名札
+
+describe('地図の名札：尾根（カプセルの丘）の名札は部隊の最初の位置から 45 m 以上離す（状態を直接操作：合戦を作って名札を読む）', () => {
+    const ridges = (id: string) => {
+        const s = createBattle(buildBattleSetup(getField(id)!, 'standard'));
+        return { s, ls: mapLabels(s).filter((l) => l.text === '尾根') };
+    };
+    it('谷間：高地の弓（±95,-5）・槍（±95,70）から離れた、線分の 1/10 の所の南（±95,-67）へ移す（直す前は (±95,-32.5) で弓の名札と重なった）', () => {
+        const { s, ls } = ridges('valley');
+        expect(ls.map((l) => [l.x, l.z])).toEqual([
+            [-95, -67],
+            [95, -67],
+        ]);
+        for (const l of ls) for (const u of s.setup.units) expect(Math.hypot(u.x - l.x, u.z - l.z)).toBeGreaterThanOrEqual(45);
+    });
+    it('尾根：今までの所（線分の 4 分の 1 の所から南へ幅の半分＝(-60,-30)）のまま（頂の目標の名札とも離れている）', () => {
+        const { ls } = ridges('ridge');
+        expect(ls.map((l) => [l.x, l.z])).toEqual([[-60, -30]]);
+    });
+});
+
+// ---------------------------------------------------------------- 地図を押したとき
+
+describe('地図を押したとき：敵のすぐ近くの地面は攻撃。そのときは脇へ動かすやり方を案内に添える（状態を直接操作：resolveTap を呼ぶ）', () => {
+    const ally = { id: 'a_tadakatsu', side: 'ally' as const, commandable: true };
+    const enemy = { kind: 'unit' as const, unitId: 'e_yumi', side: 'enemy' as const, x: 30, z: -70 };
+    it('敵そのもの：攻撃（案内なし。今までどおり）。すぐ近く：攻撃＋案内。「移動」の後なら、その地点へ移動', () => {
+        expect(resolveTap(ally, 'none', enemy)).toEqual({ type: 'order', unitId: 'a_tadakatsu', order: { type: 'attack', targetId: 'e_yumi' } });
+        expect(resolveTap(ally, 'none', { ...enemy, near: true })).toEqual({ type: 'order', unitId: 'a_tadakatsu', order: { type: 'attack', targetId: 'e_yumi' }, note: NEAR_ENEMY_NOTE });
+        expect(resolveTap(ally, 'move', { ...enemy, near: true })).toEqual({ type: 'order', unitId: 'a_tadakatsu', order: { type: 'move', x: 30, z: -70 } });
+        expect(NEAR_ENEMY_NOTE).toContain('「移動」の後で地面を押す');
     });
 });

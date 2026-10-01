@@ -137,7 +137,8 @@ export type TapAction =
     | { type: 'select'; unitId: string }
     /** 敵を調べる（味方を選んでいないとき） */
     | { type: 'inspect'; unitId: string }
-    | { type: 'order'; unitId: string; order: Order }
+    /** note：命令に添える案内（敵のすぐ近くの地面を押して攻撃になったとき） */
+    | { type: 'order'; unitId: string; order: Order; note?: string }
     | { type: 'deselect' }
     | { type: 'none' }
     /** 特殊能力（盟友への援護・後詰めの差配）の対象に、押した部隊を選ぶ（使えるかは useAbility が確かめる。断られても回数は減らない） */
@@ -147,11 +148,15 @@ export type TapAction =
     /** 何も変えず、案内を出す */
     | { type: 'hint'; text: string };
 
+/** 敵のすぐ近くの地面を押して攻撃になったときの案内（敵の脇へ移動させたつもりの人へ） */
+export const NEAR_ENEMY_NOTE = '敵のすぐ近くを押すと攻撃になる。脇へ動かすには「移動」の後で地面を押す';
+
 /**
  * 地図を押したときに何をするか（docs/chapter1-spec.md §4 表示と操作）。
  * - 味方の部隊を押す：その部隊を選ぶ（「移動」「攻撃」の途中でも、選び直しになる）。選んでいる部隊をもう一度押すと選択を外す
  *   （タッチでは Esc が無いので、これで外して敵を調べられる）。
  * - 味方を選んでいて敵を押す：攻撃（「移動」の途中なら、その地点へ移動）。味方を選んでいなければ、敵を調べる。
+ *   敵の「すぐ近く」（near）を押しても攻撃。そのときは、脇へ動かすには「移動」の後で地面を押す、と案内を添える（NEAR_ENEMY_NOTE）。
  * - 味方を選んでいて地面を押す：移動（「攻撃」の途中なら、敵を押すよう案内）。
  * - 命令できない味方（敗走・撤退済みなど）や敵を選んでいて地面を押す：選択を外す。
  * - 命令できる味方を選んでいて、味方の部隊の「すぐ近く」（near：隊列の外の余白）を押す：地面を押したのと同じ（その地点へ移動）。
@@ -170,6 +175,7 @@ export function resolveTap(sel: Selected | null, pending: Pending, tap: TapTarge
     if (tap.kind === 'unit') {
         if (ally && ally.commandable) {
             if (pending === 'move') return { type: 'order', unitId: ally.id, order: { type: 'move', x: tap.x, z: tap.z } };
+            if (tap.near) return { type: 'order', unitId: ally.id, order: { type: 'attack', targetId: tap.unitId }, note: NEAR_ENEMY_NOTE };
             return { type: 'order', unitId: ally.id, order: { type: 'attack', targetId: tap.unitId } };
         }
         return { type: 'inspect', unitId: tap.unitId };
@@ -1293,6 +1299,10 @@ const TERRAIN_LABEL: Record<string, string> = {
     paddy: '水田（とても遅い）',
 };
 
+/** 尾根（カプセルの丘）の名札を置く線分の上の所（割合。先の方から空いた所を使う）と、部隊の最初の位置から空ける距離（m） */
+const CAPSULE_LABEL_AT = [0.25, 0.75, 0.5, 0.1, 0.9, 0.4, 0.6];
+const CAPSULE_LABEL_CLEAR = 45;
+
 /** 四角の区域（川）の名札の置き場所：中心の行で、浅瀬と重ならない所 */
 function rectLabelPoint(s: BattleState, rect: { x0: number; x1: number; z0: number; z1: number }, avoid: { x0: number; x1: number; z0: number; z1: number }[]): { x: number; z: number } {
     const z = (rect.z0 + rect.z1) / 2;
@@ -1313,9 +1323,15 @@ export function mapLabels(s: BattleState): MapLabel[] {
         if (!name) return;
         if (a.circle) out.push({ id: `t${i}`, text: name, x: a.circle.cx + a.circle.r * 0.55, z: a.circle.cz + a.circle.r * 0.75, y: 2 });
         else if (a.capsule) {
-            // 尾根（カプセルの丘）：線分の 4 分の 1 の所から南へ幅の半分（真ん中の頂に置く目標の名札と重ならないように）
+            // 尾根（カプセルの丘）：線分の 4 分の 1 の所から南へ幅の半分（真ん中の頂に置く目標の名札と重ならないように）。
+            // そこが部隊の最初の位置（配置の枠・援軍の出る所）から CAPSULE_LABEL_CLEAR m 以内なら、線分の 3/4・1/2・1/10・9/10…の所の南へ
+            // 順に移す（部隊の名札と重ならないように。谷間の高地の弓）。どこも近ければ 4 分の 1 の所のまま
             const c = a.capsule;
-            out.push({ id: `t${i}`, text: '尾根', x: c.ax + (c.bx - c.ax) * 0.25, z: Math.min(c.az + (c.bz - c.az) * 0.25 + c.r * 0.5, s.map.depth / 2 - 20), y: 2 });
+            const at = (f: number) => ({ x: c.ax + (c.bx - c.ax) * f, z: Math.min(c.az + (c.bz - c.az) * f + c.r * 0.5, s.map.depth / 2 - 20) });
+            const clear = (p: { x: number; z: number }) =>
+                !s.setup.units.some((u) => Math.hypot(u.x - p.x, u.z - p.z) < CAPSULE_LABEL_CLEAR) && !out.some((l) => Math.abs(l.x - p.x) < 40 && Math.abs(l.z - p.z) < 14);
+            const p = CAPSULE_LABEL_AT.map(at).find(clear) ?? at(0.25);
+            out.push({ id: `t${i}`, text: '尾根', x: p.x, z: p.z, y: 2 });
         } else if (a.rect) {
             const r = a.rect;
             if (a.kind === 'bridge') {

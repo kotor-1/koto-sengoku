@@ -379,10 +379,11 @@ class BattleRun implements Mode {
     }
 
     /** 命令を部隊の並びへ出す（今は選んでいる 1 部隊）。1 部隊でも出せたら命令の途中（移動・攻撃）を終える */
-    private order(unitIds: readonly string[], o: Order): boolean {
+    /** note：出せたときに知らせに添える案内（resolveTap の note） */
+    private order(unitIds: readonly string[], o: Order, note?: string): boolean {
         const r = orderUnits(this.s, unitIds, o);
-        this.ui.flash(orderUnitsText(this.s, o, r));
         const ok = r.issued.length > 0;
+        this.ui.flash(orderUnitsText(this.s, o, r) + (ok && note ? `（${note}）` : ''));
         if (ok) this.pending = 'none';
         return ok;
     }
@@ -1003,7 +1004,7 @@ class BattleRun implements Mode {
                 break;
             case 'order':
                 // act.unitId は先頭の部隊。命令は選んでいる並びの部隊へ出す（今は同じ 1 部隊）
-                this.order(this.selection.includes(act.unitId) ? this.orderTargets() : [act.unitId], act.order);
+                this.order(this.selection.includes(act.unitId) ? this.orderTargets() : [act.unitId], act.order, act.note);
                 break;
             case 'deselect':
                 this.select(null);
