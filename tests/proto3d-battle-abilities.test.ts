@@ -319,15 +319,15 @@ describe('立て直しの号令（家康本陣）', () => {
         expect(ok.status).toBe('ready');
     });
 
-    it('画面の説明が処理と一致：効果・短い説明に「兵が 3 割を切った部隊は」守りが外れ、号令で支えていた部隊は退く旨が出る（値を変えれば短い説明も変わる）', () => {
+    it('画面の説明が処理と一致：短い説明に「兵が 3 割を切った部隊は守りが外れる」、長い説明に号令で支えた士気も外れ、号令が無ければ崩れていた部隊は敗走する旨（値を変えれば短い説明も変わる）', () => {
         const s = createBattle(rallyScene());
         const info = abilityInfo(s, 'a_hq')!;
-        expect(info.effectText).toContain('兵が 3 割を切った部隊');
-        expect(info.effectText).toContain('号令で支えていた士気');
+        expect(info.effectText).toContain('3 割を切った部隊には効かず');
+        expect(info.effectText).toContain('号令で支えた士気も外れ');
         expect(info.effectText).toContain('号令が無ければ崩れていた部隊はその場で敗走');
-        expect(info.short.effect).toContain('兵が 3 割を切った部隊は守りが外れ、号令で支えていた部隊は退く');
+        expect(info.short.effect).toContain('兵が 3 割を切った部隊は守りが外れる');
         expect(info.short.effect).not.toContain('敗走しない');
-        withGuard(0.25, () => expect(abilityInfo(s, 'a_hq')!.short.effect).toContain('兵が 25%を切った部隊は守りが外れ'));
+        withGuard(0.25, () => expect(abilityInfo(s, 'a_hq')!.short.effect).toContain('兵が 25%を切った部隊は守りが外れる'));
     });
 
     it('代償：効果中、家康本陣の与える損害 ×0.3・動き ×0.5', () => {
