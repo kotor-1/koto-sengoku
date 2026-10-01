@@ -9,7 +9,7 @@
  * 1 刻みも同じことは tests/proto3d-battle-v11-identity.test.ts と既存の戦場のテストで確かめる。
  */
 import { describe, expect, it } from 'vitest';
-import { createBattle, issueOrder, isActive, passableAt, rangedDamage, stepBattle, unitById, unitSpeedFactor, hasLineOfSight, RULES, type BattleState } from '../proto3d/src/battle/sim';
+import { createBattle, issueOrder, passableAt, rangedDamage, stepBattle, unitById, unitSpeedFactor, hasLineOfSight, RULES, type BattleState } from '../proto3d/src/battle/sim';
 import { TERRAIN_DEFAULTS, createFieldEnv, lineOfSight, openAllGates, dealMulIn, takeMulIn } from '../proto3d/src/battle/fieldRules';
 import { objectiveProgress } from '../proto3d/src/battle/objectives';
 import { fieldRuleTexts, mapLabels, objectivePanelModel, objectiveSummaryText, objectiveZoneMarks } from '../proto3d/src/battle/control';
