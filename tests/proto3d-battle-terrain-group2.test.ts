@@ -468,22 +468,36 @@ describe('第2群の 5 戦場の最初の案（早送りの台本）', () => {
         expect(rush.loss).toBeGreaterThan(0.4);
     });
 
-    it('水田：荷駄隊は水田を南へ横切り（遅いが騎馬の押さえる北の交わりを避ける）、中の交わりを忠勝隊・酒井隊で押さえてから退かせる → 勝つ（作った時 234 秒・損害 6％）。すぐ撤退させるだけ → 北の畦道で騎馬に追いつかれて負ける', () => {
+    // 水田は釣り合いを整えた（細かい台本・±15 秒の 16 通り・能力の比べは tests/proto3d-field-paddy.test.ts）。
+    // 最初の案の台本（荷駄隊が北西の畦道から水田を南へ横切り、中の交わりを押さえる。作った時 234 秒・損害 6％で勝ち）は、釣り合いの後は
+    // 中の交わりを大きな備えが塞ぎ、両脇の田の弓が田を渡る荷駄隊を射るため、遅く損害が大きい（347 秒・損害 48％）。ここは釣り合いの後の代表の台本に置き換えた
+    it('水田：忠勝隊が街道から交わりの備えを押さえ、酒井隊は西の田を横切って、榊原隊は東の畦道を回って横から当たり、備えが崩れたら荷駄隊を退かせる → 勝つ（179.5 秒・損害 10％）。四隊で交わりへ押し込む → 負ける（損害 43％）', () => {
         const fit = play('paddy', [
-            [0, 'a_konida', mv(-160, -60)],
-            [65, 'a_konida', mv(-160, -2)],
-            [0, 'a_tadakatsu', mv(0, 12)],
-            [0, 'a_sakai', mv(-30, 2)],
-            [0, 'a_yumi', mv(-20, 60)],
-            [0, 'a_sakakibara', mv(60, 110)],
-            [70, 'a_sakakibara', 'nearest'],
-            [70, 'a_sakai', 'nearest'],
-            [150, 'a_konida', { type: 'retreat' }],
+            [0, 'a_sakai', mv(-40, 80)],
+            [0, 'a_sakakibara', mv(140, 57)],
+            [0, 'a_yumi', mv(-20, 130)],
+            [0, 'a_tadakatsu', mv(0, 110)],
+            [30, 'a_sakakibara', mv(58, 56)],
+            [30, 'a_sakakibara', 'ability'],
+            [38, 'a_sakakibara', atk('e_yumi_e')],
+            [30, 'a_yumi', atk('e_block')],
+            [45, 'a_sakai', mv(-38, 56)],
+            [80, 'a_tadakatsu', atk('e_block')],
+            [80, 'a_sakai', atk('e_block')],
+            [80, 'a_sakakibara', atk('e_block')],
+            [110, 'a_konida', { type: 'retreat' }],
         ]);
         expect(fit.o.result).toBe('victory');
         expect(fit.o.objectives?.primary?.achieved).toBe(true);
-        const naive = play('paddy', [[0, 'a_konida', { type: 'retreat' }]]);
-        expect(naive.o.result).toBe('defeat');
-        expect(naive.o.reason).toBe('objective_failed');
+        expect(fit.loss).toBeLessThan(0.15);
+        const push = play('paddy', [
+            ...['a_tadakatsu', 'a_sakai', 'a_ishikawa', 'a_sakakibara'].map((id) => [0, id, atk('e_block')] as Step),
+            [0, 'a_yumi', mv(0, 125)],
+            [30, 'a_yumi', atk('e_block')],
+            [110, 'a_konida', { type: 'retreat' }],
+        ]);
+        expect(push.o.result).toBe('defeat');
+        expect(push.o.reason).toBe('objective_failed');
+        expect(push.loss).toBeGreaterThan(0.4);
     });
 });
