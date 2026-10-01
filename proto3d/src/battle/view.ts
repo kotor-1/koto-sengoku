@@ -35,6 +35,7 @@ import {
     formationExtent,
     hash01,
     objectiveStateOf,
+    objectiveZoneCounting,
     objectiveZoneMarks,
     reinforcementMarks,
     type CamState,
@@ -903,8 +904,7 @@ export class BattleView {
                 z.ringMat.color.set(col);
                 z.fillMat.color.set(col);
             }
-            const run = s.objectives?.list.find((r) => r.def.id === z.id);
-            const counting = st === 'active' && !!run && run.sec > 0;
+            const counting = st === 'active' && objectiveZoneCounting(s, z.id);
             z.ringMat.opacity = st === 'active' ? (counting ? 0.8 + Math.sin(t * 5) * 0.15 : 0.8) : 0.55;
             z.fillMat.opacity = counting ? 0.16 + Math.sin(t * 5) * 0.05 : st === 'active' ? 0.08 : 0.05;
         }

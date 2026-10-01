@@ -10,7 +10,7 @@
 import type { AbilityId, BattleEndReason, BattleMap, BattleOutcome, BattleResultKind, ObjectiveDef, Order, Side, UnitKind, Zone } from './types';
 import { STATUS_LABEL, attackDir, canCommand, engagementLabel, hqOf, isActive, issueOrder, orderLabel, pledgeProgress, timeLeft, unitById, type BattleEvent, type BattleState, type UnitState } from './sim';
 import { ABILITY_DATA, ABILITY_FICTION_NOTE, abilityInfo, abilityMarks, abilityShortText, isRooted, type AbilityInfo } from './abilities';
-import { objectiveProgress, type ObjectiveRole, type ObjectiveState } from './objectives';
+import { objectiveProgress, type ObjectiveRole, type ObjectiveRun, type ObjectiveState } from './objectives';
 import { zoneCenter } from './fieldRules';
 import { GENERAL_ROLE_LABELS, RELATION_SELF, generalById } from './generals';
 
@@ -1187,16 +1187,18 @@ export function objectiveResultModel(o: BattleOutcome): ObjectiveResultModel | n
 const ZONE_NAME: Partial<Record<ObjectiveDef['type'], string>> = {
     hold_point: '確保する地点',
     defend_time: '守る地点',
+    defend_zones: '守る地点',
     rescue: '救出の地点',
     breakthrough: '突破する地点',
 };
 
 /** 地図に描く目標の区域（区域を持つ目標だけ。主目標 → 副目標の順） */
 export interface ObjectiveZoneMark {
+    /** 目標の id（defend_zones は区域ごとに「目標の id#番号」） */
     id: string;
     role: ObjectiveRole;
     zone: Zone;
-    /** 短い名前（例：確保する地点） */
+    /** 短い名前（例：確保する地点。defend_zones は区域の名前） */
     name: string;
 }
 
@@ -1206,6 +1208,10 @@ export function objectiveZoneMarks(s: BattleState): ObjectiveZoneMark[] {
     const out: ObjectiveZoneMark[] = [];
     for (const r of tr.list) {
         const d = r.def;
+        if (d.type === 'defend_zones') {
+            d.zones.forEach((zone, i) => out.push({ id: `${d.id}#${i}`, role: r.role, zone, name: d.names?.[i] ?? ZONE_NAME.defend_zones! }));
+            continue;
+        }
         const zone = 'zone' in d ? d.zone : undefined;
         const name = ZONE_NAME[d.type];
         if (zone && name) out.push({ id: d.id, role: r.role, zone, name });
@@ -1213,9 +1219,26 @@ export function objectiveZoneMarks(s: BattleState): ObjectiveZoneMark[] {
     return out;
 }
 
-/** 目標の今の状態（目標の見張りから。無ければ active） */
+/** 区域の印の id（目標の id、または defend_zones の「目標の id#番号」）→ 目標の見張りと区域の番号 */
+function zoneRun(s: BattleState, id: string): { run: ObjectiveRun | undefined; i: number } {
+    const k = id.lastIndexOf('#');
+    const run = s.objectives?.list.find((r) => r.def.id === id);
+    if (run || k < 0) return { run, i: -1 };
+    return { run: s.objectives?.list.find((r) => r.def.id === id.slice(0, k) && r.def.type === 'defend_zones'), i: Number(id.slice(k + 1)) };
+}
+
+/** 目標の今の状態（目標の見張りから。無ければ active）。defend_zones の区域の印は、その区域を失ったら failed */
 export function objectiveStateOf(s: BattleState, id: string): ObjectiveState {
-    return s.objectives?.list.find((r) => r.def.id === id)?.state ?? 'active';
+    const { run, i } = zoneRun(s, id);
+    if (run && i >= 0 && run.zoneLost[i]) return 'failed';
+    return run?.state ?? 'active';
+}
+
+/** 区域の印が、いま数えている（確保を数える・敵に奪われかけている）か。地図の輪を脈打たせる */
+export function objectiveZoneCounting(s: BattleState, id: string): boolean {
+    const { run, i } = zoneRun(s, id);
+    if (!run || run.state !== 'active') return false;
+    return i >= 0 ? (run.zoneSec[i] ?? 0) > 0 : run.sec > 0;
 }
 
 /** 援軍の出る所（BattleSetup.reinforcements。部隊の最初の位置と、着く時刻の早いほう） */

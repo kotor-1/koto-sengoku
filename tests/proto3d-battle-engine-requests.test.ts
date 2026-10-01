@@ -3,6 +3,7 @@
  * - 道探し（pathfind.ts）：まっすぐ行く区間を、遅い方の速さだけでなく、かかる時間でも A* の道・元の道と比べる
  *   （行き先・出発点が水田の中でも、街道・畦道を回る方がずっと早ければ回る）。
  * - 敵の考え（ai.ts）：追う距離の上限 UnitDef.aiLeash（hold_line は持ち場から・hold_zone は区域の縁から）。
+ * - 目標（objectives.ts）：defend_zones（区域 N 個のうち M 個以上を最後まで守り抜く。複数橋の「3 本の橋のうち 2 本以上」）。
  *
  * 既存の戦場（国境の原・第1群の 5 戦場・第2群の 5 戦場）の台本が 1 刻みも変わらないことは、tests/proto3d-battle-v11-identity.test.ts・
  * tests/proto3d-fields-initiative-record.test.ts と各戦場のテストがそのまま通ることで確かめる。
@@ -10,7 +11,9 @@
  */
 import { describe, expect, it } from 'vitest';
 import { buildNav, findPath, type NavGrid } from '../proto3d/src/battle/pathfind';
-import { createBattle, issueOrder, RULES, stepBattle, unitById, type BattleState } from '../proto3d/src/battle/sim';
+import { createBattle, issueOrder, RULES, runToEnd, stepBattle, unitById, type BattleState } from '../proto3d/src/battle/sim';
+import { activeObjectiveZones, objectiveProgress } from '../proto3d/src/battle/objectives';
+import { objectiveStateOf, objectiveZoneCounting, objectiveZoneMarks } from '../proto3d/src/battle/control';
 import type { BattleSetup, Side, UnitDef, UnitKind } from '../proto3d/src/battle/types';
 
 function field(units: UnitDef[], extra: Partial<BattleSetup> = {}): BattleSetup {
@@ -183,5 +186,96 @@ describe('敵の考え：追う距離の上限 aiLeash（早送り）', () => {
         expect(run()).toBeLessThan(-10);
         // aiLeash 160：騎馬が中心から 190 m（z 130）より先へ出るまで追い、区域から 60 m 以上南まで出て来る
         expect(run(160)).toBeGreaterThan(5);
+    });
+});
+
+// ---------------------------------------------------------------- 目標 defend_zones
+
+describe('目標 defend_zones：区域 N 個のうち M 個以上を最後まで守り抜く（早送り）', () => {
+    /** 区域は西・中・東の 3 つ（南の岸の z 40）。主目標は無し（勝ち負けは日没 120 秒＝今までの決まり）。副目標で数える */
+    const ZONES = [-120, 0, 120].map((x) => ({ circle: { cx: x, cz: 40, r: 25 } }));
+    const mk = (enemies: UnitDef[], minHeld = 2) =>
+        createBattle(
+            field([...HQS(), ...enemies], {
+                timeLimitSec: 120,
+                objectives: {
+                    secondary: [{ id: 'z', type: 'defend_zones', label: '3 つのうち 2 つ以上を守る', sec: 120, zones: ZONES, minHeld, loseSec: 10, names: ['西の口', '中の口', '東の口'] }],
+                },
+            }),
+        );
+    const run = (s: BattleState) => s.objectives!.secondary[0]!;
+    /** 区域の中心へ攻め込んで居座る敵（区域を守る hold_zone） */
+    const sitter = (id: string, x: number) => U(id, 'enemy', 'yari', x, 40, { aiRole: 'hold_zone', aiTarget: { x, z: 40, r: 10 } });
+
+    it('敵だけが区域に 10 秒続けていると、その区域を失う（取り返しても戻らない）。2 つ目を失うと果たせなくなる', () => {
+        const s = mk([sitter('e1', -120)]);
+        advance(s, 9.5);
+        expect(run(s).zoneLost).toEqual([false, false, false]);
+        expect(objectiveZoneCounting(s, 'z#0')).toBe(true);
+        expect(objectiveProgress(s)[0]!.progressText).toContain('西の口を敵に奪われている：9／10 秒');
+        advance(s, 1);
+        expect(run(s).zoneLost).toEqual([true, false, false]);
+        expect(run(s).state).toBe('active');
+        expect(objectiveStateOf(s, 'z#0')).toBe('failed');
+        expect(objectiveStateOf(s, 'z#1')).toBe('active');
+        expect(s.events.some((e) => e.text === '副目標「3 つのうち 2 つ以上を守る」：西の口を失った')).toBe(true);
+        expect(objectiveProgress(s)[0]!.progressText).toContain('守っている 2／3（2 以上で残り');
+        expect(objectiveProgress(s)[0]!.progressText).toContain('西の口 ✕・中の口 ○・東の口 ○');
+        // 失った区域は、味方の動きの「目標の区域」から外れる
+        expect(activeObjectiveZones(s)).toEqual([ZONES[1], ZONES[2]]);
+        // 2 つ目を失う
+        const s2 = mk([sitter('e1', -120), sitter('e2', 120)]);
+        advance(s2, 11);
+        expect(run(s2).zoneLost).toEqual([true, false, true]);
+        expect(run(s2).state).toBe('failed');
+        expect(activeObjectiveZones(s2)).toEqual([]);
+    });
+
+    it('味方も区域にいれば奪われていない（数えない）。最後（sec 秒）まで 2 つ以上を守れば果たし、結果に 1 行で入る。sec より前に日没なら果たしていない', () => {
+        const s3 = createBattle(
+            field([...HQS(), sitter('e1', -120), U('a1', 'ally', 'yari', -120, 70)], {
+                timeLimitSec: 120,
+                objectives: { secondary: [{ id: 'z', type: 'defend_zones', label: '守る', sec: 120, zones: ZONES, minHeld: 3 }] },
+            }),
+        );
+        issueOrder(s3, 'a1', { type: 'attack', targetId: 'e1' });
+        advance(s3, 30);
+        // 味方が区域に入って斬り合う間は数えない（敵だけのときだけ数える）
+        expect(run(s3).zoneLost[0]).toBe(false);
+        // 西を失っても 2 つ残れば、sec（＝日没の 120 秒）に果たす
+        const s = mk([sitter('e1', -120)]);
+        const o = runToEnd(s);
+        expect(run(s).zoneLost).toEqual([true, false, false]);
+        expect(o.objectives!.secondary).toEqual([{ id: 'z', type: 'defend_zones', label: '3 つのうち 2 つ以上を守る', achieved: true }]);
+        // sec（150 秒）より前に日没（120 秒・撤退）で終えたら果たしていない（defend_time と同じく、勝って終えたときか sec に届いたときだけ）
+        const early = createBattle(
+            field([...HQS()], { timeLimitSec: 120, objectives: { secondary: [{ id: 'z', type: 'defend_zones', label: '守る', sec: 150, zones: ZONES, minHeld: 2 }] } }),
+        );
+        const o2 = runToEnd(early);
+        expect(o2.result).toBe('retreat');
+        expect(o2.objectives!.secondary[0]!.achieved).toBe(false);
+    });
+
+    it('sec 秒に届けば果たす（主目標が 300 秒しのぐ戦場と同じ時刻に done）。地図の印は区域ごと（id は「目標の id#番号」・名前は names）', () => {
+        const s = createBattle(
+            field([...HQS(), sitter('e1', -120)], {
+                timeLimitSec: 200,
+                objectives: { secondary: [{ id: 'z', type: 'defend_zones', label: '守る', sec: 60, zones: ZONES, minHeld: 2, names: ['西の口', '中の口', '東の口'] }] },
+            }),
+        );
+        expect(objectiveZoneMarks(s).map((m) => [m.id, m.name])).toEqual([
+            ['z#0', '西の口'],
+            ['z#1', '中の口'],
+            ['z#2', '東の口'],
+        ]);
+        advance(s, 61);
+        expect(run(s).state).toBe('done');
+        expect(objectiveStateOf(s, 'z#1')).toBe('done');
+        expect(objectiveStateOf(s, 'z#0')).toBe('failed');
+    });
+
+    it('minHeld が 1〜区域の数の整数でなければ、合戦を作るときに投げる', () => {
+        expect(() => mk([], 4)).toThrow(/minHeld/);
+        expect(() => mk([], 0)).toThrow(/minHeld/);
     });
 });

@@ -183,6 +183,9 @@ export interface FieldRules {
  * - destroy_hq：敵本陣の撃破
  * - hold_point：区域に、敵がいない状態で味方が続けて sec 秒いる
  * - defend_time：sec 秒まで守る（zone があれば、その区域を敵に loseSec 秒（省けば 10 秒）続けて奪われない。なければ本陣を守る）
+ * - defend_zones：区域 zones のうち minHeld 個以上を sec 秒まで守り抜く（例：3 本の橋のうち 2 本以上）。各区域は、敵だけが loseSec 秒
+ *   （省けば 10 秒）続けて占めると失う（取り返しても戻らない）。失っていない区域が minHeld 個より少なくなると果たせない。
+ *   names は区域ごとの短い名前（画面の見通し・地図の名札。省けば「守る地点」）
  * - rescue：味方の unitId を zone まで無事に連れ帰る（撤退の命令で戦場を離れても達成）
  * - breakthrough：味方 count 部隊が zone に入る（抜ける）
  * - retreat_success：本陣が撤退で戦場を離れ、味方の兵の minRatio 以上が撤退で戦場を離れる
@@ -195,6 +198,7 @@ export type ObjectiveDef = { id: string; label: string } & (
     | { type: 'destroy_hq' }
     | { type: 'hold_point'; zone: Zone; sec: number }
     | { type: 'defend_time'; sec: number; zone?: Zone; loseSec?: number }
+    | { type: 'defend_zones'; sec: number; zones: Zone[]; minHeld: number; loseSec?: number; names?: string[] }
     | { type: 'rescue'; unitId: string; zone: Zone }
     | { type: 'breakthrough'; zone: Zone; count: number }
     | { type: 'retreat_success'; minRatio: number }

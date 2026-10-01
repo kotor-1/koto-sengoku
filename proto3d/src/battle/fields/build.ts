@@ -131,14 +131,15 @@ export function buildBattleSetup(field: BattlefieldDef, presetOrUnits: string | 
     return setup;
 }
 
-/** 目標の区域（無ければ null） */
-function objectiveZone(o: ObjectiveDef) {
-    return 'zone' in o && o.zone ? o.zone : null;
+/** 目標の区域（区域を持たない目標は空。defend_zones は区域ごと） */
+function objectiveZones(o: ObjectiveDef) {
+    if (o.type === 'defend_zones') return o.zones;
+    return 'zone' in o && o.zone ? [o.zone] : [];
 }
 
 /** 味方が入って果たす目標の区域（地点の確保・区域の防衛・突破・救出の陣） */
 function allyZoneObjective(o: ObjectiveDef): boolean {
-    return o.type === 'hold_point' || o.type === 'breakthrough' || o.type === 'rescue' || (o.type === 'defend_time' && !!o.zone);
+    return o.type === 'hold_point' || o.type === 'breakthrough' || o.type === 'rescue' || (o.type === 'defend_time' && !!o.zone) || o.type === 'defend_zones';
 }
 
 /** 目標の指す部隊が、どちらの陣営でなければならないか（部隊を指さない目標は null） */
@@ -295,8 +296,7 @@ export function validateField(field: BattlefieldDef): string[] {
     for (const o of objs) {
         if (oids.has(o.id)) out.push(`目標 ${o.id} が重なっている`);
         oids.add(o.id);
-        const z = objectiveZone(o);
-        if (z) {
+        for (const z of objectiveZones(o)) {
             const c = zoneCenter(z);
             if (!ok(c.x, c.z)) out.push(`目標 ${o.id} の区域の中心が通れる所にない`);
             else if (!inZone(z, c.x, c.z)) out.push(`目標 ${o.id} の区域が正しくない`);
@@ -304,6 +304,13 @@ export function validateField(field: BattlefieldDef): string[] {
         }
         if (o.type === 'hold_point' && !(o.sec > 0)) out.push(`目標 ${o.id} の確保の秒数は 0 より大きい数`);
         if (o.type === 'defend_time' && !(o.sec > 0)) out.push(`目標 ${o.id} の守る秒数は 0 より大きい数`);
+        if (o.type === 'defend_zones') {
+            if (!(o.sec > 0)) out.push(`目標 ${o.id} の守る秒数は 0 より大きい数`);
+            if (o.zones.length === 0) out.push(`目標 ${o.id} の守る区域がない`);
+            if (!(Number.isInteger(o.minHeld) && o.minHeld >= 1 && o.minHeld <= o.zones.length)) out.push(`目標 ${o.id} の minHeld は 1 以上・区域の数以下の整数`);
+            if (o.names && o.names.length !== o.zones.length) out.push(`目標 ${o.id} の names の数が区域の数と違う`);
+            if (o.loseSec !== undefined && !(o.loseSec > 0)) out.push(`目標 ${o.id} の loseSec は 0 より大きい数`);
+        }
         if ((o.type === 'retreat_success' || o.type === 'preserve_unit') && !(o.minRatio > 0 && o.minRatio <= 1)) out.push(`目標 ${o.id} の minRatio は 0 より大きく 1 以下`);
         if (o.type === 'limit_losses' && !(o.maxRatio >= 0 && o.maxRatio < 1)) out.push(`目標 ${o.id} の maxRatio は 0 以上 1 未満`);
         if (o.type === 'breakthrough' && !(o.count >= 1)) out.push(`目標 ${o.id} の突破の部隊数は 1 以上`);

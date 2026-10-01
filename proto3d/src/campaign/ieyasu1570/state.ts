@@ -268,7 +268,7 @@ export const IEYASU_SIDE_OBJECTIVES: Readonly<Record<Policy, ObjectiveDef>> = {
 
 /** 副目標の記録の 1 行の上限（保存の検査） */
 const SIDE_OBJECTIVE_LABEL_MAX = 120;
-const OBJECTIVE_TYPES: readonly ObjectiveType[] = ['destroy_hq', 'hold_point', 'defend_time', 'rescue', 'breakthrough', 'retreat_success', 'survive_until', 'preserve_unit', 'limit_losses', 'break_unit'];
+const OBJECTIVE_TYPES: readonly ObjectiveType[] = ['destroy_hq', 'hold_point', 'defend_time', 'defend_zones', 'rescue', 'breakthrough', 'retreat_success', 'survive_until', 'preserve_unit', 'limit_losses', 'break_unit'];
 
 /**
  * 合戦の結果（BattleOutcome.objectives.secondary）から、その方針の副目標の記録を作る。

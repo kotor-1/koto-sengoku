@@ -18,7 +18,7 @@ export const FIELD_KINDS: readonly FieldKindInfo[] = [
     { kind: 'plains', name: '大平原', uses: '道・予備隊の枠', implemented: true },
     { kind: 'river_ford', name: '河川・浅瀬', uses: 'river・ford（浅瀬の乱れ）', implemented: true },
     { kind: 'single_bridge', name: '一本橋', uses: 'river・bridge（狭い通路）・narrow_frontage・浅瀬（遠回り）', implemented: true },
-    { kind: 'multi_bridge', name: '複数橋', uses: 'river・bridge×3・defend_time', implemented: true },
+    { kind: 'multi_bridge', name: '複数橋', uses: 'river・bridge×3・defend_time・defend_zones', implemented: true },
     { kind: 'hills', name: '丘陵', uses: 'hill・highGround', implemented: true },
     { kind: 'ridge', name: '尾根', uses: 'hill（capsule＝細長い）・cliff（急な面）・road（側面の登り道）', implemented: true },
     { kind: 'forest', name: '森林', uses: 'woods・woods_ambush・視界', implemented: true },

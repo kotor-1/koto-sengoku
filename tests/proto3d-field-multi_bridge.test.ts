@@ -2,7 +2,9 @@
  * 戦場「複数橋」（multi_bridge）の釣り合い（docs/fields-group2-design.md §4）。
  * 地形に合わない作戦（放置＝均等に置いたまま・均等に増やす・全部隊で東へ寄せる・橋を渡って攻める・早く本陣の周りへ固める）は負け、
  * 地形に合った作戦（敵の主力の向かう東の橋の口へ忠勝隊と弓を寄せ、予備の石川隊で中の口を埋め、西が片付いたら酒井隊を中へ回す）は勝つ。
- * 副目標（橋ごとに南の口を守り抜く。2 本以上が目安）は作戦によって 3 本／1 本に分かれる。
+ * 副目標（3 本の橋のうち 2 本以上を最後まで守る。目標の種類 defend_zones で、橋ごとに南の口を見る）は作戦によって 3 本／1 本に分かれる。
+ * （橋ごとの defend_time の副目標 3 つだったのを、エンジンの直しで 1 つの defend_zones にした。橋ごとの守り抜いた・失ったは目標の見張りの
+ * zoneLost で読む。直す前と同じ台本で、このファイルの確かめ（勝敗・損害・橋ごとの結果・失った時刻・16 通りの数）はどれも変わらなかった）
  * 能力の値打ちが地形で変わる比べ：酒井の両翼の采配（橋の口の狭い正面では包囲にならず効かない・南の岸の開けた所では効く）と、
  * 石川の後詰めの差配（中の口で踏みとどまったまま 150 m 先の東の口の忠勝隊を支える・同じ口の味方に使うと東は支えられない）。
  *
@@ -51,7 +53,7 @@ interface Run {
     left: Record<string, number>;
     /** 断られた命令 */
     refused: string[];
-    /** 守り抜いた橋（副目標の id） */
+    /** 守り抜いた橋（勝って終えて、失っていない橋の口。西・中・東の順に mb_west・mb_center・mb_east） */
     bridges: string[];
 }
 
@@ -68,15 +70,18 @@ function play(steps: Step[]): Run {
     });
     const al = o.units.filter((u) => u.side === 'ally');
     const loss = 1 - al.reduce((a, u) => a + u.endStrength, 0) / al.reduce((a, u) => a + u.startStrength, 0);
-    const bridges = o.objectives!.secondary.filter((x) => x.achieved).map((x) => x.id);
+    const run = s.objectives!.secondary.find((r) => r.def.id === 'mb_bridges')!;
+    const bridges = o.result === 'victory' ? BRIDGE_KEYS.filter((_, i) => !run.zoneLost[i]) : [];
     return { s, o, loss, left: Object.fromEntries(o.units.map((u) => [u.id, Math.round(u.endStrength)])), refused, bridges };
 }
 
 const statusOf = (r: Run, id: string) => r.o.units.find((u) => u.id === id)!.status;
 /** その部隊の最初の敗走の時刻（無ければ null） */
 const routAt = (r: Run, id: string) => r.s.events.find((e) => e.kind === 'rout' && e.unitId === id)?.t ?? null;
-/** 副目標を失った時刻 */
-const lostAt = (r: Run, label: string) => r.s.events.find((e) => e.text.includes(`副目標「${label}`) && e.text.includes('果たせなくなった'))?.t ?? null;
+/** 橋（「東の橋」など）の口を失った時刻 */
+const lostAt = (r: Run, label: string) => r.s.events.find((e) => e.text.includes('副目標「3 本の橋のうち') && e.text.includes(`${label}の口を失った`))?.t ?? null;
+/** 橋の口の区域の呼び方（西・中・東の順） */
+const BRIDGE_KEYS = ['mb_west', 'mb_center', 'mb_east'];
 
 /** 命令の時刻を ±15 秒ずらした 16 通り（決まった乱数で作る。0 秒の命令はずらさない） */
 function jittered(base: Step[], seed0 = 7): Run[] {
@@ -134,16 +139,15 @@ describe('複数橋のデータ', () => {
         expect(createBattle(buildBattleSetup(MB, 'standard')).field.nav).not.toBeNull();
     });
 
-    it('目標：主目標は本陣の区域を 300 秒しのぐ（敵本陣の撃破ではない）。副目標は 3 本の橋の南の口を橋ごとに守り抜く（結果に別々に入る）', () => {
+    it('目標：主目標は本陣の区域を 300 秒しのぐ（敵本陣の撃破ではない）。副目標は 3 本の橋のうち 2 本以上を最後まで守る（1 つの目標。橋ごとに南の口を見る）', () => {
         expect(MB.objectives.primary).toMatchObject({ type: 'defend_time', sec: 300, loseSec: 12 });
-        expect(MB.objectives.secondary.map((d) => d.id)).toEqual(['mb_west', 'mb_center', 'mb_east']);
-        for (const [d, x] of MB.objectives.secondary.map((d, i) => [d, [-150, 0, 150][i]!] as const)) {
-            expect(d.type).toBe('defend_time');
-            // 口で受ける隊の持ち場が区域の中
-            expect(d.type === 'defend_time' && d.zone && inZone(d.zone, x, 40)).toBe(true);
-        }
+        expect(MB.objectives.secondary.map((d) => d.id)).toEqual(['mb_bridges']);
+        const d = MB.objectives.secondary[0]!;
+        expect(d).toMatchObject({ type: 'defend_zones', sec: 300, minHeld: 2, loseSec: 10, names: ['西の橋の口', '中の橋の口', '東の橋の口'] });
+        // 口で受ける隊の持ち場が区域の中
+        if (d.type === 'defend_zones') d.zones.forEach((z, i) => expect(inZone(z, [-150, 0, 150][i]!, 40)).toBe(true));
         const r = play([]);
-        expect(r.o.objectives!.secondary.map((x) => x.id)).toEqual(['mb_west', 'mb_center', 'mb_east']);
+        expect(r.o.objectives!.secondary.map((x) => [x.id, x.type])).toEqual([['mb_bridges', 'defend_zones']]);
         expect(r.o.objectives!.primary!.id).toBe('mb_defend');
     });
 
@@ -274,8 +278,11 @@ describe('複数橋：副目標（橋ごとの守り）が作戦で分かれる�
         expect(near.bridges).toEqual(['mb_west']);
         // 主目標と副目標は別々に記録される
         expect(near.o.objectives!.primary!.achieved).toBe(true);
-        expect(near.o.objectives!.secondary.filter((x) => !x.achieved).map((x) => x.id)).toEqual(['mb_center', 'mb_east']);
+        expect(near.o.objectives!.secondary.map((x) => [x.id, x.achieved])).toEqual([['mb_bridges', false]]);
+        expect(fit.o.objectives!.secondary.map((x) => [x.id, x.achieved])).toEqual([['mb_bridges', true]]);
         expect(lostAt(near, '中の橋')).toBeLessThan(90);
+        // 2 本目（東）を失った時に副目標は果たせなくなる
+        expect(near.s.events.find((e) => e.text === '副目標「3 本の橋のうち 2 本以上を最後まで守る」は果たせなくなった')?.t).toBe(lostAt(near, '東の橋'));
     });
 
     it('16 通りずらしても分かれ方は同じ（本陣の近くで受けると 2 本以上を守る並びは 0、FIT は 14 通り以上）', () => {

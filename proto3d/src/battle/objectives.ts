@@ -24,6 +24,9 @@ export interface ObjectiveRun {
     state: ObjectiveState;
     /** hold_point：敵のいない区域に味方が続けている秒数／defend_time（区域）：敵だけが区域にいる秒数 */
     sec: number;
+    /** defend_zones：区域ごとの、敵だけが区域にいる秒数と、失ったか（ほかの目標では空） */
+    zoneSec: number[];
+    zoneLost: boolean[];
     /** breakthrough：区域に入った味方の部隊 id */
     entered: string[];
     /** survive_until：援軍が着いた時刻 */
@@ -92,6 +95,15 @@ function reinforcementUnits(s: BattleState, rid: string): UnitState[] {
     return r ? r.unitIds.map((id) => byId(s, id)).filter((u): u is UnitState => !!u) : [];
 }
 
+/** defend_zones：まだ失っていない区域の数 */
+function heldCount(r: ObjectiveRun): number {
+    return r.zoneLost.filter((x) => !x).length;
+}
+/** defend_zones の区域の短い名前（names を省けば「守る地点 1」など） */
+export function zoneName(d: Extract<ObjectiveDef, { type: 'defend_zones' }>, i: number): string {
+    return d.names?.[i] ?? `守る地点 ${i + 1}`;
+}
+
 /** 区域の中に、戦える味方・敵がいるか */
 function zoneHolders(s: BattleState, zone: Zone): { allyIn: boolean; enemyIn: boolean } {
     return {
@@ -118,7 +130,11 @@ export function createObjectiveTrack(setup: BattleSetup): ObjectiveTrack | null 
         if (def.type === 'survive_until' && !setup.reinforcements?.some((r) => r.id === def.reinforcementId)) {
             throw new Error(`目標 ${def.id} の援軍がありません: ${def.reinforcementId}`);
         }
-        return { def, role, state: 'active', sec: 0, entered: [], arrivedT: null, settledT: null };
+        const n = def.type === 'defend_zones' ? def.zones.length : 0;
+        if (def.type === 'defend_zones' && !(Number.isInteger(def.minHeld) && def.minHeld >= 1 && def.minHeld <= n)) {
+            throw new Error(`目標 ${def.id} の minHeld は 1 以上・区域の数（${n}）以下の整数にしてください`);
+        }
+        return { def, role, state: 'active', sec: 0, zoneSec: new Array<number>(n).fill(0), zoneLost: new Array<boolean>(n).fill(false), entered: [], arrivedT: null, settledT: null };
     };
     const primary = o.primary ? mk(o.primary, 'primary') : null;
     const secondary = (o.secondary ?? []).map((d) => mk(d, 'secondary'));
@@ -162,6 +178,21 @@ function update(s: BattleState, r: ObjectiveRun, dt: number, log: (text: string)
                 const a = hq(s, 'ally');
                 if (a && a.status !== 'ready') return settle(s, r, 'failed', log);
             }
+            if (t >= d.sec - 1e-9) settle(s, r, 'done', log);
+            return;
+        }
+        case 'defend_zones': {
+            const lose = d.loseSec ?? 10;
+            d.zones.forEach((z, i) => {
+                if (r.zoneLost[i]) return;
+                const { allyIn, enemyIn } = zoneHolders(s, z);
+                r.zoneSec[i] = enemyIn && !allyIn ? r.zoneSec[i]! + dt : 0;
+                if (r.zoneSec[i]! >= lose - 1e-9) {
+                    r.zoneLost[i] = true;
+                    log(`${r.role === 'primary' ? '主目標' : '副目標'}「${r.def.label}」：${zoneName(d, i)}を失った`);
+                }
+            });
+            if (heldCount(r) < d.minHeld) return settle(s, r, 'failed', log);
             if (t >= d.sec - 1e-9) settle(s, r, 'done', log);
             return;
         }
@@ -249,6 +280,9 @@ function finalAchieved(s: BattleState, r: ObjectiveRun, result: BattleResultKind
         case 'defend_time':
             // 勝って終えたなら、守り切った
             return result === 'victory';
+        case 'defend_zones':
+            // 勝って終えて、まだ minHeld 個以上を守っている（足りなくなった時点で failed になっている）
+            return result === 'victory' && heldCount(r) >= d.minHeld;
         case 'retreat_success': {
             const a = hq(s, 'ally');
             return !!a && a.status === 'withdrawn' && withdrawnRatio(s) >= d.minRatio - 1e-9;
@@ -305,6 +339,15 @@ function progressText(s: BattleState, r: ObjectiveRun): string {
         }
         case 'defend_time':
             return `残り ${Math.max(0, Math.ceil(d.sec - s.t))} 秒` + (d.zone && r.sec > 0 ? `（区域を敵に奪われている：${Math.floor(r.sec)}／${d.loseSec ?? 10} 秒）` : '');
+        case 'defend_zones': {
+            // 例：「守っている 3／3（2 以上で残り 120 秒）・西の口 ○・中の口 ○・東の口 ✕（中の口を敵に奪われている：4／10 秒）」
+            const marks = d.zones.map((_, i) => `${zoneName(d, i)} ${r.zoneLost[i] ? '✕' : '○'}`).join('・');
+            const taking = d.zones
+                .map((_, i) => i)
+                .filter((i) => !r.zoneLost[i] && r.zoneSec[i]! > 0)
+                .map((i) => `${zoneName(d, i)}を敵に奪われている：${Math.floor(r.zoneSec[i]!)}／${d.loseSec ?? 10} 秒`);
+            return `守っている ${heldCount(r)}／${d.zones.length}（${d.minHeld} 以上で残り ${Math.max(0, Math.ceil(d.sec - s.t))} 秒）・${marks}` + (taking.length ? `（${taking.join('・')}）` : '');
+        }
         case 'rescue': {
             const u = byId(s, d.unitId);
             // 輪の真ん中に味方の部隊が立っていることがある（押すとその部隊が選び直される）ので、空いた所を押すよう添える
@@ -350,6 +393,7 @@ export function activeObjectiveZones(s: BattleState): Zone[] {
         const d = r.def;
         if (d.type === 'hold_point' || d.type === 'breakthrough' || d.type === 'rescue') out.push(d.zone);
         else if (d.type === 'defend_time' && d.zone) out.push(d.zone);
+        else if (d.type === 'defend_zones') d.zones.forEach((z, i) => !r.zoneLost[i] && out.push(z));
     }
     return out;
 }
