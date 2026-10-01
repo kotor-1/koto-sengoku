@@ -75,6 +75,7 @@ import {
     abilityMoraleFloor,
     abilityGuarded,
     abilityGuardBroken,
+    abilityShadowLossMul,
     abilityMoraleLossMul,
     abilityRoutMorale,
     abilitySpeedMul,
@@ -344,6 +345,12 @@ export interface UnitState {
      * （味方をよけず、味方と押し離さない）。動こうとしていない刻みには null
      */
     squeeze: { x: number; z: number; t: number; seen: number; on: boolean } | null;
+    /**
+     * 号令の守り（兵の下限つきの能力）に守られている間の、号令が無かったときの士気の見積もり（守られ始めた時の士気・使った時の +40 の前
+     * から、号令の軽減・士気の床なしに下げる）。守りが外れた（兵が下限を切った）とき、士気をここまで下げてから普通の決まりで見る。
+     * 守られていない間は null
+     */
+    rallyShadow: number | null;
     /** 道探しでたどっている道（通れない所がある戦場だけ。goal は作ったときの行き先、pts は通る点、idx は次に向かう点） */
     path: { goalX: number; goalZ: number; builtT: number; pts: { x: number; z: number }[]; idx: number } | null;
     /** 移動の進み（新しい動きの決まりの戦場だけ）：行き先・それまでに近づいた一番近い距離・その距離を 1 m 縮めた時刻・最後に見た時刻 */
@@ -694,6 +701,7 @@ export function createBattle(setup: BattleSetup): BattleState {
             avoid: null,
             passThrough: null,
             squeeze: null,
+            rallyShadow: null,
             path: null,
             moveProg: null,
             wasHidden: false,
@@ -1015,8 +1023,12 @@ function tick(s: BattleState): void {
     s.units.forEach((u, i) => {
         if (!u.present) return;
         const l = Math.min(loss[i], u.strength);
-        // 立て直しの号令の守り（兵の下限つき）：損害を入れる前に守られていたか
-        const guarded = l > 0 && u.status === 'ready' && s.abilityList.length > 0 && abilityGuarded(s, u);
+        // 立て直しの号令の守り（兵の下限つき）：損害を入れる前に守られていたか。守られている間は、号令が無かったときの士気の
+        // 見積もり（rallyShadow）も数える（守られ始めた時の士気から）
+        const shielded = u.status === 'ready' && s.abilityList.length > 0 && abilityGuarded(s, u);
+        if (!shielded) u.rallyShadow = null;
+        else if (u.rallyShadow === null) u.rallyShadow = u.morale;
+        const guarded = l > 0 && shielded;
         u.recentLoss = u.recentLoss * 0.9 + l;
         if (l > 0) {
             u.strength -= l;
@@ -1030,13 +1042,24 @@ function tick(s: BattleState): void {
         if (meleeCount[i] >= 2) down += RULES.outnumberedPressure * dt;
         if (u.isHq && meleeCount[i] >= 1) down += RULES.hqUnderAttack * dt;
         down *= aura;
-        down *= abilityMoraleLossMul(s, u, meleeCount[i] > 0 || !!u.engagedWith);
-        if (s.encircled.length > 0) down *= encircleMul(s, u).morale;
+        const baseDown = down;
+        const inMelee = meleeCount[i] > 0 || !!u.engagedWith;
+        down *= abilityMoraleLossMul(s, u, inMelee);
+        const enc = s.encircled.length > 0 ? encircleMul(s, u).morale : 1;
+        if (s.encircled.length > 0) down *= enc;
         let m = u.morale - down;
-        if (t - u.lastHitT >= RULES.recoverDelay && !u.engagedWith) {
-            m += (RULES.recoverRate + (aura < 1 ? RULES.recoverHqBonus : 0)) * dt;
+        const recovering = t - u.lastHitT >= RULES.recoverDelay && !u.engagedWith;
+        const recover = (RULES.recoverRate + (aura < 1 ? RULES.recoverHqBonus : 0)) * dt;
+        if (recovering) {
+            m += recover;
             // 号令で最初の士気より上がった分は、戻りで削らない
             m = Math.min(m, Math.max(u.maxMorale, u.morale));
+        }
+        // 号令が無かったときの士気の見積もり：同じ損害・圧力で、号令の士気の低下の軽減・士気の床なしに下げる（ほかの能力の軽減は効かせる）
+        if (shielded && u.rallyShadow !== null) {
+            let sh = u.rallyShadow - baseDown * abilityShadowLossMul(s, u, inMelee) * enc;
+            if (recovering) sh = Math.min(sh + recover, Math.max(u.maxMorale, u.rallyShadow));
+            u.rallyShadow = clamp(sh, 0, 100);
         }
         // 立て直しの号令：士気が決まった値より下がらない（もとから低い部隊は今の値より下がらない）
         if (s.abilityList.length > 0) {
@@ -1044,12 +1067,19 @@ function tick(s: BattleState): void {
             if (floor > 0) m = Math.max(m, Math.min(u.morale, floor));
         }
         u.morale = clamp(m, 0, 100);
-        if (u.morale <= abilityRoutMorale(s, u, RULES.routMorale)) routedNow.push(u);
-        // 号令に守られていた部隊が、この損害で兵の下限（最初の 3 割）を切った：守りが外れ、その場で敗走する（全滅するまで戦わない）
-        else if (guarded && abilityGuardBroken(s, u)) {
-            routedNow.push(u);
-            guardBroken.add(u);
+        // 号令に守られていた部隊が、この損害で兵の下限（最初の 3 割）を切った：守りが外れる。号令が支えていた士気（+40・低下の軽減・
+        // 士気の床）も外れ、号令が無かったときの士気の見積もりまで下がる。そこから普通の決まり：敗走の線以下ならその場で敗走する
+        // （号令が無ければもう崩れていた部隊。全滅するまで戦わない）。士気が自前で高い部隊は戦い続ける（号令が無い時と同じ。
+        // 号令のせいで崩れることはない。家康本陣も同じ扱いで、号令を使ったせいで本陣が崩れて負けることはない）
+        const broken = guarded && abilityGuardBroken(s, u);
+        if (broken) {
+            if (u.rallyShadow !== null) u.morale = Math.min(u.morale, u.rallyShadow);
+            u.rallyShadow = null;
         }
+        if (u.morale <= abilityRoutMorale(s, u, RULES.routMorale)) {
+            routedNow.push(u);
+            if (broken) guardBroken.add(u);
+        } else if (broken) log(s, 'ability', `${u.name}：兵が減り、号令の守りが外れた（士気 ${Math.round(u.morale)}・普通の決まりで戦う）`, u.id);
     });
 
     // 8. 全滅・敗走
@@ -1075,8 +1105,10 @@ function tick(s: BattleState): void {
             if (o === u || o.side !== u.side || !isActive(o)) continue;
             const mul = abilityMoraleLossMul(s, o, !!o.engagedWith);
             const floor = s.abilityList.length > 0 ? Math.min(o.morale, abilityMoraleFloor(s, o)) : 0;
-            if (u.isHq) o.morale = Math.max(floor, o.morale - RULES.hqRoutShock * mul);
-            else if (dist(o, u) <= RULES.nearbyRoutRadius) o.morale = Math.max(floor, o.morale - RULES.nearbyRoutShock * mul);
+            const hit = u.isHq ? RULES.hqRoutShock : dist(o, u) <= RULES.nearbyRoutRadius ? RULES.nearbyRoutShock : 0;
+            if (hit > 0) o.morale = Math.max(floor, o.morale - hit * mul);
+            // 号令が無かったときの士気の見積もりも、同じ揺れを号令の軽減なしで受ける
+            if (hit > 0 && o.rallyShadow !== null) o.rallyShadow = Math.max(0, o.rallyShadow - hit * abilityShadowLossMul(s, o, !!o.engagedWith));
         }
     }
 

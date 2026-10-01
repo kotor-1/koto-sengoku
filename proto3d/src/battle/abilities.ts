@@ -83,7 +83,11 @@ export interface AbilityData {
     /**
      * 範囲の効果が効く兵の下限（最初の兵に対する割合。0 なら下限なし）。立て直しの号令の「死ぬまで退かない」を防ぐ：
      * - 兵がこの割合を切った部隊には、範囲の効果（士気の床・敗走しない・士気の低下を抑える・使った時の士気 +）が効かない（普通の決まり）。
-     * - 効果に守られていた部隊が、効果中にこの割合を切ったら、その場で敗走する（守りで士気を支えていた分、持ちこたえられない）。
+     * - 効果に守られていた部隊が、効果中にこの割合を切ったら守りが外れる。号令が支えていた士気（使った時の +、士気の低下の軽減、
+     *   士気の床）も外れ、士気は「号令が無かったときの見積もり」（sim.ts の UnitState.rallyShadow）まで下がる。そこから普通の決まりで、
+     *   敗走の線以下ならその場で敗走する（号令が無ければもう崩れていた部隊。全滅するまで戦わない）。
+     * - 士気が自前で高い部隊（見積もりでも敗走の線より上）は戦い続ける。号令が無い時と同じで、号令のせいで崩れることはない
+     *   （家康本陣も同じ扱い。号令を使ったせいで本陣が崩れて負けることはない）。
      */
     routGuardMinStrength: number;
     /** 持つ部隊自身の代償：与える損害 ×、動きの速さ ×、受ける損害 × */
@@ -160,7 +164,7 @@ export const ABILITY_DATA: Record<AbilityId, AbilityData> = {
         areaTakeMul: 1,
         areaMoraleLossMul: 0.4,
         // 範囲内は士気で敗走しない（士気は 20 未満に下がらない。もとから低い部隊も、効果中は崩れない）。
-        // ただし兵が最初の routGuardMinStrength（3 割）を切った部隊は守りが外れて退く（下の routGuardMinStrength）
+        // ただし兵が最初の routGuardMinStrength（3 割）を切った部隊は守りが外れる（号令で支えていた部隊は退く。下の routGuardMinStrength）
         areaRoutMorale: -1,
         selfDealMul: 0.3,
         selfSpeedMul: 0.5,
@@ -168,13 +172,14 @@ export const ABILITY_DATA: Record<AbilityId, AbilityData> = {
         rooted: false,
         ...NO_EXTRA,
         areaMoraleFloor: 20,
-        // 兵が最初の 3 割を切った部隊は号令の守りが外れる（効果中に切ったらその場で敗走する。全滅するまで戦わない）
+        // 兵が最初の 3 割を切った部隊は号令の守りが外れる（効果中に切ったら、号令で支えていた士気も外れ、号令が無ければ崩れていた部隊は
+        // その場で敗走する。全滅するまで戦わない。士気が自前で高い部隊・家康本陣は普通の決まりで戦い続ける）
         routGuardMinStrength: 0.3,
         cardLabel: '号令',
         targetText: '家康本陣を中心に、半径 110 m の味方の部隊（家康本陣も。使った後も本陣について動く）',
         rangeText: '半径 110 m（家康本陣の周り）',
         effectText:
-            '使った時に範囲内の味方の士気 +40（上限 100）。35 秒のあいだ、範囲内の味方の士気は 20 未満に下がらず（士気では敗走しない）、士気の低下 −60%。ただし兵が最初の 3 割を切った部隊には効かず、効果中に 3 割を切った部隊はその場で敗走する（全滅するまでは戦わない）',
+            '使った時に範囲内の味方の士気 +40（上限 100）。35 秒のあいだ、範囲内の味方の士気は 20 未満に下がらず（士気では敗走しない）、士気の低下 −60%。ただし兵が 3 割を切った部隊（最初の兵に対して）には効かない。効果中に兵が 3 割を切った部隊は守りが外れ、号令で支えていた士気（+40・低下の軽減・士気の床）も外れる。号令が無ければ崩れていた部隊はその場で敗走する（全滅するまでは戦わない）。士気が自前で高い部隊（家康本陣も）は、号令が無い時と同じく戦い続ける',
         costText: '効果中、家康本陣の与える損害 ×0.3・動き ×0.5（守りを優先）。失った兵や戦えない部隊は戻らない',
     },
     tadakatsu_rearguard: {
@@ -342,9 +347,9 @@ function ratioText(r: number): string {
     return p % 10 === 0 ? `${p / 10} 割` : `${p}%`;
 }
 
-/** 守りの下限の短い説明（例：「兵が 3 割を切った部隊は退く」）。下限が無ければ空 */
+/** 守りの下限の短い説明（例：「兵が 3 割を切った部隊は守りが外れ、号令で支えていた部隊は退く」）。下限が無ければ空 */
 export function guardText(d: AbilityData): string {
-    return d.routGuardMinStrength > 0 ? `兵が ${ratioText(d.routGuardMinStrength)}を切った部隊は退く` : '';
+    return d.routGuardMinStrength > 0 ? `兵が ${ratioText(d.routGuardMinStrength)}を切った部隊は守りが外れ、号令で支えていた部隊は退く` : '';
 }
 
 /** 能力の短い説明（スマホでも収まる長さ。数値は ABILITY_DATA から）。6 能力とも */
@@ -482,7 +487,7 @@ function belowGuard(u: UnitState, ratio: number): boolean {
 
 /**
  * u がいま、守りの下限のある範囲の効果（立て直しの号令）に守られているか。sim.ts は損害を入れる前にこれを調べ、
- * 入れた後に兵が下限を切っていたら（守りが外れた）その場で敗走させる（abilityGuardBroken）
+ * 入れた後に兵が下限を切っていたら（abilityGuardBroken）守りを外し、士気を号令が無かったときの見積もりまで下げて普通の決まりで見る
  */
 export function abilityGuarded(s: BattleState, u: UnitState): boolean {
     if (s.abilityList.length === 0) return false;
@@ -496,8 +501,8 @@ export function abilityGuarded(s: BattleState, u: UnitState): boolean {
 }
 
 /**
- * 守られていた部隊（損害を入れる前に abilityGuarded が true）が、損害で兵の下限を切ったか。
- * true なら sim.ts はその部隊を敗走させる（士気の床に支えられて全滅するまで戦わない）
+ * 守られていた部隊（損害を入れる前に abilityGuarded が true）が、損害で兵の下限を切ったか（守りが外れた）。
+ * true なら sim.ts は士気を号令が無かったときの見積もり（UnitState.rallyShadow）まで下げ、普通の決まりで敗走を見る
  */
 export function abilityGuardBroken(s: BattleState, u: UnitState): boolean {
     if (s.abilityList.length === 0) return false;
@@ -582,6 +587,23 @@ export function abilityMoraleLossMul(s: BattleState, u: UnitState, inMelee = tru
     let m = 1;
     for (const r of liveRuns(s)) {
         const data = ABILITY_DATA[r.id];
+        if (data.areaMoraleLossMeleeOnly && !inMelee) continue;
+        const holder = byId(s, r.unitId);
+        if (holder && inArea(r, holder, u)) m = Math.min(m, data.areaMoraleLossMul * (r.reserveBonus ? data.reserveMoraleLossMul : 1));
+    }
+    return m;
+}
+
+/**
+ * 号令が無かったときの士気の見積もり（UnitState.rallyShadow）に掛ける、士気の低下の倍率：abilityMoraleLossMul から、守りの下限のある
+ * 能力（立て直しの号令）を除いたもの（ほかの能力の軽減は効かせる）
+ */
+export function abilityShadowLossMul(s: BattleState, u: UnitState, inMelee = true): number {
+    if (s.abilityList.length === 0) return 1;
+    let m = 1;
+    for (const r of liveRuns(s)) {
+        const data = ABILITY_DATA[r.id];
+        if (data.routGuardMinStrength > 0) continue;
         if (data.areaMoraleLossMeleeOnly && !inMelee) continue;
         const holder = byId(s, r.unitId);
         if (holder && inArea(r, holder, u)) m = Math.min(m, data.areaMoraleLossMul * (r.reserveBonus ? data.reserveMoraleLossMul : 1));
@@ -727,6 +749,8 @@ export function updateAbilities(s: BattleState): void {
             // 時間で切れたときの代償（先駆けの号：士気 −）。崩れて終わったときは何もしない
             const cost = why === '' && data.endMoraleCost > 0 && holder && active(holder) ? data.endMoraleCost : 0;
             if (cost > 0) holder!.morale = Math.max(0, holder!.morale - cost);
+            // 号令が無かったときの士気の見積もりも同じだけ下げる
+            if (cost > 0 && holder!.rallyShadow !== null) holder!.rallyShadow = Math.max(0, holder!.rallyShadow - cost);
             pushEvent(s, {
                 kind: 'ability_end',
                 text: why === 'が崩れて' ? `${name}が崩れて「${data.name}」が終わった` : `${name}の「${data.name}」が終わった${why}` + (cost > 0 ? `（勢いが尽き、士気 −${cost}）` : ''),
@@ -829,6 +853,10 @@ function activate(s: BattleState, unitId: string, targetId: string | undefined, 
     if (data.moraleBoost > 0) {
         for (const o of s.units) {
             if (o.side !== u.side || !active(o) || !inArea(r, u, o)) continue;
+            // 号令が無かったときの士気の見積もり：守りの下限のある能力（立て直しの号令）の + は数えない（使う前の士気から数え始める）。
+            // ほかの能力の +（後詰めの差配）は見積もりにも足す
+            if (data.routGuardMinStrength > 0) o.rallyShadow ??= o.morale;
+            else if (o.rallyShadow !== null) o.rallyShadow = Math.min(100, o.rallyShadow + data.moraleBoost);
             o.morale = Math.min(100, o.morale + data.moraleBoost);
         }
     }
