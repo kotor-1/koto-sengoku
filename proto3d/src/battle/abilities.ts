@@ -116,6 +116,13 @@ export interface AbilityData {
     endMoraleCost: number;
     /** 数値の差し替え前提の能力（画面の説明に「仮」と出す） */
     provisional: boolean;
+    /**
+     * 効果を与えられる相手の確かめ（立て直しの号令。docs/fields-group3-design.md §2-3）。null なら確かめない（今までの能力）。
+     * 範囲（radius）の中の、効果を受けられる味方（自分も。兵の下限 routGuardMinStrength を切った部隊は除く）のうち 1 部隊以上で、
+     * 士気が上限 100 未満（使った時の士気 + が効く）か、敗走の防ぎが効く場面（交戦中・threatSec 秒以内に損害・矢・斬り合い・
+     * 見えている敵が threatEnemyM m 以内）のどれかが成り立たないと、使えない（点滅しない・押しても使わない・回数は減らない）
+     */
+    effectCheck: { threatSec: number; threatEnemyM: number } | null;
     /** 部隊の札・名札に添える短い呼び名（例：号令・守護・援護） */
     cardLabel: string;
     /** 効果中の印（状態の表示用）：持つ部隊・範囲内の部隊（省けば今までの 3 能力の印） */
@@ -143,6 +150,7 @@ const NO_EXTRA = {
     vanguard: null,
     lure: false,
     endMoraleCost: 0,
+    effectCheck: null,
     provisional: false,
 } as const;
 
@@ -175,8 +183,12 @@ export const ABILITY_DATA: Record<AbilityId, AbilityData> = {
         // 兵が最初の 3 割を切った部隊は号令の守りが外れる（効果中に切ったら、号令で支えていた士気も外れ、号令が無ければ崩れていた部隊は
         // その場で敗走する。全滅するまで戦わない。士気が自前で高い部隊・家康本陣は普通の決まりで戦い続ける）
         routGuardMinStrength: 0.3,
+        // 効果を与えられる相手がいない（範囲の味方がみな士気 100 で、交戦・射撃・敵の接近も無い）ときは使えない（回数は減らない）。
+        // 敵が近い＝見えている敵が弓の届く距離（RULES.bowRange 120 m）以内。損害・矢・斬り合いは 3 秒以内
+        effectCheck: { threatSec: 3, threatEnemyM: 120 },
         cardLabel: '号令',
-        targetText: '家康本陣を中心に、半径 110 m の味方の部隊（家康本陣も。使った後も本陣について動く）',
+        targetText:
+            '家康本陣を中心に、半径 110 m の味方の部隊（家康本陣も効果を受ける。使った後も本陣について動く）。効く相手（士気が 100 未満・交戦中・射撃を受けている・敵が近い部隊）が範囲にいなければ使えない（回数は減らない）',
         rangeText: '半径 110 m（家康本陣の周り）',
         effectText:
             '使った時に範囲内の味方の士気 +40（上限 100）。35 秒のあいだ、範囲内の味方の士気は 20 未満に下がらず（士気では敗走しない）、士気の低下 −60%。ただし兵が最初の 3 割を切った部隊には効かず、効果中に切った部隊は号令で支えた士気も外れ、号令が無ければ崩れていた部隊はその場で敗走する（全滅するまで戦わない）',
@@ -361,7 +373,7 @@ export function abilityShortText(id: AbilityId): { target: string; effect: strin
     switch (id) {
         case 'ieyasu_rally':
             return {
-                target: `本陣の周り ${d.radius} m の味方`,
+                target: `本陣の周り ${d.radius} m の味方（本陣も）`,
                 effect: `士気 +${d.moraleBoost}・${d.durationSec} 秒 士気 ${d.areaMoraleFloor} 未満に下がらない・士気の低下 −${pct(d.areaMoraleLossMul)}（${guardText(d)}）`,
                 cost: `本陣の与える損害 ×${d.selfDealMul}・動き ×${d.selfSpeedMul}`,
             };
@@ -815,9 +827,63 @@ function blockReason(s: BattleState, unitId: string, by: Side, targetId: string 
     if (u.status === 'destroyed') return '全滅した部隊は使えない';
     if (!u.present) return 'まだ戦場に着いていない';
     const data = ABILITY_DATA[r.id];
+    // 効果を与えられる相手がいない（立て直しの号令）：使わない（点滅もしない。回数は減らない）
+    if (data.effectCheck) {
+        const e = abilityEffectTargets(s, unitId)!;
+        if (e.inRange.length === 0) return `${data.radius} m 以内に効果を受けられる味方がいない（兵が最初の ${ratioText(data.routGuardMinStrength)}以上で戦える部隊。${u.name}も含む）`;
+        if (e.effective.length === 0) return `効く相手がいない（${data.radius} m 以内の味方は${u.name}も含めて士気 100 で、交戦・射撃・敵の接近も無い）`;
+    }
     if (data.target !== 'ally_unit' || !checkTarget) return null;
     if (!targetId) return r.id === 'nagamasa_support' ? '援護する味方の部隊を選ぶ' : '対象の味方の部隊を選ぶ';
     return targetProblem(u, data, byId(s, targetId));
+}
+
+/** 効果を与えられる相手の確かめの結果（abilityEffectTargets） */
+export interface AbilityEffectTargets {
+    /** 範囲の中の、効果を受けられる味方（自分も。戦える・着いている・兵の下限を切っていない）。近い順 */
+    inRange: string[];
+    /** そのうち、いま効果を与えられる部隊（士気が 100 未満・交戦中・射撃を受けている・敵が近い） */
+    effective: string[];
+    /** effective の部隊ごとの理由（'morale'＝士気の + が効く／'threat'＝敗走の防ぎが効く。両方なら両方） */
+    why: Record<string, ('morale' | 'threat')[]>;
+}
+
+/**
+ * 効果を与えられる相手（AbilityData.effectCheck のある能力＝立て直しの号令。無い能力は null）。
+ * abilityInfo の ready（点滅）・usable と useAbility の両方が、この結果で決める（誰にも効かなければ使わない・回数は減らない）。
+ * 自分（家康本陣）も範囲の味方として数える（号令は本陣にも効く）。敵の接近は、その陣営から見えている敵だけで見る（隠れた敵を明かさない）
+ */
+export function abilityEffectTargets(s: BattleState, unitId: string): AbilityEffectTargets | null {
+    const r = s.abilities[unitId];
+    const u = byId(s, unitId);
+    if (!r || !u) return null;
+    const data = ABILITY_DATA[r.id];
+    const chk = data.effectCheck;
+    if (!chk) return null;
+    const inRange = s.units
+        .filter((o) => o.side === u.side && active(o) && inArea(r, u, o))
+        .sort((a, b) => d2(a, u) - d2(b, u));
+    const foes = s.units.filter((o) => o.side !== u.side && active(o) && o.seenBy[u.side]);
+    const recent = (t: number) => s.t - t <= chk.threatSec;
+    const effective: string[] = [];
+    const why: Record<string, ('morale' | 'threat')[]> = {};
+    for (const o of inRange) {
+        const w: ('morale' | 'threat')[] = [];
+        if (data.moraleBoost > 0 && o.morale < 100) w.push('morale');
+        const threat =
+            !!o.engagedWith ||
+            o.attackers.length > 0 ||
+            recent(o.lastHitT) ||
+            recent(o.lastArrowT) ||
+            recent(o.lastMeleeT) ||
+            foes.some((f) => d2(f, o) <= chk.threatEnemyM);
+        if (threat) w.push('threat');
+        if (w.length) {
+            effective.push(o.id);
+            why[o.id] = w;
+        }
+    }
+    return { inRange: inRange.map((o) => o.id), effective, why };
 }
 
 /**
