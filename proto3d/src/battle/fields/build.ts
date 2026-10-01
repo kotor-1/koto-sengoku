@@ -348,6 +348,15 @@ export function validateField(field: BattlefieldDef): string[] {
         if (g.height !== undefined && !(g.height > 0)) out.push(`門 ${g.id} の高さは 0 より大きい数`);
         const c = zoneCenter(g.capture.zone);
         const taker: Side = (g.holder ?? 'enemy') === 'enemy' ? 'ally' : 'enemy';
+        // 制圧の区域は門の面まで届く（閉じた門へ押し付けられた部隊も数える。門の四辺の真ん中から 1 m 外のどれかが区域の中）
+        const { x0, x1, z0, z1 } = g.rect;
+        const faces = [
+            { x: (x0 + x1) / 2, z: z0 - 1 },
+            { x: (x0 + x1) / 2, z: z1 + 1 },
+            { x: x0 - 1, z: (z0 + z1) / 2 },
+            { x: x1 + 1, z: (z0 + z1) / 2 },
+        ];
+        if (!faces.some((p) => inZone(g.capture.zone, p.x, p.z))) out.push(`門 ${g.id} の制圧の区域が門の面に届いていない`);
         if (!ok(c.x, c.z)) out.push(`門 ${g.id} の制圧の区域の中心が通れる所にない`);
         else if (!fromExit(taker, c.x, c.z)) out.push(`門 ${g.id} の制圧の区域へ ${taker} の退き口から道がない（門が閉じた格子で）`);
     }

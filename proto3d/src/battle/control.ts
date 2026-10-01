@@ -7,7 +7,7 @@
  * - 地図の上の印（地形・目標の区域・援軍の出る所）の名札の位置。
  * - 見下ろしカメラの範囲。
  */
-import type { AbilityId, BattleEndReason, BattleMap, BattleOutcome, BattleResultKind, ObjectiveDef, Order, Side, UnitKind, Zone } from './types';
+import type { AbilityId, BattleEndReason, BattleMap, BattleOutcome, BattleResultKind, GateDef, ObjectiveDef, Order, Side, UnitKind, Zone } from './types';
 import { STATUS_LABEL, attackDir, canCommand, engagementLabel, hqOf, isActive, issueOrder, orderLabel, pledgeProgress, timeLeft, unitById, type BattleEvent, type BattleState, type UnitState } from './sim';
 import { ABILITY_DATA, ABILITY_FICTION_NOTE, abilityInfo, abilityMarks, abilityShortText, isRooted, type AbilityInfo } from './abilities';
 import { objectiveProgress, type ObjectiveRole, type ObjectiveRun, type ObjectiveState } from './objectives';
@@ -1193,6 +1193,22 @@ export function fieldRuleTexts(s: BattleState): string[] {
         out.push(bridge ? `深い川は渡れない（${ford ? '浅瀬と橋' : '橋'}だけ渡れる）` : '深い川は渡れない（浅瀬だけ渡れる）');
     }
     if (s.map.terrain.some((a) => a.kind === 'cliff')) out.push('崖は通れない');
+    // 第3群：湿地の泥（弓・突撃）・乾いた足場・障害物・門
+    const marsh = s.map.terrain.some((a) => a.kind === 'marsh') ? s.field.terrain.marsh : null;
+    if (marsh && (marsh.arrowDealMul !== 1 || marsh.noCharge || marsh.kindSpeed.kiba !== undefined)) {
+        const parts = [`動き ×${marsh.speed}${marsh.kindSpeed.kiba !== undefined ? `（騎馬 ×${Math.round(marsh.speed * marsh.kindSpeed.kiba * 100) / 100}）` : ''}`];
+        if (marsh.arrowDealMul !== 1) parts.push(`中の弓の矢 ×${marsh.arrowDealMul}`);
+        if (marsh.noCharge) parts.push('騎馬の突撃は効かない');
+        out.push(`湿地の泥：${parts.join('・')}`);
+    }
+    if (s.map.terrain.some((a) => a.kind === 'dry')) out.push('乾いた足場：湿地の中でも普通の地面（土手道は速い道）');
+    const obstacles = [
+        s.map.terrain.some((a) => a.kind === 'building') ? '家屋・堂' : '',
+        s.map.terrain.some((a) => a.kind === 'wall') ? '石垣' : '',
+    ].filter(Boolean);
+    if (obstacles.length) out.push(`${obstacles.join('・')}は通れず、矢も通さない（陰の相手は射られない。高い所からは越えて射られる）`);
+    if (s.map.terrain.some((a) => a.kind === 'fence')) out.push('柵は通れないが、矢は通す');
+    for (const g of s.field.gates) out.push(`${g.def.name}：閉じている間は通れず、矢も通さない。${gateLabelText(g.def).slice(g.def.name.length + 1)}（開いた門は閉じない）`);
     return out;
 }
 
@@ -1220,6 +1236,9 @@ const ZONE_NAME: Partial<Record<ObjectiveDef['type'], string>> = {
     defend_zones: '守る地点',
     rescue: '救出の地点',
     breakthrough: '突破する地点',
+    hold_zones: '確保する地点',
+    limit_breakthrough: '敵に抜かせない出口',
+    open_gate: '門の制圧',
 };
 
 /** 地図に描く目標の区域（区域を持つ目標だけ。主目標 → 副目標の順） */
@@ -1236,38 +1255,74 @@ export function objectiveZoneMarks(s: BattleState): ObjectiveZoneMark[] {
     const tr = s.objectives;
     if (!tr) return [];
     const out: ObjectiveZoneMark[] = [];
-    for (const r of tr.list) {
+    const add = (r: ObjectiveRun, prefix: string) => {
         const d = r.def;
-        if (d.type === 'defend_zones') {
-            d.zones.forEach((zone, i) => out.push({ id: `${d.id}#${i}`, role: r.role, zone, name: d.names?.[i] ?? ZONE_NAME.defend_zones! }));
-            continue;
+        if (d.type === 'defend_zones' || d.type === 'hold_zones') {
+            d.zones.forEach((zone, i) => out.push({ id: `${d.id}#${i}`, role: r.role, zone, name: prefix + (d.names?.[i] ?? ZONE_NAME[d.type]!) }));
+            return;
+        }
+        if (d.type === 'limit_breakthrough') {
+            d.exits.forEach((zone, i) => out.push({ id: `${d.id}#${i}`, role: r.role, zone, name: prefix + (d.names?.[i] ?? ZONE_NAME.limit_breakthrough!) }));
+            return;
+        }
+        if (d.type === 'open_gate') {
+            // 門の制圧の区域（門の前の輪）。名札は「門の制圧（外門）」
+            const g = s.field.gates.find((x) => x.def.id === d.gateId);
+            // 名札に制圧の条件も入れる（門の名札は出さない＝門の周りの名札を減らす）
+            if (g) out.push({ id: d.id, role: r.role, zone: g.def.capture.zone, name: `${prefix}${g.def.name}の制圧（輪を敵なしで ${g.def.capture.sec} 秒）` });
+            return;
+        }
+        if (d.type === 'sequence') {
+            // 段階目標：段ごとの区域（名札に「段階 1」などを添える）
+            r.steps.forEach((st, k) => add(st, `${prefix}段階 ${k + 1}・`));
+            return;
         }
         const zone = 'zone' in d ? d.zone : undefined;
         const name = ZONE_NAME[d.type];
-        if (zone && name) out.push({ id: d.id, role: r.role, zone, name });
-    }
+        if (zone && name) out.push({ id: d.id, role: r.role, zone, name: prefix + name });
+    };
+    for (const r of tr.list) add(r, '');
     return out;
 }
 
-/** 区域の印の id（目標の id、または defend_zones の「目標の id#番号」）→ 目標の見張りと区域の番号 */
-function zoneRun(s: BattleState, id: string): { run: ObjectiveRun | undefined; i: number } {
-    const k = id.lastIndexOf('#');
-    const run = s.objectives?.list.find((r) => r.def.id === id);
-    if (run || k < 0) return { run, i: -1 };
-    return { run: s.objectives?.list.find((r) => r.def.id === id.slice(0, k) && r.def.type === 'defend_zones'), i: Number(id.slice(k + 1)) };
+/** 目標の見張りを id で探す（段階目標の段も） */
+function findRun(list: readonly ObjectiveRun[] | undefined, id: string): ObjectiveRun | undefined {
+    for (const r of list ?? []) {
+        if (r.def.id === id) return r;
+        const st = findRun(r.steps, id);
+        if (st) return st;
+    }
+    return undefined;
 }
 
-/** 目標の今の状態（目標の見張りから。無ければ active）。defend_zones の区域の印は、その区域を失ったら failed */
+/** 区域の印の id（目標の id、または区域ごとの目標の「目標の id#番号」）→ 目標の見張りと区域の番号 */
+function zoneRun(s: BattleState, id: string): { run: ObjectiveRun | undefined; i: number } {
+    const k = id.lastIndexOf('#');
+    const run = findRun(s.objectives?.list, id);
+    if (run || k < 0) return { run, i: -1 };
+    return { run: findRun(s.objectives?.list, id.slice(0, k)), i: Number(id.slice(k + 1)) };
+}
+
+/**
+ * 目標の今の状態（目標の見張りから。無ければ active）。defend_zones の区域の印は、その区域を失ったら failed。
+ * 段階目標の段は、その段の状態（まだ来ていない段は active）
+ */
 export function objectiveStateOf(s: BattleState, id: string): ObjectiveState {
     const { run, i } = zoneRun(s, id);
-    if (run && i >= 0 && run.zoneLost[i]) return 'failed';
+    if (run && i >= 0 && run.def.type === 'defend_zones' && run.zoneLost[i]) return 'failed';
     return run?.state ?? 'active';
 }
 
-/** 区域の印が、いま数えている（確保を数える・敵に奪われかけている）か。地図の輪を脈打たせる */
+/** 区域の印が、いま数えている（確保を数える・敵に奪われかけている・門を制圧している）か。地図の輪を脈打たせる */
 export function objectiveZoneCounting(s: BattleState, id: string): boolean {
     const { run, i } = zoneRun(s, id);
     if (!run || run.state !== 'active') return false;
+    const d = run.def;
+    // 段階目標の段は、今の段だけ
+    if (run.parent && run.parent.steps[run.parent.stepIdx] !== run) return false;
+    if (d.type === 'limit_breakthrough') return false;
+    if (d.type === 'open_gate') return (s.field.gates.find((g) => g.def.id === d.gateId)?.sec ?? 0) > 0;
+    if (d.type === 'hold_zones') return run.sec > 0;
     return i >= 0 ? (run.zoneSec[i] ?? 0) > 0 : run.sec > 0;
 }
 
@@ -1321,6 +1376,11 @@ const TERRAIN_LABEL: Record<string, string> = {
     cliff: '崖（通れない）',
     bridge: '橋',
     paddy: '水田（とても遅い）',
+    // 第3群：建物・柵・石垣は区画が多いので、同じ名札は 1 つの戦場に 1 つだけ（mapLabels）
+    building: '家屋・堂（通れない・矢を通さない）',
+    fence: '柵（通れない・矢は通す）',
+    wall: '石垣（通れない・矢を通さない）',
+    dry: '乾いた足場',
 };
 
 /** 尾根（カプセルの丘）の名札を置く線分の上の所（割合。先の方から空いた所を使う）と、部隊の最初の位置から空ける距離（m） */
@@ -1345,7 +1405,11 @@ export function mapLabels(s: BattleState): MapLabel[] {
     s.map.terrain.forEach((a, i) => {
         const name = TERRAIN_LABEL[a.kind];
         if (!name) return;
-        if (a.circle) out.push({ id: `t${i}`, text: name, x: a.circle.cx + a.circle.r * 0.55, z: a.circle.cz + a.circle.r * 0.75, y: 2 });
+        if (a.circle && a.kind === 'dry') {
+            // 乾いた足場の島（第3群）：ほかの足場の名札から 120 m 以内には付けない（島が多い）
+            if (out.some((l) => l.text === name && Math.hypot(l.x - a.circle!.cx, l.z - a.circle!.cz) < 120)) return;
+            out.push({ id: `t${i}`, text: name, x: a.circle.cx, z: a.circle.cz + a.circle.r + 4, y: 1 });
+        } else if (a.circle) out.push({ id: `t${i}`, text: name, x: a.circle.cx + a.circle.r * 0.55, z: a.circle.cz + a.circle.r * 0.75, y: 2 });
         else if (a.capsule) {
             // 尾根（カプセルの丘）：線分の 4 分の 1 の所から南へ幅の半分（真ん中の頂に置く目標の名札と重ならないように）。
             // そこが部隊の最初の位置（配置の枠・援軍の出る所）から CAPSULE_LABEL_CLEAR m 以内なら、線分の 3/4・1/2・1/10・9/10…の所の南へ
@@ -1363,6 +1427,20 @@ export function mapLabels(s: BattleState): MapLabel[] {
                 out.push({ id: `t${i}`, text: name, x: Math.min(r.x1 + 12, s.map.width / 2 - 20), z: r.z0 - 6, y: 1 });
                 return;
             }
+            if (a.kind === 'building' || a.kind === 'fence' || a.kind === 'wall') {
+                // 障害物（第3群）：同じ名札は戦場に 1 つだけ。いちばん大きい区画（柵・石垣はいちばん長い区画）の真ん中の上
+                // （門・目標の輪・狭い正面の名札の集まる所から離れやすい）
+                if (out.some((l) => l.text === name)) return;
+                const size = (q: { x0: number; x1: number; z0: number; z1: number }) => (a.kind === 'building' ? (q.x1 - q.x0) * (q.z1 - q.z0) : Math.max(q.x1 - q.x0, q.z1 - q.z0));
+                const big = s.map.terrain.filter((b) => b.kind === a.kind && b.rect).sort((p, q) => size(q.rect!) - size(p.rect!))[0]!;
+                const br = big.rect!;
+                out.push({ id: `t${i}`, text: name, x: (br.x0 + br.x1) / 2, z: (br.z0 + br.z1) / 2, y: (big.height ?? 6) + 1 });
+                return;
+            }
+            if (a.kind === 'dry') {
+                // 土手道（細長い乾いた足場）には名札を付けない（道の名札と重なる）
+                if (r.x1 - r.x0 < 20 || r.z1 - r.z0 < 20) return;
+            }
             if (a.kind === 'paddy') {
                 // 水田は区画が多いので、ほかの水田の名札から 150 m 以内には付けない
                 const cx = (r.x0 + r.x1) / 2;
@@ -1375,7 +1453,12 @@ export function mapLabels(s: BattleState): MapLabel[] {
                 const p = rectLabelPoint(s, r, fords);
                 out.push({ id: `t${i}`, text: name, x: p.x, z: p.z, y: 0.5 });
             } else if (a.kind === 'ford') out.push({ id: `t${i}`, text: name, x: (r.x0 + r.x1) / 2, z: r.z1 + 6, y: 0.5 });
-            else if (a.kind === 'cliff') {
+            else if (a.kind === 'hill') {
+                // 四角の丘（第3群の台地・櫓の台）：大きい台地は「台地（高い）」と真ん中より少し南に。小さい台（櫓）は、上に立つ部隊の名札と
+                // 重なるので名札を付けない（合戦の前の説明に書く）
+                if ((r.x1 - r.x0) * (r.z1 - r.z0) < 900) return;
+                out.push({ id: `t${i}`, text: '台地（高い）', x: (r.x0 + r.x1) / 2, z: Math.min((r.z0 + r.z1) / 2 + 30, r.z1 - 20), y: (a.height ?? 10) + 1 });
+            } else if (a.kind === 'cliff') {
                 // 細い崖（関の狭まり）には名札を付けない
                 if (r.x1 - r.x0 < 20 || r.z1 - r.z0 < 20) return;
                 out.push({ id: `t${i}`, text: name, x: (r.x0 + r.x1) / 2, z: (r.z0 + r.z1) / 2, y: 8 });
@@ -1405,6 +1488,16 @@ export function mapLabels(s: BattleState): MapLabel[] {
     }
     // 援軍の出る所（部隊の名札と重ならないよう西へずらす）
     for (const r of reinfs) out.push({ id: `reinf-${r.id}`, text: `援軍の出る所（開始 ${fmtClock(r.at)}）`, x: Math.max(r.x - 70, -s.map.width / 2 + 30), z: r.z - 4, y: 0 });
+    // 門（第3群）：門の南の前に、制圧の条件の短い説明。狭い正面の名札より先に置いて、そちらが避ける。
+    // 門の制圧が目標（open_gate）の門は、目標の輪の名札に条件を書くので出さない
+    const gateGoals = new Set<string>();
+    const walk = (d: ObjectiveDef) => (d.type === 'open_gate' ? gateGoals.add(d.gateId) : d.type === 'sequence' ? d.steps.forEach(walk) : undefined);
+    for (const r of s.objectives?.list ?? []) walk(r.def);
+    for (const g of s.field.gates) {
+        if (gateGoals.has(g.def.id)) continue;
+        const r = g.def.rect;
+        out.push({ id: `gate-${g.def.id}`, text: gateLabelText(g.def), x: (r.x0 + r.x1) / 2, z: r.z1 + 6, y: (g.def.height ?? 6) * 0.5 });
+    }
     // 狭い正面の区域（区域の北の端に名札）
     (s.setup.fieldRules?.specialRules ?? []).forEach((r, i) => {
         if (r.type !== 'narrow_frontage') return;
@@ -1417,4 +1510,9 @@ export function mapLabels(s: BattleState): MapLabel[] {
         out.push({ id: `narrow-${i}`, text: `狭い正面（${r.maxEngaged} 部隊まで）`, x: c.x, z, y: 0.5 });
     });
     return out;
+}
+
+/** 門の名札・説明の文（例：「外門：前の輪を敵なしで 20 秒占めると開く」） */
+export function gateLabelText(g: GateDef): string {
+    return `${g.name}：前の輪を敵なしで ${g.capture.sec} 秒占めると開く`;
 }

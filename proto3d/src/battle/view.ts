@@ -161,6 +161,8 @@ export class BattleView {
     private readonly objZones: { id: string; role: 'primary' | 'secondary'; ringMat: THREE.MeshBasicMaterial; fillMat: THREE.MeshBasicMaterial; state: string }[] = [];
     /** 援軍の出る所の印（着いたら薄く） */
     private readonly reinfMarks: { at: number; mat: THREE.MeshBasicMaterial }[] = [];
+    /** 門の扉（第3群。門が開いたら隠す） */
+    private readonly gateDoors: { id: string; mesh: THREE.Mesh }[] = [];
     /** 通れる範囲（fieldRules.passable。無ければ null） */
     private readonly passable: { x0: number; x1: number; z0: number; z1: number } | null;
     private time = 0;
@@ -194,6 +196,7 @@ export class BattleView {
         this.buildPaddies();
         this.buildBridges();
         this.buildCliffs();
+        this.buildObstacles(s);
         this.buildEdges();
         this.buildFieldMarks(s);
         this.setTrees(null);
@@ -656,6 +659,8 @@ export class BattleView {
 
     private buildMarsh(): void {
         const parts: THREE.BufferGeometry[] = [];
+        const hasDry = this.map.terrain.some((a) => a.kind === 'dry');
+        const dryAt = (x: number, z: number) => hasDry && inTerrain(this.map, 'dry', x, z);
         for (const a of this.map.terrain) {
             if (a.kind !== 'marsh' || !a.rect) continue;
             const { x0, x1, z0, z1 } = a.rect;
@@ -670,6 +675,11 @@ export class BattleView {
                 g.rotateY(hash01('marsh', i + 90) * Math.PI);
                 const x = x0 + 8 + hash01('marsh', i + 130) * (x1 - x0 - 16);
                 const z = z0 + 8 + hash01('marsh', i + 170) * (z1 - z0 - 16);
+                // 乾いた足場（第3群）の上には水たまりを置かない（dry の無い戦場では今までと同じ）
+                if (dryAt(x, z)) {
+                    g.dispose();
+                    continue;
+                }
                 g.translate(x, 0.14, z);
                 g.deleteAttribute('uv');
                 g.deleteAttribute('normal');
@@ -693,7 +703,10 @@ export class BattleView {
             const { x0, x1, z0, z1 } = a.rect;
             const n = Math.round(((x1 - x0) * (z1 - z0)) / 110);
             for (let i = 0; i < n; i++) {
-                reeds.push([x0 + 3 + hash01('reed', i) * (x1 - x0 - 6), z0 + 3 + hash01('reed', i + 999) * (z1 - z0 - 6), 0.7 + hash01('reed', i + 555) * 0.7]);
+                const rx = x0 + 3 + hash01('reed', i) * (x1 - x0 - 6);
+                const rz = z0 + 3 + hash01('reed', i + 999) * (z1 - z0 - 6);
+                if (dryAt(rx, rz)) continue;
+                reeds.push([rx, rz, 0.7 + hash01('reed', i + 555) * 0.7]);
             }
         }
         if (reeds.length) {
@@ -799,6 +812,91 @@ export class BattleView {
         const geo = merge(parts);
         geo.computeVertexNormals();
         const mat = new THREE.MeshLambertMaterial({ vertexColors: true, color: '#b0a590', flatShading: true });
+        this.own(geo, mat);
+        this.scene.add(new THREE.Mesh(geo, mat));
+    }
+
+    /**
+     * 第3群の障害物（合戦用の簡単な形。美術の改修ではない）：
+     * - 家屋・堂（building）：区域を 14〜22 m ほどの家に分け、白い壁の箱と切妻の屋根（暗い瓦色）。家の間は 1.6 m あける（見た目だけ。
+     *   通れないのは区域の全体）。高さは区域の height（射線を遮る高さ）に合わせ、壁は高さの 6 割、屋根は残り。
+     * - 柵（fence）：3 m ごとの杭と 2 本の横木（低い。矢は通す）。
+     * - 石垣（wall）：灰色の石の箱と、上の白い塀の帯（高さは height）。
+     * - 門（FieldRules.gates）：両脇の太い柱・上の屋根の梁と、閉じている間だけ見える扉（gateDoors。開いたら隠す）。
+     * まとめて 1 つ（扉は門ごと）の形にする。障害物・門の無い戦場では何も作らない
+     */
+    private buildObstacles(s: BattleState): void {
+        const parts: THREE.BufferGeometry[] = [];
+        let k = 0;
+        for (const a of this.map.terrain) {
+            if (!a.rect || (a.kind !== 'building' && a.kind !== 'fence' && a.kind !== 'wall')) continue;
+            const { x0, x1, z0, z1 } = a.rect;
+            const base = elevationAt(this.map, (x0 + x1) / 2, (z0 + z1) / 2);
+            if (a.kind === 'building') {
+                const H = a.height ?? 6;
+                const nx = Math.max(1, Math.round((x1 - x0) / 18));
+                const nz = Math.max(1, Math.round((z1 - z0) / 18));
+                const cw = (x1 - x0) / nx;
+                const cd = (z1 - z0) / nz;
+                for (let i = 0; i < nx; i++) {
+                    for (let j = 0; j < nz; j++, k++) {
+                        const w = Math.max(2, cw - 1.6);
+                        const d = Math.max(2, cd - 1.6);
+                        const cx = x0 + (i + 0.5) * cw;
+                        const cz = z0 + (j + 0.5) * cd;
+                        const wallH = H * 0.6;
+                        const tone = 0.92 + hash01('house', k) * 0.08;
+                        const wallCol = new THREE.Color('#d9cfb4').multiplyScalar(tone);
+                        parts.push(part(new THREE.BoxGeometry(w, wallH, d), `#${wallCol.getHexString()}`, cx, base + wallH / 2, cz));
+                        // 腰の板（壁の下の暗い帯）
+                        parts.push(part(new THREE.BoxGeometry(w + 0.1, wallH * 0.3, d + 0.1), '#6b5038', cx, base + wallH * 0.15, cz));
+                        parts.push(gableRoof(w + 1.2, d + 1.2, H - wallH + 0.3, cx, base + wallH, cz, hash01('roof', k) < 0.5 ? '#4b4d55' : '#5a564e'));
+                    }
+                }
+            } else if (a.kind === 'fence') {
+                const alongZ = z1 - z0 >= x1 - x0;
+                const len = alongZ ? z1 - z0 : x1 - x0;
+                const c = alongZ ? (x0 + x1) / 2 : (z0 + z1) / 2;
+                const a0 = alongZ ? z0 : x0;
+                const n = Math.max(1, Math.round(len / 3));
+                for (let q = 0; q <= n; q++) {
+                    const t = a0 + (len * q) / n;
+                    parts.push(part(new THREE.BoxGeometry(0.35, 2.2, 0.35), '#5a4128', alongZ ? c : t, base + 1.1, alongZ ? t : c));
+                }
+                for (const y of [0.8, 1.7]) parts.push(part(alongZ ? new THREE.BoxGeometry(0.2, 0.18, len) : new THREE.BoxGeometry(len, 0.18, 0.2), '#7a5a3a', alongZ ? c : (x0 + x1) / 2, base + y, alongZ ? (z0 + z1) / 2 : c));
+            } else {
+                const H = a.height ?? 6;
+                parts.push(part(new THREE.BoxGeometry(x1 - x0, H * 0.8, z1 - z0), '#8f8a7e', (x0 + x1) / 2, base + H * 0.4, (z0 + z1) / 2));
+                parts.push(part(new THREE.BoxGeometry(x1 - x0 + 0.2, H * 0.2, z1 - z0 + 0.2), '#e2dccb', (x0 + x1) / 2, base + H * 0.9, (z0 + z1) / 2));
+            }
+        }
+        // 門：柱と梁（扉は別の形にして、開いたら隠す）
+        for (const g of s.field.gates) {
+            const { x0, x1, z0, z1 } = g.def.rect;
+            const H = g.def.height ?? 6;
+            const alongX = x1 - x0 >= z1 - z0;
+            const cx = (x0 + x1) / 2;
+            const cz = (z0 + z1) / 2;
+            const base = elevationAt(this.map, cx, cz);
+            for (const sd of [-1, 1]) {
+                const px = alongX ? cx + sd * ((x1 - x0) / 2 - 0.8) : cx;
+                const pz = alongX ? cz : cz + sd * ((z1 - z0) / 2 - 0.8);
+                parts.push(part(new THREE.BoxGeometry(1.6, H + 1.5, 1.6), '#4a3626', px, base + (H + 1.5) / 2, pz));
+            }
+            parts.push(gableRoof(alongX ? x1 - x0 + 3 : z1 - z0 + 3, 4, 2.2, cx, base + H + 1.2, cz, '#3f4148', !alongX));
+            const door = new THREE.BoxGeometry(alongX ? x1 - x0 - 3 : 1.2, H, alongX ? 1.2 : z1 - z0 - 3);
+            door.translate(cx, base + H / 2, cz);
+            door.deleteAttribute('uv');
+            const mat = this.own(new THREE.MeshLambertMaterial({ color: '#6e4a2c' }));
+            const mesh = new THREE.Mesh(this.own(door), mat);
+            this.scene.add(mesh);
+            this.gateDoors.push({ id: g.def.id, mesh });
+        }
+        if (!parts.length) return;
+        const geo = merge(parts);
+        geo.computeVertexNormals();
+        // 屋根の三角は両面を描く（面の向きを揃えない簡単な形のため）
+        const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, side: THREE.DoubleSide });
         this.own(geo, mat);
         this.scene.add(new THREE.Mesh(geo, mat));
     }
@@ -1262,6 +1360,8 @@ export class BattleView {
 
         if (this.abilRings.length || this.pledgeRing) this.updateAbilityMarks(s, ui, t);
         if (this.objZones.length || this.reinfMarks.length) this.updateFieldMarks(s, t);
+        // 門の扉：開いたら隠す（第3群。門の無い戦場では何もしない）
+        for (const d of this.gateDoors) d.mesh.visible = !s.field.gates.find((g) => g.def.id === d.id)?.open;
         this.ribbon.end();
     }
 
@@ -1531,6 +1631,7 @@ function groundColor(map: BattleMap, passable: { x0: number; x1: number; z0: num
     const n = Math.sin(x * 0.047 + 0.3) * 0.5 + Math.sin(z * 0.039 + 1.1) * 0.5 + Math.sin((x + z) * 0.021) * 0.6 + Math.sin(x * 0.19 - z * 0.13) * 0.25;
     out.set('#7a8f4c');
     if (inTerrain(map, 'cliff', x, z)) out.set('#4a463f');
+    else if (inTerrain(map, 'dry', x, z)) out.set('#8a835a'); // 乾いた足場（第3群。湿地の中の島・土手道）
     else if (inTerrain(map, 'ford', x, z)) out.set('#9a916c');
     else if (inTerrain(map, 'paddy', x, z)) out.set('#6c7a4e');
     else if (inTerrain(map, 'river', x, z)) out.set('#35505c');
@@ -1549,6 +1650,38 @@ function groundColor(map: BattleMap, passable: { x0: number; x1: number; z0: num
         // 通れる範囲の外（戦場の中）：暗くする
         out.lerp(new THREE.Color('#252a1e'), 0.55);
     }
+}
+
+/**
+ * 切妻の屋根（第3群の家屋・門）：幅 w（棟の向き）・奥行き d・高さ h の三角柱を、軒の高さ y に置く。alongZ なら棟を南北に向ける。
+ * part() と同じく、頂点の色を付けた添字なしの形を返す
+ */
+function gableRoof(w: number, d: number, h: number, x: number, y: number, z: number, color: string, alongZ = false): THREE.BufferGeometry {
+    const hw = w / 2;
+    const hd = d / 2;
+    // 棟は x の向き（alongZ なら後で回す）。前後の斜面 2 枚と、両端の三角 2 枚
+    const p = [
+        // 前の斜面（-z）
+        -hw, 0, -hd, hw, 0, -hd, hw, h, 0, -hw, 0, -hd, hw, h, 0, -hw, h, 0,
+        // 後ろの斜面（+z）
+        hw, 0, hd, -hw, 0, hd, -hw, h, 0, hw, 0, hd, -hw, h, 0, hw, h, 0,
+        // 両端の三角
+        -hw, 0, hd, -hw, 0, -hd, -hw, h, 0, hw, 0, -hd, hw, 0, hd, hw, h, 0,
+    ];
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
+    if (alongZ) g.rotateY(Math.PI / 2);
+    g.translate(x, y, z);
+    const c = new THREE.Color(color);
+    const col = new Float32Array((p.length / 3) * 3);
+    for (let i = 0; i < p.length / 3; i++) {
+        col[i * 3] = c.r;
+        col[i * 3 + 1] = c.g;
+        col[i * 3 + 2] = c.b;
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.computeVertexNormals();
+    return g;
 }
 
 /** 部分の形に色を付けて置く（まとめる前の部品） */

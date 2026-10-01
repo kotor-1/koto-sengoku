@@ -1317,8 +1317,9 @@ function planFor(s: BattleState, u: UnitState): Plan {
             if (near.length || prev) return { melee: holdMelee(), ranged: null, goal: null };
             if (d <= RULES.bowStandoff + 0.5) {
                 if (hasLineOfSight(s, u, tgt)) return { melee: null, ranged: tgt, goal: null };
-                // 射線が建物・石垣・閉じた門に遮られている（第3群）：射線が通る所まで、相手へ近づく（斬り合いの間合いの手前で止まる）
-                return { melee: null, ranged: null, goal: { x: tgt.x, z: tgt.z, stopAt: RULES.meleeRange + 5 } };
+                // 射線が建物・石垣・閉じた門に遮られている（第3群）：射線が通る、いちばん近い射ち場へ回る（無ければ相手へ近づく）
+                const v = vantagePoint(s, u, tgt);
+                return { melee: null, ranged: null, goal: v ? { x: v.x, z: v.z, stopAt: 0 } : { x: tgt.x, z: tgt.z, stopAt: RULES.meleeRange + 5 } };
             }
             return { melee: null, ranged: null, goal: { x: tgt.x, z: tgt.z, stopAt: RULES.bowStandoff } };
         }
@@ -1351,6 +1352,29 @@ export function bowRangeFor(s: BattleState, a: { x: number; z: number }, d: { x:
  */
 export function hasLineOfSight(s: BattleState, a: { x: number; z: number }, d: { x: number; z: number }): boolean {
     return !s.field.los || lineOfSight(s.map, s.field, a, d);
+}
+
+/**
+ * 射線が遮られた相手を射る射ち場（第3群）：相手から 50〜100 m の輪の上（15° おき）で、通れて、相手への射線が通り、射手の届く距離の点のうち、
+ * 射手にいちばん近い点（同じ距離なら並びの順）。無ければ null
+ */
+function vantagePoint(s: BattleState, u: UnitState, tgt: UnitState): { x: number; z: number } | null {
+    let best: { x: number; z: number } | null = null;
+    let bd = Infinity;
+    for (const r of [90, 70, 50, 100]) {
+        for (let k = 0; k < 24; k++) {
+            const a = (k * Math.PI) / 12;
+            const p = { x: tgt.x + Math.sin(a) * r, z: tgt.z - Math.cos(a) * r };
+            if (Math.abs(p.x) > s.map.width / 2 - 2 || Math.abs(p.z) > s.map.depth / 2 - 2 || !passableAt(s, p.x, p.z)) continue;
+            if (r > bowRangeFor(s, p, tgt) || !hasLineOfSight(s, p, tgt)) continue;
+            const d = dist(u, p);
+            if (d < bd - 1e-9) {
+                bd = d;
+                best = p;
+            }
+        }
+    }
+    return best;
 }
 
 function nearestShootable(s: BattleState, u: UnitState): UnitState | null {

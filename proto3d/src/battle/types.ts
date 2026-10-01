@@ -130,7 +130,10 @@ export interface GateDef {
     height?: number;
     /** 門を持つ側（省けば 'enemy'）。反対の側が制圧する */
     holder?: Side;
-    /** 制圧の条件：区域 zone を、holder の部隊がいない状態で、反対の側が sec 秒続けて占める */
+    /**
+     * 制圧の条件：区域 zone を、holder の部隊がいない状態で、反対の側が sec 秒続けて占める。区域は門の面まで届かせる
+     * （閉じた門へ向かって押し付けられた部隊の中心は門の面のすぐ外に止まるので、区域が門から離れていると数えない）
+     */
     capture: { zone: Zone; sec: number };
 }
 
