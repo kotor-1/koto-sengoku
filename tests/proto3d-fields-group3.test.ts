@@ -22,6 +22,7 @@ import { describe, expect, it } from 'vitest';
 import { RULES } from '../proto3d/src/battle/sim';
 import { buildBattleSetup, getField, validateField } from '../proto3d/src/battle/fields';
 import { brief, jitter, play, secondaryOf, type Run, type Step } from './proto3d-group3-helpers';
+import { parsePracticeData, practiceResultInfo, recordFromOutcome } from '../proto3d/src/campaign/practice';
 import { MARSH_PLANS, SIEGE_PLANS, TEMPLE_PLANS, TOWN_PLANS, VILLAGE_PLANS } from './proto3d-fields-group3-plans';
 
 const G3 = ['marsh', 'village', 'temple', 'town_edge', 'siege_front'] as const;
@@ -144,4 +145,26 @@ describe('城攻め前面（早送り）', () => {
     it('安定性：弓で櫓を射すくめる作戦は ±15 秒の 16 通りで 10 勝以上（作った時 12 勝。釣り合いの担当が上げる）', () => {
         expect(wins(jitter('siege_front', SIEGE_PLANS.archers))).toBeGreaterThanOrEqual(10);
     }, 120000);
+});
+
+describe('記録（演習の保存）：段階目標はどの段まで届いたかも残す', () => {
+    it('早送り：城攻め前面を待つだけで終えると、記録の主目標に段 0／2。勝てば 2／2。古い形（段の無い記録）もそのまま読める', () => {
+        const f = getField('siege_front')!;
+        const lose = play('siege_front', SIEGE_PLANS.hold);
+        const win = play('siege_front', SIEGE_PLANS.bastion);
+        const rl = recordFromOutcome(lose.o, f.objectives.primary.id, new Date(0));
+        const rw = recordFromOutcome(win.o, f.objectives.primary.id, new Date(0));
+        expect(rl.primary).toEqual({ id: 'siege_seq', achieved: false, steps: { done: 0, total: 2 } });
+        expect(rw.primary).toEqual({ id: 'siege_seq', achieved: true, steps: { done: 2, total: 2 } });
+        const json = JSON.stringify({ version: 1, records: { siege_front: { plays: 2, last: rl, best: rw } } });
+        expect(parsePracticeData(json)?.records.siege_front?.last.primary.steps).toEqual({ done: 0, total: 2 });
+        // 段の無い古い記録（第1群・第2群）は今までどおり読める。段の数がおかしい記録は読まない
+        const old = JSON.stringify({ version: 1, records: { plains: { plays: 1, last: { ...rl, primary: { id: 'x', achieved: false } }, best: { ...rl, primary: { id: 'x', achieved: false } } } } });
+        expect(parsePracticeData(old)?.records.plains?.last.primary).toEqual({ id: 'x', achieved: false });
+        const bad = JSON.stringify({ version: 1, records: { siege_front: { plays: 1, last: { ...rl, primary: { id: 'x', achieved: false, steps: { done: 3, total: 2 } } }, best: rl } } });
+        expect(parsePracticeData(bad)).toBeNull();
+        // 結果の画面の主目標の行に「（段階 0／2 まで）」
+        const info = practiceResultInfo(f, lose.o, { ok: false, reason: 'unavailable', message: '' });
+        expect(info.primary.label).toBe('外門を制圧し、最初の曲輪を確保する（段階 0／2 まで）');
+    });
 });

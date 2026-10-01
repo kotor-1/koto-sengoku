@@ -36,8 +36,8 @@ export const PRACTICE_NOTE = 'ゲーム用の演習（架空の相手）';
 export interface PracticeResultRecord {
     result: BattleResultKind;
     reason: BattleEndReason;
-    /** 主目標（達成は勝利かどうかと同じ） */
-    primary: { id: string; achieved: boolean };
+    /** 主目標（達成は勝利かどうかと同じ）。段階目標（第3群の城攻め前面など）は、果たした段の数と段の数も（無い記録もそのまま読める） */
+    primary: { id: string; achieved: boolean; steps?: { done: number; total: number } };
     /** 副目標（1 つずつ） */
     secondary: { id: string; label: string; achieved: boolean }[];
     /** 合戦にかかった時間（秒。0.1 秒で丸める） */
@@ -89,6 +89,13 @@ function parseResult(v: unknown): PracticeResultRecord | null {
     const { result, reason, primary, secondary, elapsedSec, at } = v;
     if (!RESULTS.includes(result as BattleResultKind) || !REASONS.includes(reason as BattleEndReason)) return null;
     if (!isObj(primary) || typeof primary.id !== 'string' || typeof primary.achieved !== 'boolean') return null;
+    // 段階目標の段（省けば無し。あれば 0 以上の整数で done ≤ total）
+    let steps: { done: number; total: number } | undefined;
+    if (primary.steps !== undefined) {
+        const st = primary.steps;
+        if (!isObj(st) || !Number.isInteger(st.done) || !Number.isInteger(st.total) || (st.done as number) < 0 || (st.done as number) > (st.total as number)) return null;
+        steps = { done: st.done as number, total: st.total as number };
+    }
     if (!Array.isArray(secondary)) return null;
     const sec: PracticeResultRecord['secondary'] = [];
     for (const s of secondary) {
@@ -96,7 +103,7 @@ function parseResult(v: unknown): PracticeResultRecord | null {
         sec.push({ id: s.id, label: s.label, achieved: s.achieved });
     }
     if (!isNum(elapsedSec) || elapsedSec < 0 || typeof at !== 'string' || Number.isNaN(Date.parse(at))) return null;
-    return { result: result as BattleResultKind, reason: reason as BattleEndReason, primary: { id: primary.id, achieved: primary.achieved }, secondary: sec, elapsedSec, at };
+    return { result: result as BattleResultKind, reason: reason as BattleEndReason, primary: { id: primary.id, achieved: primary.achieved, ...(steps ? { steps } : {}) }, secondary: sec, elapsedSec, at };
 }
 
 /** 保存の文字列を読む（形が違えば null） */
@@ -125,7 +132,9 @@ export function recordFromOutcome(o: BattleOutcome, primaryId: string, now: Date
     return {
         result: o.result,
         reason: o.reason,
-        primary: ob?.primary ? { id: ob.primary.id, achieved: ob.primary.achieved } : { id: primaryId, achieved: o.result === 'victory' },
+        primary: ob?.primary
+            ? { id: ob.primary.id, achieved: ob.primary.achieved, ...(ob.primary.steps ? { steps: { ...ob.primary.steps } } : {}) }
+            : { id: primaryId, achieved: o.result === 'victory' },
         secondary: (ob?.secondary ?? []).map((s) => ({ id: s.id, label: s.label, achieved: s.achieved })),
         elapsedSec: Math.round(Math.max(0, o.elapsedSec) * 10) / 10,
         at: now.toISOString(),
@@ -487,7 +496,11 @@ export function practiceResultInfo(field: BattlefieldDef, o: BattleOutcome, r: P
         resultLabel: RESULT_LABEL[o.result],
         reason: o.reason,
         reasonText: texts.reasons[o.reason] ?? '',
-        primary: { label: o.objectives?.primary?.label ?? field.objectives.primary.label, achieved: rec.primary.achieved },
+        primary: {
+            // 段階目標で全部の段に届かなかったときは、どの段まで届いたかを添える（例：「…（段階 1／2 まで）」）
+            label: (o.objectives?.primary?.label ?? field.objectives.primary.label) + (rec.primary.steps && rec.primary.steps.done < rec.primary.steps.total ? `（段階 ${rec.primary.steps.done}／${rec.primary.steps.total} まで）` : ''),
+            achieved: rec.primary.achieved,
+        },
         secondary: (o.objectives?.secondary ?? []).map((s) => ({ label: s.label, achieved: s.achieved })),
         elapsed: fmtClock(o.elapsedSec),
         saved: savedNote(r),
