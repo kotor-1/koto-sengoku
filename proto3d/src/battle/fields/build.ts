@@ -12,9 +12,9 @@
  * - 武将の自由な動き（BattleSetup.generalInitiative）は、戦場の generalInitiative（演習の 5 戦場）を写す。opts で上書きできる。
  * - 援軍：編成の部隊が reinforcement を指せば、その出現地点・時刻（arriveAt）に置き、BattleSetup.reinforcements に入れる。
  */
-import type { BattleMap, BattleSetup, FieldRules, ObjectiveDef, Side, TerrainKind, UnitDef } from '../types';
+import type { BattleMap, BattleSetup, FieldRules, ObjectiveDef, Side, TerrainKind, UnitDef, Zone } from '../types';
 import { RULES, elevationAt } from '../sim';
-import { areaCenter, createFieldEnv, inZone, zoneCenter } from '../fieldRules';
+import { OBSTACLE_KINDS, areaCenter, createFieldEnv, inZone, openAllGates, zoneCenter } from '../fieldRules';
 import { NAV_CELL, isPassable, reachable } from '../pathfind';
 import { generalById } from '../generals';
 import { ABILITY_DATA } from '../abilities';
@@ -54,6 +54,7 @@ export function fieldRulesOf(field: BattlefieldDef): FieldRules | undefined {
     if (field.passable) r.passable = field.passable;
     if (field.pathfinding) r.pathfinding = true;
     if (!field.keepV11Movement) r.settleMoves = true;
+    if (field.gates && field.gates.length) r.gates = field.gates;
     return Object.keys(r).length ? r : undefined;
 }
 
@@ -131,15 +132,25 @@ export function buildBattleSetup(field: BattlefieldDef, presetOrUnits: string | 
     return setup;
 }
 
-/** 目標の区域（区域を持たない目標は空。defend_zones は区域ごと） */
-function objectiveZones(o: ObjectiveDef) {
-    if (o.type === 'defend_zones') return o.zones;
+/** 目標の区域（区域を持たない目標は空。defend_zones・hold_zones は区域ごと、limit_breakthrough は出口ごと。段階目標は各段の区域） */
+function objectiveZones(o: ObjectiveDef): Zone[] {
+    if (o.type === 'defend_zones' || o.type === 'hold_zones') return o.zones;
+    if (o.type === 'limit_breakthrough') return o.exits;
+    if (o.type === 'sequence') return o.steps.flatMap(objectiveZones);
     return 'zone' in o && o.zone ? [o.zone] : [];
 }
 
 /** 味方が入って果たす目標の区域（地点の確保・区域の防衛・突破・救出の陣） */
 function allyZoneObjective(o: ObjectiveDef): boolean {
-    return o.type === 'hold_point' || o.type === 'breakthrough' || o.type === 'rescue' || (o.type === 'defend_time' && !!o.zone) || o.type === 'defend_zones';
+    return (
+        o.type === 'hold_point' ||
+        o.type === 'breakthrough' ||
+        o.type === 'rescue' ||
+        (o.type === 'defend_time' && !!o.zone) ||
+        o.type === 'defend_zones' ||
+        o.type === 'hold_zones' ||
+        o.type === 'limit_breakthrough'
+    );
 }
 
 /** 目標の指す部隊が、どちらの陣営でなければならないか（部隊を指さない目標は null） */
@@ -160,13 +171,14 @@ function validateRules(field: BattlefieldDef): string[] {
     if (!(Number.isFinite(field.timeLimitSec) && field.timeLimitSec > 0)) out.push('日没までの秒数（timeLimitSec）は 0 より大きい数');
     for (const [k, r] of Object.entries(field.terrainRules ?? {}) as [TerrainKind, NonNullable<BattlefieldDef['terrainRules']>[TerrainKind]][]) {
         if (!r) continue;
-        const blocked = k === 'river' || k === 'cliff';
+        const blocked = k === 'river' || k === 'cliff' || OBSTACLE_KINDS.includes(k);
         if (!blocked && !positive(r.speed)) out.push(`地形の決まり ${k} の speed は 0 より大きい数（部隊が動けなくなる）`);
         for (const [uk, v] of Object.entries(r.kindSpeed ?? {})) if (!blocked && !positive(v)) out.push(`地形の決まり ${k} の kindSpeed.${uk} は 0 より大きい数`);
         if (!positive(r.dealMul)) out.push(`地形の決まり ${k} の dealMul は 0 より大きい数`);
         if (!positive(r.takeMul)) out.push(`地形の決まり ${k} の takeMul は 0 より大きい数`);
         if (!positive(r.arrowTakeMul)) out.push(`地形の決まり ${k} の arrowTakeMul は 0 より大きい数`);
         if (!nonNegative(r.hideSight)) out.push(`地形の決まり ${k} の hideSight は 0 以上の数`);
+        if (!positive(r.arrowDealMul)) out.push(`地形の決まり ${k} の arrowDealMul は 0 より大きい数`);
     }
     const hg = field.highGround;
     if (hg) {
@@ -202,6 +214,12 @@ function validateTerrain(
         if (a.circle && !(a.circle.r > 0)) out.push(`${tag} の円の半径は 0 より大きい数`);
         if (a.capsule && !(a.capsule.r > 0)) out.push(`${tag} のカプセルの幅 r は 0 より大きい数`);
         if (a.kind === 'hill' && a.height !== undefined && !(a.height > 0)) out.push(`${tag} の高さは 0 より大きい数`);
+        // 障害物（第3群）：格子（5 m）の升の中心を 1 つ以上含む（細すぎると、通れない所・射線を遮る所として格子に載らない）。高さは正
+        if (OBSTACLE_KINDS.includes(a.kind)) {
+            if (!(a.rect || a.circle)) out.push(`${tag} の障害物は四角か円で書く`);
+            else if (!coversCell(field, a)) out.push(`${tag} の障害物が細すぎて格子（${NAV_CELL} m）の升に載らない（厚さ ${NAV_CELL + 1} m 以上にする）`);
+            if (a.height !== undefined && !(a.height > 0)) out.push(`${tag} の高さは 0 より大きい数`);
+        }
         if (a.kind === 'bridge') {
             if (!a.rect) {
                 out.push(`${tag} の橋は四角で書く`);
@@ -247,6 +265,16 @@ function validateTerrain(
     return out;
 }
 
+/** 区域が格子の升の中心を 1 つ以上含むか（障害物・門が格子に載るか） */
+function coversCell(field: BattlefieldDef, a: Zone): boolean {
+    const x0 = -field.width / 2;
+    const z0 = -field.depth / 2;
+    const cols = Math.ceil(field.width / NAV_CELL);
+    const rows = Math.ceil(field.depth / NAV_CELL);
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) if (inZone(a, x0 + (c + 0.5) * NAV_CELL, z0 + (r + 0.5) * NAV_CELL)) return true;
+    return false;
+}
+
 /**
  * 戦場のデータを検査する（問題の文の並び。空なら問題なし）：
  * - 広さ・退き口・配置の枠・援軍の地点・目標の区域の中心・敵の考えの地点が、戦場の中の通れる所にある
@@ -257,6 +285,12 @@ function validateTerrain(
  * - 編成ごとに：部隊の id が重ならない・陣営ごとの部隊数が上限（RULES.maxUnitsPerSide）以下・本陣が陣営に 1 つ以上・
  *   枠／援軍が有る・目標の指す部隊が有る（救出・部隊を残すは味方、崩すは敵の部隊）・武将（generalId）と能力（ability）が有る
  * - 目標の id が重ならない・援軍の目標の援軍が有る
+ * 第3群で足した検査：
+ * - 障害物（building・fence・wall）・門が格子の升に載る（細すぎない）。配置の枠のまわり（6 m）が障害物で塞がれていない
+ * - 門：id が重ならない・制圧の秒数が正・制圧の区域の中心が通れて味方の退き口から道がある（門が閉じた格子で）・門を開くと門の所が通れる
+ * - 目標：hold_zones・limit_breakthrough・open_gate・sequence の数値と、区域への道（段階目標の 2 段目からは、門をすべて開いた格子でも確かめる。
+ *   出口は敵の退き口からも道がある）
+ * - 編成：増援（援軍・遅れて着く部隊）も含めて、同時に戦場にいる部隊の数が上限以内（部隊は戦場を離れても戻らないので、陣営の部隊の数そのもの）
  */
 export function validateField(field: BattlefieldDef): string[] {
     const out: string[] = [];
@@ -265,14 +299,26 @@ export function validateField(field: BattlefieldDef): string[] {
     const nav = env.nav!;
     const inside = (x: number, z: number) => Math.abs(x) <= field.width / 2 && Math.abs(z) <= field.depth / 2;
     const ok = (x: number, z: number) => inside(x, z) && isPassable(nav, x, z);
+    // 門をすべて開いた格子（第3群。門の無い戦場では閉じた格子と同じ）。門を持つ側（ふつうは敵）は門の内と外を行き来できるとみなし、
+    // その側の道は開いた格子で確かめる。門を制圧する側の道は、閉じた格子で確かめる（門の前の制圧の区域へ行ける）
+    const openEnv = createFieldEnv(map, { ...(fieldRulesOf(field) ?? {}), pathfinding: true });
+    if (openEnv.gates.length) openAllGates(map, openEnv);
+    const openNav = openEnv.nav!;
+    const holders = new Set<Side>((field.gates ?? []).map((g) => g.holder ?? 'enemy'));
+    const navFor = (side: Side) => (holders.has(side) ? openNav : nav);
+    const okOpen = (x: number, z: number) => inside(x, z) && isPassable(openNav, x, z);
     /** その陣営の退き口から (x, z) へ道がある（退き口が通れない所にあるときは、そちらの問題として別に出す） */
     const fromExit = (side: Side, x: number, z: number) => {
         const e = field.exits[side];
-        return !ok(e.x, e.z) || reachable(nav, 'yari', e.x, e.z, x, z);
+        return !ok(e.x, e.z) || reachable(navFor(side), 'yari', e.x, e.z, x, z);
+    };
+    const fromExitOpen = (side: Side, x: number, z: number) => {
+        const e = field.exits[side];
+        return !okOpen(e.x, e.z) || reachable(openNav, 'yari', e.x, e.z, x, z);
     };
     if (!(field.width > 0 && field.depth > 0)) out.push('広さが正しくない');
     out.push(...validateRules(field));
-    out.push(...validateTerrain(field, ok, fromExit));
+    out.push(...validateTerrain(field, ok, fromExitOpen));
     for (const side of ['ally', 'enemy'] as Side[]) {
         const e = field.exits[side];
         if (!ok(e.x, e.z)) out.push(`${side} の退き口が通れる所にない`);
@@ -281,7 +327,7 @@ export function validateField(field: BattlefieldDef): string[] {
             if (ids.has(d.id)) out.push(`${side} の配置の枠 ${d.id} が重なっている`);
             ids.add(d.id);
             if (!ok(d.x, d.z)) out.push(`${side} の配置の枠 ${d.id} が通れる所にない`);
-            else if (ok(e.x, e.z) && !reachable(nav, 'yari', d.x, d.z, e.x, e.z)) out.push(`${side} の配置の枠 ${d.id} から退き口へ道がない`);
+            else if (ok(e.x, e.z) && !reachable(navFor(side), 'yari', d.x, d.z, e.x, e.z)) out.push(`${side} の配置の枠 ${d.id} から退き口へ道がない`);
         }
     }
     const rids = new Set<string>();
@@ -291,11 +337,35 @@ export function validateField(field: BattlefieldDef): string[] {
         if (!ok(r.point.x, r.point.z)) out.push(`援軍 ${r.id} の出現地点が通れる所にない`);
         else if (!fromExit(r.side, r.point.x, r.point.z)) out.push(`援軍 ${r.id} の出現地点へ ${r.side} の退き口から道がない`);
     }
+    // 門（第3群）
+    const gids = new Set<string>();
+    for (const g of field.gates ?? []) {
+        if (gids.has(g.id)) out.push(`門 ${g.id} が重なっている`);
+        gids.add(g.id);
+        if (!(g.rect.x1 > g.rect.x0 && g.rect.z1 > g.rect.z0)) out.push(`門 ${g.id} の四角が正しくない`);
+        else if (!coversCell(field, { rect: g.rect })) out.push(`門 ${g.id} が細すぎて格子の升に載らない`);
+        if (!(g.capture.sec > 0)) out.push(`門 ${g.id} の制圧の秒数は 0 より大きい数`);
+        if (g.height !== undefined && !(g.height > 0)) out.push(`門 ${g.id} の高さは 0 より大きい数`);
+        const c = zoneCenter(g.capture.zone);
+        const taker: Side = (g.holder ?? 'enemy') === 'enemy' ? 'ally' : 'enemy';
+        if (!ok(c.x, c.z)) out.push(`門 ${g.id} の制圧の区域の中心が通れる所にない`);
+        else if (!fromExit(taker, c.x, c.z)) out.push(`門 ${g.id} の制圧の区域へ ${taker} の退き口から道がない（門が閉じた格子で）`);
+    }
+    // 門を開くと門の所が通れるか（閉じていると通れないか）
+    for (const g of field.gates ?? []) {
+        const gx = (g.rect.x0 + g.rect.x1) / 2;
+        const gz = (g.rect.z0 + g.rect.z1) / 2;
+        if (!okOpen(gx, gz)) out.push(`門 ${g.id} を開いても門の所が通れない（壁・建物と重なっている）`);
+        else if (ok(gx, gz)) out.push(`門 ${g.id} が閉じていても門の所が通れる（門が格子に載っていない）`);
+    }
     const objs = [field.objectives.primary, ...field.objectives.secondary];
     const oids = new Set<string>();
     for (const o of objs) {
         if (oids.has(o.id)) out.push(`目標 ${o.id} が重なっている`);
         oids.add(o.id);
+        out.push(...validateNewObjective(field, o, oids, gids, okOpen, fromExitOpen, ok, fromExit));
+        // 段階目標の区域は validateNewObjective が段ごとに見る
+        if (o.type === 'sequence') continue;
         for (const z of objectiveZones(o)) {
             const c = zoneCenter(z);
             if (!ok(c.x, c.z)) out.push(`目標 ${o.id} の区域の中心が通れる所にない`);
@@ -316,10 +386,25 @@ export function validateField(field: BattlefieldDef): string[] {
         if (o.type === 'breakthrough' && !(o.count >= 1)) out.push(`目標 ${o.id} の突破の部隊数は 1 以上`);
         if (o.type === 'survive_until' && !rids.has(o.reinforcementId)) out.push(`目標 ${o.id} の援軍 ${o.reinforcementId} がない`);
     }
+    // 配置の枠のまわり（6 m）が障害物で塞がれていない（第3群。部隊が建物の間に挟まって動けなくならないように）
+    if (field.terrain.some((a) => OBSTACLE_KINDS.includes(a.kind))) {
+        for (const side of ['ally', 'enemy'] as Side[]) {
+            for (const d of field.deployments[side]) {
+                const around = [
+                    [6, 0],
+                    [-6, 0],
+                    [0, 6],
+                    [0, -6],
+                ].filter(([dx, dz]) => !ok(d.x + dx!, d.z + dz!)).length;
+                if (around >= 2) out.push(`${side} の配置の枠 ${d.id} のまわりが障害物で塞がれている`);
+            }
+        }
+    }
     for (const r of field.specialRules ?? []) {
         if (r.type === 'narrow_frontage') {
             const c = zoneCenter(r.zone);
-            if (!ok(c.x, c.z)) out.push('狭い正面の区域の中心が通れる所にない');
+            // 門をくぐる所の狭い正面は、門が開いた格子で見る
+            if (!okOpen(c.x, c.z)) out.push('狭い正面の区域の中心が通れる所にない');
             if (!(r.maxEngaged >= 1)) out.push('狭い正面の maxEngaged は 1 以上');
         } else if (r.type === 'woods_ambush') {
             if (!(r.firstStrikeMul > 0 && r.sec > 0)) out.push('林の奇襲の数値が正しくない');
@@ -331,6 +416,59 @@ export function validateField(field: BattlefieldDef): string[] {
         if (pids.has(pr.id)) out.push(`編成 ${pr.id} が重なっている`);
         pids.add(pr.id);
         out.push(...validatePreset(field, pr, objs, ok, fromExit));
+    }
+    return out;
+}
+
+/**
+ * 第3群で足した目標の種類の検査（ほかの種類は何も返さない）。段階目標は段ごとに、1 段目は門が閉じた格子、2 段目からは門をすべて開いた格子で、
+ * 区域への道を確かめる
+ */
+function validateNewObjective(
+    field: BattlefieldDef,
+    o: ObjectiveDef,
+    oids: Set<string>,
+    gids: Set<string>,
+    okOpen: (x: number, z: number) => boolean,
+    fromExitOpen: (side: Side, x: number, z: number) => boolean,
+    ok: (x: number, z: number) => boolean,
+    fromExit: (side: Side, x: number, z: number) => boolean,
+): string[] {
+    const out: string[] = [];
+    if (o.type === 'hold_zones') {
+        if (o.zones.length === 0) out.push(`目標 ${o.id} の区域がない`);
+        if (!(o.sec > 0)) out.push(`目標 ${o.id} の確保の秒数は 0 より大きい数`);
+        if (o.mode !== 'all') out.push(`目標 ${o.id} の mode は 'all'`);
+        if (o.names && o.names.length !== o.zones.length) out.push(`目標 ${o.id} の names の数が区域の数と違う`);
+    } else if (o.type === 'limit_breakthrough') {
+        if (o.exits.length === 0) out.push(`目標 ${o.id} の出口がない`);
+        if (!(Number.isInteger(o.maxCount) && o.maxCount >= 0)) out.push(`目標 ${o.id} の maxCount は 0 以上の整数`);
+        if (o.untilSec !== undefined && !(o.untilSec > 0)) out.push(`目標 ${o.id} の untilSec は 0 より大きい数`);
+        if (o.names && o.names.length !== o.exits.length) out.push(`目標 ${o.id} の names の数が出口の数と違う`);
+        // 出口へは、敵の退き口（敵の来る側）からも道がある（敵が出口へ届ける）
+        for (const z of o.exits) {
+            const c = zoneCenter(z);
+            if (ok(c.x, c.z) && !fromExitOpen('enemy', c.x, c.z)) out.push(`目標 ${o.id} の出口へ敵の退き口から道がない`);
+        }
+    } else if (o.type === 'open_gate') {
+        if (!gids.has(o.gateId)) out.push(`目標 ${o.id} の門 ${o.gateId} がない`);
+    } else if (o.type === 'sequence') {
+        if (o.steps.length === 0) out.push(`目標 ${o.id} の段がない`);
+        o.steps.forEach((st, i) => {
+            if (oids.has(st.id)) out.push(`目標 ${st.id} が重なっている`);
+            oids.add(st.id);
+            if (st.type === 'sequence') out.push(`目標 ${o.id} の段 ${st.id} に段階目標は入れられない`);
+            out.push(...validateNewObjective(field, st, oids, gids, okOpen, fromExitOpen, ok, fromExit));
+            const okI = i === 0 ? ok : okOpen;
+            const fromI = i === 0 ? fromExit : fromExitOpen;
+            for (const z of objectiveZones(st)) {
+                const c = zoneCenter(z);
+                if (!okI(c.x, c.z)) out.push(`目標 ${o.id} の段 ${i + 1}（${st.id}）の区域の中心が通れる所にない${i > 0 ? '（門を開いた後）' : ''}`);
+                else if (!fromI('ally', c.x, c.z)) out.push(`目標 ${o.id} の段 ${i + 1}（${st.id}）の区域へ味方の退き口から道がない${i > 0 ? '（門を開いた後）' : ''}`);
+            }
+            if (st.type === 'hold_point' && !(st.sec > 0)) out.push(`目標 ${st.id} の確保の秒数は 0 より大きい数`);
+            if (st.type === 'breakthrough' && !(st.count >= 1)) out.push(`目標 ${st.id} の突破の部隊数は 1 以上`);
+        });
     }
     return out;
 }
@@ -368,8 +506,10 @@ function validatePreset(
         slots.add(k);
     }
     for (const side of ['ally', 'enemy'] as Side[]) {
+        // 増援（援軍・遅れて着く部隊）も数える。部隊は戦場を離れても戻らないので、同時に戦場にいる数の最大は陣営の部隊の数を超えない
+        // （いちばん遅く着く部隊が着いた時に、それまでの部隊が一つも崩れていなければ全部がそろう）
         const us = pr.units.filter((u) => u.side === side);
-        if (us.length > RULES.maxUnitsPerSide[side]) out.push(`${tag}：${side} の部隊が ${us.length}（上限 ${RULES.maxUnitsPerSide[side]}）`);
+        if (us.length > RULES.maxUnitsPerSide[side]) out.push(`${tag}：${side} の部隊が ${us.length}（増援を含めて同時に戦場にいる数の上限 ${RULES.maxUnitsPerSide[side]}）`);
         if (!us.some((u) => u.kind === 'honjin')) out.push(`${tag}：${side} に本陣がない`);
     }
     for (const o of objs) {

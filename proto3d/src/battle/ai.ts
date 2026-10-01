@@ -23,6 +23,7 @@
  * - assault（データ駆動の戦場）：aiTarget の地点へ攻め進む。途中で 60 m 以内に見えている相手がいれば当たる（弓隊は届く相手がいれば止まって射る）。
  *   着いたら、その区域を hold_zone と同じように守る。
  * 動く命令は sim.ts が道探し（通れない所がある戦場だけ）でたどるので、ここは行き先を決めるだけ。
+ * 射線（第3群）：弓の相手は、射線が建物・石垣・閉じた門に遮られない相手だけ（待機の弓は sim.ts の相手選び、攻め進む弓はここで見る）。
  *
  * 特殊能力（abilities.ts。敵方に能力を持つ武将がいるときだけ。プレイヤーは敵の能力を操作できない）：
  * - 盟友への援護：範囲（60 m）の中で斬り合っている・矢を浴びて士気の落ちた味方（敵方）の部隊があれば、士気のいちばん低い部隊を支える。
@@ -55,6 +56,7 @@
 import type { Order, UnitDef } from './types';
 import { ABILITY_DATA, abilityInfo, lureLive, rearguardCover } from './abilities';
 import { generalById, type GeneralAiPolicy, type GeneralInitiative } from './generals';
+import { lineOfSight } from './fieldRules';
 import type { BattleState, UnitState } from './sim';
 
 export type AiRole = NonNullable<UnitDef['aiRole']>;
@@ -552,8 +554,9 @@ function assault(s: BattleState, api: AiApi, u: UnitState, m: AiMemo): void {
     const Z = m.zone!;
     const allies = visibleAllies(s);
     if (u.kind === 'yumi') {
-        // 届く相手がいれば止まって射る（待機の弓はいちばん近い相手を射る）。いなければ地点へ進む
-        if (allies.some((o) => d2(o, u) <= AI.assaultShoot)) {
+        // 届く相手がいれば止まって射る（待機の弓はいちばん近い相手を射る）。いなければ地点へ進む。
+        // 射線が建物・石垣・閉じた門に遮られる相手は「届く相手」に数えない（第3群。射線の格子の無い戦場では見ない）
+        if (allies.some((o) => d2(o, u) <= AI.assaultShoot && (!s.field.los || lineOfSight(s.map, s.field, u, o)))) {
             if (u.order.type !== 'hold') api.issue(u.id, { type: 'hold' });
             return;
         }

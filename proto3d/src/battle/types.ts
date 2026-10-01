@@ -96,7 +96,12 @@ export type TerrainKind =
     | 'ford' // 浅瀬：渡れるが、とても遅く、中で戦うと不利
     | 'cliff' // 崖・岩：通れない
     | 'bridge' // 橋：深い川の上の通れる細い帯（動きは道と同じ）。狭い正面（narrow_frontage）と組み合わせて、同時に戦える部隊の数を絞る
-    | 'paddy'; // 水田：動きがとても遅い（部隊の種類ごとに違う）。中で斬り合うと不利。畦道・街道は道（road）として田の間に通す
+    | 'paddy' // 水田：動きがとても遅い（部隊の種類ごとに違う）。中で斬り合うと不利。畦道・街道は道（road）として田の間に通す
+    // 第3群で足した障害物（通れない。射線は building・wall だけが遮る。高さは TerrainArea.height、省けば fieldRules.ts の OBSTACLE_HEIGHT）
+    | 'building' // 家屋・寺の堂・櫓の建物：通れない・射線を遮る
+    | 'fence' // 柵・低い土塀：通れない・射線は通す（低い）
+    | 'wall' // 石垣・高い塀：通れない・射線を遮る
+    | 'dry'; // 乾いた足場：湿地・水田・浅瀬の上に重ねると、その所は普通の地面に戻す（速さ・損害の倍率を打ち消す）。土手道は dry の上に road を重ねる
 export interface TerrainArea {
     kind: TerrainKind;
     /**
@@ -106,8 +111,27 @@ export interface TerrainArea {
     rect?: { x0: number; x1: number; z0: number; z1: number };
     circle?: { cx: number; cz: number; r: number };
     capsule?: { ax: number; az: number; bx: number; bz: number; r: number };
-    /** 丘の高さ（m。表示と守りの強さの計算に使う） */
+    /** 丘の高さ（m。表示と守りの強さの計算に使う）。building・wall では射線を遮る高さ（m。射線がこれより高い所を通れば遮らない） */
     height?: number;
+}
+
+/**
+ * 門（第3群。通行の変わる障害物）。閉じている間は通れず、射線も遮る（高さ height、省けば 6 m）。
+ * 制圧：capture.zone の中に、holder（門を持つ側。省けば敵）の戦える部隊がいない状態で、反対の側の戦える部隊が capture.sec 秒続けていると開く。
+ * 開いたら通れる（道探しの格子を作り直し、進んでいる道をすべて引き直す）。開いた門は閉じない（今回のデータでは閉じる門を作らない）。
+ */
+export interface GateDef {
+    id: string;
+    /** 画面に出す名前（例：「外門」） */
+    name: string;
+    /** 門の形（四角。壁の切れ目にはめる。格子 5 m に載る厚さ 6 m 以上） */
+    rect: { x0: number; x1: number; z0: number; z1: number };
+    /** 射線を遮る高さ（m。省けば 6） */
+    height?: number;
+    /** 門を持つ側（省けば 'enemy'）。反対の側が制圧する */
+    holder?: Side;
+    /** 制圧の条件：区域 zone を、holder の部隊がいない状態で、反対の側が sec 秒続けて占める */
+    capture: { zone: Zone; sec: number };
 }
 
 /** 区域（四角形または円のどちらか。目標・特殊ルール・敵の考えの区域に使う） */
@@ -133,6 +157,10 @@ export interface TerrainRule {
     arrowTakeMul?: number;
     /** 中にいる部隊は、相手の戦える部隊がこの距離（m）に来るまで見えない（省けば隠れない） */
     hideSight?: number;
+    /** 中にいる弓隊が射る矢の損害の倍率（例：泥に足を取られて射にくい湿地 ×0.7。省けば 1） */
+    arrowDealMul?: number;
+    /** true なら、中にいる騎馬は突撃にならない（ぬかるみで勢いがつかない。省けば突撃できる） */
+    noCharge?: boolean;
 }
 
 /** 高低差の効果（戦場ごとに上書きする。既定は sim.ts の HIGH_GROUND_DEFAULTS） */
@@ -176,6 +204,8 @@ export interface FieldRules {
      * 合戦場のデータから作る合戦（fields/build.ts）は、keepV11Movement の戦場（国境の原）を除いて付ける。
      */
     settleMoves?: boolean;
+    /** 門（第3群。閉じている間は通れず射線を遮る。制圧で開く）。省けば門は無い */
+    gates?: GateDef[];
 }
 
 /**
@@ -193,6 +223,15 @@ export interface FieldRules {
  * - preserve_unit：部隊 unitId を崩さず、兵を最初の minRatio 以上残して終える（副目標向け。全軍撤退で終えたら果たせない）
  * - limit_losses：味方の兵の損害を maxRatio 以内で終える（副目標向け。全軍撤退で終えたら果たせない）
  * - break_unit：敵の部隊 unitId を崩す（敗走・全滅・撤退させる）
+ * 第3群で足した種類：
+ * - hold_zones：区域 zones のすべて（mode 'all'）を同時に、敵のいない状態で味方が占め、それが sec 秒続く（例：山門と本堂前）。
+ *   どれか 1 つでも外れると 0 に戻る。names は区域ごとの短い名前
+ * - limit_breakthrough：敵の戦える部隊が出口 exits のどれかに入った数（部隊単位。兵の人数では数えない）を maxCount 以内に抑える。
+ *   出口に入った敵の部隊は戦場を抜けて離れる（撤退済み）。maxCount を超えたら果たせない。untilSec まで（省けば日没まで）、
+ *   または敵の攻め手（aiRole 'assault' の部隊。いなければ本陣以外の敵）がすべて抜けたか戦えなくなったら果たす。names は出口ごとの名前
+ * - open_gate：門 gateId を制圧して開く（門の制圧の条件は GateDef.capture）
+ * - sequence：段階目標。steps を順に果たす（今の段だけを数える。どれかの段が果たせなくなれば果たせない。最後の段で果たす）。
+ *   結果には、どの段まで届いたか（ObjectiveResult.steps）も入れる
  */
 export type ObjectiveDef = { id: string; label: string } & (
     | { type: 'destroy_hq' }
@@ -206,6 +245,10 @@ export type ObjectiveDef = { id: string; label: string } & (
     | { type: 'preserve_unit'; unitId: string; minRatio: number }
     | { type: 'limit_losses'; maxRatio: number }
     | { type: 'break_unit'; unitId: string }
+    | { type: 'hold_zones'; zones: Zone[]; sec: number; mode: 'all'; names?: string[] }
+    | { type: 'limit_breakthrough'; exits: Zone[]; maxCount: number; untilSec?: number; names?: string[] }
+    | { type: 'open_gate'; gateId: string }
+    | { type: 'sequence'; steps: ObjectiveDef[] }
 );
 export type ObjectiveType = ObjectiveDef['type'];
 
@@ -215,6 +258,8 @@ export interface ObjectiveResult {
     type: ObjectiveType;
     label: string;
     achieved: boolean;
+    /** 段階目標（sequence）だけ：果たした段の数と段の数 */
+    steps?: { done: number; total: number };
 }
 
 /** 戦場 */

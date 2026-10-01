@@ -9,6 +9,7 @@
 import type {
     AbilityId,
     ClanId,
+    GateDef,
     HighGroundRule,
     ObjectiveDef,
     Order,
@@ -131,6 +132,8 @@ export interface BattlefieldDef {
     highGround?: HighGroundRule;
     /** 特殊ルール */
     specialRules?: SpecialRule[];
+    /** 門（第3群。閉じている間は通れず射線を遮る。制圧の条件 capture で開く。FieldRules.gates） */
+    gates?: GateDef[];
     /** 初期配置の枠（味方・敵） */
     deployments: { ally: DeploySlot[]; enemy: DeploySlot[] };
     /** 援軍の出現地点 */

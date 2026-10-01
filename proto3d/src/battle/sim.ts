@@ -37,6 +37,13 @@
  * - 特殊ルール：narrow_frontage（区域の中で同じ相手へ斬りかかれる部隊の数を絞る。あふれた部隊は後ろで待つ）・
  *   woods_ambush（見えていなかった部隊の最初の当たりの損害を上げる）。
  * - 目標（objectives.ts）：主目標があれば、主目標の達成で勝利・果たせなくなれば敗北。副目標は結果に記録するだけ。
+ *
+ * 第3群で加えたもの（docs/fields-group3-design.md §3。その地形・門を持たない戦場では計算に入らない＝既存の 10 戦場は 1 刻みも同じ）：
+ * - 障害物（building・fence・wall）は通れない。射線（fieldRules.ts の lineOfSight）：弓は、射手から相手までの線分が建物・石垣・閉じた門に
+ *   遮られる相手を射ない（待機の弓の相手選び・攻撃の命令の弓。遮られていれば、射線が通る所まで近づく）。柵は射線を通す。
+ * - 門（fieldRules.gates）：閉じている間は通れない。制圧の区域を、門を持つ側がいない状態で反対の側が続けて占めると開く（trackGates）。
+ *   開いたら道探しの格子・射線の格子を作り直し、進んでいる道をすべて引き直す。
+ * - 地形の決まりの arrowDealMul（中の弓の射る矢）・noCharge（中の騎馬は突撃にならない）。
  */
 import type {
     AbilityId,
@@ -56,15 +63,20 @@ import type {
 import { createAiState, createInitiative, thinkEnemy, thinkGenerals, type AiState, type InitiativeMemo } from './ai';
 import {
     TERRAIN_DEFAULTS,
+    arrowDealMulIn,
     arrowTakeMulIn,
-    capsuleDist,
     createFieldEnv,
     dealMulIn,
     hideSightIn,
     inZone,
+    lineOfSight,
+    noChargeIn,
+    rebuildNav,
     takeMulIn,
+    terrainElevation,
     terrainSpeedIn,
     type FieldEnv,
+    type GateRun,
 } from './fieldRules';
 import { findPath, isPassable, nearestPassable } from './pathfind';
 import { activeObjectiveZones, createObjectiveTrack, finalObjectives, refreshObjective, trackObjectives, type ObjectiveTrack } from './objectives';
@@ -230,6 +242,10 @@ export const TERRAIN_SPEED: Record<TerrainKind, number> = {
     cliff: TERRAIN_DEFAULTS.cliff.speed,
     bridge: TERRAIN_DEFAULTS.bridge.speed,
     paddy: TERRAIN_DEFAULTS.paddy.speed,
+    building: TERRAIN_DEFAULTS.building.speed,
+    fence: TERRAIN_DEFAULTS.fence.speed,
+    wall: TERRAIN_DEFAULTS.wall.speed,
+    dry: TERRAIN_DEFAULTS.dry.speed,
 };
 
 /** 画面の知らせ（出来事の記録）の種類 */
@@ -533,19 +549,8 @@ export function inTerrain(map: BattleMap, kind: TerrainKind, x: number, z: numbe
  * 表示（view）も同じ式で地面を盛り上げると、見た目と守りの計算が合う。
  */
 export function elevationAt(map: BattleMap, x: number, z: number): number {
-    let h = 0;
-    for (const a of map.terrain) {
-        if (a.kind !== 'hill') continue;
-        const H = a.height ?? 10;
-        if (a.circle) {
-            const d = Math.hypot(x - a.circle.cx, z - a.circle.cz) / a.circle.r;
-            if (d < 1) h = Math.max(h, H * (1 - d * d));
-        } else if (a.capsule) {
-            const d = capsuleDist(a.capsule, x, z) / a.capsule.r;
-            if (d < 1) h = Math.max(h, H * (1 - d * d));
-        } else if (a.rect && inArea(a, x, z)) h = Math.max(h, H);
-    }
-    return h;
+    // 計算は fieldRules.ts の terrainElevation（射線の計算からも使うため、そちらに移した。式は同じ）
+    return terrainElevation(map, x, z);
 }
 /** その地点の動きの速さの倍率（既定の決まり。戦場ごとの上書きと部隊の種類の補正は unitSpeedFactor） */
 export function speedFactorAt(map: BattleMap, x: number, z: number): number {
@@ -970,8 +975,8 @@ function tick(s: BattleState): void {
                 shock[di] += RULES.flankShock;
                 log(s, 'ambush', `${a.name}が${d.name}へ不意を突いて斬りかかった`, a.id, d.id);
             }
-            // 騎馬の突撃：動いてきて交戦に入った（直前 8 秒は斬り合っていない）
-            if (a.kind === 'kiba' && !wasInMelee && a.moving && t - a.lastMeleeT > 8) {
+            // 騎馬の突撃：動いてきて交戦に入った（直前 8 秒は斬り合っていない）。突撃にならない地形（第3群の湿地など）の中では起きない
+            if (a.kind === 'kiba' && !wasInMelee && a.moving && t - a.lastMeleeT > 8 && !(s.field.noChargeKinds.length > 0 && noChargeIn(s.map, s.field, a.x, a.z))) {
                 const intoPikes = d.kind === 'yari' && arc === 'front';
                 if (!intoPikes && d.status === 'ready') {
                     a.chargeUntil = t + RULES.chargeSec;
@@ -1136,7 +1141,10 @@ function tick(s: BattleState): void {
     // 9b. 戦前の約束：対象が安全地点に続けていた時間
     if (s.pledge) trackPledge(s, dt);
 
-    // 9c. 目標（目標のある合戦だけ）
+    // 9c. 門の制圧（門のある戦場だけ。目標の前に：門が開いた刻みに、門の制圧の目標も果たす）
+    if (s.field.gates.length > 0) trackGates(s, dt);
+
+    // 9d. 目標（目標のある合戦だけ）
     if (s.objectives) trackObjectives(s, dt, (text) => log(s, 'objective', text));
 
     // 10. 勝ち負け
@@ -1307,7 +1315,11 @@ function planFor(s: BattleState, u: UnitState): Plan {
         }
         if (u.kind === 'yumi') {
             if (near.length || prev) return { melee: holdMelee(), ranged: null, goal: null };
-            if (d <= RULES.bowStandoff + 0.5) return { melee: null, ranged: tgt, goal: null };
+            if (d <= RULES.bowStandoff + 0.5) {
+                if (hasLineOfSight(s, u, tgt)) return { melee: null, ranged: tgt, goal: null };
+                // 射線が建物・石垣・閉じた門に遮られている（第3群）：射線が通る所まで、相手へ近づく（斬り合いの間合いの手前で止まる）
+                return { melee: null, ranged: null, goal: { x: tgt.x, z: tgt.z, stopAt: RULES.meleeRange + 5 } };
+            }
             return { melee: null, ranged: null, goal: { x: tgt.x, z: tgt.z, stopAt: RULES.bowStandoff } };
         }
         const block = inFront(headingTo(u.x, u.z, tgt.x, tgt.z));
@@ -1333,13 +1345,22 @@ export function bowRangeFor(s: BattleState, a: { x: number; z: number }, d: { x:
     return RULES.bowRange;
 }
 
+/**
+ * 射手 a から相手 d への射線が通るか（第3群。射線を遮る建物・石垣・門が無い戦場では、計算せずにいつも true）。
+ * 敵の考え（ai.ts）は fieldRules.ts の lineOfSight を直に使う（同じ判定）
+ */
+export function hasLineOfSight(s: BattleState, a: { x: number; z: number }, d: { x: number; z: number }): boolean {
+    return !s.field.los || lineOfSight(s.map, s.field, a, d);
+}
+
 function nearestShootable(s: BattleState, u: UnitState): UnitState | null {
     let best: UnitState | null = null;
     let bd = Infinity;
     for (const o of s.units) {
         if (o.side === u.side || !isActive(o) || !o.seenBy[u.side]) continue;
         const d = dist(o, u);
-        if (d <= bowRangeFor(s, u, o) && d < bd) {
+        // 射線が遮られている相手は射ない（射線の格子の無い戦場では見ない）
+        if (d <= bowRangeFor(s, u, o) && d < bd && (!s.field.los || lineOfSight(s.map, s.field, u, o))) {
             bd = d;
             best = o;
         }
@@ -1402,6 +1423,8 @@ export function rangedDamage(s: BattleState, a: UnitState, d: UnitState): number
     let m = RULES.rangedRate * KIND_STATS[d.kind].defence * moraleMul(a) * Math.max(0.6, fall);
     // 林など（中の相手への矢。既定は林 ×0.6）
     m *= arrowTakeMulIn(s.map, s.field, d.x, d.z);
+    // 射手のいる地形（第3群の湿地の泥の中など。倍率を持つ地形の無い戦場では計算しない）
+    if (s.field.arrowDealKinds.length > 0) m *= arrowDealMulIn(s.map, s.field, a.x, a.z);
     // 高所から低所へ射る矢（谷の両側から谷底など。既定 1 の戦場では計算しない）
     const hg = s.field.high;
     if (hg.arrowDealVsLower !== 1 && elevationAt(s.map, a.x, a.z) - elevationAt(s.map, d.x, d.z) >= hg.minDiff) m *= hg.arrowDealVsLower;
@@ -2007,6 +2030,43 @@ function decideByObjective(s: BattleState): void {
         return finish(s, 'defeat', 'ally_army_broken');
     }
     if (s.tick >= Math.round(s.timeLimitSec / RULES.tick)) return endRetreat('nightfall');
+}
+
+// ---------------------------------------------------------------- 門（第3群）
+
+/**
+ * 毎刻み（門のある戦場だけ）：閉じた門ごとに、制圧の区域を「門を持つ側の戦える部隊がいない状態で、反対の側の戦える部隊が占めている」
+ * 秒数を数える（外れると 0 に戻る）。capture.sec に届いたら門を開き、道探しの格子・射線の格子を作り直して、進んでいる道をすべて引き直す
+ * （閉じた門へ向かって押し付けられていた部隊も、開いた門を通る道を新しく作る）
+ */
+function trackGates(s: BattleState, dt: number): void {
+    let changed = false;
+    for (const g of s.field.gates) {
+        if (g.open) continue;
+        const z = g.def.capture.zone;
+        const taker = other(g.holder);
+        const takerIn = s.units.some((u) => u.side === taker && isActive(u) && inZone(z, u.x, u.z));
+        const holderIn = s.units.some((u) => u.side === g.holder && isActive(u) && inZone(z, u.x, u.z));
+        g.sec = takerIn && !holderIn ? g.sec + dt : 0;
+        if (g.sec >= g.def.capture.sec - 1e-9) {
+            g.open = true;
+            g.openedT = s.t;
+            changed = true;
+            log(s, 'objective', `${g.def.name}を制圧した。門が開き、通れるようになった`);
+        }
+    }
+    if (!changed) return;
+    rebuildNav(s.map, s.field);
+    for (const u of s.units) {
+        u.path = null;
+        u.moveProg = null;
+        u.avoid = null;
+    }
+}
+
+/** 門の状態（画面の説明・目標の進み用）。門の無い戦場は空 */
+export function gateStates(s: BattleState): readonly GateRun[] {
+    return s.field.gates;
 }
 
 // ---------------------------------------------------------------- 戦前の約束

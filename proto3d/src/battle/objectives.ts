@@ -8,6 +8,12 @@
  * - 画面は objectiveProgress(s) で、目標ごとの { id, label, role, state, progressText } の一覧を読む。
  *
  * 目標の種類を足すときは：types.ts の ObjectiveDef に型を 1 つ足し、このファイルの update・finalAchieved・progressText に分岐を足す。
+ *
+ * 第3群で足した種類（docs/fields-group3-design.md §3）：
+ * - hold_zones：すべての区域を同時に確保して sec 秒（どれか外れると 0 に戻る）。
+ * - limit_breakthrough：敵の戦える部隊が出口へ届いた数（部隊単位）を maxCount 以内に抑える。届いた部隊は戦場を抜けて離れる（撤退済み）。
+ * - open_gate：門を制圧して開く（数えるのは sim.ts の trackGates。ここは門が開いたかを見るだけ）。
+ * - sequence：段階目標。今の段だけを数え、果たしたら次の段へ（次の段の時間は、その段が始まった時から数える）。
  * sim.ts を実行時に import しない（sim.ts がこのファイルを import するため）。
  */
 import type { BattleEndReason, BattleResultKind, BattleSetup, ObjectiveDef, ObjectiveResult, Side, Zone } from './types';
@@ -33,6 +39,13 @@ export interface ObjectiveRun {
     arrivedT: number | null;
     /** done・failed になった時刻 */
     settledT: number | null;
+    /** 数え始めた時刻（ふつうは 0。段階目標の段は、その段が始まった時刻。defend_time・limit_breakthrough の時間はここから数える） */
+    startT: number;
+    /** 段階目標（sequence）の段（ほかの目標では空）と、今の段の番号 */
+    steps: ObjectiveRun[];
+    stepIdx: number;
+    /** 段階目標の段なら、その段階目標 */
+    parent: ObjectiveRun | null;
 }
 
 export interface ObjectiveTrack {
@@ -134,7 +147,30 @@ export function createObjectiveTrack(setup: BattleSetup): ObjectiveTrack | null 
         if (def.type === 'defend_zones' && !(Number.isInteger(def.minHeld) && def.minHeld >= 1 && def.minHeld <= n)) {
             throw new Error(`目標 ${def.id} の minHeld は 1 以上・区域の数（${n}）以下の整数にしてください`);
         }
-        return { def, role, state: 'active', sec: 0, zoneSec: new Array<number>(n).fill(0), zoneLost: new Array<boolean>(n).fill(false), entered: [], arrivedT: null, settledT: null };
+        if (def.type === 'open_gate' && !setup.fieldRules?.gates?.some((g) => g.id === def.gateId)) throw new Error(`目標 ${def.id} の門がありません: ${def.gateId}`);
+        if (def.type === 'sequence' && def.steps.length === 0) throw new Error(`目標 ${def.id} の段階がありません`);
+        if (def.type === 'hold_zones' && def.zones.length === 0) throw new Error(`目標 ${def.id} の区域がありません`);
+        if (def.type === 'limit_breakthrough' && def.exits.length === 0) throw new Error(`目標 ${def.id} の出口がありません`);
+        const run: ObjectiveRun = {
+            def,
+            role,
+            state: 'active',
+            sec: 0,
+            zoneSec: new Array<number>(n).fill(0),
+            zoneLost: new Array<boolean>(n).fill(false),
+            entered: [],
+            arrivedT: null,
+            settledT: null,
+            startT: 0,
+            steps: [],
+            stepIdx: 0,
+            parent: null,
+        };
+        if (def.type === 'sequence') {
+            run.steps = def.steps.map((d) => mk(d, role));
+            for (const st of run.steps) st.parent = run;
+        }
+        return run;
     };
     const primary = o.primary ? mk(o.primary, 'primary') : null;
     const secondary = (o.secondary ?? []).map((d) => mk(d, 'secondary'));
@@ -148,7 +184,34 @@ function settle(s: BattleState, r: ObjectiveRun, state: 'done' | 'failed', log: 
     r.state = state;
     r.settledT = s.t;
     const head = r.role === 'primary' ? '主目標' : '副目標';
-    log(state === 'done' ? `${head}「${r.def.label}」を果たした` : `${head}「${r.def.label}」は果たせなくなった`);
+    // 段階目標の段：「主目標「…」の段階 1「外門の制圧」を果たした」
+    const p = r.parent;
+    const name = p ? `${head}「${p.def.label}」の段階 ${p.steps.indexOf(r) + 1}「${r.def.label}」` : `${head}「${r.def.label}」`;
+    log(state === 'done' ? `${name}を果たした` : `${name}は果たせなくなった`);
+}
+
+/** limit_breakthrough の攻め手（aiRole 'assault' の敵。いなければ本陣以外の敵） */
+function breakthroughAttackers(s: BattleState): UnitState[] {
+    const es = s.units.filter((u) => u.side === 'enemy');
+    const assault = es.filter((u) => u.aiRole === 'assault');
+    return assault.length ? assault : es.filter((u) => !u.isHq);
+}
+
+/** limit_breakthrough の締めの時刻（untilSec を省けば日没） */
+function breakthroughUntil(s: BattleState, r: ObjectiveRun): number {
+    const d = r.def as Extract<ObjectiveDef, { type: 'limit_breakthrough' }>;
+    return d.untilSec !== undefined ? r.startT + d.untilSec : s.timeLimitSec;
+}
+
+/** 門（第3群。fieldRules.gates）の今の状態 */
+function gateOf(s: BattleState, id: string) {
+    return s.field.gates.find((g) => g.def.id === id);
+}
+
+/** 区域が「敵がいない状態で味方が占めている」か */
+function heldByAlly(s: BattleState, z: Zone): boolean {
+    const { allyIn, enemyIn } = zoneHolders(s, z);
+    return allyIn && !enemyIn;
 }
 
 /** 1 つの目標を進める（毎刻み。done・failed になった目標は動かない） */
@@ -169,6 +232,7 @@ function update(s: BattleState, r: ObjectiveRun, dt: number, log: (text: string)
             return;
         }
         case 'defend_time': {
+            const t = s.t - r.startT;
             if (d.zone) {
                 const allyIn = s.units.some((u) => u.side === 'ally' && active(u) && inZone(d.zone!, u.x, u.z));
                 const enemyIn = s.units.some((u) => u.side === 'enemy' && active(u) && inZone(d.zone!, u.x, u.z));
@@ -193,7 +257,7 @@ function update(s: BattleState, r: ObjectiveRun, dt: number, log: (text: string)
                 }
             });
             if (heldCount(r) < d.minHeld) return settle(s, r, 'failed', log);
-            if (t >= d.sec - 1e-9) settle(s, r, 'done', log);
+            if (t - r.startT >= d.sec - 1e-9) settle(s, r, 'done', log);
             return;
         }
         case 'rescue': {
@@ -241,6 +305,50 @@ function update(s: BattleState, r: ObjectiveRun, dt: number, log: (text: string)
             const u = byId(s, d.unitId);
             if (u && u.arrived && u.status !== 'ready') settle(s, r, 'done', log);
             else if (u && u.status === 'destroyed') settle(s, r, 'done', log);
+            return;
+        }
+        case 'hold_zones': {
+            r.sec = d.zones.every((z) => heldByAlly(s, z)) ? r.sec + dt : 0;
+            if (r.sec >= d.sec - 1e-9) settle(s, r, 'done', log);
+            return;
+        }
+        case 'limit_breakthrough': {
+            // 敵の戦える部隊が出口に入った：部隊単位で数え、その部隊は戦場を抜けて離れる（撤退済み。兵の人数では数えない）
+            for (const u of s.units) {
+                if (u.side !== 'enemy' || !active(u) || r.entered.includes(u.id)) continue;
+                const k = d.exits.findIndex((z) => inZone(z, u.x, u.z));
+                if (k < 0) continue;
+                r.entered.push(u.id);
+                u.status = 'withdrawn';
+                u.present = false;
+                u.engagedWith = null;
+                u.shootingAt = null;
+                const where = d.names?.[k] ?? '出口';
+                log(`${u.name}が${where}を抜けた（突破 ${r.entered.length}／許容 ${d.maxCount}）`);
+            }
+            if (r.entered.length > d.maxCount) return settle(s, r, 'failed', log);
+            if (s.t >= breakthroughUntil(s, r) - 1e-9) return settle(s, r, 'done', log);
+            // 攻め手が、すべて抜けたか戦えなくなった（まだ着いていない攻め手は残っている）
+            if (!breakthroughAttackers(s).some((u) => u.status === 'ready' && !r.entered.includes(u.id))) settle(s, r, 'done', log);
+            return;
+        }
+        case 'open_gate': {
+            if (gateOf(s, d.gateId)?.open) settle(s, r, 'done', log);
+            return;
+        }
+        case 'sequence': {
+            const cur = r.steps[r.stepIdx];
+            if (!cur) return;
+            update(s, cur, dt, log);
+            if (cur.state === 'failed') return settle(s, r, 'failed', log);
+            if (cur.state !== 'done') return;
+            r.stepIdx++;
+            const next = r.steps[r.stepIdx];
+            if (!next) return settle(s, r, 'done', log);
+            next.startT = s.t;
+            // 次の段がもう満たされている（門を開いた刻みに、門の目標がもう果たされているなど）なら、同じ刻みに確かめる
+            update(s, next, 0, log);
+            if (next.state === 'done' || next.state === 'failed') update(s, r, 0, log);
             return;
         }
     }
@@ -293,9 +401,17 @@ function finalAchieved(s: BattleState, r: ObjectiveRun, result: BattleResultKind
         }
         case 'limit_losses':
             return allyLossRatio(s) <= d.maxRatio + 1e-9;
+        case 'limit_breakthrough':
+            // 撤退で終えたら果たせない。そうでなければ、許容の数を超えずに終えた
+            return reason !== 'ordered_retreat' && r.entered.length <= d.maxCount;
         default:
             return false;
     }
+}
+
+/** 段階目標の、果たした段の数 */
+function stepsDone(r: ObjectiveRun): number {
+    return r.steps.filter((x) => x.state === 'done').length;
 }
 
 /** BattleOutcome.objectives を作る（目標の無い合戦は undefined）。終わりの状態も done／failed に決める */
@@ -310,7 +426,10 @@ export function finalObjectives(
         const achieved = finalAchieved(s, r, result, reason);
         r.state = achieved ? 'done' : 'failed';
         if (r.settledT === null) r.settledT = s.t;
-        return { id: r.def.id, type: r.def.type, label: r.def.label, achieved };
+        const out: ObjectiveResult = { id: r.def.id, type: r.def.type, label: r.def.label, achieved };
+        // 段階目標は、どの段まで届いたか（果たした段の数）も記録する
+        if (r.def.type === 'sequence') out.steps = { done: stepsDone(r), total: r.steps.length };
+        return out;
     };
     const out: { primary?: ObjectiveResult; secondary: ObjectiveResult[] } = { secondary: [] };
     if (tr.primary) out.primary = row(tr.primary);
@@ -319,6 +438,27 @@ export function finalObjectives(
 }
 
 // ---------------------------------------------------------------- 画面向け
+
+/** 区域ごとの ○（敵のいない区域に味方がいる）・敵（敵がいる）・空（味方がいない） */
+function zoneMark(s: BattleState, z: Zone): string {
+    const { allyIn, enemyIn } = zoneHolders(s, z);
+    return enemyIn ? '敵' : allyIn ? '○' : '空';
+}
+
+/** 門の制圧の進みの文（例：「外門 制圧 5／20 秒・門の前に敵がいる」） */
+export function gateProgressText(s: BattleState, id: string): string {
+    const g = gateOf(s, id);
+    if (!g) return '';
+    if (g.open) return `${g.def.name}：開いた（通れる）`;
+    const head = `${g.def.name} 制圧 ${Math.floor(g.sec)}／${g.def.capture.sec} 秒`;
+    const taker = g.holder === 'enemy' ? 'ally' : 'enemy';
+    const z = g.def.capture.zone;
+    const holderIn = s.units.some((u) => u.side === g.holder && active(u) && inZone(z, u.x, u.z));
+    const takerIn = s.units.some((u) => u.side === taker && active(u) && inZone(z, u.x, u.z));
+    if (holderIn) return `${head}・門の前に敵がいる（追い出すと数え始める）`;
+    if (!takerIn) return `${head}・門の前に味方がいない（門の前の輪へ移動させる）`;
+    return `${head}（門の前の輪を、敵のいない間に味方が占めて数える）`;
+}
 
 function progressText(s: BattleState, r: ObjectiveRun): string {
     const d = r.def;
@@ -338,7 +478,7 @@ function progressText(s: BattleState, r: ObjectiveRun): string {
             return `${head}（敵のいない区域に味方がいる間だけ数える）`;
         }
         case 'defend_time':
-            return `残り ${Math.max(0, Math.ceil(d.sec - s.t))} 秒` + (d.zone && r.sec > 0 ? `（区域を敵に奪われている：${Math.floor(r.sec)}／${d.loseSec ?? 10} 秒）` : '');
+            return `残り ${Math.max(0, Math.ceil(r.startT + d.sec - s.t))} 秒` + (d.zone && r.sec > 0 ? `（区域を敵に奪われている：${Math.floor(r.sec)}／${d.loseSec ?? 10} 秒）` : '');
         case 'defend_zones': {
             // 例：「守っている 3／3（2 以上で残り 120 秒）・西の口 ○・中の口 ○・東の口 ✕（中の口を敵に奪われている：4／10 秒）」
             const marks = d.zones.map((_, i) => `${zoneName(d, i)} ${r.zoneLost[i] ? '✕' : '○'}`).join('・');
@@ -346,7 +486,7 @@ function progressText(s: BattleState, r: ObjectiveRun): string {
                 .map((_, i) => i)
                 .filter((i) => !r.zoneLost[i] && r.zoneSec[i]! > 0)
                 .map((i) => `${zoneName(d, i)}を敵に奪われている：${Math.floor(r.zoneSec[i]!)}／${d.loseSec ?? 10} 秒`);
-            return `守っている ${heldCount(r)}／${d.zones.length}（${d.minHeld} 以上で残り ${Math.max(0, Math.ceil(d.sec - s.t))} 秒）・${marks}` + (taking.length ? `（${taking.join('・')}）` : '');
+            return `守っている ${heldCount(r)}／${d.zones.length}（${d.minHeld} 以上で残り ${Math.max(0, Math.ceil(r.startT + d.sec - s.t))} 秒）・${marks}` + (taking.length ? `（${taking.join('・')}）` : '');
         }
         case 'rescue': {
             const u = byId(s, d.unitId);
@@ -373,6 +513,25 @@ function progressText(s: BattleState, r: ObjectiveRun): string {
             const u = byId(s, d.unitId);
             return u ? `${u.name}を崩す` : '';
         }
+        case 'hold_zones': {
+            // 例：「同時確保 12／60 秒・山門 ○・本堂前 敵」（どれか外れると 0 に戻る）
+            const marks = d.zones.map((z, i) => `${d.names?.[i] ?? `地点 ${i + 1}`} ${zoneMark(s, z)}`).join('・');
+            return `同時確保 ${Math.floor(r.sec)}／${d.sec} 秒・${marks}（すべてを敵なしで味方が占める間だけ数える）`;
+        }
+        case 'limit_breakthrough': {
+            // 例：「突破 1／許容 2（あと 1）・残り 120 秒」
+            const left = d.maxCount - r.entered.length;
+            return `突破 ${r.entered.length}／許容 ${d.maxCount}（あと ${left}）・残り ${Math.max(0, Math.ceil(breakthroughUntil(s, r) - s.t))} 秒`;
+        }
+        case 'open_gate':
+            return gateProgressText(s, d.gateId);
+        case 'sequence': {
+            // 例：「段階 1／2：外門の制圧・外門 制圧 5／20 秒（次：最初の曲輪の確保）」
+            const cur = r.steps[r.stepIdx];
+            if (!cur) return '';
+            const next = r.steps[r.stepIdx + 1];
+            return `段階 ${r.stepIdx + 1}／${r.steps.length}：${cur.def.label}・${progressText(s, cur)}` + (next ? `（次：${next.def.label}）` : '（最後の段）');
+        }
     }
 }
 
@@ -390,12 +549,24 @@ export function activeObjectiveZones(s: BattleState): Zone[] {
     const out: Zone[] = [];
     for (const r of tr.list) {
         if (r.state !== 'active') continue;
-        const d = r.def;
-        if (d.type === 'hold_point' || d.type === 'breakthrough' || d.type === 'rescue') out.push(d.zone);
-        else if (d.type === 'defend_time' && d.zone) out.push(d.zone);
-        else if (d.type === 'defend_zones') d.zones.forEach((z, i) => !r.zoneLost[i] && out.push(z));
+        pushActiveZones(s, r, out);
     }
     return out;
+}
+
+function pushActiveZones(s: BattleState, r: ObjectiveRun, out: Zone[]): void {
+    const d = r.def;
+    if (d.type === 'hold_point' || d.type === 'breakthrough' || d.type === 'rescue') out.push(d.zone);
+    else if (d.type === 'defend_time' && d.zone) out.push(d.zone);
+    else if (d.type === 'defend_zones') d.zones.forEach((z, i) => !r.zoneLost[i] && out.push(z));
+    else if (d.type === 'hold_zones') out.push(...d.zones);
+    else if (d.type === 'open_gate') {
+        const g = gateOf(s, d.gateId);
+        if (g && !g.open) out.push(g.def.capture.zone);
+    } else if (d.type === 'sequence') {
+        const cur = r.steps[r.stepIdx];
+        if (cur && cur.state === 'active') pushActiveZones(s, cur, out);
+    }
 }
 
 /** 主目標の状態（主目標の無い合戦は null） */
