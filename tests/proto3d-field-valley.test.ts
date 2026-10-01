@@ -313,7 +313,7 @@ describe('谷間のデータ', () => {
         }
         // 中央を抜ける行き先も出口の区域の中
         for (const [x, z] of Object.values(CENTER_EXIT)) expect(inZone(p.zone, x, z)).toBe(true);
-        // 追う距離（区域の縁から 320 m）：塞ぎは、当たった相手が谷の口 (0,165) まで退いても追う（誘い出せる）。ほかの部隊は既定のまま
+        // 追う距離（区域の縁から 320 m）：塞ぎは、当たった相手が谷の口 (0,165) まで退いても（見えている間は）追う（誘い出せる）。ほかの部隊は既定のまま
         const leash = us.find((u) => u.id === 'e_block')!.aiLeash!;
         expect(leash).toBe(320);
         expect(g.r! + leash).toBeGreaterThan(Math.hypot(0 - g.x, 165 - g.z));
