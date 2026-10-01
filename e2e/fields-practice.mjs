@@ -6,7 +6,7 @@
  *
  * desktop（PC 1280×720、マウスとキー）：
  *   - 一覧・説明の画面の中身と並び（横にはみ出さない・札が重ならない・ボタンが画面の中）。説明の「一覧へ戻る」。
- *   - 10 戦場（第1群・第2群）すべてを、タイトルから「合戦場の演習 → 戦場を選ぶ → 出陣」して合戦の画面が出る（戦場 id・部隊数・敵はすべて敵勢）。
+ *   - 15 戦場（第1群・第2群・第3群）すべてを、タイトルから「合戦場の演習 → 戦場を選ぶ → 出陣」して合戦の画面が出る（戦場 id・部隊数・敵はすべて敵勢）。
  *   - 大平原（味方 7 部隊）：キー 1〜8・札のクリックで選ぶ、地面のクリックで移動、A → 敵のクリックで攻撃、H で防衛・待機、R で撤退。
  *     命令が届いたことを合戦の状態（window.__battle.state の部隊の order）で確かめる。
  *   - 地形が効いていること（戦場ごとに 1 枚撮る：出力先/terrain-<戦場id>.png）。命令は札のクリックと地面のクリックで出し、
@@ -16,10 +16,13 @@
  *       山道・峠：崖の中へ入らず、峠道を通って関へ上がる。
  *       一本橋・複数橋：深い川（橋の外）へ入らず、橋を通って渡る。尾根：西の登り道から尾根の西の端へ上がる（崖の中へ入らない）。
  *       谷間：西の高地へ南の端から登る（高さ 8 m 以上）。水田：水田の中は街道より動きが遅い。
+ *       第3群：湿地：泥の中は土手道より動きがとても遅い。村落：家屋の中へ入らず、通りを通って屋敷前の広場へ着く。
+ *       寺社周辺：騎馬が崖・建物の中へ入らず、東の脇道を回って境内の東の口の手前へ着く。城下町外縁：家屋の中へ入らず、大通りを北の口へ。
+ *       城攻め前面：閉じた外門の奥（曲輪）へ移動を命じても、石垣・門を通り抜けない（門の前で止まる）。
  *   - 丘陵は、通常の速さ（×1。一時停止しない）のまま、札と地面のクリックで先に頂を取る作戦（命令 6 回）を出してから、早送りで決着まで進め、勝つ。
  *     合戦の結果の画面（勝敗・主目標・副目標が別の行）→ 続ける → 演習の結果（勝敗・主目標・副目標・保存が別の行）→ 一覧。
- *   - ほかの 9 戦場は、全軍撤退のボタン（確かめのボタンも）を押してから早送りで終える（撤退の記録）。
- *   - 最後に開き直し（再読み込み）て、10 戦場の記録（丘陵は決着の結果）が一覧と保存に残っていることを確かめる。書いたキーは koto-sengoku/3d-fields だけ。
+ *   - ほかの 14 戦場は、全軍撤退のボタン（確かめのボタンも）を押してから早送りで終える（撤退の記録）。
+ *   - 最後に開き直し（再読み込み）て、15 戦場の記録（丘陵は決着の結果）が一覧と保存に残っていることを確かめる。書いたキーは koto-sengoku/3d-fields だけ。
  * phone（スマホ横 844×390、hasTouch・isMobile、タップ）：
  *   - 一覧・説明の画面の中身と並び。大平原に出陣。札の列を横になぞってずらす（なぞっても選ばない）→ 7 番目の札をタップで選ぶ、
  *     地図のタップで移動、「攻撃」→ 敵のタップで攻撃、「防衛・待機」、「撤退」。全軍撤退 → 早送り → 結果 → 演習の結果 → 一覧（どれもタップ）。
@@ -39,8 +42,8 @@ import { mkdirSync } from 'node:fs';
 const OUT = process.argv[2] || 'e2e-out/fields-practice';
 mkdirSync(OUT, { recursive: true });
 const PARTS = (process.env.PARTS || 'desktop,phone,eight,oldsaves').split(',');
-/** 演習の 10 戦場（第1群 5・第2群 5。演習の一覧の順） */
-const FIELD_IDS = ['plains', 'river_ford', 'hills', 'forest', 'mountain_pass', 'single_bridge', 'multi_bridge', 'ridge', 'valley', 'paddy'];
+/** 演習の 15 戦場（第1群 5・第2群 5・第3群 5。演習の一覧の順） */
+const FIELD_IDS = ['plains', 'river_ford', 'hills', 'forest', 'mountain_pass', 'single_bridge', 'multi_bridge', 'ridge', 'valley', 'paddy', 'marsh', 'village', 'temple', 'town_edge', 'siege_front'];
 /** 通常の速さで動かしてから早送りで決着まで進める戦場 */
 const DECIDE_FIELD = 'hills';
 const failures = [];
@@ -664,7 +667,86 @@ const TERRAIN = {
         check(roadV !== null && paddyV !== null && paddyV < roadV * 0.4, '[desktop] 水田：水田の中は街道より動きがとても遅い（1 秒あたりの進み）', `街道 ${roadV?.toFixed(2)} m・水田 ${paddyV?.toFixed(2)} m`);
         await shot(p, 'terrain-paddy', 0, 40, 380);
     },
+    // ---- 第3群（障害物・射線・門・乾いた足場）。命令は札と地面のクリック、時間は早送り、状態は読むだけ
+    async marsh(p) {
+        const { page } = p;
+        // 忠勝隊は土手道の上を北へ (0,60)、酒井隊は泥の中を北へ (-60,100)。1 秒の進みを比べる
+        await bpress(p, '.b-card[data-id="a_tadakatsu"]');
+        await clickGround(p, 0, 60, 300);
+        await bpress(p, '.b-card[data-id="a_sakai"]');
+        await clickGround(p, -60, 100, 300);
+        check((await orderOf(page, 'a_tadakatsu')).type === 'move' && (await orderOf(page, 'a_sakai')).type === 'move', '[desktop] 湿地：札と地面のクリックで土手道と泥の中へ移動');
+        let pt = await unit(page, 'a_tadakatsu');
+        let ps = await unit(page, 'a_sakai');
+        let roadV = null;
+        let mudV = null;
+        for (let i = 0; i < 40; i++) {
+            await ff(page, 1);
+            const t = await unit(page, 'a_tadakatsu');
+            const sk = await unit(page, 'a_sakai');
+            if (roadV === null && t.z < 130 && pt.z < 130 && dist2(pt, t) > 0.5) roadV = dist2(pt, t);
+            if (mudV === null && sk.z < 130 && ps.z < 130 && dist2(ps, sk) > 0.05) mudV = dist2(ps, sk);
+            pt = t;
+            ps = sk;
+            if (roadV !== null && mudV !== null) break;
+        }
+        check(roadV !== null && mudV !== null && mudV < roadV * 0.4, '[desktop] 湿地：泥の中は土手道よりとても遅い（1 秒あたりの進み）', `土手道 ${roadV?.toFixed(2)} m・泥 ${mudV?.toFixed(2)} m`);
+        await shot(p, 'terrain-marsh', -40, 60, 360);
+    },
+    async village(p) {
+        // 忠勝隊を真ん中の通りの南の口から、屋敷前の広場 (0,40) へ。家屋の中へは入らない
+        const r = await walkAvoiding(p, 'a_tadakatsu', 0, 40, 40, ['building', 'fence']);
+        check(r.bad.length === 0, '[desktop] 村落：家屋・柵の中へ入らない（1 秒ごとに確かめた）', r.bad.slice(0, 5).join(' '));
+        check(r.arrived, '[desktop] 村落：通りを通って屋敷前の広場へ着く', r.where);
+        await shot(p, 'terrain-village', 0, 40, 300);
+    },
+    async temple(p) {
+        // 榊原隊（騎馬）を東の脇道の上 (174,-100) へ。崖・建物の中へは入らない
+        const r = await walkAvoiding(p, 'a_sakakibara', 174, -100, 60, ['cliff', 'building']);
+        check(r.bad.length === 0, '[desktop] 寺社周辺：崖・建物の中へ入らない（1 秒ごとに確かめた）', r.bad.slice(0, 5).join(' '));
+        check(r.arrived, '[desktop] 寺社周辺：東の脇道を回って境内の東の口の手前へ着く', r.where);
+        await shot(p, 'terrain-temple', 60, -60, 380);
+    },
+    async town_edge(p) {
+        // 忠勝隊を大通りの北の口 (0,25) へ。家屋の中へは入らない
+        const r = await walkAvoiding(p, 'a_tadakatsu', 0, 25, 40, ['building', 'wall', 'fence']);
+        check(r.bad.length === 0, '[desktop] 城下町外縁：家屋・塀の中へ入らない（1 秒ごとに確かめた）', r.bad.slice(0, 5).join(' '));
+        check(r.arrived, '[desktop] 城下町外縁：大通りを北の口へ着く', r.where);
+        await shot(p, 'terrain-town_edge', 0, 60, 380);
+    },
+    async siege_front(p) {
+        const { page } = p;
+        // 徳川騎馬隊を閉じた外門の奥（曲輪の中 (-30,-110)）へ：門は閉じているので通れず、石垣の手前で止まる（石垣の南の面 z -56 より南のまま）。
+        // 行き先へまっすぐの線は、門の前の出張りの区域を避ける
+        const r = await walkAvoiding(p, 'a_kiba', -30, -110, 60, ['wall']);
+        const gate = await page.evaluate(() => window.__battle.state.field.gates.map((g) => ({ open: g.open, sec: g.sec })));
+        const u = await unit(page, 'a_kiba');
+        check(r.bad.length === 0, '[desktop] 城攻め前面：石垣の中へ入らない（1 秒ごとに確かめた）', r.bad.slice(0, 5).join(' '));
+        check(u.z > -56 && gate[0] && gate[0].open === false, '[desktop] 城攻め前面：外門が閉じている間は門を通り抜けない（門の前で止まる）', `${u.x.toFixed(0)},${u.z.toFixed(0)}・門 ${JSON.stringify(gate)}`);
+        await shot(p, 'terrain-siege_front', 0, -50, 300);
+    },
 };
+
+/**
+ * 部隊 id を札で選び (x, z) の地面をクリックして、sec 秒まで 1 秒ずつ早送りし、kinds の地形（障害物・崖）の四角の中へ入らない（1.5 m のゆとり）ことと、
+ * 行き先へ着いたか（8 m 以内）を見る
+ */
+async function walkAvoiding(p, id, x, z, sec, kinds) {
+    const { page } = p;
+    await bpress(p, `.b-card[data-id="${id}"]`);
+    await clickGround(p, x, z, 300);
+    check((await orderOf(page, id)).type === 'move', `[desktop] ${id} を札と地面のクリックで (${x}, ${z}) へ移動`);
+    const rects = await page.evaluate((ks) => window.__battle.state.map.terrain.filter((a) => ks.includes(a.kind) && a.rect).map((a) => a.rect), kinds);
+    const bad = [];
+    let u = null;
+    for (let i = 0; i < sec; i++) {
+        await ff(page, 1);
+        u = await unit(page, id);
+        if (rects.some((r) => inRect(u, r, 1.5))) bad.push(`${u.x.toFixed(0)},${u.z.toFixed(0)}`);
+        if (dist2(u, { x, z }) < 6) break;
+    }
+    return { bad, arrived: !!u && dist2(u, { x, z }) < 8, where: u ? `${u.x.toFixed(0)},${u.z.toFixed(0)}` : '（いない）' };
+}
 
 /** カプセルの丘の高さ（sim.ts の elevationAt と同じ式。尾根・谷の高地の確かめに使う） */
 function capsuleHeight(q, c, H) {
@@ -704,7 +786,7 @@ async function crossRiver(p, id, x, z, river, spans, sec) {
     return { onBridge, crossed, where: u ? `${u.x.toFixed(0)},${u.z.toFixed(0)}` : '（いない）' };
 }
 
-// ================================================================ PC：10 戦場の通し
+// ================================================================ PC：15 戦場の通し
 
 async function desktop() {
     log(`== desktop：${FIELD_IDS.length} 戦場の通し`);

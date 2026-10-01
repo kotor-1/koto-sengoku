@@ -1,12 +1,12 @@
 /**
  * 合戦場の画面（データ駆動の戦場・6〜10 部隊）の表示と操作を、実際のブラウザで実際のクリック・キー・タップで確かめる。
  *   BASE=http://localhost:8172 node e2e/fields-ui.mjs [出力先]   （開発サーバー：proto3d/blender/tools/vite.nohmr.mjs）
- * - ?dev=field&id=<戦場id> で 10 戦場（第1群・第2群）をそれぞれ開き、PC（1280×720）とスマホ横（844×390、タッチ）で 1 枚ずつ撮る（出力先/<id>-desktop.png・<id>-phone.png）。
+ * - ?dev=field&id=<戦場id> で 15 戦場（第1群・第2群・第3群）をそれぞれ開き、PC（1280×720）とスマホ横（844×390、タッチ）で 1 枚ずつ撮る（出力先/<id>-desktop.png・<id>-phone.png）。
  * - 画面の部品（左上の欄・目標の欄・右上・右・札・命令のボタン・案内）が重ならない・はみ出さないことを、四角の位置で確かめる。
  * - 大平原（plains。味方 7 部隊）：PC は 1〜7 キーで選ぶ・札の数・武将の行（名前・役割・固有能力の「仮」）・移動・攻撃・防衛・撤退を
  *   クリックとキーで出す。スマホは札を横になぞってずらす（なぞっても選ばない）・札をタップで選ぶ・地図のタップで移動・目標の欄を開く／畳む。
  * - 結果の画面：全軍撤退で終え、勝敗・主目標・副目標の行が別々に出る（約束は演習に無い）。
- * - スマホ（goals）：10 戦場で、部隊の札をタップ → 目標の見出しを開く（能力の欄は隠れ、左上の列が札の列に重ならない）→ 別の部隊を選ぶ
+ * - スマホ（goals）：15 戦場で、部隊の札をタップ → 目標の見出しを開く（能力の欄は隠れ、左上の列が札の列に重ならない）→ 別の部隊を選ぶ
  *   （目標の欄を畳み、能力の欄が戻る。左上の列の下端が札の列より上）。
  * - PC（orders）：河川・浅瀬で、中央を弓で開ける作戦の命令をすべて札と地図のクリックで出し、丘の守りと斬り合う味方がいる丘の輪の端へ
  *   四隊を移して勝つ（目標の欄の進みの文が、数えていない理由を出す）。森林で、物見隊を選んで輪の真ん中（家康本陣）を押すと本陣が選び直され、
@@ -26,7 +26,7 @@ function check(ok, what, extra = '') {
     if (!ok) failures.push(what);
 }
 const PARTS = (process.env.PARTS || 'shots,desktop,phone,goals,orders').split(',');
-const FIELD_IDS = ['plains', 'river_ford', 'hills', 'forest', 'mountain_pass', 'single_bridge', 'multi_bridge', 'ridge', 'valley', 'paddy'];
+const FIELD_IDS = ['plains', 'river_ford', 'hills', 'forest', 'mountain_pass', 'single_bridge', 'multi_bridge', 'ridge', 'valley', 'paddy', 'marsh', 'village', 'temple', 'town_edge', 'siege_front'];
 
 const b = await launchBrowser();
 
@@ -89,7 +89,7 @@ async function start(p) {
     await press(p, '.b-pause');
 }
 
-// ================================================================ 10 戦場を開いて撮る
+// ================================================================ 15 戦場を開いて撮る
 if (PARTS.includes('shots')) {
     for (const kind of ['desktop', 'phone']) {
         for (const id of FIELD_IDS) {

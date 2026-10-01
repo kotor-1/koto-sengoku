@@ -9,7 +9,7 @@
 // この中で、次のヘッダー付きの簡易サーバーを立てる：
 //   content-security-policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'
 // 経路：タイトル →「合戦場の演習」→ 一覧 → 戦場を選ぶ → 説明 → 出陣 → 合戦（合戦を始める・×2・全軍撤退）→ 結果 → 続ける → 演習の結果（勝敗・主目標・副目標・保存）
-//       → 一覧へ、を 10 戦場（第1群・第2群）で。最後に開き直して、10 戦場の記録が一覧に残ること。演習の画面の塊（practiceView-*.js）を選んだときに読むこと。
+//       → 一覧へ、を 15 戦場（第1群・第2群・第3群）で。最後に開き直して、15 戦場の記録が一覧に残ること。演習の画面の塊（practiceView-*.js）を選んだときに読むこと。
 //       CSP の違反・ページの誤り・読めなかったファイル・data: の URL が無いこと。
 import { createServer } from 'node:http';
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -22,7 +22,7 @@ const PORT = Number(process.env.PORT || 8133);
 const [VW, VH] = (process.env.VIEW || '1280x720').split('x').map(Number);
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'";
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.glb': 'model/gltf-binary' };
-const FIELD_IDS = ['plains', 'river_ford', 'hills', 'forest', 'mountain_pass', 'single_bridge', 'multi_bridge', 'ridge', 'valley', 'paddy'];
+const FIELD_IDS = ['plains', 'river_ford', 'hills', 'forest', 'mountain_pass', 'single_bridge', 'multi_bridge', 'ridge', 'valley', 'paddy', 'marsh', 'village', 'temple', 'town_edge', 'siege_front'];
 
 if (!existsSync(join(DIST, 'index.html'))) throw new Error(`${DIST}/index.html が無い（先に本番ビルド）`);
 const served = [];
@@ -92,7 +92,7 @@ try {
   await sheet('practice-list').waitFor({ state: 'visible' });
   check('演習の一覧が出る（選んだときに演習の画面の塊を読む）', served.some((p) => /practiceView-.*\.js$/.test(p)), served.filter((p) => /practiceView/.test(p)).join(' '));
   const listed = await page.evaluate(() => [...document.querySelectorAll('.g-pr-field')].map((e) => e.dataset.field));
-  check(`一覧に ${FIELD_IDS.length} 戦場（第1群・第2群）`, JSON.stringify(listed) === JSON.stringify(FIELD_IDS), listed.join(','));
+  check(`一覧に ${FIELD_IDS.length} 戦場（第1群・第2群・第3群）`, JSON.stringify(listed) === JSON.stringify(FIELD_IDS), listed.join(','));
   await shot('P01-list');
   for (const id of FIELD_IDS) {
     console.log(`--- ${id}`);
