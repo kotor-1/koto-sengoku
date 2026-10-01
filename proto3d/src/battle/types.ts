@@ -75,6 +75,13 @@ export interface UnitDef {
     aiRole?: 'hold_line' | 'reserve' | 'flank' | 'guard_hq' | 'hold_zone' | 'assault';
     /** hold_zone（守る区域）・assault（攻め進む先）の地点と半径（m）。省けば最初の位置・半径 60 m */
     aiTarget?: { x: number; z: number; r?: number };
+    /**
+     * 持ち場（区域）から追う距離の上限（m。敵の考え ai.ts。省けば役割ごとの既定）。
+     * - hold_line：持ち場からこの距離より離れた相手は追わない（既定 120 m）。打って出る相手も、持ち場からこの距離（既定の 75 m より短ければ）の中だけ。
+     *   矢を嫌って射手へ打って出たときだけは、今までどおり 120 m まで追う（弓の陽動で誘い出せる）。
+     * - hold_zone・assault（着いて守る間）：区域の縁からこの距離より離れた相手は追わない（既定 60 m）。長くすると、区域に入った相手を遠くまで追う（誘い出せる）。
+     */
+    aiLeash?: number;
     /** この部隊を率いる武将の特殊能力（武将がいる部隊だけ。1 合戦 1 回）。省けば generalId の武将の能力（battle/generals.ts の abilityId） */
     ability?: AbilityId;
 }

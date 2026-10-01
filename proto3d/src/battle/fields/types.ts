@@ -89,6 +89,7 @@ export interface PresetUnit {
     arriveAt?: number;
     aiRole?: UnitDef['aiRole'];
     aiTarget?: UnitDef['aiTarget'];
+    aiLeash?: UnitDef['aiLeash'];
     /** 固有能力（省けば武将の能力を使う。武将の能力の結び付けは generals.ts・abilities.ts の担当） */
     ability?: AbilityId;
     order?: Order;

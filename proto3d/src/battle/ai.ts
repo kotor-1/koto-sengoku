@@ -17,6 +17,9 @@
  * - guard_hq：本陣を守る。本陣そのものは持ち場を動かない。本陣以外なら、本陣の 80 m 以内に来た相手を迎え撃つ。
  * - hold_zone（データ駆動の戦場）：aiTarget の区域（省けば最初の位置・半径 60 m）を守る。区域（＋10 m）に入ってきた見えている相手に当たり、
  *   区域から 60 m より離れた相手は追わずに持ち場（区域の中の最初の位置。外にいれば区域の中心）へ戻る。弓隊は持ち場を動かず、届く相手を射る。
+ * - 追う距離の上限（UnitDef.aiLeash。データで部隊ごとに変える。省けば上の既定）：hold_line は持ち場から（打って出る相手も、その距離が
+ *   75 m より短ければその中だけ。矢を嫌って射手へ打って出たときは今までどおり 120 m まで追う）、hold_zone・assault（着いて守る間）は区域の縁から。
+ *   例：橋の北の口で待ち構えさせる（hold_line・短く）、狭い口の塞ぎを誘い出せるようにする（hold_zone・長く）。
  * - assault（データ駆動の戦場）：aiTarget の地点へ攻め進む。途中で 60 m 以内に見えている相手がいれば当たる（弓隊は届く相手がいれば止まって射る）。
  *   着いたら、その区域を hold_zone と同じように守る。
  * 動く命令は sim.ts が道探し（通れない所がある戦場だけ）でたどるので、ここは行き先を決めるだけ。
@@ -118,6 +121,8 @@ export interface AiMemo {
     waypoint: { x: number; z: number } | null;
     /** hold_zone・assault の区域（aiTarget。省けば最初の位置・半径 AI.zoneRadius） */
     zone: { x: number; z: number; r: number } | null;
+    /** hold_line：矢を嫌って打って出た相手（その相手だけは AI.holdLeash まで追う。aiLeash の短い部隊でも誘い出せる） */
+    provokedId?: string | null;
 }
 
 export interface AiState {
@@ -234,6 +239,14 @@ function visibleAllies(s: BattleState): UnitState[] {
 function home(m: AiMemo): { x: number; z: number } {
     return { x: m.homeX, z: m.homeZ };
 }
+/** hold_line：持ち場からこの距離より離れた相手は追わない（aiLeash。省けば AI.holdLeash） */
+function holdLeashOf(u: UnitState): number {
+    return u.aiLeash ?? AI.holdLeash;
+}
+/** hold_zone・assault：区域の縁からこの距離より離れた相手は追わない（aiLeash。省けば AI.zoneLeash） */
+function zoneLeashOf(u: UnitState): number {
+    return u.aiLeash ?? AI.zoneLeash;
+}
 /** 相手 o が、u の方を向いている（u が o の正面 ±50° にいる） */
 function facesMe(o: UnitState, u: UnitState): boolean {
     const h = Math.atan2(u.x - o.x, -(u.z - o.z));
@@ -303,7 +316,7 @@ function retreatingAlly(o: UnitState): boolean {
 function mayChase(s: BattleState, u: UnitState, m: AiMemo, o: UnitState): boolean {
     switch (m.role) {
         case 'hold_line':
-            return d2(o, home(m)) <= AI.holdLeash;
+            return d2(o, home(m)) <= holdLeashOf(u);
         case 'guard_hq': {
             const hq = s.units.find((x) => x.side === u.side && x.isHq);
             return d2(o, hq && active(hq) ? hq : home(m)) <= AI.guardLeash;
@@ -314,7 +327,7 @@ function mayChase(s: BattleState, u: UnitState, m: AiMemo, o: UnitState): boolea
         case 'assault':
             return true;
         case 'hold_zone':
-            return d2(o, m.zone!) <= m.zone!.r + AI.zoneLeash;
+            return d2(o, m.zone!) <= m.zone!.r + zoneLeashOf(u);
     }
 }
 
@@ -371,10 +384,14 @@ function holdLine(s: BattleState, api: AiApi, u: UnitState, m: AiMemo): void {
     }
     const cur = attackTarget(s, u);
     if (cur) {
-        if (active(cur) && cur.seenBy.enemy && d2(cur, home(m)) <= AI.holdLeash) return;
+        // 矢を嫌って打って出た射手は、aiLeash が短くても AI.holdLeash まで追う（弓の陽動で誘い出せる）
+        const leash = cur.id === m.provokedId ? Math.max(AI.holdLeash, holdLeashOf(u)) : holdLeashOf(u);
+        if (active(cur) && cur.seenBy.enemy && d2(cur, home(m)) <= leash) return;
+        m.provokedId = null;
         goHome(api, u, m);
         return;
     }
+    m.provokedId = null;
     // 矢を浴び続けたら、射手へ打って出る
     if (m.arrowSec >= AI.provokeSec) {
         const sh = byId(s, u.lastShooterId);
@@ -382,11 +399,13 @@ function holdLine(s: BattleState, api: AiApi, u: UnitState, m: AiMemo): void {
         if (!calm && active(sh) && sh.seenBy.enemy && d2(sh, home(m)) <= AI.provokeRange) {
             m.arrowSec = 0;
             attack(s, api, u, sh, `${u.name}が矢を嫌って打って出た`);
+            if (attackTarget(s, u) === sh) m.provokedId = sh.id;
             return;
         }
     }
+    const engage = Math.min(AI.holdEngage, holdLeashOf(u));
     const threats = visibleAllies(s)
-        .filter((o) => d2(o, home(m)) <= AI.holdEngage)
+        .filter((o) => d2(o, home(m)) <= engage)
         .sort((a, b) => d2(a, home(m)) - d2(b, home(m)));
     for (const o of threats) {
         if (attackTarget(s, o) === u) continue; // こちらへ来る相手は、持ち場で待ち構える
@@ -505,7 +524,7 @@ function guardZone(s: BattleState, api: AiApi, u: UnitState, m: AiMemo, backHome
     const Z = m.zone!;
     const cur = attackTarget(s, u);
     if (cur) {
-        if (active(cur) && cur.seenBy.enemy && d2(cur, Z) <= Z.r + AI.zoneLeash) return;
+        if (active(cur) && cur.seenBy.enemy && d2(cur, Z) <= Z.r + zoneLeashOf(u)) return;
         backHome();
         return;
     }

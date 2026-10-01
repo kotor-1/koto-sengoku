@@ -89,6 +89,7 @@ function unitFromPreset(field: BattlefieldDef, p: PresetUnit): UnitDef {
     if (arriveAt !== undefined && arriveAt > 0) u.arriveAt = arriveAt;
     if (p.aiRole) u.aiRole = p.aiRole;
     if (p.aiTarget) u.aiTarget = { ...p.aiTarget };
+    if (p.aiLeash !== undefined) u.aiLeash = p.aiLeash;
     if (p.ability) u.ability = p.ability;
     if (p.order) u.order = { ...p.order };
     return u;
@@ -345,6 +346,7 @@ function validatePreset(
         if (u.reinforcement && !field.reinforcements?.some((r) => r.id === u.reinforcement && r.side === u.side)) out.push(`${tag}：部隊 ${u.id} の援軍 ${u.reinforcement} がない`);
         if (u.aiTarget && !ok(u.aiTarget.x, u.aiTarget.z)) out.push(`${tag}：部隊 ${u.id} の敵の考えの地点が通れる所にない`);
         else if (u.aiTarget && !fromExit(u.side, u.aiTarget.x, u.aiTarget.z)) out.push(`${tag}：部隊 ${u.id} の敵の考えの地点へ ${u.side} の退き口から道がない`);
+        if (u.aiLeash !== undefined && !(Number.isFinite(u.aiLeash) && u.aiLeash >= 0)) out.push(`${tag}：部隊 ${u.id} の aiLeash は 0 以上の数`);
         if (u.generalId !== undefined && !generalById(u.generalId)) out.push(`${tag}：部隊 ${u.id} の武将 ${u.generalId} がいない（generals.ts）`);
         if (u.ability !== undefined && !(u.ability in ABILITY_DATA)) out.push(`${tag}：部隊 ${u.id} の能力 ${u.ability} がない（abilities.ts）`);
         if (u.arriveAt !== undefined && !(Number.isFinite(u.arriveAt) && u.arriveAt >= 0)) out.push(`${tag}：部隊 ${u.id} の arriveAt は 0 以上の数`);

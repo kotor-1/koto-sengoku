@@ -2,6 +2,7 @@
  * 第2群の戦場の調整役から出たエンジン側の要望（docs/fields-group2-design.md の後の直し）。どれもデータと汎用の仕組みで、戦場の id では分けない。
  * - 道探し（pathfind.ts）：まっすぐ行く区間を、遅い方の速さだけでなく、かかる時間でも A* の道・元の道と比べる
  *   （行き先・出発点が水田の中でも、街道・畦道を回る方がずっと早ければ回る）。
+ * - 敵の考え（ai.ts）：追う距離の上限 UnitDef.aiLeash（hold_line は持ち場から・hold_zone は区域の縁から）。
  *
  * 既存の戦場（国境の原・第1群の 5 戦場・第2群の 5 戦場）の台本が 1 刻みも変わらないことは、tests/proto3d-battle-v11-identity.test.ts・
  * tests/proto3d-fields-initiative-record.test.ts と各戦場のテストがそのまま通ることで確かめる。
@@ -9,7 +10,35 @@
  */
 import { describe, expect, it } from 'vitest';
 import { buildNav, findPath, type NavGrid } from '../proto3d/src/battle/pathfind';
-import type { UnitKind } from '../proto3d/src/battle/types';
+import { createBattle, issueOrder, RULES, stepBattle, unitById, type BattleState } from '../proto3d/src/battle/sim';
+import type { BattleSetup, Side, UnitDef, UnitKind } from '../proto3d/src/battle/types';
+
+function field(units: UnitDef[], extra: Partial<BattleSetup> = {}): BattleSetup {
+    return {
+        map: { id: 'test', name: '試験の原', width: 400, depth: 400, terrain: [], exits: { ally: { x: 0, z: 200 }, enemy: { x: 0, z: -200 } } },
+        units,
+        timeLimitSec: 900,
+        briefing: [],
+        ...extra,
+    };
+}
+function U(id: string, side: Side, kind: UnitKind, x: number, z: number, extra: Partial<UnitDef> = {}): UnitDef {
+    return { id, side, clan: side === 'ally' ? 'tokugawa' : 'rival', kind, name: id, strength: 300, morale: 80, x, z, facing: side === 'ally' ? 0 : Math.PI, ...extra };
+}
+/** 両軍の本陣（離れた隅に置く。試験の相手にならない） */
+const HQS = (): UnitDef[] => [U('a_hq', 'ally', 'honjin', -190, 190), U('e_hq', 'enemy', 'honjin', -190, -190, { aiRole: 'guard_hq' })];
+/** sec 秒進める。刻みごとに each を呼ぶ */
+function advance(s: BattleState, sec: number, each?: (s: BattleState) => void): void {
+    const end = s.tick + Math.round(sec / RULES.tick);
+    while (s.tick < end && !s.result) {
+        stepBattle(s, RULES.tick);
+        each?.(s);
+    }
+}
+const attacking = (s: BattleState, id: string, target: string) => {
+    const o = unitById(s, id)!.order;
+    return o.type === 'attack' && o.targetId === target;
+};
 
 // ---------------------------------------------------------------- 道探し
 
@@ -79,5 +108,80 @@ describe('道探し：まっすぐ行く区間を、かかる時間でも比べ�
         expect(findPath(nav, 'yari', 0, 90, 0, -90)).toEqual([{ x: 0, z: -90 }]);
         // 田の中だけ（街道・畦道を通らない）
         expect(findPath(nav, 'yari', -60, 80, -30, 0)).toEqual([{ x: -30, z: 0 }]);
+    });
+});
+
+// ---------------------------------------------------------------- 敵の考えの追う距離（aiLeash）
+
+describe('敵の考え：追う距離の上限 aiLeash（早送り）', () => {
+    it('hold_line：横を通る相手へ、既定（75 m）なら持ち場から 50 m でも打って出る。aiLeash 30 なら 30 m の中に来るまで持ち場で待つ', () => {
+        // 持ち場 (0,-60)。味方の槍は持ち場の東 50 m を北へ通り過ぎる（守りへは向かわない）
+        const mk = (leash?: number) => {
+            const s = createBattle(field([...HQS(), U('a', 'ally', 'yari', 50, 40), U('g', 'enemy', 'yari', 0, -60, { aiRole: 'hold_line', ...(leash !== undefined ? { aiLeash: leash } : {}) })]));
+            issueOrder(s, 'a', { type: 'move', x: 50, z: -150 });
+            return s;
+        };
+        const def = mk();
+        let out = false;
+        advance(def, 40, (st) => (out ||= attacking(st, 'g', 'a')));
+        expect(out).toBe(true);
+        const short = mk(30);
+        let out2 = false;
+        let far = 0;
+        advance(short, 40, (st) => {
+            out2 ||= attacking(st, 'g', 'a');
+            const g = unitById(st, 'g')!;
+            far = Math.max(far, Math.hypot(g.x, g.z + 60));
+        });
+        expect(out2).toBe(false);
+        expect(far).toBeLessThan(5);
+    });
+
+    it('hold_line：aiLeash 30 でも、持ち場の 30 m の中へ来た相手には打って出て、離れたら（30 m より先）持ち場へ戻る', () => {
+        const s = createBattle(field([...HQS(), U('a', 'ally', 'yari', 20, 10), U('g', 'enemy', 'yari', 0, -60, { aiRole: 'hold_line', aiLeash: 30 })]));
+        // 持ち場の東 20 m を北へ通る
+        issueOrder(s, 'a', { type: 'move', x: 20, z: -150 });
+        let out = false;
+        advance(s, 30, (st) => (out ||= attacking(st, 'g', 'a')));
+        expect(out).toBe(true);
+    });
+
+    it('hold_line：aiLeash 30 でも、矢を嫌って射手（持ち場から 100 m）へ打って出たときは今までどおり追う（弓の陽動で誘い出せる）', () => {
+        const s = createBattle(field([...HQS(), U('b', 'ally', 'yumi', 0, 40), U('g', 'enemy', 'yari', 0, -60, { aiRole: 'hold_line', aiLeash: 30 })]));
+        issueOrder(s, 'b', { type: 'attack', targetId: 'g' });
+        // 弓は届く所（射程）まで寄って射る。12 秒以上浴びると打って出る
+        let out = false;
+        let far = 0;
+        advance(s, 60, (st) => {
+            out ||= attacking(st, 'g', 'b');
+            const g = unitById(st, 'g')!;
+            far = Math.max(far, Math.hypot(g.x, g.z + 60));
+        });
+        expect(out).toBe(true);
+        expect(far).toBeGreaterThan(40);
+    });
+
+    it('hold_zone：区域に入った相手が区域の外へ退くと、既定（縁から 60 m）なら追うのをやめる。aiLeash 160 なら追い続ける（誘い出せる）', () => {
+        const mk = (leash?: number) => {
+            const s = createBattle(
+                field([...HQS(), U('a', 'ally', 'kiba', 0, -30), U('g', 'enemy', 'yari', 0, -60, { aiRole: 'hold_zone', aiTarget: { x: 0, z: -60, r: 30 }, ...(leash !== undefined ? { aiLeash: leash } : {}) })]),
+            );
+            return s;
+        };
+        const run = (leash?: number) => {
+            const s = mk(leash);
+            // 区域の縁に入った騎馬に守りが当たりに来る。来たら騎馬は南へ駆けて離れる
+            advance(s, 4);
+            expect(attacking(s, 'g', 'a')).toBe(true);
+            issueOrder(s, 'a', { type: 'move', x: 0, z: 150 });
+            // 守りがいちばん南まで追って来た所（騎馬は 6 m/秒、槍は 3 m/秒）
+            let maxZ = -Infinity;
+            advance(s, 40, (st) => (maxZ = Math.max(maxZ, unitById(st, 'g')!.z)));
+            return maxZ;
+        };
+        // 既定：騎馬が区域の中心から 90 m（z 30）より先へ出ると、守りは追うのをやめて戻る
+        expect(run()).toBeLessThan(-10);
+        // aiLeash 160：騎馬が中心から 190 m（z 130）より先へ出るまで追い、区域から 60 m 以上南まで出て来る
+        expect(run(160)).toBeGreaterThan(5);
     });
 });

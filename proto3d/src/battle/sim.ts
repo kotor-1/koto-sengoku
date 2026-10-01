@@ -273,6 +273,8 @@ export interface UnitState {
     readonly aiRole?: UnitDef['aiRole'];
     /** hold_zone・assault の地点（UnitDef.aiTarget） */
     readonly aiTarget?: UnitDef['aiTarget'];
+    /** 持ち場（区域）から追う距離の上限（UnitDef.aiLeash） */
+    readonly aiLeash?: number;
     /** 率いる武将の特殊能力（abilities.ts。武将のいる部隊だけ） */
     readonly ability?: AbilityId;
     /** その陣営の本陣（その陣営の最初の honjin） */
@@ -645,6 +647,7 @@ export function createBattle(setup: BattleSetup): BattleState {
             ...(d.generalId ? { generalId: d.generalId } : {}),
             aiRole: d.aiRole,
             ...(d.aiTarget ? { aiTarget: { ...d.aiTarget } } : {}),
+            ...(d.aiLeash !== undefined ? { aiLeash: d.aiLeash } : {}),
             ...(ability ? { ability } : {}),
             isHq,
             startStrength: strength,
