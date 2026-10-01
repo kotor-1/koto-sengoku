@@ -134,6 +134,8 @@ if (PARTS.includes('desktop')) {
     check((await ui(page)).selectedId === 't_honjin', '札で家康本陣を選ぶ');
     const panel1 = await text(page, '.b-abil');
     check(panel1.includes('立て直しの号令') && panel1.includes('使える') && panel1.includes('対象') && panel1.includes('効果') && panel1.includes('代償') && panel1.includes('範囲 110 m') && panel1.includes('ゲーム用の創作'), '能力の欄：名前・使える・対象・範囲・効果・代償・創作の断り', panel1.slice(0, 80));
+    // 号令の直し（docs/fields-group2-design.md §1）：能力の欄の説明が処理と一致（兵が 3 割を切った部隊は退く。「敗走しない」だけにしない）
+    check(panel1.includes('兵が 3 割を切った部隊') && panel1.includes('20 未満に下がら'), '能力の欄：号令の守りの下限（兵が 3 割を切った部隊は退く）', panel1.slice(panel1.indexOf('効果'), panel1.indexOf('効果') + 120));
     await shot(page, 'desktop-02-select-ieyasu');
     await overlapCheck(page, 'PC 家康本陣を選んだ');
     await page.keyboard.press('KeyF');

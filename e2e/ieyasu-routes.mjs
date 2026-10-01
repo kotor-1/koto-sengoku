@@ -552,6 +552,8 @@ async function route1() {
   await B.select('t_honjin');
   const panel = await page.textContent('.b-abil');
   check('1 家康本陣を選ぶ → 能力の欄（立て直しの号令・対象・範囲・効果・代償・使える・創作の断り）', ['立て直しの号令', '対象', '範囲 110 m', '効果', '代償', '使える', 'ゲーム用の創作'].every((w) => panel.includes(w)), panel.slice(0, 90));
+  // 号令の直し（docs/fields-group2-design.md §1）：説明が処理と一致（兵が 3 割を切った部隊は退く）
+  check('1 号令の説明に守りの下限（兵が 3 割を切った部隊は退く）', panel.includes('兵が 3 割を切った部隊') && panel.includes('20 未満に下がら'), panel.slice(panel.indexOf('効果'), panel.indexOf('効果') + 120));
   await shot(page, '1-03-ability-panel');
   let rallyShot = false;
   const sallied = `alive('e_asai_sente') && U('e_asai_sente').engagedWith === 't_yumi'`;
