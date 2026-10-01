@@ -2,13 +2,15 @@
  * 第3群の前に整える操作（docs/fields-group3-design.md §2-2）のうち、画面の決まり（control.ts）で確かめられる分：
  * - 畳んだ目標の欄の見出し（objectiveSummaryText）：主目標の進みを 1 行で。数を含む短い括弧（「（あと 2）」など）は残す。
  *   既存の 10 戦場では、前の書き方（括弧の中をすべて省く）と同じ文になる。
+ * - 移動先指定（§2-1）で、通れない所（第3群の家屋の中）を押したとき：命令は押した点で出し、issueOrder が近くの通れる所へ直す（状態を直接見るテスト）。
  * 移動先指定・対象選びの優先は tests/proto3d-battle-control.test.ts、号令の確かめは tests/proto3d-battle-rally-check.test.ts。
  * 早送り（stepBattle で時間を進める。命令は出さない）と、文を直接与えるテスト。
  */
 import { describe, expect, it } from 'vitest';
-import { objectivePanelModel, objectiveSummaryText, type ObjectiveRowModel } from '../proto3d/src/battle/control';
-import { createBattle, stepBattle } from '../proto3d/src/battle/sim';
+import { objectivePanelModel, objectiveSummaryText, resolveTap, type ObjectiveRowModel } from '../proto3d/src/battle/control';
+import { createBattle, issueOrder, stepBattle, unitById } from '../proto3d/src/battle/sim';
 import { buildBattleSetup, practiceFields } from '../proto3d/src/battle/fields';
+import { isPassable } from '../proto3d/src/battle/pathfind';
 
 const row = (progressText: string, state: ObjectiveRowModel['state'] = 'active' as ObjectiveRowModel['state']): ObjectiveRowModel => ({
     id: 'p',
@@ -44,5 +46,32 @@ describe('畳んだ目標の欄の見出し（objectiveSummaryText）', () => {
                 expect(objectiveSummaryText(p), `${f.id} ${until} 秒`).toBe(oldSummary(p));
             }
         }
+    });
+});
+
+describe('移動先指定で通れない所を押す（第3群の家屋）', () => {
+    it('村落の庄屋の屋敷（building）の真ん中に味方が立つ所を移動先指定で押す → 選び直さず移動。行き先は屋敷の外の通れる所に直る', () => {
+        const f = practiceFields().find((x) => x.id === 'village')!;
+        const s = createBattle(buildBattleSetup(f, f.presets[0]!.id));
+        const nav = s.field.nav!;
+        expect(nav).toBeTruthy();
+        // 屋敷（x -30〜30・z -12〜16）の真ん中は通れない
+        expect(isPassable(nav, 0, 2)).toBe(false);
+        const allies = s.units.filter((u) => u.side === 'ally' && !u.isHq);
+        const mover = allies[0]!;
+        const other = s.units.find((u) => u.side === 'ally' && u.id !== mover.id)!;
+        // 押した所に別の味方の体がある（行き先に味方が立っている）想定
+        const act = resolveTap({ id: mover.id, side: 'ally', commandable: true }, 'move', { kind: 'unit', unitId: other.id, side: 'ally', x: 0, z: 2 });
+        expect(act).toEqual({ type: 'order', unitId: mover.id, order: { type: 'move', x: 0, z: 2 } });
+        if (act.type !== 'order') return;
+        expect(issueOrder(s, act.unitId, act.order)).toBe(true);
+        const o = unitById(s, mover.id)!.order;
+        expect(o.type).toBe('move');
+        if (o.type !== 'move') return;
+        // 近くの通れる所（屋敷の外。押した点から屋敷の半分の奥行き＋格子 1 つほど）
+        expect(isPassable(nav, o.x, o.z)).toBe(true);
+        expect(Math.hypot(o.x - 0, o.z - 2)).toBeLessThan(25);
+        // 指定なしで同じ所を押すと、今までどおりその味方を選ぶ
+        expect(resolveTap({ id: mover.id, side: 'ally', commandable: true }, 'none', { kind: 'unit', unitId: other.id, side: 'ally', x: 0, z: 2 })).toEqual({ type: 'select', unitId: other.id });
     });
 });
