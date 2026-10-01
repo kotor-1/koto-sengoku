@@ -20,7 +20,8 @@
  *   4. スマホの表示：知らせは 2 つまで見える・能力の欄の高さ・目標の見出しが 1 行・操作の要らない表示（知らせ・能力の欄・案内の文・
  *      発動の知らせ・止めている印・調べる欄）が押しを奪わない（pointer-events: none）。
  * - shots（スマホ横）：演習の一覧の戦場（window.__fieldDev.ids。今ある分）を開き、家康本陣を選んで撮る。点滅する印が、押しを奪う部品
- *   （pointer-events が none でない部品）に覆われていないか・操作の要らない表示が押しを奪わないかを数える。
+ *   （pointer-events が none でない部品）に覆われていないか・操作の要らない表示が押しを奪わないか・畳んだ目標の見出しが 1 行で
+ *   進みの数（最初の区切り。段階目標は今の段まで）が「…」で切れないかを数える。60 秒進めて（早送り）もう一度数えて撮る（-60s）。
  * 待つ時間だけは開発用の早送り（fastForward）を使う。命令・能力は画面の操作だけで出す。状態は window.__battle から読む
  * （号令の確かめの場面づくりだけは状態を直接書き換える。ログに「直接操作」と書く）。コンテナはソフトウェア描画（実機・性能は未確認）。
  */
@@ -328,7 +329,7 @@ async function shots() {
         const hq = await page.evaluate(() => window.__battle.state.units.find((u) => u.side === 'ally' && u.isHq).id);
         await selectCard(p, hq);
         await page.waitForTimeout(400);
-        const r = await page.evaluate(() => {
+        const measure = () => page.evaluate(() => {
             const vis = (e) => e && !e.hidden && getComputedStyle(e).display !== 'none' && getComputedStyle(e).visibility !== 'hidden';
             const R = (e) => { const b = e.getBoundingClientRect(); return { l: b.left, t: b.top, r: b.right, b: b.bottom }; };
             const ov = (a, c) => a.l < c.r - 1 && c.l < a.r - 1 && a.t < c.b - 1 && c.t < a.b - 1;
@@ -346,13 +347,43 @@ async function shots() {
                 for (const k of quiet) if (ov(bb, k)) covered.push(`${e.dataset.id}×${k.s}`);
             }
             const quietPe = ['.b-toast', '.b-abil', '.b-abnote', '.b-pausepill', '.b-inspect', '.b-hint'].every((s) => { const e = document.querySelector(s); return !e || getComputedStyle(e).pointerEvents === 'none'; });
-            return { hidden, covered, quietPe, field: document.querySelector('.b-root')?.dataset.field };
+            // 畳んだ目標の見出し：1 行に収まり、進みの文が省略（…）で切れていないか
+            const g = document.querySelector('.b-goals');
+            const head = g?.querySelector('.b-goals-head');
+            const sumE = g?.querySelector('.b-goals-sum');
+            // 進みの要（最初の「・」までの区切り。段階目標は今の段の数を含む 2 つ目まで）が、見出しの右端の内に収まるか
+            let keyCut = false;
+            const sum = sumE?.textContent ?? '';
+            if (sumE && sumE.firstChild) {
+                const segs = sum.split('・');
+                const key = segs.slice(0, sum.startsWith('段階') ? 2 : 1).join('・');
+                const rg = document.createRange();
+                rg.setStart(sumE.firstChild, 0);
+                rg.setEnd(sumE.firstChild, Math.min(key.length, sumE.firstChild.length));
+                keyCut = rg.getBoundingClientRect().right > sumE.getBoundingClientRect().right + 1;
+            }
+            const goals = g ? { closed: g.classList.contains('closed'), h: head ? head.getBoundingClientRect().height : 0, sum, cut: !!sumE && sumE.scrollWidth > sumE.clientWidth + 1, keyCut } : null;
+            const toasts = [...document.querySelectorAll('.b-toast')].filter((e) => vis(e)).length;
+            return { hidden, covered, quietPe, goals, toasts, field: document.querySelector('.b-root')?.dataset.field };
         });
+        const r = await measure();
         check(r.field === id, `[shots] ${id}：開けた`);
         check(r.hidden.length === 0, `[shots] ${id}：点滅する印が押しを奪う部品に覆われない`, r.hidden.join(' '));
         check(r.quietPe, `[shots] ${id}：操作の要らない表示は押しを奪わない`);
         if (r.covered.length) log(`  （記録）${id}：点滅する印が操作の要らない表示の下にある（押しは通る）：${r.covered.join(' ')}`);
+        // 見出しの後ろ（区域ごとの様子など）が「…」で切れるのは記録だけ。進みの要（数）は切れないこと
+        if (r.goals) check(r.goals.closed && r.goals.h <= 32 && !r.goals.keyCut, `[shots] ${id}：目標は畳んで 1 行・進みの数が「…」で切れない`, `${r.goals.h.toFixed(0)} px「${r.goals.sum}」${r.goals.cut ? '（後ろが「…」）' : ''}`);
         await page.screenshot({ path: `${OUT}/shots-${id}-phone.png` });
+        // 60 秒進めた後（知らせ・目標の進みが出た後）も、点滅する印が押しを奪う部品に覆われない（待つ時間だけ早送り）
+        await page.evaluate(() => window.__battle.fastForward(60));
+        await page.waitForTimeout(600);
+        if ((await ui(page)).selectedId !== hq) await selectCard(p, hq);
+        await page.waitForTimeout(400);
+        const r2 = await measure();
+        check(r2.hidden.length === 0, `[shots] ${id}：60 秒の後も点滅する印が押しを奪う部品に覆われない`, r2.hidden.join(' '));
+        check(r2.toasts <= 2 && r2.quietPe, `[shots] ${id}：60 秒の後、知らせは 2 つまで・操作の要らない表示は押しを奪わない`, `知らせ ${r2.toasts}`);
+        if (r2.goals) check(r2.goals.h <= 32 && !r2.goals.keyCut, `[shots] ${id}：60 秒の後も目標の見出しは 1 行・進みの数が切れない`, `「${r2.goals.sum}」${r2.goals.cut ? '（後ろが「…」）' : ''}`);
+        await page.screenshot({ path: `${OUT}/shots-${id}-phone-60s.png` });
         await p.ctx.close();
     }
 }
