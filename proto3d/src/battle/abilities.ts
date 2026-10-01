@@ -80,6 +80,12 @@ export interface AbilityData {
     areaRoutMorale: number | null;
     /** 範囲内（areaFilter）の部隊の士気は、この値より下がらない（もとからこれより低い部隊は、今の値より下がらない）。0 なら何もしない */
     areaMoraleFloor: number;
+    /**
+     * 範囲の効果が効く兵の下限（最初の兵に対する割合。0 なら下限なし）。立て直しの号令の「死ぬまで退かない」を防ぐ：
+     * - 兵がこの割合を切った部隊には、範囲の効果（士気の床・敗走しない・士気の低下を抑える・使った時の士気 +）が効かない（普通の決まり）。
+     * - 効果に守られていた部隊が、効果中にこの割合を切ったら、その場で敗走する（守りで士気を支えていた分、持ちこたえられない）。
+     */
+    routGuardMinStrength: number;
     /** 持つ部隊自身の代償：与える損害 ×、動きの速さ ×、受ける損害 × */
     selfDealMul: number;
     selfSpeedMul: number;
@@ -126,6 +132,7 @@ const NO_EXTRA = {
     areaFlankDealMul: 1,
     areaMoraleLossMeleeOnly: false,
     areaMoraleFloor: 0,
+    routGuardMinStrength: 0,
     leash: false,
     reserveMoraleLossMul: 1,
     encircle: null,
@@ -152,7 +159,8 @@ export const ABILITY_DATA: Record<AbilityId, AbilityData> = {
         areaFilter: 'all',
         areaTakeMul: 1,
         areaMoraleLossMul: 0.4,
-        // 範囲内は士気で敗走しない（士気は 20 未満に下がらない。もとから低い部隊も、効果中は崩れない）
+        // 範囲内は士気で敗走しない（士気は 20 未満に下がらない。もとから低い部隊も、効果中は崩れない）。
+        // ただし兵が最初の routGuardMinStrength（3 割）を切った部隊は守りが外れて退く（下の routGuardMinStrength）
         areaRoutMorale: -1,
         selfDealMul: 0.3,
         selfSpeedMul: 0.5,
@@ -160,10 +168,13 @@ export const ABILITY_DATA: Record<AbilityId, AbilityData> = {
         rooted: false,
         ...NO_EXTRA,
         areaMoraleFloor: 20,
+        // 兵が最初の 3 割を切った部隊は号令の守りが外れる（効果中に切ったらその場で敗走する。全滅するまで戦わない）
+        routGuardMinStrength: 0.3,
         cardLabel: '号令',
         targetText: '家康本陣を中心に、半径 110 m の味方の部隊（家康本陣も。使った後も本陣について動く）',
         rangeText: '半径 110 m（家康本陣の周り）',
-        effectText: '使った時に範囲内の味方の士気 +40（上限 100）。35 秒のあいだ、範囲内の味方の士気は 20 未満に下がらず（敗走しない）、士気の低下 −60%',
+        effectText:
+            '使った時に範囲内の味方の士気 +40（上限 100）。35 秒のあいだ、範囲内の味方の士気は 20 未満に下がらず（士気では敗走しない）、士気の低下 −60%。ただし兵が最初の 3 割を切った部隊には効かず、効果中に 3 割を切った部隊はその場で敗走する（全滅するまでは戦わない）',
         costText: '効果中、家康本陣の与える損害 ×0.3・動き ×0.5（守りを優先）。失った兵や戦えない部隊は戻らない',
     },
     tadakatsu_rearguard: {
@@ -325,6 +336,17 @@ function pct(mul: number): string {
     return `${Math.round(Math.abs(1 - mul) * 100)}%`;
 }
 
+/** 兵の割合を「3 割」のように（0.25 なら「25%」） */
+function ratioText(r: number): string {
+    const p = Math.round(r * 100);
+    return p % 10 === 0 ? `${p / 10} 割` : `${p}%`;
+}
+
+/** 守りの下限の短い説明（例：「兵が 3 割を切った部隊は退く」）。下限が無ければ空 */
+export function guardText(d: AbilityData): string {
+    return d.routGuardMinStrength > 0 ? `兵が ${ratioText(d.routGuardMinStrength)}を切った部隊は退く` : '';
+}
+
 /** 能力の短い説明（スマホでも収まる長さ。数値は ABILITY_DATA から）。6 能力とも */
 export function abilityShortText(id: AbilityId): { target: string; effect: string; cost: string } {
     const d = ABILITY_DATA[id];
@@ -332,7 +354,7 @@ export function abilityShortText(id: AbilityId): { target: string; effect: strin
         case 'ieyasu_rally':
             return {
                 target: `本陣の周り ${d.radius} m の味方`,
-                effect: `士気 +${d.moraleBoost}・${d.durationSec} 秒 士気 ${d.areaMoraleFloor} 未満に下がらず敗走しない・士気の低下 −${pct(d.areaMoraleLossMul)}`,
+                effect: `士気 +${d.moraleBoost}・${d.durationSec} 秒 士気 ${d.areaMoraleFloor} 未満に下がらない・士気の低下 −${pct(d.areaMoraleLossMul)}（${guardText(d)}）`,
                 cost: `本陣の与える損害 ×${d.selfDealMul}・動き ×${d.selfSpeedMul}`,
             };
         case 'tadakatsu_rearguard':
@@ -439,6 +461,8 @@ function liveRuns(s: BattleState): AbilityRun[] {
 function inArea(r: AbilityRun, holder: UnitState, u: UnitState): boolean {
     const data = ABILITY_DATA[r.id];
     if (u.side !== r.side || !u.present) return false;
+    // 守りの下限（立て直しの号令）：兵が最初の決まった割合を切った部隊には、範囲の効果が効かない（普通の決まりで退く）
+    if (data.routGuardMinStrength > 0 && belowGuard(u, data.routGuardMinStrength)) return false;
     switch (data.areaFilter) {
         case 'all':
             return u.status === 'ready' && d2(holder, u) <= data.radius;
@@ -449,6 +473,39 @@ function inArea(r: AbilityRun, holder: UnitState, u: UnitState): boolean {
         case 'self':
             return u === holder && u.status === 'ready';
     }
+}
+
+/** 兵が最初の ratio を切っている（守りの下限） */
+function belowGuard(u: UnitState, ratio: number): boolean {
+    return u.strength < u.startStrength * ratio;
+}
+
+/**
+ * u がいま、守りの下限のある範囲の効果（立て直しの号令）に守られているか。sim.ts は損害を入れる前にこれを調べ、
+ * 入れた後に兵が下限を切っていたら（守りが外れた）その場で敗走させる（abilityGuardBroken）
+ */
+export function abilityGuarded(s: BattleState, u: UnitState): boolean {
+    if (s.abilityList.length === 0) return false;
+    for (const r of liveRuns(s)) {
+        const data = ABILITY_DATA[r.id];
+        if (data.routGuardMinStrength <= 0) continue;
+        const holder = byId(s, r.unitId);
+        if (holder && inArea(r, holder, u)) return true;
+    }
+    return false;
+}
+
+/**
+ * 守られていた部隊（損害を入れる前に abilityGuarded が true）が、損害で兵の下限を切ったか。
+ * true なら sim.ts はその部隊を敗走させる（士気の床に支えられて全滅するまで戦わない）
+ */
+export function abilityGuardBroken(s: BattleState, u: UnitState): boolean {
+    if (s.abilityList.length === 0) return false;
+    for (const r of liveRuns(s)) {
+        const data = ABILITY_DATA[r.id];
+        if (data.routGuardMinStrength > 0 && belowGuard(u, data.routGuardMinStrength)) return true;
+    }
+    return false;
 }
 
 /** d の受ける損害の倍率（能力がなければ 1） */

@@ -48,6 +48,8 @@
  *     忠勝隊の 66〜105 秒の損害 76 → 126・忠勝隊の敗走 111.2 → 93.9 秒（無敵ではない）。
  *   ・家康「立て直しの号令」（前線の士気が 45 を切った 70.9 秒）：前線の士気 忠勝 62→100・酒井 45→85・榊原 45→85・弓 75→100（使った瞬間）・
  *     90 秒の前線の士気の平均 43 → 84・150 秒までの前線の敗走 4 → 0・効果中の味方の士気の最低 37（20 未満に下がらない）・使わない時は家康本陣が崩れて負け。
+ *     （号令の直しの後（docs/fields-group2-design.md §1・routGuardMinStrength 0.3）：150 秒までの前線の敗走 4 → 1。1 は効果中に兵が 3 割を切った
+ *     榊原隊の敗走（91.1 秒「号令でも支えきれない」。直す前は 104.4 秒に全滅していた）。効果中の全滅 0。単体の数字は tests/proto3d-battle-abilities-compare.test.ts）
  * - 点滅：開始時は徳川の 5 武将だけ。使った武将・敗走・撤退済み・全滅の武将は点滅せず、使っていない戦える武将だけが点滅（5 台本の終わりで確かめた）。
  *   対象がいない石川（180 m 以内に味方がいない）は、単体テスト（状態を直接操作。tests/proto3d-battle-ability-tap.test.ts）で確かめた。
  */
@@ -867,6 +869,8 @@ async function abilitiesPart(kind) {
         sameRun(kind, name, br, on);
         const avg = (run, tt) => FRONT.reduce((a, id) => a + uAt(run, tt, id).mor, 0) / FRONT.length;
         const routs = (run, tt) => run.events.filter((x) => { const [time, k, u] = x.split('|'); return k === 'rout' && FRONT.includes(u) && Number(time) <= tt; }).length;
+        // 号令の効果中（使った時刻から 35 秒）の味方の敗走・全滅（号令の直し：敗走は兵が 3 割を切った部隊だけ・全滅 0）
+        const inRally = (run, k) => run.events.filter((x) => { const [time, kk, u] = x.split('|'); return kk === k && u.startsWith('a_') && Number(time) >= t - 1e-6 && Number(time) <= t + 35; });
         const m = {
             usedAt: t,
             frontMoraleAtUse: [m0, m1],
@@ -874,12 +878,15 @@ async function abilitiesPart(kind) {
             frontRouts150: [routs(off, 150), routs(br, 150)],
             minMoraleInRally: br.rec.minAllyMoraleInRally,
             offResult: off.result,
+            rallyRouts: inRally(br, 'rout').map((x) => x.split('|').slice(0, 3).join(' ') + (x.includes('号令でも支えきれない') ? '（兵が 3 割を切って退く）' : '（士気で崩れた）')),
+            rallyDestroyed: inRally(br, 'destroyed').length,
         };
         out.scenarios.ieyasu = { ...m, realtime: rt };
-        log(`    ${name}（${r1(t)} 秒）：前線の士気（使った瞬間）${FRONT.map((id) => `${id} ${m0[id]}→${m1[id]}`).join('・')}・90 秒の前線の士気の平均 ${r0(m.frontAvg90[0])} → ${r0(m.frontAvg90[1])}・150 秒までの前線の敗走 ${m.frontRouts150[0]} → ${m.frontRouts150[1]}・効果中の味方の士気の最低 ${r0(m.minMoraleInRally)}・使わない時の決着 ${JSON.stringify(m.offResult)}`);
+        log(`    ${name}（${r1(t)} 秒）：前線の士気（使った瞬間）${FRONT.map((id) => `${id} ${m0[id]}→${m1[id]}`).join('・')}・90 秒の前線の士気の平均 ${r0(m.frontAvg90[0])} → ${r0(m.frontAvg90[1])}・150 秒までの前線の敗走 ${m.frontRouts150[0]} → ${m.frontRouts150[1]}・効果中の味方の士気の最低 ${r0(m.minMoraleInRally)}・効果中の敗走 ${m.rallyRouts.join('／') || 'なし'}・効果中の全滅 ${m.rallyDestroyed}・使わない時の決着 ${JSON.stringify(m.offResult)}`);
         log(`      表示：${rt.frames} 回読んだ・兵士 ${rt.visMin}〜${rt.visMax} 人・画面外の部隊 最大 ${rt.culledMax}・LOD ${rt.lods.join('/')}%`);
         check(FRONT.every((id) => m1[id] >= Math.min(100, m0[id] + 39) || m0[id] === 0), `[${kind}] ${name}：使った瞬間に前線の士気が大きく戻る（+40・上限 100）`);
-        check(m.frontAvg90[1] > m.frontAvg90[0] + 30 && m.frontRouts150[0] >= 3 && m.frontRouts150[1] === 0, `[${kind}] ${name}：前線が崩れない（90 秒の士気の平均が 30 以上高い・150 秒までの敗走 ${m.frontRouts150[0]} → 0）`);
+        check(m.frontAvg90[1] > m.frontAvg90[0] + 30 && m.frontRouts150[0] >= 3 && m.frontRouts150[1] <= 1, `[${kind}] ${name}：前線が立て直る（90 秒の士気の平均が 30 以上高い・150 秒までの敗走 ${m.frontRouts150[0]} → ${m.frontRouts150[1]}）`);
+        check(m.rallyRouts.every((x) => x.includes('兵が 3 割を切って退く')) && m.rallyDestroyed === 0, `[${kind}] ${name}：効果中に士気で崩れる部隊はなく、兵が 3 割を切った部隊だけが全滅する前に退く（効果中の全滅 0）`, m.rallyRouts.join('／'));
         check(m.minMoraleInRally >= 20 - 1e-6, `[${kind}] ${name}：効果中は味方の士気が 20 未満に下がらない`, r0(m.minMoraleInRally));
         sc.push(await blinkRule(p, name));
     }

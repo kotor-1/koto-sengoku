@@ -72,6 +72,8 @@ import {
     abilityDealMul,
     abilityFlankDealMul,
     abilityMoraleFloor,
+    abilityGuarded,
+    abilityGuardBroken,
     abilityMoraleLossMul,
     abilityRoutMorale,
     abilitySpeedMul,
@@ -981,9 +983,13 @@ function tick(s: BattleState): void {
 
     // 7. 損害と士気
     const routedNow: UnitState[] = [];
+    /** 号令の守りが兵の下限で外れて敗走する部隊（知らせの文を分ける） */
+    const guardBroken = new Set<UnitState>();
     s.units.forEach((u, i) => {
         if (!u.present) return;
         const l = Math.min(loss[i], u.strength);
+        // 立て直しの号令の守り（兵の下限つき）：損害を入れる前に守られていたか
+        const guarded = l > 0 && u.status === 'ready' && s.abilityList.length > 0 && abilityGuarded(s, u);
         u.recentLoss = u.recentLoss * 0.9 + l;
         if (l > 0) {
             u.strength -= l;
@@ -1012,6 +1018,11 @@ function tick(s: BattleState): void {
         }
         u.morale = clamp(m, 0, 100);
         if (u.morale <= abilityRoutMorale(s, u, RULES.routMorale)) routedNow.push(u);
+        // 号令に守られていた部隊が、この損害で兵の下限（最初の 3 割）を切った：守りが外れ、その場で敗走する（全滅するまで戦わない）
+        else if (guarded && abilityGuardBroken(s, u)) {
+            routedNow.push(u);
+            guardBroken.add(u);
+        }
     });
 
     // 8. 全滅・敗走
@@ -1031,7 +1042,8 @@ function tick(s: BattleState): void {
         u.engagedWith = null;
         u.shootingAt = null;
         u.faceGoal = null;
-        log(s, 'rout', u.isHq ? `${u.name}が崩れた！` : `${u.name}が敗走した`, u.id);
+        const why = guardBroken.has(u) ? '（兵が減り、号令でも支えきれない）' : '';
+        log(s, 'rout', u.isHq ? `${u.name}が崩れた！${why}` : `${u.name}が敗走した${why}`, u.id);
         for (const o of s.units) {
             if (o === u || o.side !== u.side || !isActive(o)) continue;
             const mul = abilityMoraleLossMul(s, o, !!o.engagedWith);

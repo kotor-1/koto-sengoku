@@ -7,8 +7,15 @@
  * 確かめた時の数字（2026-09-30、このコミットのコード）：
  * - 家康「立て直しの号令」（前線が持ち場で受ける。前線のどれかの士気が 45 を切った 70.9 秒に使う）：
  *   使わない＝敗北（家康本陣が 188.6 秒に崩れる）。前線 4 隊（忠勝・酒井・榊原・弓）が 136.8 秒までにすべて敗走。90 秒の前線の士気の平均 43。
- *   使う＝日没で撤退（敗北しない）。90 秒の前線の士気の平均 85（忠勝 99・酒井 80・榊原 59・弓 100）。前線の敗走 0（代わりに崩れずに戦い続けた
- *   榊原隊が 104.4 秒に、弓隊が 184 秒に全滅する＝士気で崩れないので最後まで斬り合う）。
+ *   使う＝日没で撤退（敗北しない）。90 秒の前線の士気の平均 85（忠勝 99・酒井 80・榊原 59・弓 100）。
+ *   【号令の直し（docs/fields-group2-design.md §1。基準を作り直したのはこの台本だけ）】
+ *   直す前（a027682）：前線の敗走 0。代わりに士気の床で崩れずに戦い続けた榊原隊が 104.4 秒に全滅（効果中に兵 0 まで斬り合う＝依頼の
+ *   「死ぬまで退かない」）、弓隊が 184 秒に全滅。
+ *   直した後（ABILITY_DATA.ieyasu_rally.routGuardMinStrength＝0.3）：榊原隊は効果中の 91.1 秒に兵が最初の 3 割（120）を切り、守りが外れて
+ *   その場で敗走（「兵が減り、号令でも支えきれない」）→ 116.3 秒に戦場から逃れる（兵 91 が残る。全滅しない）。効果中に全滅する部隊は 0。
+ *   弓隊は効果が切れた（105.9 秒）後、普通の決まりで敵の騎馬に斬られ、159.7 秒に全滅（本陣の近くで士気の低下 ×0.75・号令の +40 で
+ *   士気 100 から始まったため、士気 15 に届く前に兵が尽きた。効果中の守りではなく普通の決まりの結果）。
+ *   結果は変わらず日没で撤退（480 秒）。90 秒の士気の平均も同じ（榊原隊が 3 割を切るのは 90 秒の後）。
  * - 酒井「両翼の采配」（地形に合った作戦の前半：酒井隊が敵の左備を正面で受け、騎馬が横から当たる 46 秒に使う）：
  *   騎馬が背後から当たった 59.9 秒に左備が包囲され（正面＋背後）、その刻みに敗走（使わない時は 63.0 秒）。60 秒の左備の士気 34 → 13。
  *   左備の兵の残り 220 → 260（Version 13 候補の確認で「包囲を作ること自体が条件」に直した後の値。前は包囲がなくても側面 ×1.8 が効き、
@@ -104,15 +111,29 @@ describe('家康「立て直しの号令」：崩れかけの前線の立て直�
         expect(off.o.reason).toBe('ally_hq_routed');
         expect(routedBy(off, 150)).toBe(4);
     });
-    it('使う：号令の後、前線の士気が大きく戻り（90 秒の平均が 30 以上高い）、35 秒のあいだ誰も敗走しない。負けずに日没まで持ちこたえる', () => {
+    it('使う：号令の後、前線の士気が大きく戻り（90 秒の平均が 30 以上高い）、負けずに日没まで持ちこたえる。150 秒までに崩れる前線は 1 隊だけ（使わない時は 4 隊）', () => {
         const usedAt = on.o.abilitiesUsed!.a_ieyasu!;
         expect(usedAt).toBeGreaterThan(60);
         expect(usedAt).toBeLessThan(80);
         expect(avg(on, 90)).toBeGreaterThan(avg(off, 90) + 30);
-        expect(on.s.events.filter((e) => e.kind === 'rout' && e.t >= usedAt && e.t <= usedAt + 35 && e.unitId?.startsWith('a_'))).toEqual([]);
-        expect(routedBy(on, 150)).toBe(0);
+        expect(routedBy(on, 150)).toBe(1);
         expect(on.o.result).not.toBe('defeat');
         expect(on.o.elapsedSec).toBeGreaterThan(off.o.elapsedSec);
+    });
+    it('号令の直し：効果中に士気で崩れる前線はいない。崩れたのは兵が最初の 3 割を切った部隊だけで、全滅するまで戦わずに退く（効果中の全滅 0）', () => {
+        const usedAt = on.o.abilitiesUsed!.a_ieyasu!;
+        const inEffect = (e: { t: number; unitId?: string }) => e.t >= usedAt && e.t <= usedAt + 35 && !!e.unitId?.startsWith('a_');
+        const routs = on.s.events.filter((e) => e.kind === 'rout' && inEffect(e));
+        // 直す前は 0（士気の床で崩れず、榊原隊が 104.4 秒に全滅していた）。直した後は榊原隊が 91.1 秒に敗走する
+        expect(routs.map((e) => e.unitId)).toEqual(['a_sakakibara']);
+        expect(routs[0]!.text).toContain('号令でも支えきれない');
+        expect(on.s.events.filter((e) => e.kind === 'destroyed' && inEffect(e))).toEqual([]);
+        // 榊原隊は兵を残して戦場から逃れる（直す前は全滅）
+        const saka = on.o.units.find((u) => u.id === 'a_sakakibara')!;
+        expect(saka.status).toBe('routed');
+        expect(saka.endStrength).toBeGreaterThan(0);
+        expect(on.when('fled', 'a_sakakibara')).not.toBeNull();
+        expect(on.when('destroyed', 'a_sakakibara')).toBeNull();
     });
 });
 

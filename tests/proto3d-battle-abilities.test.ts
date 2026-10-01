@@ -146,6 +146,118 @@ describe('立て直しの号令（家康本陣）', () => {
         expect(abilityInfo(b, 'a_hq')!.state).toBe('spent');
     });
 
+    // ---- 号令の直し（docs/fields-group2-design.md §1）：兵が最初の 3 割（routGuardMinStrength）を切った部隊は守りが外れて退く ----
+
+    /** routGuardMinStrength を一時的に変えて fn を走らせる（調整できるデータであることの確かめ。終わったら戻す） */
+    function withGuard<T>(ratio: number, fn: () => T): T {
+        const d = ABILITY_DATA.ieyasu_rally as { routGuardMinStrength: number };
+        const keep = d.routGuardMinStrength;
+        d.routGuardMinStrength = ratio;
+        try {
+            return fn();
+        } finally {
+            d.routGuardMinStrength = keep;
+        }
+    }
+    /**
+     * 号令を 0 秒に使い、a_y（兵 300）が正面の槍 600・横の騎馬 400 に斬られて敗走・全滅するまで（最長 35 秒＝効果の間）進める。
+     * そのときの兵と状態（確かめた時の値：下限なし＝20.9 秒に全滅／0.3＝13.2 秒に兵 89.8 で敗走／0.5＝9.3 秒に兵 149.9 で敗走）
+     */
+    function rallyUntilBreak(): { status: string; strength: number; t: number; text: string } {
+        const s = createBattle(
+            setup([
+                U('a_hq', 'ally', 'honjin', 0, 100, N, { morale: 90, ...withAbility('ieyasu_rally', 'ieyasu') }),
+                U('a_y', 'ally', 'yari', 0, 40, N, { morale: 95 }),
+                U('e_y', 'enemy', 'yari', 0, 5, S, { strength: 600, morale: 90, order: { type: 'attack', targetId: 'a_y' } }),
+                U('e_k', 'enemy', 'kiba', -40, 40, Math.PI / 2, { strength: 400, morale: 90, order: { type: 'attack', targetId: 'a_y' } }),
+            ]),
+        );
+        useAbility(s, 'a_hq');
+        const y = get(s, 'a_y');
+        advance(s, 35);
+        const end = s.events.find((e) => (e.kind === 'rout' || e.kind === 'destroyed') && e.unitId === 'a_y');
+        return { status: y.status, strength: y.strength, t: end?.t ?? -1, text: end?.text ?? '' };
+    }
+
+    it('既定の値：兵が最初の 3 割（0.3）を切った部隊は守りが外れる（ABILITY_DATA.ieyasu_rally.routGuardMinStrength）。ほかの能力は下限なし', () => {
+        expect(ABILITY_DATA.ieyasu_rally.routGuardMinStrength).toBe(0.3);
+        for (const id of Object.keys(ABILITY_DATA) as AbilityId[]) if (id !== 'ieyasu_rally') expect(ABILITY_DATA[id].routGuardMinStrength).toBe(0);
+    });
+
+    it('早送り：正面と横から斬られ続けても、効果中に兵が 3 割を切った所で敗走し、全滅するまで戦わない（下限なし＝直す前は効果中に全滅する）', () => {
+        const before = withGuard(0, rallyUntilBreak);
+        expect(before.status).toBe('destroyed');
+        expect(before.t).toBeLessThan(35);
+        const after = rallyUntilBreak();
+        expect(after.status).toBe('routed');
+        expect(after.text).toContain('号令でも支えきれない');
+        expect(after.t).toBeLessThan(before.t);
+        // 3 割（90）を切った刻みに崩れる（崩れた後の追い討ちの分だけ減ってよいが、兵は残る）
+        expect(after.strength).toBeGreaterThan(0);
+        expect(after.strength).toBeLessThan(90);
+    });
+
+    it('早送り：下限は調整できるデータ。0.5 にすると、兵が 5 割を切った所で（3 割より早く）退く', () => {
+        const at03 = rallyUntilBreak();
+        const at05 = withGuard(0.5, rallyUntilBreak);
+        expect(at05.status).toBe('routed');
+        expect(at05.t).toBeLessThan(at03.t);
+        expect(at05.strength).toBeLessThan(150);
+        expect(at05.strength).toBeGreaterThan(at03.strength);
+    });
+
+    it('（状態を直接変更）兵が 3 割以上の部隊は今までどおり守られる（士気 12 でも敗走しない・士気の低下 −60%・印「号令」）', () => {
+        const s = createBattle(rallyScene());
+        useAbility(s, 'a_hq');
+        const y = get(s, 'a_y');
+        y.strength = 95; // 最初の 300 の 31.7%
+        y.morale = 12;
+        expect(abilityMoraleLossMul(s, y)).toBeCloseTo(0.4);
+        expect(abilityMarks(s, 'a_y')).toContain('号令');
+        advance(s, 0.1);
+        // この刻みの損害で 3 割（90）を切らなければ、守られたまま
+        if (y.strength >= 90) {
+            expect(y.status).toBe('ready');
+            expect(y.morale).toBeGreaterThanOrEqual(12);
+        }
+    });
+
+    it('（状態を直接変更）兵が 3 割未満の部隊には号令が効かない：士気 +40 も上がらず、士気が低ければ普通の決まりで敗走する。印も出ない', () => {
+        const s = createBattle(
+            setup([
+                U('a_hq', 'ally', 'honjin', 0, 100, N, { morale: 90, ...withAbility('ieyasu_rally', 'ieyasu') }),
+                U('a_weak', 'ally', 'yari', 0, 40, N, { morale: 95 }),
+                U('a_ok', 'ally', 'yari', 30, 40, N, { morale: 95 }),
+            ]),
+        );
+        const weak = get(s, 'a_weak');
+        const ok = get(s, 'a_ok');
+        weak.strength = 80; // 26.7%
+        ok.strength = 100; // 33.3%
+        weak.morale = 30;
+        ok.morale = 30;
+        useAbility(s, 'a_hq');
+        expect(weak.morale).toBe(30);
+        expect(ok.morale).toBe(70);
+        expect(abilityMarks(s, 'a_weak')).toEqual([]);
+        expect(abilityMarks(s, 'a_ok')).toContain('号令');
+        expect(abilityMoraleLossMul(s, weak)).toBe(1);
+        weak.morale = 12;
+        ok.morale = 12;
+        advance(s, 0.1);
+        expect(weak.status).toBe('routed');
+        expect(ok.status).toBe('ready');
+    });
+
+    it('画面の説明が処理と一致：効果・短い説明に「兵が 3 割を切った部隊は」退く旨が出る（値を変えれば短い説明も変わる）', () => {
+        const s = createBattle(rallyScene());
+        const info = abilityInfo(s, 'a_hq')!;
+        expect(info.effectText).toContain('3 割を切った部隊');
+        expect(info.short.effect).toContain('兵が 3 割を切った部隊は退く');
+        expect(info.short.effect).not.toContain('敗走しない');
+        withGuard(0.25, () => expect(abilityInfo(s, 'a_hq')!.short.effect).toContain('兵が 25%を切った部隊は退く'));
+    });
+
     it('代償：効果中、家康本陣の与える損害 ×0.3・動き ×0.5', () => {
         const s = createBattle(rallyScene());
         const hq = get(s, 'a_hq');
