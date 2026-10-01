@@ -94,6 +94,8 @@ export interface GateRun {
     sec: number;
     /** 開いた時刻（開いていなければ null） */
     openedT: number | null;
+    /** 制圧を始めた知らせを最後に出した時刻（出していなければ null。出入りを繰り返すときに知らせを重ねない） */
+    noteT: number | null;
 }
 
 /** 射線の格子（道探しの格子と同じ升。升ごとに射線を遮る高さ。0 は遮らない） */
@@ -346,7 +348,7 @@ export function createFieldEnv(map: BattleMap, rules?: FieldRules): FieldEnv {
         arrowDealKinds: kinds.filter((k) => terrain[k].arrowDealMul !== 1),
         noChargeKinds: kinds.filter((k) => terrain[k].noCharge),
         dry: present.has('dry'),
-        gates: (rules?.gates ?? []).map((def) => ({ def, holder: def.holder ?? 'enemy', open: false, sec: 0, openedT: null })),
+        gates: (rules?.gates ?? []).map((def) => ({ def, holder: def.holder ?? 'enemy', open: false, sec: 0, openedT: null, noteT: null })),
         los: null,
     };
     if (hasBlockingTerrain(map) || passable || rules?.pathfinding || env.gates.length > 0) env.nav = makeNav(map, env);

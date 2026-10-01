@@ -2063,6 +2063,10 @@ function decideByObjective(s: BattleState): void {
  * 秒数を数える（外れると 0 に戻る）。capture.sec に届いたら門を開き、道探しの格子・射線の格子を作り直して、進んでいる道をすべて引き直す
  * （閉じた門へ向かって押し付けられていた部隊も、開いた門を通る道を新しく作る）
  */
+/** 門の制圧を始めた知らせを、同じ門で出す間隔（秒）。途切れた知らせは、この秒数以上数えてからのときだけ */
+const GATE_NOTE_SEC = 20;
+const GATE_BREAK_NOTE_SEC = 3;
+
 function trackGates(s: BattleState, dt: number): void {
     let changed = false;
     for (const g of s.field.gates) {
@@ -2071,7 +2075,15 @@ function trackGates(s: BattleState, dt: number): void {
         const taker = other(g.holder);
         const takerIn = s.units.some((u) => u.side === taker && isActive(u) && inZone(z, u.x, u.z));
         const holderIn = s.units.some((u) => u.side === g.holder && isActive(u) && inZone(z, u.x, u.z));
+        const prev = g.sec;
         g.sec = takerIn && !holderIn ? g.sec + dt : 0;
+        // 出来事の知らせ：占め始めた（同じ門で GATE_NOTE_SEC 秒に 1 回まで）・GATE_BREAK_NOTE_SEC 秒以上数えてから途切れた
+        if (prev === 0 && g.sec > 0 && (g.noteT === null || s.t - g.noteT >= GATE_NOTE_SEC)) {
+            g.noteT = s.t;
+            log(s, 'objective', `${g.def.name}の前の輪を占めた。敵を入れずに ${g.def.capture.sec} 秒続けると開く`);
+        } else if (prev >= GATE_BREAK_NOTE_SEC && g.sec === 0) {
+            log(s, 'objective', `${g.def.name}の制圧が途切れた（${Math.floor(prev)}／${g.def.capture.sec} 秒。${holderIn ? `輪に${g.holder === 'enemy' ? '敵' : '味方'}が入った` : `輪から${g.holder === 'enemy' ? '味方' : '敵'}が出た`}）`);
+        }
         if (g.sec >= g.def.capture.sec - 1e-9) {
             g.open = true;
             g.openedT = s.t;

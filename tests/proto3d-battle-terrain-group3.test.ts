@@ -166,6 +166,10 @@ describe('門（gates）', () => {
         // 開いたのは、敵を追い払って 10 秒より後
         expect(g.openedT!).toBeGreaterThanOrEqual(routedT + 10 - 1e-6);
         expect(s.events.some((e) => e.kind === 'objective' && e.text.includes('試験の門を制圧した'))).toBe(true);
+        // 出来事に制圧の進み：占め始めた（条件の秒数つき）。知らせは同じ門で 20 秒に 1 回まで
+        const starts = s.events.filter((e) => e.kind === 'objective' && e.text === '試験の門の前の輪を占めた。敵を入れずに 10 秒続けると開く');
+        expect(starts.length).toBeGreaterThanOrEqual(1);
+        for (let i = 1; i < starts.length; i++) expect(starts[i]!.t - starts[i - 1]!.t).toBeGreaterThanOrEqual(20 - 1e-6);
         // 開いた後は、門の前にいた a2 が門を抜けて北の行き先へ着く（詰まらない）
         run(s, 60);
         expect(unitById(s, 'a2')!.z).toBeLessThan(-40);
@@ -187,6 +191,24 @@ describe('門（gates）', () => {
         run(s, 90);
         expect(unitById(s, 'a1')!.z).toBeLessThan(-60);
         expect(unitById(s, 'a2')!.z).toBeLessThan(-60);
+    });
+
+    it('早送り：制圧の途中で輪に敵が入ると、数えた秒数は 0 に戻り「制圧が途切れた」と出来事に出る', () => {
+        const s = createBattle(field(WALL, [...units(), U('e2', 'enemy', 'yari', 120, 20, { aiRole: 'hold_line' })], { fieldRules: { gates: [GATE] } }));
+        issueOrder(s, 'a1', { type: 'move', x: 0, z: 18 });
+        let counted = 0;
+        run(s, 40, (st) => {
+            const g = st.field.gates[0]!;
+            counted = Math.max(counted, g.sec);
+            // 5 秒数えたところで、敵を輪の中へ置く（状態を直接操作）
+            if (g.sec >= 5 && g.sec < 5 + RULES.tick) {
+                const e = unitById(st, 'e2')!;
+                e.x = 15;
+                e.z = 25;
+            }
+        });
+        expect(counted).toBeGreaterThanOrEqual(5);
+        expect(s.events.some((e) => e.kind === 'objective' && /^試験の門の制圧が途切れた（5／10 秒。輪に敵が入った）$/.test(e.text))).toBe(true);
     });
 
     it('検査：門の制圧の区域へ道が無い・門の面に届いていない・門が格子に載らない・門を開いても壁で塞がれている、を見つける', () => {
@@ -363,6 +385,26 @@ describe('目標の種類（第3群）', () => {
         const ng = createBattle({ ...buildBattleSetup(getField('siege_front')!, 'standard'), objectives: undefined });
         expect(mapLabels(ng).some((l) => l.text === '外門：前の輪を敵なしで 20 秒占めると開く')).toBe(true);
         expect(fieldRuleTexts(g).some((x) => x.startsWith('外門：閉じている間は通れず、矢も通さない。前の輪を敵なしで 20 秒占めると開く'))).toBe(true);
+    });
+
+    it('地図の名札：同じ所から何度も出る援軍は 1 つの名札に時刻を並べ、近い所の援軍の名札は重ならないようにずらす。援軍の出る所が 1 つの戦場は今までの所', () => {
+        const near = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.abs(a.x - b.x) < 130 && Math.abs(a.z - b.z) < 12;
+        for (const f of FIELDS) {
+            const s = createBattle(buildBattleSetup(f, f.presets[0]!.id));
+            const rl = mapLabels(s).filter((l) => l.id.startsWith('reinf-'));
+            for (let i = 0; i < rl.length; i++) for (let j = i + 1; j < rl.length; j++) expect(near(rl[i]!, rl[j]!), `${f.id} ${rl[i]!.text} と ${rl[j]!.text}`).toBe(false);
+            const pts = (f.reinforcements ?? []).length;
+            if (pts === 1) {
+                // 今までと同じ所（出る所の西 70 m・北 4 m）
+                const r = f.reinforcements![0]!;
+                expect(rl.length).toBe(1);
+                expect(rl[0]!.z).toBeCloseTo(r.point.z - 4, 5);
+            }
+        }
+        const town = mapLabels(createBattle(buildBattleSetup(getField('town_edge')!, 'standard'))).filter((l) => l.id.startsWith('reinf-'));
+        // 大通りの出る所 (0,-195) は 2 回（m1・m2）を 1 つの名札に
+        expect(town.length).toBe(3);
+        expect(town.some((l) => /^援軍の出る所（開始 \d+:\d\d・\d+:\d\d）$/.test(l.text))).toBe(true);
     });
 });
 

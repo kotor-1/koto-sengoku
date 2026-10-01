@@ -33,6 +33,7 @@ import {
     clashShift,
     figureCount,
     formationExtent,
+    gateGoalIds,
     hash01,
     objectiveStateOf,
     objectiveZoneCounting,
@@ -66,6 +67,8 @@ const SELF_RING_R = 14;
 const OBJ_COLOR = { primary: '#ffd76a', secondary: '#9fd0ff', done: '#8ed57a', failed: '#8a8a8a' };
 /** 狭い正面の区域の縁の色 */
 const NARROW_COLOR = '#f0a040';
+/** 目標でない門の制圧の区域の縁（第3群。目標の門は目標の色の輪で描く） */
+const GATE_ZONE_COLOR = '#e8dcc0';
 /** 約束の安全地点と対象の輪の色 */
 const PLEDGE_COLOR = '#5fe0c0';
 
@@ -163,6 +166,8 @@ export class BattleView {
     private readonly reinfMarks: { at: number; mat: THREE.MeshBasicMaterial }[] = [];
     /** 門の扉（第3群。門が開いたら隠す） */
     private readonly gateDoors: { id: string; mesh: THREE.Mesh }[] = [];
+    /** 目標でない門の制圧の区域の縁（開いたら隠す） */
+    private readonly gateZones: { id: string; mesh: THREE.Mesh }[] = [];
     /** 通れる範囲（fieldRules.passable。無ければ null） */
     private readonly passable: { x0: number; x1: number; z0: number; z1: number } | null;
     private time = 0;
@@ -927,6 +932,18 @@ export class BattleView {
             rm.renderOrder = 5;
             this.scene.add(rm);
         }
+        // 門の制圧の区域（第3群）：目標でない門だけ、淡い縁を描く（目標の門は上の目標の輪が描く）。開いたら隠す
+        const gateGoals = gateGoalIds(s);
+        for (const g of s.field.gates) {
+            if (gateGoals.has(g.def.id)) continue;
+            const mat = this.own(new THREE.MeshBasicMaterial({ color: GATE_ZONE_COLOR, transparent: true, opacity: 0.6, depthTest: false, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
+            const { ring, fill } = this.zoneShapes(g.def.capture.zone, 1.5);
+            fill.dispose();
+            const rm = new THREE.Mesh(this.own(ring), mat);
+            rm.renderOrder = 5;
+            this.scene.add(rm);
+            this.gateZones.push({ id: g.def.id, mesh: rm });
+        }
         // 援軍の出る所：地面の菱形と、細い竿の小旗（陣営の色）
         for (const r of reinforcementMarks(s)) {
             const mat = this.own(new THREE.MeshBasicMaterial({ color: SIDE_COLOR[r.side], transparent: true, opacity: 0.85, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
@@ -1362,6 +1379,7 @@ export class BattleView {
         if (this.objZones.length || this.reinfMarks.length) this.updateFieldMarks(s, t);
         // 門の扉：開いたら隠す（第3群。門の無い戦場では何もしない）
         for (const d of this.gateDoors) d.mesh.visible = !s.field.gates.find((g) => g.def.id === d.id)?.open;
+        for (const d of this.gateZones) d.mesh.visible = !s.field.gates.find((g) => g.def.id === d.id)?.open;
         this.ribbon.end();
     }
 
