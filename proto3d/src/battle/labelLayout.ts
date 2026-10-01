@@ -7,7 +7,7 @@
  *   1. 能力を使える武将（点滅）・対象選びで選べる味方（名札全体が当たり）
  *   2. 重要な武将（generalId・leaderId のある部隊・本陣・約束や目標の印の付いた部隊）
  *   3. そのほか
- *   同じ順の中は、画面の中央に近い名札が先。
+ *   同じ順の中は、画面の中央に近い名札が先（隠さない 0・1 の名札は、上へ積むので画面の下の名札から）。
  * 0・1 の名札（keep）は小さくも隠しもしない。重なれば今までどおり上へずらす（最大で名札 4 つ分）。点滅する能力の印はいつも見えて押せる。
  * 2・3 の名札は、重ならなければその位置のまま。重なれば小さく（その位置か、小さい名札 1 つ分まで上へずらして）、それでも重なれば隠す。
  * 小さく・隠すのは、重なりが解ければ次のフレームで戻る（行ったり来たりしないよう、戻すときは少し余裕を見る）。
@@ -52,10 +52,16 @@ export function labelRank(it: Pick<LabelLayoutItem, 'sel' | 'ready' | 'important
     return it.sel ? 0 : it.ready ? 1 : it.important ? 2 : 3;
 }
 
-/** 置く順（優先の順、同じ順の中は画面の中央 (cx, cy) に近い順。同じなら id の順で決まった並びにする） */
+/**
+ * 置く順（優先の順。同じなら id の順で決まった並びにする）。
+ * 重要な武将・そのほか（小さく・隠す名札）は、同じ順の中で画面の中央 (cx, cy) に近い順（中央に近い名札が残る）。
+ * 選んだ・点滅の名札（どれも隠さず、重なれば上へずらす）は、画面の下の名札から（上へ積むので、下から置けばずらす量が小さい。
+ * 中央に近い順だと、下の名札が上の名札をいくつも越えてずれ、ずらす上限で重なったままになることがあった）
+ */
 export function labelOrder<T extends LabelLayoutItem>(items: readonly T[], cx: number, cy: number): T[] {
     const d = (it: LabelLayoutItem) => Math.hypot(it.x - cx, it.y - it.h / 2 - cy);
-    return [...items].sort((a, b) => labelRank(a) - labelRank(b) || d(a) - d(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    const key = (it: LabelLayoutItem) => (labelRank(it) <= 1 ? -it.y : d(it));
+    return [...items].sort((a, b) => labelRank(a) - labelRank(b) || key(a) - key(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
 interface Box {

@@ -1199,6 +1199,8 @@ function exposeDev(run: BattleRun): void {
          * 名札の優先表示の様子（読むだけ）：部隊ごとの見せ方（full・mini・hide）・選んでいる・能力の印（data-ab）・重要な武将・
          * 画面に出ているか（地図の外・まだ着いていない部隊は false）
          */
+        /** 最後に並べた名札の項目と結果（読むだけ。名札の優先表示の確かめ） */
+        labelLayout: () => run.ui.lastLayout,
         labelFits() {
             return run.s.units.map((u) => {
                 const e = document.querySelector(`.b-label[data-id="${u.id}"]`) as HTMLElement | null;

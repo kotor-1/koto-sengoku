@@ -808,11 +808,9 @@ export class BattleUi {
         }
         const W = this.labels.clientWidth || window.innerWidth;
         const H = this.labels.clientHeight || window.innerHeight;
-        const lay = layoutLabels(
-            list.map((k) => k.it),
-            W / 2,
-            H / 2,
-        );
+        const items = list.map((k) => k.it);
+        const lay = layoutLabels(items, W / 2, H / 2);
+        this.lastLayout = { items, out: [...lay].map(([id, p]) => ({ id, ...p })) };
         for (const { l, it } of list) {
             const p = lay.get(it.id);
             if (!p) continue;
@@ -836,6 +834,9 @@ export class BattleUi {
         const l = this.labelEls.get(id);
         if (l) l.imp = on;
     }
+
+    /** 最後に並べた名札（確かめ用。並べる前の項目と、並べた結果） */
+    lastLayout: { items: LabelLayoutItem[]; out: { id: string; fit: LabelFit; dy: number }[] } | null = null;
 
     /** 名札の優先表示の見せ方（確かめ用。名札が無ければ null） */
     labelFit(id: string): LabelFit | null {

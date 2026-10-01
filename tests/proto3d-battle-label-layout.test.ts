@@ -94,12 +94,23 @@ describe('名札を並べる', () => {
         expect(lay.get('center')!.fit).not.toBe('full');
     });
 
-    it('点滅の名札どうしが重なれば、中央から遠い方を上へずらす（どちらも隠さない）', () => {
+    it('点滅の名札どうしが重なれば、画面の下の名札をそのままに、上の名札を上へずらす（どちらも隠さない）', () => {
         const items = [L('r1', CX, CY, { ready: true }), L('r2', CX + 30, CY + 4, { ready: true })];
         const lay = layoutLabels(items, CX, CY);
-        expect(lay.get('r1')).toEqual({ fit: 'full', dy: 0 });
-        expect(lay.get('r2')!.fit).toBe('full');
+        expect(lay.get('r2')).toEqual({ fit: 'full', dy: 0 });
+        expect(lay.get('r1')!.fit).toBe('full');
+        expect(lay.get('r1')!.dy).toBeLessThan(0);
         expect(overlap(shownBox(items[0]!, lay.get('r1')!)!, shownBox(items[1]!, lay.get('r2')!)!)).toBe(false);
+    });
+
+    it('確認で見つかった密集（スマホの丘陵の全体表示）：点滅の 5 武将の名札は、ずらす上限に当たらず、どれも互いに重ならない', () => {
+        // e2e/ability-fixes.mjs で、中央に近い順に置いたとき家康の名札が 4 つ分（56 px）ずれても忠勝の名札に重なっていた時の値
+        const R = (id: string, x: number, y: number, w: number) => L(id, x, y, { w, h: 14, mw: 47, mh: 12, ready: true, important: true });
+        const items = [R('a_ieyasu', 396.3, 275.5, 93), R('a_tadakatsu', 364.6, 234.5, 102), R('a_sakai', 432.3, 235.9, 102), R('a_sakakibara', 332.0, 202.6, 112), R('a_ishikawa', 396.9, 261.9, 112)];
+        const lay = layoutLabels(items, 422, 195);
+        const boxes = items.map((it) => shownBox(it, lay.get(it.id)!)!);
+        for (const it of items) expect(lay.get(it.id)!.dy).toBeGreaterThan(-4 * 14);
+        for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) expect(overlap(boxes[i]!, boxes[j]!)).toBe(false);
     });
 
     it('戻すときは少し余裕を見る（境目で毎フレーム切り替わらない）：前に隠した名札は、すき間が余白 + 4 px 以上になってから小さく見せる', () => {
