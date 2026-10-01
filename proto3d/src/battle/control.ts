@@ -122,7 +122,8 @@ export type Pending = 'none' | 'move' | 'attack' | 'ability';
  * x, z は押した地面の位置。
  */
 export type TapTarget =
-    | { kind: 'unit'; unitId: string; side: Side; x: number; z: number; near?: boolean }
+    /** fighting：その部隊が戦える（敗走中・全滅は false。省けば戦える） */
+    | { kind: 'unit'; unitId: string; side: Side; x: number; z: number; near?: boolean; fighting?: boolean }
     | { kind: 'ground'; x: number; z: number };
 
 /** 選んでいる部隊（命令できるか） */
@@ -171,6 +172,9 @@ export function resolveTap(sel: Selected | null, pending: Pending, tap: TapTarge
         return { type: 'abilityCancel', text: '能力の対象選びをやめた（使用回数は減っていない）' };
     }
     if (tap.kind === 'unit' && tap.side === 'ally' && tap.near && ally && ally.commandable) return resolveTap(sel, pending, { kind: 'ground', x: tap.x, z: tap.z });
+    // 戦えない（敗走中の）敵の体を押した：攻撃にはならない（「もう戦えません」と断られて動かない）。地面を押したのと同じ扱い
+    // （谷間の確認：敗走中の攻め手が通りかかっていた地面を押すと移動にならず、誘い出しができなかった）
+    if (tap.kind === 'unit' && tap.side !== 'ally' && tap.fighting === false && ally && ally.commandable) return resolveTap(sel, pending, { kind: 'ground', x: tap.x, z: tap.z });
     if (tap.kind === 'unit' && tap.side === 'ally') return sel && sel.id === tap.unitId && pending === 'none' ? { type: 'deselect' } : { type: 'select', unitId: tap.unitId };
     if (tap.kind === 'unit') {
         if (ally && ally.commandable) {

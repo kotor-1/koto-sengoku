@@ -28,7 +28,7 @@
 import { appContext, enterMode, exitMode, registerBattleRunner, type AppContext, type Mode } from '../app/modes';
 import { loadModel } from '../app/models';
 import type { BattleOutcome, BattleRunHooks, BattleSetup, Order } from './types';
-import { canCommand, createBattle, elevationAt, issueOrder, orderAllRetreat, stepBattle, unitById, type BattleEvent, type BattleState } from './sim';
+import { canCommand, createBattle, elevationAt, isActive, issueOrder, orderAllRetreat, stepBattle, unitById, type BattleEvent, type BattleState } from './sim';
 import { BattleView } from './view';
 import { BattleUi, type CommandKind } from './battleUi';
 import { abilityInfo, useAbility } from './abilities';
@@ -954,7 +954,7 @@ class BattleRun implements Mode {
         const g = this.view.groundAt(x, y);
         const u = id ? unitById(this.s, id) : undefined;
         let target: TapTarget;
-        if (u) target = { kind: 'unit', unitId: u.id, side: u.side, x: g?.x ?? u.x, z: g?.z ?? u.z, near: !exactId };
+        if (u) target = { kind: 'unit', unitId: u.id, side: u.side, x: g?.x ?? u.x, z: g?.z ?? u.z, near: !exactId, fighting: isActive(u) };
         else if (g) target = { kind: 'ground', x: g.x, z: g.z };
         else return;
         const sel = this.selected();
@@ -963,6 +963,8 @@ class BattleRun implements Mode {
             if (!sel || !sel.commandable) return;
             if (target.kind === 'unit' && target.side === 'ally' && !target.near) return;
             if (target.kind === 'unit' && target.side === 'ally') target = { kind: 'ground', x: target.x, z: target.z };
+            // 戦えない（敗走中の）敵の体は、地面と同じ（その地点へ移動）
+            if (target.kind === 'unit' && target.fighting === false) target = { kind: 'ground', x: target.x, z: target.z };
             const o: Order = target.kind === 'unit' ? { type: 'attack', targetId: target.unitId } : { type: 'move', x: target.x, z: target.z };
             this.order(this.orderTargets(), o);
             return;

@@ -143,6 +143,18 @@ describe('地図を押したとき', () => {
         expect(resolveTap(ally, 'none', { ...nearSelf, near: false })).toEqual({ type: 'deselect' });
         expect(resolveTap(ally, 'move', { ...nearFriend, near: false })).toEqual({ type: 'select', unitId: 'a_hq' });
     });
+    it('味方を選んで、戦えない（敗走中の）敵の体を押すと、その地点へ移動（攻撃にして「もう戦えません」と断らない。谷間の確認で見つかった）', () => {
+        const fleeing = { ...enemy, x: -1, z: -127, fighting: false };
+        expect(resolveTap(ally, 'none', fleeing)).toEqual({ type: 'order', unitId: 'a_genzo', order: { type: 'move', x: -1, z: -127 } });
+        expect(resolveTap(ally, 'none', { ...fleeing, near: true })).toEqual({ type: 'order', unitId: 'a_genzo', order: { type: 'move', x: -1, z: -127 } });
+        expect(resolveTap(ally, 'move', fleeing)).toEqual({ type: 'order', unitId: 'a_genzo', order: { type: 'move', x: -1, z: -127 } });
+        // 「攻撃」の途中なら地面と同じく案内だけ
+        expect(resolveTap(ally, 'attack', fleeing).type).toBe('hint');
+        // 戦える敵は今までどおり攻撃。何も選んでいなければ今までどおり調べる
+        expect(resolveTap(ally, 'none', { ...fleeing, fighting: true })).toEqual({ type: 'order', unitId: 'a_genzo', order: { type: 'attack', targetId: 'e_sente' } });
+        expect(resolveTap(null, 'none', fleeing)).toEqual({ type: 'inspect', unitId: 'e_sente' });
+        expect(resolveTap(gone, 'none', fleeing)).toEqual({ type: 'inspect', unitId: 'e_sente' });
+    });
     it('命令できない味方・敵を選んでいて地面を押すと、選択を外す。何も選んでいなければ何もしない', () => {
         expect(resolveTap(gone, 'none', ground)).toEqual({ type: 'deselect' });
         expect(resolveTap(enemySel, 'none', ground)).toEqual({ type: 'deselect' });
