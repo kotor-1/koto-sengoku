@@ -112,6 +112,9 @@ export function clashShift(d: number, halfDepthA: number, halfDepthB: number): n
 
 /**
  * 命令の出し方の途中（「移動」「攻撃」のボタンの後で地図を押す）。
+ * move：移動先指定（「移動」・M の後。docs/fields-group3-design.md §2-1）。押した所へ移動を命じる。味方の部隊の体・すぐ近く・名札の名前を
+ * 押しても選び直さない（行き先に味方が立っていても、その点へ。通れなければ近くの通れる所＝sim.ts の issueOrder が直す）。
+ * 能力の印（点滅している ◆）は今までどおり能力として使う。下の札・1〜8 キーは今までどおり選び直す。
  * ability：対象を選ぶ特殊能力（盟友への援護・後詰めの差配）の対象選び。「能力」・F・点滅している名札の後で、対象の味方の部隊を押す
  * （Esc・やめる・地面・同じ名札をもう一度で取り消し。選んでいる部隊＝能力を使う部隊）。
  */
@@ -162,6 +165,9 @@ export const NEAR_ENEMY_NOTE = '敵のすぐ近くを押すと攻撃になる。
  * - 命令できない味方（敗走・撤退済みなど）や敵を選んでいて地面を押す：選択を外す。
  * - 命令できる味方を選んでいて、味方の部隊の「すぐ近く」（near：隊列の外の余白）を押す：地面を押したのと同じ（その地点へ移動）。
  *   スマホの引いた画面でも、選んだ部隊を少しだけ動かす・味方の隣へ付ける、ができるように。選び直すには部隊そのものか札を押す。
+ * - 移動先指定（pending 'move'）の間に味方の部隊そのものを押す：選び直さず、その点へ移動（行き先に味方が立っているとき用。自分の隊列の中も同じ）。
+ *   指定なし（pending 'none'）で味方そのものを押せば、今までどおり選ぶ。
+ * - 能力の対象選び（pending 'ability'）の間は、対象選びが先（移動の命令にはならない）。
  */
 export function resolveTap(sel: Selected | null, pending: Pending, tap: TapTarget): TapAction {
     const ally = sel && sel.side === 'ally' ? sel : null;
@@ -171,6 +177,8 @@ export function resolveTap(sel: Selected | null, pending: Pending, tap: TapTarge
         if (tap.kind === 'unit') return { type: 'abilityTarget', unitId: tap.unitId };
         return { type: 'abilityCancel', text: '能力の対象選びをやめた（使用回数は減っていない）' };
     }
+    // 移動先指定の間：味方の体（そのもの・すぐ近く）を押しても選び直さず、その点へ移動
+    if (pending === 'move' && tap.kind === 'unit' && tap.side === 'ally' && ally && ally.commandable) return { type: 'order', unitId: ally.id, order: { type: 'move', x: tap.x, z: tap.z } };
     if (tap.kind === 'unit' && tap.side === 'ally' && tap.near && ally && ally.commandable) return resolveTap(sel, pending, { kind: 'ground', x: tap.x, z: tap.z });
     // 戦えない（敗走中の）敵の体を押した：攻撃にはならない（「もう戦えません」と断られて動かない）。地面を押したのと同じ扱い
     // （谷間の確認：敗走中の攻め手が通りかかっていた地面を押すと移動にならず、誘い出しができなかった）

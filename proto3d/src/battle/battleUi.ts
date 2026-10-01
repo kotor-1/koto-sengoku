@@ -365,7 +365,7 @@ export class BattleUi {
         this.bindCardList(cards);
         const cmds = el('div', 'b-cmds');
         this.cmdBtns = {
-            move: button('b-btn b-cmd', '移動', '移動（この後で地面を押す）'),
+            move: button('b-btn b-cmd', '移動', '移動先指定（この後で押した所へ移動。味方の立つ所を押しても選び直さない）'),
             attack: button('b-btn b-cmd', '攻撃', '攻撃（この後で敵を押す）'),
             hold: button('b-btn b-cmd', '防衛・待機', '防衛・待機'),
             retreat: button('b-btn b-cmd', '撤退', 'この部隊を撤退させる'),
@@ -568,7 +568,8 @@ export class BattleUi {
 
         // 命令の途中の案内（または短い知らせ）
         let hint = '';
-        if (st.pending === 'move') hint = `${sel?.name ?? ''}：移動先の地面を押してください`;
+        // 移動先指定：味方の上を押しても選び直さず、その点へ（通れなければ近くの通れる所）
+        if (st.pending === 'move') hint = `移動先指定中：${sel?.name ?? ''}の行き先を押す（味方の上も可）`;
         else if (st.pending === 'attack') hint = `${sel?.name ?? ''}：攻撃する敵の部隊を押してください`;
         else if (st.pending === 'ability') hint = abilityTargetHint(s, sel?.id ?? null);
         const now = performance.now();
@@ -1042,6 +1043,7 @@ export class BattleUi {
         how.append(el('b', '', '操作'));
         const touchLines = [
             '部隊（または下の札）を押して選ぶ → 地面を押すと移動、敵を押すと攻撃（敵のすぐ近くの地面も攻撃になる。脇へ動かすには「移動」の後で地面を押す）。選んだ部隊をもう一度押すと選択を外す（敵を調べられる）。',
+            '「移動」（移動先指定）の後は、味方の立つ所を押しても選び直さず、そこへ移動する。',
             ...(this.cards.size > 4 ? ['下の札は横になぞるとずらせる（隠れている部隊の札が出る）。'] : []),
             '「防衛・待機」「撤退」はボタン。1 本指で地図を動かす、2 本指で寄る・引く。',
             '「指揮（一時停止）」で時を止めて命令を出せる。',
@@ -1049,6 +1051,7 @@ export class BattleUi {
         const nCards = this.cards.size;
         const pcLines = [
             `クリック（または下の札・1〜${Math.max(1, Math.min(8, nCards))} キー）で部隊を選ぶ → 地面をクリックで移動、敵をクリックで攻撃（右クリックでも命令。敵のすぐ近くの地面も攻撃になる。脇へ動かすには M の後で地面をクリック）。`,
+            'M（移動先指定）の後は、味方の立つ所をクリックしても選び直さず、そこへ移動する。',
             'ドラッグで地図を動かす、ホイールで寄る・引く。M 移動・A 攻撃・H 防衛・待機・R 撤退・Esc 取り消し。',
             'Space で指揮（一時停止）／再開。止めたまま命令を出せる。',
         ];

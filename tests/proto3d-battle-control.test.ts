@@ -106,12 +106,14 @@ describe('地図を押したとき', () => {
     const enemy = { kind: 'unit' as const, unitId: 'e_sente', side: 'enemy' as const, x: 3, z: -50 };
     const friend = { kind: 'unit' as const, unitId: 'a_hq', side: 'ally' as const, x: 0, z: 110 };
     const ground = { kind: 'ground' as const, x: 12, z: 34 };
-    it('味方を押すと選ぶ（命令の途中でも選び直し）。選んでいる部隊をもう一度押すと外す', () => {
+    it('味方を押すと選ぶ（「攻撃」の途中でも選び直し）。選んでいる部隊をもう一度押すと外す', () => {
         expect(resolveTap(null, 'none', friend)).toEqual({ type: 'select', unitId: 'a_hq' });
         expect(resolveTap(ally, 'attack', friend)).toEqual({ type: 'select', unitId: 'a_hq' });
         const hqSel: Selected = { id: 'a_hq', side: 'ally', commandable: true };
         expect(resolveTap(hqSel, 'none', friend)).toEqual({ type: 'deselect' });
-        expect(resolveTap(hqSel, 'move', friend)).toEqual({ type: 'select', unitId: 'a_hq' });
+        // 第3群の移動先指定（docs/fields-group3-design.md §2-1）で変えた：「移動」の途中に自分の体を押すと、前は選び直し（選んだまま・移動の待ちが終わる）
+        // → 今はその点へ移動（自分の隊列の中の点へ動かす）
+        expect(resolveTap(hqSel, 'move', friend)).toEqual({ type: 'order', unitId: 'a_hq', order: { type: 'move', x: 0, z: 110 } });
     });
     it('味方を選んで敵を押すと攻撃。「移動」の途中ならその地点へ移動', () => {
         expect(resolveTap(ally, 'none', enemy)).toEqual({ type: 'order', unitId: 'a_genzo', order: { type: 'attack', targetId: 'e_sente' } });
@@ -139,9 +141,31 @@ describe('地図を押したとき', () => {
         // 何も選んでいない・命令できない味方のときは、今まで通り近くの味方を選ぶ（引いた画面でも選びやすい）
         expect(resolveTap(null, 'none', nearFriend)).toEqual({ type: 'select', unitId: 'a_hq' });
         expect(resolveTap(gone, 'none', nearFriend)).toEqual({ type: 'select', unitId: 'a_hq' });
-        // 部隊そのものを押したときは選び直し・外す（今まで通り）
+        // 指定なしで部隊そのものを押したときは選び直し・外す（今まで通り）
         expect(resolveTap(ally, 'none', { ...nearSelf, near: false })).toEqual({ type: 'deselect' });
-        expect(resolveTap(ally, 'move', { ...nearFriend, near: false })).toEqual({ type: 'select', unitId: 'a_hq' });
+        expect(resolveTap(ally, 'none', { ...nearFriend, near: false })).toEqual({ type: 'select', unitId: 'a_hq' });
+        // 第3群の移動先指定で変えた：「移動」の途中に味方そのものを押すと、前は選び直し → 今はその点へ移動（選び直さない）
+        expect(resolveTap(ally, 'move', { ...nearFriend, near: false })).toEqual({ type: 'order', unitId: 'a_genzo', order: { type: 'move', x: 22, z: 112 } });
+    });
+    it('移動先指定（「移動」・M の後）：味方の体そのもの・すぐ近く・自分の隊列を押しても選び直さず、押した点へ移動。指定なしなら今までどおり選ぶ', () => {
+        const body = { ...friend, x: 4, z: 108 };
+        // 移動先指定：行き先に味方（本陣）が立っていても、その点へ移動を命じる（通れない点は sim.ts の issueOrder が近くの通れる所へ直す）
+        expect(resolveTap(ally, 'move', body)).toEqual({ type: 'order', unitId: 'a_genzo', order: { type: 'move', x: 4, z: 108 } });
+        expect(resolveTap(ally, 'move', { ...body, near: true })).toEqual({ type: 'order', unitId: 'a_genzo', order: { type: 'move', x: 4, z: 108 } });
+        expect(resolveTap(ally, 'move', { kind: 'unit', unitId: 'a_genzo', side: 'ally', x: 1, z: 2 })).toEqual({ type: 'order', unitId: 'a_genzo', order: { type: 'move', x: 1, z: 2 } });
+        // 指定なし：今までどおり選び直す（地面の押しの移動は追加の操作なしのまま）
+        expect(resolveTap(ally, 'none', body)).toEqual({ type: 'select', unitId: 'a_hq' });
+        expect(resolveTap(ally, 'none', ground)).toEqual({ type: 'order', unitId: 'a_genzo', order: { type: 'move', x: 12, z: 34 } });
+        // 命令できない味方を選んでいる（移動の待ちは entry.ts が外すが、残っていても）：命令にしない
+        expect(resolveTap(gone, 'move', body)).toEqual({ type: 'select', unitId: 'a_hq' });
+    });
+    it('能力の対象選びの間は、対象選びが先：味方・敵の体を押すと対象に、地面はやめる（移動の命令にしない）', () => {
+        const body = { ...friend, x: 4, z: 108 };
+        expect(resolveTap(ally, 'ability', body)).toEqual({ type: 'abilityTarget', unitId: 'a_hq' });
+        expect(resolveTap(ally, 'ability', { ...body, near: true })).toEqual({ type: 'abilityTarget', unitId: 'a_hq' });
+        expect(resolveTap(ally, 'ability', enemy)).toEqual({ type: 'abilityTarget', unitId: 'e_sente' });
+        expect(resolveTap(ally, 'ability', ground).type).toBe('abilityCancel');
+        for (const t of [body, enemy, ground] as const) expect(resolveTap(ally, 'ability', t).type).not.toBe('order');
     });
     it('味方を選んで、戦えない（敗走中の）敵の体を押すと、その地点へ移動（攻撃にして「もう戦えません」と断らない。谷間の確認で見つかった）', () => {
         const fleeing = { ...enemy, x: -1, z: -127, fighting: false };

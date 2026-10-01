@@ -31,7 +31,7 @@ import type { BattleOutcome, BattleRunHooks, BattleSetup, Order } from './types'
 import { canCommand, createBattle, elevationAt, isActive, issueOrder, orderAllRetreat, stepBattle, unitById, type BattleEvent, type BattleState } from './sim';
 import { BattleView } from './view';
 import { BattleUi, type CommandKind } from './battleUi';
-import { abilityInfo, useAbility } from './abilities';
+import { abilityEffectTargets, abilityInfo, useAbility } from './abilities';
 import {
     RESULT_LABEL,
     LABEL_HIT_PX,
@@ -790,6 +790,8 @@ class BattleRun implements Mode {
         const sel = this.selected();
         let cur = '';
         if (u && this.pending === 'ability') cur = 'copy';
+        // 移動先指定の間は、味方の上もその点へ移動（選び直さない）
+        else if (this.pending === 'move' && sel?.commandable) cur = 'cell';
         else if (u && u.side === 'ally') cur = 'pointer';
         else if (u && sel?.commandable) cur = 'crosshair';
         else if (u) cur = 'help';
@@ -882,6 +884,11 @@ class BattleRun implements Mode {
                 this.useAbilityOn(act.userId, act.targetId);
                 break;
         }
+        this.guardHere(x, y);
+    }
+
+    /** 同じ所のタップの守り（TAP_GUARD_SEC の間、この点の近くの連打の 2 回目は何もしない。control.ts の guardTap） */
+    private guardHere(x: number, y: number): void {
         const hitPx = this.ctx.touch ? LABEL_HIT_PX.touch : LABEL_HIT_PX.mouse;
         this.tapGuard = { x, y, until: performance.now() / 1000 + TAP_GUARD_SEC, r: hitPx / 2 };
     }
@@ -892,6 +899,8 @@ class BattleRun implements Mode {
         const hit = this.labelAt(x, y);
         if (!hit) return false;
         if (hit.part === 'name') {
+            // 移動先指定の間は、名札の名前の所は地図を押した扱い（その点へ移動。確かめの中の 2 回目にもしない。能力の印 ◆ は能力のまま）
+            if (this.pending === 'move') return false;
             // 命令を出せる味方を選んでいる間は、名札の名前の所は今までどおり地図を押した扱い（地面の移動・部隊の選択。
             // 引いた画面では名札が地面・部隊に重なるので、移動のつもりの指を奪わない）。確かめの中のその武将の名札だけは 2 回目として使う
             const now = performance.now() / 1000;
@@ -1017,10 +1026,13 @@ class BattleRun implements Mode {
                 break;
             case 'abilityTarget':
                 if (this.selectedId) this.useAbilityOn(this.selectedId, act.unitId);
+                this.guardHere(x, y);
                 break;
             case 'abilityCancel':
                 this.pending = 'none';
                 this.ui.flash(act.text);
+                // 対象選びをやめた押しの連打（2 回目）を、地面の移動・部隊の選択に漏らさない
+                this.guardHere(x, y);
                 break;
             case 'none':
                 break;
@@ -1150,6 +1162,8 @@ function exposeDev(run: BattleRun): void {
         order: (unitId: string, o: Order) => issueOrder(run.s, unitId, o),
         /** 状態を直接書き換える確認用（画面の確認では使わず、報告では「直接操作」と書く） */
         useAbility: (unitId: string, targetId?: string) => useAbility(run.s, unitId, targetId),
+        /** 号令などの「効果を与えられる相手」（abilities.ts の abilityEffectTargets。読むだけ。確かめの無い能力は null） */
+        effectTargets: (unitId: string) => abilityEffectTargets(run.s, unitId),
         allRetreat: () => orderAllRetreat(run.s),
         setTimeScale(k: number) {
             run.devScale = Math.max(0, Math.min(40, k));
