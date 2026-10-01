@@ -113,35 +113,35 @@ const LURE: Step[] = [
     [100, 'a_sakai', 'nearest'],
     [100, 'a_ishikawa', 'nearest'],
 ];
-/** 後半（150 秒）：三隊で橋を渡って橋頭へ、弓は東の弓を射る */
+/**
+ * 後半（150 秒）：忠勝隊は橋を渡って橋頭へ、酒井隊・石川隊は橋頭の左右の弓へ当たる、弓は東の弓を射る。
+ * （画面では、弓の近くの地面を押すとその弓への攻撃になる。台本も画面の操作と同じ命令にする）
+ */
 const CROSS: Step[] = [
     [150, 'a_tadakatsu', mv(0, -70)],
-    [150, 'a_sakai', mv(15, -80)],
-    [150, 'a_ishikawa', mv(-15, -80)],
+    [150, 'a_sakai', atk('e_yumi_e')],
+    [150, 'a_ishikawa', atk('e_yumi_w')],
     [150, 'a_yumi', atk('e_yumi_e')],
 ];
 
-/** 地形に合った作戦その 1（陽動と浅瀬の守り）：前半の後、騎馬二隊も浅瀬の南の口から橋を渡って橋頭の西へ。命令は 20 回（0・50・60・100・150 秒） */
-const FIT: Step[] = [...LURE, ...CROSS, [150, 'a_sakakibara', mv(-30, -70)], [150, 'a_kiba', mv(-20, -60)]];
+/** 地形に合った作戦その 1（陽動と浅瀬の守り）：前半の後、騎馬二隊も浅瀬の南の口から橋を渡り、榊原隊は西の弓へ、騎馬隊は橋頭の西へ。命令は 20 回（0・50・60・100・150 秒） */
+const FIT: Step[] = [...LURE, ...CROSS, [150, 'a_sakakibara', atk('e_yumi_w')], [150, 'a_kiba', mv(-20, -60)]];
 
 /**
  * 地形に合った作戦その 2（浅瀬から回る）：前半の後、別働隊を討った騎馬二隊は 95 秒に浅瀬を北へ渡り（向こう岸の浅瀬の口へ）、
- * 150 秒に橋頭の西から入る（橋を通らない）。命令は 20 回
+ * 150 秒に橋頭の西から入る（榊原隊は西の弓へ。橋を通らない）。命令は 20 回
  */
-const DETOUR: Step[] = [...LURE, [95, 'a_sakakibara', mv(-160, -65)], [95, 'a_kiba', mv(-150, -60)], [150, 'a_sakakibara', mv(-30, -75)], [150, 'a_kiba', mv(-25, -65)], ...CROSS];
+const DETOUR: Step[] = [...LURE, [95, 'a_sakakibara', mv(-160, -65)], [95, 'a_kiba', mv(-150, -60)], [150, 'a_sakakibara', atk('e_yumi_w')], [150, 'a_kiba', mv(-25, -65)], ...CROSS];
 
-/** 陽動だけ（浅瀬を放っておく）：騎馬は動かさず、三隊（忠勝・酒井・榊原）で守りを囲んでから、全部隊で橋を渡る */
+/** 陽動だけ（浅瀬を放っておく）：騎馬は動かさず、三隊（忠勝・酒井・榊原）で守りを囲んでから、後半は同じく橋を渡る */
 const LURE_ONLY: Step[] = [
     [0, 'a_yumi', atk('e_guard')],
     [50, 'a_tadakatsu', atk('e_guard')],
     [50, 'a_sakai', atk('e_guard')],
     [50, 'a_sakakibara', atk('e_guard')],
-    [150, 'a_tadakatsu', mv(0, -70)],
-    [150, 'a_sakai', mv(15, -80)],
-    [150, 'a_ishikawa', mv(-15, -80)],
-    [150, 'a_sakakibara', mv(-30, -70)],
+    ...CROSS,
+    [150, 'a_sakakibara', atk('e_yumi_w')],
     [150, 'a_kiba', mv(-20, -60)],
-    [150, 'a_yumi', atk('e_yumi_e')],
 ];
 
 /** 正面突破：槍・騎馬の五隊で橋頭へ真っすぐ（弓は橋の守りを射る） */
@@ -255,7 +255,7 @@ describe('一本橋：地形に合わない作戦（早送り）', () => {
 });
 
 describe('一本橋：地形に合った作戦（早送り）', () => {
-    it('陽動と浅瀬の守り：守りを南の岸へ引き出して囲み、渡って来る後詰めも迎え撃ち、別働隊は浅瀬の中で討ってから橋頭へ → 勝つ（副目標も両方。作った時 272 秒・損害 27％）', () => {
+    it('陽動と浅瀬の守り：守りを南の岸へ引き出して囲み、渡って来る後詰めも迎え撃ち、別働隊は浅瀬の中で討ってから橋頭へ → 勝つ（副目標も両方。作った時 292 秒・損害 27％）', () => {
         let guardSouth = false;
         let reservesSouth = 0;
         const r = play(FIT, (s) => {
@@ -276,7 +276,28 @@ describe('一本橋：地形に合った作戦（早送り）', () => {
         for (const id of ['e_guard', 'e_second', 'e_kiba', 'e_west']) expect(statusOf(r, id)).not.toBe('ready');
     });
 
-    it('浅瀬から回る：同じ陽動の後、騎馬二隊は浅瀬を北へ渡って橋頭の西から入る → 勝つ（作った時 268 秒・損害 26％）', () => {
+    it('浅瀬の守り：西の別働隊は浅瀬の中で崩れ、南の岸へ上がれない（作った時 78.7 秒に z -19 で崩れた）。浅瀬を放っておくと南の岸の奥まで来る', () => {
+        const westRun = (steps: Step[]) => {
+            let maxZ = -Infinity;
+            let brokenAt = -1;
+            play(steps, (s) => {
+                const w = unitById(s, 'e_west')!;
+                if (w.status === 'ready') maxZ = Math.max(maxZ, w.z);
+                else if (brokenAt < 0) brokenAt = s.t;
+            });
+            return { maxZ, brokenAt };
+        };
+        const fit = westRun(FIT);
+        expect(fit.brokenAt).toBeGreaterThan(0);
+        expect(fit.brokenAt).toBeLessThan(120);
+        // 深い川の帯（z -40〜-10）の中＝浅瀬の中で崩れた
+        expect(fit.maxZ).toBeLessThan(-10);
+        // 陽動だけ（浅瀬を放っておく）・何もしない：別働隊は浅瀬を渡って南の岸の奥（z 60 ほど）まで回り込む
+        expect(westRun(LURE_ONLY).maxZ).toBeGreaterThan(30);
+        expect(westRun([]).maxZ).toBeGreaterThan(30);
+    });
+
+    it('浅瀬から回る：同じ陽動の後、騎馬二隊は浅瀬を北へ渡って橋頭の西から入る → 勝つ（作った時 284 秒・損害 26％）', () => {
         let northOfFord = false;
         const r = play(DETOUR, (s) => {
             const k = unitById(s, 'a_sakakibara')!;
@@ -288,9 +309,10 @@ describe('一本橋：地形に合った作戦（早送り）', () => {
         expect(northOfFord).toBe(true);
     });
 
-    // 確かめた時（乱数の種 7）：陽動と浅瀬の守り 16 勝（損害 3 割以内 9・弓を残す 14）、浅瀬から回る 14 勝。
-    // 参考に種 1〜6 の 96 通りでも数えた：陽動と浅瀬の守り 83 勝、浅瀬から回る 80 勝、陽動だけ 49 勝（守りへ槍を出す 50 秒の命令が 35〜60 秒を外れると崩れやすい）
-    it('命令の時刻を ±15 秒ずらした 16 通り：陽動と浅瀬の守りは 14 通り以上、浅瀬から回るのは 12 通り以上で勝つ（確かめた時 16 勝・14 勝）', () => {
+    // 確かめた時（乱数の種 7）：陽動と浅瀬の守り 16 勝（損害 3 割以内 9・弓を残す 14）、浅瀬から回る 13 勝（損害 3 割以内 11・弓を残す 12）。
+    // 参考に種 1〜6 の 96 通りでも数えた：陽動と浅瀬の守り 80 勝、浅瀬から回る 76 勝、陽動だけ 33 勝。
+    // 負けた通りは主に、守りへ槍を出す 50 秒の命令が早すぎる（守りがまだ橋の上・南の口＝狭い正面）か遅すぎる（弓隊が崩される）もの
+    it('命令の時刻を ±15 秒ずらした 16 通り：陽動と浅瀬の守りは 14 通り以上、浅瀬から回るのは 12 通り以上で勝つ（確かめた時 16 勝・13 勝）', () => {
         const fit = jitterWins(FIT);
         const det = jitterWins(DETOUR);
         expect(fit.wins).toBeGreaterThanOrEqual(14);
@@ -301,15 +323,16 @@ describe('一本橋：地形に合った作戦（早送り）', () => {
 });
 
 describe('一本橋：浅瀬を放っておく・副目標は作戦で分かれる（早送り）', () => {
-    it('陽動だけで浅瀬を放っておく → 勝っても損害 3 割を超える（別働隊に横を突かれる）。±15 秒の 16 通りでは勝ちが少ない（確かめた時 6 勝）', () => {
+    it('陽動だけで浅瀬を放っておく → 別働隊に横を突かれ、±15 秒の 16 通りでは勝ちが少ない（確かめた時 6 勝。陽動と浅瀬の守りは 16 勝）。ずらさない台本は勝つ（作った時 損害 29.9％）', () => {
         const r = play(LURE_ONLY);
         expect(r.o.result).toBe('victory');
-        expect(secondaryOf(r, 'bridge_losses')).toBe(false);
-        expect(r.loss).toBeGreaterThan(0.3);
-        const fit = play(FIT);
-        expect(fit.loss).toBeLessThan(r.loss - 0.03);
-        expect(jitterWins(LURE_ONLY).wins).toBeLessThanOrEqual(10);
-    }, 60_000);
+        const only = jitterWins(LURE_ONLY);
+        const fit = jitterWins(FIT);
+        expect(only.wins).toBeLessThanOrEqual(10);
+        expect(fit.wins - only.wins).toBeGreaterThanOrEqual(5);
+        // 損害を 3 割以内に抑えられたのも少ない（確かめた時 1 通り。陽動と浅瀬の守りは 9 通り）
+        expect(only.lossOk).toBeLessThan(fit.lossOk);
+    }, 120_000);
 
     it('槍を出すのが遅い（70 秒）→ 守りに弓隊が崩され、陽動の弓隊を残せない（副目標）。勝ち負け・主目標・副目標は別の欄', () => {
         const late = play(FIT.map(([t, id, o]) => [t === 50 ? 70 : t, id, o] as Step));

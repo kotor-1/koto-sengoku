@@ -357,7 +357,7 @@ describe('第2群の 5 戦場の最初の案（早送りの台本）', () => {
     // 一本橋は釣り合いを整えた（細かい台本・±15 秒の 16 通り・能力の比べは tests/proto3d-field-single_bridge.test.ts）。
     // 最初の案の台本（三隊で西の浅瀬へ回る。作った時 313 秒・損害 33％で勝ち、橋頭へ押し込むのは 47％で勝ち）は、釣り合いの後は
     // どちらも勝てない（橋の守り・弓を強め、浅瀬の見張りを回り込む別働隊にしたため）。ここは釣り合いの後の代表の台本に置き換えた
-    it('一本橋：弓の陽動で橋の守りを南の岸へ引き出して囲み、騎馬で西の浅瀬の別働隊を討ってから橋頭へ → 勝つ（272 秒・損害 27％）。全部隊で橋頭へ押し込む → 負ける（損害 48％）', () => {
+    it('一本橋：弓の陽動で橋の守りを南の岸へ引き出して囲み、騎馬で西の浅瀬の別働隊を討ってから橋頭へ → 勝つ（292 秒・損害 27％）。全部隊で橋頭へ押し込む → 負ける（損害 48％）', () => {
         const fit = play('single_bridge', [
             [0, 'a_yumi', atk('e_guard')],
             [0, 'a_sakakibara', mv(-167, 10)],
@@ -372,10 +372,10 @@ describe('第2群の 5 戦場の最初の案（早送りの台本）', () => {
             [100, 'a_sakai', 'nearest'],
             [100, 'a_ishikawa', 'nearest'],
             [150, 'a_tadakatsu', mv(0, -70)],
-            [150, 'a_sakai', mv(15, -80)],
-            [150, 'a_ishikawa', mv(-15, -80)],
+            [150, 'a_sakai', atk('e_yumi_e')],
+            [150, 'a_ishikawa', atk('e_yumi_w')],
             [150, 'a_yumi', atk('e_yumi_e')],
-            [150, 'a_sakakibara', mv(-30, -70)],
+            [150, 'a_sakakibara', atk('e_yumi_w')],
             [150, 'a_kiba', mv(-20, -60)],
         ]);
         const push = play('single_bridge', [...['a_tadakatsu', 'a_sakakibara', 'a_sakai', 'a_ishikawa', 'a_kiba'].map((id) => [0, id, mv(0, -72)] as Step), [0, 'a_yumi', atk('e_guard')]]);
