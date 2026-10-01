@@ -1134,6 +1134,18 @@ export function objectivePanelModel(s: BattleState): ObjectivePanelModel | null 
     return { primary: primary ? row(primary) : null, secondary: list.filter((p) => p.role === 'secondary').map(row), rules: fieldRuleTexts(s) };
 }
 
+/**
+ * 畳んだ目標の欄の見出しに出す、主目標の短い進み（スマホでも 1 行で読める）。括弧の中の説明は省く。
+ * ただし数を含む短い括弧（6 字まで。例：「突破 1／許容 3（あと 2）」の「あと 2」）は進みそのものなので残す（第3群の操作の直し。
+ * 既存の 10 戦場の進みの文の括弧はどれも 7 字以上か数を含まないので、見出しは今までと同じ）
+ */
+export function objectiveSummaryText(p: ObjectiveRowModel | null): string {
+    if (!p) return '';
+    if (p.state === 'done') return '主目標 ✓ 達成';
+    if (p.state === 'failed') return '主目標 ✗';
+    return p.progressText.replace(/（([^）]*)）/g, (all, inner: string) => (inner.length <= 6 && /\d/.test(inner) ? all : ''));
+}
+
 /** 戦場の決まりの短い説明（その戦場のデータにあるものだけ。無い合戦は空） */
 export function fieldRuleTexts(s: BattleState): string[] {
     const fr = s.setup.fieldRules;

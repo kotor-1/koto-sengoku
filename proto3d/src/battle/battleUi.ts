@@ -33,6 +33,7 @@ import {
     conditionsFor,
     generalLineModel,
     objectivePanelModel,
+    objectiveSummaryText,
     pledgeLineModel,
     scenarioTexts,
     timeText,
@@ -645,7 +646,7 @@ export class BattleUi {
         }
         const p = m.primary;
         // 見出しの短い進み（括弧の中の説明は省く）
-        const sum = p ? (p.state === 'done' ? '主目標 ✓ 達成' : p.state === 'failed' ? '主目標 ✗' : p.progressText.replace(/（[^）]*）/g, '')) : '';
+        const sum = objectiveSummaryText(p);
         if (this.goalSum) setText(this.goalSum, sum);
         if (p && this.goals.dataset.state !== p.state) this.goals.dataset.state = p.state;
     }
