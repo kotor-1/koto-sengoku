@@ -348,7 +348,13 @@ async function run(kind) {
     await page.evaluate(() => window.__battle.setTimeScale(1));
     await press(p, '.b-pause');
     await page.waitForTimeout(600);
-    check((await label(page, 'a_sakakibara')).ab === '', `[${kind}] 切れた後は榊原の名札に印が無い`);
+    // 切れた後の榊原の名札は点滅しないので、密集していれば名札の優先表示で小さく・一時的に隠れることがある（docs/fields-group2-design.md §2）。
+    // 印の有無は名札の data-ab で読む（隠れていても名札の要素はある）
+    const endLab = await page.evaluate(() => {
+        const e = document.querySelector('.b-label[data-id="a_sakakibara"]');
+        return { ab: e?.dataset.ab ?? '', fit: e?.dataset.fit ?? 'full', text: e?.textContent ?? '' };
+    });
+    check(endLab.ab === '' && !endLab.text.includes('◆'), `[${kind}] 切れた後は榊原の名札に印が無い`, `見せ方 ${endLab.fit}`);
     await shot(p, '07-ended');
     await p.ctx.close();
 }

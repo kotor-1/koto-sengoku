@@ -360,12 +360,15 @@ class BattleRun implements Mode {
             this.ui.markLabel(u.id, 'routed', u.status === 'routed');
             if (pledgeId) this.ui.markLabel(u.id, 'pledge', pledgeId === u.id);
             if (this.unitMarks.size) this.ui.labelMark(u.id, u.status === 'ready' ? (this.unitMarks.get(u.id) ?? '') : '');
+            // 名札の優先表示の「重要な武将」：武将のいる部隊・本陣・約束の対象・目標の印の付いた部隊（labelLayout.ts）
+            if (hasAbilities) this.ui.labelImportant(u.id, !!(u.generalId || u.leaderId) || u.isHq || pledgeId === u.id || !!this.unitMarks.get(u.id));
         }
         for (const t of this.terrainLabels) {
             const p = this.view.project(t.x, t.y, t.z);
             this.ui.label(t.id, t.text, 'terrain', p.x, p.y, !p.off);
         }
-        // 特殊能力のある合戦：部隊の名札の重なりをほどく（点滅する印が別の名札に隠れないように。架空の第一章は Version 12 のまま）
+        // 特殊能力のある合戦：部隊の名札の重なりをほどき、密集したら優先の低い名札を小さく・一時的に隠す（点滅する印が別の名札に隠れないように。
+        // 優先は 選んだ > 点滅 > 重要な武将 > 画面の中央に近い。labelLayout.ts）。架空の第一章は Version 12 のまま
         this.ui.declutterLabels(hasAbilities);
     }
 
@@ -1191,6 +1194,16 @@ function exposeDev(run: BattleRun): void {
             const e = document.querySelector(`.b-label[data-id="${unitId}"]`) as HTMLElement | null;
             const box = (q: DOMRect) => ({ l: q.left, t: q.top, r: q.right, b: q.bottom, x: (q.left + q.right) / 2, y: (q.top + q.bottom) / 2 });
             return r ? { ...box(r), badge: g ? box(g) : null, ab: e?.dataset.ab ?? '', blink: e ? Number(e.style.getPropertyValue('--ab') || 1) : 1 } : null;
+        },
+        /**
+         * 名札の優先表示の様子（読むだけ）：部隊ごとの見せ方（full・mini・hide）・選んでいる・能力の印（data-ab）・重要な武将・
+         * 画面に出ているか（地図の外・まだ着いていない部隊は false）
+         */
+        labelFits() {
+            return run.s.units.map((u) => {
+                const e = document.querySelector(`.b-label[data-id="${u.id}"]`) as HTMLElement | null;
+                return { id: u.id, fit: run.ui.labelFit(u.id), shown: !!e && !e.hidden, sel: !!e?.classList.contains('sel'), ab: e?.dataset.ab ?? '', imp: !!(u.generalId || u.leaderId) || u.isHq };
+            });
         },
         /** 兵士の表示の数え上げ（直前のフレーム）：見えている兵士の数・部隊ごとの人数・描画の呼び出しの数・InstancedMesh ごとの数 */
         troopStats: () => run.view.troopStats(),

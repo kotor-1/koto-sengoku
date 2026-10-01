@@ -88,6 +88,12 @@ body.mode-battle #build { display: none !important; }
 /* 引いた画面の発動できる名札も、名前と兵の数を小さくして（印はそのまま）、部隊を覆いすぎないように */
 .b-labels.far .b-label[data-ab="ready"]:not(.sel) { font-size: 9.5px; padding: 0 4px 1px; }
 .b-labels.far .b-label[data-ab="ready"]:not(.sel) small { display: none; }
+/* 名札の優先表示（docs/fields-group2-design.md §2。つなぎが data-fit を付ける）：密集して重なる優先の低い名札は、名前だけの小さい字（mini）、
+   小さくしても重なれば一時的に隠す（hide。押しても当たらない）。選んだ名札・点滅している名札・対象選びで選べる名札には付かない */
+.b-label[data-fit] { font-size: 9px; padding: 0 3px; border-left-width: 2px; opacity: 0.78; }
+.b-label[data-fit] small, .b-label[data-fit] .b-lab-ab { display: none; }
+.b-label[data-fit]::before { font-size: 8px; padding: 0 2px; margin-right: 2px; }
+.b-label[data-fit="hide"] { visibility: hidden; }
 .b-label.terrain {
     background: none;
     border: none;

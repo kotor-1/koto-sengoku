@@ -18,7 +18,8 @@
  *   名札そのものは押せない（pointer-events: none）。名札・能力の印の四角（labelRect）をつなぎが読んで、地図を押した所と比べる。
  * e2e が使える印：.b-root[data-field]（戦場 id）・.b-card[data-id][data-key]・.b-cards[data-count]・.b-goals の .b-goal[data-id][data-role][data-state]・
  *   .b-gen[data-general]・結果の .b-robj の行 [data-role][data-achieved]・名札 .b-label[data-mark]（救出・守る・崩す）・
- *   部隊の名札 .b-label[data-id][data-ab]（ready・active・choosing・target・untargetable）・発動の知らせ .b-abnote[data-kind]。
+ *   部隊の名札 .b-label[data-id][data-ab]（ready・active・choosing・target・untargetable）・発動の知らせ .b-abnote[data-kind]・
+ *   名札の優先表示 .b-label[data-fit]（mini＝小さく・hide＝一時的に隠す。付いていなければそのまま）。
  * ボタンは押した瞬間（pointerdown）に反応し、その後の click は無視する（キーボードの Enter／Space の click だけ受ける）。
  * 画面を押して地図を動かす面（input）は一番下に敷き、つなぎがそこへ指・マウスの処理を付ける。
  */
@@ -43,6 +44,7 @@ import {
     type ResultRow,
 } from './control';
 import type { Side } from './types';
+import { layoutLabels, type LabelFit, type LabelLayoutItem } from './labelLayout';
 
 export type CommandKind = 'move' | 'attack' | 'hold' | 'retreat';
 
@@ -152,6 +154,16 @@ interface LabelEls {
     blink: number;
     /** 名札の重なりをほどくために上へずらした量（px。0 か負） */
     dy: number;
+    /** 優先表示の見せ方（full・mini＝名前だけ小さく・hide＝一時的に隠す。labelLayout.ts） */
+    fit: LabelFit;
+    /** 重要な武将（武将のいる部隊・本陣・約束や目標の印）。優先表示の順に使う */
+    imp: boolean;
+    /** 見せ方ごとの大きさ（最後に測った値。0 ならまだ測っていない）と、名前の所の幅 */
+    fw: number;
+    fh: number;
+    mw: number;
+    mh: number;
+    nw: number;
     /** いま書いてある位置（x, y + dy。同じなら transform を書き直さない） */
     px: number;
     py: number;
@@ -721,7 +733,7 @@ export class BattleUi {
             ab.hidden = true;
             e.append(name, small, ab);
             this.labels.append(e);
-            l = { e, name, small, ab, x: NaN, y: NaN, shown: true, text: '', abMode: '', abText: '', blink: -1, dy: 0, px: NaN, py: NaN };
+            l = { e, name, small, ab, x: NaN, y: NaN, shown: true, text: '', abMode: '', abText: '', blink: -1, dy: 0, px: NaN, py: NaN, fit: 'full', imp: false, fw: 0, fh: 0, mw: 0, mh: 0, nw: 0 };
             this.labelEls.set(id, l);
         }
         if (l.shown !== shown) {
@@ -750,50 +762,84 @@ export class BattleUi {
     }
 
     /**
-     * 部隊の名札の重なりをほどく（特殊能力のある合戦だけ。つなぎが毎フレーム、名札を置いた後に呼ぶ）。
-     * 発動できる名札・対象選びの持ち主・選んだ名札を先に（その位置のまま）、ほかは画面の下の名札から順に置き、先に置いた名札と重なれば
-     * 上へずらす（最大で名札 4 つ分）。点滅する印が別の名札の下に隠れて押せない・見えないことをなくす（Version 13 候補の確認で直した）。
-     * 名札の大きさは毎フレーム読む（書き込みの後にまとめて読むので、並べ直しは 1 フレーム 1 回）。
+     * 部隊の名札の重なりをほどく・優先表示（特殊能力のある合戦だけ。つなぎが毎フレーム、名札を置いた後に呼ぶ）。
+     * 並べ方は labelLayout.ts の layoutLabels（docs/fields-group2-design.md §2）：選んだ名札 > 能力を使える（点滅）・対象選びで選べる名札 >
+     * 重要な武将 > 画面の中央に近い、の順に置く。選んだ・点滅の名札はそのまま（重なれば上へずらす。小さくも隠しもしない＝点滅する印は
+     * いつも見えて押せる）。ほかの名札は、重なれば小さく（名前だけ・小さい字）、小さくしても重なれば一時的に隠す（data-fit）。
+     * 名札の大きさは毎フレーム読む（書き込みの後にまとめて読むので、並べ直しは 1 フレーム 1 回）。いまと違う見せ方の大きさは、最後に測った値
+     * （まだ測っていなければ名前の幅からの見積もり）を使う。
      */
     declutterLabels(on: boolean): void {
-        const list: { l: LabelEls; w: number; h: number; pr: number }[] = [];
+        const list: { l: LabelEls; it: LabelLayoutItem }[] = [];
         for (const l of this.labelEls.values()) {
-            if (!l.e.dataset.id) continue;
+            const id = l.e.dataset.id;
+            if (!id) continue;
             if (!on || !l.shown) {
+                if (l.fit !== 'full') this.setFit(l, 'full');
                 if (l.dy !== 0) {
                     l.dy = 0;
                     if (l.shown) this.placeLabel(l);
                 }
                 continue;
             }
-            const pr = l.abMode === 'ready' || l.abMode === 'choosing' ? 0 : l.e.classList.contains('sel') ? 1 : 2;
-            list.push({ l, w: 0, h: 0, pr });
+            const keep = l.abMode === 'ready' || l.abMode === 'choosing' || l.abMode === 'target';
+            const it: LabelLayoutItem = { id, x: l.x, y: l.y, w: 0, h: 0, mw: 0, mh: 0, sel: l.e.classList.contains('sel'), ready: keep, important: l.imp, prev: l.fit };
+            list.push({ l, it });
         }
         if (list.length === 0) return;
-        for (const k of list) {
-            k.w = k.l.e.offsetWidth;
-            k.h = k.l.e.offsetHeight;
-        }
-        list.sort((a, b) => a.pr - b.pr || b.l.y - a.l.y);
-        const placed: { l: number; t: number; r: number; b: number }[] = [];
-        for (const k of list) {
-            const { l, w, h } = k;
-            let dy = 0;
-            const box = () => ({ l: l.x - w / 2, r: l.x + w / 2, t: l.y + dy - h, b: l.y + dy });
-            for (let i = 0; i < 6; i++) {
-                const me = box();
-                const hit = placed.find((p) => me.l < p.r - 1 && me.r > p.l + 1 && me.t < p.b + 1 && me.b > p.t - 1);
-                if (!hit) break;
-                // 先に置いた名札の上の縁から 2 px あける（縦は 1 px 未満の重なり・接しているのも重なりとみなす。高さの端数で重ならないように）
-                dy = hit.t - 2 - l.y;
+        // 選んだ・点滅の名札が小さい・隠れたままなら、測る前にそのままの見せ方へ戻す（大きさをそのままで測る）
+        for (const { l, it } of list) if ((it.sel || it.ready) && l.fit !== 'full') this.setFit(l, 'full');
+        for (const { l, it } of list) {
+            const w = l.e.offsetWidth;
+            const h = l.e.offsetHeight;
+            if (l.fit === 'full') {
+                l.fw = w;
+                l.fh = h;
+                l.nw = l.name.offsetWidth;
+            } else {
+                l.mw = w;
+                l.mh = h;
             }
-            dy = Math.max(dy, -4 * Math.max(h, 12));
-            placed.push(box());
-            if (Math.abs(l.dy - dy) > 0.4) {
-                l.dy = dy;
+            it.w = l.fw || w;
+            it.h = l.fh || h;
+            // 小さくした大きさ：測っていなければ、名前の幅（小さい字）と枠の余白から見積もる
+            it.mw = l.mw || Math.min(it.w, Math.round((l.nw || it.w * 0.6) * 0.82 + 8));
+            it.mh = l.mh || Math.min(it.h, Math.round(it.h * 0.85));
+        }
+        const W = this.labels.clientWidth || window.innerWidth;
+        const H = this.labels.clientHeight || window.innerHeight;
+        const lay = layoutLabels(
+            list.map((k) => k.it),
+            W / 2,
+            H / 2,
+        );
+        for (const { l, it } of list) {
+            const p = lay.get(it.id);
+            if (!p) continue;
+            if (p.fit !== l.fit) this.setFit(l, p.fit);
+            if (Math.abs(l.dy - p.dy) > 0.4) {
+                l.dy = p.dy;
                 this.placeLabel(l);
             }
         }
+    }
+
+    /** 名札の優先表示の見せ方を書く（data-fit：mini＝名前だけ小さく・hide＝一時的に隠す。full は付けない） */
+    private setFit(l: LabelEls, fit: LabelFit): void {
+        l.fit = fit;
+        if (fit === 'full') delete l.e.dataset.fit;
+        else l.e.dataset.fit = fit;
+    }
+
+    /** 名札の重要な武将の印（優先表示の順。武将のいる部隊・本陣・約束や目標の印の付いた部隊） */
+    labelImportant(id: string, on: boolean): void {
+        const l = this.labelEls.get(id);
+        if (l) l.imp = on;
+    }
+
+    /** 名札の優先表示の見せ方（確かめ用。名札が無ければ null） */
+    labelFit(id: string): LabelFit | null {
+        return this.labelEls.get(id)?.fit ?? null;
     }
 
     /**
@@ -826,7 +872,8 @@ export class BattleUi {
      */
     labelRect(id: string, part: 'all' | 'badge' = 'all'): DOMRect | null {
         const l = this.labelEls.get(id);
-        if (!l || !l.shown || l.e.hidden) return null;
+        // 優先表示で一時的に隠した名札は押せない（見えていない）
+        if (!l || !l.shown || l.e.hidden || l.fit === 'hide') return null;
         if (part === 'badge' && l.ab.hidden) return null;
         const r = (part === 'badge' ? l.ab : l.e).getBoundingClientRect();
         return r.width > 0 && r.height > 0 ? r : null;
@@ -842,7 +889,7 @@ export class BattleUi {
         let i = 0;
         for (const [id, l] of this.labelEls) {
             i++;
-            if (!l.e.dataset.id || !l.shown || l.e.hidden) continue;
+            if (!l.e.dataset.id || !l.shown || l.e.hidden || l.fit === 'hide') continue;
             const r = l.e.getBoundingClientRect();
             if (!(r.width > 0 && r.height > 0)) continue;
             const top = l.abMode === 'ready' || l.abMode === 'choosing';

@@ -327,7 +327,9 @@ async function inputPart(kind) {
     const rem1 = await labelText(page, 'a_ieyasu');
     await page.waitForTimeout(2500);
     const rem2 = await labelText(page, 'a_ieyasu');
-    check((await label(page, 'a_ieyasu')).ab === 'active' && /残り 35 秒/.test(rem1) && rem1 === rem2, `[${kind}] 使った家康の名札は点滅をやめ、止めている間は「残り 35 秒」のまま`, `${rem1} / ${rem2}`);
+    // 使った名札は点滅しないので、密集していれば名札の優先表示で小さく・一時的に隠れることがある（docs/fields-group2-design.md §2）。印は名札の data-ab で読む
+    const abIe = await page.evaluate(() => document.querySelector('.b-label[data-id="a_ieyasu"]')?.dataset.ab ?? '');
+    check(abIe === 'active' && /残り 35 秒/.test(rem1) && rem1 === rem2, `[${kind}] 使った家康の名札は点滅をやめ、止めている間は「残り 35 秒」のまま`, `${rem1} / ${rem2}`);
 
     // 使った名札の所をもう一度押す（守りの 0.5 秒より後）→ 2 回目は使えない（名札の名前 → 家康本陣の選択になるだけ）
     await pointAt(p, bIe.x, bIe.y);
