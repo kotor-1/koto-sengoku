@@ -433,38 +433,39 @@ describe('第2群の 5 戦場の最初の案（早送りの台本）', () => {
         expect(play('ridge', []).o.reason).toBe('nightfall');
     });
 
-    it('谷間：先に西の高地へ南の端から登って槍と弓を破り、高地と谷底を並んで北へ進んで塞ぎを破ってから抜ける → 勝つ（作った時 436 秒）。谷底を急いで抜けるだけ → 負ける', () => {
+    // 谷間は釣り合いを整えた（細かい台本・±15 秒の 16 通り・能力の比べは tests/proto3d-field-valley.test.ts）。
+    // 最初の案の台本（高地と谷底を並んで北へ進み、出口の塞ぎを破ってから抜ける。作った時 436 秒）は、釣り合いの後は勝てない
+    // （谷の両側の壁を崖にし、出口の手前を狭い口にして塞ぎを置いたため）。ここは釣り合いの後の代表の台本に置き換えた
+    it('谷間：西の高地へ南の端から登って槍と弓を破り、高地の上を北へ進んで北の端から出口の西へ降りる（忠勝隊は谷の口で攻め手を待つ）→ 勝つ（311 秒・損害 15％）。谷底を急いで抜けるだけ → 負ける（損害 52％）', () => {
+        const W = ['a_sakai', 'a_ishikawa', 'a_sakakibara', 'a_kiba'];
+        const ex: Record<string, [number, number]> = { a_sakai: [-30, -190], a_ishikawa: [-15, -205], a_sakakibara: [-40, -205], a_kiba: [-45, -185] };
         const fit = play('valley', [
-            [0, 'a_sakai', mv(-95, 140)],
-            [0, 'a_sakakibara', mv(-110, 150)],
+            [0, 'a_sakai', mv(-95, 125)],
+            [0, 'a_ishikawa', mv(-75, 135)],
+            [0, 'a_sakakibara', mv(-115, 140)],
+            [0, 'a_kiba', mv(-60, 155)],
             [0, 'a_yumi', mv(-70, 150)],
-            [0, 'a_tadakatsu', mv(0, 140)],
             [30, 'a_sakai', atk('e_w_guard')],
+            [30, 'a_ishikawa', atk('e_w_guard')],
             [30, 'a_sakakibara', atk('e_w_guard')],
             [40, 'a_yumi', atk('e_w_guard')],
-            [120, 'a_sakai', atk('e_w_yumi')],
-            [120, 'a_sakakibara', atk('e_w_yumi')],
-            [120, 'a_yumi', mv(-95, 60)],
-            [140, 'a_tadakatsu', 'nearest'],
-            [140, 'a_kiba', 'nearest'],
-            [200, 'a_yumi', 'nearest'],
-            [230, 'a_sakai', mv(-95, -100)],
-            [230, 'a_sakakibara', mv(-80, -120)],
-            [260, 'a_tadakatsu', mv(0, -120)],
-            [260, 'a_kiba', mv(20, -110)],
-            [330, 'a_tadakatsu', atk('e_block')],
-            [330, 'a_sakai', atk('e_block')],
-            [330, 'a_sakakibara', atk('e_block')],
-            [330, 'a_kiba', atk('e_block')],
-            [420, 'a_tadakatsu', mv(0, -195)],
-            [420, 'a_sakai', mv(-25, -195)],
-            [420, 'a_kiba', mv(25, -195)],
-            [420, 'a_sakakibara', mv(0, -205)],
-            [420, 'a_ishikawa', mv(10, -195)],
+            [60, 'a_kiba', mv(-95, 100)],
+            [100, 'a_sakai', atk('e_w_yumi')],
+            [100, 'a_ishikawa', mv(-80, 10)],
+            [100, 'a_sakakibara', mv(-110, 10)],
+            [100, 'a_kiba', mv(-95, 40)],
+            [100, 'a_yumi', mv(-95, 60)],
+            [240, 'a_sakai', mv(-95, -150)],
+            [240, 'a_ishikawa', mv(-80, -150)],
+            [240, 'a_sakakibara', mv(-110, -150)],
+            [240, 'a_kiba', mv(-95, -130)],
+            ...W.flatMap((id) => [[300, id, mv(...ex[id]!)] as Step, [340, id, mv(...ex[id]!)] as Step]),
         ]);
         expect(fit.o.result).toBe('victory');
+        expect(fit.loss).toBeLessThan(0.2);
         const rush = play('valley', ['a_tadakatsu', 'a_sakakibara', 'a_sakai', 'a_ishikawa', 'a_kiba', 'a_yumi'].map((id, i) => [0, id, mv(-20 + (i % 3) * 20, -195)] as Step));
         expect(rush.o.result).toBe('defeat');
+        expect(rush.loss).toBeGreaterThan(0.4);
     });
 
     it('水田：荷駄隊は水田を南へ横切り（遅いが騎馬の押さえる北の交わりを避ける）、中の交わりを忠勝隊・酒井隊で押さえてから退かせる → 勝つ（作った時 234 秒・損害 6％）。すぐ撤退させるだけ → 北の畦道で騎馬に追いつかれて負ける', () => {

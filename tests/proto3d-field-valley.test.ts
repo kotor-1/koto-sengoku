@@ -1,0 +1,493 @@
+/**
+ * 戦場「谷間」（valley）の釣り合い（docs/fields-group2-design.md §4）。
+ * 地形に合わない作戦（放置・谷底を押し上がる・出口の塞ぎへ当たって近い敵へ当て直す・能力も使う・谷の口で攻め手を討った後に谷底を押す）は
+ * 負けか日没（損害が大きい）。地形に合った作戦（西の高地へ南の端から登って高地の槍と弓を破り、高地の上を北へ進んで北の端から出口の西へ
+ * 降りる。忠勝隊と家康本陣は谷の口で谷を下ってくる攻め手を待って討つ）は勝つ。谷底へ出て攻め手を迎えると、忠勝隊が両側から射られて崩れる。
+ * 副目標（損害 2 割以内・敵勢の本陣も崩す）は作戦で分かれる（まっすぐ出口へ／降りる前に本陣も崩す）。
+ * 武将の能力の価値が地形で変わる比べ：石川の後詰めの差配（谷底を駆け抜ける部隊・高地の上の道を行く部隊）と、
+ * 忠勝の退路の守護（谷の口・谷底で、谷底から退く味方の殿）。
+ *
+ * どれも「早送り」（決まった時刻に issueOrder・useAbility で命令を出す台本を runToEnd で最後まで進める）。
+ * 台本は人が画面でできる程度の命令の数・間隔（数十秒おき）にしている。移動の後の向き（face）は画面から指定できないので使わない。
+ * 画面では敵の近くの地面を押すとその敵への攻撃になるので、台本の地面の行き先（tap）も、押す点の 20 m 以内に見えている敵がいれば
+ * その敵への攻撃にする（例：西の高地の弓 (-95,-5) の近くの (-95,10) を押すと、その弓への攻撃になる）。
+ * 数字（兵の残り・時間）は valley.ts の釣り合いの目安（作った時の値をコメントに残す）。
+ */
+import { describe, expect, it } from 'vitest';
+import { createBattle, elevationAt, isActive, issueOrder, passableAt, runToEnd, unitById, RULES, type BattleState } from '../proto3d/src/battle/sim';
+import { useAbility } from '../proto3d/src/battle/abilities';
+import { inZone } from '../proto3d/src/battle/fieldRules';
+import { buildBattleSetup, getField, presetUnits, validateField } from '../proto3d/src/battle/fields';
+import type { BattleOutcome, Order } from '../proto3d/src/battle/types';
+
+const VL = getField('valley')!;
+
+/** 地面を押す（押す点の 20 m 以内に見えている敵がいれば、その敵への攻撃。画面と同じ） */
+interface Tap {
+    tap: [number, number];
+}
+/** 能力を対象に使う（後詰めの差配。画面では能力の印を押してから対象の部隊を押す） */
+interface AbilityOn {
+    abilityOn: string;
+}
+/**
+ * 台本の 1 行：[開始からの秒, 部隊 id, 命令]。'ability' は固有能力、'nearest' は「見えている一番近い敵へ攻撃」
+ * （今の相手が戦えるなら出さない）
+ */
+type Step = [number, string, Order | Tap | AbilityOn | 'ability' | 'nearest'];
+
+const atk = (targetId: string): Order => ({ type: 'attack', targetId });
+const tap = (x: number, z: number): Tap => ({ tap: [x, z] });
+/** 本陣以外の槍・騎馬 */
+const MELEE = ['a_tadakatsu', 'a_sakakibara', 'a_sakai', 'a_ishikawa', 'a_kiba'];
+
+function seenEnemies(s: BattleState) {
+    return s.units.filter((x) => x.side === 'enemy' && isActive(x) && x.seenBy.ally);
+}
+function nearestEnemy(s: BattleState, id: string): Order | null {
+    const u = unitById(s, id)!;
+    if (!isActive(u)) return null;
+    if (u.order.type === 'attack') {
+        const cur = unitById(s, u.order.targetId);
+        if (cur && isActive(cur)) return null;
+    }
+    const e = seenEnemies(s).sort((a, b) => Math.hypot(a.x - u.x, a.z - u.z) - Math.hypot(b.x - u.x, b.z - u.z))[0];
+    return e ? atk(e.id) : null;
+}
+function tapOrder(s: BattleState, [x, z]: [number, number]): Order {
+    const e = seenEnemies(s)
+        .filter((u) => Math.hypot(u.x - x, u.z - z) <= 20)
+        .sort((a, b) => Math.hypot(a.x - x, a.z - z) - Math.hypot(b.x - x, b.z - z))[0];
+    return e ? atk(e.id) : { type: 'move', x, z };
+}
+
+interface Run {
+    o: BattleOutcome;
+    /** 味方の兵の損害の割合（0〜1） */
+    loss: number;
+    /** 部隊ごとの兵の残り */
+    left: Record<string, number>;
+    /** 断られた命令 */
+    refused: string[];
+}
+
+function play(steps: Step[], each?: (s: BattleState) => void): Run {
+    const s = createBattle(buildBattleSetup(VL, 'standard'));
+    const q = [...steps].sort((a, b) => a[0] - b[0]);
+    const refused: string[] = [];
+    const o = runToEnd(s, (st) => {
+        while (q.length && st.t >= q[0]![0] - 1e-9) {
+            const [t, id, ord] = q.shift()!;
+            if (ord === 'nearest') {
+                const n = nearestEnemy(st, id);
+                if (n && !issueOrder(st, id, n)) refused.push(`${t}:${id}`);
+            } else if (ord === 'ability') {
+                if (!useAbility(st, id).ok) refused.push(`${t}:${id}`);
+            } else if ('abilityOn' in ord) {
+                if (!useAbility(st, id, ord.abilityOn).ok) refused.push(`${t}:${id}`);
+            } else if (!issueOrder(st, id, 'tap' in ord ? tapOrder(st, ord.tap) : ord)) refused.push(`${t}:${id}`);
+        }
+        each?.(st);
+    });
+    const al = o.units.filter((u) => u.side === 'ally');
+    const loss = 1 - al.reduce((a, u) => a + u.endStrength, 0) / al.reduce((a, u) => a + u.startStrength, 0);
+    return { o, loss, left: Object.fromEntries(o.units.map((u) => [u.id, Math.round(u.endStrength)])), refused };
+}
+
+const statusOf = (r: Run, id: string) => r.o.units.find((u) => u.id === id)!.status;
+const secondaryOf = (r: Run, id: string) => r.o.objectives!.secondary.find((x) => x.id === id)!.achieved;
+
+/** 命令の時刻を ±15 秒ずらした 16 通り（決まった乱数。tests/proto3d-field-river_ford.test.ts と同じ作り方）の勝ち数と副目標の数 */
+function jitterWins(base: Step[]): { wins: number; lossOk: number; hqOk: number; reserveOk: number } {
+    let seed = 7;
+    const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+    let wins = 0;
+    let lossOk = 0;
+    let hqOk = 0;
+    let reserveOk = 0;
+    for (let k = 0; k < 16; k++) {
+        const steps = base.map(([t, id, o]) => [t === 0 ? 0 : t + Math.round((rnd() - 0.5) * 30), id, o] as Step);
+        const r = play(steps);
+        if (r.o.result === 'victory') wins++;
+        if (secondaryOf(r, 'valley_losses')) lossOk++;
+        if (secondaryOf(r, 'valley_hq')) hqOk++;
+        if (secondaryOf(r, 'valley_reserve')) reserveOk++;
+    }
+    return { wins, lossOk, hqOk, reserveOk };
+}
+
+// ---------------------------------------------------------------- 台本
+
+/** 西の高地へ上がる四隊 */
+const WEST_IDS = ['a_sakai', 'a_ishikawa', 'a_sakakibara', 'a_kiba'];
+/** 出口の西寄りの行き先（狭い口の塞ぎの区域から離れた所。x -15〜-45） */
+const EXIT_AT: Record<string, [number, number]> = { a_sakai: [-30, -190], a_ishikawa: [-15, -205], a_sakakibara: [-40, -205], a_kiba: [-45, -185] };
+/** t 秒に四隊を出口へ。40 秒後にもう一度押す（途中で味方とつかえて止まった隊を出し直す。人が画面で見て押し直すのと同じ） */
+const exitAt = (t: number): Step[] => WEST_IDS.flatMap((id) => [[t, id, tap(...EXIT_AT[id]!)] as Step, [t + 40, id, tap(...EXIT_AT[id]!)] as Step]);
+
+/**
+ * 高所を先に取る（0〜240 秒）：酒井隊・石川隊・榊原隊（騎馬）は西の高地の南の端へ上がり、30 秒に高地の槍へ当たる。徳川騎馬隊は後から続く。
+ * 弓は南の端の坂の下から高地の槍を射る。100 秒に高地の弓（(-95,10) を押す＝弓への攻撃）へ進み、弓は高地の南へ上がる。
+ * 240 秒に高地の上を北の端へ。忠勝隊と家康本陣は命令なし（谷の口で待ち、谷を下ってくる攻め手を迎える）
+ */
+const WEST: Step[] = [
+    [0, 'a_sakai', tap(-95, 125)],
+    [0, 'a_ishikawa', tap(-75, 135)],
+    [0, 'a_sakakibara', tap(-115, 140)],
+    [0, 'a_kiba', tap(-60, 155)],
+    [0, 'a_yumi', tap(-70, 150)],
+    [30, 'a_sakai', atk('e_w_guard')],
+    [30, 'a_ishikawa', atk('e_w_guard')],
+    [30, 'a_sakakibara', atk('e_w_guard')],
+    [40, 'a_yumi', atk('e_w_guard')],
+    [60, 'a_kiba', tap(-95, 100)],
+    [100, 'a_sakai', tap(-95, 10)],
+    [100, 'a_ishikawa', tap(-80, 10)],
+    [100, 'a_sakakibara', tap(-110, 10)],
+    [100, 'a_kiba', tap(-95, 40)],
+    [100, 'a_yumi', tap(-95, 60)],
+    [240, 'a_sakai', tap(-95, -150)],
+    [240, 'a_ishikawa', tap(-80, -150)],
+    [240, 'a_sakakibara', tap(-110, -150)],
+    [240, 'a_kiba', tap(-95, -130)],
+];
+/** 地形に合った作戦（高所を先に取り、高地の上から出口の西へ降りる。谷の口で攻め手を待つ）：300 秒に出口へ。命令は 27 回 */
+const FIT: Step[] = [...WEST, ...exitAt(300)];
+/** 同じ作戦で、北の端から降りる前に敵勢の本陣（出口の北西）も崩す（290 秒に本陣へ、350 秒に出口へ）。命令は 31 回 */
+const FIT_HQ: Step[] = [...WEST, ...WEST_IDS.map((id) => [290, id, atk('e_hq')] as Step), ...exitAt(350)];
+
+/** 正面突破：槍・騎馬・弓の六隊で谷底を出口へ押し上がる */
+const PUSH: Step[] = [...MELEE, 'a_yumi'].map((id, i) => [0, id, tap(-20 + (i % 3) * 20, -195)] as Step);
+
+describe('谷間のデータ', () => {
+    it('検査を通る。味方 7／敵 10（敵はすべて敵勢）。カプセルの丘 2 つ・崖 6 つ・谷底の道・狭い口の狭い正面（1 部隊）。主目標は突破（敵本陣の撃破ではない）', () => {
+        expect(validateField(VL)).toEqual([]);
+        const us = presetUnits(VL, 'standard');
+        expect(us.filter((u) => u.side === 'ally').map((u) => u.id)).toEqual(['a_ieyasu', 'a_tadakatsu', 'a_sakakibara', 'a_sakai', 'a_ishikawa', 'a_yumi', 'a_kiba']);
+        expect(us.filter((u) => u.side === 'enemy')).toHaveLength(10);
+        expect(us.filter((u) => u.side === 'enemy').every((u) => u.clan === 'rival')).toBe(true);
+        expect(VL.terrain.filter((t) => t.kind === 'hill')).toEqual([
+            { kind: 'hill', capsule: { ax: -95, az: -120, bx: -95, bz: 110, r: 60 }, height: 14 },
+            { kind: 'hill', capsule: { ax: 95, az: -120, bx: 95, bz: 110, r: 60 }, height: 14 },
+        ]);
+        expect(VL.terrain.filter((t) => t.kind === 'cliff')).toHaveLength(6);
+        expect(VL.terrain.filter((t) => t.kind === 'road')).toHaveLength(1);
+        expect(VL.highGround).toEqual({ defenseVsLower: 0.7, minDiff: 2, rangeBonus: 25, sightBonus: 0, arrowDealVsLower: 1.35 });
+        expect(VL.specialRules).toEqual([{ type: 'narrow_frontage', zone: { rect: { x0: -16, x1: 16, z0: -170, z1: -130 } }, maxEngaged: 1 }]);
+        expect(VL.objectives.primary).toMatchObject({ id: 'valley_break', type: 'breakthrough', count: 3 });
+        expect(VL.objectives.secondary.map((o) => [o.id, o.type])).toEqual([
+            ['valley_reserve', 'preserve_unit'],
+            ['valley_losses', 'limit_losses'],
+            ['valley_hq', 'break_unit'],
+        ]);
+        // 主目標・副目標は結果に別々に入る
+        const s = createBattle(buildBattleSetup(VL, 'standard'));
+        expect(s.objectives!.primary!.def.id).toBe('valley_break');
+        expect(s.objectives!.secondary.map((r) => r.def.id)).toEqual(['valley_reserve', 'valley_losses', 'valley_hq']);
+    });
+
+    it('地形の形：谷底の途中からは高地へ登れない（両側の壁は崖）。高地へは南の端から登れ、北の端から出口の西へ降りられる。出口の手前は幅 32 m の狭い口', () => {
+        const s = createBattle(buildBattleSetup(VL, 'standard'));
+        // 谷底は通れて、両側の壁は崖
+        for (const z of [-120, -60, 0, 60]) {
+            expect(passableAt(s, 0, z)).toBe(true);
+            expect(passableAt(s, -30, z)).toBe(true);
+            expect(passableAt(s, -42, z)).toBe(false);
+            expect(passableAt(s, 42, z)).toBe(false);
+        }
+        // 狭い口：x -16〜16 だけ通れる
+        expect(passableAt(s, 0, -150)).toBe(true);
+        for (const x of [-30, -20, 20, 30]) expect(passableAt(s, x, -150)).toBe(false);
+        // 南の端（谷の口の左右）と、北の端から出口の西へ降りる所は通れる
+        expect(passableAt(s, -60, 120)).toBe(true);
+        expect(passableAt(s, -60, -175)).toBe(true);
+        // 高さ：高地の上（線分の上）は 14 m、谷底は 0 m
+        expect(elevationAt(s.map, -95, 0)).toBeCloseTo(14, 5);
+        expect(elevationAt(s.map, 0, 0)).toBe(0);
+    });
+
+    it('敵の考え：高地の槍は南の端の登り口の区域、弓は持ち場（谷底の真ん中を射る）。狭い口の塞ぎは口から 30 m に来た相手に当たる。出口の騎馬は後詰め。攻め手は 75 秒に着いて谷の口へ', () => {
+        const us = presetUnits(VL, 'standard').filter((u) => u.side === 'enemy');
+        expect(Object.fromEntries(us.map((u) => [u.id, u.aiRole]))).toEqual({
+            e_hq: 'guard_hq',
+            e_block: 'hold_zone',
+            e_w_yumi: 'hold_line',
+            e_w_guard: 'hold_zone',
+            e_e_yumi: 'hold_line',
+            e_e_guard: 'hold_zone',
+            e_x_yumi: 'hold_line',
+            e_kiba: 'reserve',
+            e_raid1: 'assault',
+            e_raid2: 'assault',
+        });
+        const raid = us.find((u) => u.id === 'e_raid1')!;
+        expect(raid.arriveAt).toBe(75);
+        expect(raid.aiTarget).toEqual({ x: 0, z: 150, r: 30 });
+        const reach = RULES.bowRange + VL.highGround!.rangeBonus!;
+        const slot = (id: string) => VL.deployments.enemy.find((d) => d.id === id)!;
+        for (const id of ['w_archers', 'e_archers']) {
+            const a = slot(id);
+            // 高地の弓は谷底の真ん中 (0,0)・(0,-100) に届き、谷の口 (0,150) と味方の最初の位置には届かない
+            expect(Math.hypot(a.x, a.z)).toBeLessThan(reach);
+            expect(Math.hypot(a.x, a.z + 100)).toBeLessThan(reach);
+            expect(Math.hypot(a.x, a.z - 150)).toBeGreaterThan(reach);
+            for (const d of VL.deployments.ally) expect(Math.hypot(d.x - a.x, d.z - a.z)).toBeGreaterThan(reach);
+        }
+        // 狭い口の塞ぎ：口から 30 m（区域 20 m ＋ 10 m）に来た相手に当たる。出口の西寄りの行き先には当たらない
+        const g = us.find((u) => u.id === 'e_block')!.aiTarget!;
+        expect(g).toEqual({ x: 0, z: -150, r: 20 });
+        const p = VL.objectives.primary;
+        if (p.type !== 'breakthrough') throw new Error('breakthrough のはず');
+        for (const [x, z] of Object.values(EXIT_AT)) {
+            expect(inZone(p.zone, x, z)).toBe(true);
+            expect(Math.hypot(x - g.x, z - g.z)).toBeGreaterThan(g.r! + 10);
+        }
+    });
+});
+
+describe('谷間：地形に合わない作戦（早送り）', () => {
+    it('何もしない → 抜けられず日没（谷の口へ来た攻め手は、待っている忠勝隊が迎える）', () => {
+        const r = play([]);
+        expect(r.o.result).toBe('retreat');
+        expect(r.o.reason).toBe('nightfall');
+        expect(r.o.objectives!.primary!.achieved).toBe(false);
+    });
+
+    it('正面突破：六隊で谷底を出口へ押し上がる → 両側から射られ、狭い口で止められ、谷を下ってくる攻め手とぶつかって負ける（作った時 179 秒・損害 52.3％）。家康本陣も一緒でも負け', () => {
+        const r = play(PUSH);
+        expect(r.o.result).toBe('defeat');
+        expect(r.o.objectives!.primary!.achieved).toBe(false);
+        expect(r.loss).toBeGreaterThan(0.4);
+        const all = play([...PUSH, [0, 'a_ieyasu', tap(0, -195)]]);
+        expect(all.o.result).toBe('defeat');
+    });
+
+    it('全部隊で塞ぎへ当たり、30 秒ごとに近い敵へ当て直す → 負ける（作った時 214 秒・損害 51.1％）。能力も使う（先駆け・号令・両翼・後詰めの差配で忠勝隊を急がせる）→ 負ける（作った時 45.8％）', () => {
+        const again = [30, 60, 90, 120, 150, 180, 210, 240, 270, 300].flatMap((t) => MELEE.map((id) => [t, id, 'nearest'] as Step));
+        const r = play([...MELEE.map((id) => [0, id, atk('e_block')] as Step), [0, 'a_yumi', atk('e_block')], ...again]);
+        expect(r.o.result).not.toBe('victory');
+        expect(r.loss).toBeGreaterThan(0.4);
+        const ab = play([...PUSH, [5, 'a_ishikawa', { abilityOn: 'a_tadakatsu' }], [25, 'a_sakakibara', 'ability'], [60, 'a_ieyasu', 'ability'], [100, 'a_sakai', 'ability']]);
+        expect(ab.refused).toEqual([]);
+        expect(ab.o.result).not.toBe('victory');
+        expect(ab.o.objectives!.primary!.achieved).toBe(false);
+        expect(ab.loss).toBeGreaterThan(0.4);
+    });
+
+    it('谷の口で攻め手を討ってから谷底を押し上がる（石川の差配で忠勝隊を先に口へ・弓も塞ぎを射る・近い敵へ当て直す）→ 狭い口で止められて勝てない（±15 秒の 16 通りで 0 勝。作った時 損害 5 割超）', () => {
+        const LURE_PUSH: Step[] = [
+            [0, 'a_yumi', tap(-85, 150)],
+            [0, 'a_sakai', tap(-25, 150)],
+            [0, 'a_ishikawa', tap(25, 160)],
+            [0, 'a_sakakibara', tap(-40, 185)],
+            [0, 'a_kiba', tap(40, 175)],
+            [190, 'a_sakai', atk('e_raid1')],
+            [190, 'a_kiba', atk('e_raid2')],
+            [190, 'a_sakakibara', atk('e_raid1')],
+            [240, 'a_ishikawa', { abilityOn: 'a_tadakatsu' }],
+            [240, 'a_tadakatsu', atk('e_block')],
+            [250, 'a_sakai', atk('e_block')],
+            [250, 'a_sakakibara', tap(-10, -100)],
+            [250, 'a_kiba', tap(10, -100)],
+            [250, 'a_yumi', atk('e_block')],
+            [310, 'a_sakakibara', atk('e_block')],
+            [310, 'a_kiba', atk('e_block')],
+            ...[360, 400].flatMap((t) => MELEE.map((id) => [t, id, 'nearest'] as Step)),
+            ...MELEE.map((id, i) => [440, id, tap(-20 + (i % 3) * 20, -195)] as Step),
+        ];
+        const r = play(LURE_PUSH);
+        expect(r.o.result).not.toBe('victory');
+        expect(r.loss).toBeGreaterThan(0.4);
+        expect(statusOf(r, 'e_block')).toBe('ready');
+        expect(jitterWins(LURE_PUSH).wins).toBe(0);
+    }, 60_000);
+});
+
+describe('谷間：地形に合った作戦（早送り）', () => {
+    it('高所を先に取る：西の高地の槍・弓を破り、高地の上を北へ進んで出口の西へ降りる。谷の口では忠勝隊が攻め手を迎える → 勝つ（作った時 311 秒・損害 16.3％）', () => {
+        let onHeight = false;
+        const entries: Record<string, { x: number; z: number }> = {};
+        const p = VL.objectives.primary;
+        if (p.type !== 'breakthrough') throw new Error('breakthrough のはず');
+        const r = play(FIT, (s) => {
+            // 高地へ上がった隊が、高地の上（高さ 10 m 以上）で高地の弓と斬り合った
+            for (const id of WEST_IDS) {
+                const k = unitById(s, id)!;
+                if (k.engagedWith === 'e_w_yumi' && elevationAt(s.map, k.x, k.z) > 10) onHeight = true;
+            }
+            for (const u of s.units) if (u.side === 'ally' && !entries[u.id] && inZone(p.zone, u.x, u.z)) entries[u.id] = { x: u.x, z: u.z };
+        });
+        expect(r.refused).toEqual([]);
+        expect(r.o.result).toBe('victory');
+        expect(r.o.reason).toBe('objective_done');
+        expect(r.o.objectives!.primary!.achieved).toBe(true);
+        expect(r.loss).toBeLessThan(0.2);
+        expect(onHeight).toBe(true);
+        // 高地の槍・弓は崩れ、狭い口の塞ぎは無傷（出口の西から入ったので当たっていない）
+        expect(statusOf(r, 'e_w_guard')).not.toBe('ready');
+        expect(statusOf(r, 'e_w_yumi')).not.toBe('ready');
+        expect(r.left.e_block).toBe(450);
+        // 抜けた隊は、出口の西寄り（x -25 より西）から入った（3 隊目が入った刻みで合戦が終わるので、見えるのは先の 2 隊）
+        const ids = Object.keys(entries);
+        expect(ids.length).toBeGreaterThanOrEqual(2);
+        for (const id of ids) {
+            expect(WEST_IDS).toContain(id);
+            expect(entries[id]!.x).toBeLessThan(-25);
+        }
+        // 谷の口で待った忠勝隊は崩れず、攻め手は二隊とも崩れる
+        expect(statusOf(r, 'a_tadakatsu')).toBe('ready');
+        expect(statusOf(r, 'e_raid1')).not.toBe('ready');
+        expect(statusOf(r, 'e_raid2')).not.toBe('ready');
+        // 正面突破（損害 5 割超・負け）と比べて、損害は 3 分の 1 ほど
+        expect(r.loss).toBeLessThan(play(PUSH).loss - 0.25);
+    });
+
+    // 確かめた時（乱数の種 7）：高所を先に 16 勝（損害 2 割以内 12・本陣 0・予備 16・損害の平均 18.1％）、
+    // 本陣も崩す 15 勝（損害 2 割以内 1・本陣 16・予備 16・損害の平均 23.8％）、正面突破 0 勝（16 通りとも負け）
+    it('命令の時刻を ±15 秒ずらした 16 通り：高所を先に取る作戦は 14 通り以上で勝つ（確かめた時 16 勝）。正面突破はずらしても勝たない', () => {
+        expect(jitterWins(FIT).wins).toBeGreaterThanOrEqual(14);
+        expect(jitterWins(PUSH).wins).toBe(0);
+    }, 60_000);
+
+    it('敵を谷へ誘い込む：谷の口で待つ代わりに、忠勝隊が谷底へ出て攻め手を迎える → 両側の高地から射られて忠勝隊が崩れ、家康本陣も崩れて負ける（作った時 忠勝隊が 179.5 秒に崩れ、267 秒に負け）', () => {
+        const MEET: Step[] = [...FIT, [100, 'a_tadakatsu', tap(0, 30)]];
+        let tadaBroke = -1;
+        const r = play(MEET, (s) => {
+            if (tadaBroke < 0 && unitById(s, 'a_tadakatsu')!.status !== 'ready') tadaBroke = s.t;
+        });
+        expect(r.refused).toEqual([]);
+        expect(tadaBroke).toBeGreaterThan(0);
+        expect(r.o.result).toBe('defeat');
+        // 谷の口で待つ作戦では、忠勝隊は最後まで崩れない（上の確かめ）。16 通りでも谷底で迎えると勝ちは半分以下（作った時 5 勝）
+        expect(jitterWins(MEET).wins).toBeLessThanOrEqual(8);
+    }, 60_000);
+});
+
+describe('谷間：副目標は作戦で分かれる（早送り）', () => {
+    it('高所を先に取ってまっすぐ出口へ → 損害 2 割以内 ✓・本陣 ✗。降りる前に本陣も崩す → 本陣 ✓・損害 2 割以内 ✗（作った時 361 秒・損害 20.1％）。予備（石川隊）はどちらも ✓。勝ち負け・主目標・副目標は別の欄', () => {
+        const fit = play(FIT);
+        const hq = play(FIT_HQ);
+        expect(hq.refused).toEqual([]);
+        expect(fit.o.result).toBe('victory');
+        expect(hq.o.result).toBe('victory');
+        expect(fit.o.objectives!.primary!.achieved).toBe(true);
+        expect(hq.o.objectives!.primary!.achieved).toBe(true);
+        expect([secondaryOf(fit, 'valley_reserve'), secondaryOf(fit, 'valley_losses'), secondaryOf(fit, 'valley_hq')]).toEqual([true, true, false]);
+        expect([secondaryOf(hq, 'valley_reserve'), secondaryOf(hq, 'valley_losses'), secondaryOf(hq, 'valley_hq')]).toEqual([true, false, true]);
+        expect(hq.loss).toBeGreaterThan(fit.loss);
+        expect(hq.o.elapsedSec).toBeGreaterThan(fit.o.elapsedSec);
+    });
+
+    it('±15 秒の 16 通り：まっすぐ出口へは本陣を崩さず、損害 2 割以内が多い。本陣も崩す作戦は本陣を必ず崩し、損害 2 割以内は少ない（確かめた時 12・0 と 1・16。予備はどちらも 14 以上）', () => {
+        const fit = jitterWins(FIT);
+        const hq = jitterWins(FIT_HQ);
+        expect(fit.hqOk).toBe(0);
+        expect(fit.lossOk).toBeGreaterThanOrEqual(10);
+        expect(hq.wins).toBeGreaterThanOrEqual(13);
+        expect(hq.hqOk).toBeGreaterThanOrEqual(14);
+        expect(hq.lossOk).toBeLessThanOrEqual(3);
+        expect(fit.reserveOk).toBeGreaterThanOrEqual(14);
+        expect(hq.reserveOk).toBeGreaterThanOrEqual(14);
+    }, 60_000);
+});
+
+describe('谷間：武将の能力の価値が地形で変わる（早送り）', () => {
+    // 石川の後詰めの差配（対象の動き ×1.8・30 秒。石川隊は差配に専念して動けない）
+    // 谷底：忠勝隊が谷の口 (0,150) から谷底を狭い口の手前 (0,-110) まで駆ける（両側の高地の弓の届く所を通る）。12 秒に差配で急がせる
+    // 高地の上の道：高所を先に取る作戦で、高地の弓を破った後の 240 秒に、北の端へ向かう酒井隊を急がせる（もう射る弓がいない）
+    it('石川の後詰めの差配：谷底を駆け抜ける部隊に使うと、射られる時間が短くなり損害が大きく減る。弓を破った後の高地の上の道で使っても、早く抜けられない', () => {
+        const floorRun = (use: boolean) => {
+            const st: Step[] = [
+                [0, 'a_tadakatsu', tap(0, -110)],
+                [0, 'a_ishikawa', tap(20, 150)],
+            ];
+            if (use) st.push([12, 'a_ishikawa', { abilityOn: 'a_tadakatsu' }]);
+            let arrive = -1;
+            let lost = 0;
+            const r = play(st, (s) => {
+                const u = unitById(s, 'a_tadakatsu')!;
+                if (arrive < 0 && u.z < -100) {
+                    arrive = s.t;
+                    lost = 450 - u.strength;
+                }
+            });
+            return { r, arrive, lost };
+        };
+        const no = floorRun(false);
+        const use = floorRun(true);
+        expect(use.r.refused).toEqual([]);
+        // 谷底（作った時）：口の手前に着くのが 69.5 → 45.6 秒、それまでに射られた兵が 156 → 91
+        expect(no.arrive).toBeGreaterThan(0);
+        expect(use.arrive).toBeLessThan(no.arrive - 15);
+        expect(no.lost).toBeGreaterThan(120);
+        expect(use.lost).toBeLessThan(no.lost - 45);
+
+        // 高地の上の道（作った時）：勝つ時刻は 311 → 316 秒（早くならない）、損害は 16.3％のまま。酒井隊は差配の 30 秒にほとんど兵を失わない（射る弓がもういない）
+        const sakaiLost = (steps: Step[]) => {
+            let a = -1;
+            let b = -1;
+            const r = play(steps, (s) => {
+                const k = unitById(s, 'a_sakai')!;
+                if (a < 0 && s.t >= 240 - 1e-9) a = k.strength;
+                if (b < 0 && s.t >= 270 - 1e-9) b = k.strength;
+            });
+            return { r, lost: a - b };
+        };
+        const hNo = sakaiLost(FIT);
+        const hUse = sakaiLost([...FIT, [240, 'a_ishikawa', { abilityOn: 'a_sakai' }]]);
+        expect(hUse.r.refused).toEqual([]);
+        expect(hUse.r.o.result).toBe('victory');
+        expect(hUse.r.o.elapsedSec).toBeGreaterThanOrEqual(hNo.r.o.elapsedSec);
+        expect(Math.abs(hUse.r.loss - hNo.r.loss)).toBeLessThan(0.01);
+        expect(hNo.lost).toBeLessThan(10);
+        expect(hUse.lost).toBeLessThan(10);
+        // 同じ能力で、射られずに済んだ兵：谷底は 40 を超え、高地の上の道はほとんど無い（10 未満）
+        expect(no.lost - use.lost).toBeGreaterThan(40);
+        expect(Math.abs(hNo.lost - hUse.lost)).toBeLessThan(10);
+    });
+
+    // 忠勝の退路の守護（50 秒・半径 100 m で退く味方の受ける損害 −80％・追う敵を引きつける。忠勝隊は動けず、受ける損害 ×1.4）
+    // 谷底から退く：酒井隊・石川隊・榊原隊・徳川騎馬隊・弓が谷底 (z -60 あたり) まで押し上がり、100 秒に撤退する
+    // 谷の口：忠勝隊は谷の口 (0,150) で待ち、100 秒に使う。谷底：忠勝隊も谷底 (0,-20) まで出て、100 秒にそこで使う
+    it('忠勝の退路の守護：谷の口（高地の弓の届かない所）で使うと、退く味方の損害が減り忠勝隊も無傷。谷底で使うと、動けないまま射られて忠勝隊が早く崩れる', () => {
+        const G = ['a_sakai', 'a_ishikawa', 'a_sakakibara', 'a_kiba', 'a_yumi'];
+        const probe = (tada: Step[], use: boolean) => {
+            const st: Step[] = [
+                ...G.map((id, i) => [0, id, tap(-20 + (i % 3) * 20, -60 + Math.floor(i / 3) * 25)] as Step),
+                ...G.map((id) => [100, id, { type: 'retreat' }] as Step),
+                ...tada,
+            ];
+            if (use) st.push([100, 'a_tadakatsu', 'ability']);
+            const sum = (s: BattleState) => G.reduce((a, id) => a + unitById(s, id)!.strength, 0);
+            const at: { g0?: number; g1?: number; t0?: number; t1?: number } = {};
+            let broke = -1;
+            const r = play(st, (s) => {
+                const t = unitById(s, 'a_tadakatsu')!;
+                if (at.g0 === undefined && s.t >= 100 - 1e-9) {
+                    at.g0 = sum(s);
+                    at.t0 = t.strength;
+                }
+                if (at.g1 === undefined && s.t >= 150 - 1e-9) {
+                    at.g1 = sum(s);
+                    at.t1 = t.strength;
+                }
+                if (broke < 0 && t.status !== 'ready') broke = s.t;
+            });
+            return { r, runLost: at.g0! - at.g1!, tadaLost: at.t0! - at.t1!, broke };
+        };
+        const mouthNo = probe([], false);
+        const mouthUse = probe([], true);
+        const floorNo = probe([[0, 'a_tadakatsu', tap(0, -20)]], false);
+        const floorUse = probe([[0, 'a_tadakatsu', tap(0, -20)]], true);
+        for (const p of [mouthUse, floorUse]) expect(p.r.refused).toEqual([]);
+        // 谷の口（作った時）：退く五隊の 50 秒の損害 136 → 104、忠勝隊は 0 → 0 で崩れない
+        expect(mouthUse.runLost).toBeLessThan(mouthNo.runLost - 20);
+        expect(mouthUse.tadaLost).toBe(0);
+        expect(mouthUse.broke).toBe(-1);
+        // 谷底（作った時）：忠勝隊が崩れるのが 163.8 → 129.0 秒と早まり、退く五隊の損害は減らない（43 → 52）
+        expect(floorNo.broke).toBeGreaterThan(0);
+        expect(floorUse.broke).toBeGreaterThan(0);
+        expect(floorUse.broke).toBeLessThan(floorNo.broke - 20);
+        expect(floorUse.runLost).toBeGreaterThanOrEqual(floorNo.runLost);
+    });
+});
