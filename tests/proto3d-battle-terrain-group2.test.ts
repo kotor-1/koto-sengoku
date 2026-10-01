@@ -302,6 +302,9 @@ describe('第2群の 5 戦場のデータ', () => {
         const txt = (id: string) => fieldRuleTexts(createBattle(buildBattleSetup(getField(id)!, 'standard')));
         expect(txt('single_bridge')).toContain('深い川は渡れない（浅瀬と橋だけ渡れる）');
         expect(txt('multi_bridge')).toContain('深い川は渡れない（橋だけ渡れる）');
+        // 3 本の橋の狭い正面は 1 行にまとめる
+        expect(txt('multi_bridge').filter((t) => t.startsWith('狭い正面'))).toEqual(['狭い正面（3 か所）：区域の中では、同じ相手に斬りかかれるのは 1 部隊まで']);
+        expect(txt('mountain_pass').filter((t) => t.startsWith('狭い正面'))).toEqual(['狭い正面：区域の中では、同じ相手に斬りかかれるのは 2 部隊まで']);
         expect(txt('paddy').some((t) => t.startsWith('水田：動き 槍・本陣 ×0.3・騎馬 ×0.2・弓 ×0.35'))).toBe(true);
         expect(txt('valley').some((t) => t.includes('低い相手へ射る矢 ×1.35'))).toBe(true);
         // 第1群の文は変わらない

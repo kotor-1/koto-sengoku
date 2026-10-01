@@ -1121,9 +1121,16 @@ export function fieldRuleTexts(s: BattleState): string[] {
     const fr = s.setup.fieldRules;
     if (!fr) return [];
     const out: string[] = [];
+    // 狭い正面は、同じ数の区域が何か所もあれば 1 行にまとめる（複数橋の 3 本の橋など）
+    const narrowCount = new Map<number, number>();
+    for (const r of fr.specialRules ?? []) if (r.type === 'narrow_frontage') narrowCount.set(r.maxEngaged, (narrowCount.get(r.maxEngaged) ?? 0) + 1);
     for (const r of fr.specialRules ?? []) {
-        if (r.type === 'narrow_frontage') out.push(`狭い正面：区域の中では、同じ相手に斬りかかれるのは ${r.maxEngaged} 部隊まで`);
-        else if (r.type === 'woods_ambush') out.push(`林の奇襲：見られていない部隊の最初の当たり ×${r.firstStrikeMul}（${r.sec} 秒）`);
+        if (r.type === 'narrow_frontage') {
+            const n = narrowCount.get(r.maxEngaged) ?? 0;
+            if (n === 0) continue;
+            narrowCount.set(r.maxEngaged, 0);
+            out.push(`狭い正面${n > 1 ? `（${n} か所）` : ''}：区域の中では、同じ相手に斬りかかれるのは ${r.maxEngaged} 部隊まで`);
+        } else if (r.type === 'woods_ambush') out.push(`林の奇襲：見られていない部隊の最初の当たり ×${r.firstStrikeMul}（${r.sec} 秒）`);
     }
     const tr = fr.terrainRules ?? {};
     const ford = tr.ford;
@@ -1276,20 +1283,21 @@ function rectLabelPoint(s: BattleState, rect: { x0: number; x1: number; z0: numb
 
 export function mapLabels(s: BattleState): MapLabel[] {
     const out: MapLabel[] = [];
-    const fords = s.map.terrain.filter((a) => a.kind === 'ford' && a.rect).map((a) => a.rect!);
+    // 川の名札は浅瀬・橋と重ならない所に置く（橋の無い戦場では浅瀬だけ。今までと同じ）
+    const fords = s.map.terrain.filter((a) => (a.kind === 'ford' || a.kind === 'bridge') && a.rect).map((a) => a.rect!);
     s.map.terrain.forEach((a, i) => {
         const name = TERRAIN_LABEL[a.kind];
         if (!name) return;
         if (a.circle) out.push({ id: `t${i}`, text: name, x: a.circle.cx + a.circle.r * 0.55, z: a.circle.cz + a.circle.r * 0.75, y: 2 });
         else if (a.capsule) {
-            // 尾根（カプセルの丘）：線分の中点から南へ幅の 7 割
+            // 尾根（カプセルの丘）：線分の 4 分の 1 の所から南へ幅の半分（真ん中の頂に置く目標の名札と重ならないように）
             const c = a.capsule;
-            out.push({ id: `t${i}`, text: '尾根', x: (c.ax + c.bx) / 2, z: Math.min((c.az + c.bz) / 2 + c.r * 0.7, s.map.depth / 2 - 20), y: 2 });
+            out.push({ id: `t${i}`, text: '尾根', x: c.ax + (c.bx - c.ax) * 0.25, z: Math.min(c.az + (c.bz - c.az) * 0.25 + c.r * 0.5, s.map.depth / 2 - 20), y: 2 });
         } else if (a.rect) {
             const r = a.rect;
             if (a.kind === 'bridge') {
-                // 橋は東の欄干の外
-                out.push({ id: `t${i}`, text: name, x: Math.min(r.x1 + 12, s.map.width / 2 - 20), z: (r.z0 + r.z1) / 2, y: 1 });
+                // 橋は北の端の東（橋の上の狭い正面・川の名札と重ならないように）
+                out.push({ id: `t${i}`, text: name, x: Math.min(r.x1 + 12, s.map.width / 2 - 20), z: r.z0 - 6, y: 1 });
                 return;
             }
             if (a.kind === 'paddy') {
@@ -1339,7 +1347,11 @@ export function mapLabels(s: BattleState): MapLabel[] {
         if (r.type !== 'narrow_frontage') return;
         const c = zoneCenter(r.zone);
         const north = r.zone.rect ? r.zone.rect.z0 : r.zone.circle ? c.z - r.zone.circle.r : c.z;
-        out.push({ id: `narrow-${i}`, text: `狭い正面（${r.maxEngaged} 部隊まで）`, x: c.x, z: north + 12, y: 0.5 });
+        const south = r.zone.rect ? r.zone.rect.z1 : r.zone.circle ? c.z + r.zone.circle.r : c.z;
+        // 北の端の内側。ほかの名札（橋頭の目標など）と重なるなら、南の端の外 → 北の端の外の順に空いた所（どこも重なれば北の端の内側）
+        const free = (z: number) => !out.some((l) => Math.abs(l.x - c.x) < 40 && Math.abs(l.z - z) < 14);
+        const z = [north + 12, Math.min(south + 8, s.map.depth / 2 - 10), Math.max(north - 10, -s.map.depth / 2 + 10)].find(free) ?? north + 12;
+        out.push({ id: `narrow-${i}`, text: `狭い正面（${r.maxEngaged} 部隊まで）`, x: c.x, z, y: 0.5 });
     });
     return out;
 }

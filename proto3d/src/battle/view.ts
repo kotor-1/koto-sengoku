@@ -506,7 +506,8 @@ export class BattleView {
             let first = true;
             for (let a = a0; a <= a1 + 0.01; a += 4) {
                 const wob = Math.sin(a * 0.03) * 1.2;
-                for (const sx of [-1, 1]) {
+                // 東西の道は、面の表が上を向くように左右の順を入れ替える（裏の面は描かれない）
+                for (const sx of alongZ ? [-1, 1] : [1, -1]) {
                     const x = alongZ ? c + wob + sx * hw : a;
                     const z = alongZ ? a : c + wob + sx * hw;
                     pts.push(x, elevationAt(this.map, x, z) + 0.12, z);

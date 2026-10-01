@@ -6,7 +6,7 @@
  *
  * desktop（PC 1280×720、マウスとキー）：
  *   - 一覧・説明の画面の中身と並び（横にはみ出さない・札が重ならない・ボタンが画面の中）。説明の「一覧へ戻る」。
- *   - 5 戦場すべてを、タイトルから「合戦場の演習 → 戦場を選ぶ → 出陣」して合戦の画面が出る（戦場 id・部隊数・敵はすべて敵勢）。
+ *   - 10 戦場（第1群・第2群）すべてを、タイトルから「合戦場の演習 → 戦場を選ぶ → 出陣」して合戦の画面が出る（戦場 id・部隊数・敵はすべて敵勢）。
  *   - 大平原（味方 7 部隊）：キー 1〜8・札のクリックで選ぶ、地面のクリックで移動、A → 敵のクリックで攻撃、H で防衛・待機、R で撤退。
  *     命令が届いたことを合戦の状態（window.__battle.state の部隊の order）で確かめる。
  *   - 地形が効いていること（戦場ごとに 1 枚撮る：出力先/terrain-<戦場id>.png）。命令は札のクリックと地面のクリックで出し、
@@ -14,10 +14,12 @@
  *       大平原：東の林の中の敵の騎馬は見えない。河川・浅瀬：深い川は通らず浅瀬を通る道を作る・浅瀬の中は動きが遅い。
  *       丘陵：騎馬を頂へ上げる（主目標の区域）。森林：林の中は動きが遅い・林の中の伏兵は見えない・林の中の味方は敵から見えない。
  *       山道・峠：崖の中へ入らず、峠道を通って関へ上がる。
+ *       一本橋・複数橋：深い川（橋の外）へ入らず、橋を通って渡る。尾根：西の登り道から尾根の西の端へ上がる（崖の中へ入らない）。
+ *       谷間：西の高地へ南の端から登る（高さ 8 m 以上）。水田：水田の中は街道より動きが遅い。
  *   - 丘陵は、通常の速さ（×1。一時停止しない）のまま、札と地面のクリックで先に頂を取る作戦（命令 6 回）を出してから、早送りで決着まで進め、勝つ。
  *     合戦の結果の画面（勝敗・主目標・副目標が別の行）→ 続ける → 演習の結果（勝敗・主目標・副目標・保存が別の行）→ 一覧。
- *   - ほかの 4 戦場は、全軍撤退のボタン（確かめのボタンも）を押してから早送りで終える（撤退の記録）。
- *   - 最後に開き直し（再読み込み）て、5 戦場の記録（丘陵は決着の結果）が一覧と保存に残っていることを確かめる。書いたキーは koto-sengoku/3d-fields だけ。
+ *   - ほかの 9 戦場は、全軍撤退のボタン（確かめのボタンも）を押してから早送りで終える（撤退の記録）。
+ *   - 最後に開き直し（再読み込み）て、10 戦場の記録（丘陵は決着の結果）が一覧と保存に残っていることを確かめる。書いたキーは koto-sengoku/3d-fields だけ。
  * phone（スマホ横 844×390、hasTouch・isMobile、タップ）：
  *   - 一覧・説明の画面の中身と並び。大平原に出陣。札の列を横になぞってずらす（なぞっても選ばない）→ 7 番目の札をタップで選ぶ、
  *     地図のタップで移動、「攻撃」→ 敵のタップで攻撃、「防衛・待機」、「撤退」。全軍撤退 → 早送り → 結果 → 演習の結果 → 一覧（どれもタップ）。
@@ -37,7 +39,8 @@ import { mkdirSync } from 'node:fs';
 const OUT = process.argv[2] || 'e2e-out/fields-practice';
 mkdirSync(OUT, { recursive: true });
 const PARTS = (process.env.PARTS || 'desktop,phone,eight,oldsaves').split(',');
-const FIELD_IDS = ['plains', 'river_ford', 'hills', 'forest', 'mountain_pass'];
+/** 演習の 10 戦場（第1群 5・第2群 5。演習の一覧の順） */
+const FIELD_IDS = ['plains', 'river_ford', 'hills', 'forest', 'mountain_pass', 'single_bridge', 'multi_bridge', 'ridge', 'valley', 'paddy'];
 /** 通常の速さで動かしてから早送りで決着まで進める戦場 */
 const DECIDE_FIELD = 'hills';
 const failures = [];
@@ -233,7 +236,7 @@ async function titleToList(p, detailed) {
         fields: [...document.querySelectorAll('.g-pr-field')].map((e) => e.dataset.field),
         text: document.querySelector('.g-pr-list')?.textContent ?? '',
     }));
-    check(JSON.stringify(list.fields) === JSON.stringify(FIELD_IDS_ORDER), `[${kind}] 5 戦場が演習の順に並ぶ`, list.fields.join(','));
+    check(JSON.stringify(list.fields) === JSON.stringify(FIELD_IDS_ORDER), `[${kind}] ${FIELD_IDS_ORDER.length} 戦場が演習の順に並ぶ`, list.fields.join(','));
     check(list.text.includes('ゲーム用の演習（架空の相手）'), `[${kind}] 「ゲーム用の演習（架空の相手）」と出る`);
     check(list.text.includes('主目標') && list.text.includes('副目標') && list.text.includes('最後'), `[${kind}] 主目標・副目標・記録の欄`);
     await layoutCheck(p, '一覧', '.g-pr-field');
@@ -257,7 +260,7 @@ async function listToBattle(p, id, detailed) {
         primary: document.querySelector('[data-objective="primary"]')?.textContent ?? '',
         secondary: [...document.querySelectorAll('.g-pr-brief [data-objective="secondary"]')].map((e) => e.textContent),
     }));
-    check(brief.field === id && brief.primary.length > 0 && brief.secondary.length === 1, `[${kind}] ${id} の説明：主目標と副目標が別の行`, `${brief.primary} / ${brief.secondary.join('')}`);
+    check(brief.field === id && brief.primary.length > 0 && brief.secondary.length >= 1, `[${kind}] ${id} の説明：主目標と副目標が別の行`, `${brief.primary} / ${brief.secondary.join('')}`);
     if (detailed) {
         check(brief.units.length === 7, `[${kind}] 味方の編成 7 部隊`, brief.units.join(','));
         check(brief.prov >= 2, `[${kind}] 仮の能力に「仮」の印`, `${brief.prov}`);
@@ -327,7 +330,7 @@ async function resultToTitle(p, id, want) {
         decided: window.__battle.ui.decided,
     }));
     check(!!bres.decided && bres.decided.ok, `[${kind}] ${id}：合戦の結果の画面に「演習の記録を保存しました」`, JSON.stringify(bres.decided));
-    check(bres.rows.length === 2 && bres.rows[0].role === 'primary' && bres.rows[1].role === 'secondary', `[${kind}] ${id}：合戦の結果の画面で、主目標・副目標が勝敗と別の行`, bres.rows.map((r) => `${r.role}:${r.achieved}`).join(' '));
+    check(bres.rows.length >= 2 && bres.rows[0].role === 'primary' && bres.rows.slice(1).every((r) => r.role === 'secondary'), `[${kind}] ${id}：合戦の結果の画面で、主目標・副目標が勝敗と別の行`, bres.rows.map((r) => `${r.role}:${r.achieved}`).join(' '));
     check(bres.pledgeHidden, `[${kind}] ${id}：演習には約束の欄が無い`);
     await page.screenshot({ path: `${OUT}/${kind}-${id}-4-battle-result.png` });
     await press(p, '.b-primary');
@@ -348,7 +351,7 @@ async function resultToTitle(p, id, want) {
     check(res.screen === 'result' && res.field === id && res.outcome === wantResult, `[${kind}] ${id}：演習の結果の画面（勝敗 ${wantResult}）`, JSON.stringify({ screen: res.screen, outcome: res.outcome, reason: o.reason, t: Math.round(o.t) }));
     const lp = res.last?.objectives?.primary?.achieved;
     const ls = res.last?.objectives?.secondary?.map((x) => String(x.achieved)) ?? [];
-    check(res.primary === String(lp) && JSON.stringify(res.secondary) === JSON.stringify(ls) && res.secondary.length === 1,
+    check(res.primary === String(lp) && JSON.stringify(res.secondary) === JSON.stringify(ls) && res.secondary.length >= 1 && res.secondary.length === bres.rows.length - 1,
         `[${kind}] ${id}：勝敗・主目標・副目標が別々の行（合戦の結果と同じ達成）`, JSON.stringify({ p: res.primary, s: res.secondary }));
     check(res.saved === 'true' && !!res.rec && res.rec.last.result === wantResult && res.rec.last.primary?.achieved === lp, `[${kind}] ${id}：記録が保存されている（読み直した保存の最後の結果）`, JSON.stringify(res.rec?.last && { result: res.rec.last.result, primary: res.rec.last.primary, secondary: res.rec.last.secondary }));
     check(!res.body.includes('mode-battle'), `[${kind}] ${id}：合戦の場面を出ている`);
@@ -588,12 +591,121 @@ const TERRAIN = {
         log(`   山道・峠：1 部隊を攻撃の相手にした敵の数の最大 ${engagedMax}（狭い正面の決まりは斬り合う数で、ここは参考）`);
         await shot(p, 'terrain-mountain_pass', 0, 40, 300);
     },
+    // ---- 第2群（地形の仕組み：橋・尾根（カプセルの丘）・水田）。命令は札と地面のクリック、時間は早送り、状態は読むだけ
+    async single_bridge(p) {
+        // 忠勝隊を橋の真ん中 (0,-25) へ。深い川（橋の外）へは入らない
+        const r = await crossRiver(p, 'a_tadakatsu', 0, -25, { x0: -200, x1: 200, z0: -40, z1: -10 }, [{ x0: -9, x1: 9 }, { x0: -185, x1: -150 }], 30);
+        check(r.onBridge, '[desktop] 一本橋：忠勝隊が札と地面のクリックで橋の上へ出る（早送り）', r.where);
+        await shot(p, 'terrain-single_bridge', 0, -30, 260);
+    },
+    async multi_bridge(p) {
+        // 酒井隊を西の橋の向こう (-150,-45) へ（西の陽動の隊が着く前に渡る）。深い川（3 本の橋の外）へは入らない
+        const r = await crossRiver(p, 'a_sakai', -150, -45, { x0: -220, x1: 220, z0: -25, z1: 5 }, [{ x0: -158, x1: -142 }, { x0: -8, x1: 8 }, { x0: 142, x1: 158 }], 40);
+        check(r.crossed, '[desktop] 複数橋：酒井隊が西の橋を渡って向こう岸へ出る（早送り）', r.where);
+        await shot(p, 'terrain-multi_bridge', -60, 0, 380);
+    },
+    async ridge(p) {
+        const { page } = p;
+        // 榊原隊（騎馬）を西の登り道から尾根の西の端 (-165,-60) へ
+        await bpress(p, '.b-card[data-id="a_sakakibara"]');
+        await clickGround(p, -165, -60, 300);
+        check((await orderOf(page, 'a_sakakibara')).type === 'move', '[desktop] 尾根：札と地面のクリックで西の登り道へ移動');
+        const CLIFFS = [{ x0: -150, x1: -16, z0: -24, z1: -8 }, { x0: 16, x1: 150, z0: -24, z1: -8 }];
+        const bad = [];
+        let u = null;
+        for (let i = 0; i < 45; i++) {
+            await ff(page, 1);
+            u = await unit(page, 'a_sakakibara');
+            if (CLIFFS.some((c) => inRect(u, c, 1.5))) bad.push(`${u.x.toFixed(0)},${u.z.toFixed(0)}`);
+            if (dist2(u, { x: -165, z: -60 }) < 6) break;
+        }
+        const h = capsuleHeight(u, { ax: -120, az: -60, bx: 120, bz: -60, r: 60 }, 16);
+        check(bad.length === 0, '[desktop] 尾根：崖の中へ入らない（1 秒ごとに確かめた）', bad.slice(0, 5).join(' '));
+        check(dist2(u, { x: -165, z: -60 }) < 8 && h > 5, '[desktop] 尾根：西の登り道から尾根の西の端へ上がる（高さ 5 m より上）', `${u.x.toFixed(0)},${u.z.toFixed(0)}・高さ ${h.toFixed(1)} m`);
+        await shot(p, 'terrain-ridge', -60, -40, 340);
+    },
+    async valley(p) {
+        const { page } = p;
+        // 酒井隊を西の高地 (-95,100) へ（南の端から登る）
+        await bpress(p, '.b-card[data-id="a_sakai"]');
+        await clickGround(p, -95, 100, 300);
+        check((await orderOf(page, 'a_sakai')).type === 'move', '[desktop] 谷間：札と地面のクリックで西の高地へ移動');
+        let u = null;
+        for (let i = 0; i < 60; i++) {
+            await ff(page, 1);
+            u = await unit(page, 'a_sakai');
+            if (dist2(u, { x: -95, z: 100 }) < 6) break;
+        }
+        const h = capsuleHeight(u, { ax: -95, az: -120, bx: -95, bz: 110, r: 60 }, 14);
+        check(dist2(u, { x: -95, z: 100 }) < 8 && h > 8, '[desktop] 谷間：西の高地へ南の端から登る（高さ 8 m より上）', `${u.x.toFixed(0)},${u.z.toFixed(0)}・高さ ${h.toFixed(1)} m`);
+        await shot(p, 'terrain-valley', 0, 60, 360);
+    },
+    async paddy(p) {
+        const { page } = p;
+        // 忠勝隊（街道の上）を東の水田の中 (60,70) へ。水田の中の 1 秒の進みは、街道の上より大きく遅い
+        await bpress(p, '.b-card[data-id="a_tadakatsu"]');
+        await clickGround(p, 60, 70, 300);
+        check((await orderOf(page, 'a_tadakatsu')).type === 'move', '[desktop] 水田：札と地面のクリックで水田の中へ移動');
+        const PADDY_SE = { x0: 6, x1: 210, z0: 6, z1: 120 };
+        let prev = await unit(page, 'a_tadakatsu');
+        let roadV = null;
+        let paddyV = null;
+        for (let i = 0; i < 60; i++) {
+            await ff(page, 1);
+            const u = await unit(page, 'a_tadakatsu');
+            const v = dist2(prev, u);
+            if (Math.abs(prev.x) < 5 && Math.abs(u.x) < 5 && v > 0.5 && roadV === null) roadV = v;
+            if (inRect(prev, PADDY_SE, 2) && inRect(u, PADDY_SE, 2) && v > 0.05 && paddyV === null) paddyV = v;
+            prev = u;
+            if (roadV !== null && paddyV !== null) break;
+        }
+        check(roadV !== null && paddyV !== null && paddyV < roadV * 0.4, '[desktop] 水田：水田の中は街道より動きがとても遅い（1 秒あたりの進み）', `街道 ${roadV?.toFixed(2)} m・水田 ${paddyV?.toFixed(2)} m`);
+        await shot(p, 'terrain-paddy', 0, 40, 380);
+    },
 };
 
-// ================================================================ PC：5 戦場の通し
+/** カプセルの丘の高さ（sim.ts の elevationAt と同じ式。尾根・谷の高地の確かめに使う） */
+function capsuleHeight(q, c, H) {
+    const dx = c.bx - c.ax;
+    const dz = c.bz - c.az;
+    const t = Math.max(0, Math.min(1, ((q.x - c.ax) * dx + (q.z - c.az) * dz) / (dx * dx + dz * dz)));
+    const d = Math.hypot(q.x - (c.ax + dx * t), q.z - (c.az + dz * t)) / c.r;
+    return d < 1 ? H * (1 - d * d) : 0;
+}
+
+/**
+ * 橋を渡る確かめ：部隊 id を札で選び (x, z) の地面をクリックして、sec 秒まで 1 秒ずつ早送りし、深い川の帯（river）のうち
+ * 渡れる所（spans：橋・浅瀬の x の範囲。道探しの格子 5 m のゆとりを付ける）の外へ入らないこと・帯の上（橋の上）に出たこと・向こう岸へ出たことを見る
+ */
+async function crossRiver(p, id, x, z, river, spans, sec) {
+    const { page } = p;
+    await bpress(p, `.b-card[data-id="${id}"]`);
+    await clickGround(p, x, z, 300);
+    check((await orderOf(page, id)).type === 'move', `[desktop] ${id} を札と地面のクリックで (${x}, ${z}) へ移動`);
+    const bad = [];
+    let onBridge = false;
+    let crossed = false;
+    let u = null;
+    const z0 = river.z0 + 2;
+    const z1 = river.z1 - 2;
+    for (let i = 0; i < sec; i++) {
+        await ff(page, 1);
+        const us = await page.evaluate(() => window.__battle.state.units.filter((v) => v.present && v.side === 'ally').map((v) => ({ id: v.id, x: v.x, z: v.z })));
+        for (const q of us) if (q.z > z0 && q.z < z1 && !spans.some((s) => q.x > s.x0 - 5 && q.x < s.x1 + 5)) bad.push(`${q.id}@${q.x.toFixed(0)},${q.z.toFixed(0)}`);
+        u = us.find((q) => q.id === id);
+        if (!u) break;
+        if (u.z > z0 && u.z < z1) onBridge = true;
+        if (onBridge && u.z < river.z0 - 5) crossed = true;
+        if (dist2(u, { x, z }) < 4) break;
+    }
+    check(bad.length === 0, `[desktop] 深い川（橋・浅瀬の外）へ入らない（1 秒ごとに確かめた）`, bad.slice(0, 5).join(' '));
+    return { onBridge, crossed, where: u ? `${u.x.toFixed(0)},${u.z.toFixed(0)}` : '（いない）' };
+}
+
+// ================================================================ PC：10 戦場の通し
 
 async function desktop() {
-    log('== desktop：5 戦場の通し');
+    log(`== desktop：${FIELD_IDS.length} 戦場の通し`);
     const p = await openTitle('desktop');
     const { page } = p;
     const decided = {};
@@ -625,11 +737,11 @@ async function desktop() {
         keys: Object.keys(localStorage).filter((k) => k.startsWith('koto-sengoku')),
     }));
     const r = after.recs?.status === 'ok' ? after.recs.data.records : {};
-    check(after.recs?.status === 'ok' && after.recs.data.version === 1 && FIELD_IDS.every((id) => r[id]?.plays === 1 && r[id].last.result === decided[id].result && !!r[id].best), '[desktop] 開き直した後も 5 戦場の記録が残る（版 1・遊んだ回数・最後・最高）', JSON.stringify(Object.fromEntries(FIELD_IDS.map((id) => [id, r[id]?.last?.result]))));
+    check(after.recs?.status === 'ok' && after.recs.data.version === 1 && FIELD_IDS.every((id) => r[id]?.plays === 1 && r[id].last.result === decided[id].result && !!r[id].best), `[desktop] 開き直した後も ${FIELD_IDS.length} 戦場の記録が残る（版 1・遊んだ回数・最後・最高）`, JSON.stringify(Object.fromEntries(FIELD_IDS.map((id) => [id, r[id]?.last?.result]))));
     const d = decided[DECIDE_FIELD];
     const dr = r[DECIDE_FIELD]?.last;
     check(!!dr && dr.primary?.achieved === d.primary && JSON.stringify(dr.secondary.map((x) => x.achieved)) === JSON.stringify(d.secondary), `[desktop] ${DECIDE_FIELD} の記録：勝敗・主目標・副目標が別々に残る`, JSON.stringify({ result: dr?.result, primary: dr?.primary, secondary: dr?.secondary }));
-    check(FIELD_IDS.every((id) => after.rows[id]?.length > 0), '[desktop] 開き直した後の一覧に 5 戦場の記録の行', JSON.stringify(after.rows));
+    check(FIELD_IDS.every((id) => after.rows[id]?.length > 0), `[desktop] 開き直した後の一覧に ${FIELD_IDS.length} 戦場の記録の行`, JSON.stringify(after.rows));
     check(JSON.stringify(after.keys) === JSON.stringify(['koto-sengoku/3d-fields']), '[desktop] 書いたキーは koto-sengoku/3d-fields だけ', after.keys.join(','));
     await page.screenshot({ path: `${OUT}/desktop-9-list-after-reload.png` });
     await p.ctx.close();
