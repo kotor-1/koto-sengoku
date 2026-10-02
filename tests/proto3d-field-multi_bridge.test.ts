@@ -1,7 +1,9 @@
 /**
  * 戦場「複数橋」（multi_bridge）の釣り合い（docs/fields-group2-design.md §4）。
- * 地形に合わない作戦（放置＝均等に置いたまま・均等に増やす・全部隊で東へ寄せる・橋を渡って攻める・早く本陣の周りへ固める）は負け、
- * 地形に合った作戦（敵の主力の向かう東の橋の口へ忠勝隊と弓を寄せ、予備の石川隊で中の口を埋め、西が片付いたら酒井隊を中へ回す）は勝つ。
+ * 地形に合った作戦（敵の主力の向かう東の橋の口へ忠勝隊と弓を寄せ、予備の石川隊で中の口を埋め、西が片付いたら酒井隊を中へ回す）は
+ * 16 通りで安定して勝つ。無計画な攻撃・地形に合わない作戦（放置＝均等に置いたまま・均等に増やす・全部隊で東へ寄せる・橋を渡って攻める・
+ * 早く本陣の周りへ固める）は、地形に合った作戦・準備した正面攻撃と比べて主目標に届かない・守れる橋が少ない・16 通りの勝ちが少ない
+ * （比べが合格条件。勝敗は記録として書く）。準備した正面攻撃（弓・予備・号令を整えてから東の主力へ当たる）の結果も記録して比べる。
  * 副目標（3 本の橋のうち 2 本以上を最後まで守る。目標の種類 defend_zones で、橋ごとに南の口を見る）は作戦によって 3 本／1 本に分かれる。
  * （橋ごとの defend_time の副目標 3 つだったのを、エンジンの直しで 1 つの defend_zones にした。橋ごとの守り抜いた・失ったは目標の見張りの
  * zoneLost で読む。直す前と同じ台本で、このファイルの確かめ（勝敗・損害・橋ごとの結果・失った時刻・16 通りの数）はどれも変わらなかった）
@@ -17,6 +19,8 @@
  * - 何もしない（均等に置いたまま）：129.4 秒に東の口を失い、220.2 秒に家康本陣が崩れて負け（損害 33％）。
  * - 地形に合った作戦（FIT）：勝利（300 秒）。損害 38％。3 本の橋の口をすべて守る。榊原隊は 129.5 秒に敗走（兵 128 を残す）、
  *   忠勝隊は兵 143 で最後まで東の口に立つ。±15 秒ずらした 16 通り（乱数の種 7）：16 勝、2 本以上を守る 16 通り（西 16・中 15・東 16）、損害の平均 37％・最大 45％。
+ * - 準備した正面攻撃（PREPARED。2026-10-02 に足した）：勝利（300 秒）・損害 42.6％・3 本とも守る。16 通りで 14 勝・平均の損害 36.3％
+ *   （15 秒に全部隊で主力へ当たる無計画な攻撃は 3 勝）。
  * - 本陣の近くで受ける（橋を捨てて早く下がる。酒井隊だけ西を片付けてから）：勝利だが、橋は西の 1 本だけ（中は 67.7 秒、東は 129.4 秒に失う）。
  *   16 通りすべて勝ち・2 本以上を守る 0 通り。損害 34％（本陣の近くの戦いは損害がやや少ないが、橋を守る副目標は果たせない）。
  * - 酒井の両翼の采配（局面。正面の酒井隊と横の槍隊で 1 隊の敵を挟む）：
@@ -123,6 +127,45 @@ const NEAR_HQ: Step[] = [
     [100, 'a_sakai', mv(-30, 105)],
 ];
 
+/**
+ * 準備した正面攻撃（東の主力へ打って出る）：20 秒、忠勝隊を東の口の後ろ (140,60)、弓を東の口の後ろ、予備の石川隊を空いた中の口へ、
+ * 騎馬を東寄り (100,80) へ。60 秒に弓で主力（一）を射て、80 秒、東の口の榊原隊と組み合った主力（一）へ忠勝隊・騎馬で当たる。
+ * 100 秒に西を片付けた酒井隊を中の口へ、110 秒に家康の号令、120 秒に忠勝隊・騎馬は主力（二）へ、155 秒に酒井隊は二番手（西）へ。
+ * 命令は 12 回（20・60・80・100・110・120・155 秒）。口で待ち受ける地形に合った作戦（FIT）と違い、主力へこちらから当たる
+ */
+const PREPARED: Step[] = [
+    [20, 'a_tadakatsu', mv(140, 60)],
+    [20, 'a_yumi', mv(120, 62)],
+    [20, 'a_ishikawa', mv(0, 40)],
+    [20, 'a_kiba', mv(100, 80)],
+    [60, 'a_yumi', atk('e_main1')],
+    [80, 'a_tadakatsu', atk('e_main1')],
+    [80, 'a_kiba', atk('e_main1')],
+    [100, 'a_sakai', mv(-15, 45)],
+    [110, 'a_ieyasu', 'ability'],
+    [120, 'a_tadakatsu', atk('e_main2')],
+    [120, 'a_kiba', atk('e_main2')],
+    [155, 'a_sakai', atk('e_second2')],
+];
+
+/** 無計画な攻撃：主力が見えた 15 秒に全部隊で主力（一）へ当たる（東の橋を渡って押す） */
+const RUSH_MAIN: Step[] = [...FIGHTERS.map((id) => [15, id, atk('e_main1')] as Step), [15, 'a_yumi', atk('e_main1')]];
+
+const wins = (rs: Run[]) => rs.filter((x) => x.o.result === 'victory').length;
+const meanLoss = (rs: Run[]) => rs.reduce((a, r) => a + r.loss, 0) / rs.length;
+
+/** 比べの基準（同じ台本は 1 回だけ進める） */
+const memo = new Map<Step[], Run>();
+const once = (steps: Step[]): Run => {
+    if (!memo.has(steps)) memo.set(steps, play(steps));
+    return memo.get(steps)!;
+};
+const memo16 = new Map<Step[], Run[]>();
+const jitteredOnce = (steps: Step[]): Run[] => {
+    if (!memo16.has(steps)) memo16.set(steps, jittered(steps));
+    return memo16.get(steps)!;
+};
+
 describe('複数橋のデータ', () => {
     it('検査を通る。味方 7／敵 10（敵はすべて敵勢）。深い川に橋 3 本（間は 150 m）、どの橋も橋の上と南の口が狭い正面（1 部隊まで）', () => {
         expect(validateField(MB)).toEqual([]);
@@ -171,56 +214,79 @@ describe('複数橋のデータ', () => {
     });
 });
 
-describe('複数橋：地形に合わない作戦（早送り）', () => {
-    it('何もしない（3 本の橋に 1 隊ずつ均等に置いたまま）→ 東の口が主力に押し切られ、本陣が崩れて負ける。橋は 1 本も残らない', () => {
-        const r = play([]);
-        expect(r.o.result).toBe('defeat');
-        expect(r.o.reason).toBe('ally_hq_routed');
+// 合格条件は「正面なら負ける」ではなく、同じ台本・同じ数字での比べ（地形に合った作戦・準備した正面攻撃と比べて、主目標に届かない・
+// 守れる橋が少ない・16 通りの勝ちが少ない）。無計画な攻撃の勝敗は「記録」として残す（台本と数字は前のまま。変わったら理由と前後の数字を書いて直す）。
+// しのぐ戦場なので、負けた作戦は早く終わり、損害の割合は勝った作戦と同じくらいになる（損害では比べない）
+describe('複数橋：無計画な攻撃・地形に合わない作戦と、地形に合った作戦の比べ（早送り）', () => {
+    it('何もしない（3 本の橋に 1 隊ずつ均等に置いたまま）→ 地形に合った作戦（3 本とも守る）と違い、主目標に届かず、橋も 1 本も残らない（記録：東の口が主力に押し切られ、本陣が崩れて負ける）', () => {
+        const r = once([]);
+        expect(once(FIT).o.objectives!.primary!.achieved).toBe(true);
+        expect(once(FIT).bridges).toHaveLength(3);
         expect(r.o.objectives!.primary!.achieved).toBe(false);
         expect(r.bridges).toEqual([]);
+        // 記録（確かめた時：220.2 秒に負け・損害 33.4％）
+        expect(r.o.result).toBe('defeat');
+        expect(r.o.reason).toBe('ally_hq_routed');
         expect(lostAt(r, '東の橋')).toBeLessThan(150);
         expect(r.o.elapsedSec).toBeLessThan(240);
     });
 
-    it('均等に増やす（予備の石川隊を中、騎馬を西、弓を東の後ろへ。どの橋も 2 隊ずつ）→ 主力の来る東が押し切られて負ける', () => {
-        const r = play([
+    it('均等に増やす（予備の石川隊を中、騎馬を西、弓を東の後ろへ。どの橋も 2 隊ずつ）→ 主力の来る東へ寄せる地形に合った作戦と違い、主目標に届かず、橋も残らない（記録：東が押し切られて負ける）', () => {
+        const r = once([
             [20, 'a_ishikawa', mv(0, 60)],
             [20, 'a_kiba', mv(-150, 60)],
             [20, 'a_yumi', mv(150, 70)],
         ]);
         expect(r.refused).toEqual([]);
+        expect(r.o.objectives!.primary!.achieved).toBe(false);
+        expect(r.bridges.length).toBeLessThan(once(FIT).bridges.length);
+        // 記録（確かめた時：243.1 秒に負け）
         expect(r.o.result).toBe('defeat');
         expect(r.bridges).toEqual([]);
     });
 
-    it('全部隊で東の口へ寄せる（中・西を空ける）→ 狭い口に入り切らず、口の外で主力に囲まれて崩れ、軍が崩壊して負ける', () => {
-        const r = play([...['a_tadakatsu', 'a_sakai', 'a_ishikawa', 'a_kiba'].map((id, i) => [20, id, mv(130 + i * 5, 45 + i * 5)] as Step), [20, 'a_yumi', mv(120, 62)]]);
+    it('全部隊で東の口へ寄せる（中・西を空ける）→ 東へ 2 隊と弓だけ寄せる地形に合った作戦と違い、主目標に届かない（記録：狭い口に入り切らず、口の外で主力に囲まれて崩れ、軍が崩壊して負ける）', () => {
+        const r = once([...['a_tadakatsu', 'a_sakai', 'a_ishikawa', 'a_kiba'].map((id, i) => [20, id, mv(130 + i * 5, 45 + i * 5)] as Step), [20, 'a_yumi', mv(120, 62)]]);
+        expect(r.o.objectives!.primary!.achieved).toBe(false);
+        expect(r.o.elapsedSec).toBeLessThan(once(FIT).o.elapsedSec);
+        // 記録（確かめた時：146.8 秒に負け）
         expect(r.o.result).toBe('defeat');
         expect(r.o.reason).toBe('ally_army_broken');
         expect(r.o.elapsedSec).toBeLessThan(160);
         expect(r.bridges).toEqual([]);
     });
 
-    it('正面突破（全部隊で中の橋を渡って敵本陣へ攻めかかる）→ 本陣が空き、渡った隊も橋の向こうで崩れて負ける。命令の時刻を ±15 秒ずらした 16 通りもすべて負け', () => {
+    it('正面突破（全部隊で中の橋を渡って敵本陣へ攻めかかる。無計画）→ 地形に合った作戦・準備した正面攻撃より 16 通りの勝ちが少なく、主目標に届かない（記録：本陣が空き、渡った隊も橋の向こうで崩れて負ける。16 通りすべて負け）', () => {
         const cross: Step[] = [...FIGHTERS.map((id) => [30, id, atk('e_hq')] as Step), [30, 'a_yumi', mv(0, 20)]];
-        const r = play(cross);
+        const r = once(cross);
+        const rs = jitteredOnce(cross);
+        // 確かめた時：正面突破 0 勝 ／ 地形に合った作戦 16 勝 ／ 準備した正面攻撃 14 勝
+        expect(wins(rs) + 12).toBeLessThanOrEqual(wins(jitteredOnce(FIT)));
+        expect(wins(rs) + 10).toBeLessThanOrEqual(wins(jitteredOnce(PREPARED)));
         expect(r.refused).toEqual([]);
-        expect(r.o.result).toBe('defeat');
         expect(r.o.objectives!.primary!.achieved).toBe(false);
+        // 記録（確かめた時：169.5 秒に負け）
+        expect(r.o.result).toBe('defeat');
         expect(r.o.elapsedSec).toBeLessThan(200);
-        expect(jittered(cross).filter((x) => x.o.result === 'victory')).toHaveLength(0);
-    }, 60_000);
+        expect(wins(rs)).toBe(0);
+    }, 90_000);
 
     // 確かめた時：15 秒に全部隊で主力（一）へ当たると 130.5 秒に軍が崩壊（16 通りでは 3 勝 13 敗。主力が東の口で崩れる並びの時だけ勝つ）
-    it('正面突破（主力が見えた 15 秒に全部隊で主力（一）へ当たる。東の橋を渡って押す）→ 負ける', () => {
-        const r = play([...FIGHTERS.map((id) => [15, id, atk('e_main1')] as Step), [15, 'a_yumi', atk('e_main1')]]);
+    it('正面突破（主力が見えた 15 秒に全部隊で主力（一）へ当たる。無計画）→ 同じ主力へ弓・予備・号令を整えてから当たる準備した正面攻撃より 16 通りの勝ちが少なく、守れる橋も少ない（記録：負ける）', () => {
+        const r = once(RUSH_MAIN);
+        const rush = jitteredOnce(RUSH_MAIN);
+        const prep = jitteredOnce(PREPARED);
+        // 確かめた時：無計画 3 勝・2 本以上を守る 1 通り ／ 準備した正面攻撃 14 勝・14 通り
+        expect(wins(rush) + 8).toBeLessThanOrEqual(wins(prep));
+        expect(rush.filter((x) => x.bridges.length >= 2).length + 8).toBeLessThanOrEqual(prep.filter((x) => x.bridges.length >= 2).length);
         expect(r.refused).toEqual([]);
-        expect(r.o.result).toBe('defeat');
         expect(r.o.objectives!.primary!.achieved).toBe(false);
-    });
+        // 記録
+        expect(r.o.result).toBe('defeat');
+    }, 90_000);
 
-    it('早く本陣の周りへ固める（20 秒に全部隊を本陣の前へ下げる）→ 3 本とも渡られ、本陣の前で挟まれて負ける', () => {
-        const r = play([
+    it('早く本陣の周りへ固める（20 秒に全部隊を本陣の前へ下げる）→ 地形に合った作戦と違い、主目標に届かず、橋も残らない（記録：3 本とも渡られ、本陣の前で挟まれて負ける）', () => {
+        const r = once([
             [20, 'a_tadakatsu', mv(30, 105)],
             [20, 'a_sakai', mv(-30, 105)],
             [20, 'a_sakakibara', mv(50, 125)],
@@ -228,14 +294,17 @@ describe('複数橋：地形に合わない作戦（早送り）', () => {
             [20, 'a_kiba', mv(-50, 125)],
             [20, 'a_yumi', mv(0, 155)],
         ]);
+        expect(r.o.objectives!.primary!.achieved).toBe(false);
+        // 記録（確かめた時：194.4 秒に負け）
         expect(r.o.result).toBe('defeat');
         expect(r.bridges).toEqual([]);
     });
 
     // 確かめた時：最初の命令を 100 秒まで待つと、勝つが東の口を失い（忠勝隊も敗走）、損害 51％（FIT は 38％）。80 秒なら損害 40％で東の口を失う
+    // （このファイルの今の確かめ：遅い 48.4％・FIT 35.9％）
     it('寄せるのが遅い（地形に合った作戦の最初の命令を、西が片付く 100 秒まで待つ）→ しのげても東の口を失い、損害が 1 割以上多い', () => {
-        const fit = play(FIT);
-        const r = play(FIT.map(([t, id, o]) => [t === 20 ? 100 : t, id, o] as Step));
+        const fit = once(FIT);
+        const r = once(FIT.map(([t, id, o]) => [t === 20 ? 100 : t, id, o] as Step));
         expect(r.bridges).not.toContain('mb_east');
         expect(statusOf(r, 'a_tadakatsu')).toBe('routed');
         expect(r.loss).toBeGreaterThan(fit.loss + 0.1);
@@ -383,5 +452,28 @@ describe('複数橋：能力の値打ちが地形で変わる', () => {
         const on = eastHeld(jittered(FIT));
         expect(on).toBeGreaterThanOrEqual(off);
         expect(on).toBe(16);
+    }, 90_000);
+});
+
+describe('複数橋：準備した正面攻撃（早送り）', () => {
+    it('弓で主力（一）を射て、東の口で榊原隊と組み合ったところへ忠勝隊・騎馬で当たり、予備で中を埋め、号令を使う（記録：300 秒しのいで勝ち・損害 42.6％・3 本とも守る）', () => {
+        const r = once(PREPARED);
+        expect(r.refused).toEqual([]);
+        expect(Object.keys(r.o.abilitiesUsed ?? {})).toEqual(['a_ieyasu']);
+        // 記録
+        expect(r.o.result).toBe('victory');
+        expect(r.o.objectives!.primary!.achieved).toBe(true);
+        expect(r.bridges).toEqual(['mb_west', 'mb_center', 'mb_east']);
+        expect(r.loss).toBeLessThan(0.45);
+    });
+
+    it('16 通りで、無計画に主力へ当たる（15 秒に全部隊）より勝ちが多い。口で待ち受ける地形に合った作戦と比べると勝ちは少し少なく、損害は同じくらい（記録：準備 14 勝・平均 36.3％ ／ 無計画 3 勝・37.9％ ／ 地形に合った作戦 16 勝・36.6％）', () => {
+        const prep = jitteredOnce(PREPARED);
+        const rush = jitteredOnce(RUSH_MAIN);
+        const fit = jitteredOnce(FIT);
+        expect(wins(prep)).toBeGreaterThanOrEqual(12);
+        expect(wins(prep)).toBeGreaterThan(wins(rush) + 8);
+        expect(wins(fit)).toBeGreaterThanOrEqual(wins(prep));
+        expect(Math.abs(meanLoss(prep) - meanLoss(fit))).toBeLessThan(0.05);
     }, 90_000);
 });
