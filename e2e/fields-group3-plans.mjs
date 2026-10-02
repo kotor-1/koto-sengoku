@@ -88,7 +88,7 @@ function genModule(field) {
     const before = src;
     src = src.replace(/^import \{[^}]*\} from 'vitest';$/m, STUB);
     if (src === before) throw new Error(`${field}：vitest の読み込みの行が見つからない`);
-    src = src.replaceAll("from '../proto3d/src/", "from '/src/").replaceAll("from './proto3d-", `from '/@fs${REPO}/tests/proto3d-`);
+    src = src.replaceAll("from '../proto3d/src/", "from '/src/").replace(/from '\.\/(proto3d-[^']+)'/g, `from '/@fs${REPO}/tests/$1.ts'`);
     const names = [...new Set([...Object.keys(NAMES[field]), 'play', 'J0'])].filter((n) => new RegExp(`^(?:const|function) ${n}\\b`, 'm').test(src));
     src += `\n// e2e/fields-group3-plans.mjs が足した書き出し（テストの台本を画面の操作で走らせる）\nexport { ${names.join(', ')} };\n`;
     const path = `${GEN}/${field}.ts`;
