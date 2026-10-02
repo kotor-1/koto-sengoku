@@ -26,7 +26,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { BattleMap, ClanId, Side, Zone } from './types';
-import { attackArc, elevationAt, exitPointFor, inTerrain, type BattleState, type UnitState } from './sim';
+import { attackArc, elevationAt, exitPointFor, inTerrain, isActive, type BattleState, type UnitState } from './sim';
 import {
     CAM,
     clampCam,
@@ -1561,10 +1561,16 @@ export class BattleView {
         return p;
     }
 
-    /** 画面の点に一番近い、見えている部隊（隊列の広がりか tolPx の近さの中） */
+    /**
+     * 画面の点に一番近い、見えている部隊（隊列の広がりか tolPx の近さの中）。
+     * 戦える部隊を先にする：戦える部隊が近さの中にいれば、それより近い敗走中・全滅の部隊があっても戦える部隊を返す
+     * （城攻め前面の確かめ：曲輪の槍の体を押しても、2.6 m 隣の敗走中の門の裏の槍が選ばれ、攻撃にならず地面への移動になっていた）。
+     */
     pick(s: BattleState, sx: number, sy: number, tolPx: number): string | null {
         let best: string | null = null;
         let bestScore = 1;
+        let down: string | null = null;
+        let downScore = 1;
         for (let i = 0; i < this.vis.length; i++) {
             const v = this.vis[i];
             const u = s.units[i];
@@ -1578,12 +1584,17 @@ export class BattleView {
             const fl = this.project(v.flagX, v.flagY + POLE_H * 0.7, v.flagZ);
             const d = Math.min(Math.hypot(sx - c.x, sy - c.y), Math.hypot(sx - fl.x, sy - fl.y) * 1.3);
             const score = d / r;
-            if (score < bestScore) {
+            if (!isActive(u)) {
+                if (score < downScore) {
+                    downScore = score;
+                    down = u.id;
+                }
+            } else if (score < bestScore) {
                 bestScore = score;
                 best = u.id;
             }
         }
-        return best;
+        return best ?? down;
     }
 
     /** 部隊の名札の位置（旗の上。本陣は旗が高い）。能力の印の点滅も、この位置の名札で出す */
