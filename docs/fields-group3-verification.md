@@ -40,7 +40,7 @@
 | chapter1-input | | | 未 | | |
 | chapter1-idempotent | | | 未 | | |
 | chapter1-battle | | | 未 | | |
-| review-group3（一覧の外。最後の直しの e2e） | | | 未 | | |
+| review-group3（一覧の外。最後の直しの e2e） | ad22471 | 2026-10-02 22:23〜22:28 | ok 17・NG 0（desktop・phone） | 17 | 本物の入力 |
 
 ## 本番ビルド
 
