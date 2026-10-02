@@ -685,10 +685,12 @@ describe('作戦（早送り）', () => {
         expect(sec(r.front, 'siege_bastion')).toBe(false);
     });
 
-    it('急いで門へ：門はいちばん早く開く（記録：門 80 秒。この 1 通りは勝つが 386 秒・損害 39.4％・副目標 ✗✗✗）', () => {
+    // 第3群の動きの直し（FieldRules.refinedMoves：閉じた門の外で敗走した出張りが、その場から逃れ去る・止まった味方の中のすり抜け など）の後、
+    // この 1 通りは 386 秒・39.4％・副目標 ✗✗✗ → 211 秒・24.8％・損害 ✓（門は 80 秒のまま）。拠点の弓・騎馬を残すは ✗ のまま
+    it('急いで門へ：門はいちばん早く開く（記録：門 80 秒。この 1 通りは勝つが 386 秒・損害 39.4％・副目標 ✗✗✗。動きの直しの後 211 秒・24.8％・✓✗✗）', () => {
         expect(r.rush.gateT!).toBeLessThan(r.bastion.gateT! - 60);
         expect(r.rush.gateT!).toBeLessThan(r.front.gateT! - 60);
-        expect(r.rush.o.objectives!.secondary.every((x) => !x.achieved), brief(r.rush)).toBe(true);
+        expect([sec(r.rush, 'siege_bastion'), sec(r.rush, 'siege_cavalry')], brief(r.rush)).toEqual([false, false]);
     });
 
     it('比べ：準備した正面攻撃は、無計画な攻撃より損害が小さく、守れる部隊が多く、主目標まで届く（記録：無計画は門を開くが曲輪へ届かず 463 秒に総崩れ・損害 63.0％・残る部隊 1）', () => {
@@ -734,10 +736,12 @@ describe('作戦の安定性と比べ（早送り・±15 秒と見てから押�
         expect(winT(front)).toBeLessThan(winT(bastion));
     }, 300000);
 
-    it('損害：急いで門へは準備した正面攻撃より損害が大きく、悪い時はもっと大きい（記録：平均 31.9％ 対 28.0％、最大 44.3％ 対 31.0％。急ぐ方は 16 通りで 15 勝＝1 回は日没）', () => {
+    // 第3群の動きの直しの後：平均 30.5％ 対 27.8％、最大 38.1％ 対 31.2％、急ぐ方も 16 勝（日没だった 1 通りも勝つ）。
+    // 悪い時の差の幅を 8 点 → 5 点にし、勝ちの数の比べ（急ぐ方が少ない）は記録（15 勝以上）にする
+    it('損害：急いで門へは準備した正面攻撃より損害が大きく、悪い時はもっと大きい（記録：平均 31.9％ 対 28.0％、最大 44.3％ 対 31.0％。急ぐ方は 16 通りで 15 勝＝1 回は日没。動きの直しの後 30.5％ 対 27.8％、38.1％ 対 31.2％、16 勝）', () => {
         expect(lossMean(rush)).toBeGreaterThan(lossMean(front) + 0.02);
-        expect(lossMax(rush)).toBeGreaterThan(lossMax(front) + 0.08);
-        expect(wins(rush)).toBeLessThan(wins(front));
+        expect(lossMax(rush)).toBeGreaterThan(lossMax(front) + 0.05);
+        expect(wins(rush)).toBeGreaterThanOrEqual(15);
     }, 300000);
 
     it('副目標が作戦で分かれる：拠点の弓は拠点を先にだけ（16／0／0）、損害 3 割は準備した正面攻撃がいちばん多く（10／14／7）、騎馬を残すのは急ぐと 0（9／10／0）', () => {
@@ -759,11 +763,16 @@ describe('武将の能力の価値が地形で変わる（早送り・16 通り�
         expect(bOn.every((c) => c.breakSec !== null && c.breakSec < 40)).toBe(true);
         // 櫓（外から）：櫓台の石垣で斬り合いが届かない。先駆けを使っても同じ
         for (const c of [...res('towerOut', false), ...res('towerOut', true)]) expect([c.reached, c.breakSec]).toEqual([false, null]);
-        // 曲輪の中から櫓へ：どちらも崩すが、先駆けの差は平均で数秒（記録：88.2 秒 → 86.0 秒。早まるのは 22 秒まで、遅れることもある）
+        // 曲輪の中から櫓へ：どちらも崩すが、先駆けの差は平均で数秒（記録：88.2 秒 → 86.0 秒。早まるのは 22 秒まで、遅れることもある）。
+        // 第3群の動きの直し（閉じた門の外で敗走した出張りがその場から逃れ去る）の後は門の開く時刻が変わり、先駆けありの 1 通り（k=5）で、榊原隊が
+        // 門をくぐって西の道へ回り、門の裏の槍に捕まって崩れる（櫓へ届かない）。16 通りとも崩す → 15 通り以上で崩す。平均は崩した通りで比べる
+        // （直しの後：なし 75.1 秒・あり 74.6 秒（崩した 15 通り））
         const iOff = res('towerIn', false);
         const iOn = res('towerIn', true);
-        expect(iOff.every((c) => c.breakSec !== null) && iOn.every((c) => c.breakSec !== null)).toBe(true);
-        expect(Math.abs(mean(iOff.map((c) => c.breakSec!)) - mean(iOn.map((c) => c.breakSec!)))).toBeLessThan(6);
+        const broke = (cs: Charge[]) => cs.filter((c) => c.breakSec !== null).map((c) => c.breakSec!);
+        expect(broke(iOff).length).toBeGreaterThanOrEqual(15);
+        expect(broke(iOn).length).toBeGreaterThanOrEqual(15);
+        expect(Math.abs(mean(broke(iOff)) - mean(broke(iOn)))).toBeLessThan(6);
     }, 600000);
 
     it('忠勝の退路の守護（門の前で退く隊）：矢と出張りの追い討ちの下で退く酒井隊の損害が減る。代わりに忠勝隊が引きつけて削られる', () => {
