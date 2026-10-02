@@ -31,8 +31,9 @@
  * - 実機・性能：未確認（コンテナはソフトウェア描画）。
  */
 import { launchBrowser } from './lib.mjs';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { execSync } from 'node:child_process';
 
 const BASE = process.env.BASE3D || process.env.BASE || 'http://localhost:8305';
 const OUT = process.argv[2] || 'e2e-out/fields-group3-plans';
@@ -68,7 +69,13 @@ const NAMES = {
     siege_front: { FRONT: '準備した正面攻撃（弓で櫓を射すくめる）', BASTION: '側面の拠点を先に', RUSH: '急いで門へ', UNPLANNED: '無計画' },
 };
 const failures = [];
+// 前の記録があれば、今回走らせる作戦の分だけ置き換える（RUNS で一部ずつ走らせても 1 つの record.json にまとまる）
 const record = { base: BASE, runs: [] };
+try {
+    if (existsSync(`${OUT}/record.json`)) record.runs = JSON.parse(readFileSync(`${OUT}/record.json`, 'utf8')).runs ?? [];
+} catch {
+    record.runs = [];
+}
 const T0 = Date.now();
 const log = (...a) => console.log(...a);
 function check(ok, what, extra = '') {
@@ -246,7 +253,7 @@ async function loadPlan(page, field, plan) {
             const extra = (s) => {
                 const g = s.field?.gates?.[0];
                 const pr = s.objectives?.primary;
-                return { gate: g ? (g.open ? +(g.openedT ?? 0).toFixed(1) : null) : undefined, entered: pr?.entered ? pr.entered.length : undefined };
+                return { gate: g ? (g.open ? +(g.openedT ?? 0).toFixed(1) : null) : undefined, entered: pr && /breakthrough/.test(pr.def.type) ? pr.entered.length : undefined };
             };
             const summ = (o, t, s, more = {}) => {
                 const al = o.units.filter((u) => u.side === 'ally');
@@ -296,7 +303,8 @@ async function loadPlan(page, field, plan) {
                     if (!m.play) return null;
                     const r = m.play(make());
                     // 出口へ入った数は、テストが最後の状態を返すときだけ（湿地の play の entered は刻みの前に書くので、決着の刻みの分が入らない）
-                    const ent = r.s?.objectives?.primary?.entered ? r.s.objectives.primary.entered.length : undefined;
+                    const pr = r.s?.objectives?.primary;
+                    const ent = pr && /breakthrough/.test(pr.def.type) ? pr.entered.length : undefined;
                     return summ(r.o, r.t, null, { refused: r.refused, gate: r.gateT === undefined ? undefined : r.gateT === null ? null : +r.gateT.toFixed(1), entered: ent });
                 },
                 /** B：同じ台本を every 秒ごとにだけ見て、issueOrder・useAbility で直接出す */
@@ -512,7 +520,8 @@ async function runPlan({ kind, field, plan }) {
     }
     const A = await page.evaluate(() => window.__g3p.playTest());
     const B = await page.evaluate(() => window.__g3p.playEvery(1));
-    const rec = { kind, field, plan, title, lines: ld.count, A, B: { ...B, cmds: undefined }, cmds: [], C: null };
+    const rec = { kind, field, plan, title, at: new Date().toISOString(), commit: COMMIT, lines: ld.count, A, B: { ...B, cmds: undefined }, cmds: [], C: null };
+    record.runs = record.runs.filter((x) => !(x.kind === kind && x.field === field && x.plan === plan));
     record.runs.push(rec);
     const fmt = (r) => r && `${r.result}（${r.reason}）${r.t} 秒・損害 ${r.loss}％・主目標 ${r.primary ? '✓' : '✗'}${r.steps ? `（段 ${r.steps.done}／${r.steps.total}）` : ''}・副目標 ${r.secondary.join(' ')}・戦える ${r.standing}${r.gate !== undefined ? `・門 ${r.gate}` : ''}${r.entered !== undefined ? `・出口 ${r.entered}` : ''}${r.refused?.length ? `・断られた ${r.refused.length}` : ''}`;
     log(`    A テストの台本（早送り・0.1 秒ごと）：${fmt(A)}`);
