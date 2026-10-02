@@ -41,6 +41,7 @@
  * 第3群で加えたもの（docs/fields-group3-design.md §3。その地形・門を持たない戦場では計算に入らない＝既存の 10 戦場は 1 刻みも同じ）：
  * - 障害物（building・fence・wall）は通れない。射線（fieldRules.ts の lineOfSight）：弓は、射手から相手までの線分が建物・石垣・閉じた門に
  *   遮られる相手を射ない（待機の弓の相手選び・攻撃の命令の弓。遮られていれば、射線が通る所まで近づく）。柵は射線を通す。
+ *   斬り合いも同じ判定で、建物・石垣・閉じた門を挟んだ相手とは間合いの中でも斬り合わない（攻撃の命令なら手前で止まらず回り込む）。柵越しは斬り合う。
  * - 門（fieldRules.gates）：閉じている間は通れない。制圧の区域を、門を持つ側がいない状態で反対の側が続けて占めると開く（trackGates）。
  *   開いたら道探しの格子・射線の格子を作り直し、進んでいる道をすべて引き直す。
  * - 地形の決まりの arrowDealMul（中の弓の射る矢）・noCharge（中の騎馬は突撃にならない）。
@@ -1287,13 +1288,15 @@ function planFor(s: BattleState, u: UnitState): Plan {
     for (const o of s.units) {
         if (o.side !== opp || !o.present) continue;
         if (dist(o, u) > RULES.meleeRange) continue;
+        // 第3群：建物・石垣・閉じた門を挟んだ相手とは斬り合わない（射線と同じ判定。柵は挟んでも斬り合える。障害物の無い戦場では判定しない）
+        if (!hasLineOfSight(s, u, o)) continue;
         if (o.status === 'ready') near.push(o);
         else if (o.status === 'routed') nearRouted.push(o);
     }
     near.sort((a, b) => dist(a, u) - dist(b, u));
     nearRouted.sort((a, b) => dist(a, u) - dist(b, u));
     const prevU = u.engagedWith ? unitById(s, u.engagedWith) : undefined;
-    const prev = prevU && prevU.side === opp && isActive(prevU) && dist(prevU, u) <= RULES.meleeRange + RULES.meleeHold ? prevU : null;
+    const prev = prevU && prevU.side === opp && isActive(prevU) && dist(prevU, u) <= RULES.meleeRange + RULES.meleeHold && hasLineOfSight(s, u, prevU) ? prevU : null;
     const front = (o: UnitState, heading: number) => Math.abs(angleDiff(heading, headingTo(u.x, u.z, o.x, o.z))) <= 70 * DEG;
     const inFront = (heading: number) => (prev && front(prev, heading) ? prev : near.find((o) => front(o, heading)) ?? null);
     const holdMelee = () => prev ?? near[0] ?? nearRouted[0] ?? null;
@@ -1325,7 +1328,8 @@ function planFor(s: BattleState, u: UnitState): Plan {
         }
         const block = inFront(headingTo(u.x, u.z, tgt.x, tgt.z));
         if (block) return { melee: block, ranged: null, goal: null };
-        return { melee: null, ranged: null, goal: { x: tgt.x, z: tgt.z, stopAt: RULES.meleeRange * 0.8 } };
+        // 相手が建物・石垣・閉じた門の向こうなら、手前で止まらず道をたどって回り込む（第3群）
+        return { melee: null, ranged: null, goal: { x: tgt.x, z: tgt.z, stopAt: hasLineOfSight(s, u, tgt) ? RULES.meleeRange * 0.8 : 0 } };
     }
     // 防衛・待機：間合いの中の相手と斬り合う。弓は見えている一番近い相手を射る
     const m = holdMelee();

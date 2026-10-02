@@ -66,6 +66,39 @@ describe('障害物（building・fence・wall）', () => {
         expect(lineOfSight(s.map, s.field, { x: -60, z: 40 }, { x: -60, z: -40 })).toBe(true);
     });
 
+    it('早送り：石垣・家屋を挟んで 25 m 以内（斬り合いの間合い）の相手とは斬り合わない。柵を挟んだ相手とは斬り合う。攻撃の命令なら石垣の端を回って当たる', () => {
+        // 東西に長い石垣（厚さ 12 m）の南と北に槍を置く（中心の隔たり 20 m）。x 100 より東は開いている
+        const wall: TerrainArea[] = [{ kind: 'wall', rect: { x0: -150, x1: 100, z0: -6, z1: 6 }, height: 6 }];
+        const s = createBattle(field(wall, [...HQS(), U('a', 'ally', 'yari', 0, 10), U('e', 'enemy', 'yari', 0, -10, { aiRole: 'hold_line' })]));
+        issueOrder(s, 'a', { type: 'hold' });
+        run(s, 10);
+        expect(unitById(s, 'a')!.engagedWith).toBeNull();
+        expect(unitById(s, 'a')!.strength).toBe(300);
+        expect(unitById(s, 'e')!.strength).toBe(300);
+        // 柵（通れないが低い）なら、挟んでも斬り合う
+        const fence: TerrainArea[] = [{ kind: 'fence', rect: { x0: -150, x1: 100, z0: -3, z1: 3 } }];
+        const f = createBattle(field(fence, [...HQS(), U('a', 'ally', 'yari', 0, 10), U('e', 'enemy', 'yari', 0, -10, { aiRole: 'hold_line' })]));
+        issueOrder(f, 'a', { type: 'hold' });
+        run(f, 10);
+        expect(unitById(f, 'a')!.engagedWith).toBe('e');
+        expect(unitById(f, 'e')!.strength).toBeLessThan(300);
+        // 石垣の向こうの相手への攻撃の命令：手前（20 m）で止まらず、石垣に沿って東の端（x 100）の近くまで回って当たる。
+        // 斬り合っている間は、いつも石垣を挟まない（射線が通る）
+        issueOrder(s, 'a', { type: 'attack', targetId: 'e' });
+        let engagedAcross = 0;
+        let engaged = 0;
+        run(s, 120, (st) => {
+            const a = unitById(st, 'a')!;
+            if (a.engagedWith !== 'e') return;
+            engaged++;
+            if (!hasLineOfSight(st, a, unitById(st, 'e')!)) engagedAcross++;
+        });
+        expect(engaged).toBeGreaterThan(0);
+        expect(engagedAcross).toBe(0);
+        expect(unitById(s, 'a')!.x).toBeGreaterThan(70);
+        expect(unitById(s, 'e')!.strength).toBeLessThan(300);
+    });
+
     it('早送り：家屋の向こうへの移動は、家屋を回って着く（家屋の中へは一度も入らない）', () => {
         const terrain: TerrainArea[] = [{ kind: 'building', rect: { x0: -60, x1: 60, z0: -10, z1: 10 }, height: 6 }];
         const s = createBattle(field(terrain, [...HQS(), U('a', 'ally', 'yari', 0, 60)]));
