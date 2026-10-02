@@ -1,6 +1,8 @@
 /**
- * 戦場「森林」（forest）の釣り合い：地形に合わない作戦（放置・中央の道を攻め上る・見通される林道や道の脇の林を回る・一隊だけで回る）は
- * 負ける・日没・損害が大きい、地形に合った作戦（三隊で西の林の中を見られずに抜けて本陣へ斬りかかる）は勝つ、
+ * 戦場「森林」（forest）の釣り合い：地形に合った作戦（三隊で西の林の中を見られずに抜けて本陣へ斬りかかる）は 16 通りで安定して勝つ。
+ * 無計画な攻撃（中央の道を攻め上る・見通される林道や道の脇の林を回る・一隊だけで回る）は、地形に合った作戦・準備した正面攻撃と比べて
+ * 主目標に届かない・損害が大きい・崩せる敵が少ない（比べが合格条件。無計画な攻撃の勝敗は記録として書く）。準備した正面攻撃（伏兵を誘い、
+ * 近い敵から順に当たり、本陣を上げて采配・号令を使う）は 16 通りで 2 勝と本陣に届きにくいが、その結果と理由も記録して比べる。
  * 副目標（迷った物見隊を連れ帰る）は作戦によって達成／未達成に分かれる。
  *
  * どれも「早送り」（決まった時刻に issueOrder・useAbility で命令を出す台本を runToEnd で最後まで進める）。
@@ -104,6 +106,50 @@ const STRIKE_HQ: Step[] = FLANKERS.map((id) => [200, id, atk('e_hq')] as Step);
 /** 地形に合った作戦：物見隊を林の中から下げ、三隊で西の林を見られずに抜けて本陣へ。命令は 10 回（0・50・200 秒） */
 const FIT: Step[] = [...LOST_WOODS, ...WOODS_MARCH, ...STRIKE_HQ];
 
+/** t 秒ごとに、ids の部隊へ「見えている一番近い敵へ攻撃」（今の相手が戦えるなら出さない） */
+const nearestAt = (ts: number[], ids: string[]): Step[] => ts.flatMap((t) => ids.map((id) => [t, id, 'nearest'] as Step));
+
+/**
+ * 準備した正面攻撃（中央の道を攻め上る）：物見隊は林の中から下げる。忠勝隊を道の東の伏兵の守る区域の縁 (0,25) へ出して伏兵を誘い、
+ * 酒井隊・石川隊はその左右の後ろ（道の外の開けた所）、弓はすぐ後ろ、家康本陣も (0,75) へ上げて号令の届く所に置く。榊原隊（騎馬）は予備。
+ * 60・90・120 秒に四隊が見えている一番近い敵へ当たり、70 秒に酒井隊の両翼の采配、80 秒に家康の号令。200 秒に槍三隊と騎馬で本陣へ。
+ * 命令は 24 回（0・60・70・80・90・120・200 秒）。回り込まない
+ */
+const PREPARED: Step[] = [
+    ...LOST_WOODS,
+    [0, 'a_tadakatsu', mv(0, 25)],
+    [0, 'a_sakai', mv(-25, 50)],
+    [0, 'a_ishikawa', mv(25, 50)],
+    [0, 'a_yumi', mv(0, 60)],
+    [0, 'a_ieyasu', mv(0, 75)],
+    ...nearestAt([60, 90, 120], ['a_sakai', 'a_ishikawa', 'a_tadakatsu', 'a_yumi']),
+    [70, 'a_sakai', 'ability'],
+    [80, 'a_ieyasu', 'ability'],
+    ...['a_tadakatsu', 'a_sakai', 'a_ishikawa', 'a_sakakibara'].map((id) => [200, id, atk('e_hq')] as Step),
+];
+
+/** 無計画な攻撃：全部隊で敵勢の本陣へ攻めかかる（中央の道を攻め上る） */
+const ALL_HQ: Step[] = [...LOST_WOODS, ...FIGHTERS.map((id) => [0, id, atk('e_hq')] as Step)];
+
+/** 命令の時刻を ±15 秒ずらした 16 通り（決まった乱数で作る。0 秒の命令はずらさない。地形に合った作戦の 16 通りと同じ作り方） */
+function variants16(base: Step[]): Run[] {
+    let seed = 11;
+    const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+    const out: Run[] = [];
+    for (let k = 0; k < 16; k++) out.push(play(base.map(([t, id, o]) => [t === 0 ? 0 : t + Math.round((rnd() - 0.5) * 30), id, o] as Step)));
+    return out;
+}
+const count = (rs: Run[], result: BattleOutcome['result']) => rs.filter((r) => r.o.result === result).length;
+/** 崩した（敗走・全滅させた）敵の部隊の数 */
+const broken = (r: Run) => r.o.units.filter((u) => u.side === 'enemy' && u.status !== 'ready').length;
+
+/** 比べの基準（同じ台本は 1 回だけ進める） */
+const memo = new Map<Step[], Run>();
+const run = (steps: Step[]): Run => {
+    if (!memo.has(steps)) memo.set(steps, play(steps));
+    return memo.get(steps)!;
+};
+
 describe('森林のデータ', () => {
     it('検査を通る。味方 6＋迷った物見隊／敵 8（敵はすべて敵勢）。林の奇襲と林の中の騎馬の遅さ。通れない所は無い', () => {
         expect(validateField(FOREST)).toEqual([]);
@@ -138,35 +184,47 @@ describe('森林のデータ', () => {
     });
 });
 
-describe('森林：地形に合わない作戦（早送り）', () => {
-    it('何もしない → 物見隊が追っ手に崩され、本陣へも届かずに日没（主目標・副目標とも果たせない）', () => {
-        const r = play([]);
-        expect(r.o.result).toBe('retreat');
-        expect(r.o.reason).toBe('nightfall');
+// 合格条件は「正面なら負ける」ではなく、同じ台本・同じ数字での比べ（地形に合った作戦・準備した正面攻撃と比べて、主目標に届かない・
+// 損害が大きい・崩せる敵が少ない）。無計画な攻撃の勝敗は「記録」として残す（台本と数字は前のまま。変わったら理由と前後の数字を書いて直す）
+describe('森林：無計画な攻撃・地形に合わない作戦と、地形に合った作戦の比べ（早送り）', () => {
+    it('何もしない → 地形に合った作戦（主目標・副目標とも達成）と違い、どちらも果たせない（記録：物見隊が追っ手に崩され、本陣へも届かずに日没）', () => {
+        const r = run([]);
+        expect(run(FIT).o.objectives!.primary!.achieved).toBe(true);
+        expect(rescued(run(FIT))).toBe(true);
         expect(r.o.objectives!.primary!.achieved).toBe(false);
         expect(rescued(r)).toBe(false);
+        // 記録
+        expect(r.o.result).toBe('retreat');
+        expect(r.o.reason).toBe('nightfall');
         expect(statusOf(r, 'a_lost')).toBe('routed');
     });
 
-    it('全部隊で敵勢の本陣へ攻めかかる（中央の道を攻め上る）→ 道の両脇の伏兵に横を突かれ、弓に射られて負ける', () => {
-        const r = play([...LOST_WOODS, ...FIGHTERS.map((id) => [0, id, atk('e_hq')] as Step)]);
-        expect(r.o.result).toBe('defeat');
+    it('全部隊で敵勢の本陣へ攻めかかる（無計画に中央の道を攻め上る）→ 地形に合った作戦より損害が大きく、主目標に届かず、準備した正面攻撃より崩せる敵が少ない（記録：道の両脇の伏兵に横を突かれ、弓に射られて負ける）', () => {
+        const r = run(ALL_HQ);
+        // 確かめた時：無計画 166.8 秒に負け・損害 38.6％・崩した敵 2 隊 ／ 地形に合った作戦 勝ち・14.9％ ／ 準備した正面攻撃 日没・52.7％・崩した敵 5 隊
+        expect(r.loss).toBeGreaterThan(run(FIT).loss + 0.1);
         expect(r.o.objectives!.primary!.achieved).toBe(false);
+        expect(broken(r)).toBeLessThan(broken(run(PREPARED)));
+        // 記録
+        expect(r.o.result).toBe('defeat');
         expect(r.loss).toBeGreaterThan(0.3);
         expect(r.left.e_hq).toBe(350);
         // 伏兵が林から不意を突いた
         expect(r.events.some((e) => e.kind === 'ambush' && e.unitId?.startsWith('e_ambush'))).toBe(true);
     });
 
-    it('全部隊で中央の道の中ほどへ出てから本陣へ → 負ける', () => {
-        const r = play([...LOST_WOODS, ...FIGHTERS.map((id) => [0, id, mv(0, -60)] as Step), ...FIGHTERS.map((id) => [90, id, atk('e_hq')] as Step)]);
-        expect(r.o.result).toBe('defeat');
+    it('全部隊で中央の道の中ほどへ出てから本陣へ（無計画）→ 地形に合った作戦より損害が大きく、主目標に届かない（記録：負ける）', () => {
+        const r = run([...LOST_WOODS, ...FIGHTERS.map((id) => [0, id, mv(0, -60)] as Step), ...FIGHTERS.map((id) => [90, id, atk('e_hq')] as Step)]);
+        // 確かめた時：166.8 秒に負け・損害 36.0％
+        expect(r.loss).toBeGreaterThan(run(FIT).loss + 0.1);
         expect(r.o.objectives!.primary!.achieved).toBe(false);
+        // 記録
+        expect(r.o.result).toBe('defeat');
     });
 
-    it('道の先手へ四隊・弓へ騎馬で当たり、30 秒ごとに崩れた相手から近い敵へ当て直す → 負ける', () => {
+    it('道の先手へ四隊・弓へ騎馬で当たり、30 秒ごとに崩れた相手から近い敵へ当て直す（無計画）→ 地形に合った作戦より損害が大きく、主目標に届かない（記録：負ける）', () => {
         const again = [60, 90, 120, 150, 180, 210, 240].flatMap((t) => FIGHTERS.map((id) => [t, id, 'nearest'] as Step));
-        const r = play([
+        const r = run([
             ...LOST_WOODS,
             [0, 'a_tadakatsu', atk('e_sente')],
             [0, 'a_sakai', atk('e_sente')],
@@ -175,12 +233,16 @@ describe('森林：地形に合わない作戦（早送り）', () => {
             [0, 'a_sakakibara', atk('e_yumi_l')],
             ...again,
         ]);
+        // 確かめた時：370.2 秒に負け・損害 40.1％
+        expect(r.loss).toBeGreaterThan(run(FIT).loss + 0.1);
+        expect(r.o.objectives!.primary!.achieved).toBe(false);
+        // 記録
         expect(r.o.result).toBe('defeat');
         expect(r.loss).toBeGreaterThan(0.35);
     });
 
-    it('同じ三隊で回るが、林道（見通される）を通る → 不意を突けず、本陣を崩せない（日没・損害が大きい）', () => {
-        const r = play([
+    it('同じ三隊で回るが、林道（見通される）を通る → 林の中を通る同じ三隊より損害が大きく、主目標に届かない（記録：不意を突けず日没）', () => {
+        const r = run([
             ...LOST_WOODS,
             [0, 'a_sakai', mv(-125, 75)],
             [0, 'a_ishikawa', mv(-125, 90)],
@@ -190,13 +252,16 @@ describe('森林：地形に合わない作戦（早送り）', () => {
             [50, 'a_tadakatsu', mv(-125, -60)],
             ...STRIKE_HQ,
         ]);
-        expect(r.o.result).not.toBe('victory');
+        // 確かめた時：日没・損害 47.4％（林の中を通ると 268.8 秒に勝ち・14.9％）
+        expect(r.loss).toBeGreaterThan(run(FIT).loss + 0.2);
         expect(r.o.objectives!.primary!.achieved).toBe(false);
+        // 記録
+        expect(r.o.result).not.toBe('victory');
         expect(r.loss).toBeGreaterThan(0.4);
     });
 
-    it('同じ三隊で回るが、中央の道のすぐ脇の林を通る → 西の伏兵に見つかって組み合い、本陣を崩せない', () => {
-        const r = play([
+    it('同じ三隊で回るが、中央の道のすぐ脇の林を通る → 道から離れた林を通る同じ三隊より損害が大きく、主目標に届かない（記録：西の伏兵に見つかって組み合い、日没）', () => {
+        const r = run([
             ...LOST_WOODS,
             [0, 'a_sakai', mv(-45, 60)],
             [0, 'a_ishikawa', mv(-50, 70)],
@@ -206,15 +271,20 @@ describe('森林：地形に合わない作戦（早送り）', () => {
             [50, 'a_tadakatsu', mv(-40, -100)],
             ...STRIKE_HQ,
         ]);
-        expect(r.o.result).not.toBe('victory');
+        // 確かめた時：日没・損害 41.3％
+        expect(r.loss).toBeGreaterThan(run(FIT).loss + 0.2);
         expect(r.o.objectives!.primary!.achieved).toBe(false);
+        // 記録
+        expect(r.o.result).not.toBe('victory');
         expect(r.events.some((e) => e.kind === 'engage' && e.text.includes('伏兵（西）'))).toBe(true);
     });
 
-    it('西の林を一隊（忠勝隊）だけで抜けて本陣へ → 守りの騎馬は崩せても本陣は崩せず、忠勝隊を失う', () => {
-        const r = play([...LOST_WOODS, [0, 'a_tadakatsu', mv(-100, 55)], [50, 'a_tadakatsu', mv(-100, -100)], [200, 'a_tadakatsu', atk('e_hq')]]);
-        expect(r.o.result).not.toBe('victory');
+    it('西の林を一隊（忠勝隊）だけで抜けて本陣へ → 三隊で抜ける作戦と違い、主目標に届かず、忠勝隊を失う（記録：守りの騎馬は崩せても本陣は崩せず日没）', () => {
+        const r = run([...LOST_WOODS, [0, 'a_tadakatsu', mv(-100, 55)], [50, 'a_tadakatsu', mv(-100, -100)], [200, 'a_tadakatsu', atk('e_hq')]]);
         expect(r.o.objectives!.primary!.achieved).toBe(false);
+        expect(r.left.a_tadakatsu).toBeLessThan(run(FIT).left.a_tadakatsu! - 100);
+        // 記録
+        expect(r.o.result).not.toBe('victory');
         expect(r.left.a_tadakatsu).toBeLessThan(100);
     });
 });
@@ -290,4 +360,35 @@ describe('森林：副目標（迷った物見隊を連れ帰る）は作戦で�
         expect(woods.o.reason).toBe('nightfall');
         expect(road.o.reason).toBe('nightfall');
     });
+});
+
+// 森林では準備した正面攻撃は、たまにしか本陣に届かない（16 通りで 2 勝）。理由：中央の道の守りは 5 隊（先手 450・伏兵 300 と 350・弓 250 が
+// 2 隊）で、林の中の伏兵は見えないまま横から当たり（林の奇襲：最初の 8 秒の損害 ×1.5）、道の出口の弓 2 隊が道の上を射る。伏兵を道の外へ誘い、
+// 家康本陣を号令の届く所まで上げて当たれば、道の守りの多くを崩せるが、そのころには当たった槍も多くが敗走し（200 秒の本陣への命令は
+// 忠勝隊がもう敗走していて断られる）、本陣と守りの騎馬は無傷のまま残る。無計画な攻撃と比べて良いのは「負けが少ない（16 → 3）・
+// 崩せる敵が多い・ときどき勝つ」。損害の割合はかえって大きい（無計画な攻撃は早く崩れて終わるが、準備した攻撃は日没まで戦い続けるため）
+describe('森林：準備した正面攻撃（早送り）', () => {
+    it('伏兵を道の外へ誘い、近い敵から順に当たり、本陣を上げて采配・号令を使って攻め上る（記録：日没・損害 52.7％・崩した敵 5 隊・物見隊は連れ帰る。忠勝隊は 200 秒までに敗走）', () => {
+        const r = run(PREPARED);
+        expect(r.refused).toEqual(['200:a_tadakatsu']);
+        expect(Object.keys(r.o.abilitiesUsed ?? {}).sort()).toEqual(['a_ieyasu', 'a_sakai']);
+        // 記録
+        expect(r.o.result).toBe('retreat');
+        expect(r.o.reason).toBe('nightfall');
+        expect(r.o.objectives!.primary!.achieved).toBe(false);
+        expect(rescued(r)).toBe(true);
+        expect(broken(r)).toBe(5);
+        for (const id of ['e_sente', 'e_ambush_w', 'e_ambush_e']) expect(statusOf(r, id)).not.toBe('ready');
+        expect(statusOf(r, 'e_hq')).toBe('ready');
+    });
+
+    it('16 通りで、無計画な攻め上り（全部隊で本陣へ）より負けが少なく、勝ちが多く、崩せる敵が多い。損害の割合はかえって大きい（記録：準備 2 勝・負け 3・平均 53.7％ ／ 無計画 0 勝・負け 16・38.6％ ／ 地形に合った作戦 16 勝）', () => {
+        const prep = variants16(PREPARED);
+        const reckless = variants16(ALL_HQ);
+        expect(count(prep, 'defeat') + 10).toBeLessThanOrEqual(count(reckless, 'defeat'));
+        expect(count(prep, 'victory')).toBeGreaterThan(count(reckless, 'victory'));
+        expect(prep.reduce((a, r) => a + broken(r), 0)).toBeGreaterThan(reckless.reduce((a, r) => a + broken(r), 0) * 1.5);
+        // 地形に合った作戦（林の中を抜ける）の方が、ずっと安定して勝つ
+        expect(count(variants16(FIT), 'victory')).toBeGreaterThanOrEqual(count(prep, 'victory') + 10);
+    }, 90_000);
 });
