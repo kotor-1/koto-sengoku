@@ -43,17 +43,18 @@ const GEN = resolve(OUT, 'gen');
 mkdirSync(GEN, { recursive: true });
 /** 戦場ごとに、主目標に届く作戦（main）ともう 1 つの作戦 */
 const RUNS_DEFAULT = [
+    // 主目標に届くことを合格条件にする作戦（MAIN）を先に、スマホ相当の 1 つ、そのあと比べの作戦（記録）
     'desktop:marsh:WEST',
-    'desktop:marsh:PREP',
     'desktop:village:POST',
-    'desktop:village:FRONTAL',
     'desktop:temple:COMBO',
-    'desktop:temple:FRONT',
     'desktop:town_edge:WATCH',
-    'desktop:town_edge:FRONTAL',
     'desktop:siege_front:FRONT',
-    'desktop:siege_front:BASTION',
     'phone:temple:COMBO',
+    'desktop:marsh:PREP',
+    'desktop:village:FRONTAL',
+    'desktop:temple:FRONT',
+    'desktop:town_edge:FRONTAL',
+    'desktop:siege_front:BASTION',
 ];
 const RUNS = (process.env.RUNS || RUNS_DEFAULT.join(',')).split(',').map((x) => {
     const [kind, field, plan] = x.split(':');
@@ -69,6 +70,16 @@ const NAMES = {
     siege_front: { FRONT: '準備した正面攻撃（弓で櫓を射すくめる）', BASTION: '側面の拠点を先に', RUSH: '急いで門へ', UNPLANNED: '無計画' },
 };
 const failures = [];
+/** 走らせたコミット（作業ツリーの proto3d・tests・e2e に変更があれば「+変更あり」） */
+const COMMIT = (() => {
+    try {
+        const h = execSync('git rev-parse --short HEAD', { encoding: 'utf8' }).trim();
+        const dirty = execSync('git status --porcelain -- proto3d tests e2e', { encoding: 'utf8' }).trim();
+        return dirty ? `${h}+変更あり` : h;
+    } catch {
+        return '?';
+    }
+})();
 // 前の記録があれば、今回走らせる作戦の分だけ置き換える（RUNS で一部ずつ走らせても 1 つの record.json にまとまる）
 const record = { base: BASE, runs: [] };
 try {
@@ -338,6 +349,70 @@ async function loadPlan(page, field, plan) {
                     });
                     return summ(o, s.t, s, { refused, cmds });
                 },
+                /**
+                 * C の画面の操作で実際に入った命令を書き留める（読むだけ）：味方の部隊の order に書き込みを見る口を付け、
+                 * 操作の間（on）に入った命令を、時刻・部隊・命令ごとに並べる。ずれて直す前の命令も入る
+                 */
+                hook() {
+                    const s = window.__battle.state;
+                    this.log ??= [];
+                    for (const u of s.units) {
+                        if (u.side !== 'ally' || u.__g3pHooked) continue;
+                        let v = u.order;
+                        const self = this;
+                        Object.defineProperty(u, 'order', {
+                            get: () => v,
+                            set(n) {
+                                v = n;
+                                if (self.on !== null && self.on !== undefined) self.log.push({ t: +window.__battle.state.t.toFixed(1), cmd: self.on, id: u.id, o: JSON.parse(JSON.stringify(n)) });
+                            },
+                            configurable: true,
+                            enumerable: true,
+                        });
+                        Object.defineProperty(u, '__g3pHooked', { value: true, enumerable: false });
+                    }
+                },
+                setOn(i) {
+                    this.on = i;
+                },
+                addAbility(i, id, target) {
+                    this.log.push({ t: +window.__battle.state.t.toFixed(1), cmd: i, id, ab: true, target: target ?? null });
+                },
+                /**
+                 * D：C で実際に入った命令（ずれて直す前の命令も含む）を、同じ時刻に issueOrder・useAbility で直接入れ直す（早送り）。
+                 * 同じ結果なら、C と B の違いは画面の操作で入った命令の違い（ずれて直す前の命令など）だけで説明がつく
+                 */
+                replay() {
+                    const s = sim.createBattle(fl.buildBattleSetup(fl.getField(field), 'standard'));
+                    // 操作 1 回ごとにまとめる（時刻の順）
+                    const groups = [];
+                    for (const e of this.log ?? []) {
+                        const g = groups.at(-1);
+                        if (g && g.cmd === e.cmd) g.es.push(e);
+                        else groups.push({ cmd: e.cmd, t: e.t, es: [e] });
+                    }
+                    const refused = [];
+                    const o = sim.runToEnd(s, (st) => {
+                        while (groups.length && groups[0].t <= st.t + 0.05) {
+                            const { es } = groups.shift();
+                            const abE = es.find((e) => e.ab);
+                            if (!abE) {
+                                for (const e of es) if (!sim.issueOrder(st, e.id, e.o)) refused.push(`${e.t}:${e.id}:${e.o.type}`);
+                                continue;
+                            }
+                            // 能力の操作：useAbility を入れ直し、その間に入った命令は、部隊ごとの最後の命令と違うときだけ入れる
+                            if (!ab.useAbility(st, abE.id, abE.target ?? undefined).ok) refused.push(`${abE.t}:${abE.id}:ability`);
+                            const last = new Map();
+                            for (const e of es) if (!e.ab) last.set(e.id, e);
+                            for (const e of last.values()) {
+                                const u = sim.unitById(st, e.id);
+                                if (u && JSON.stringify(u.order) === JSON.stringify(e.o)) continue;
+                                if (!sim.issueOrder(st, e.id, e.o)) refused.push(`${e.t}:${e.id}:${e.o.type}`);
+                            }
+                        }
+                    });
+                    return summ(o, s.t, s, { refused, orders: (this.log ?? []).filter((e) => !e.ab).length });
+                },
                 /** C の結果（今の合戦） */
                 liveResult() {
                     const s = window.__battle.state;
@@ -479,10 +554,22 @@ async function execButton(p, id, kind) {
     const o = await orderOf(p.page, id);
     return { ok: o?.type === kind, how: 'ボタン' };
 }
-async function exec(p, d) {
+async function exec(p, d, n) {
     const { id, a } = d;
     const rec = { t: r1(await simT(p.page)), id, label: d.label };
     if (!a) return null; // nearest で当て直す相手が無い（テストでも出さない）
+    // 敗走・全滅した部隊には命令を出せない（sim.ts の canCommand。テストの issueOrder・useAbility でも断られる）
+    const me = await unit(p.page, id);
+    if (!me || !me.present || me.status !== 'ready') {
+        rec.want = a.kind === 'tap' ? ordStr(a.intent) : a.kind;
+        rec.key = a.kind === 'tap' ? (a.intent.type === 'attack' ? `atk:${a.intent.targetId}` : 'move') : a.kind === 'attack' ? `atk:${a.target}` : a.kind === 'abilityOn' ? `ab:${a.target}` : a.kind;
+        return Object.assign(rec, { ok: false, refused: true, why: `${id}は${me?.status ?? '居ない'}（命令を受けない。テストでも断られる）` });
+    }
+    const idx = n;
+    await p.page.evaluate((i) => {
+        window.__g3p.hook();
+        window.__g3p.setOn(i);
+    }, idx);
     let r;
     if (a.kind === 'tap') {
         rec.want = ordStr(a.intent);
@@ -493,10 +580,12 @@ async function exec(p, d) {
     } else if (a.kind === 'ability' || a.kind === 'abilityOn') {
         rec.want = `能力${a.target ? ` → ${a.target}` : ''}`;
         r = await execAbility(p, id, a.target);
+        if (r.ok) await p.page.evaluate(([i, id, t]) => window.__g3p.addAbility(i, id, t), [idx, id, a.target ?? null]);
     } else {
         rec.want = a.kind;
         r = await execButton(p, id, a.kind);
     }
+    await p.page.evaluate(() => window.__g3p.setOn(null));
     Object.assign(rec, r);
     rec.key = a.kind === 'tap' ? (a.intent.type === 'attack' ? `atk:${a.intent.targetId}` : 'move') : a.kind === 'attack' ? `atk:${a.target}` : a.kind === 'abilityOn' ? `ab:${a.target}` : a.kind;
     return rec;
@@ -509,13 +598,20 @@ async function runPlan({ kind, field, plan }) {
     const title = `${NAMES[field][plan] ?? plan}（${plan}）`;
     log(`\n== [${kind}] ${field}：${title}`);
     const p = await openTitle(kind);
+    try {
+        await runPlanIn(p, { kind, field, plan, name, title });
+    } finally {
+        // 途中で止まっても頁を閉じる（閉じないと合戦の描画が裏で動き続け、次の作戦が重くなる）
+        await p.ctx.close().catch(() => {});
+    }
+}
+async function runPlanIn(p, { kind, field, plan, name, title }) {
     const { page } = p;
     await titleToList(p);
     await listToBattle(p, field);
     const ld = await loadPlan(page, field, plan);
     if (ld.error) {
         check(false, `[${kind}] ${name}：台本を読み込む`, ld.error);
-        await p.ctx.close();
         return;
     }
     const A = await page.evaluate(() => window.__g3p.playTest());
@@ -536,7 +632,7 @@ async function runPlan({ kind, field, plan }) {
         for (;;) {
             const d = await page.evaluate(() => window.__g3p.next());
             if (!d) break;
-            const r = await exec(p, d);
+            const r = await exec(p, d, rec.cmds.length);
             if (!r) continue;
             rec.cmds.push(r);
             if (!r.ok) log(`    ${r.refused ? '（断られる）' : 'NG'} ${r.t} 秒 ${r.id} ← ${r.want}：${r.why ?? r.got ?? ''}`);
@@ -555,6 +651,15 @@ async function runPlan({ kind, field, plan }) {
     const C = await page.evaluate(() => window.__g3p.liveResult());
     rec.C = C;
     log(`    C 画面の操作（本物の入力・待ちは早送り）：${fmt(C)}`);
+    // D：C で入った命令の入れ直し（早送り）。C と同じなら、B との違いは入った命令の違いだけで説明がつく
+    const D = await page.evaluate(() => window.__g3p.replay());
+    rec.D = D;
+    rec.orderLog = await page.evaluate(() => window.__g3p.log ?? []);
+    const same = (x, y) => x && y && x.result === y.result && Math.abs(x.t - y.t) < 0.05 && Math.abs(x.loss - y.loss) < 0.05 && x.primary === y.primary && x.secondary.join() === y.secondary.join();
+    rec.CeqB = !!same(C, B);
+    rec.DeqC = !!same(D, C);
+    log(`    D C で入った命令（直す前の命令を含む ${D.orders} 回）を直接入れ直す（早送り）：${fmt(D)}${rec.DeqC ? '（C と同じ）' : '（C と違う）'}`);
+    check(rec.DeqC, `[${kind}] ${name}：画面の操作の結果（C）は、そのとき入った命令の入れ直し（D）と同じ（合戦は同じ命令なら同じ結果）`, rec.CeqB ? 'B とも同じ' : 'B との違いは入った命令の違い');
     const cm = rec.cmds;
     const nat = cm.filter((x) => x.ok && !x.diverged).length;
     const div = cm.filter((x) => x.diverged);
@@ -581,7 +686,6 @@ async function runPlan({ kind, field, plan }) {
     check(res.outcome === C?.result && String(C?.primary) === res.primary, `[${kind}] ${name}：結果の画面の勝敗・主目標が状態と同じ`, `${res.outcome}・主目標 ${res.primary}`);
     if (MAIN[field] === plan) check(C?.result === 'victory' && C.primary === true, `[${kind}] ${field}：画面の操作で命令し、${title}で主目標まで届く`, fmt(C));
     else log(`    （記録）${title}：主目標 ${C?.primary ? '届く' : '届かない'}`);
-    await p.ctx.close();
 }
 
 for (const r of RUNS) {
