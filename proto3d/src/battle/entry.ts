@@ -28,7 +28,7 @@
 import { appContext, enterMode, exitMode, registerBattleRunner, type AppContext, type Mode } from '../app/modes';
 import { loadModel } from '../app/models';
 import type { BattleOutcome, BattleRunHooks, BattleSetup, Order } from './types';
-import { canCommand, createBattle, elevationAt, isActive, issueOrder, orderAllRetreat, stepBattle, unitById, type BattleEvent, type BattleState } from './sim';
+import { canCommand, createBattle, elevationAt, isActive, issueOrder, meleeUnreachable, orderAllRetreat, stepBattle, unitById, type BattleEvent, type BattleState } from './sim';
 import { BattleView } from './view';
 import { BattleUi, type CommandKind } from './battleUi';
 import { abilityEffectTargets, abilityInfo, useAbility } from './abilities';
@@ -1013,10 +1013,24 @@ class BattleRun implements Mode {
                 this.select(act.unitId);
                 this.pending = 'none';
                 break;
-            case 'order':
+            case 'order': {
+                let o = act.order;
+                let note = act.note;
+                // 敵の「すぐ近く」（隊列の外の余白）を押した攻撃で、その敵へ道が無い（櫓台の上・閉じた門の向こう）：押した地点への移動にする
+                // （曲輪の中の地面を押すと門の裏の槍への攻撃になって断られ、先に曲輪へ向かわせておけなかった）。体そのものを押したときは、
+                // 攻撃として断って理由を出す（refusalText）
+                if (o.type === 'attack' && target.kind === 'unit' && target.near) {
+                    const me = unitById(this.s, act.unitId);
+                    const foe = unitById(this.s, o.targetId);
+                    if (me && foe && meleeUnreachable(this.s, me, foe)) {
+                        o = { type: 'move', x: target.x, z: target.z };
+                        note = `${foe.name}へは道が無いので、押した地点へ移動`;
+                    }
+                }
                 // act.unitId は先頭の部隊。命令は選んでいる並びの部隊へ出す（今は同じ 1 部隊）
-                this.order(this.selection.includes(act.unitId) ? this.orderTargets() : [act.unitId], act.order, act.note);
+                this.order(this.selection.includes(act.unitId) ? this.orderTargets() : [act.unitId], o, note);
                 break;
+            }
             case 'deselect':
                 this.select(null);
                 this.pending = 'none';

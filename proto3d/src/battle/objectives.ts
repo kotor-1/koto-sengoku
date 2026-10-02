@@ -53,6 +53,8 @@ export interface ObjectiveTrack {
     secondary: ObjectiveRun[];
     /** primary → secondary の順 */
     list: ObjectiveRun[];
+    /** 敵の部隊がすべて崩れても主目標を自分で果たすまで続く合戦（sim.ts の needsOwnDeed）で、そのことを知らせた時刻 */
+    armyBrokenT?: number;
 }
 
 /** 画面向けの見通し */

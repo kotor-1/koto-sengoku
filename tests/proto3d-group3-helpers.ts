@@ -6,7 +6,7 @@
  * 押す点の 20 m 以内に見えている敵がいればその敵への攻撃にする（画面と同じ）。
  * 'when' の行は「見てから押す」命令（条件が初めて満たされた刻みに 1 回だけ出す。人が画面で状況を見てから押すのと同じ）。
  */
-import { createBattle, isActive, issueOrder, runToEnd, unitById, type BattleState } from '../proto3d/src/battle/sim';
+import { createBattle, isActive, issueOrder, meleeUnreachable, runToEnd, unitById, type BattleState } from '../proto3d/src/battle/sim';
 import { useAbility } from '../proto3d/src/battle/abilities';
 import { buildBattleSetup, getField, type BattlefieldDef } from '../proto3d/src/battle/fields';
 import type { BattleOutcome, Order } from '../proto3d/src/battle/types';
@@ -35,7 +35,10 @@ export function nearestEnemy(s: BattleState, id: string): Order | null {
         const cur = unitById(s, u.order.targetId);
         if (cur && isActive(cur)) return null;
     }
-    const e = seenEnemies(s).sort((a, b) => Math.hypot(a.x - u.x, a.z - u.z) - Math.hypot(b.x - u.x, b.z - u.z))[0];
+    // 道の無い相手（櫓台の上・閉じた門の向こう）への攻撃は画面で断られて理由が出る（sim.ts の meleeUnreachable）ので、人は次に近い敵を押す
+    const e = seenEnemies(s)
+        .filter((x) => !meleeUnreachable(s, u, x))
+        .sort((a, b) => Math.hypot(a.x - u.x, a.z - u.z) - Math.hypot(b.x - u.x, b.z - u.z))[0];
     return e ? atk(e.id) : null;
 }
 export function tapOrder(s: BattleState, [x, z]: [number, number]): Order {

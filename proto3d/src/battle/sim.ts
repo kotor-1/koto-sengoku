@@ -54,6 +54,7 @@ import type {
     BattleResultKind,
     BattleSetup,
     ClanId,
+    ObjectiveDef,
     Order,
     Side,
     TerrainKind,
@@ -812,6 +813,9 @@ function applyOrder(s: BattleState, u: UnitState, order: Order): boolean {
         case 'attack': {
             const t = unitById(s, order.targetId);
             if (!t || t.side === u.side || !isActive(t) || !t.seenBy[u.side]) return false;
+            // 第3群の直し（FieldRules.refinedMoves）：味方の槍・騎馬・本陣は、道の無い相手（櫓台の上・閉じた門の向こう）への攻撃を受けない
+            // （受けると、相手の手前の石垣の足元で道が無いまま攻撃の命令で立ち続け、何も知らせなかった。理由は control.ts の refusalText）
+            if (u.side === 'ally' && meleeUnreachable(s, u, t)) return false;
             u.order = { type: 'attack', targetId: t.id };
             break;
         }
@@ -821,6 +825,18 @@ function applyOrder(s: BattleState, u: UnitState, order: Order): boolean {
     u.faceGoal = null;
     u.path = null;
     return true;
+}
+
+/**
+ * 斬り合う部隊（弓のほか）から相手への道が無く、斬りかかれない（第3群の直し FieldRules.refinedMoves の戦場だけ。ほかの戦場はいつも false）。
+ * 櫓台の上（外からは登れない）・閉じた門の向こうの相手など。斬り合いの間合い（meleeRange + 10 m）で射線が通る相手（柵越し）は除く
+ */
+export function meleeUnreachable(s: BattleState, u: UnitState, t: UnitState): boolean {
+    const nav = s.field.nav;
+    if (!s.field.refined || !nav || u.kind === 'yumi') return false;
+    if (dist(u, t) <= RULES.meleeRange + 10 && hasLineOfSight(s, u, t)) return false;
+    const g = isPassable(nav, t.x, t.z) ? t : nearestPassable(nav, t.x, t.z);
+    return findPath(nav, u.kind, u.x, u.z, g.x, g.z) === null;
 }
 
 /** 全軍撤退（味方のすべての部隊を退き口へ。まだ着いていない部隊は来ない）。出せたら true */
@@ -1693,6 +1709,10 @@ function isFriendObstacle(u: UnitState, o: UnitState): boolean {
 function friendHoldsGoal(s: BattleState, u: UnitState, goal: { x: number; z: number }): boolean {
     // 通れない所がある戦場だけ、境目にゆとりを持たせる（無い戦場は Version 11 と同じ判定）
     const near = s.field.nav ? RULES.spacing - RULES.goalHoldSlack : RULES.spacing;
+    // 第3群の直し（FieldRules.refinedMoves）：自分が中で戦うと不利な地形（泥・水田・浅瀬）にいて、行き先はそうでない（島・土手道の上）なら、
+    // 行き先の隣の味方に触れても着いたことにしない（湿地の確かめ：4 部隊を 1 つの島へ 8 m おきに送ると、先に島へ着いた榊原隊に触れた酒井隊、
+    // その手前の忠勝隊に触れた騎馬隊が、島の手前の泥の中で黙って待機になっていた。stuckNearGoal の泥の決まりと同じ考え）
+    if (s.field.refined && takeMulIn(s.map, s.field, u.x, u.z) > 1 + 1e-9 && takeMulIn(s.map, s.field, goal.x, goal.z) <= 1 + 1e-9) return false;
     for (const o of s.units) {
         if (!isFriendObstacle(u, o)) continue;
         if (o.engagedWith && entersObjectiveZone(s, u, goal)) continue;
@@ -1889,11 +1909,17 @@ function separate(s: BattleState): void {
     const refined = s.field.refined;
     const okAt = (u: UnitState, x: number, z: number) =>
         !nav || !isPassable(nav, u.x, u.z) || (isPassable(nav, x, z) && (!refined || lineClear(nav, u, { x, z })));
-    const nudge = (u: UnitState, dx: number, dz: number) => {
+    // 第3群の直し（FieldRules.refinedMoves）：止まっている味方どうしの押し離しでは、普通の地面（島・土手道の上）から中で戦うと不利な地形
+    // （泥・水田・浅瀬）へ押し出さない（湿地の確かめ：1 つの島へ 4 部隊を送ると、島の縁に着いた部隊が先に着いた味方に押されて泥へ出され、
+    // 泥の中で待機になっていた。島が埋まっていれば縁で重なって待つ）
+    const intoMud = (u: UnitState, x: number, z: number) =>
+        refined && !u.moving && takeMulIn(s.map, s.field, x, z) > 1 + 1e-9 && takeMulIn(s.map, s.field, u.x, u.z) <= 1 + 1e-9;
+    const nudge = (u: UnitState, dx: number, dz: number, ally = false) => {
         const nx = u.x + dx;
         const nz = u.z + dz;
         if (tooCloseToFoe(u, nx, nz)) return;
         if (nav && !okAt(u, nx, nz)) return;
+        if (ally && intoMud(u, nx, nz)) return;
         u.x = nx;
         u.z = nz;
     };
@@ -1953,8 +1979,8 @@ function separate(s: BattleState): void {
                 const kb = (push * wb) / sum;
                 if (!okAt(a, a.x - ux * ka, a.z - uz * ka) || !okAt(b, b.x + ux * kb, b.z + uz * kb)) continue;
             }
-            nudge(a, -ux * push * (wa / sum), -uz * push * (wa / sum));
-            nudge(b, ux * push * (wb / sum), uz * push * (wb / sum));
+            nudge(a, -ux * push * (wa / sum), -uz * push * (wa / sum), true);
+            nudge(b, ux * push * (wb / sum), uz * push * (wb / sum), true);
         }
     }
     for (const u of us) {
@@ -2107,7 +2133,18 @@ function decideByObjective(s: BattleState): void {
         if (enemyOthers.length > 0 && !enemyOthers.some(able)) return finish(s, 'victory', 'enemy_army_broken');
     } else {
         const enemies = s.units.filter((u) => u.side === 'enemy');
-        if (enemies.length > 0 && !enemies.some(able)) return finish(s, 'victory', 'enemy_army_broken');
+        if (enemies.length > 0 && !enemies.some(able)) {
+            // 第3群の直し（FieldRules.refinedMoves）：主目標が「取る」目標（区域の確保・門の制圧・出口への突破・段階目標）なら、敵がすべて崩れても
+            // 勝ちにせず、その目標を果たすまで続ける（敵がいないので確保は数えられる。日没までに果たさなければ撤退）。前は、地形を見ずに一番近い
+            // 敵へ当て直すだけの攻めでも、敵を崩し切れば曲輪の確保・二つの要所の確保をせずに主目標を果たしたことになっていた（城攻め前面・寺社周辺）。
+            // 守る目標（時間・区域を守る・突破を抑える）は、攻め手がいなくなれば守り切ったのと同じなので、今までどおり勝ち
+            if (!(s.field.refined && needsOwnDeed(P.def))) return finish(s, 'victory', 'enemy_army_broken');
+            const tr = s.objectives!;
+            if (tr.armyBrokenT === undefined) {
+                tr.armyBrokenT = s.t;
+                log(s, 'objective', `敵の部隊はすべて崩れた。主目標「${P.def.label}」を果たせば勝ち（日没まで）`);
+            }
+        }
     }
     const allyOthers = s.units.filter((u) => u.side === 'ally' && !u.isHq);
     if (allyOthers.length > 0 && !allyOthers.some(able)) {
@@ -2120,6 +2157,12 @@ function decideByObjective(s: BattleState): void {
         return finish(s, 'defeat', 'ally_army_broken');
     }
     if (s.tick >= Math.round(s.timeLimitSec / RULES.tick)) return endRetreat('nightfall');
+}
+
+/** 敵がすべて崩れても、味方が自分で果たさなければならない主目標（区域の確保・門の制圧・出口への突破。段階目標はその段のどれかがそうなら） */
+function needsOwnDeed(d: ObjectiveDef): boolean {
+    if (d.type === 'sequence') return d.steps.some(needsOwnDeed);
+    return d.type === 'hold_point' || d.type === 'hold_zones' || d.type === 'open_gate' || d.type === 'breakthrough';
 }
 
 // ---------------------------------------------------------------- 門（第3群）

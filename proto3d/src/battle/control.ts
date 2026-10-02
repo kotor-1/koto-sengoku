@@ -8,7 +8,7 @@
  * - 見下ろしカメラの範囲。
  */
 import type { AbilityId, BattleEndReason, BattleMap, BattleOutcome, BattleResultKind, GateDef, ObjectiveDef, Order, Side, UnitKind, Zone } from './types';
-import { STATUS_LABEL, attackDir, canCommand, engagementLabel, hqOf, isActive, issueOrder, orderLabel, pledgeProgress, timeLeft, unitById, type BattleEvent, type BattleState, type UnitState } from './sim';
+import { STATUS_LABEL, attackDir, canCommand, engagementLabel, hqOf, isActive, issueOrder, meleeUnreachable, orderLabel, pledgeProgress, timeLeft, unitById, type BattleEvent, type BattleState, type UnitState } from './sim';
 import { ABILITY_DATA, ABILITY_FICTION_NOTE, abilityInfo, abilityMarks, abilityShortText, isRooted, type AbilityInfo } from './abilities';
 import { objectiveProgress, type ObjectiveRole, type ObjectiveRun, type ObjectiveState } from './objectives';
 import { zoneCenter } from './fieldRules';
@@ -218,6 +218,7 @@ export function refusalText(s: BattleState, unitId: string, order: Order): strin
         if (!t || !isActive(t)) return 'その部隊はもう戦えません';
         if (!t.seenBy[u.side]) return 'その部隊は見えていません';
         if (t.side === u.side) return '味方は攻撃できません';
+        if (meleeUnreachable(s, u, t)) return `${t.name}へは道が無く、斬りかかれません（石垣・櫓台・閉じた門の向こう）。弓なら届けば射られます`;
     }
     return '命令を出せませんでした';
 }
