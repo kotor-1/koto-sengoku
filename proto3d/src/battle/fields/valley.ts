@@ -110,6 +110,8 @@ export const VALLEY: BattlefieldDef = {
     },
     // 武将の基本方針による自由な動き（命令を受けていない待機中だけ。演習の戦場だけ入れる）
     generalInitiative: true,
+    // 第3群で足した動き・道探しの直し（FieldRules.refinedMoves）を付けない（第2群までの台本の結果を 1 刻みも変えない）
+    keepGroup2Movement: true,
     timeLimitSec: 540,
     briefing: [
         'ゲーム用の演習（架空の相手）。南北に長い谷。谷底の両側は高地（高さ 14 m）で、谷底との境は崖。高地へは南の端から登れ、北の端から出口の左右へ降りられる。',

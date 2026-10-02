@@ -156,6 +156,11 @@ export interface BattlefieldDef {
      */
     keepV11Movement?: boolean;
     /**
+     * true なら、第3群で足した動き・道探しの直し（FieldRules.refinedMoves）を付けない。第2群までの 10 戦場が付ける（台本の結果を
+     * 1 刻みも変えないため）。新しい戦場は省く
+     */
+    keepGroup2Movement?: boolean;
+    /**
      * true なら、武将の基本方針による自由な動きを入れる（BattleSetup.generalInitiative。docs/troops-abilities-design.md §3）。
      * 演習の 5 戦場だけが付ける。国境の原（架空の第一章・歴史分岐の章）は付けない
      */

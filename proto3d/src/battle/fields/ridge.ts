@@ -94,6 +94,8 @@ export const RIDGE: BattlefieldDef = {
     },
     // 武将の基本方針による自由な動き（命令を受けていない待機中だけ。演習の戦場だけ入れる）
     generalInitiative: true,
+    // 第3群で足した動き・道探しの直し（FieldRules.refinedMoves）を付けない（第2群までの台本の結果を 1 刻みも変えない）
+    keepGroup2Movement: true,
     timeLimitSec: 540,
     briefing: [
         'ゲーム用の演習（架空の相手）。東西に細長い尾根（高さ 16 m）。尾根の上は、下から攻める相手の損害 ×0.6、弓の射程 +25 m、低い相手へ射る矢 ×1.6、見通し +40 m。',

@@ -190,6 +190,14 @@ function settle(s: BattleState, r: ObjectiveRun, state: 'done' | 'failed', log: 
     log(state === 'done' ? `${name}を果たした` : `${name}は果たせなくなった`);
 }
 
+/** 部隊が limit_breakthrough の出口を抜けた（段階目標の段も見る。突破を抑える目標の無い合戦ではいつも false） */
+function brokeThrough(s: BattleState, id: string): boolean {
+    const tr = s.objectives;
+    if (!tr) return false;
+    const look = (r: ObjectiveRun): boolean => (r.def.type === 'limit_breakthrough' && r.entered.includes(id)) || r.steps.some(look);
+    return tr.list.some(look);
+}
+
 /** limit_breakthrough の攻め手（aiRole 'assault' の敵。いなければ本陣以外の敵） */
 function breakthroughAttackers(s: BattleState): UnitState[] {
     const es = s.units.filter((u) => u.side === 'enemy');
@@ -303,6 +311,8 @@ function update(s: BattleState, r: ObjectiveRun, dt: number, log: (text: string)
             return;
         case 'break_unit': {
             const u = byId(s, d.unitId);
+            // 出口を抜けた（limit_breakthrough で撤退済みにした）敵は、崩したことにしない。もう崩せないので果たせない
+            if (u && brokeThrough(s, u.id)) return settle(s, r, 'failed', log);
             if (u && u.arrived && u.status !== 'ready') settle(s, r, 'done', log);
             else if (u && u.status === 'destroyed') settle(s, r, 'done', log);
             return;

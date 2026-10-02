@@ -77,6 +77,8 @@ export const HILLS: BattlefieldDef = {
     },
     // 武将の基本方針による自由な動き（命令を受けていない待機中だけ。演習の戦場だけ入れる）
     generalInitiative: true,
+    // 第3群で足した動き・道探しの直し（FieldRules.refinedMoves）を付けない（第2群までの台本の結果を 1 刻みも変えない）
+    keepGroup2Movement: true,
     timeLimitSec: 480,
     briefing: [
         'ゲーム用の演習（架空の相手）。中央に大きな丘、東に丘がある。間は谷。中央の丘は頂の近くが急で、頂を取った側が有利になる。',

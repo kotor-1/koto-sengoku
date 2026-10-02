@@ -14,7 +14,7 @@
  */
 import type { BattleMap, BattleSetup, FieldRules, ObjectiveDef, Side, TerrainKind, UnitDef, Zone } from '../types';
 import { RULES, elevationAt } from '../sim';
-import { OBSTACLE_KINDS, areaCenter, createFieldEnv, inZone, openAllGates, zoneCenter } from '../fieldRules';
+import { LOS_BLOCK_KINDS, LOS_EYE, OBSTACLE_HEIGHT, OBSTACLE_KINDS, areaCenter, createFieldEnv, inZone, openAllGates, terrainElevation, zoneCenter } from '../fieldRules';
 import { NAV_CELL, isPassable, reachable } from '../pathfind';
 import { generalById } from '../generals';
 import { ABILITY_DATA } from '../abilities';
@@ -55,6 +55,7 @@ export function fieldRulesOf(field: BattlefieldDef): FieldRules | undefined {
     if (field.pathfinding) r.pathfinding = true;
     if (!field.keepV11Movement) r.settleMoves = true;
     if (field.gates && field.gates.length) r.gates = field.gates;
+    if (!field.keepV11Movement && !field.keepGroup2Movement) r.refinedMoves = true;
     return Object.keys(r).length ? r : undefined;
 }
 
@@ -219,6 +220,13 @@ function validateTerrain(
             if (!(a.rect || a.circle)) out.push(`${tag} の障害物は四角か円で書く`);
             else if (!coversCell(field, a)) out.push(`${tag} の障害物が細すぎて格子（${NAV_CELL} m）の升に載らない（厚さ ${NAV_CELL + 1} m 以上にする）`);
             if (a.height !== undefined && !(a.height > 0)) out.push(`${tag} の高さは 0 より大きい数`);
+            // 射線を遮る高さ（building・wall）は、高さ 0 からの値。丘・台地の上で、その所の地面の高さ＋目の高さ以下だと射線を遮らない
+            if (LOS_BLOCK_KINDS.includes(a.kind) && (a.rect || a.circle)) {
+                const h = a.height ?? OBSTACLE_HEIGHT[a.kind as 'building' | 'wall'];
+                const e = maxGroundIn(field, a);
+                if (e !== null && h <= e + LOS_EYE + 1e-9)
+                    out.push(`${tag} の射線を遮る高さ ${h} m が、その所の地面の高さ ${round1(e)} m＋目の高さ ${LOS_EYE} m 以下で、射線を遮らない（height は高さ 0 からの値。地面の高さを足す）`);
+            }
         }
         if (a.kind === 'bridge') {
             if (!a.rect) {
@@ -263,6 +271,30 @@ function validateTerrain(
         }
     });
     return out;
+}
+
+function round1(v: number): number {
+    return Math.round(v * 10) / 10;
+}
+
+/** 区域に入る格子の升の中心での、地面の高さのいちばん高い値（升に載らない区域は null） */
+function maxGroundIn(field: BattlefieldDef, a: Zone): number | null {
+    const map = fieldMap(field);
+    const x0 = -field.width / 2;
+    const z0 = -field.depth / 2;
+    const cols = Math.ceil(field.width / NAV_CELL);
+    const rows = Math.ceil(field.depth / NAV_CELL);
+    let best: number | null = null;
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            const x = x0 + (c + 0.5) * NAV_CELL;
+            const z = z0 + (r + 0.5) * NAV_CELL;
+            if (!inZone(a, x, z)) continue;
+            const e = terrainElevation(map, x, z);
+            if (best === null || e > best) best = e;
+        }
+    }
+    return best;
 }
 
 /** 区域が格子の升の中心を 1 つ以上含むか（障害物・門が格子に載るか） */
@@ -346,6 +378,11 @@ export function validateField(field: BattlefieldDef): string[] {
         else if (!coversCell(field, { rect: g.rect })) out.push(`門 ${g.id} が細すぎて格子の升に載らない`);
         if (!(g.capture.sec > 0)) out.push(`門 ${g.id} の制圧の秒数は 0 より大きい数`);
         if (g.height !== undefined && !(g.height > 0)) out.push(`門 ${g.id} の高さは 0 より大きい数`);
+        {
+            const e = maxGroundIn(field, { rect: g.rect });
+            const h = g.height ?? OBSTACLE_HEIGHT.gate;
+            if (e !== null && h <= e + LOS_EYE + 1e-9) out.push(`門 ${g.id} の射線を遮る高さ ${h} m が、その所の地面の高さ ${round1(e)} m＋目の高さ ${LOS_EYE} m 以下で、射線を遮らない`);
+        }
         const c = zoneCenter(g.capture.zone);
         const taker: Side = (g.holder ?? 'enemy') === 'enemy' ? 'ally' : 'enemy';
         // 制圧の区域は門の面まで届く（閉じた門へ押し付けられた部隊も数える。門の四辺の真ん中から 1 m 外のどれかが区域の中）

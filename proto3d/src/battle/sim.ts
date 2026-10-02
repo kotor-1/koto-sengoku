@@ -219,6 +219,12 @@ export const RULES = {
     squeezeMove: 2,
     squeezeNear: 8,
     squeezeClear: 6,
+    /**
+     * 第3群の直し（FieldRules.refinedMoves）だけ：橋の無い所で、止まっている（斬り合っていない）味方に塞がれて、この秒数のあいだ行き先までの
+     * 残りの道のりを 1 m も縮められない部隊は、味方の中をすり抜ける（門の口・家並みの間の道を味方が埋めて、移動・攻撃の命令の部隊が動けないまま
+     * 止まらないように。橋の 3 秒より長く待つ：味方がどくのを待つ間は今までどおり）
+     */
+    squeezeStallSec: 20,
 } as const;
 
 /** 種類ごとの性質 */
@@ -361,7 +367,7 @@ export interface UnitState {
      * 橋の詰まり（RULES.squeezeSec）：進みを数え始めた位置・時刻・最後に見た時刻。on なら味方の中をすり抜けている
      * （味方をよけず、味方と押し離さない）。動こうとしていない刻みには null
      */
-    squeeze: { x: number; z: number; t: number; seen: number; on: boolean } | null;
+    squeeze: { x: number; z: number; t: number; seen: number; on: boolean; best?: number; bt?: number } | null;
     /**
      * 号令の守り（兵の下限つきの能力）に守られている間の、号令が無かったときの士気の見積もり（守られ始めた時の士気・使った時の +40 の前
      * から、号令の軽減・士気の床なしに下げる）。守りが外れた（兵が下限を切った）とき、士気をここまで下げてから普通の決まりで見る。
@@ -369,7 +375,7 @@ export interface UnitState {
      */
     rallyShadow: number | null;
     /** 道探しでたどっている道（通れない所がある戦場だけ。goal は作ったときの行き先、pts は通る点、idx は次に向かう点） */
-    path: { goalX: number; goalZ: number; builtT: number; pts: { x: number; z: number }[]; idx: number } | null;
+    path: { goalX: number; goalZ: number; builtT: number; pts: { x: number; z: number }[]; idx: number; none?: boolean } | null;
     /** 移動の進み（新しい動きの決まりの戦場だけ）：行き先・それまでに近づいた一番近い距離・その距離を 1 m 縮めた時刻・最後に見た時刻 */
     moveProg: { gx: number; gz: number; best: number; bestLeft: number; t: number; seen: number } | null;
     /** 戦場にいて相手から隠れていたことがあり、まだ見つかっていない（林の奇襲の判定） */
@@ -1124,11 +1130,14 @@ function tick(s: BattleState): void {
         const leaving = u.status === 'routed' || (u.status === 'ready' && u.order.type === 'retreat');
         if (!leaving) continue;
         const e = exitPointFor(s, u);
-        if (dist(u, e) > 6) continue;
+        // 第3群の直し（FieldRules.refinedMoves）：敗走の部隊の退き口へ道が無い（閉じた門の外へ逃げた城方の出張りなど）なら、退き口へ着くのを
+        // 待たずに、その場から戦場を逃れ去る（閉じた門に押し付けられたまま、門の前の輪の中に残って見えないように）
+        const noRoute = s.field.refined && u.status === 'routed' && !!u.path?.none && Math.hypot(u.path.goalX - e.x, u.path.goalZ - e.z) <= 0.5;
+        if (dist(u, e) > 6 && !noRoute) continue;
         u.present = false;
         u.engagedWith = null;
         u.shootingAt = null;
-        if (u.status === 'routed') log(s, 'fled', `${u.name}が戦場から逃れ去った`, u.id);
+        if (u.status === 'routed') log(s, 'fled', dist(u, e) > 6 ? `${u.name}が散り散りに逃れ去った（退き口への道が塞がれている）` : `${u.name}が戦場から逃れ去った`, u.id);
         else {
             u.status = 'withdrawn';
             log(s, 'withdrawn', `${u.name}が戦場を離れた`, u.id);
@@ -1481,8 +1490,9 @@ function moveUnit(s: BattleState, u: UnitState, p: Plan, dt: number): void {
         if (room > 0.05) {
             // 少しだけ後ろへ下がるときは、向きを変えずに後ずさりする（半分の速さ）
             const backStep = u.status === 'ready' && u.order.type === 'move' && room < 20 && Math.abs(angleDiff(u.facing, direct)) > 120 * DEG;
-            // 橋の上・橋の口で味方に挟まれて進めない：味方の中をすり抜ける（戦える部隊だけ。撤退・敗走はもとから味方の間をすり抜ける）
-            if (s.field.nav && hasBridge(s.map) && u.status === 'ready' && u.order.type !== 'retreat') trackSqueeze(s, u);
+            // 橋の上・橋の口で味方に挟まれて進めない：味方の中をすり抜ける（戦える部隊だけ。撤退・敗走はもとから味方の間をすり抜ける）。
+            // 第3群の直し（FieldRules.refinedMoves）の戦場では、橋の近くに限らず、止まっている味方の間・家並みの間の狭い道で進めないときも同じ
+            if (s.field.nav && (hasBridge(s.map) || s.field.refined) && u.status === 'ready' && u.order.type !== 'retreat') trackSqueeze(s, u, pathLeft(u, p.goal, d));
             else u.squeeze = null;
             // 止まっている味方の部隊が行く手にあれば、横へよけて通る（戦える部隊だけ。撤退・敗走は味方の間をすり抜ける）
             const want = backStep || u.status !== 'ready' || u.order.type === 'retreat' ? direct : steerAround(s, u, aim, u.order.type === 'attack', p.goal);
@@ -1495,13 +1505,15 @@ function moveUnit(s: BattleState, u: UnitState, p: Plan, dt: number): void {
             let speed = st.speed * unitSpeedFactor(s, u) * aligned * abilitySpeedMul(s, u);
             if (u.status === 'routed') speed *= 1.2;
             const step = Math.min(speed * dt, room);
-            // 相手の部隊の中へは入らない（14 m より近づかない）
+            // 相手の部隊の中へは入らない（14 m より近づかない）。第3群：建物・塀の角の向こうで射線の通らない（斬り合えない）相手には
+            // この決まりを効かせない（角の手前 14 m で一歩も進めず、斬り合いもできずに止まらないように。道をたどって角を回れば射線が通って
+            // 斬り合える。重なりは separate が押し離す。射線の格子の無い戦場では、いつも効かせる＝今までどおり）
             let nx = u.x + Math.sin(want) * step;
             let nz = u.z - Math.cos(want) * step;
             for (const o of s.units) {
                 if (o.side === u.side || !isActive(o) || u.status !== 'ready') continue;
                 const nd = Math.hypot(nx - o.x, nz - o.z);
-                if (nd < ENEMY_GAP && nd < dist(u, o)) {
+                if (nd < ENEMY_GAP && nd < dist(u, o) && hasLineOfSight(s, u, o)) {
                     nx = u.x;
                     nz = u.z;
                     break;
@@ -1553,13 +1565,18 @@ function moveUnit(s: BattleState, u: UnitState, p: Plan, dt: number): void {
  * - すり抜けは、始めた所から squeezeClear m 進み、spacing m 以内に味方がいなくなったら終わる。
  * 続けて呼ばれなかった（止まった・斬り合った）ときは数え直す。広い所や、味方がいない所（敵に塞がれている）では始めない
  */
-function trackSqueeze(s: BattleState, u: UnitState): void {
+function trackSqueeze(s: BattleState, u: UnitState, left: number): void {
     const q = u.squeeze;
     if (!q || s.t - q.seen > RULES.tick * 1.5) {
-        u.squeeze = { x: u.x, z: u.z, t: s.t, seen: s.t, on: false };
+        u.squeeze = { x: u.x, z: u.z, t: s.t, seen: s.t, on: false, best: left, bt: s.t };
         return;
     }
     q.seen = s.t;
+    // 行き先までの残りの道のりが 1 m 縮んだ時刻（第3群の直しの、橋の無い所の行き詰まりに使う。味方の横を行ったり来たりしても進んだことにしない）
+    if (q.best === undefined || left <= q.best - 1) {
+        q.best = left;
+        q.bt = s.t;
+    }
     const moved = Math.hypot(u.x - q.x, u.z - q.z);
     const friendNear = (r: number) => s.units.some((o) => o !== u && o.side === u.side && isActive(o) && o.order.type !== 'retreat' && dist(o, u) < r);
     if (q.on) {
@@ -1572,7 +1589,17 @@ function trackSqueeze(s: BattleState, u: UnitState): void {
         q.t = s.t;
         return;
     }
-    if (s.t - q.t < RULES.squeezeSec - 1e-9 || !friendNear(RULES.spacing + 2) || !nearBridge(s.map, u)) return;
+    if (hasBridge(s.map) && nearBridge(s.map, u)) {
+        if (s.t - q.t < RULES.squeezeSec - 1e-9 || !friendNear(RULES.spacing + 2)) return;
+    } else {
+        // 第3群の直し（FieldRules.refinedMoves）：橋の無い所では、止まっていて斬り合っていない味方に塞がれて（門の口・家並みの間の道を
+        // 味方が埋めている）squeezeStallSec 秒進めず、近く（spacing × 2 m）に戦える敵がいないときだけすり抜ける
+        // （斬り合っている味方の後ろで順を待つ列・敵に塞がれた所では始めない）
+        if (!s.field.refined || s.t - (q.bt ?? s.t) < RULES.squeezeStallSec - 1e-9) return;
+        const idleFriend = s.units.some((o) => o !== u && o.side === u.side && isActive(o) && o.order.type !== 'retreat' && !o.moving && !o.engagedWith && dist(o, u) < RULES.spacing + 2);
+        const foeNear = s.units.some((o) => o.side !== u.side && isActive(o) && dist(o, u) < RULES.spacing * 2);
+        if (!idleFriend || foeNear) return;
+    }
     q.on = true;
     q.x = u.x;
     q.z = u.z;
@@ -1616,6 +1643,8 @@ function pathAim(s: BattleState, u: UnitState, goal: { x: number; z: number }): 
     if (stale) {
         const pts = findPath(nav, u.kind, u.x, u.z, goal.x, goal.z);
         P = u.path = { goalX: goal.x, goalZ: goal.z, builtT: s.t, pts: pts ?? [{ x: goal.x, z: goal.z }], idx: 0 };
+        // 道が無かった（閉じた門の向こうの行き先など）：行き先へまっすぐ向かう。敗走の部隊は、第3群の直しで戦場から逃れ去る（tick の 9）
+        if (!pts) P.none = true;
     }
     const path = P!;
     while (path.idx < path.pts.length - 1 && (dist(u, path.pts[path.idx]!) <= RULES.waypointReach || passedWaypoint(nav, u, path.pts[path.idx]!, path.pts[path.idx + 1]!))) path.idx++;
@@ -1712,6 +1741,9 @@ function stuckNearGoal(s: BattleState, u: UnitState, goal: { x: number; z: numbe
     }
     const still = s.t - m.t;
     if (still < RULES.settleSec - 1e-9) return false;
+    // 第3群の直し（FieldRules.refinedMoves）：中で戦うと不利な地形（泥・水田・浅瀬）にいる間は、着いたことにしない（土手道の味方に塞がれた騎馬が、
+    // 出口の区域の 4 m 手前の泥で止まったまま日没にならないように。よけて進み続け、長く塞がれれば味方の中をすり抜ける）
+    if (s.field.refined && takeMulIn(s.map, s.field, u.x, u.z) > 1 + 1e-9) return false;
     // 近く（36 m）の味方：動いている味方がいれば、どくのを待って長めに（押し合ったまま止まらない二隊も、いずれ片方が着く）。
     // 行き先から遠い部隊は、動いている・斬り合っている味方がいれば待ち続ける（狭い所を抜ける列の途中・前の味方が戦っている列の後ろ）
     const friends = s.units.filter((o) => o !== u && o.side === u.side && isActive(o) && dist(o, u) < RULES.spacing * 2);
@@ -1719,7 +1751,10 @@ function stuckNearGoal(s: BattleState, u: UnitState, goal: { x: number; z: numbe
     const fighting = friends.some((o) => !!o.engagedWith);
     if (d <= RULES.settleNear) return still >= RULES.settleSec * (moving ? 3 : 1) - 1e-9;
     if (fighting || moving) return false;
-    return still >= RULES.settleSec * 2 - 1e-9;
+    if (still < RULES.settleSec * 2 - 1e-9) return false;
+    // 第3群の直し（FieldRules.refinedMoves）：行き先から遠い所で行き詰まって待機にするときは、味方の部隊なら知らせる（黙って止まらない）
+    if (s.field.refined && u.side === 'ally') log(s, 'lost', `${u.name}：道を塞がれて先へ進めない。ここで待機する`, u.id);
+    return true;
 }
 
 /**

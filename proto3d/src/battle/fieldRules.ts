@@ -134,6 +134,8 @@ export interface FieldEnv {
     gates: GateRun[];
     /** 射線の格子（射線を遮る障害物・門がある戦場だけ。無ければ null で、射線を見ない） */
     los: LosGrid | null;
+    /** 第3群の動きの直し（FieldRules.refinedMoves。省けば false で、既存の 10 戦場の動きのまま） */
+    refined: boolean;
 }
 
 /** 区域（地形・目標）の中か */
@@ -271,26 +273,37 @@ function buildLos(map: BattleMap, gates: readonly GateRun[]): LosGrid | null {
     return { cell, x0, z0, cols, rows, height };
 }
 
+/** 射線の格子の升の番号（格子の外は -1） */
+function losCell(g: LosGrid, x: number, z: number): number {
+    const c = Math.floor((x - g.x0) / g.cell);
+    const r = Math.floor((z - g.z0) / g.cell);
+    if (c < 0 || r < 0 || c >= g.cols || r >= g.rows) return -1;
+    return r * g.cols + c;
+}
+
 /**
  * 射線が通るか（a から d へ。射線の格子の無い戦場ではいつも true＝見ない）。
  * 線分を 1 m おきにたどり、射線を遮る升（建物・石垣・閉じた門）の上で、線分の高さ（両端の地面の高さ＋目の高さ LOS_EYE を
- * まっすぐ結んだ高さ）が遮る高さより低ければ遮られる。高い所（丘・櫓）の上から射る・高い所の相手を射るときは、遮る物の上を越えることがある
+ * まっすぐ結んだ高さ）が遮る高さより低ければ遮られる。高い所（丘・櫓）の上から射る・高い所の相手を射るときは、遮る物の上を越えることがある。
+ * 両端の点そのものを含む升は見ない（建物の縁が格子の線からずれていると、建物の外に立つ部隊の点が「遮る升」に入ることがある。
+ * 自分の立つ升で自分の射線が切れないように）
  */
 export function lineOfSight(map: BattleMap, env: FieldEnv, a: { x: number; z: number }, d: { x: number; z: number }): boolean {
     const g = env.los;
     if (!g) return true;
     const len = Math.hypot(d.x - a.x, d.z - a.z);
     const steps = Math.max(1, Math.ceil(len));
+    const ia = losCell(g, a.x, a.z);
+    const id = losCell(g, d.x, d.z);
     let ea = NaN;
     let ed = NaN;
     for (let k = 1; k < steps; k++) {
         const t = k / steps;
         const x = a.x + (d.x - a.x) * t;
         const z = a.z + (d.z - a.z) * t;
-        const c = Math.floor((x - g.x0) / g.cell);
-        const r = Math.floor((z - g.z0) / g.cell);
-        if (c < 0 || r < 0 || c >= g.cols || r >= g.rows) continue;
-        const h = g.height[r * g.cols + c]!;
+        const i = losCell(g, x, z);
+        if (i < 0 || i === ia || i === id) continue;
+        const h = g.height[i]!;
         if (h <= 0) continue;
         if (Number.isNaN(ea)) {
             ea = terrainElevation(map, a.x, a.z) + LOS_EYE;
@@ -308,6 +321,7 @@ function makeNav(map: BattleMap, env: FieldEnv): NavGrid {
         map.depth,
         (x, z) => passableIn(map, env.passable, x, z, env.gates),
         (kind, x, z) => terrainSpeedIn(map, env, kind, x, z),
+        env.refined,
     );
 }
 
@@ -350,6 +364,7 @@ export function createFieldEnv(map: BattleMap, rules?: FieldRules): FieldEnv {
         dry: present.has('dry'),
         gates: (rules?.gates ?? []).map((def) => ({ def, holder: def.holder ?? 'enemy', open: false, sec: 0, openedT: null, noteT: null })),
         los: null,
+        refined: !!rules?.refinedMoves,
     };
     if (hasBlockingTerrain(map) || passable || rules?.pathfinding || env.gates.length > 0) env.nav = makeNav(map, env);
     env.los = buildLos(map, env.gates);

@@ -7,6 +7,12 @@
  * - 行き先へまっすぐ行ける（途中に出発点・行き先より遅い所が無い）ときも、まっすぐの方がかかる時間で A* の道より
  *   STRAIGHT_SLACK 倍より遅ければ、A* の道を使う（行き先が水田の中でも、街道・畦道を回る方がずっと早ければ回る）。
  * - 行き先が通れない所なら、いちばん近い通れる格子の中心へ向かう。
+ * - 第3群の動きの直し（buildNav の refined。FieldRules.refinedMoves の戦場だけ。既存の 10 戦場は今までどおり）：
+ *   - 出発点・行き先の格子の中心がとても遅い地形（SLOW_TERRAIN 未満。泥など）でも、その点そのものが速い地形（乾いた足場・土手道）なら、
+ *     隣の格子のうち、その点の速さ以上でいちばん近い格子を出発・行き先の格子にする（幅 24 m の土手道の縁 x=10 の行き先が、中心 12.5 の
+ *     泥の升に入って、泥をまっすぐ突っ切らないように）。
+ *   - 出発点がとても遅い地形の中なら、道を短くする区間のかかる時間の上限を SMOOTH_SLACK（2 倍）ではなく STRAIGHT_SLACK（1.1 倍）にする
+ *     （泥の中から、土手道へ戻らずに泥を突っ切る区間を選ばない）。
  *
  * sim.ts から：buildNav（合戦の始めに 1 回）・findPath（部隊が道を作り直すとき）・isPassable・nearestPassable。
  * 同じ入力なら同じ道になる（探す順・同じ重みのときの順は決まっている）。
@@ -28,6 +34,11 @@ export const STRAIGHT_SLACK = 1.1;
  * 今までどおり飛ばす（第1群の戦場の動きを 1 刻みも変えないため）。
  */
 export const SMOOTH_SLACK = 2;
+/**
+ * 第3群の動きの直し（refined）で「とても遅い地形」とみなす速さの倍率の上限（これ未満。泥 0.35・浅瀬 0.4・水田 0.3。林 0.5 は含めない）。
+ * 出発点・行き先の格子の選び直しと、道を短くする上限を STRAIGHT_SLACK にするのは、この地形から出る道だけ
+ */
+export const SLOW_TERRAIN = 0.5;
 
 export interface NavGrid {
     readonly cell: number;
@@ -42,6 +53,10 @@ export interface NavGrid {
     readonly speedOf: (kind: UnitKind) => Float32Array;
     /** 格子の中でいちばん速い速さ（A* の見積もりに使う） */
     readonly maxSpeed: number;
+    /** 第3群の動きの直し（出発点・行き先の格子をその点の速さで選び直す・道を短くする上限を STRAIGHT_SLACK に）。省けば false */
+    readonly refined: boolean;
+    /** その点そのものの速さ（格子の中心ではなく。refined の出発点・行き先の格子の選び直しに使う） */
+    readonly pointSpeed: (kind: UnitKind, x: number, z: number) => number;
     // A* の作業場所（使い回す）
     g: Float64Array;
     from: Int32Array;
@@ -60,6 +75,7 @@ export function buildNav(
     depth: number,
     passableAt: (x: number, z: number) => boolean,
     speedAt: (kind: UnitKind, x: number, z: number) => number,
+    refined = false,
 ): NavGrid {
     const cell = NAV_CELL;
     const cols = Math.max(1, Math.ceil(width / cell));
@@ -105,6 +121,8 @@ export function buildNav(
         blocked,
         speedOf,
         maxSpeed: maxSpeed || 1,
+        refined,
+        pointSpeed: (kind, x, z) => (passableAt(x, z) ? Math.max(0.05, speedAt(kind, x, z)) : 0),
         g: new Float64Array(n),
         from: new Int32Array(n),
         stamp: new Uint32Array(n),
@@ -195,6 +213,36 @@ function straightTime(nav: NavGrid, spd: Float32Array, ax: number, az: number, b
 }
 
 /**
+ * 第3群の動きの直し（nav.refined）：点 (x, z) を含む格子 i の中心の速さが、その点そのものの速さより遅い（升の中心は泥、点は乾いた足場の縁）なら、
+ * まわり 8 つの格子のうち、通れて速さがその点の速さ以上の、点にいちばん近い格子（同じ距離なら並びの順）。無ければ i のまま
+ */
+function snapCell(nav: NavGrid, spd: Float32Array, kind: UnitKind, i: number, x: number, z: number): number {
+    if (!nav.refined || nav.blocked[i] || spd[i]! >= SLOW_TERRAIN - 1e-6) return i;
+    const want = nav.pointSpeed(kind, x, z);
+    if (!(want > spd[i]! + 1e-6)) return i;
+    const c0 = i % nav.cols;
+    const r0 = (i - c0) / nav.cols;
+    let best = i;
+    let bd = Infinity;
+    for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+            const r = r0 + dr;
+            const c = c0 + dc;
+            if ((dr === 0 && dc === 0) || r < 0 || c < 0 || r >= nav.rows || c >= nav.cols) continue;
+            const j = r * nav.cols + c;
+            if (nav.blocked[j] || spd[j]! < want - 1e-6) continue;
+            const p = centerOf(nav, j);
+            const d = Math.hypot(p.x - x, p.z - z);
+            if (d < bd - 1e-9) {
+                bd = d;
+                best = j;
+            }
+        }
+    }
+    return best;
+}
+
+/**
  * from から to への道（通る点の並び。最後の点が行き先。from は含まない）。道が無ければ null。
  * 行き先が通れない所なら、いちばん近い通れる所を行き先にする。
  */
@@ -202,11 +250,14 @@ export function findPath(nav: NavGrid, kind: UnitKind, fx: number, fz: number, t
     const spd = nav.speedOf(kind);
     const goalPt = nearestPassable(nav, tx, tz);
     let start = cellOf(nav, fx, fz);
+    // 出発点の格子がとても遅い地形（泥など）か（第3群の直し：道を短くする上限を STRAIGHT_SLACK にする）
+    const slowStart = nav.refined && !nav.blocked[start] && spd[start]! < SLOW_TERRAIN - 1e-6;
     if (nav.blocked[start]) {
         const p = nearestPassable(nav, fx, fz);
         start = cellOf(nav, p.x, p.z);
-    }
-    const goal = cellOf(nav, goalPt.x, goalPt.z);
+    } else start = snapCell(nav, spd, kind, start, fx, fz);
+    const startSnapped = start !== cellOf(nav, fx, fz) && !nav.blocked[cellOf(nav, fx, fz)];
+    const goal = snapCell(nav, spd, kind, cellOf(nav, goalPt.x, goalPt.z), goalPt.x, goalPt.z);
     if (start === goal) return [goalPt];
     // まっすぐ行けて、途中に出発点・行き先より遅い所が無ければ、まっすぐ行く候補。途中がどこも格子でいちばん速い所なら、それより早い道は無い。
     // そうでなければ A* の道と、かかる時間で比べる（下の straightT）
@@ -331,9 +382,10 @@ export function findPath(nav: NavGrid, kind: UnitKind, fx: number, fz: number, t
     let g0 = 0; // 今の点（出発点、または前の格子の中心）までの元の道の時間
     let k = 0;
     const minTo = new Float64Array(pts.length);
+    const slack = slowStart ? STRAIGHT_SLACK : SMOOTH_SLACK;
     while (k < pts.length) {
-        // minTo[j]：今の点から j までの元の道のいちばん遅い速さ
-        let m = spd[cellOf(nav, ax, az)]!;
+        // minTo[j]：今の点から j までの元の道のいちばん遅い速さ（第3群の直しでは、出発点の速さは選び直した出発の格子の速さ）
+        let m = startSnapped && k === 0 ? spd[start]! : spd[cellOf(nav, ax, az)]!;
         for (let q = k; q < pts.length; q++) {
             m = Math.min(m, spd[cells[q]!]!);
             minTo[q] = m;
@@ -344,7 +396,7 @@ export function findPath(nav: NavGrid, kind: UnitKind, fx: number, fz: number, t
             // 元の道が同じ速さだけなら、まっすぐの方が早い（時間を比べるまでもない）
             if (minTo[j]! >= nav.maxSpeed - 1e-6) break;
             const c = centerOf(nav, cells[j]!);
-            if (straightTime(nav, spd, ax, az, c.x, c.z) <= (g[cells[j]!]! - g0) * SMOOTH_SLACK + 1e-9) break;
+            if (straightTime(nav, spd, ax, az, c.x, c.z) <= (g[cells[j]!]! - g0) * slack + 1e-9) break;
         }
         out.push(pts[j]!);
         ax = pts[j]!.x;

@@ -111,7 +111,13 @@ export interface TerrainArea {
     rect?: { x0: number; x1: number; z0: number; z1: number };
     circle?: { cx: number; cz: number; r: number };
     capsule?: { ax: number; az: number; bx: number; bz: number; r: number };
-    /** 丘の高さ（m。表示と守りの強さの計算に使う）。building・wall では射線を遮る高さ（m。射線がこれより高い所を通れば遮らない） */
+    /**
+     * 丘の高さ（m。表示と守りの強さの計算に使う）。
+     * building・wall では射線を遮る高さ（m）。地面からの高さではなく、高さ 0（丘の無い平地の地面）からの高さ。射線の線分の高さ
+     * （両端の地面の高さ＋目の高さ 1.5 m をまっすぐ結んだ高さ）がこれより高い所を通れば遮らない。丘・台地の上に建てるときは、
+     * その所の地面の高さを足す（例：高さ 8 m の台地の上の高さ 7 m の堂は 15）。地面の高さ＋1.5 m 以下だと、同じ高さに立つ部隊どうしの射線を
+     * 遮らないので、validateField が知らせる
+     */
     height?: number;
 }
 
@@ -209,6 +215,17 @@ export interface FieldRules {
     settleMoves?: boolean;
     /** 門（第3群。閉じている間は通れず射線を遮る。制圧で開く）。省けば門は無い */
     gates?: GateDef[];
+    /**
+     * true なら、第3群で足した動き・道探しの直しを使う（省けば今までの動き。合戦場のデータから作る合戦（fields/build.ts）は、
+     * keepV11Movement・keepGroup2Movement の戦場を除いて付ける）：
+     * - 道探し（pathfind.ts）：出発点・行き先の格子の中心が泥でも、その点が乾いた足場なら隣の乾いた格子から道を探す。道を短くする区間の時間の上限を
+     *   STRAIGHT_SLACK（1.1 倍）にする（泥の中から土手道へ戻らずに泥を突っ切らない）。
+     * - 移動の行き詰まり（sim.ts の stuckNearGoal）：中で戦うと不利な地形（泥・水田・浅瀬）にいる間と、まだ果たしていない目標の区域へ外から
+     *   入る間は、行き先の近くで止まっても着いたことにしない。止まっている味方 2 部隊の間などで長く進めない移動・攻撃は、よける側を替え、
+     *   道を引き直し、それでも進めなければ待機に戻して知らせる。
+     * - 敗走の部隊の退き口へ道が無い（閉じた門の向こう）ときは、その場から戦場を逃れ去る。
+     */
+    refinedMoves?: boolean;
 }
 
 /**
@@ -225,7 +242,7 @@ export interface FieldRules {
  * - survive_until：援軍 reinforcementId が着いて、さらに holdSec 秒（省けば 0）耐える
  * - preserve_unit：部隊 unitId を崩さず、兵を最初の minRatio 以上残して終える（副目標向け。全軍撤退で終えたら果たせない）
  * - limit_losses：味方の兵の損害を maxRatio 以内で終える（副目標向け。全軍撤退で終えたら果たせない）
- * - break_unit：敵の部隊 unitId を崩す（敗走・全滅・撤退させる）
+ * - break_unit：敵の部隊 unitId を崩す（敗走・全滅・撤退させる）。limit_breakthrough の出口を抜けた部隊は崩したことにしない（果たせない）
  * 第3群で足した種類：
  * - hold_zones：区域 zones のすべて（mode 'all'）を同時に、敵のいない状態で味方が占め、それが sec 秒続く（例：山門と本堂前）。
  *   どれか 1 つでも外れると 0 に戻る。names は区域ごとの短い名前
