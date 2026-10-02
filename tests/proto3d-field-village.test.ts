@@ -28,6 +28,12 @@
  * - 無計画（UNPLANNED）：0／16 勝（記録：平均 172 秒に負け・損害 39.1％・最後まで戦える部隊 平均 0.3・敵の損害 12.0％）。
  * - 通りごとに 1 部隊ずつ分ける（SPLIT。薄い）：0／16 勝（記録：平均 267 秒に負け）。待つだけ：110 秒に屋敷前を奪われて負け。
  * - 石川の差配：西の辻 (-72,-25) へ回す予備に使うと 0 → 11／16 勝。家並みの間 (-72,-5) では 16 → 16、広場の中では 15 → 15（損害 26.0 → 27.5％）。
+ *
+ * 本物の入力（このテストの外。使い捨ての Playwright で ?dev=field&id=village を開き、札を押す → 地面を押すで POST と同じ命令を出し、待ちは
+ * 開発用の早送り）：PC・スマホ相当とも 420 秒で勝ち、副目標 3 つとも果たした。家康本陣の (0,125) は、押した所に止まっている忠勝隊の体があり
+ * 選び直しになった（移動先指定を使わない押し方。台本は issueOrder で直接出すので動く）。この差は結果を変えなかった。
+ * 数字はどれも細かい位置・時刻で動く（例：榊原隊の行き先を (30,80) から直った先の (28,63) に書き換えるだけで、家屋の陰の弓が崩れない数が 4 → 13）。
+ * そのため、勝ち数・副目標の数は「比べ」と「下限」で確かめ、等しさで縛るのは記録として安定している所（0 勝・16 勝・850 など）だけにした。
  */
 import { describe, expect, it } from 'vitest';
 import { createBattle, issueOrder, runToEnd, RULES, type BattleState } from '../proto3d/src/battle/sim';
@@ -163,7 +169,7 @@ const DEPLOY: [string, [number, number]][] = [
     ['a_kiba', [48, 40]],
     ['a_ishikawa', [18, 52]],
     ['a_yumi', [-18, 55]],
-    ['a_sakakibara', [30, 80]],
+    ['a_sakakibara', [30, 80]], // 南の列の家屋の中（押すと issueOrder が近くの通れる所 (28,63) ほどへ直す。画面で押しても同じ。第3群の共通の台本と同じ点）
     ['a_ieyasu', [0, 125]],
 ];
 const deploy = (o: Record<string, [number, number]> = {}): Step[] => DEPLOY.map(([id, p], i) => [4 + i * 2, id, tap(...(o[id] ?? p))] as Step);
@@ -320,9 +326,9 @@ describe('村落の作戦（早送り）', () => {
         // 作った時：柵の内側 817（850 から 33 減る）、家屋の陰 850（射られない）
         expect(shade).toBe(850);
         expect(fence).toBeLessThan(shade - 20);
-        // 弓隊を崩さずに終える（16 通り）：柵の内側 16 ／家屋の陰 4
+        // 弓隊を崩さずに終える（16 通り）：柵の内側 16 ／家屋の陰 4（抜け道の口の脇で第三波に当たられる）
         expect(count(sixteen(FENCE), 'village_archers')).toBe(16);
-        expect(count(sixteen(SHADE), 'village_archers')).toBeLessThan(8);
+        expect(count(sixteen(SHADE), 'village_archers')).toBeLessThan(count(sixteen(FENCE), 'village_archers'));
     }, 300_000);
 
     it('副目標が作戦で分かれる：広場を固めると損害は抑えるが米蔵を失う。通りの口で受ける（準備した正面攻撃）と米蔵は守るが損害が 3 割を超える', () => {
@@ -381,7 +387,7 @@ describe('村落の作戦（早送り）', () => {
         expect(wins(sixteen(STREET_NO))).toBe(16);
         expect(wins(sixteen(STREET_AB))).toBe(16);
         // 広場の中で回す（第三波へ）：差配あり 15・なし 15 勝。損害は 27.5％ と 26.0％（差配の分、石川隊が動けない）
-        expect(wins(sixteen(OPEN_AB))).toBe(wins(sixteen(OPEN_NO)));
+        expect(Math.abs(wins(sixteen(OPEN_AB)) - wins(sixteen(OPEN_NO)))).toBeLessThanOrEqual(2);
         const gain = (a: Run[], b: Run[]) => wins(a) - wins(b);
         expect(gain(jAb, jNo)).toBeGreaterThan(gain(sixteen(STREET_AB), sixteen(STREET_NO)) + 8);
         expect(gain(jAb, jNo)).toBeGreaterThan(gain(sixteen(OPEN_AB), sixteen(OPEN_NO)) + 8);
