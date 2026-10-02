@@ -1,7 +1,9 @@
 /**
- * 戦場「一本橋」（single_bridge）の釣り合い：地形に合わない作戦（放置・全部隊で橋へ押し込む・全部隊で橋の守りへ・向かい直しても）は
- * 負ける・日没・損害が大きい。地形に合った作戦（弓の陽動で橋の守りを南の岸へ引き出して囲み、橋を渡って来る後詰めも岸で迎え撃ち、
- * 西の浅瀬を渡って来る別働隊は騎馬で水の中で討ってから橋頭へ）は勝つ。副目標（損害を 3 割以内に・陽動の弓隊を半分以上残す）は作戦で分かれる。
+ * 戦場「一本橋」（single_bridge）の釣り合い：地形に合った作戦（弓の陽動で橋の守りを南の岸へ引き出して囲み、橋を渡って来る後詰めも岸で
+ * 迎え撃ち、西の浅瀬を渡って来る別働隊は騎馬で水の中で討ってから橋頭へ）は 16 通りで安定して勝つ。無計画な攻撃（全部隊で橋へ押し込む・
+ * 全部隊で橋の守りへ・向かい直しても）は、地形に合った作戦・準備した正面攻撃と比べて主目標に届かない・損害が大きい・副目標を落とす
+ * （比べが合格条件。勝敗は記録として書く）。準備した正面攻撃（守りと別働隊を先に討ち、五隊で橋を正面から渡る）の結果も記録して比べる。
+ * 副目標（損害を 3 割以内に・陽動の弓隊を半分以上残す）は作戦で分かれる。
  * 武将の能力の価値が地形で変わる比べ（榊原の先駆けの号：浅瀬と橋の上。忠勝の退路の守護：橋の上から退く隊）。
  *
  * どれも「早送り」（決まった時刻に issueOrder・useAbility で命令を出す台本を runToEnd で最後まで進める）。
@@ -147,6 +149,38 @@ const LURE_ONLY: Step[] = [
 /** 正面突破：槍・騎馬の五隊で橋頭へ真っすぐ（弓は橋の守りを射る） */
 const PUSH: Step[] = [...MELEE.map((id) => [0, id, HEAD] as Step), [0, 'a_yumi', atk('e_guard')]];
 
+/**
+ * 準備した正面攻撃（橋を正面から渡る）：前半は弓で橋の守りを射て（射られた守りは南の岸へ打って出る）、岸で忠勝隊・酒井隊・石川隊の三隊で
+ * 当たる（50 秒）。騎馬二隊は西の浅瀬の南の口で別働隊を水の中で討つ（兵種を合わせる）。100 秒に三隊を近い敵へ当て直し、150 秒に
+ * 槍・騎馬の五隊で橋頭へ正面から渡る（弓は東の弓を射る）。地形に合った作戦（FIT）との違いは、渡った後に橋頭の左右の弓へ当たらず、
+ * 浅瀬から回り込みもせず、五隊とも橋の上を通って橋頭の輪へ真っすぐ入ること。命令は 18 回（0・50・60・100・150 秒）。
+ * 能力は使わない（酒井の采配を 55 秒に足すと 16 通りの勝ち 14 → 12・平均の損害 30.2 → 35.0％、家康本陣を上げて 160 秒に号令を足しても
+ * 14 勝のまま・損害 33.8％、榊原の先駆けの号を 60 秒に足すと 11 勝。狭い橋の上と浅瀬の口では囲めず、効果の後の士気の下がりが重い）
+ */
+const PREPARED: Step[] = [
+    [0, 'a_yumi', atk('e_guard')],
+    [0, 'a_sakakibara', mv(-167, 10)],
+    [0, 'a_kiba', mv(-155, 25)],
+    [0, 'a_ishikawa', mv(-10, 45)],
+    [50, 'a_tadakatsu', atk('e_guard')],
+    [50, 'a_sakai', atk('e_guard')],
+    [50, 'a_ishikawa', atk('e_guard')],
+    [60, 'a_sakakibara', atk('e_west')],
+    [60, 'a_kiba', atk('e_west')],
+    [100, 'a_tadakatsu', 'nearest'],
+    [100, 'a_sakai', 'nearest'],
+    [100, 'a_ishikawa', 'nearest'],
+    ...MELEE.map((id) => [150, id, HEAD] as Step),
+    [150, 'a_yumi', atk('e_yumi_e')],
+];
+
+/** 比べの基準（同じ台本は 1 回だけ進める） */
+const memo = new Map<Step[], Run>();
+const run = (steps: Step[]): Run => {
+    if (!memo.has(steps)) memo.set(steps, play(steps));
+    return memo.get(steps)!;
+};
+
 describe('一本橋のデータ', () => {
     it('検査を通る。味方 7／敵 7（敵はすべて敵勢）。橋 1 本・浅瀬 1 か所・狭い正面（1 部隊）・橋の矢 ×1.6。主目標は橋頭確保（敵本陣の撃破ではない）', () => {
         expect(validateField(SB)).toEqual([]);
@@ -203,59 +237,88 @@ describe('一本橋のデータ', () => {
     });
 });
 
-describe('一本橋：地形に合わない作戦（早送り）', () => {
-    it('何もしない → 橋頭を取れず日没', () => {
-        const r = play([]);
+// 合格条件は「正面なら負ける」ではなく、同じ台本・同じ数字での比べ（地形に合った作戦・準備した正面攻撃と比べて、主目標に届かない・
+// 損害が大きい・副目標を落とす）。無計画な攻撃の勝敗は「記録」として残す（台本と数字は前のまま。変わったら理由と前後の数字を書いて直す）
+describe('一本橋：無計画な攻撃・地形に合わない作戦と、地形に合った作戦の比べ（早送り）', () => {
+    it('何もしない → 地形に合った作戦（勝ち）と違い、主目標に届かない（記録：橋頭を取れず日没）', () => {
+        const r = run([]);
+        expect(run(FIT).o.objectives!.primary!.achieved).toBe(true);
+        expect(r.o.objectives!.primary!.achieved).toBe(false);
+        // 記録
         expect(r.o.result).toBe('retreat');
         expect(r.o.reason).toBe('nightfall');
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
     });
 
-    it('全部隊で橋頭へ押し込む（弓は橋の守りを射る）→ 橋の上で守りに一隊ずつ当たり、両の弓に射られて負けるか日没（損害 4 割を超える。作った時 235 秒で負け・48％）', () => {
-        const r = play(PUSH);
-        expect(r.o.result).not.toBe('victory');
+    it('全部隊で橋頭へ押し込む（無計画。弓は橋の守りを射る）→ 準備した正面攻撃・地形に合った作戦より損害が大きく、主目標に届かず、副目標も落とす（記録：橋の上で守りに一隊ずつ当たり、両の弓に射られて負けるか日没。作った時 235 秒で負け・48％）', () => {
+        const r = run(PUSH);
+        // 確かめた時：223.0 秒に負け・損害 50.3％ ／ 準備した正面攻撃 277.4 秒に勝ち・29.8％ ／ 地形に合った作戦 291.8 秒に勝ち・27.3％
+        for (const better of [run(PREPARED), run(FIT)]) {
+            expect(r.loss).toBeGreaterThan(better.loss + 0.15);
+            expect(better.o.objectives!.primary!.achieved).toBe(true);
+            expect(secondaryOf(better, 'bridge_losses')).toBe(true);
+        }
         expect(r.o.objectives!.primary!.achieved).toBe(false);
+        expect(secondaryOf(r, 'bridge_losses')).toBe(false);
+        // 記録
+        expect(r.o.result).not.toBe('victory');
         expect(r.loss).toBeGreaterThan(0.4);
         // 敵の弓はどちらも無傷のまま（橋の上の隊は射られるだけ）
         expect(r.left.e_yumi_w).toBe(260);
         expect(r.left.e_yumi_e).toBe(260);
     });
 
-    it('弓も一緒に全部隊で橋頭へ → 負ける（作った時 146 秒）', () => {
-        const r = play([...MELEE, 'a_yumi'].map((id) => [0, id, HEAD] as Step));
-        expect(r.o.result).toBe('defeat');
+    it('弓も一緒に全部隊で橋頭へ（無計画）→ 準備した正面攻撃より損害が大きく、主目標に届かず、陽動の弓隊も残せない（記録：負ける。作った時 146 秒）', () => {
+        const r = run([...MELEE, 'a_yumi'].map((id) => [0, id, HEAD] as Step));
+        // 確かめた時：157.6 秒に負け・損害 48.9％
+        expect(r.loss).toBeGreaterThan(run(PREPARED).loss + 0.15);
         expect(r.o.objectives!.primary!.achieved).toBe(false);
+        expect(secondaryOf(run(PREPARED), 'bridge_archers')).toBe(true);
+        expect(secondaryOf(r, 'bridge_archers')).toBe(false);
+        // 記録
+        expect(r.o.result).toBe('defeat');
         expect(r.o.elapsedSec).toBeLessThan(240);
     });
 
-    it('全部隊で橋の守りへ攻めかかる（弓も）→ 勝てない（橋頭を取れず、損害 4 割超）。30 秒ごとに近い敵へ当て直しても負ける', () => {
+    it('全部隊で橋の守りへ攻めかかる（弓も。無計画）→ 準備した正面攻撃より損害が大きく、主目標に届かない。30 秒ごとに近い敵へ当て直しても同じ（記録：橋頭を取れず日没・負け、損害 4 割超）', () => {
         const all: Step[] = [...MELEE, 'a_yumi'].map((id) => [0, id, atk('e_guard')] as Step);
-        const r = play(all);
+        const r = run(all);
         // 橋の詰まりの直し（sim.ts の trackSqueeze：橋の口で止まっている味方に挟まれた部隊は、味方の中をすり抜ける）で数字が変わった：
         // 直す前 192.3 秒で負け（全軍の崩れ）・損害 47.8％ → 直した後 日没（480 秒・撤退）・損害 43.4％。詰まっていた隊が橋を渡り切って
         // 橋の守りを 58.5 秒に崩すが、狭い正面で一隊ずつ削られ、弓以外の五隊は敗走し、橋頭は取れない（主目標は未達成）
-        expect(r.o.result).not.toBe('victory');
+        expect(r.loss).toBeGreaterThan(run(PREPARED).loss + 0.1);
         expect(r.o.objectives!.primary!.achieved).toBe(false);
+        // 記録
+        expect(r.o.result).not.toBe('victory');
         expect(r.loss).toBeGreaterThan(0.4);
         const again = [30, 60, 90, 120, 150, 180, 210, 240, 270, 300].flatMap((t) => MELEE.map((id) => [t, id, 'nearest'] as Step));
-        const r2 = play([...all, ...again]);
-        expect(r2.o.result).not.toBe('victory');
+        const r2 = run([...all, ...again]);
+        // 確かめた時：230.5 秒に負け・損害 43.1％
+        expect(r2.loss).toBeGreaterThan(run(PREPARED).loss + 0.1);
         expect(r2.o.objectives!.primary!.achieved).toBe(false);
+        // 記録
+        expect(r2.o.result).not.toBe('victory');
         expect(r2.loss).toBeGreaterThan(0.4);
     });
 
-    it('60 秒ごとに橋頭へ向かい直す（崩れた隊の命令は断られる）→ 負けるか日没（損害 4 割を超える。作った時 283 秒で負け・54％）', () => {
+    it('60 秒ごとに橋頭へ向かい直す（無計画。崩れた隊の命令は断られる）→ 準備した正面攻撃より損害が大きく、主目標に届かない（記録：負けるか日没。作った時 283 秒で負け・54％）', () => {
         const re = [60, 120, 180, 240, 300].flatMap((t) => MELEE.map((id) => [t, id, HEAD] as Step));
-        const r = play([...PUSH, ...re]);
-        expect(r.o.result).not.toBe('victory');
+        const r = run([...PUSH, ...re]);
+        // 確かめた時：290.7 秒に負け・損害 54.3％
+        expect(r.loss).toBeGreaterThan(run(PREPARED).loss + 0.15);
         expect(r.o.objectives!.primary!.achieved).toBe(false);
+        // 記録
+        expect(r.o.result).not.toBe('victory');
         expect(r.loss).toBeGreaterThan(0.4);
     });
 
-    it('陽動でも、槍を出すのが早すぎる（30 秒。守りがまだ橋の上・南の口）→ 狭い正面で一隊ずつになり負ける', () => {
-        const r = play(FIT.map(([t, id, o]) => [t === 50 ? 30 : t, id, o] as Step));
-        expect(r.o.result).not.toBe('victory');
+    it('陽動でも、槍を出すのが早すぎる（30 秒。守りがまだ橋の上・南の口）→ 50 秒に出す同じ作戦より損害が大きく、主目標に届かず、損害の副目標を落とす（記録：狭い正面で一隊ずつになり負ける）', () => {
+        const r = run(FIT.map(([t, id, o]) => [t === 50 ? 30 : t, id, o] as Step));
+        // 確かめた時：397.8 秒に負け・損害 58.6％
+        expect(r.loss).toBeGreaterThan(run(FIT).loss + 0.2);
+        expect(r.o.objectives!.primary!.achieved).toBe(false);
         expect(secondaryOf(r, 'bridge_losses')).toBe(false);
+        // 記録
+        expect(r.o.result).not.toBe('victory');
     });
 });
 
@@ -322,7 +385,7 @@ describe('一本橋：地形に合った作戦（早送り）', () => {
         const det = jitterWins(DETOUR);
         expect(fit.wins).toBeGreaterThanOrEqual(14);
         expect(det.wins).toBeGreaterThanOrEqual(12);
-        // 正面突破はずらしても勝たない（台本は時刻 0 だけなので、ずらすのは同じ。確かめとして日没か負け）
+        // 記録：正面突破はずらしても勝たない（台本は時刻 0 だけなので、ずらすのは同じ。日没か負け）。比べは「無計画な攻撃と…の比べ」を見る
         expect(play(PUSH).o.result).not.toBe('victory');
     }, 120_000);
 });
@@ -431,4 +494,26 @@ describe('一本橋：武将の能力の価値が地形で変わる（早送り�
         expect(statusOf(use.r, 'a_sakai')).toBe('withdrawn');
         expect(Object.keys(use.r.o.abilitiesUsed ?? {})).toEqual(['a_tadakatsu']);
     });
+});
+
+describe('一本橋：準備した正面攻撃（早送り）', () => {
+    it('弓で守りを南の岸へ出して三隊で討ち、騎馬で浅瀬の別働隊を討ってから、五隊で橋を正面から渡って橋頭へ（記録：277.4 秒に勝ち・損害 29.8％・副目標も両方）', () => {
+        const r = run(PREPARED);
+        expect(r.refused).toEqual([]);
+        // 記録
+        expect(r.o.result).toBe('victory');
+        expect(r.o.objectives!.primary!.achieved).toBe(true);
+        expect(secondaryOf(r, 'bridge_losses')).toBe(true);
+        expect(secondaryOf(r, 'bridge_archers')).toBe(true);
+        expect(r.loss).toBeLessThan(0.32);
+    });
+
+    it('16 通りで、無計画な押し込み（正面突破）より勝ちが多い。地形に合った作戦（渡った後に左右の弓へ当たる）よりは少し勝ちが少なく、損害の副目標も落としやすい（記録：準備 14 勝・損害 3 割以内 12・弓を残す 15 ／ 正面突破 0 勝 ／ 地形に合った作戦 16 勝・9・14）', () => {
+        const prep = jitterWins(PREPARED);
+        // 正面突破は 0 秒の命令だけなのでずらしても同じ（1 通りの結果が 16 通りの結果）
+        expect(run(PUSH).o.result).not.toBe('victory');
+        expect(prep.wins).toBeGreaterThanOrEqual(12);
+        expect(prep.archersOk).toBeGreaterThanOrEqual(12);
+        expect(jitterWins(FIT).wins).toBeGreaterThanOrEqual(prep.wins);
+    }, 120_000);
 });
