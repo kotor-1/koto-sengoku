@@ -9,25 +9,38 @@
  * 無計画な攻撃・一方へ集める・待つだけの結果は記録として書く。
  *
  * どれも「早送り」：決まった時刻と「見てから押す」行で issueOrder・useAbility を出す台本を runToEnd で最後まで進める（画面の操作ではない）。
- * 台本は人が画面でできる程度の命令の数・間隔にしている（一番多い準備した正面攻撃で 49 回・約 7 分。10 秒に多くて 8 回＝押し返しが来たとき）。
+ * 台本は人が画面でできる程度の命令の数・間隔にしている（一番多い準備した正面攻撃で 43 回・約 6 分。1 通りは 10 秒に多くて 8 回＝押し返しが
+ * 来たとき。16 通りでは多くて 41 回・10 秒に 10 回。画面の「指揮」で止めて出せる）。
  * 移動の後の向き（face）は使わない。画面では敵の近くの地面を押すとその敵への攻撃になるので、台本の地面の行き先（tap）も、押す点の 20 m 以内に
  * 見えている敵がいればその敵への攻撃にする。
- * 人が画面でするのと同じ「見てから押す」行：着いたのを見て次の点を押す（道筋）、詰まって手前で止まったら押し直す、押し返しの槍が輪へ
- * 近づいたのを見て守り手を当てる、追い払ったら輪の中の持ち場へ戻す。
+ * 人が画面でするのと同じ「見てから押す」行：着いたのを見て次の点を押す（道筋）、詰まって手前で止まったら押し直す、輪を取った後に押し返しの槍が
+ * 輪へ近づいたのを見て守り手を当てる、追い払ったら輪の中の持ち場へ戻す、手の空いた部隊を要所の敵へ当て直す。
  *
  * 揺らぎ（16 通り）：時刻の行は ±15 秒（乱数の種 7 から。第2群・第3群のテストと同じ作り方）、「見てから押す」行には人が見てから押すまでの
  * 遅れ 0〜15 秒を足す（同じ乱数から。tests/proto3d-field-marsh.test.ts と同じ作り方）。
  *
- * 作った時の結果（早送り。16 通りは上の揺らぎ。守れる部隊＝最後に戦える味方の部隊の数／7。副目標は 損害 3 割・忠勝隊 6 割・押し返しの槍）：
+ * 今の結果（早送り。16 通りは上の揺らぎ。守れる部隊＝最後に戦える味方の部隊の数／7。副目標は 損害 3 割・忠勝隊 6 割・押し返しの槍）：
  * | 作戦 | 1 通り | 16 通り |
- * | 石段と脇道から同時に（COMBO） | 251 秒・損害 19.8％・勝ち・✓✗✗・7／7 | 13 勝・平均 265 秒（256〜275）・損害 22.7％・守れる 6.6・副目標 13／0／3 |
- * | 脇道と林から分けて入る（SPLIT） | 266 秒・14.7％・勝ち・✓✓✗・7／7 | 15 勝・平均 311 秒（279〜454）・22.4％・守れる 6.6・副目標 15／16／3 |
- * | 準備した正面攻撃（FRONT。全軍で石段から） | 464 秒・25.0％・勝ち・✓✗✓・6／7 | 11 勝・平均 522 秒（471〜590）・27.5％・守れる 5.9・副目標 12／0／16 |
- * | 一方へ集める（CONC。東へ全軍） | 日没・31.0％・✗✗✓・6／7（本堂前は取るが、山門の輪へ手が回らない） | |
- * | 無計画：全部隊で目標へ一斉、あとは一番近い敵へ当て直すだけ（RUSH） | 443 秒に敵をすべて崩して勝ち・49.8％・✗✗✓・4／7（動きの直しの後 378 秒・37.2％・5／7） | 16 通りとも同じ（当て直しの時刻をずらしても変わらない） |
+ * | 石段と脇道から同時に（COMBO） | 225 秒・損害 15.7％・勝ち・✓✗✗・7／7 | 16 勝・平均 263 秒（247〜279）・損害 20.2％・守れる 7.0・副目標 16／0／0 |
+ * | 脇道と林から分けて入る（SPLIT） | 266 秒・14.7％・勝ち・✓✓✗・7／7 | 16 勝・平均 295 秒（278〜313）・21.3％・守れる 6.9・副目標 15／16／1 |
+ * | 準備した正面攻撃（FRONT。全軍で石段から） | 372 秒・24.8％・勝ち・✓✗✓・6／7 | 16 勝・平均 433 秒（367〜534）・26.6％・守れる 5.4・副目標 13／0／16 |
+ * | 一方へ集める（CONC。東へ全軍） | 日没・16.0％・✓✓✓・7／7（本堂前は取り、敵は本陣のほか崩すが、山門の輪へ手が回らない） | |
+ * | 無計画：全部隊で目標へ一斉、あとは一番近い敵へ当て直すだけ（RUSH） | 378 秒に敵をすべて崩して勝ち・37.2％・✗✗✓・5／7 | 16 通りとも同じ（当て直しの時刻をずらしても変わらない） |
  * | 待つ（HOLD） | 日没・損害 0 | |
- * 第3群の動きの直し（FieldRules.refinedMoves ほか）の後：1 通りは無計画の行だけが変わる（上の表の括弧）。16 通りは石段と脇道 13 勝・脇道と林 15 勝のまま、
- * 準備した正面攻撃 11 勝 → 14 勝（平均 521 秒・26.3％・守れる 6.1）。
+ * 本物の入力での確かめ（このテストの外。使い捨ての Playwright で ?dev=field&id=temple を開き、「指揮」で止めて、札を押す →「移動」→ 地面を押す／
+ * 札を押す → 敵の体を押すで SPLIT と同じ点・同じ条件の命令を出し、待ちは開発用の早送り（1 秒ずつ）。条件も 1 秒ごとに見る）：
+ * 前の台本では PC で日没・損害 38.7％（酒井隊・榊原隊・騎馬が崩れる）。原因は台本の作りで、東の口の槍が崩れたのと本陣の騎馬が本堂前の 60 m に
+ * 入ったのを同じ 1 秒で見ると、押し返しへ当たる行が後から出て、本堂前の槍への攻撃を上書きした（刻みごとに見る早送りでは 0.5 秒ずれて逆の順に
+ * なり、勝っていた）。騎馬を追い払った二隊はその場で待機のまま本堂の弓に射られ続けた。早送りでも、条件を 1 秒ごとに見ると同じ結果になった。
+ * 直し：押し返しへ当たるのは輪を取った後だけ（meet の held）・別の押し返しへ当たっている守り手は当て直さない・手の空いた部隊を要所の敵へ
+ * 当て直す（resume）・準備した正面攻撃の集まる所へは本堂前を取った後に呼び戻さない（go の until）・一方へ集めるの列の並び（酒井隊が先頭）。
+ * 直しの前 → 後（1 通り）：石段と脇道 251 秒・19.8％ → 225 秒・15.7％、脇道と林 266 秒・14.7％（同じ）、準備した正面攻撃 464 秒・25.0％ →
+ * 372 秒・24.8％、一方へ集める 日没・31.0％・✗✗✓ → 日没・16.0％・✓✓✓。16 通り：13・15・14 勝 → 16・16・16 勝。
+ * 条件を 1 秒・2 秒ごとに見ても、3 つの作戦はどれも勝つ（石段と脇道 236・240 秒、脇道と林 268・268 秒、準備した正面攻撃 412・416 秒）。
+ * 直した台本を同じやり方の本物の入力で出すと（ポート 8351・コミット 4dc42f4 の上の作業ツリー）：PC 269.3 秒・損害 15.3％、スマホ相当
+ * 270.4 秒・14.0％で、どちらも勝ち（副目標 ✓✓✗・戦える部隊 7／7・命令 25 回・思ったとおりにならなかった命令 0・ページの誤り 0）。
+ * それより前の記録：作った時（3bed681）の 16 通りは 13・15・11 勝、第3群の動きの直し（FieldRules.refinedMoves ほか）の後は 13・15・14 勝で、
+ * 無計画は 443 秒・49.8％・4／7 → 378 秒・37.2％・5／7。
  *
  * 武将の能力の価値が地形で変わる比べ（同じ 16 通り）：
  * - 家康の「立て直しの号令」：狭い石段で忠勝隊が山門の槍と削り合う（1 部隊ずつしか斬りかかれない）と、号令で山門の槍が 9〜14 秒早く崩れる。
@@ -212,9 +225,9 @@ function squad(ids: string[], pts: [number, number][][], start: number, j: J): S
 
 /**
  * 行き先へ押す（start の後）。詰まって手前で待機になった（25 m より遠い）のを見たら押し直す（最大 n 回。石段の上で味方が斬り合っていると
- * 後ろが詰まる。人が画面で押し直すのと同じ）
+ * 後ろが詰まる。人が画面で押し直すのと同じ）。until が真になったら押し直さない（次の段へ進んだ後に、通り道の集まる所へ呼び戻さない）
  */
-function go(id: string, x: number, z: number, start: Cond, j: J, n = 3): Step[] {
+function go(id: string, x: number, z: number, start: Cond, j: J, n = 3, until?: Cond): Step[] {
     const first = late(start, j.d());
     const cnt = new WeakMap<BattleState, number>();
     const sent = new WeakMap<BattleState, number>();
@@ -237,7 +250,7 @@ function go(id: string, x: number, z: number, start: Cond, j: J, n = 3): Step[] 
             (s) => {
                 if ((cnt.get(s) ?? 0) !== k + 1) return false;
                 const u = unitById(s, id)!;
-                const ok = s.t >= sent.get(s)! + 3 && idle(id)(s) && Math.hypot(u.x - x, u.z - z) > 25;
+                const ok = s.t >= sent.get(s)! + 3 && idle(id)(s) && Math.hypot(u.x - x, u.z - z) > 25 && !until?.(s);
                 if (!ok) {
                     seen.delete(s);
                     return false;
@@ -285,16 +298,72 @@ function post(id: string, x: number, z: number, from: Cond, j: J, n = 4): Step[]
     return out;
 }
 
-/** 押し返し（と本陣の騎馬）が輪 (zx, zz) の r m 以内へ来たのを見て、守り手 ids がその敵へ当たる（見えている敵だけ） */
+/**
+ * 当て直し：from の後、待機（斬り合っていない）になった部隊を、targets のうち見えていて戦える最初の敵へ当てる（最大 n 回・5 秒あけて）。
+ * 押し返しの槍・本陣の騎馬へ当たって追い払うと、その部隊はその場で待機になる。人が画面で、手の空いた部隊を見て要所の敵へ押し直すのと同じ。
+ * （これが無いと、本陣の騎馬が本堂前へ来たのと東の口の槍が崩れたのを同じ時に見て騎馬へ当てた場合に、騎馬を追い払った後の部隊が
+ * 本堂の弓に射られたまま立ち尽くす。本物の入力で 1 秒ごとに見て押したときに起きた）
+ */
+function resume(id: string, targets: string[], from: Cond, j: J, n = 3): Step[] {
+    const out: Step[] = [];
+    const cnt = new WeakMap<BattleState, number>();
+    const last = new WeakMap<BattleState, number>();
+    const pick = (s: BattleState) =>
+        targets.find((x) => {
+            const u = unitById(s, x);
+            return !!u && isActive(u) && u.seenBy.ally;
+        });
+    for (let k = 0; k < n; k++) {
+        const d = j.d() + 2;
+        const seen = new WeakMap<BattleState, number>();
+        const ready: Cond = (s) => {
+            if ((cnt.get(s) ?? 0) !== k) return false;
+            const ok = from(s) && s.t >= (last.get(s) ?? -1e9) + 5 && idle(id)(s) && !!pick(s);
+            if (!ok) {
+                seen.delete(s);
+                return false;
+            }
+            if (!seen.has(s)) seen.set(s, s.t);
+            return s.t >= seen.get(s)! + d - 1e-9;
+        };
+        for (const tg of targets)
+            out.push([
+                (s) => {
+                    if (!ready(s) || pick(s) !== tg) return false;
+                    cnt.set(s, k + 1);
+                    last.set(s, s.t);
+                    return true;
+                },
+                id,
+                atk(tg),
+            ]);
+    }
+    return out;
+}
+
+/**
+ * 押し返し（と本陣の騎馬）が輪 (zx, zz) の r m 以内へ来たのを見て、守り手 ids がその敵へ当たる（見えている敵だけ）。
+ * held（その輪の守り手の槍が崩れた＝輪を取った）の後だけ。取る前は、輪の敵への攻撃を続ける（取る前に本陣の騎馬へ向きを変えると、
+ * 騎馬を追い払った後に本堂の弓に射られ、輪の槍を崩し切れない。本物の入力で 1 秒ごとに見て押したときに起きた）。
+ * もう別の押し返しへ当たっている守り手は、その相手が崩れるまで当て直さない（数秒の間に同じ隊へ二度押さない）
+ */
 const COUNTERS = ['e_counter', 'e_counter2', 'e_kiba'];
-function meet(ids: string[], zx: number, zz: number, j: J, r = 60): Step[] {
+function meet(ids: string[], zx: number, zz: number, held: Cond, j: J, r = 60): Step[] {
     const out: Step[] = [];
     for (const f of COUNTERS) {
         const c: Cond = (s) => {
             const u = unitById(s, f);
-            return !!u && u.status === 'ready' && u.present && u.seenBy.ally && Math.hypot(u.x - zx, u.z - zz) <= r;
+            return held(s) && !!u && u.status === 'ready' && u.present && u.seenBy.ally && Math.hypot(u.x - zx, u.z - zz) <= r;
         };
-        for (const id of ids) out.push([w(c, j), id, atk(f)]);
+        for (const id of ids) {
+            const busy: Cond = (s) => {
+                const o = unitById(s, id)!.order;
+                if (o.type !== 'attack' || o.targetId === f || !COUNTERS.includes(o.targetId)) return false;
+                const e = unitById(s, o.targetId);
+                return !!e && isActive(e);
+            };
+            out.push([w((s) => c(s) && !busy(s), j), id, atk(f)]);
+        }
     }
     return out;
 }
@@ -307,8 +376,8 @@ const G2: [number, number] = [9, -68];
 const H1: [number, number] = [31, -152];
 const H2: [number, number] = [49, -152];
 const H3: [number, number] = [40, -135];
-const gateDef = (ids: string[], j: J) => meet(ids, GATE.x, GATE.z, j);
-const hallDef = (ids: string[], j: J) => meet(ids, HALL.x, HALL.z, j);
+const gateDef = (ids: string[], j: J) => meet(ids, GATE.x, GATE.z, gone('e_gate'), j);
+const hallDef = (ids: string[], j: J) => meet(ids, HALL.x, HALL.z, gone('e_hall'), j);
 
 interface Run {
     o: BattleOutcome;
@@ -324,8 +393,11 @@ interface Run {
     cmds: number[];
 }
 
-/** 台本を最後まで進める（each は刻みごと） */
-function play(steps: Step[], each?: (s: BattleState) => void): Run {
+/**
+ * 台本を最後まで進める（each は刻みごと）。every を渡すと、命令の行（時刻・条件）を every 秒ごとにだけ見る（人が画面を 1 秒ごとに見て押すのに
+ * 近い。同じ時に真になった条件は行の並びの順に出る）
+ */
+function play(steps: Step[], each?: (s: BattleState) => void, every = 0): Run {
     const s = createBattle(buildBattleSetup(TP, 'standard'));
     const timed = steps.filter((x) => typeof x[0] === 'number').sort((a, b) => (a[0] as number) - (b[0] as number));
     const watch = steps.filter((x) => typeof x[0] === 'function');
@@ -348,6 +420,10 @@ function play(steps: Step[], each?: (s: BattleState) => void): Run {
         } else if (!issueOrder(st, id, 'tap' in ord ? tapOrder(st, ord.tap) : ord)) refused.push(`${label}:${id}`);
     };
     const o = runToEnd(s, (st) => {
+        if (every > 0 && Math.abs(st.t / every - Math.round(st.t / every)) > 1e-6) {
+            each?.(st);
+            return;
+        }
         while (timed.length && st.t >= (timed[0]![0] as number) - 1e-9) {
             const [t, id, ord] = timed.shift()!;
             run(st, String(t), id, ord);
@@ -428,6 +504,9 @@ const COMBO: Plan = (j) => [
     ...post('a_sakakibara', ...H2, gone('e_hall'), j),
     ...post('a_tadakatsu', ...G2, gone('e_gate'), j),
     ...post('a_ishikawa', ...G1, gone('e_gate'), j),
+    ...resume('a_sakai', ['e_hall'], late(gone('e_side'), 10), j),
+    ...resume('a_sakakibara', ['e_yumi_hall', 'e_hall'], late(gone('e_side'), 10), j),
+    ...resume('a_kiba', ['e_hall'], late(gone('e_side'), 10), j),
 ];
 
 /**
@@ -491,6 +570,8 @@ const SPLIT: Plan = (j) => [
     ...post('a_sakakibara', ...H2, gone('e_hall'), j),
     ...post('a_tadakatsu', ...G2, gone('e_gate'), j),
     ...post('a_ishikawa', ...G1, gone('e_gate'), j),
+    ...resume('a_sakai', ['e_hall'], late(gone('e_side'), 10), j),
+    ...resume('a_sakakibara', ['e_yumi_hall', 'e_hall'], late(gone('e_side'), 10), j),
 ];
 
 /**
@@ -511,9 +592,10 @@ const FRONT: Plan = (j) => [
     [w(low('e_gate', 70), j), 'a_tadakatsu', atk('e_gate')],
     [w(engaged('a_tadakatsu', 'e_gate'), j), 'a_ishikawa', { abilityOn: 'a_tadakatsu' }],
     [w(low('a_tadakatsu', 60), j), 'a_ieyasu', 'ability'],
-    ...go('a_sakakibara', 25, -95, gone('e_gate'), j),
-    ...go('a_kiba', -20, -100, gone('e_gate'), j),
-    ...go('a_sakai', 5, -105, late(gone('e_gate'), 8), j),
+    // 本堂前の手前の集まる所。本堂前の槍を崩した後は呼び戻さない（輪の中の持ち場と行き来しない）
+    ...go('a_sakakibara', 25, -95, gone('e_gate'), j, 3, gone('e_hall')),
+    ...go('a_kiba', -20, -100, gone('e_gate'), j, 3, gone('e_hall')),
+    ...go('a_sakai', 5, -105, late(gone('e_gate'), 8), j, 3, gone('e_hall')),
     ...go('a_tadakatsu', ...G2, gone('e_gate'), j),
     ...go('a_ishikawa', ...G1, late(gone('e_gate'), 20), j),
     ...go('a_yumi', -10, -50, late(gone('e_gate'), 30), j),
@@ -532,6 +614,9 @@ const FRONT: Plan = (j) => [
     ...post('a_sakakibara', ...H2, gone('e_hall'), j),
     ...post('a_tadakatsu', ...G2, gone('e_gate'), j),
     ...post('a_ishikawa', ...G1, gone('e_gate'), j),
+    ...resume('a_sakai', ['e_hall'], late(gone('e_gate'), 40), j),
+    ...resume('a_kiba', ['e_hall'], late(gone('e_gate'), 40), j),
+    ...resume('a_sakakibara', ['e_yumi_hall', 'e_hall'], late(gone('e_gate'), 40), j),
 ];
 
 /** 一方へ集める（CONC）：弓のほかは全軍で東の脇道を回り、本堂前を取る。山門へは本堂前を取ってから騎馬を 1 隊だけ回す */
@@ -541,12 +626,13 @@ const CONC: Plan = (j) => [
     ...squad(
         ['a_sakai', 'a_sakakibara', 'a_kiba', 'a_tadakatsu', 'a_ishikawa'],
         [
+            // 道の上の並び（北が先頭）を次の行き先の並びと同じにする（酒井隊が先頭。逆だと、先頭へ出る酒井隊が前の隊に塞がれて道の途中で止まる）
             [
+                [174, 0],
+                [174, 30],
+                [176, 110],
                 [174, 60],
                 [174, 90],
-                [176, 110],
-                [174, 30],
-                [174, 0],
             ],
             [
                 [174, -110],
@@ -734,7 +820,7 @@ describe('作戦（早送り）', () => {
         hold: play(HOLD(J0)),
     };
 
-    it('石段と脇道から同時に：二つの要所を同時に 60 秒確保して勝つ（記録：251 秒・損害 19.8％）', () => {
+    it('石段と脇道から同時に：二つの要所を同時に 60 秒確保して勝つ（記録：225 秒・損害 15.7％）', () => {
         expect(won(r.combo), brief(r.combo)).toBe(true);
         expect(r.combo.o.reason).toBe('objective_done');
     });
@@ -744,24 +830,26 @@ describe('作戦（早送り）', () => {
         expect(r.split.o.reason).toBe('objective_done');
     });
 
-    it('準備した正面攻撃（全軍で石段から）：勝つ（記録：464 秒・損害 25.0％）。石段と脇道より遅い', () => {
+    // 台本の直し（meet の held・resume・go の until）で、準備した正面攻撃は 464 秒 → 372 秒になった（本堂前の集まる所と持ち場を行き来しなくなった）。
+    // 石段と脇道 225 秒・脇道と林 266 秒との差は 147 秒・106 秒なので、比べの幅を「120 秒以上遅い」→「90 秒以上遅い」にする
+    it('準備した正面攻撃（全軍で石段から）：勝つ（記録：372 秒・損害 24.8％）。石段と脇道・脇道と林より遅い', () => {
         expect(won(r.front), brief(r.front)).toBe(true);
-        expect(r.front.t).toBeGreaterThan(r.combo.t + 120);
-        expect(r.front.t).toBeGreaterThan(r.split.t + 120);
+        expect(r.front.t).toBeGreaterThan(r.combo.t + 90);
+        expect(r.front.t).toBeGreaterThan(r.split.t + 90);
     });
 
     it('副目標が作戦で分かれる：脇道と林は忠勝隊を残すが押し返しを崩さない。準備した正面攻撃は押し返しを崩すが忠勝隊が削られる。石段と脇道は忠勝隊 ✗', () => {
         expect([sec(r.split, 'temple_tadakatsu'), sec(r.split, 'temple_counter')], brief(r.split)).toEqual([true, false]);
         expect([sec(r.front, 'temple_tadakatsu'), sec(r.front, 'temple_counter')], brief(r.front)).toEqual([false, true]);
         expect(sec(r.combo, 'temple_tadakatsu'), brief(r.combo)).toBe(false);
-        // 3 つとも損害は 3 割以内（記録：19.8・14.7・25.0％）
+        // 3 つとも損害は 3 割以内（記録：15.7・14.7・24.8％）
         for (const x of [r.combo, r.split, r.front]) expect(sec(x, 'temple_losses'), brief(x)).toBe(true);
     });
 
     // 第3群の動きの直し（FieldRules.refinedMoves と、建物の角の向こうの相手に「14 m より近づかない」を効かせない直し）の後、無計画な攻撃は
     // 443 秒・49.8％・残る部隊 4 → 378 秒・37.2％・残る部隊 5 になった（家屋・堂の角の手前で止まって射られ続けていた部隊が、角を回って斬り合う）。
     // ほかの作戦の 1 通りの結果は変わらない。比べの幅を「損害が 15 点以上小さい」→「10 点以上」、石段と脇道・脇道と林は「25 点以上」→「15 点以上」にする
-    it('比べ：準備した正面攻撃は無計画な攻撃より損害が小さく、守れる部隊・果たす副目標が多い（記録：無計画は 443 秒に敵をすべて崩して勝つが、損害 49.8％・残る部隊 4。動きの直しの後 378 秒・37.2％・5）', () => {
+    it('比べ：準備した正面攻撃は無計画な攻撃より損害が小さく、守れる部隊・果たす副目標が多い（記録：無計画は 378 秒に敵をすべて崩して勝つが、損害 37.2％・残る部隊 5。準備した正面攻撃は 24.8％・6）', () => {
         expect(r.front.loss).toBeLessThan(r.rush.loss - 0.1);
         expect(standing(r.front)).toBeGreaterThan(standing(r.rush));
         const n = (x: Run) => x.o.objectives!.secondary.filter((y) => y.achieved).length;
@@ -775,13 +863,22 @@ describe('作戦（早送り）', () => {
         }
     });
 
-    it('記録：一方へ集める（東へ全軍）は、本堂前は取るが山門へ手が回らず、同時の確保が数えられないまま日没（損害は分けて入る作戦と同じくらい）。待つだけも日没', () => {
+    it('記録：一方へ集める（東へ全軍）は、本堂前は取るが山門へ手が回らず、同時の確保が数えられないまま日没（損害は分けて入る作戦と同じくらい：16.0％ 対 14.7％）。待つだけも日没', () => {
         expect(r.conc.o.objectives!.primary!.achieved, brief(r.conc)).toBe(false);
         expect(r.conc.o.reason).toBe('nightfall');
         // 敵の部隊は本陣のほかすべて崩しているのに、二つの輪を同時に占めていない
         expect(r.conc.o.units.filter((u) => u.side === 'enemy' && u.id !== 'e_hq' && u.status === 'ready').length).toBe(0);
         expect(Math.abs(r.conc.loss - r.split.loss)).toBeLessThan(0.2);
         expect([r.hold.o.reason, r.hold.loss]).toEqual(['nightfall', 0]);
+    });
+
+    // 本物の入力（1 秒ごとに見て押す）で、脇道と林が日没になったことから足した（ヘッダーの「本物の入力での確かめ」）
+    it('条件を 1 秒・2 秒ごとに見て押しても、3 つの作戦はどれも勝つ（記録：石段と脇道 236・240 秒、脇道と林 268・268 秒、準備した正面攻撃 412・416 秒）', () => {
+        for (const every of [1, 2])
+            for (const p of [COMBO, SPLIT, FRONT]) {
+                const x = play(p(J0), undefined, every);
+                expect(won(x), `${every}秒 ${brief(x)}`).toBe(true);
+            }
     });
 
     it('台本は人が画面でできる程度：命令は 50 回以下、10 秒に 8 回以下。移動の後の向き（face）は使わない', () => {
@@ -795,23 +892,26 @@ describe('作戦（早送り）', () => {
 });
 
 describe('作戦の安定性（早送り・±15 秒と見てから押す遅れの 16 通り）', () => {
-    it('石段と脇道・脇道と林は 16 通りで 12 勝以上（記録：13 勝・15 勝）。脇道と林は忠勝隊をいつも残し、石段と脇道は早い', () => {
+    it('石段と脇道・脇道と林は 16 通りで 12 勝以上（記録：16 勝・16 勝）。脇道と林は忠勝隊をいつも残し、石段と脇道は早い', () => {
         const combo = sixteen(COMBO);
         const split = sixteen(SPLIT);
         expect(combo.filter(won).length).toBeGreaterThanOrEqual(12);
         expect(split.filter(won).length).toBeGreaterThanOrEqual(12);
-        // 時間：勝った回の平均（記録：265 秒・311 秒）
+        // 時間：勝った回の平均（記録：263 秒・295 秒）
         expect(mean(combo.filter(won).map((x) => x.t))).toBeLessThan(mean(split.filter(won).map((x) => x.t)));
         // 忠勝隊を残す（記録：0／16・16／16）
         expect(split.filter((x) => sec(x, 'temple_tadakatsu')).length).toBe(16);
         expect(combo.filter((x) => sec(x, 'temple_tadakatsu')).length).toBe(0);
     }, 300000);
 
-    it('準備した正面攻撃は 16 通りで 8 勝以上（記録：11 勝・平均 522 秒＝日没 600 秒に近く、遅れると日が暮れる）。押し返しの槍はいつも崩す', () => {
+    // 台本の直し（meet の held・resume・go の until）で 14 勝・平均 521 秒 → 16 勝・平均 433 秒になった。勝ちの下限を 8 → 12 に上げ、
+    // 「平均 450 秒より遅い」を「脇道と林より 100 秒以上遅い」（記録：433 秒 対 295 秒）の比べにする
+    it('準備した正面攻撃は 16 通りで 12 勝以上（記録：16 勝・平均 433 秒）。脇道と林より遅い。押し返しの槍はいつも崩す', () => {
         const front = sixteen(FRONT);
-        expect(front.filter(won).length).toBeGreaterThanOrEqual(8);
+        const split = sixteen(SPLIT);
+        expect(front.filter(won).length).toBeGreaterThanOrEqual(12);
         expect(front.filter((x) => sec(x, 'temple_counter')).length).toBe(16);
-        expect(mean(front.filter(won).map((x) => x.t))).toBeGreaterThan(450);
+        expect(mean(front.filter(won).map((x) => x.t))).toBeGreaterThan(mean(split.filter(won).map((x) => x.t)) + 100);
     }, 300000);
 });
 
