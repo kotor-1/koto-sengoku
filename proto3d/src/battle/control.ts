@@ -1492,28 +1492,28 @@ export function mapLabels(s: BattleState): MapLabel[] {
     }
     // 援軍の出る所（部隊の名札と重ならないよう西へずらす）。
     // 同じ所（5 m 以内）から何度も出る援軍は 1 つの名札に時刻を並べる（城下町外縁の大通り：「開始 0:10・1:30」）。
-    // 前の援軍の名札と重なるなら東 → 南へ順にずらす（援軍の出る所が 1 つの既存の戦場は今までと同じ所）
+    // 出る所が 2 つ以上なら、先に置いた名札（退き口・ほかの援軍）と重なるとき、西 → 東 → 真上 → 1 段南の順に空いた所へ置く。
+    // 出る所が 1 つ以下の戦場（既存の 10 戦場）は今までと同じ所
     const reinfGroups: { id: string; x: number; z: number; ats: number[] }[] = [];
     for (const r of reinfs) {
         const g = reinfGroups.find((q) => Math.hypot(q.x - r.x, q.z - r.z) < 5);
         if (g) g.ats.push(r.at);
         else reinfGroups.push({ id: r.id, x: r.x, z: r.z, ats: [r.at] });
     }
-    const reinfPlaced: MapLabel[] = [];
     for (const g of reinfGroups) {
-        const clash = (x: number, z: number) => reinfPlaced.some((l) => Math.abs(l.x - x) < REINF_LABEL_DX && Math.abs(l.z - z) < REINF_LABEL_DZ);
-        const west = Math.max(g.x - 70, -s.map.width / 2 + 30);
-        const east = Math.min(g.x + 70, s.map.width / 2 - 30);
-        const cand = [
-            { x: west, z: g.z - 4 },
-            { x: east, z: g.z - 4 },
-            ...[1, 2, 3].map((k) => ({ x: west, z: g.z - 4 + k * REINF_LABEL_DZ })),
-        ];
-        const at = cand.find((c) => !clash(c.x, c.z)) ?? cand[0];
         const times = [...new Set(g.ats)].sort((a, b) => a - b).map(fmtClock).join('・');
-        const l = { id: `reinf-${g.id}`, text: `援軍の出る所（開始 ${times}）`, x: at.x, z: at.z, y: 0 };
-        reinfPlaced.push(l);
-        out.push(l);
+        const text = `援軍の出る所（開始 ${times}）`;
+        const clamp = (x: number) => Math.min(Math.max(x, -s.map.width / 2 + 30), s.map.width / 2 - 30);
+        const west = Math.max(g.x - 70, -s.map.width / 2 + 30);
+        let at = { x: west, z: g.z - 4 };
+        if (reinfGroups.length > 1) {
+            const clash = (x: number, z: number) =>
+                out.some((l) => Math.abs(l.z - z) < REINF_LABEL_DZ && Math.abs(l.x - x) < (l.text.length + text.length) * LABEL_HALF_CHAR_M);
+            const cand: { x: number; z: number }[] = [];
+            for (let k = 0; k < 4; k++) for (const x of [west, clamp(g.x + 70), clamp(g.x)]) cand.push({ x, z: g.z - 4 + k * REINF_LABEL_DZ });
+            at = cand.find((c) => !clash(c.x, c.z)) ?? at;
+        }
+        out.push({ id: `reinf-${g.id}`, text, x: at.x, z: at.z, y: 0 });
     }
     // 門（第3群）：門の南の前に、制圧の条件の短い説明。狭い正面の名札より先に置いて、そちらが避ける。
     // 門の制圧が目標（open_gate）の門は、目標の輪の名札に条件を書くので出さない
@@ -1537,9 +1537,12 @@ export function mapLabels(s: BattleState): MapLabel[] {
     return out;
 }
 
-/** 援軍の出る所の名札どうしが重なるとみなす隔たり（m。名札の幅・高さのおよそ） */
-const REINF_LABEL_DX = 130;
+/**
+ * 援軍の出る所の名札をほかの名札と重ねないための大きさ（m）：南北の隔たりと、1 字あたりの半分の幅
+ * （全体を見る視点の北の端で 1 m ≒ 1.3 px・1 字 ≒ 12 px）
+ */
 const REINF_LABEL_DZ = 12;
+const LABEL_HALF_CHAR_M = 4.5;
 
 /** 制圧が目標（open_gate。段階目標の段も）になっている門の id。目標の輪と名札がその門の制圧の区域・条件を出す */
 export function gateGoalIds(s: BattleState): Set<string> {

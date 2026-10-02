@@ -387,24 +387,30 @@ describe('目標の種類（第3群）', () => {
         expect(fieldRuleTexts(g).some((x) => x.startsWith('外門：閉じている間は通れず、矢も通さない。前の輪を敵なしで 20 秒占めると開く'))).toBe(true);
     });
 
-    it('地図の名札：同じ所から何度も出る援軍は 1 つの名札に時刻を並べ、近い所の援軍の名札は重ならないようにずらす。援軍の出る所が 1 つの戦場は今までの所', () => {
-        const near = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.abs(a.x - b.x) < 130 && Math.abs(a.z - b.z) < 12;
+    it('地図の名札：同じ所から何度も出る援軍は 1 つの名札に時刻を並べ、出る所が 2 つ以上なら退き口・ほかの援軍の名札と重ならないようにずらす。出る所が 1 つの戦場は今までの所', () => {
+        // 重なり：南北 12 m 以内で、東西の隔たりが 2 つの名札の字数 × 4.5 m より近い（全体を見る視点の北の端で 1 m ≒ 1.3 px・1 字 ≒ 12 px）
+        const clash = (a: { x: number; z: number; text: string }, b: { x: number; z: number; text: string }) =>
+            Math.abs(a.z - b.z) < 12 && Math.abs(a.x - b.x) < (a.text.length + b.text.length) * 4.5;
         for (const f of FIELDS) {
             const s = createBattle(buildBattleSetup(f, f.presets[0]!.id));
-            const rl = mapLabels(s).filter((l) => l.id.startsWith('reinf-'));
-            for (let i = 0; i < rl.length; i++) for (let j = i + 1; j < rl.length; j++) expect(near(rl[i]!, rl[j]!), `${f.id} ${rl[i]!.text} と ${rl[j]!.text}`).toBe(false);
-            const pts = (f.reinforcements ?? []).length;
+            const labels = mapLabels(s);
+            const rl = labels.filter((l) => l.id.startsWith('reinf-'));
+            const pts = new Set((f.reinforcements ?? []).map((r) => `${r.point.x},${r.point.z}`)).size;
+            if (pts >= 2) {
+                for (const r of rl) for (const l of labels) if (l !== r && (l.id.startsWith('reinf-') || l.id.startsWith('exit-'))) expect(clash(r, l), `${f.id} ${r.text} と ${l.text}`).toBe(false);
+            }
             if (pts === 1) {
                 // 今までと同じ所（出る所の西 70 m・北 4 m）
                 const r = f.reinforcements![0]!;
                 expect(rl.length).toBe(1);
+                expect(rl[0]!.x).toBeCloseTo(Math.max(r.point.x - 70, -s.map.width / 2 + 30), 5);
                 expect(rl[0]!.z).toBeCloseTo(r.point.z - 4, 5);
             }
         }
         const town = mapLabels(createBattle(buildBattleSetup(getField('town_edge')!, 'standard'))).filter((l) => l.id.startsWith('reinf-'));
-        // 大通りの出る所 (0,-195) は 2 回（m1・m2）を 1 つの名札に
+        // 大通りの出る所 (0,-195) は 3 回（m1・m2・m4）を 1 つの名札に
         expect(town.length).toBe(3);
-        expect(town.some((l) => /^援軍の出る所（開始 \d+:\d\d・\d+:\d\d）$/.test(l.text))).toBe(true);
+        expect(town.some((l) => /^援軍の出る所（開始 \d+:\d\d・\d+:\d\d・\d+:\d\d）$/.test(l.text))).toBe(true);
     });
 });
 
