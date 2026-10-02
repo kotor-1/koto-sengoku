@@ -225,6 +225,13 @@ export const RULES = {
      * 止まらないように。橋の 3 秒より長く待つ：味方がどくのを待つ間は今までどおり）
      */
     squeezeStallSec: 20,
+    /**
+     * 同じ（第3群の直しの戦場だけ）：行き先から遠い所で、待機（hold）か能力でその場を動けない（rooted）味方に塞がれて、移動の命令の部隊が
+     * この秒数のあいだ行き先へ 1 m も近づけないときは、行き詰まりの待機にせず、その味方の中をすり抜ける（sim.ts の stuckNearGoal）。
+     * 遠くで行き詰まって待機にする時（settleSec × 2 秒）と同じにして、待機にしていた場面だけを変える（6・8 秒で試すと、少し待てば
+     * 味方がどいて進めた場面まで変わり、寺社周辺・城攻め前面の作戦の比べが動いた）
+     */
+    squeezeHoldSec: 12,
 } as const;
 
 /** 種類ごとの性質 */
@@ -1751,6 +1758,21 @@ function stuckNearGoal(s: BattleState, u: UnitState, goal: { x: number; z: numbe
     const fighting = friends.some((o) => !!o.engagedWith);
     if (d <= RULES.settleNear) return still >= RULES.settleSec * (moving ? 3 : 1) - 1e-9;
     if (fighting || moving) return false;
+    // 第3群の直し（FieldRules.refinedMoves）：行き先から遠い所で、待機（防衛・待機の命令・着いた）か能力でその場を動けない味方に塞がれて
+    // 進めない（狭い通りの口・大通りをその味方が埋めている）：自分からはどかないので、行き詰まりの待機にせず、その味方の中をすり抜ける
+    // （村落：西の通りの口で待機する酒井隊の後ろで、西の辻へ向かう石川隊が止まって「道を塞がれて先へ進めない」の待機になり、辻へ
+    // 着かなかった。e2e/fields-group3.mjs の見張りで見つけた）。近くに戦える敵がいれば今までどおり（敵に塞がれた所では始めない）
+    if (s.field.refined && !u.squeeze?.on && still >= RULES.squeezeHoldSec - 1e-9) {
+        // 塞いでいる味方が行き先の近く（spacing × 2 m 以内）にいるとき（同じ所へ二隊を重ねて置く）は、今までどおりその後ろで待機にする
+        const stays = friends.some(
+            (o) => !o.moving && !o.engagedWith && o.order.type !== 'retreat' && dist(o, u) < RULES.spacing + 2 && dist(o, goal) > RULES.spacing * 2 && (o.order.type === 'hold' || isRooted(s, o.id)),
+        );
+        if (stays && !foeNear) {
+            u.squeeze = { x: u.x, z: u.z, t: s.t, seen: s.t, on: true };
+            m.t = s.t;
+            return false;
+        }
+    }
     if (still < RULES.settleSec * 2 - 1e-9) return false;
     // 第3群の直し（FieldRules.refinedMoves）：行き先から遠い所で行き詰まって待機にするときは、味方の部隊なら知らせる（黙って止まらない）
     if (s.field.refined && u.side === 'ally') log(s, 'lost', `${u.name}：道を塞がれて先へ進めない。ここで待機する`, u.id);

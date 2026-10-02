@@ -5,6 +5,10 @@
  *   石垣を越えて曲輪の中へ抜けた。e2e の刻みごとの見張りでは、門が開く前に曲輪の中にいた）。
  *   第3群の直し（FieldRules.refinedMoves）の戦場では、押す先までまっすぐ通れるときだけ押す。既存の 10 戦場（refinedMoves なし）は
  *   今までどおり（1 刻みも同じ）。
+ * - 待機の味方に塞がれた移動（sim.ts の stuckNearGoal・RULES.squeezeHoldSec）：行き先から遠い所で、待機（防衛・待機の命令・着いた）か能力で
+ *   その場を動けない味方に塞がれて 12 秒進めない移動の命令は、「道を塞がれて先へ進めない」の待機にせず、その味方の中をすり抜ける
+ *   （村落：西の通りの口で待機する酒井隊の後ろで、西の辻へ向かう石川隊が待機になり、辻へ着かなかった）。塞いでいる味方が行き先の近くに
+ *   いる（同じ所へ二隊を重ねて置く）とき・近くに戦える敵がいるときは今までどおり。第3群の直しの戦場だけ。
  *
  * 確かめの種類はテストの名前に書く：「状態を直接操作」（部隊の位置を書き換える）、「早送り」（stepBattle で進める）。
  */
@@ -91,5 +95,61 @@ describe('押し離しで石垣・閉じた門を越えない（sim.ts の separ
         expect(sk.z).toBeGreaterThan(-57);
         while (s.t < gate.openedT! + 20) stepBattle(s, RULES.tick);
         expect(sk.z).toBeLessThan(-70);
+    });
+});
+
+describe('待機の味方に塞がれた移動はすり抜ける（sim.ts の stuckNearGoal）', () => {
+    it('早送り：村落で、西の通りの口 (-72,20) に待機する酒井隊の後ろを通って、西の辻 (-72,-28) へ向かう石川隊が辻へ着く（直しの前は 71 秒に (-56.5,29.1) で「道を塞がれて先へ進めない」の待機）', () => {
+        const s = createBattle(buildBattleSetup(getField('village')!, 'standard'));
+        const steps: [number, string, number, number][] = [
+            [4, 'a_tadakatsu', 0, 30],
+            [6, 'a_sakai', -48, 40],
+            [8, 'a_kiba', 48, 40],
+            [10, 'a_ishikawa', 18, 52],
+            [12, 'a_yumi', -18, 55],
+            [14, 'a_sakakibara', 30, 80],
+            [16, 'a_ieyasu', 0, 125],
+            [25, 'a_ishikawa', -72, -28],
+            [27, 'a_sakai', -72, 20],
+        ];
+        let i = 0;
+        let lost = false;
+        while (s.t < 100 - 1e-9) {
+            while (i < steps.length && s.t >= steps[i]![0] - 1e-9) {
+                const [, id, x, z] = steps[i++]!;
+                issueOrder(s, id, { type: 'move', x, z });
+            }
+            stepBattle(s, RULES.tick);
+            if (s.events.some((e) => e.unitId === 'a_ishikawa' && e.text.includes('道を塞がれて'))) lost = true;
+        }
+        const k = unitById(s, 'a_ishikawa')!;
+        const sk = unitById(s, 'a_sakai')!;
+        expect(lost).toBe(false);
+        expect(Math.hypot(k.x + 72, k.z + 28)).toBeLessThan(6);
+        // 酒井隊は通りの口に残る（すり抜けられた側は動かない）
+        expect(Math.hypot(sk.x + 72, sk.z - 20)).toBeLessThan(4);
+    });
+
+    it('状態を直接操作：塞いでいる待機の味方が行き先の近くにいる（同じ所へ二隊を重ねて置く）ときは、今までどおりその後ろで待機にする', () => {
+        // 幅 16 m の通り（東西の家並み）の中ほどに待機の槍。その 3 m 先を行き先にした騎馬は、槍の後ろで止まって待機になる（すり抜けない）
+        const s = createBattle(
+            field(
+                [
+                    { kind: 'building', rect: { x0: -100, x1: -8, z0: -60, z1: 60 }, height: 6 },
+                    { kind: 'building', rect: { x0: 8, x1: 100, z0: -60, z1: 60 }, height: 6 },
+                ],
+                [...HQS(), U('a_post', 'ally', 'yari', 0, 0), U('a_mover', 'ally', 'kiba', 0, 50)],
+                { refinedMoves: true },
+            ),
+        );
+        issueOrder(s, 'a_mover', { type: 'move', x: 0, z: -3 });
+        const u = unitById(s, 'a_mover')!;
+        let minZ = Infinity;
+        while (s.t < 40 - 1e-9) {
+            stepBattle(s, RULES.tick);
+            minZ = Math.min(minZ, u.z);
+        }
+        expect(u.squeeze?.on ?? false).toBe(false);
+        expect(minZ).toBeGreaterThan(10);
     });
 });

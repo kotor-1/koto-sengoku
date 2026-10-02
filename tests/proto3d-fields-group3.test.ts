@@ -23,6 +23,7 @@
  * - 湿地（湿地の調整 8ff4319 の後）：足場を伝う → 314 秒・12.7％で勝つ（16 通りで 16 勝）。最初の案の土手道の台本（causeway）は勝てなくなった
  *   （調整の後 日没・30.8％。動きの直しの後 日没・56.6％・2 部隊だけ抜ける）。準備した土手道の攻めは tests/proto3d-field-marsh.test.ts の PREP
  *   （283 秒・20.5％で勝ち、16 通りで 16 勝）で確かめる。無計画 → 日没・48.7％（直しの前は 325 秒に負け・37.1％）。
+ *   待機の味方に塞がれた移動のすり抜け（RULES.squeezeHoldSec）の後、最初の案の土手道の台本は 254 秒・36.0％で勝つ。
  * - 村落（村落の調整の後）：広場を固める → 420 秒・21.5％で勝つ。無計画 → 174 秒に負け・35.4％。分ける（shift）→ 311 秒に負け・39.8％。
  * - 寺社周辺（寺社周辺の調整 3bed681 の後）：分けて入る → 242 秒・30.7％で勝つ（16 通りで 16 勝）。準備した石段の攻め → 日没（調整の後 22.2％、
  *   動きの直しの後 33.1％）。無計画 → 敵をすべて崩して勝つ（調整の後 455 秒・48.8％、動きの直しの後 380 秒・34.0％。建物の角の手前で止まって
@@ -84,10 +85,13 @@ describe('湿地（早送り）', () => {
         expect(won(r.west!), brief(r.west!)).toBe(true);
         expect([secondaryOf(r.west!, 'marsh_losses'), secondaryOf(r.west!, 'marsh_block')]).toEqual([true, false]);
         // 最初の案の土手道の台本（押さえを正面と西の泥から押すだけ）：押さえは崩すが、損害が大きい（記録：湿地の調整の後は日没で勝てない。
-        // 準備した土手道（先駆けの号で東の弓を崩す・両翼の采配・号令）は湿地のテストの PREP で勝つ）
+        // 準備した土手道（先駆けの号で東の弓を崩す・両翼の采配・号令）は湿地のテストの PREP で勝つ）。
+        // 待機の味方に塞がれた移動のすり抜け（sim.ts の stuckNearGoal・RULES.squeezeHoldSec。土手道で待機する味方の後ろで出口へ向かう部隊が
+        // 「道を塞がれて先へ進めない」の待機になっていた）の後は、日没・56.6％・2 部隊だけ抜ける → 254 秒・36.0％で勝つ（押さえ ✓・損害 ✗・島 ✗）。
+        // 勝ち負けの記録を外し、足場を伝う作戦との損害・副目標の分かれ方の比べにする
         expect(secondaryOf(r.causeway!, 'marsh_block')).toBe(true);
         expect(r.causeway!.loss).toBeGreaterThan(r.west!.loss + 0.1);
-        expect(r.causeway!.o.reason, brief(r.causeway!)).toBe('nightfall');
+        expect([secondaryOf(r.causeway!, 'marsh_losses'), secondaryOf(r.west!, 'marsh_block')]).toEqual([false, false]);
     });
     it('比べ：無計画な攻撃は、足場を伝う作戦より損害が大きく、出口へ抜けた部隊が少ない（記録：日没・損害 48.7％・抜けたのは 1 部隊）', () => {
         const entered = (x: Run) => x.s.objectives!.primary!.entered.length;
