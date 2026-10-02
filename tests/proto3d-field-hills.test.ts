@@ -1,6 +1,8 @@
 /**
- * 戦場「丘陵」（hills）の釣り合い：地形に合わない作戦（放置・全部隊で頂へ真っすぐ・騎馬を使わずに槍で頂へ・頂を取られた後に正面から攻め上がる）は
- * 負ける・日没・損害が大きい、地形に合った作戦（騎馬で先に頂を取る／取られたら東の丘の弓を崩して東から横へ当たる）は勝つ、
+ * 戦場「丘陵」（hills）の釣り合い：地形に合った作戦（騎馬で先に頂を取る／取られたら東の丘の弓を崩して東から横へ当たる）は 16 通りで
+ * 安定して勝つ。無計画な攻撃（全部隊で頂へ真っすぐ・騎馬を使わずに槍で頂へ・弓を放って正面から攻め上がる）は、地形に合った作戦・
+ * 準備した正面攻撃と比べて 16 通りの勝ちが少ない・損害が大きい・副目標を落とす（比べが合格条件。無計画な攻撃の勝敗は記録として書く）。
+ * 準備した正面攻撃（東の丘の弓を崩し、弓で先手を射てから、南から四隊で当たり采配を使う）の結果も記録して比べる。
  * 副目標（東の丘の弓隊を崩す）は作戦によって達成／未達成に分かれる。
  *
  * どれも「早送り」（決まった時刻に issueOrder・useAbility で命令を出す台本を runToEnd で最後まで進める）。
@@ -130,6 +132,26 @@ function frontal(killArchers: boolean): Step[] {
     ];
 }
 
+/**
+ * 準備した正面攻撃：頂は敵に取らせ、始めに騎馬と酒井隊で東の丘の弓を崩し、弓は頂の先手を射続ける（頂を取られた後の正面の攻め上がり
+ * frontal(true) と同じ）。120 秒から正面（南）の四隊で当たり、酒井隊が槍隊へ当たる 122 秒に両翼の采配を使う。回り込まない。
+ * 命令は 11 回（0・2・4・80〜86・120〜126 秒）
+ */
+const PREPARED: Step[] = [...frontal(true), [122, 'a_sakai', 'ability']];
+
+/** 比べの基準（同じ台本は 1 回だけ進める） */
+const memo = new Map<Step[], Run>();
+const run = (steps: Step[]): Run => {
+    if (!memo.has(steps)) memo.set(steps, play(steps));
+    return memo.get(steps)!;
+};
+/** 16 通りの比べの基準（同じ台本・同じずらし方は 1 回だけ） */
+const memo16 = new Map<string, Run[]>();
+const variantsOnce = (name: string, base: Step[], early: number, amp: number): Run[] => {
+    if (!memo16.has(name)) memo16.set(name, variants(base, early, amp));
+    return memo16.get(name)!;
+};
+
 describe('丘陵のデータ', () => {
     it('検査を通る。味方 6／敵 6（敵はすべて敵勢）。高所の有利は強め（×0.65・2 m・射程 +30 m・見通し +40 m）、特殊ルールなし、道探しなし', () => {
         expect(validateField(HILLS)).toEqual([]);
@@ -185,40 +207,62 @@ describe('丘陵のデータ', () => {
     });
 });
 
-describe('丘陵：地形に合わない作戦（早送り）', () => {
-    it('何もしない → 頂を取れず日没。右翼の酒井隊は東の丘の弓に射すくめられて全滅する', () => {
-        const r = play([]);
+// 合格条件は「正面なら負ける」ではなく、同じ台本・同じ数字での比べ（地形に合った作戦・準備した正面攻撃と比べて、16 通りの勝ちが少ない・
+// 損害が大きい・副目標を落とす）。無計画な攻撃の勝敗は「記録」として残す（台本と数字は前のまま。変わったら理由と前後の数字を書いて直す）
+describe('丘陵：無計画な攻撃・地形に合わない作戦と、地形に合った作戦の比べ（早送り）', () => {
+    it('何もしない → 地形に合った作戦（勝ち）と違い、主目標に届かない（記録：日没。右翼の酒井隊は東の丘の弓に射すくめられて全滅する）', () => {
+        const r = run([]);
+        expect(run(TAKE).o.objectives!.primary!.achieved).toBe(true);
+        expect(r.o.objectives!.primary!.achieved).toBe(false);
+        // 記録
         expect(r.o.result).toBe('retreat');
         expect(r.o.reason).toBe('nightfall');
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
         expect(statusOf(r, 'a_sakai')).toBe('destroyed');
         expect(secondaryOf(r)).toBe(false);
     });
 
-    it('全部隊で始めから頂へ真っすぐ向かう → 敵と同時に頂で組み合い、高所の有利が無いまま崩されて負ける（16 通りすべて）', () => {
+    it('全部隊で始めから頂へ真っすぐ向かう（無計画）→ 先に頂を取る作戦・準備した正面攻撃より 16 通りの勝ちが少なく、損害が大きい（記録：敵と同時に頂で組み合い、高所の有利が無いまま崩されて負ける。16 通りすべて）', () => {
         const all: Step[] = ['a_sakakibara', 'a_tadakatsu', 'a_sakai', 'a_ishikawa', 'a_yumi'].map((id, i) => [2 * i, id, mv(0, -20)] as Step);
-        const r = play(all);
+        const r = run(all);
+        const rs = variants(all, 8, 0);
+        // 確かめた時：無計画 0 勝・損害 32.7％（119.2 秒に負け） ／ 先に頂を取る 16 勝・17.8％ ／ 準備した正面攻撃 16 勝・20.5％
+        expect(wins(rs) + 12).toBeLessThanOrEqual(wins(variantsOnce('take', TAKE, 8, 0)));
+        expect(wins(rs) + 12).toBeLessThanOrEqual(wins(variantsOnce('prepared', PREPARED, 0, 30)));
+        expect(r.loss).toBeGreaterThan(run(TAKE).loss + 0.1);
+        expect(r.loss).toBeGreaterThan(run(PREPARED).loss + 0.1);
+        expect(r.o.objectives!.primary!.achieved).toBe(false);
+        // 記録
         expect(r.o.result).toBe('defeat');
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
         expect(r.o.elapsedSec).toBeLessThan(200);
-        expect(variants(all, 8, 0).every((v) => v.o.result === 'defeat')).toBe(true);
-    }, 30_000);
+        expect(rs.every((v) => v.o.result === 'defeat')).toBe(true);
+    }, 60_000);
 
-    it('騎馬を使わずに槍で頂の左右へ向かう（先に頂を取る作戦から騎馬の命令を抜く）→ 敵の先手が先に頂に着き、頂を取れず日没（16 通りの多くで勝てない）', () => {
+    it('騎馬を使わずに槍で頂の左右へ向かう（先に頂を取る作戦から騎馬の命令を抜く）→ 騎馬で取る同じ作戦より 16 通りの勝ちが少なく、損害が大きい（記録：敵の先手が先に頂に着き、頂を取れず日没）', () => {
         const spears = TAKE.filter(([, id]) => id !== 'a_sakakibara');
-        const r = play(spears);
-        expect(r.o.result).not.toBe('victory');
+        const r = run(spears);
+        const rs = variants(spears, 8, 0);
+        // 確かめた時：騎馬なし 4 勝・損害 31.6％（日没） ／ 騎馬で取る 16 勝・17.8％
+        expect(wins(rs) + 8).toBeLessThanOrEqual(wins(variantsOnce('take', TAKE, 8, 0)));
+        expect(r.loss).toBeGreaterThan(run(TAKE).loss + 0.1);
         expect(r.o.objectives!.primary!.achieved).toBe(false);
+        // 記録
+        expect(r.o.result).not.toBe('victory');
         expect(r.loss).toBeGreaterThan(0.25);
-        expect(wins(variants(spears, 8, 0))).toBeLessThanOrEqual(6);
-    }, 30_000);
+        expect(wins(rs)).toBeLessThanOrEqual(6);
+    }, 60_000);
 
-    it('頂を取られた後、東の丘の弓を放って四隊で正面（南）から攻め上がる → 16 通りの多くで日没。勝っても損害 3 割を超える', () => {
-        const rs = variants(frontal(false), 0, 30);
+    it('頂を取られた後、東の丘の弓を放って四隊で正面（南）から攻め上がる（準備なし）→ 弓を崩してから采配を使う準備した正面攻撃より 16 通りの勝ちが少なく、損害が大きく、副目標を落とす', () => {
+        const rs = variantsOnce('front_no_prep', frontal(false), 0, 30);
+        const prep = variantsOnce('prepared', PREPARED, 0, 30);
+        // 確かめた時：準備なし 5 勝・平均の損害 39.0％・副目標 0 通り ／ 準備した正面攻撃 16 勝・23.9％・副目標 16 通り
+        expect(wins(rs) + 8).toBeLessThanOrEqual(wins(prep));
+        expect(meanLoss(rs)).toBeGreaterThan(meanLoss(prep) + 0.1);
+        expect(prep.every((r) => secondaryOf(r))).toBe(true);
+        // 記録（16 通りの多くで日没。勝っても損害 3 割を超える）
         expect(wins(rs)).toBeLessThanOrEqual(8);
         expect(rs.every((r) => r.loss > 0.3)).toBe(true);
         expect(rs.every((r) => !secondaryOf(r))).toBe(true);
-    }, 30_000);
+    }, 60_000);
 });
 
 describe('丘陵：地形に合った作戦（早送り）', () => {
@@ -300,4 +344,29 @@ describe('丘陵：副目標（東の丘の弓隊を崩す）は作戦で分か�
         // 勝敗・主目標・副目標は別の欄
         expect(skip.o.objectives!.primary!.achieved).toBe(true);
     });
+});
+
+describe('丘陵：準備した正面攻撃（早送り）', () => {
+    it('東の丘の弓を崩し、弓で先手を射てから、四隊で南から当たり、酒井隊の両翼の采配を使う（記録：272.2 秒に勝ち・損害 20.5％・副目標も達成）', () => {
+        const r = run(PREPARED);
+        expect(r.refused).toEqual([]);
+        expect(Object.keys(r.o.abilitiesUsed ?? {})).toEqual(['a_sakai']);
+        // 記録
+        expect(r.o.result).toBe('victory');
+        expect(r.o.objectives!.primary!.achieved).toBe(true);
+        expect(secondaryOf(r)).toBe(true);
+        expect(r.loss).toBeLessThan(0.25);
+    });
+
+    it('16 通りで、無計画な攻め上がり（全部隊で頂へ・弓を放って正面から）より勝ちが多く損害が小さい。回り込みの作戦よりは損害が多い（記録：準備 16 勝・平均 23.9％ ／ 回り込み 16 勝・16.4％ ／ 準備なしの正面 5 勝・39.0％）', () => {
+        const prep = variantsOnce('prepared', PREPARED, 0, 30);
+        const flank = variants(FLANK, 0, 30);
+        expect(wins(prep)).toBeGreaterThanOrEqual(14);
+        expect(prep.every((r) => secondaryOf(r))).toBe(true);
+        const noPrep = variantsOnce('front_no_prep', frontal(false), 0, 30);
+        expect(wins(prep)).toBeGreaterThan(wins(noPrep));
+        expect(meanLoss(prep)).toBeLessThan(meanLoss(noPrep));
+        // 東から横へ当たる回り込みの方が、損害が少ない（どちらも副目標を果たす）
+        expect(meanLoss(flank)).toBeLessThan(meanLoss(prep));
+    }, 60_000);
 });
