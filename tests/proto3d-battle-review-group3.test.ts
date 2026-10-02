@@ -13,9 +13,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import { createBattle, issueOrder, meleeUnreachable, stepBattle, unitById, RULES, type BattleState } from '../proto3d/src/battle/sim';
-import { refusalText } from '../proto3d/src/battle/control';
+import { compassName, faceOrder, orderAck, refusalText, resolveTap } from '../proto3d/src/battle/control';
 import { openAllGates, takeMulIn } from '../proto3d/src/battle/fieldRules';
 import { buildBattleSetup, getField } from '../proto3d/src/battle/fields';
+import { findPath, isPassable, pathExists } from '../proto3d/src/battle/pathfind';
 
 const start = (id: string): BattleState => createBattle(buildBattleSetup(getField(id)!, 'standard'));
 const runFor = (s: BattleState, sec: number) => {
@@ -115,5 +116,96 @@ describe('取る目標は、敵がすべて崩れても果たすまで続く（�
             expect(s.result?.result, id).toBe('victory');
             expect(s.result?.reason, id).toBe(reason);
         }
+    });
+});
+
+describe('向きの指定（「向き」・T。control.ts の faceOrder）', () => {
+    const ally = { id: 'a1', side: 'ally' as const, commandable: true };
+    it('向き指定中は、地面・味方・敵のどこを押してもその方へ向き直る命令にする（選び直さない）。能力の対象選びの間は対象選びが先', () => {
+        expect(resolveTap(ally, 'face', { kind: 'ground', x: 10, z: -50 })).toEqual({ type: 'face', unitId: 'a1', x: 10, z: -50 });
+        expect(resolveTap(ally, 'face', { kind: 'unit', unitId: 'a2', side: 'ally', x: 3, z: 4 })).toEqual({ type: 'face', unitId: 'a1', x: 3, z: 4 });
+        expect(resolveTap(ally, 'face', { kind: 'unit', unitId: 'e1', side: 'enemy', x: 3, z: 4, fighting: true })).toEqual({ type: 'face', unitId: 'a1', x: 3, z: 4 });
+        expect(resolveTap(ally, 'ability', { kind: 'unit', unitId: 'a2', side: 'ally', x: 3, z: 4 })).toEqual({ type: 'abilityTarget', unitId: 'a2' });
+        // 指定なしは今までどおり（地面は移動）
+        expect(resolveTap(ally, 'none', { kind: 'ground', x: 10, z: -50 })).toEqual({ type: 'order', unitId: 'a1', order: { type: 'move', x: 10, z: -50 } });
+    });
+
+    it('状態を直接操作・早送り：今いる所への移動に向きを付けた命令で、その場から動かずに押した方へ向き直って待機する。知らせは「〜へ向き直る」', () => {
+        const s = start('town_edge');
+        const u = unitById(s, 'a_tadakatsu')!;
+        const x0 = u.x;
+        const z0 = u.z;
+        const o = faceOrder(s, 'a_tadakatsu', u.x + 50, u.z)!;
+        expect(o).toEqual({ type: 'move', x: x0, z: z0, face: Math.PI / 2 });
+        expect(orderAck(s, 'a_tadakatsu', o)).toBe('本多忠勝隊：東へ向き直る');
+        expect(faceOrder(s, 'a_tadakatsu', u.x + 1, u.z)).toBeNull();
+        expect(issueOrder(s, 'a_tadakatsu', o)).toBe(true);
+        runFor(s, 6);
+        expect(u.order.type).toBe('hold');
+        expect(Math.hypot(u.x - x0, u.z - z0)).toBeLessThan(1);
+        expect(Math.abs(u.facing - Math.PI / 2)).toBeLessThan(1e-6);
+        expect(compassName(Math.PI)).toBe('南');
+        expect(compassName(-Math.PI / 4)).toBe('北西');
+    });
+});
+
+describe('向きの指定の効き目（早送り）', () => {
+    // 城下町外縁の確かめ：忠勝隊を大通りの (0,95) へ南へ下ろして置くと、南を向いたまま北から来る攻め手の槍に背後から当たられて崩れた。
+    // 着いた後に「向き」で北を向かせると持ちこたえる（作った時：当たって 30 秒後の兵と士気 321／28 → 384／73。終わりに南向きは敗走、北向きは戦える）
+    function probe(face: boolean) {
+        const s = start('town_edge');
+        const u = unitById(s, 'a_tadakatsu')!;
+        issueOrder(s, 'a_tadakatsu', { type: 'move', x: 0, z: 95 });
+        let faced = false;
+        let hit = -1;
+        let at30: { str: number; mor: number } | null = null;
+        while (!s.result && s.t < 400) {
+            if (face && !faced && s.t > 3 && u.order.type === 'hold') {
+                faced = issueOrder(s, 'a_tadakatsu', faceOrder(s, 'a_tadakatsu', 0, 0)!);
+            }
+            if (hit < 0 && u.engagedWith) hit = s.t;
+            if (hit >= 0 && !at30 && s.t >= hit + 30 - 1e-9) at30 = { str: u.strength, mor: u.morale };
+            stepBattle(s, RULES.tick);
+        }
+        return { hit, at30: at30!, status: u.status };
+    }
+    it('南向きのまま待つより、北を向かせた方が当たって 30 秒後の兵が 40 以上・士気が 30 以上多く、最後まで崩れない', () => {
+        const south = probe(false);
+        const north = probe(true);
+        expect(south.hit).toBeGreaterThan(0);
+        expect(north.at30.str).toBeGreaterThan(south.at30.str + 40);
+        expect(north.at30.mor).toBeGreaterThan(south.at30.mor + 30);
+        expect(south.status).toBe('routed');
+        expect(north.status).toBe('ready');
+    });
+});
+
+describe('道があるか（pathfind.ts の pathExists。通れる升のつながりで見る）', () => {
+    it('第3群の 5 戦場（城攻め前面は門を閉じた時と開いた時）で、通れる点の組 150 ずつが A*（findPath）の答えと同じ', () => {
+        let seed = 11;
+        const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+        const check = (s: BattleState, label: string) => {
+            const nav = s.field.nav!;
+            const W = s.map.width / 2 - 3;
+            const D = s.map.depth / 2 - 3;
+            let n = 0;
+            let cut = 0;
+            while (n < 150) {
+                const a = { x: (rnd() * 2 - 1) * W, z: (rnd() * 2 - 1) * D };
+                const b = { x: (rnd() * 2 - 1) * W, z: (rnd() * 2 - 1) * D };
+                if (!isPassable(nav, a.x, a.z) || !isPassable(nav, b.x, b.z)) continue;
+                n++;
+                const want = findPath(nav, 'yari', a.x, a.z, b.x, b.z) !== null;
+                if (!want) cut++;
+                expect(pathExists(nav, a.x, a.z, b.x, b.z), `${label} (${a.x.toFixed(0)},${a.z.toFixed(0)})→(${b.x.toFixed(0)},${b.z.toFixed(0)})`).toBe(want);
+            }
+            return cut;
+        };
+        for (const id of ['marsh', 'village', 'temple', 'town_edge']) check(start(id), id);
+        const sf = start('siege_front');
+        // 閉じた門の外と曲輪の中は道が無い組がある
+        expect(check(sf, 'siege_front 門が閉じている')).toBeGreaterThan(0);
+        openAllGates(sf.map, sf.field);
+        check(sf, 'siege_front 門が開いている');
     });
 });

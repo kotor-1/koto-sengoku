@@ -47,7 +47,7 @@ import {
 import type { Side } from './types';
 import { layoutLabels, layoutMapLabels, type LabelFit, type LabelLayoutItem, type MapLabelItem } from './labelLayout';
 
-export type CommandKind = 'move' | 'attack' | 'hold' | 'retreat';
+export type CommandKind = 'move' | 'attack' | 'hold' | 'retreat' | 'face';
 
 export interface UiHandlers {
     start(): void;
@@ -212,7 +212,8 @@ export class BattleUi {
     /** 能力の欄を最後に作ったときに選んでいた部隊（縦の狭い画面で、選び直したら目標の欄を畳むため） */
     private lastAbilSel: string | null = null;
     private readonly goalRows = new Map<string, { e: HTMLElement; text: HTMLElement; last: string }>();
-    private readonly cmdBtns: Record<CommandKind, HTMLButtonElement>;
+    /** 命令のボタン（「向き」は能力のある合戦だけ） */
+    private readonly cmdBtns: Partial<Record<CommandKind, HTMLButtonElement>> & Record<'move' | 'attack' | 'hold' | 'retreat', HTMLButtonElement>;
     /** 「能力」のボタン（特殊能力のある合戦だけ） */
     private readonly abilBtn: HTMLButtonElement | null = null;
     /** 選んだ部隊の能力の欄 */
@@ -372,8 +373,8 @@ export class BattleUi {
             retreat: button('b-btn b-cmd', '撤退', 'この部隊を撤退させる'),
         };
         for (const k of Object.keys(this.cmdBtns) as CommandKind[]) {
-            press(this.cmdBtns[k], () => h.command(k));
-            cmds.append(this.cmdBtns[k]);
+            press(this.cmdBtns[k]!, () => h.command(k));
+            cmds.append(this.cmdBtns[k]!);
         }
         if (this.hasAbility) {
             // 特殊能力のある合戦だけ（架空の第一章の命令のボタンは今までどおり 4 つ）
@@ -381,6 +382,11 @@ export class BattleUi {
             this.abilBtn = button('b-btn b-cmd b-abil-btn', '能力', '選んだ部隊の特殊能力を使う');
             press(this.abilBtn, () => h.ability());
             cmds.insertBefore(this.abilBtn, this.cmdBtns.hold);
+            // 向きの指定（第3群の確かめ：移動の後は進んできた向きのまま待つので、出口の前へ下ろした部隊が攻め手に背を向けていた）
+            const face = button('b-btn b-cmd', '向き', '向きを変える（この後で向く方を押す。その場で向き直る）');
+            press(face, () => h.command('face'));
+            cmds.insertBefore(face, this.abilBtn);
+            this.cmdBtns.face = face;
         }
         bottom.append(cards, cmds);
 
@@ -550,8 +556,8 @@ export class BattleUi {
         const ally = sel && sel.side === 'ally' ? cardModel(s, sel) : null;
         const can = !!ally && ally.commandable;
         for (const k of Object.keys(this.cmdBtns) as CommandKind[]) {
-            setClass(this.cmdBtns[k], 'off', !can);
-            setClass(this.cmdBtns[k], 'on', can && st.pending === k);
+            setClass(this.cmdBtns[k]!, 'off', !can);
+            setClass(this.cmdBtns[k]!, 'on', can && st.pending === k);
         }
         if (this.abilBtn) {
             // 押せる：選んだ味方の能力が今使える（使えない時も押すと理由を出すので、見た目だけ薄くする）
@@ -564,6 +570,7 @@ export class BattleUi {
         setClass(this.root, 'paused', st.paused && st.started && !ended);
         setClass(this.root, 'pending-attack', st.pending === 'attack');
         setClass(this.root, 'pending-move', st.pending === 'move');
+        setClass(this.root, 'pending-face', st.pending === 'face');
         setClass(this.root, 'pending-ability', st.pending === 'ability');
         this.pausePill.hidden = !(st.paused && st.started && !ended);
 
@@ -572,6 +579,7 @@ export class BattleUi {
         // 移動先指定：味方の上を押しても選び直さず、その点へ（通れなければ近くの通れる所）
         if (st.pending === 'move') hint = `移動先指定中：${sel?.name ?? ''}の行き先を押す（味方の上も可）`;
         else if (st.pending === 'attack') hint = `${sel?.name ?? ''}：攻撃する敵の部隊を押してください`;
+        else if (st.pending === 'face') hint = `向き指定中：${sel?.name ?? ''}が向く方を押す（その場で向き直る）`;
         else if (st.pending === 'ability') hint = abilityTargetHint(s, sel?.id ?? null);
         const now = performance.now();
         const flash = now < this.flashTimer ? this.flashText : '';
@@ -672,7 +680,17 @@ export class BattleUi {
                 if (!this.abil.hidden) this.abil.hidden = true;
                 return;
             }
+        } else if (this.goals) {
+            // PC（第3群の確かめ）：目標の欄は開いたまま始まるので、部隊を選ぶと能力の欄と 2 つで画面の左の 3 割近く（幅 330 px）を覆い、
+            // 湿地の西の島・村落の西の家並みが隠れ、城攻め前面では能力の欄の下が札の列に重なっていた。部隊を選び直したら目標の欄を畳む
+            // （見出しの 1 行に主目標の進みが出る。見出しを押せば開き直せ、そのときは能力の欄の長い説明を省く：battle.css の .goals-open）
+            if (!this.goals.classList.contains('closed') && selId && selId !== this.lastAbilSel) this.goals.classList.add('closed');
+            this.lastAbilSel = selId;
         } else this.lastAbilSel = selId;
+        if (this.goals) {
+            const gOpen = !this.goals.classList.contains('closed');
+            if (this.root.classList.contains('goals-open') !== gOpen) this.root.classList.toggle('goals-open', gOpen);
+        }
         const u = selId ? s.units.find((x) => x.id === selId) : undefined;
         const m = u ? abilityPanelModel(s, u.id) : null;
         const gm = u ? generalLineModel(s, u.id) : null;

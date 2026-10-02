@@ -274,6 +274,12 @@ body.mode-battle #build { display: none !important; }
     line-height: 1.45;
 }
 .b-abil[hidden] { display: none; }
+/* PC で目標の欄を開き直したまま部隊を選んだとき：能力の欄の長い説明・断りを省き、左上の列が下の札の列（城攻め前面で 618 px から）まで
+   伸びないようにする（第3群の確かめ。1280×720 で能力の欄の下端が 675 px まで伸び、家康本陣・本多忠勝隊の札の下に説明が描かれていた） */
+@media (min-height: 521px) {
+    .b-root.goals-open .b-abil .b-ab-long, .b-root.goals-open .b-abil .b-ab-note { display: none; }
+    .b-root.goals-open .b-topleft { max-height: calc(100% - var(--safe-t) - var(--safe-b) - 140px); overflow: hidden; }
+}
 .b-abil[data-side="enemy"] { border-left-color: #ff5b4c; }
 .b-ab-h { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 .b-ab-h b { color: var(--gold); font-weight: 600; }
@@ -471,7 +477,7 @@ body.mode-battle #build { display: none !important; }
 .b-abl[data-state="active"] { background: rgba(255, 215, 106, 0.35); color: #fff0c2; }
 .b-eng { color: #ffc9a3; }
 .b-cmds { display: grid; grid-template-columns: repeat(4, auto); gap: 6px; pointer-events: auto; }
-.b-cmds.with-ability { grid-template-columns: repeat(5, auto); }
+.b-cmds.with-ability { grid-template-columns: repeat(6, auto); }
 /* 味方が 5 部隊以上：小さな札を並べ（はみ出したら横にずらす）、命令のボタンは 2 段 */
 .b-bottom.many { --card-h: 88px; }
 .b-cards.many {

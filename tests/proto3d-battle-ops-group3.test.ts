@@ -34,6 +34,8 @@ describe('畳んだ目標の欄の見出し（objectiveSummaryText）', () => {
             '段階 1／2・外門 制圧 5／20 秒・門の前に味方がいない',
         );
         expect(objectiveSummaryText(row('段階 2／2：最初の曲輪の確保・確保 12／60 秒（最後の段）'))).toBe('段階 2／2・確保 12／60 秒');
+        // 同時確保：要所ごとの様子を前に出す（スマホの見出しで 2 つ目の要所が「…」に切れないように。秒は後ろ）
+        expect(objectiveSummaryText(row('同時確保 0／60 秒・山門 敵・本堂前 空（すべてを敵なしで味方が占める間だけ数える）'))).toBe('山門 敵・本堂前 空・0／60 秒');
         expect(objectiveSummaryText(null)).toBe('');
         expect(objectiveSummaryText(row('x', 'done' as ObjectiveRowModel['state']))).toBe('主目標 ✓ 達成');
         expect(objectiveSummaryText(row('x', 'failed' as ObjectiveRowModel['state']))).toBe('主目標 ✗');

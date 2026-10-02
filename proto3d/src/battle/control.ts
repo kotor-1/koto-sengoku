@@ -117,8 +117,10 @@ export function clashShift(d: number, halfDepthA: number, halfDepthB: number): n
  * 能力の印（点滅している ◆）は今までどおり能力として使う。下の札・1〜8 キーは今までどおり選び直す。
  * ability：対象を選ぶ特殊能力（盟友への援護・後詰めの差配）の対象選び。「能力」・F・点滅している名札の後で、対象の味方の部隊を押す
  * （Esc・やめる・地面・同じ名札をもう一度で取り消し。選んでいる部隊＝能力を使う部隊）。
+ * face：向きの指定（「向き」・T の後。第3群の確かめで足した）。押した所（地面・部隊のどこでも）の方へ、その場で向き直らせる（移動の後は進んできた
+ * 向きのまま待つので、出口の前へ下ろした部隊が攻め手に背を向けていた。背後から当たられると損害 ×2.2）。能力の印は今までどおり能力。
  */
-export type Pending = 'none' | 'move' | 'attack' | 'ability';
+export type Pending = 'none' | 'move' | 'attack' | 'ability' | 'face';
 
 /**
  * 地図を押した所。unit の near は「部隊そのもの（隊列の広がり）ではなく、そのすぐ近く（押しやすくするための余白）を押した」。
@@ -149,6 +151,8 @@ export type TapAction =
     | { type: 'abilityTarget'; unitId: string }
     /** 対象選びをやめる（地面を押した。回数は減らない。押した所へ移動の命令は出さない） */
     | { type: 'abilityCancel'; text: string }
+    /** 向きの指定（pending 'face'）：選んでいる部隊を、その場で (x, z) の方へ向き直らせる（faceOrder で命令にする） */
+    | { type: 'face'; unitId: string; x: number; z: number }
     /** 何も変えず、案内を出す */
     | { type: 'hint'; text: string };
 
@@ -177,6 +181,8 @@ export function resolveTap(sel: Selected | null, pending: Pending, tap: TapTarge
         if (tap.kind === 'unit') return { type: 'abilityTarget', unitId: tap.unitId };
         return { type: 'abilityCancel', text: '能力の対象選びをやめた（使用回数は減っていない）' };
     }
+    // 向きの指定の間：地面・部隊（味方・敵とも）のどこを押しても、その方へ向き直る（選び直さない）
+    if (pending === 'face' && ally && ally.commandable) return { type: 'face', unitId: ally.id, x: tap.x, z: tap.z };
     // 移動先指定の間：味方の体（そのもの・すぐ近く）を押しても選び直さず、その点へ移動
     if (pending === 'move' && tap.kind === 'unit' && tap.side === 'ally' && ally && ally.commandable) return { type: 'order', unitId: ally.id, order: { type: 'move', x: tap.x, z: tap.z } };
     if (tap.kind === 'unit' && tap.side === 'ally' && tap.near && ally && ally.commandable) return resolveTap(sel, pending, { kind: 'ground', x: tap.x, z: tap.z });
@@ -223,12 +229,31 @@ export function refusalText(s: BattleState, unitId: string, order: Order): strin
     return '命令を出せませんでした';
 }
 
+/**
+ * 向きの指定の命令：今いる所への移動に、着いた後の向き（face）を付ける（sim.ts は着いたらその向きへ向き直って待機する）。
+ * 押した点が部隊のすぐ上（2 m 以内）なら向きが決まらないので null
+ */
+export function faceOrder(s: BattleState, unitId: string, x: number, z: number): Order | null {
+    const u = unitById(s, unitId);
+    if (!u || Math.hypot(x - u.x, z - u.z) < 2) return null;
+    return { type: 'move', x: u.x, z: u.z, face: Math.atan2(x - u.x, -(z - u.z)) };
+}
+
+/** 向き（ラジアン。北 0・東 π/2）の 8 方位の名前 */
+export function compassName(face: number): string {
+    const names = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'];
+    const k = Math.round(((face % (2 * Math.PI)) + 2 * Math.PI) / (Math.PI / 4)) % 8;
+    return names[k]!;
+}
+
 /** 命令を出したときの短い知らせ */
 export function orderAck(s: BattleState, unitId: string, order: Order): string {
     const u = unitById(s, unitId);
     const name = u?.name ?? '';
     switch (order.type) {
         case 'move':
+            // 向きの指定（今いる所への移動に向きを付けたもの）
+            if (order.face !== undefined && u && Math.hypot(order.x - u.x, order.z - u.z) < 2) return `${name}：${compassName(order.face)}へ向き直る`;
             return `${name}：移動`;
         case 'attack':
             return `${name}：${unitById(s, order.targetId)?.name ?? '敵'}へ攻撃`;
@@ -1141,6 +1166,8 @@ export function objectivePanelModel(s: BattleState): ObjectivePanelModel | null 
  * 既存の 10 戦場の進みの文の括弧はどれも 7 字以上か数を含まないので、見出しは今までと同じ）。
  * 段階目標（「段階 1／2：外門の制圧・外門 制圧 5／20 秒…」）は段の名前を省いて「段階 1／2・外門 制圧 5／20 秒…」にする
  * （スマホの狭い見出しで、名前のせいで今の段の数が「…」で切れていた。段の名前は開いた欄と地図の目標の名札に出ている）
+ * 同時確保（「同時確保 12／60 秒・山門 ○・本堂前 敵」）は、要所ごとの ○・空・敵 を前に出して「山門 ○・本堂前 敵・12／60 秒」にする
+ * （寺社周辺の確かめ：スマホの見出しが「同時確保 0／60 秒・山門 敵・本…」で切れ、2 つ目の要所の様子が欄を開かないと分からなかった）
  */
 export function objectiveSummaryText(p: ObjectiveRowModel | null): string {
     if (!p) return '';
@@ -1148,7 +1175,8 @@ export function objectiveSummaryText(p: ObjectiveRowModel | null): string {
     if (p.state === 'failed') return '主目標 ✗';
     return p.progressText
         .replace(/（([^）]*)）/g, (all, inner: string) => (inner.length <= 6 && /\d/.test(inner) ? all : ''))
-        .replace(/^(段階 \d+／\d+)：[^・]*・/, '$1・');
+        .replace(/^(段階 \d+／\d+)：[^・]*・/, '$1・')
+        .replace(/同時確保 (\d+／\d+ 秒)・(.*)$/, '$2・$1');
 }
 
 /** 戦場の決まりの短い説明（その戦場のデータにあるものだけ。無い合戦は空） */

@@ -62,6 +62,7 @@ import {
     refusalText,
     resolveLabelTap,
     resolveTap,
+    faceOrder,
     resultRows,
     scenarioTexts,
     selectOnly,
@@ -405,7 +406,7 @@ class BattleRun implements Mode {
             this.ui.flash(refusalText(this.s, sel.id, { type: 'hold' }));
             return;
         }
-        if (c === 'move' || c === 'attack') this.pending = this.pending === c ? 'none' : c;
+        if (c === 'move' || c === 'attack' || c === 'face') this.pending = this.pending === c ? 'none' : c;
         else this.order(this.orderTargets(), { type: c });
     }
 
@@ -792,6 +793,7 @@ class BattleRun implements Mode {
         if (u && this.pending === 'ability') cur = 'copy';
         // 移動先指定の間は、味方の上もその点へ移動（選び直さない）
         else if (this.pending === 'move' && sel?.commandable) cur = 'cell';
+        else if (this.pending === 'face' && sel?.commandable) cur = 'crosshair';
         else if (u && u.side === 'ally') cur = 'pointer';
         else if (u && sel?.commandable) cur = 'crosshair';
         else if (u) cur = 'help';
@@ -900,7 +902,7 @@ class BattleRun implements Mode {
         if (!hit) return false;
         if (hit.part === 'name') {
             // 移動先指定の間は、名札の名前の所は地図を押した扱い（その点へ移動。確かめの中の 2 回目にもしない。能力の印 ◆ は能力のまま）
-            if (this.pending === 'move') return false;
+            if (this.pending === 'move' || this.pending === 'face') return false;
             // 命令を出せる味方を選んでいる間は、名札の名前の所は今までどおり地図を押した扱い（地面の移動・部隊の選択。
             // 引いた画面では名札が地面・部隊に重なるので、移動のつもりの指を奪わない）。確かめの中のその武将の名札だけは 2 回目として使う
             const now = performance.now() / 1000;
@@ -1031,6 +1033,13 @@ class BattleRun implements Mode {
                 this.order(this.selection.includes(act.unitId) ? this.orderTargets() : [act.unitId], o, note);
                 break;
             }
+            case 'face': {
+                // 向きの指定：その場で押した方へ向き直る（今いる所への移動に向きを付ける）
+                const o = faceOrder(this.s, act.unitId, act.x, act.z);
+                if (!o) this.ui.flash('向く方（部隊から少し離れた所）を押してください');
+                else this.order([act.unitId], o);
+                break;
+            }
             case 'deselect':
                 this.select(null);
                 this.pending = 'none';
@@ -1108,6 +1117,11 @@ class BattleRun implements Mode {
                 break;
             case 'KeyR':
                 this.command('retreat');
+                break;
+            case 'KeyT':
+                // 向きの指定は、能力のある合戦（「向き」のボタンを出す合戦）だけ
+                if (this.s.abilityList.length === 0) return;
+                this.command('face');
                 break;
             case 'KeyF':
                 if (this.s.abilityList.length === 0) return;
