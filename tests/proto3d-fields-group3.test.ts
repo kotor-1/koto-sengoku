@@ -18,6 +18,18 @@
  *   どれも 227 秒に 3 部隊目が抜けて負ける（損害 12〜37％。出口の前で受けるは直しの前 39.2％ → 37.4％）。
  * - 城攻め前面：側面の拠点を先に → 353 秒・損害 40.5％で勝つ（拠点の弓 ✓）。弓で櫓を射すくめる → 397 秒・損害 36.9％で勝つ（16 通りで 12 勝）。
  *   無計画 → 366 秒・損害 45.4％で勝つ（拠点の弓 ✗）。
+ *
+ * 今の結果（各戦場の釣り合いの調整と、第3群の動きの直し FieldRules.refinedMoves の後。早送り）：
+ * - 湿地（湿地の調整 8ff4319 の後）：足場を伝う → 314 秒・12.7％で勝つ（16 通りで 16 勝）。最初の案の土手道の台本（causeway）は勝てなくなった
+ *   （調整の後 日没・30.8％。動きの直しの後 日没・56.6％・2 部隊だけ抜ける）。準備した土手道の攻めは tests/proto3d-field-marsh.test.ts の PREP
+ *   （283 秒・20.5％で勝ち、16 通りで 16 勝）で確かめる。無計画 → 日没・48.7％（直しの前は 325 秒に負け・37.1％）。
+ * - 村落（村落の調整の後）：広場を固める → 420 秒・21.5％で勝つ。無計画 → 174 秒に負け・35.4％。分ける（shift）→ 311 秒に負け・39.8％。
+ * - 寺社周辺（寺社周辺の調整 3bed681 の後）：分けて入る → 242 秒・30.7％で勝つ（16 通りで 16 勝）。準備した石段の攻め → 日没（調整の後 22.2％、
+ *   動きの直しの後 33.1％）。無計画 → 敵をすべて崩して勝つ（調整の後 455 秒・48.8％、動きの直しの後 380 秒・34.0％。建物の角の手前で止まって
+ *   射られ続けていた部隊が、角を回って斬り合うようになった）。
+ * - 城下町外縁（調整の後）：組み替える → 420 秒・32.9％で勝つ。大通り・出口の前・無計画・待つ → 3 部隊目が抜けて負け（245〜336 秒）。
+ * - 城攻め前面（調整の後）：拠点を先に → 281 秒・27.9％（動きの直しの後 293 秒・28.4％）。弓で櫓を射すくめる → 255 秒・23.8％。
+ *   無計画 → 459 秒に総崩れ・61.0％（門は開くが曲輪に届かない）。
  */
 import { describe, expect, it } from 'vitest';
 import { RULES } from '../proto3d/src/battle/sim';
@@ -67,17 +79,20 @@ function plays(field: string, plans: Record<string, Step[]>): Record<string, Run
 
 describe('湿地（早送り）', () => {
     const r = plays('marsh', MARSH_PLANS);
-    it('足場を伝って西から回る：4 部隊が出口へ抜けて勝つ。準備した土手道の攻めも勝つ。二つは時間・損害・副目標で分かれる', () => {
+    it('足場を伝って西から回る：4 部隊が出口へ抜けて勝つ。最初の案の土手道の台本とは、損害・副目標で分かれる（準備した土手道の攻めの比べは tests/proto3d-field-marsh.test.ts）', () => {
         expect(won(r.west!), brief(r.west!)).toBe(true);
-        expect(won(r.causeway!), brief(r.causeway!)).toBe(true);
-        // 土手道は早いが損害が大きい。足場は遅いが損害が少ない
-        expect(r.causeway!.t).toBeLessThan(r.west!.t);
-        expect(r.causeway!.loss).toBeGreaterThan(r.west!.loss + 0.1);
         expect([secondaryOf(r.west!, 'marsh_losses'), secondaryOf(r.west!, 'marsh_block')]).toEqual([true, false]);
-        expect([secondaryOf(r.causeway!, 'marsh_losses'), secondaryOf(r.causeway!, 'marsh_block')]).toEqual([false, true]);
+        // 最初の案の土手道の台本（押さえを正面と西の泥から押すだけ）：押さえは崩すが、損害が大きい（記録：湿地の調整の後は日没で勝てない。
+        // 準備した土手道（先駆けの号で東の弓を崩す・両翼の采配・号令）は湿地のテストの PREP で勝つ）
+        expect(secondaryOf(r.causeway!, 'marsh_block')).toBe(true);
+        expect(r.causeway!.loss).toBeGreaterThan(r.west!.loss + 0.1);
+        expect(r.causeway!.o.reason, brief(r.causeway!)).toBe('nightfall');
     });
-    it('比べ：無計画な攻撃は、足場を伝う作戦より損害が大きく、日没までに抜けられない（記録：日没・損害 32.6％）', () => {
-        expect(r.unplanned!.loss).toBeGreaterThan(r.west!.loss);
+    it('比べ：無計画な攻撃は、足場を伝う作戦より損害が大きく、出口へ抜けた部隊が少ない（記録：日没・損害 48.7％・抜けたのは 1 部隊）', () => {
+        const entered = (x: Run) => x.s.objectives!.primary!.entered.length;
+        expect(r.unplanned!.loss).toBeGreaterThan(r.west!.loss + 0.2);
+        expect(entered(r.unplanned!)).toBeLessThan(entered(r.west!));
+        // 記録
         expect(r.unplanned!.o.objectives!.primary!.achieved).toBe(false);
         expect(r.hold!.o.reason).toBe('nightfall');
     });
@@ -105,9 +120,15 @@ describe('寺社周辺（早送り）', () => {
         expect(won(r.split!), brief(r.split!)).toBe(true);
         expect(wins(jitter('temple', TEMPLE_PLANS.split))).toBe(16);
     }, 120000);
-    it('比べ：準備した石段の攻め（弓で山門の弓を射すくめてから登る）は、無計画な攻撃より損害が小さい（記録：山門は取るが、本堂前まで届かず日没）', () => {
-        expect(r.front!.loss).toBeLessThan(r.unplanned!.loss);
-        expect(r.unplanned!.o.objectives!.primary!.achieved).toBe(false);
+    // 寺社周辺の調整（3bed681）の前は「準備した石段の攻めは無計画より損害が小さい（25.8％ 対 53.6％）・無計画は負ける」を確かめていた。
+    // 調整の後は無計画も敵をすべて崩して勝つ（455 秒・48.8％）、第3群の動きの直しの後は 380 秒・34.0％、石段の攻め（最初の案の台本）は日没・33.1％で、
+    // 損害の差がほとんど無い。「正面・無計画なら負ける」は合格条件にしないので、分けて入る作戦との比べにする。
+    // 準備した正面攻撃（全軍で石段から）の比べは tests/proto3d-field-temple.test.ts
+    it('比べ：分けて入る作戦は、無計画な攻撃より早く主目標に届き、損害も小さい（記録：無計画は 380 秒に敵をすべて崩して勝つ・34.0％。石段の攻めは日没）', () => {
+        expect(r.split!.t).toBeLessThan(r.unplanned!.t - 60);
+        expect(r.split!.loss).toBeLessThan(r.unplanned!.loss);
+        // 記録
+        expect(r.front!.o.reason).toBe('nightfall');
     });
 });
 
