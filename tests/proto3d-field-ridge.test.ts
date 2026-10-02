@@ -1,8 +1,10 @@
 /**
  * 戦場「尾根」（ridge）の釣り合い（docs/fields-group2-design.md §4）。
- * 地形に合わない作戦（放置・正面の急坂を大勢で登る・弓も一緒に・近い敵へ当て直す・能力も使う・崩した後に残りを頂へ送る）は
- * 負けか日没（損害が大きい）。地形に合った作戦（西の登り道から尾根に登り、西の肩を破って尾根の上を横に進み、
- * 忠勝隊は急坂を登って下から挟む）は勝つ。副目標（損害 25％以内・東の肩の隊も崩す）は作戦で分かれる（西だけ／西と東の両方から）。
+ * 地形に合った作戦（西の登り道から尾根に登り、西の肩を破って尾根の上を横に進み、忠勝隊は急坂を登って下から挟む）は 16 通りで
+ * 安定して勝つ。無計画な攻撃（放置・正面の急坂を大勢で登る・弓も一緒に・近い敵へ当て直す・能力だけ使う・崩した後に残りを頂へ送る）は、
+ * 地形に合った作戦・準備した正面攻撃と比べて主目標に届かない・損害が大きい・16 通りの勝ちが少ない（比べが合格条件。勝敗は記録として書く）。
+ * 準備した正面攻撃（弓で崩し、采配・号令を使い、予備を入れ替えて急坂を登る）は 16 通りの多くで勝つが損害が大きい。その結果も記録して比べる。
+ * 副目標（損害 25％以内・東の肩の隊も崩す）は作戦で分かれる（西だけ／西と東の両方から）。
  * 武将の能力の価値が地形で変わる比べ：酒井の両翼の采配（尾根の上と急坂から挟むと包囲・急坂だけでは狭い正面で包囲にならない）と、
  * 榊原の先駆けの号（尾根の上を横から頂の弓へ・急坂を登って口の守りへ）。
  *
@@ -181,6 +183,44 @@ const BOTH: Step[] = [
 /** 正面突破：槍・騎馬の五隊で頂へ（画面で頂の輪の中心を押す＝頂の弓への攻撃）。弓は頂の弓を射る */
 const PUSH: Step[] = [...MELEE.map((id) => [0, id, SUMMIT] as Step), [0, 'a_yumi', atk('e_yumi')]];
 
+/**
+ * 準備した正面攻撃（急坂を登る）：弓を急坂の下 (0,25) へ出して頂の守り（西）を射る（20 秒）。家康本陣も (0,60) へ上げて号令の届く所に置く。
+ * 60 秒に忠勝隊・酒井隊で急坂を登って頂の守り（西）へ当たり、70 秒に酒井隊の両翼の采配、90 秒に家康の号令。120 秒に予備の石川隊が
+ * 同じ守りへ、騎馬隊が頂の守り（東）へ続く（一隊ずつしか当たれない急坂へ、後から入れ替えて入れる）。180 秒に榊原隊は頂の弓へ、忠勝隊は
+ * 近い敵へ、220 秒に残りも近い敵へ当て直し、260 秒に頂の輪へ入る。命令は 17 回（0・20・60・70・90・120・180・220・260 秒）。回り込まない
+ */
+const PREPARED: Step[] = [
+    [0, 'a_yumi', tap(0, 25)],
+    [0, 'a_ieyasu', tap(0, 60)],
+    [20, 'a_yumi', atk('e_summit_w')],
+    [60, 'a_tadakatsu', atk('e_summit_w')],
+    [60, 'a_sakai', atk('e_summit_w')],
+    [70, 'a_sakai', 'ability'],
+    [90, 'a_ieyasu', 'ability'],
+    [120, 'a_ishikawa', atk('e_summit_w')],
+    [120, 'a_kiba', atk('e_summit_e')],
+    [180, 'a_sakakibara', atk('e_yumi')],
+    [180, 'a_tadakatsu', 'nearest'],
+    [220, 'a_sakai', 'nearest'],
+    [220, 'a_ishikawa', 'nearest'],
+    [220, 'a_kiba', 'nearest'],
+    [260, 'a_sakai', tap(-10, -62)],
+    [260, 'a_ishikawa', tap(10, -62)],
+    [260, 'a_tadakatsu', tap(0, -50)],
+];
+
+/** 比べの基準（同じ台本は 1 回だけ進める） */
+const memo = new Map<Step[], Run>();
+const run = (steps: Step[]): Run => {
+    if (!memo.has(steps)) memo.set(steps, play(steps));
+    return memo.get(steps)!;
+};
+const memo16 = new Map<Step[], ReturnType<typeof jitterWins>>();
+const jitterOnce = (steps: Step[]) => {
+    if (!memo16.has(steps)) memo16.set(steps, jitterWins(steps));
+    return memo16.get(steps)!;
+};
+
 describe('尾根のデータ', () => {
     it('検査を通る。味方 7／敵 7（敵はすべて敵勢）。カプセルの丘 1 つ・崖 4 つ・両端の登り道・狭い正面（1 部隊）。主目標は頂の確保（敵本陣の撃破ではない）', () => {
         expect(validateField(RG)).toEqual([]);
@@ -257,60 +297,86 @@ describe('尾根のデータ', () => {
     });
 });
 
-describe('尾根：地形に合わない作戦（早送り）', () => {
-    it('何もしない → 頂を取れず日没', () => {
-        const r = play([]);
+// 合格条件は「正面なら負ける」ではなく、同じ台本・同じ数字での比べ（地形に合った作戦・準備した正面攻撃と比べて、主目標に届かない・
+// 損害が大きい・16 通りの勝ちが少ない）。無計画な攻撃の勝敗は「記録」として残す（台本と数字は前のまま。変わったら理由と前後の数字を書いて直す）
+describe('尾根：無計画な攻撃・地形に合わない作戦と、地形に合った作戦の比べ（早送り）', () => {
+    it('何もしない → 地形に合った作戦（勝ち）と違い、主目標に届かない（記録：頂を取れず日没）', () => {
+        const r = run([]);
+        expect(run(FIT).o.objectives!.primary!.achieved).toBe(true);
+        expect(r.o.objectives!.primary!.achieved).toBe(false);
+        // 記録
         expect(r.o.result).toBe('retreat');
         expect(r.o.reason).toBe('nightfall');
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
     });
 
-    it('正面突破：五隊で頂へ（弓は頂の弓を射る）→ 急坂の上の口で一隊ずつ迎えられ、日没（損害 4 割を超える。作った時 43.8％。五隊とも敗走）', () => {
-        const r = play(PUSH);
-        expect(r.o.result).not.toBe('victory');
+    it('正面突破：五隊で頂へ（無計画。弓は頂の弓を射る）→ 地形に合った作戦より損害が大きく、主目標に届かない（記録：急坂の上の口で一隊ずつ迎えられ、日没。作った時 43.8％。五隊とも敗走）', () => {
+        const r = run(PUSH);
+        // 確かめた時：日没・損害 43.8％ ／ 地形に合った作戦 364.1 秒に勝ち・20.0％
+        expect(r.loss).toBeGreaterThan(run(FIT).loss + 0.15);
         expect(r.o.objectives!.primary!.achieved).toBe(false);
+        // 記録
+        expect(r.o.result).not.toBe('victory');
         expect(r.loss).toBeGreaterThan(0.4);
         for (const id of MELEE) expect(r.o.units.find((u) => u.id === id)!.status).not.toBe('ready');
     });
 
-    it('五隊だけで頂へ（弓は動かさない）→ 頂の守り・弓を崩せず日没（作った時 損害 46.9％、頂の弓は無傷）。60 秒ごとに頂へ押し直しても同じ', () => {
-        const r = play(MELEE.map((id) => [0, id, SUMMIT] as Step));
+    it('五隊だけで頂へ（無計画。弓は動かさない）→ 地形に合った作戦より損害が大きく、主目標に届かない。60 秒ごとに頂へ押し直しても同じ（記録：頂の守り・弓を崩せず日没。作った時 損害 46.9％、頂の弓は無傷）', () => {
+        const r = run(MELEE.map((id) => [0, id, SUMMIT] as Step));
+        expect(r.loss).toBeGreaterThan(run(FIT).loss + 0.15);
+        expect(r.o.objectives!.primary!.achieved).toBe(false);
+        // 記録
         expect(r.o.result).not.toBe('victory');
         expect(r.loss).toBeGreaterThan(0.4);
         expect(r.left.e_yumi).toBe(300);
         const re = [60, 120, 180, 240, 300].flatMap((t) => MELEE.map((id) => [t, id, SUMMIT] as Step));
-        const r2 = play([...MELEE.map((id) => [0, id, SUMMIT] as Step), ...re]);
-        expect(r2.o.result).not.toBe('victory');
+        const r2 = run([...MELEE.map((id) => [0, id, SUMMIT] as Step), ...re]);
+        expect(r2.loss).toBeGreaterThan(run(FIT).loss + 0.15);
         expect(r2.o.objectives!.primary!.achieved).toBe(false);
-        expect(r2.loss).toBeGreaterThan(0.4);
-    });
-
-    it('弓も一緒に全部隊で頂の守り（西）へ → 負ける（作った時 414 秒・損害 67％）。30 秒ごとに近い敵へ当て直しても勝てない', () => {
-        const all: Step[] = [...MELEE, 'a_yumi'].map((id) => [0, id, atk('e_summit_w')] as Step);
-        const r = play(all);
-        expect(r.o.result).toBe('defeat');
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
-        const again = [30, 60, 90, 120, 150, 180, 210, 240, 270, 300].flatMap((t) => MELEE.map((id) => [t, id, 'nearest'] as Step));
-        const r2 = play([...PUSH, ...again]);
+        // 記録
         expect(r2.o.result).not.toBe('victory');
         expect(r2.loss).toBeGreaterThan(0.4);
     });
 
-    it('正面突破で能力も使う（榊原の先駆け・酒井の両翼・家康の号令）→ 日没（作った時 損害 41.7％）', () => {
-        const r = play([...PUSH, [25, 'a_sakakibara', 'ability'], [60, 'a_ieyasu', 'ability'], [100, 'a_sakai', 'ability']]);
-        expect(r.refused).toEqual([]);
-        expect(r.o.result).not.toBe('victory');
+    it('弓も一緒に全部隊で頂の守り（西）へ（無計画）→ 弓で崩してから入れ替えて登る準備した正面攻撃より損害が大きく、主目標に届かない。30 秒ごとに近い敵へ当て直しても同じ（記録：負ける。作った時 414 秒・損害 67％）', () => {
+        const all: Step[] = [...MELEE, 'a_yumi'].map((id) => [0, id, atk('e_summit_w')] as Step);
+        const r = run(all);
+        // 確かめた時：414.1 秒に負け・損害 66.6％ ／ 準備した正面攻撃 389.8 秒に勝ち・29.4％
+        expect(r.loss).toBeGreaterThan(run(PREPARED).loss + 0.2);
         expect(r.o.objectives!.primary!.achieved).toBe(false);
+        // 記録
+        expect(r.o.result).toBe('defeat');
+        const again = [30, 60, 90, 120, 150, 180, 210, 240, 270, 300].flatMap((t) => MELEE.map((id) => [t, id, 'nearest'] as Step));
+        const r2 = run([...PUSH, ...again]);
+        // 確かめた時：日没・損害 43.8％
+        expect(r2.loss).toBeGreaterThan(run(PREPARED).loss + 0.1);
+        expect(r2.o.objectives!.primary!.achieved).toBe(false);
+        // 記録
+        expect(r2.o.result).not.toBe('victory');
+        expect(r2.loss).toBeGreaterThan(0.4);
+    });
+
+    it('正面突破で能力も使う（榊原の先駆け・酒井の両翼・家康の号令。弓で崩さず五隊同時）→ 準備した正面攻撃より損害が大きく、主目標に届かない（記録：日没。作った時 損害 41.7％）', () => {
+        const r = run([...PUSH, [25, 'a_sakakibara', 'ability'], [60, 'a_ieyasu', 'ability'], [100, 'a_sakai', 'ability']]);
+        expect(r.refused).toEqual([]);
+        expect(r.loss).toBeGreaterThan(run(PREPARED).loss + 0.1);
+        expect(r.o.objectives!.primary!.achieved).toBe(false);
+        // 記録
+        expect(r.o.result).not.toBe('victory');
         expect(r.loss).toBeGreaterThan(0.4);
     });
 
-    it('正面突破で頂の守り・弓を崩した後に、残る隊（弓・家康本陣も）を頂へ送る → 勝てない（±15 秒の 16 通りで 0 勝。作った時 250 秒に送ると家康本陣が崩れて負け）', () => {
+    it('正面突破で頂の守り・弓を崩した後に、残る隊（弓・家康本陣も）を頂へ送る（無計画）→ 準備した正面攻撃・地形に合った作戦より 16 通りの勝ちが少ない（記録：16 通りで 0 勝。作った時 250 秒に送ると家康本陣が崩れて負け）', () => {
         const base: Step[] = [...MELEE, 'a_yumi'].map((id) => [0, id, SUMMIT] as Step);
         const follow: Step[] = [...base, [250, 'a_yumi', SUMMIT], [250, 'a_ieyasu', tap(0, -55)]];
-        const r = play(follow);
+        const r = run(follow);
+        const w = jitterOnce(follow).wins;
+        // 確かめた時：無計画 0 勝 ／ 準備した正面攻撃 13 勝 ／ 地形に合った作戦 16 勝
+        expect(w + 10).toBeLessThanOrEqual(jitterOnce(PREPARED).wins);
+        expect(w + 10).toBeLessThanOrEqual(jitterOnce(FIT).wins);
+        // 記録（確かめた時：388.1 秒に家康本陣が崩れて負け・損害 57.1％）
         expect(r.o.result).not.toBe('victory');
-        expect(jitterWins(follow).wins).toBe(0);
-    }, 60_000);
+        expect(w).toBe(0);
+    }, 90_000);
 });
 
 describe('尾根：地形に合った作戦（早送り）', () => {
@@ -339,9 +405,11 @@ describe('尾根：地形に合った作戦（早送り）', () => {
     // 確かめた時（乱数の種 7）：西から横 16 勝（損害 25％以内 15・東の肩 0・損害の平均 19.6％）、
     // 西と東の両方から 13 勝（損害 25％以内 1・東の肩 16・損害の平均 35.0％）、正面突破 0 勝（16 通りとも日没）。
     // 参考に種 3・11 でも数えた：西から横 15 勝・16 勝、西と東の両方から 12 勝・14 勝
-    it('命令の時刻を ±15 秒ずらした 16 通り：西から横は 14 通り以上で勝つ（確かめた時 16 勝）。正面突破はずらしても勝たない', () => {
-        expect(jitterWins(FIT).wins).toBeGreaterThanOrEqual(14);
-        expect(jitterWins(PUSH).wins).toBe(0);
+    it('命令の時刻を ±15 秒ずらした 16 通り：西から横は 14 通り以上で勝ち、正面突破（五隊で頂へ）より勝ちが多い（確かめた時 16 勝・0 勝）', () => {
+        expect(jitterOnce(FIT).wins).toBeGreaterThanOrEqual(14);
+        expect(jitterOnce(FIT).wins).toBeGreaterThan(jitterOnce(PUSH).wins + 10);
+        // 記録：正面突破はずらしても勝たない
+        expect(jitterOnce(PUSH).wins).toBe(0);
     }, 60_000);
 });
 
@@ -461,4 +529,33 @@ describe('尾根：武将の能力の価値が地形で変わる（早送り）'
         expect(crestUse.foeLost / crestUse.sakaLost).toBeGreaterThan(4);
         expect(slopeUse.foeLost / slopeUse.sakaLost).toBeLessThan(0.3);
     });
+});
+
+// 尾根の準備した正面攻撃は、急坂の上の口で一隊ずつしか当たれない地形でも、弓で崩し・号令と采配で支え・予備を入れ替えて登れば、
+// 16 通りの多くで頂に届く。ただし損害は大きく（平均 5 割ほど）、損害 25％以内の副目標は 16 通りとも果たせない。西から横の作戦は損害 2 割ほど
+describe('尾根：準備した正面攻撃（早送り）', () => {
+    it('弓で頂の守りを射てから二隊で急坂を登り、采配・号令を使い、予備を入れ替えて入れる（記録：389.8 秒に勝ち・損害 29.4％・副目標はどちらも未達成。忠勝隊は 260 秒までに敗走）', () => {
+        const r = run(PREPARED);
+        expect(r.refused).toEqual(['260:a_tadakatsu']);
+        expect(Object.keys(r.o.abilitiesUsed ?? {}).sort()).toEqual(['a_ieyasu', 'a_sakai']);
+        // 記録
+        expect(r.o.result).toBe('victory');
+        expect(r.o.objectives!.primary!.achieved).toBe(true);
+        expect(secondaryOf(r, 'ridge_losses')).toBe(false);
+        expect(secondaryOf(r, 'ridge_east')).toBe(false);
+    });
+
+    it('16 通りで、正面突破（五隊で頂へ）より勝ちがずっと多い。準備を抜くと勝てない（能力なし 4 勝・弓なし 0 勝）。西から横の作戦より勝ちが少なく、損害の副目標は一度も果たせない（記録：準備 13 勝・損害 25％以内 0 ／ 正面突破 0 勝 ／ 西から横 16 勝・15）', () => {
+        const prep = jitterOnce(PREPARED);
+        const push = jitterOnce(PUSH);
+        const fit = jitterOnce(FIT);
+        expect(prep.wins).toBeGreaterThanOrEqual(11);
+        expect(prep.wins).toBeGreaterThan(push.wins + 8);
+        expect(prep.lossOk).toBe(0);
+        expect(fit.wins).toBeGreaterThanOrEqual(prep.wins);
+        expect(fit.lossOk).toBeGreaterThan(prep.lossOk + 8);
+        // 準備の値打ち：能力を抜くと勝ちが大きく減り、弓を抜くと勝てない
+        expect(jitterOnce(PREPARED.filter(([, , o]) => o !== 'ability')).wins).toBeLessThanOrEqual(prep.wins - 6);
+        expect(jitterOnce(PREPARED.filter(([, id]) => id !== 'a_yumi')).wins).toBeLessThanOrEqual(2);
+    }, 120_000);
 });
