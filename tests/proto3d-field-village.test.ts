@@ -290,10 +290,12 @@ describe('村落の作戦（早送り）', () => {
 
     it('主目標に届く作戦が 4 つ（広場を固める・柵の内側の弓・西の辻に二隊・予備を回す）。どれも ±15 秒の 16 通りで 15 勝以上', () => {
         for (const p of [PLAZA, FENCE, POST, RESERVE]) expect(won(once(p)), brief(once(p))).toBe(true);
-        // 16 通りの勝ち数（作った時：広場 15・柵の弓 16・西の辻 16・予備を回す 16）
+        // 16 通りの勝ち数（作った時：広場 15・柵の弓 16・西の辻 16・予備を回す 16）。
+        // 第3群の動きの直し（建物の角の向こうの相手に「14 m より近づかない」を効かせない ほか）の後、西の辻は 15（k=9：西の通りの口で酒井隊と
+        // 斬り合っていた西の槍が 250 秒に離れて広場へ向かい、忠勝隊を 325 秒ごろに崩して、342 秒に屋敷前を奪われる）。ほかは同じ
         expect(wins(sixteen(PLAZA))).toBeGreaterThanOrEqual(15);
         expect(wins(sixteen(FENCE))).toBe(16);
-        expect(wins(sixteen(POST))).toBe(16);
+        expect(wins(sixteen(POST))).toBeGreaterThanOrEqual(15);
         expect(wins(sixteen(RESERVE))).toBe(16);
     }, 300_000);
 
