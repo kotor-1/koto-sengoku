@@ -23,7 +23,7 @@
  * | 側面の拠点を先に（BASTION） | 門 161 秒・勝ち 289 秒・損害 22.5％・✓✓✓・7／7 | 16 勝・勝ち 371 秒（320〜400）・門 214 秒（180〜252）・損害 29.3％（24.8〜36.2）・守れる 6.4・副目標 10／16／9 |
  * | 準備した正面攻撃（FRONT。弓で櫓を射すくめてから全軍） | 門 171 秒・勝ち 288 秒・27.8％・✓✗✓・6／7 | 16 勝・331 秒（310〜348）・門 195 秒（175〜208）・28.0％（24.0〜31.0）・6.4・14／0／10 |
  * | 急いで門へ（RUSH） | 門 80 秒・勝ち 386 秒・39.4％・✗✗✗・6／7 | 15 勝（1 回は日没）・249 秒（209〜418）・門 88 秒（82〜93）・31.9％（26.9〜44.3）・6.4・7／0／0 |
- * | 無計画：全部隊で門の前へ一斉、あとは一番近い敵へ当て直すだけ（UNPLANNED） | 門は 205 秒に開くが曲輪へ届かず、463 秒に総崩れ・63.0％・残る部隊 1 | 時刻をずらしても同じ |
+ * | 無計画：全部隊で門の前へ一斉、あとは一番近い敵へ当て直すだけ（UNPLANNED） | 門は 195 秒に開くが曲輪の確保（段階 2）へ届かず、439 秒に敵の諸隊をすべて崩して勝つ・53.4％・残る部隊 4（押し離しの直しの前は 205 秒・463 秒に総崩れ・63.0％・残る部隊 1） | 時刻をずらしても同じ |
  * | 待つ（HOLD） | 日没・損害 0・門は開かない | |
  * 作戦の違い：拠点を先には東へ遠回りするので門が開くのも勝つのも一番遅いが、拠点の弓をいつも崩す。準備した正面攻撃は損害が一番安定して
  * 小さく（損害 3 割を 16 通りで 14 回守る）、拠点には手を出さない。急いで門へは門が 100 秒ほど早く開き勝つのも早いが、損害が大きくばらつき
@@ -693,11 +693,20 @@ describe('作戦（早送り）', () => {
         expect([sec(r.rush, 'siege_bastion'), sec(r.rush, 'siege_cavalry')], brief(r.rush)).toEqual([false, false]);
     });
 
-    it('比べ：準備した正面攻撃は、無計画な攻撃より損害が小さく、守れる部隊が多く、主目標まで届く（記録：無計画は門を開くが曲輪へ届かず 463 秒に総崩れ・損害 63.0％・残る部隊 1）', () => {
-        expect(r.unplanned.loss).toBeGreaterThan(r.front.loss + 0.25);
-        expect(standing(r.unplanned)).toBeLessThan(standing(r.front) - 3);
-        expect(r.unplanned.o.objectives!.primary!.achieved).toBe(false);
-        expect(r.unplanned.o.reason).toBe('ally_army_broken');
+    // 押し離しの直し（sim.ts の separate：第3群の直しの戦場では、押す先までまっすぐ通れるときだけ押す）の前は、門の前で味方と重なった部隊が
+    // 1 刻みに 12 m ほど押されて閉じた門の横の石垣を越え、曲輪の中へ抜けていた（e2e/fields-group3.mjs の見張りで見つけた）。
+    // 無計画な攻撃は直しの前：門 205 秒・曲輪へ届かず 463 秒に総崩れ（ally_army_broken）・損害 63.0％・残る部隊 1。
+    // 直しの後：門 195 秒・曲輪の確保（段階 2）の前に敵の諸隊をすべて崩して 439 秒に勝つ（enemy_army_broken。主目標は勝敗と同じで ✓、段は 1／2）・
+    // 損害 53.4％・残る部隊 4。比べを「主目標まで届くか」から「段階 2 まで届くか・時間・損害・残る部隊」に直し、残る部隊の差を 3 → 2 にした
+    // （準備した正面攻撃は 286 秒・27.7％・残る部隊 6 のまま）
+    it('比べ：準備した正面攻撃は、無計画な攻撃より損害が小さく、守れる部隊が多く、早く、曲輪の確保（段階 2）まで届く（記録：無計画は門を 195 秒に開くが曲輪の確保へ届かず、439 秒に敵の諸隊をすべて崩して勝つ・損害 53.4％・残る部隊 4）', () => {
+        expect(r.unplanned.loss).toBeGreaterThan(r.front.loss + 0.2);
+        expect(standing(r.unplanned)).toBeLessThanOrEqual(standing(r.front) - 2);
+        expect(r.unplanned.t).toBeGreaterThan(r.front.t + 100);
+        expect(r.unplanned.o.objectives!.primary!.steps).toEqual({ done: 1, total: 2 });
+        expect(r.front.o.objectives!.primary!.steps).toEqual({ done: 2, total: 2 });
+        // 記録：無計画は敵の諸隊をすべて崩して終わる（曲輪の確保の 45 秒は数え終えない）
+        expect(r.unplanned.o.reason).toBe('enemy_army_broken');
         // 待つだけは日没（門は開かない・損害 0）
         expect([r.hold.o.reason, r.hold.loss, r.hold.gateT]).toEqual(['nightfall', 0, null]);
         expect(r.hold.o.objectives!.primary!.steps).toEqual({ done: 0, total: 2 });

@@ -1852,6 +1852,7 @@ function steerAround(s: BattleState, u: UnitState, goal: { x: number; z: number 
  * - 相手の陣営の戦える部隊どうしは、14 m より近ければ押し離す。
  * - 敗走・撤退中の部隊は味方の間をすり抜ける。狭い所で味方の中をすり抜けている部隊（passThrough）も、その味方とは押し離さない。
  * - 通れない所がある戦場で、動いている味方どうしを押し離すとどちらかが崖・川へ入るときは、押し離さない（狭い所を並んで抜ける）。
+ * - 第3群の直しの戦場では、押す先までの間に通れない所（石垣・家屋・閉じた門）があるときも押さない（押し越えない）。
  */
 function separate(s: BattleState): void {
     const us = s.units;
@@ -1859,9 +1860,13 @@ function separate(s: BattleState): void {
     const weight = (u: UnitState) => (u.engagedWith ? 0.1 : u.moving ? 1 : 0.25);
     const tooCloseToFoe = (u: UnitState, x: number, z: number) =>
         us.some((o) => o.side !== u.side && isActive(o) && Math.hypot(o.x - x, o.z - z) < ENEMY_GAP && Math.hypot(o.x - x, o.z - z) < dist(o, u));
-    // 通れない所がある戦場では、押されても川・崖へは入らない（もともと通れない所にいる部隊は出られるように押す）
+    // 通れない所がある戦場では、押されても川・崖へは入らない（もともと通れない所にいる部隊は出られるように押す）。
+    // 第3群の直し（FieldRules.refinedMoves）：押される先までまっすぐ通れること（味方とほぼ重なると 1 刻みに 18 m 近く押されるので、
+    // 先の点だけを見ると厚い石垣・閉じた門・家並みを押し越えて向こう側へ出てしまう。城攻め前面で門の前の味方が石垣の北の曲輪へ抜けた）
     const nav = s.field.nav;
-    const okAt = (u: UnitState, x: number, z: number) => !nav || isPassable(nav, x, z) || !isPassable(nav, u.x, u.z);
+    const refined = s.field.refined;
+    const okAt = (u: UnitState, x: number, z: number) =>
+        !nav || !isPassable(nav, u.x, u.z) || (isPassable(nav, x, z) && (!refined || lineClear(nav, u, { x, z })));
     const nudge = (u: UnitState, dx: number, dz: number) => {
         const nx = u.x + dx;
         const nz = u.z + dz;

@@ -29,7 +29,8 @@
  *   射られ続けていた部隊が、角を回って斬り合うようになった）。
  * - 城下町外縁（調整の後）：組み替える → 420 秒・32.9％で勝つ。大通り・出口の前・無計画・待つ → 3 部隊目が抜けて負け（245〜336 秒）。
  * - 城攻め前面（調整の後）：拠点を先に → 281 秒・27.9％（動きの直しの後 293 秒・28.4％）。弓で櫓を射すくめる → 255 秒・23.8％。
- *   無計画 → 459 秒に総崩れ・61.0％（門は開くが曲輪に届かない）。
+ *   無計画 → 459 秒に総崩れ・61.0％（門は開くが曲輪に届かない）。押し離しの直し（separate が石垣を越えて押さない）の後は、448 秒に
+ *   敵の諸隊をすべて崩して勝つ・53.0％（曲輪の確保へは届かない。拠点の弓 ✓）。ほかの台本は同じ。
  */
 import { describe, expect, it } from 'vitest';
 import { RULES } from '../proto3d/src/battle/sim';
@@ -157,10 +158,12 @@ describe('城攻め前面（早送り）', () => {
             expect(r[k]!.o.objectives!.primary!.steps).toEqual({ done: 2, total: 2 });
         }
     });
-    it('比べ：拠点を先に落とす作戦だけが副目標（拠点の弓を崩す）を果たす。弓で櫓を射すくめる作戦は、無計画な攻撃より損害が小さい（記録：無計画も勝つ・損害 45.4％）', () => {
+    // 押し離しの直し（sim.ts の separate：押す先までまっすぐ通れるときだけ押す。門の前の部隊が石垣を越えて曲輪へ抜けていた）の前は、
+    // 無計画は 459 秒に負け（ally_army_broken）・61.0％・拠点の弓 ✗。直しの後は 448 秒に敵の諸隊をすべて崩して勝つ（enemy_army_broken）・
+    // 53.0％・拠点の弓 ✓（すべて崩したので）。「無計画は拠点の弓を崩さない」を外し、計画した作戦どうしの分かれ方と損害の比べにした
+    it('比べ：計画した作戦では、拠点を先に落とす作戦だけが副目標（拠点の弓を崩す）を果たす。弓で櫓を射すくめる作戦は、無計画な攻撃より損害が小さい（記録：無計画は敵の諸隊をすべて崩して勝つ・損害 53.0％）', () => {
         expect(secondaryOf(r.bastion!, 'siege_bastion')).toBe(true);
         expect(secondaryOf(r.archers!, 'siege_bastion')).toBe(false);
-        expect(secondaryOf(r.unplanned!, 'siege_bastion')).toBe(false);
         expect(r.archers!.loss).toBeLessThan(r.unplanned!.loss);
         expect(r.hold!.o.objectives!.primary!.steps).toEqual({ done: 0, total: 2 });
     });
