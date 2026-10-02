@@ -1,7 +1,9 @@
 /**
  * 戦場「谷間」（valley）の釣り合い（docs/fields-group2-design.md §4）。
- * 地形に合わない作戦（放置・谷底を押し上がる・出口の塞ぎへ当たって近い敵へ当て直す・能力も使う・谷の口で攻め手を討った後に谷底を押す・
- * 攻め手より先に中央を駆け抜ける）は負けか日没（損害が大きい）。地形に合った作戦は 2 つあり、どちらも勝つ（選べる）：
+ * 無計画な攻撃・地形に合わない作戦（放置・谷底を押し上がる・出口の塞ぎへ当たって近い敵へ当て直す・能力だけ使う・攻め手より先に中央を
+ * 駆け抜ける）は、地形に合った作戦・準備した正面攻撃と比べて主目標に届かない・損害が大きい・崩せる敵が少ない（比べが合格条件。勝敗は記録
+ * として書く）。準備した正面攻撃（谷の口で攻め手を討った後に、差配・弓で整えて谷底を押す）は主目標に届かないが、その結果と理由も記録する。
+ * 地形に合った作戦は 2 つあり、どちらも 16 通りで安定して勝つ（選べる）：
  * - 高所を先に取る：西の高地へ南の端から登って高地の槍と弓を破り、高地の上を北へ進んで北の端から出口の西へ降りる。
  * - 中央を抜ける：谷の口で攻め手を討った後、騎馬で狭い口の塞ぎに当たって退き、塞ぎを谷底へ誘い出す。谷底の両脇で待つ隊が両側から
  *   挟んで崩し、空いた狭い口を抜ける。
@@ -227,6 +229,57 @@ const CENTER: Step[] = [...MOUTH, ...centerFrom(250)];
 /** 正面突破：槍・騎馬・弓の六隊で谷底を出口へ押し上がる */
 const PUSH: Step[] = [...MELEE, 'a_yumi'].map((id, i) => [0, id, tap(-20 + (i % 3) * 20, -195)] as Step);
 
+/**
+ * 準備した正面攻撃（谷底を押し上がる）：前は「地形に合わない作戦」のテストの中にあった台本（LURE_PUSH）を、そのまま準備した正面攻撃として数える
+ * （台本は 1 行も変えていない）。弓・酒井隊・石川隊・榊原隊・騎馬隊を谷の口の左右に置き、谷を下ってくる攻め手を 190 秒に討つ（予備を後から・
+ * 兵種を合わせる）。240 秒に石川隊の後詰めの差配で忠勝隊を急がせて狭い口の塞ぎへ、250 秒に酒井隊も塞ぎへ、騎馬二隊は谷底の (∓10,-100) へ、
+ * 弓は塞ぎを射る。310 秒に騎馬二隊も塞ぎへ、360・400 秒に近い敵へ当て直し、440 秒に出口へ。命令は 31 回。高地へは上がらず、塞ぎを誘い出さない
+ */
+const PREPARED: Step[] = [
+    [0, 'a_yumi', tap(-85, 150)],
+    [0, 'a_sakai', tap(-25, 150)],
+    [0, 'a_ishikawa', tap(25, 160)],
+    [0, 'a_sakakibara', tap(-40, 185)],
+    [0, 'a_kiba', tap(40, 175)],
+    [190, 'a_sakai', atk('e_raid1')],
+    [190, 'a_kiba', atk('e_raid2')],
+    [190, 'a_sakakibara', atk('e_raid1')],
+    [240, 'a_ishikawa', { abilityOn: 'a_tadakatsu' }],
+    [240, 'a_tadakatsu', atk('e_block')],
+    [250, 'a_sakai', atk('e_block')],
+    [250, 'a_sakakibara', tap(-10, -100)],
+    [250, 'a_kiba', tap(10, -100)],
+    [250, 'a_yumi', atk('e_block')],
+    [310, 'a_sakakibara', atk('e_block')],
+    [310, 'a_kiba', atk('e_block')],
+    ...[360, 400].flatMap((t) => MELEE.map((id) => [t, id, 'nearest'] as Step)),
+    ...MELEE.map((id, i) => [440, id, tap(-20 + (i % 3) * 20, -195)] as Step),
+];
+
+/** 命令の時刻を ±15 秒ずらした 16 通り（jitterWins と同じ作り方）の結果 */
+function jitterRuns(base: Step[]): Run[] {
+    let seed = 7;
+    const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+    const out: Run[] = [];
+    for (let k = 0; k < 16; k++) out.push(play(base.map(([t, id, o]) => [t === 0 ? 0 : t + Math.round((rnd() - 0.5) * 30), id, o] as Step)));
+    return out;
+}
+const count = (rs: Run[], f: (r: Run) => boolean) => rs.filter(f).length;
+/** 崩した（敗走・全滅させた）敵の部隊の数 */
+const broken = (r: Run) => r.o.units.filter((u) => u.side === 'enemy' && u.status !== 'ready').length;
+
+/** 比べの基準（同じ台本は 1 回だけ進める） */
+const memo = new Map<Step[], Run>();
+const run = (steps: Step[]): Run => {
+    if (!memo.has(steps)) memo.set(steps, play(steps));
+    return memo.get(steps)!;
+};
+const memo16 = new Map<Step[], ReturnType<typeof jitterWins>>();
+const jitterOnce = (steps: Step[]) => {
+    if (!memo16.has(steps)) memo16.set(steps, jitterWins(steps));
+    return memo16.get(steps)!;
+};
+
 describe('谷間のデータ', () => {
     it('検査を通る。味方 7／敵 10（敵はすべて敵勢）。カプセルの丘 2 つ・崖 6 つ・谷底の道・狭い口の狭い正面（1 部隊）。主目標は突破（敵本陣の撃破ではない）', () => {
         expect(validateField(VL)).toEqual([]);
@@ -321,72 +374,65 @@ describe('谷間のデータ', () => {
     });
 });
 
-describe('谷間：地形に合わない作戦（早送り）', () => {
-    it('何もしない → 抜けられず日没（谷の口へ来た攻め手は、待っている忠勝隊が迎える）', () => {
-        const r = play([]);
+// 合格条件は「正面なら負ける」ではなく、同じ台本・同じ数字での比べ（地形に合った作戦・準備した正面攻撃と比べて、主目標に届かない・
+// 損害が大きい・16 通りの勝ちが少ない・崩せる敵が少ない）。無計画な攻撃の勝敗は「記録」として残す（台本と数字は前のまま。変わったら
+// 理由と前後の数字を書いて直す）。前にここにあった「谷の口で攻め手を討ってから谷底を押し上がる」は、準備した正面攻撃（PREPARED）として下へ移した
+describe('谷間：無計画な攻撃・地形に合わない作戦と、地形に合った作戦の比べ（早送り）', () => {
+    it('何もしない → 地形に合った作戦（勝ち）と違い、主目標に届かない（記録：抜けられず日没。谷の口へ来た攻め手は、待っている忠勝隊が迎える）', () => {
+        const r = run([]);
+        expect(run(FIT).o.objectives!.primary!.achieved).toBe(true);
+        expect(r.o.objectives!.primary!.achieved).toBe(false);
+        // 記録
         expect(r.o.result).toBe('retreat');
         expect(r.o.reason).toBe('nightfall');
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
     });
 
-    it('正面突破：六隊で谷底を出口へ押し上がる → 両側から射られ、狭い口で止められ、谷を下ってくる攻め手とぶつかって負ける（作った時 179 秒・損害 52.3％）。家康本陣も一緒でも負け', () => {
-        const r = play(PUSH);
-        expect(r.o.result).toBe('defeat');
+    it('正面突破：六隊で谷底を出口へ押し上がる（無計画）→ 地形に合った作戦より損害が大きく、主目標に届かず、準備した正面攻撃より崩せる敵が少ない（記録：両側から射られ、狭い口で止められ、谷を下ってくる攻め手とぶつかって負ける。作った時 179 秒・損害 52.3％）。家康本陣も一緒でも負け', () => {
+        const r = run(PUSH);
+        // 確かめた時：179.2 秒に負け・損害 52.3％・崩した敵 0 ／ 高所を先に取る 勝ち・16.3％ ／ 準備した正面攻撃 477.6 秒に負け・崩した敵 4
+        expect(r.loss).toBeGreaterThan(run(FIT).loss + 0.25);
         expect(r.o.objectives!.primary!.achieved).toBe(false);
+        expect(broken(r)).toBeLessThan(broken(run(PREPARED)));
+        // 記録
+        expect(r.o.result).toBe('defeat');
         expect(r.loss).toBeGreaterThan(0.4);
-        const all = play([...PUSH, [0, 'a_ieyasu', tap(0, -195)]]);
+        const all = run([...PUSH, [0, 'a_ieyasu', tap(0, -195)]]);
+        expect(all.o.objectives!.primary!.achieved).toBe(false);
+        // 記録（確かめた時：185.9 秒に負け・損害 60.6％）
         expect(all.o.result).toBe('defeat');
     });
 
-    it('全部隊で塞ぎへ当たり、30 秒ごとに近い敵へ当て直す → 負ける（作った時 214 秒・損害 51.1％）。能力も使う（先駆け・号令・両翼・後詰めの差配で忠勝隊を急がせる）→ 負ける（作った時 45.8％）', () => {
+    it('全部隊で塞ぎへ当たり、30 秒ごとに近い敵へ当て直す（無計画）→ 地形に合った作戦より損害が大きく、主目標に届かない。能力も使う（先駆け・号令・両翼・後詰めの差配で忠勝隊を急がせる）→ 同じ（記録：負ける。作った時 214 秒・損害 51.1％ と 45.8％）', () => {
         const again = [30, 60, 90, 120, 150, 180, 210, 240, 270, 300].flatMap((t) => MELEE.map((id) => [t, id, 'nearest'] as Step));
-        const r = play([...MELEE.map((id) => [0, id, atk('e_block')] as Step), [0, 'a_yumi', atk('e_block')], ...again]);
+        const r = run([...MELEE.map((id) => [0, id, atk('e_block')] as Step), [0, 'a_yumi', atk('e_block')], ...again]);
+        expect(r.loss).toBeGreaterThan(run(FIT).loss + 0.25);
+        expect(r.o.objectives!.primary!.achieved).toBe(false);
+        // 記録
         expect(r.o.result).not.toBe('victory');
         expect(r.loss).toBeGreaterThan(0.4);
-        const ab = play([...PUSH, [5, 'a_ishikawa', { abilityOn: 'a_tadakatsu' }], [25, 'a_sakakibara', 'ability'], [60, 'a_ieyasu', 'ability'], [100, 'a_sakai', 'ability']]);
+        const ab = run([...PUSH, [5, 'a_ishikawa', { abilityOn: 'a_tadakatsu' }], [25, 'a_sakakibara', 'ability'], [60, 'a_ieyasu', 'ability'], [100, 'a_sakai', 'ability']]);
         expect(ab.refused).toEqual([]);
-        expect(ab.o.result).not.toBe('victory');
+        expect(ab.loss).toBeGreaterThan(run(FIT).loss + 0.25);
         expect(ab.o.objectives!.primary!.achieved).toBe(false);
+        // 記録
+        expect(ab.o.result).not.toBe('victory');
         expect(ab.loss).toBeGreaterThan(0.4);
     });
 
-    it('谷の口で攻め手を討ってから谷底を押し上がる（石川の差配で忠勝隊を先に口へ・弓も塞ぎを射る・近い敵へ当て直す）→ 狭い口で止められて勝てない（±15 秒の 16 通りで 0 勝。作った時 損害 5 割超）', () => {
-        const LURE_PUSH: Step[] = [
-            [0, 'a_yumi', tap(-85, 150)],
-            [0, 'a_sakai', tap(-25, 150)],
-            [0, 'a_ishikawa', tap(25, 160)],
-            [0, 'a_sakakibara', tap(-40, 185)],
-            [0, 'a_kiba', tap(40, 175)],
-            [190, 'a_sakai', atk('e_raid1')],
-            [190, 'a_kiba', atk('e_raid2')],
-            [190, 'a_sakakibara', atk('e_raid1')],
-            [240, 'a_ishikawa', { abilityOn: 'a_tadakatsu' }],
-            [240, 'a_tadakatsu', atk('e_block')],
-            [250, 'a_sakai', atk('e_block')],
-            [250, 'a_sakakibara', tap(-10, -100)],
-            [250, 'a_kiba', tap(10, -100)],
-            [250, 'a_yumi', atk('e_block')],
-            [310, 'a_sakakibara', atk('e_block')],
-            [310, 'a_kiba', atk('e_block')],
-            ...[360, 400].flatMap((t) => MELEE.map((id) => [t, id, 'nearest'] as Step)),
-            ...MELEE.map((id, i) => [440, id, tap(-20 + (i % 3) * 20, -195)] as Step),
-        ];
-        const r = play(LURE_PUSH);
-        expect(r.o.result).not.toBe('victory');
-        expect(r.loss).toBeGreaterThan(0.4);
-        expect(statusOf(r, 'e_block')).toBe('ready');
-        expect(jitterWins(LURE_PUSH).wins).toBe(0);
-    }, 60_000);
-
     // 確かめた時（乱数の種 7）：16 通りで 2 勝（勝っても 178・192 秒・損害 35〜40％）、ほかは負けか日没（損害 46〜61％）
-    it('攻め手より先に中央を駆け抜ける（すぐ騎馬で塞ぎを誘い出し、両脇の隊で挟んでから狭い口を抜ける）→ 75 秒に出口へ現れた攻め手に止められ、谷底で射られて負ける（作った時 287 秒に負け・損害 47.7％。±15 秒の 16 通りでも勝ちは 3 以下）', () => {
+    it('攻め手より先に中央を駆け抜ける（すぐ騎馬で塞ぎを誘い出し、両脇の隊で挟んでから狭い口を抜ける）→ 攻め手を討ってから同じ手順で抜ける作戦より損害が大きく、16 通りの勝ちが少ない（記録：75 秒に出口へ現れた攻め手に止められ、谷底で射られて負ける。作った時 287 秒に負け・損害 47.7％。±15 秒の 16 通りでも勝ちは 3 以下）', () => {
         const EARLY = centerFrom(0);
-        const r = play(EARLY);
-        expect(r.o.result).toBe('defeat');
+        const r = run(EARLY);
+        const w = jitterOnce(EARLY).wins;
+        // 確かめた時：早すぎる 2 勝 ／ 攻め手を討ってから（CENTER）16 勝・24.6％
+        expect(r.loss).toBeGreaterThan(run(CENTER).loss + 0.15);
+        expect(w + 10).toBeLessThanOrEqual(jitterOnce(CENTER).wins);
         expect(r.o.objectives!.primary!.achieved).toBe(false);
+        // 記録
+        expect(r.o.result).toBe('defeat');
         expect(r.loss).toBeGreaterThan(0.4);
-        expect(jitterWins(EARLY).wins).toBeLessThanOrEqual(3);
-    }, 60_000);
+        expect(w).toBeLessThanOrEqual(3);
+    }, 90_000);
 });
 
 describe('谷間：地形に合った作戦（早送り）', () => {
@@ -467,10 +513,12 @@ describe('谷間：地形に合った作戦（早送り）', () => {
     // 正面突破 0 勝（16 通りとも負け）
     // 参考に種 1〜6・11 でも数えた：高所を先に 15〜16 勝（損害 2 割以内 9〜13・塞ぎ 0）、中央を抜ける 16 勝（損害 2 割以内 0・塞ぎ 16・損害の平均 25.7〜26.9％）、
     // 攻め手より先に駆け抜ける 1〜4 勝（損害の平均 46.7〜50.8％）
-    it('命令の時刻を ±15 秒ずらした 16 通り：高所を先に取る・中央を抜ける作戦は 14 通り以上で勝つ（確かめた時 15 勝・16 勝）。正面突破はずらしても勝たない', () => {
-        expect(jitterWins(FIT).wins).toBeGreaterThanOrEqual(14);
-        expect(jitterWins(CENTER).wins).toBeGreaterThanOrEqual(14);
-        expect(jitterWins(PUSH).wins).toBe(0);
+    it('命令の時刻を ±15 秒ずらした 16 通り：高所を先に取る・中央を抜ける作戦は 14 通り以上で勝ち、正面突破より勝ちが多い（確かめた時 15 勝・16 勝・0 勝）', () => {
+        expect(jitterOnce(FIT).wins).toBeGreaterThanOrEqual(14);
+        expect(jitterOnce(CENTER).wins).toBeGreaterThanOrEqual(14);
+        expect(jitterOnce(FIT).wins).toBeGreaterThan(jitterOnce(PUSH).wins + 10);
+        // 記録：正面突破はずらしても勝たない
+        expect(jitterOnce(PUSH).wins).toBe(0);
     }, 60_000);
 
     it('敵を谷へ誘い込む：谷の口で待つ代わりに、忠勝隊が谷底へ出て攻め手を迎える → 両側の高地から射られて忠勝隊が崩れ、家康本陣も崩れて負ける（作った時 忠勝隊が 179.5 秒に崩れ、267 秒に負け）', () => {
@@ -666,4 +714,36 @@ describe('谷間：武将の能力の価値が地形で変わる（早送り）'
         expect(neckUse.r.o.result).not.toBe('victory');
         // 同じ能力で、塞ぎが崩れるまで：谷底は使えば 5 秒かからない。狭い口では使っても何も変わらない
     });
+});
+
+// 谷間では準備した正面攻撃（谷底を押し上がる）は主目標に届かない（16 通りで 0 勝）。理由：谷底は 300 m ほど両側の高地の弓（高所から
+// 射程 +25 m・矢の損害 ×1.35）に射られ続け、狭い口（1 部隊しか当たれない）では塞ぎ（450）と出口の弓が待つ。攻め手を先に討ち、差配で急がせ、
+// 弓で塞ぎを射ても、塞ぎを崩す前後に当たった隊が次々に敗走し、戦える 3 部隊が出口へ届かない（戦える部隊が足りなくなると主目標を果たせなく
+// なって負ける）。台本を変えても同じだった（確かめた時：攻め手を討ってから四隊で塞ぎへ・差配・采配 → 日没・損害 53.4％・16 通りで 0 勝 12 敗、
+// 弓で西の高地の弓を射ながら谷底の西寄りを登る → 日没・56.9％・0 勝 7 敗。どちらも採らず、前からの台本を残した）。
+// 無計画な正面突破と比べて良いのは「負けが少ない（16 → 8）・塞ぎを崩せる（0 → 10 通り）・崩せる敵が多い」で、損害の割合は同じくらい
+describe('谷間：準備した正面攻撃（早送り）', () => {
+    it('谷の口で攻め手を討ってから谷底を押し上がる（石川の差配で忠勝隊を先に口へ・弓も塞ぎを射る・近い敵へ当て直す）（記録：477.6 秒に負け・損害 56.9％・崩した敵 4 隊。塞ぎは崩せない並び）', () => {
+        const r = run(PREPARED);
+        // 記録（前は「地形に合わない作戦」として書いていた数字。台本も同じ）
+        expect(r.o.result).not.toBe('victory');
+        expect(r.loss).toBeGreaterThan(0.4);
+        expect(statusOf(r, 'e_block')).toBe('ready');
+        expect(jitterOnce(PREPARED).wins).toBe(0);
+        // 攻め手は二隊とも谷の口で崩す
+        expect(statusOf(r, 'e_raid1')).not.toBe('ready');
+        expect(statusOf(r, 'e_raid2')).not.toBe('ready');
+    }, 60_000);
+
+    it('16 通りで、無計画な正面突破（六隊で谷底へ）より負けが少なく、塞ぎを崩せる並びが多く、崩せる敵が多い（記録：準備 0 勝・負け 8・塞ぎ 10・崩した敵の平均 5.1 ／ 正面突破 0 勝・負け 16・塞ぎ 0・0 ／ 高所を先に取る 15 勝）', () => {
+        const prep = jitterRuns(PREPARED);
+        const push = jitterRuns(PUSH);
+        const isDefeat = (r: Run) => r.o.result === 'defeat';
+        const blockBroke = (r: Run) => secondaryOf(r, 'valley_block');
+        expect(count(prep, isDefeat) + 6).toBeLessThanOrEqual(count(push, isDefeat));
+        expect(count(prep, blockBroke)).toBeGreaterThanOrEqual(count(push, blockBroke) + 6);
+        expect(prep.reduce((a, r) => a + broken(r), 0)).toBeGreaterThan(push.reduce((a, r) => a + broken(r), 0) + 40);
+        // 主目標に届くのは地形に合った作戦（高所を先に取る・塞ぎを誘い出して中央を抜ける）
+        expect(jitterOnce(FIT).wins).toBeGreaterThanOrEqual(14);
+    }, 120_000);
 });
