@@ -1,6 +1,8 @@
 /**
- * 戦場「山道・峠」（mountain_pass）の釣り合い：地形に合わない作戦（放置・峠道の外の開けた所で迎え撃つ・全部隊で北へ攻め出る）は
- * 援軍を待たずに本陣が崩れて負ける、地形に合った作戦（関に槍を横に並べ、弓を関の後ろの坂に置く）は援軍が着いてから 60 秒耐えて勝つ、
+ * 戦場「山道・峠」（mountain_pass）の釣り合い：地形に合った作戦（関に槍を横に並べ、弓を関の後ろの坂に置く）は援軍が着いてから 60 秒耐えて、
+ * 16 通りで安定して勝つ。無計画な攻撃・地形に合わない作戦（放置・峠道の外の開けた所で迎え撃つ・全部隊で北へ攻め出る）は、地形に合った作戦・
+ * 準備した正面攻撃と比べて主目標に届かない・損害が大きい・囲まれる（比べが合格条件。勝敗は記録として書く）。準備した正面攻撃（峠道の北寄りまで
+ * 攻め上がり、弓・本陣を後ろに付けて能力を使う）の結果も記録して比べる。
  * 副目標（関を失わない）は作戦（本陣を関の後ろへ上げて号令で支えるか）によって達成／未達成に分かれる。
  *
  * どれも「早送り」（決まった時刻に issueOrder・useAbility で命令を出す台本を runToEnd で最後まで進める）。
@@ -102,6 +104,46 @@ const RELIEF_UP: Step[] = [
 /** 地形に合った作戦：命令は 9 回（0・20・120・180 秒） */
 const FIT: Step[] = [...GATE, ...HQ_UP, ...RELIEF_UP];
 
+/**
+ * 準備した正面攻撃（峠道を攻め上がって迎え撃つ）：関で待たずに、忠勝隊・酒井隊を峠道の北寄り (±10,-100) まで上げる（峠道の北の出口の
+ * 20 m 手前。狭い正面の中なので、1 部隊へ同時に斬りかかれる敵は 2 部隊まで）。弓はその 40 m 後ろ、本陣も峠道の中ほど (0,0) へ上げて
+ * 号令の届く所に置く。最初の波と組み合った 90 秒に家康の号令と忠勝の守護、援軍は 180 秒に二隊の 30 m 後ろへ上げ、石川隊の後詰めの差配で
+ * 榊原隊の足を速める。命令は 10 回（0・20・90・180・212 秒）。関の坂の守り（下から攻める相手の損害は半分）は使わない
+ */
+const PREPARED: Step[] = [
+    [0, 'a_tadakatsu', mv(-10, -100)],
+    [0, 'a_sakai', mv(10, -100)],
+    [20, 'a_yumi', mv(0, -60)],
+    [20, 'a_ieyasu', mv(0, 0)],
+    [90, 'a_ieyasu', 'ability'],
+    [90, 'a_tadakatsu', 'ability'],
+    [180, 'a_sakakibara', mv(-10, -70)],
+    [180, 'a_ishikawa', mv(10, -70)],
+    [181, 'a_ishikawa', { abilityTarget: 'a_sakakibara' }],
+    [212, 'a_ishikawa', mv(10, -70)],
+];
+
+/** 無計画な攻撃：全部隊で北へ攻め出る（峠道を抜けて北の開けた所へ） */
+const NORTH: Step[] = FIGHTERS.map((id) => [0, id, mv(0, -150)] as Step);
+
+/** 命令の時刻を ±15 秒ずらした 16 通り（決まった乱数で作る。0 秒の命令はずらさない。地形に合った作戦の 16 通りと同じ作り方） */
+function variants16(base: Step[]): Run[] {
+    let seed = 11;
+    const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+    const out: Run[] = [];
+    for (let k = 0; k < 16; k++) out.push(play(base.map(([t, id, o]) => [t === 0 ? 0 : t + Math.round((rnd() - 0.5) * 30), id, o] as Step)));
+    return out;
+}
+const wins = (rs: Run[]) => rs.filter((r) => r.o.result === 'victory').length;
+const meanLoss = (rs: Run[]) => rs.reduce((a, r) => a + r.loss, 0) / rs.length;
+
+/** 比べの基準（同じ台本は 1 回だけ進める） */
+const memo = new Map<Step[], Run>();
+const run = (steps: Step[]): Run => {
+    if (!memo.has(steps)) memo.set(steps, play(steps));
+    return memo.get(steps)!;
+};
+
 describe('山道・峠のデータ', () => {
     it('検査を通る。味方 4＋援軍 2／敵 10（敵はすべて敵勢）。狭い正面・関の坂の守り・崖（道探しを使う）', () => {
         expect(validateField(PASS_FIELD)).toEqual([]);
@@ -141,45 +183,59 @@ describe('山道・峠のデータ', () => {
     });
 });
 
-describe('山道・峠：地形に合わない作戦（早送り）', () => {
-    it('何もしない（南の開けた所で待つ）→ 峠道を抜けてきた敵に囲まれ、援軍が着く前後に本陣が崩れて負ける', () => {
-        const r = play([]);
+// 合格条件は「正面なら負ける」ではなく、同じ台本・同じ数字での比べ（地形に合った作戦・準備した正面攻撃と比べて、主目標に届かない・
+// 損害が大きい・囲まれる）。無計画な攻撃の勝敗は「記録」として残す（台本と数字は前のまま。変わったら理由と前後の数字を書いて直す）
+describe('山道・峠：無計画な攻撃・地形に合わない作戦と、地形に合った作戦の比べ（早送り）', () => {
+    it('何もしない（南の開けた所で待つ）→ 地形に合った作戦より損害が大きく、主目標（240 秒耐える）に届かず、関も失う（記録：峠道を抜けてきた敵に囲まれ、援軍が着く前後に本陣が崩れて負ける）', () => {
+        const r = run([]);
+        // 確かめた時：174.1 秒に負け・損害 44.8％ ／ 地形に合った作戦 240 秒で勝ち・27.8％
+        expect(r.loss).toBeGreaterThan(run(FIT).loss + 0.1);
+        expect(r.o.objectives!.primary!.achieved).toBe(false);
+        expect(gateHeld(run(FIT))).toBe(true);
+        expect(gateHeld(r)).toBe(false);
+        // 記録
         expect(r.o.result).toBe('defeat');
         expect(r.o.reason).toBe('ally_hq_routed');
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
-        expect(gateHeld(r)).toBe(false);
         expect(r.o.elapsedSec).toBeLessThan(200);
         expect(r.loss).toBeGreaterThan(0.4);
     });
 
-    it('全部隊で北へ攻め出る（峠道を抜けて北の開けた所へ）→ 大軍に押し潰され、150 秒より前に負ける', () => {
-        const r = play(FIGHTERS.map((id) => [0, id, mv(0, -150)] as Step));
-        expect(r.o.result).toBe('defeat');
+    it('全部隊で北へ攻め出る（無計画に峠道を抜けて北の開けた所へ）→ 峠道の中で迎え撃つ準備した正面攻撃・関の守りと違い、援軍が着く前に主目標を落とす（記録：大軍に押し潰され、150 秒より前に負ける）', () => {
+        const r = run(NORTH);
+        for (const better of [run(FIT), run(PREPARED)]) expect(better.o.objectives!.primary!.achieved).toBe(true);
         expect(r.o.objectives!.primary!.achieved).toBe(false);
+        // 記録（確かめた時：142.5 秒に負け・損害 29.4％。早く崩れるので損害の割合では比べない）
+        expect(r.o.result).toBe('defeat');
         expect(r.o.elapsedSec).toBeLessThan(150);
         // 敵の一番手はほとんど減らない
         expect(r.left.e_w1a).toBeGreaterThan(500);
     });
 
-    it('峠道の北の出口の外で迎え撃つ → 3 部隊以上に囲まれ、負ける', () => {
-        const r = play([
+    it('峠道の北の出口の外で迎え撃つ → 出口の 20 m 手前（峠道の中）で迎え撃つ準備した正面攻撃と違い、3 部隊以上に囲まれ、主目標に届かない（記録：負ける）', () => {
+        const r = run([
             [0, 'a_tadakatsu', mv(-10, -120)],
             [0, 'a_sakai', mv(10, -120)],
             [0, 'a_yumi', mv(0, -90)],
         ]);
-        expect(r.o.result).toBe('defeat');
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
+        expect(run(PREPARED).maxInPass).toBeLessThanOrEqual(2);
+        expect(run(PREPARED).o.objectives!.primary!.achieved).toBe(true);
         expect(r.maxOutside).toBeGreaterThanOrEqual(3);
+        expect(r.o.objectives!.primary!.achieved).toBe(false);
+        // 記録（確かめた時：220.5 秒に負け・損害 34.0％）
+        expect(r.o.result).toBe('defeat');
     });
 
-    it('南の開けた所に横に広がって迎え撃つ → 峠道から出てくる敵に次々に当たられ、負ける', () => {
-        const r = play([
+    it('南の開けた所に横に広がって迎え撃つ → 関の守りより損害が大きく、主目標に届かない（記録：峠道から出てくる敵に次々に当たられ、負ける）', () => {
+        const r = run([
             [0, 'a_tadakatsu', mv(-30, 140)],
             [0, 'a_sakai', mv(30, 140)],
             [0, 'a_yumi', mv(0, 150)],
         ]);
-        expect(r.o.result).toBe('defeat');
+        // 確かめた時：199.7 秒に負け・損害 46.8％
+        expect(r.loss).toBeGreaterThan(run(FIT).loss + 0.1);
         expect(r.o.objectives!.primary!.achieved).toBe(false);
+        // 記録
+        expect(r.o.result).toBe('defeat');
         expect(r.loss).toBeGreaterThan(0.4);
     });
 });
@@ -245,4 +301,28 @@ describe('山道・峠：副目標（関を失わない）は作戦で分かれ�
         // 勝敗・主目標・副目標は別の欄
         expect(stay.o.objectives!.primary!.achieved).toBe(true);
     });
+});
+
+describe('山道・峠：準備した正面攻撃（早送り）', () => {
+    it('峠道の北寄りまで攻め上がり、弓・本陣を後ろに付け、号令・守護・後詰めの差配を使って迎え撃つ（記録：240 秒で勝ち・損害 41.8％・関も失わない）', () => {
+        const r = run(PREPARED);
+        expect(r.refused).toEqual([]);
+        expect(Object.keys(r.o.abilitiesUsed ?? {}).sort()).toEqual(['a_ieyasu', 'a_ishikawa', 'a_tadakatsu']);
+        // 記録
+        expect(r.o.result).toBe('victory');
+        expect(r.o.objectives!.primary!.achieved).toBe(true);
+        expect(gateHeld(r)).toBe(true);
+        expect(r.maxInPass).toBeLessThanOrEqual(2);
+        expect(r.loss).toBeLessThan(0.45);
+    });
+
+    it('16 通りで、無計画に攻め出る（全部隊で北へ）より勝ちが多い。関の坂で守る地形に合った作戦と同じく勝てるが、損害は大きい（記録：準備 16 勝・平均 41.4％ ／ 攻め出る 0 勝 ／ 関の守り 16 勝・28.8％）', () => {
+        const prep = variants16(PREPARED);
+        const fit = variants16(FIT);
+        // 攻め出るのは 0 秒の命令だけなのでずらしても同じ（1 通りの結果が 16 通りの結果）
+        expect(run(NORTH).o.result).not.toBe('victory');
+        expect(wins(prep)).toBeGreaterThanOrEqual(14);
+        // 関の坂の守り（下から攻める相手の損害は半分）を使わない分、損害が 1 割ほど多い
+        expect(meanLoss(prep)).toBeGreaterThan(meanLoss(fit) + 0.05);
+    }, 60_000);
 });
