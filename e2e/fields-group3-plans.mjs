@@ -19,9 +19,41 @@
  *   - 攻撃：札で選ぶ → 敵の体を押す（ずれたら「攻撃」→ 敵の体の近くを押し直す）。
  *   - 能力：名札の印を押す（印が無ければ札で選んで「能力」）。対象の要る能力は、続けて対象の体を押す。
  *   - 防衛・待機・撤退：札で選んで命令のボタン。
- *   - 見えていない敵への攻撃・使えない能力は、テストでも断られる命令（A・B の refused）として数える（画面では押せない・使えない）。
+ *   - 見えていない敵への攻撃・使えない能力・敗走した部隊への命令は、テストでも断られる命令（A・B の refused）として数える（画面では押せない・使えない）。
  *   カメラは window.__battle.centerOn（表示だけ）で押す所へ寄せる（人が地図を動かすのと同じ）。
  * 結果は合戦の結果の画面と演習の結果の画面（勝敗・主目標・副目標の行・保存）からも読む。
+ * C と B の違いを説明するための 2 つ（どちらも早送り）：
+ * - D：C の操作の間に味方の部隊へ実際に入った命令（ずれて直す前の命令を含む。order への書き込みを見て書き留める）を、
+ *   同じ時刻に issueOrder・useAbility で新しい合戦へ入れ直す。C と同じになることを確かめる（合戦は同じ命令なら同じ結果）。
+ * - E（C が B と違うときだけ）：B の台本の通しで、移動の行き先だけを C で押した点に替える。C と同じなら、違いは押した点の端数だけ。
+ *
+ * 【記録】933b79e の開発サーバーで 11 通り（E は後で足し、C と B が違った 2 通りだけ E を足したコードで走らせ直した）。PC 1280×720・スマホ相当 844×390（触れる画面）。2026-10-02。
+ * 主目標に届くことを合格条件にした作戦（MAIN）は 5 戦場とも、画面の操作だけで主目標まで届いた（勝ち）。
+ *   作戦                                   A テストの台本（0.1 秒ごと）        B＝1 秒ごと・直接              C 画面の操作              副目標（C）           戦える
+ *   湿地 足場伝い WEST（MAIN）              381.1 秒・11.2％                  383.7 秒・11.3％               B と同じ・出口 4 隊        損害✓ 押さえ✗ 島✓      7
+ *   湿地 準備した土手道 PREP                282.6 秒・20.5％                  282.8 秒・20.7％               B と同じ・出口 4 隊        損害✗ 押さえ✓ 島✗      6
+ *   村落 西の辻に二隊 POST（MAIN）          420 秒・25.0％                    同じ                          同じ                      損害✓ 弓✓ 米蔵✓        5
+ *   村落 通りの口で受ける FRONTAL           420 秒・46.0％                    420 秒・45.9％                 B と同じ                  損害✗ 弓✓ 米蔵✓        5
+ *   寺社周辺 石段と脇道 COMBO（MAIN）        224.8 秒・15.7％                  236.1 秒・16.6％               B と同じ（スマホ相当も）   損害✓ 忠勝✗ 押し返し✗  7
+ *   寺社周辺 準備した正面攻撃 FRONT          371.5 秒・24.8％                  404.3 秒・25.8％               405.9 秒・26.2％           損害✓ 忠勝✗ 押し返し✓  5
+ *   城下町外縁 辻で挟む WATCH（MAIN）        384.6 秒・20.4％・突破 0          384.6 秒・20.5％・突破 0       B と同じ                  損害✓ 市✓ 弓✗          6
+ *   城下町外縁 野へ打って出る FRONTAL        418.8 秒・38.7％・突破 2          410.1 秒・36.9％・突破 2       418.9 秒・38.7％・突破 2   損害✗ 市✓ 弓✓          5
+ *   城攻め前面 準備した正面攻撃 FRONT（MAIN） 286.4 秒・27.7％・門 171.3 秒      285.9 秒・27.4％・門 174.6 秒   B と同じ・段 2／2          損害✓ 拠点✗ 騎馬✓      6
+ *   城攻め前面 拠点を先に BASTION           288.1 秒・22.4％・門 160.5 秒      292.7 秒・22.8％・門 162.8 秒   B と同じ・段 2／2          損害✓ 拠点✓ 騎馬✓      7
+ *   （どれも勝ち・主目標 ✓。結果の画面と演習の結果の画面の勝敗・主目標・副目標の行は状態と同じで、演習の記録に保存された）
+ * - A と B の違いは「見てから押す」条件を見る間隔（0.1 秒と 1 秒）だけ。押すのが最大 0.9 秒遅れ、寺社周辺の FRONT で +32.8 秒・COMBO で +11.3 秒。
+ * - C と B は 11 通りのうち 9 通りで同じ。違った寺社周辺 FRONT・城下町外縁 FRONTAL は、D が C と同じで、E（B の移動の行き先だけを C で押した点に
+ *   替える）も C と同じだった：違いは押した点の端数（地図の押しから地面の点を出す計算の丸め。最大 1.3e-12 m）だけで、ずれて直す前の命令や
+ *   押した時刻ではない。台本の行き先が格子（5 m）の境の上（例 (0,-45)）にあると、この端数で道が分かれる。
+ * - 台本の押しが画面ではテストの意図と違った所（ずれ。人が直すのと同じ操作で直した。どれも製品の不具合ではなく、画面の決まりどおり）：
+ *   - 地面の点の 20 m 以内に見えている敵がいると、テスト（tapOrder）は敵への攻撃にするが、画面の地面の押しは移動になる（敵の体を押したときだけ攻撃）。
+ *     湿地 WEST 180 秒の 4 隊（島の槍 e_isle）・寺社周辺 FRONT 202 秒・222 秒。→ 敵の体を押し直した。
+ *   - 行き先に味方が立っていると、その味方を選ぶ（移動先指定でなければ味方の体の押しは選択）。城攻め前面 FRONT 151 秒・BASTION 248 秒・
+ *     寺社周辺 FRONT 252 秒・298 秒。→「移動」で移動先指定にして押し直した。
+ *   - 行き先にその部隊自身が立っていると、選択を外す。城下町外縁 WATCH 2 秒・城攻め前面 FRONT 241 秒。→ 移動先指定で押し直した。
+ *   直す前に入った命令（移動のあと同じ瞬間に攻撃）は、D から除いて入れ直しても 11 通りとも結果が同じで、結果には効かない（record.json の命令の書き留めから確かめた）。
+ * - 断られた命令：城攻め前面 FRONT・寺社周辺 FRONT の榊原隊への命令 3 回ずつ（榊原隊が敗走した後。テストの A・B でも断られる）。
+ * 撮影：e2e-out/fields-group3-plans/（各作戦の 0・120・240・360 秒の全体・合戦の結果・演習の結果）。記録：同じ所の record.json。
  *
  * 確認の種類：
  * - 本物の入力：タイトルからの画面の移り・札・地図の押し（地面・敵の体・味方の体）・命令のボタン・名札の印・結果の画面のボタン。
@@ -318,16 +350,22 @@ async function loadPlan(page, field, plan) {
                     const ent = pr && /breakthrough/.test(pr.def.type) ? pr.entered.length : undefined;
                     return summ(r.o, r.t, null, { refused: r.refused, gate: r.gateT === undefined ? undefined : r.gateT === null ? null : +r.gateT.toFixed(1), entered: ent });
                 },
-                /** B：同じ台本を every 秒ごとにだけ見て、issueOrder・useAbility で直接出す */
-                playEvery(every) {
+                /**
+                 * B：同じ台本を every 秒ごとにだけ見て、issueOrder・useAbility で直接出す。
+                 * E（pts を渡す）：B と同じだが、移動の行き先だけを C で押した点（地図の押しの点。端数を含む）に替える。
+                 * pts は「行の名前|部隊」→ 移動の命令（C の操作で最後に入った命令）
+                 */
+                playEvery(every, pts = null) {
                     const s = sim.createBattle(fl.buildBattleSetup(fl.getField(field), 'standard'));
                     const { timed, watch } = split(make());
                     const f = new Set();
                     const cmds = [];
                     const refused = [];
-                    const run = (st, id, c) => {
+                    const run = (st, id, c, label) => {
                         const a = resolveCmd(st, id, c);
                         if (!a) return;
+                        const pt = pts?.[`${label}|${id}`];
+                        if (a.kind === 'tap' && a.intent.type === 'move' && pt?.type === 'move') a.intent = { ...a.intent, x: pt.x, z: pt.z };
                         let ok;
                         if (a.kind === 'ability') ok = ab.useAbility(st, id).ok;
                         else if (a.kind === 'abilityOn') ok = ab.useAbility(st, id, a.target).ok;
@@ -338,13 +376,13 @@ async function loadPlan(page, field, plan) {
                     const o = sim.runToEnd(s, (st) => {
                         if (every > 0 && Math.abs(st.t / every - Math.round(st.t / every)) > 1e-6) return;
                         while (timed.length && st.t >= timed[0][0] - 1e-9) {
-                            const [, id, c] = timed.shift();
-                            run(st, id, c);
+                            const [t, id, c] = timed.shift();
+                            run(st, id, c, `${t}`);
                         }
                         watch.forEach(([cond, id, c], i) => {
                             if (f.has(i) || !cond(st)) return;
                             f.add(i);
-                            run(st, id, c);
+                            run(st, id, c, `when${i}`);
                         });
                     });
                     return summ(o, s.t, s, { refused, cmds });
@@ -660,6 +698,21 @@ async function runPlanIn(p, { kind, field, plan, name, title }) {
     rec.DeqC = !!same(D, C);
     log(`    D C で入った命令（直す前の命令を含む ${D.orders} 回）を直接入れ直す（早送り）：${fmt(D)}${rec.DeqC ? '（C と同じ）' : '（C と違う）'}`);
     check(rec.DeqC, `[${kind}] ${name}：画面の操作の結果（C）は、そのとき入った命令の入れ直し（D）と同じ（合戦は同じ命令なら同じ結果）`, rec.CeqB ? 'B とも同じ' : 'B との違いは入った命令の違い');
+    if (!rec.CeqB) {
+        // E：B の移動の行き先だけを C で押した点に替える。C と同じなら、B との違いは押した点の端数（地図の押しから地面の点を出す計算の
+        // 1e-12 m ほどの丸め）だけ。ずれて直す前の命令・押した時刻の違いではない
+        const pts = {};
+        rec.cmds.forEach((c, i) => {
+            const last = rec.orderLog.filter((e) => e.cmd === i && !e.ab).at(-1);
+            if (last) pts[`${c.label}|${c.id}`] = last.o;
+        });
+        const E = await page.evaluate((pts) => window.__g3p.playEvery(1, pts), pts);
+        rec.E = { ...E, cmds: undefined };
+        rec.EeqC = !!same(E, C);
+        const dev = Math.max(0, ...rec.orderLog.filter((e) => !e.ab && e.o.type === 'move').map((e) => Math.max(Math.abs(e.o.x - Math.round(e.o.x)), Math.abs(e.o.z - Math.round(e.o.z)))).filter((d) => d < 1e-6));
+        log(`    E B の移動の行き先だけを C で押した点に替える（早送り）：${fmt(E)}${rec.EeqC ? '（C と同じ）' : '（C と違う）'}・押した点の端数 最大 ${dev.toExponential(1)} m`);
+        log(`    （記録）C と B の違いは${rec.EeqC ? '押した点の端数だけ（合戦の動きがこの差で分かれる）' : '押した点の端数だけでは説明がつかない'}`);
+    }
     const cm = rec.cmds;
     const nat = cm.filter((x) => x.ok && !x.diverged).length;
     const div = cm.filter((x) => x.diverged);
