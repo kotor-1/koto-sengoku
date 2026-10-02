@@ -532,12 +532,12 @@ describe('水田：準備した正面攻撃（早送り）', () => {
         const r = run(PREPARED);
         expect(r.refused).toEqual([]);
         expect(Object.keys(r.o.abilitiesUsed ?? {}).sort()).toEqual(['a_ieyasu', 'a_sakai']);
-        // 記録
-        expect(r.o.result).toBe('defeat');
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
-        expect(statusOf(r, 'e_block')).toBe('ready');
-        expect(standing(r)).toBe(3);
-        expect(r.loss).toBeLessThan(0.35);
+        // 記録（作った時）：153.7 秒に負け・主目標 ✗・備えは残る・槍騎馬 3 隊が残る。
+        // 「準備した正面攻撃は勝てない」は合格条件にしない（設計 §1。前はここで負け・主目標 ✗・備えが残るを expect していた）。
+        // 合格条件は無計画な押し込みとの比べ：損害が小さく、崩れずに残る槍・騎馬が多い
+        const push = run(PUSH);
+        expect(r.loss).toBeLessThan(push.loss - 0.08);
+        expect(standing(r)).toBeGreaterThanOrEqual(standing(push) + 2);
     });
 
     it('16 通りで、無計画な押し込みより損害が小さく、崩れずに残る隊が多い。勝ちはどちらも 0 で、地形に合った作戦（16 勝）に及ばない（記録：準備 平均 31.0％・残る隊の平均 2.9 ／ 無計画 42.7％・0）', () => {
@@ -545,8 +545,9 @@ describe('水田：準備した正面攻撃（早送り）', () => {
         const push = jitterOnce(PUSH);
         expect(meanOf(prep, (r) => r.loss) + 0.08).toBeLessThan(meanOf(push, (r) => r.loss));
         expect(meanOf(prep, standing)).toBeGreaterThan(meanOf(push, standing) + 2);
-        // 記録
-        expect(winsOf(prep)).toBe(0);
+        // 記録（作った時）：準備した正面攻撃は 16 通りで 0 勝。前はこれを toBe(0) で確かめていたが、合格条件にはしない（設計 §1）。
+        // 地形に合った作戦の方が安定して主目標に届く、という比べだけを書く
+        expect(winsOf(prep) + 10).toBeLessThanOrEqual(winsOf(jitterOnce(FIT)));
         expect(winsOf(jitterOnce(FIT))).toBeGreaterThanOrEqual(14);
     }, 90_000);
 });

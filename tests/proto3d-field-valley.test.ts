@@ -725,11 +725,12 @@ describe('谷間：武将の能力の価値が地形で変わる（早送り）'
 describe('谷間：準備した正面攻撃（早送り）', () => {
     it('谷の口で攻め手を討ってから谷底を押し上がる（石川の差配で忠勝隊を先に口へ・弓も塞ぎを射る・近い敵へ当て直す）（記録：477.6 秒に負け・損害 56.9％・崩した敵 4 隊。塞ぎは崩せない並び）', () => {
         const r = run(PREPARED);
-        // 記録（前は「地形に合わない作戦」として書いていた数字。台本も同じ）
-        expect(r.o.result).not.toBe('victory');
-        expect(r.loss).toBeGreaterThan(0.4);
-        expect(statusOf(r, 'e_block')).toBe('ready');
-        expect(jitterOnce(PREPARED).wins).toBe(0);
+        // 記録（前は「地形に合わない作戦」として書いていた数字。台本も同じ）：負け・損害 56.9％・塞ぎは残る・16 通りで 0 勝。
+        // 「準備した正面攻撃は勝てない」は合格条件にしない（設計 §1。前はここで負け・塞ぎが残る・0 勝を expect していた）。
+        // 合格条件は地形に合った作戦との比べ：損害が 2 割以上大きく、16 通りの勝ちが 10 以上少ない
+        const fit = run(FIT);
+        expect(r.loss).toBeGreaterThan(fit.loss + 0.2);
+        expect(jitterOnce(PREPARED).wins + 10).toBeLessThanOrEqual(jitterOnce(FIT).wins);
         // 攻め手は二隊とも谷の口で崩す
         expect(statusOf(r, 'e_raid1')).not.toBe('ready');
         expect(statusOf(r, 'e_raid2')).not.toBe('ready');
