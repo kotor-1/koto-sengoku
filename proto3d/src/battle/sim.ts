@@ -80,7 +80,7 @@ import {
     type FieldEnv,
     type GateRun,
 } from './fieldRules';
-import { findPath, isPassable, nearestPassable } from './pathfind';
+import { findPath, isPassable, nearestPassable, pathExists } from './pathfind';
 import { activeObjectiveZones, createObjectiveTrack, finalObjectives, refreshObjective, trackObjectives, type ObjectiveTrack } from './objectives';
 import {
     abilitiesUsedRecord,
@@ -835,8 +835,7 @@ export function meleeUnreachable(s: BattleState, u: UnitState, t: UnitState): bo
     const nav = s.field.nav;
     if (!s.field.refined || !nav || u.kind === 'yumi') return false;
     if (dist(u, t) <= RULES.meleeRange + 10 && hasLineOfSight(s, u, t)) return false;
-    const g = isPassable(nav, t.x, t.z) ? t : nearestPassable(nav, t.x, t.z);
-    return findPath(nav, u.kind, u.x, u.z, g.x, g.z) === null;
+    return !pathExists(nav, u.x, u.z, t.x, t.z);
 }
 
 /** 全軍撤退（味方のすべての部隊を退き口へ。まだ着いていない部隊は来ない）。出せたら true */

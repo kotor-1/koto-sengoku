@@ -245,6 +245,8 @@ describe('演習の 15 戦場（第1群・第2群・第3群）の案が動いて
                 expect(r.objectives?.primary?.achieved).toBe(r.result === 'victory');
                 expect(r.objectives?.secondary.map((o) => o.id)).toEqual(f.objectives.secondary.map((o) => o.id));
             }
-        });
+            // 時間の上限：城攻め前面は、道の無い相手（櫓の上の弓）への攻撃が断られて日没（660 秒）まで進むようになり、1 本で 2.7 秒ほどかかる
+            // （前は 408 秒に終わって 1.1 秒）。ほかの作業者のテストと重なって重い時に既定の 5 秒を超えないように。確かめの中身は同じ
+        }, 30_000);
     }
 });

@@ -407,6 +407,49 @@ export function findPath(nav: NavGrid, kind: UnitKind, fx: number, fz: number, t
     return out;
 }
 
+/** 通れる升のつながり（上下左右でつながる升に同じ番号。通れない升は -1）。格子ごとに 1 回だけ数える（門が開くと格子を作り直すので数え直す） */
+const regionMemo = new WeakMap<NavGrid, Int32Array>();
+function regionsOf(nav: NavGrid): Int32Array {
+    let lab = regionMemo.get(nav);
+    if (lab) return lab;
+    const { cols, rows, blocked } = nav;
+    const n = cols * rows;
+    lab = new Int32Array(n).fill(-1);
+    const stack = new Int32Array(n);
+    let id = 0;
+    for (let i0 = 0; i0 < n; i0++) {
+        if (blocked[i0] || lab[i0] !== -1) continue;
+        let sp = 0;
+        stack[sp++] = i0;
+        lab[i0] = id;
+        while (sp > 0) {
+            const cur = stack[--sp]!;
+            const c = cur % cols;
+            const r = (cur - c) / cols;
+            const nb = [c > 0 ? cur - 1 : -1, c < cols - 1 ? cur + 1 : -1, r > 0 ? cur - cols : -1, r < rows - 1 ? cur + cols : -1];
+            for (const ni of nb) {
+                if (ni < 0 || blocked[ni] || lab[ni] !== -1) continue;
+                lab[ni] = id;
+                stack[sp++] = ni;
+            }
+        }
+        id++;
+    }
+    regionMemo.set(nav, lab);
+    return lab;
+}
+
+/**
+ * 道があるか（合戦の中で何度も聞く sim.ts の meleeUnreachable 用。A* を回さず、通れる升のつながりで見る）。
+ * findPath は斜めに進むとき両脇の升が通れることを求めるので、上下左右のつながりと同じ。通れない所に立つ点は、いちばん近い通れる升から見る
+ */
+export function pathExists(nav: NavGrid, fx: number, fz: number, tx: number, tz: number): boolean {
+    const lab = regionsOf(nav);
+    const a = nearestPassable(nav, fx, fz);
+    const b = nearestPassable(nav, tx, tz);
+    return lab[cellOf(nav, a.x, a.z)] === lab[cellOf(nav, b.x, b.z)];
+}
+
 /** start から goal まで道があるか（戦場データの検査用） */
 export function reachable(nav: NavGrid, kind: UnitKind, fx: number, fz: number, tx: number, tz: number): boolean {
     if (!isPassable(nav, tx, tz)) return false;
