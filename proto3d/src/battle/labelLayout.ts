@@ -133,3 +133,54 @@ export function layoutLabels(items: readonly LabelLayoutItem[], cx: number, cy: 
     }
     return out;
 }
+
+// ---------------------------------------------------------------- 地図の名札（地形・目標・門・援軍・退き口・狭い正面）
+
+/**
+ * 地図の名札（control.ts の mapLabels）の優先の順（小さいほど先に置く）。id の頭で決める：
+ *   0. 目標の輪（obj-）：隠さない
+ *   1. 門の制圧の条件（gate-）
+ *   2. 援軍の出る所（reinf-）・約束の安全地点（safe-）
+ *   3. 退き口（exit-）
+ *   4. 狭い正面（narrow-）
+ *   5. 地形の名前（t…。林・湿地・乾いた足場・家屋・石垣など）
+ */
+export function mapLabelRank(id: string): number {
+    if (id.startsWith('obj-')) return 0;
+    if (id.startsWith('gate-')) return 1;
+    if (id.startsWith('reinf-') || id.startsWith('safe-')) return 2;
+    if (id.startsWith('exit-')) return 3;
+    if (id.startsWith('narrow-')) return 4;
+    return 5;
+}
+
+/** 並べる地図の名札（CSS px。x は名札の横の真ん中、y は名札の下の縁） */
+export interface MapLabelItem {
+    id: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    /** 前のフレームで隠していた（出し直すときは LABEL_HYSTERESIS だけ多く空いていること） */
+    prevHidden?: boolean;
+}
+
+/**
+ * 地図の名札の重なりをほどく（スマホで全体を見ると、湿地の名札と島の「乾いた足場」・門の前の目標・条件・狭い正面の名札が重なって読めない）。
+ * 優先の順（mapLabelRank、同じ順なら並びの順）に置き、先に置いた名札と重なる名札は一時的に隠す。目標の輪の名札（順 0）は隠さない。
+ * 部隊の名札とは比べない（部隊は動くので、地形の名札が出たり消えたりしないように）。返すのは隠す名札の id
+ */
+export function layoutMapLabels(items: readonly MapLabelItem[]): Set<string> {
+    const order = items.map((it, i) => ({ it, i, rank: mapLabelRank(it.id) })).sort((a, b) => a.rank - b.rank || a.i - b.i);
+    const placed: Box[] = [];
+    const hidden = new Set<string>();
+    for (const { it, rank } of order) {
+        const box = boxOf(it.x, it.y, it.w, it.h);
+        if (rank > 0 && hits(box, placed, it.prevHidden ? LABEL_GAP + LABEL_HYSTERESIS : LABEL_GAP)) {
+            hidden.add(it.id);
+            continue;
+        }
+        placed.push(box);
+    }
+    return hidden;
+}

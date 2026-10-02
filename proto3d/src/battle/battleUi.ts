@@ -45,7 +45,7 @@ import {
     type ResultRow,
 } from './control';
 import type { Side } from './types';
-import { layoutLabels, type LabelFit, type LabelLayoutItem } from './labelLayout';
+import { layoutLabels, layoutMapLabels, type LabelFit, type LabelLayoutItem, type MapLabelItem } from './labelLayout';
 
 export type CommandKind = 'move' | 'attack' | 'hold' | 'retreat';
 
@@ -772,6 +772,7 @@ export class BattleUi {
      * （まだ測っていなければ名前の幅からの見積もり）を使う。
      */
     declutterLabels(on: boolean): void {
+        this.declutterMapLabels(on);
         const list: { l: LabelEls; it: LabelLayoutItem }[] = [];
         for (const l of this.labelEls.values()) {
             const id = l.e.dataset.id;
@@ -821,6 +822,29 @@ export class BattleUi {
                 l.dy = p.dy;
                 this.placeLabel(l);
             }
+        }
+    }
+
+    /**
+     * 地図の名札（地形・目標・門・援軍・退き口・狭い正面。data-id の無い名札）の重なりをほどく（特殊能力のある合戦だけ。架空の第一章は今までどおり）。
+     * 優先の順（labelLayout.ts の mapLabelRank：目標 > 門 > 援軍 > 退き口 > 狭い正面 > 地形の名前）に置き、先に置いた名札と重なる名札は
+     * 一時的に隠す（data-fit="hide"。目標の輪の名札は隠さない）。部隊の名札とは比べない
+     */
+    private declutterMapLabels(on: boolean): void {
+        const list: { l: LabelEls; it: MapLabelItem }[] = [];
+        for (const [id, l] of this.labelEls) {
+            if (l.e.dataset.id) continue;
+            if (!on || !l.shown) {
+                if (l.fit !== 'full') this.setFit(l, 'full');
+                continue;
+            }
+            list.push({ l, it: { id, x: l.x, y: l.y + l.dy, w: l.e.offsetWidth, h: l.e.offsetHeight, prevHidden: l.fit === 'hide' } });
+        }
+        if (list.length === 0) return;
+        const hidden = layoutMapLabels(list.map((k) => k.it));
+        for (const { l, it } of list) {
+            const fit: LabelFit = hidden.has(it.id) ? 'hide' : 'full';
+            if (l.fit !== fit) this.setFit(l, fit);
         }
     }
 

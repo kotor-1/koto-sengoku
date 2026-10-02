@@ -4,7 +4,7 @@
  * 選んでいる・点滅の名札は小さくも隠しもしない（重なれば上へずらす）。小さくした名札は、小さい名札 1 つ分まで上へずらしてよい。
  */
 import { describe, expect, it } from 'vitest';
-import { LABEL_GAP, labelOrder, labelRank, layoutLabels, type LabelLayoutItem } from '../proto3d/src/battle/labelLayout';
+import { LABEL_GAP, LABEL_HYSTERESIS, labelOrder, labelRank, layoutLabels, layoutMapLabels, mapLabelRank, type LabelLayoutItem } from '../proto3d/src/battle/labelLayout';
 
 const CX = 480;
 const CY = 270;
@@ -151,5 +151,24 @@ describe('名札を並べる', () => {
             // 選んだ・点滅でない名札どうしも重ならない
             for (let i = 0; i < shown.length; i++) for (let j = i + 1; j < shown.length; j++) expect(overlap(shown[i]!, shown[j]!)).toBe(false);
         }
+    });
+});
+
+describe('地図の名札（地形・目標・門・援軍・退き口・狭い正面）の重なり（第3群の要望：スマホで湿地・村落・城攻め前面の名札が重なって読めない）', () => {
+    const M = (id: string, x: number, y: number, w = 100, h = 14) => ({ id, x, y, w, h });
+    it('優先の順：目標 > 門 > 援軍・約束 > 退き口 > 狭い正面 > 地形の名前', () => {
+        expect(['obj-a', 'gate-g', 'reinf-r', 'safe-zone', 'exit-ally', 'narrow-0', 't3'].map(mapLabelRank)).toEqual([0, 1, 2, 2, 3, 4, 5]);
+    });
+    it('重なる名札は、優先の低い方を隠す。目標の名札は重なっても隠さない。重ならない名札はそのまま', () => {
+        const hidden = layoutMapLabels([M('t1', 100, 100), M('obj-a', 120, 104), M('narrow-0', 130, 96), M('obj-b', 110, 100), M('t2', 400, 100), M('gate-g', 300, 300), M('t3', 310, 302)]);
+        expect([...hidden].sort()).toEqual(['narrow-0', 't1', 't3']);
+    });
+    it('同じ順の中は並びの順で先に置く。前のフレームで隠した名札は、少し多く空いてから出す（行ったり来たりしない）', () => {
+        expect([...layoutMapLabels([M('t1', 100, 100), M('t2', 150, 100)])]).toEqual(['t2']);
+        // t2 の左の縁が t1 の右の縁から LABEL_GAP＋1 px 離れている：隠していなければ出す、隠していたらまだ隠す
+        const x2 = 100 + 100 + LABEL_GAP + 1;
+        expect([...layoutMapLabels([M('t1', 100, 100), M('t2', x2, 100)])]).toEqual([]);
+        expect([...layoutMapLabels([M('t1', 100, 100), { ...M('t2', x2, 100), prevHidden: true }])]).toEqual(['t2']);
+        expect([...layoutMapLabels([M('t1', 100, 100), { ...M('t2', x2 + LABEL_HYSTERESIS, 100), prevHidden: true }])]).toEqual([]);
     });
 });
