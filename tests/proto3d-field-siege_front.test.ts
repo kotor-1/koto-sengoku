@@ -464,6 +464,22 @@ const RUSH: Plan = (j) => [
     ...inside('a_tadakatsu', INSIDE_ORDER, j),
 ];
 
+/**
+ * 準備なしの 5 隊の一斉（ALL5。確かめの担当が見つけた形）：弓も能力も使わず、槍・騎馬の 5 隊で 5 秒に出張りへ当たり、崩れたら 3 隊で輪を占め、
+ * 門が開いたら 5 隊で門の裏の槍、崩れたら曲輪の槍、崩れたら曲輪の輪の持ち場へ（急いで門へ＝RUSH との違い：弓を前へ出さない・差配を使わない・
+ * 門の裏の槍へ 5 隊が一度に当たる）
+ */
+const ALL5: Plan = (j) => {
+    const ids = ['a_tadakatsu', 'a_sakai', 'a_ishikawa', 'a_kiba', 'a_sakakibara'];
+    const o: Step[] = ids.map((id) => [j.t(5), id, atk('e_sortie')] as Step);
+    o.push(...toFront('a_tadakatsu', F1, j), ...toFront('a_ishikawa', F2, j), ...toFront('a_sakai', F3, j));
+    for (const id of ids) o.push([w(opened, j), id, atk('e_gate_guard')]);
+    for (const id of ids) o.push([w(gone('e_gate_guard'), j), id, atk('e_inner')]);
+    const posts = [B1, B2, B3];
+    ids.slice(0, 3).forEach((id, i) => o.push(...go(id, ...posts[i]!, gone('e_inner'), j)));
+    return o;
+};
+
 /** 無計画（UNPLANNED）：全部隊で門の前へ一斉、あとは 10 秒ごとに見えている一番近い敵へ当て直すだけ（地形を見ない。本陣は動かさない） */
 const UNPLANNED: Plan = () => {
     const o: Step[] = [];
@@ -758,6 +774,21 @@ describe('作戦の安定性と比べ（早送り・±15 秒と見てから押�
         expect(lossMean(rush)).toBeGreaterThan(lossMean(front) + 0.02);
         expect(lossMax(rush)).toBeGreaterThan(lossMax(front) + 0.05);
         expect(wins(rush)).toBeGreaterThanOrEqual(15);
+    }, 300000);
+
+    // 確かめの指摘（釣り合い）：弓も能力も使わない 5 隊の一斉の攻めが、準備した作戦より早く、損害も変わらない。16 通り（作った時）：
+    // 一斉 16 勝・勝ち 211 秒・損害 27.7％（最大 32.0）・戦える 6.13・副目標 13／0／6、準備した正面攻撃 16 勝・331 秒・27.7％・6.38・13／0／10。
+    // 櫓の上の弓は 150 で、出張りを破って輪を占める 20 秒の間に与える損害が小さく、射すくめる準備（弓の撃ち合いで弓隊が 110 ほど失う・120 秒ほど
+    // かかる）が時間でも損害でも得にならない。準備が得になるのは騎馬を残す副目標だけ（10 対 6）。設計 §4 の「正面に急いで門へ（損害大）」は
+    // 成り立っていない。釣り合いを試した数字（早送り・16 通りの損害の平均。準備した正面攻撃 ／一斉。試しの一斉は 5 秒の行をずらさない形）：櫓の弓 250 → 0 勝（射すくめる条件の
+    // 士気 30 を切らず日没）／36.7％、櫓の弓 280・士気 45 → 41.1％／36.7％、250・55 → 43.6％／35.8％、220・50 → 34.2％／31.0％、
+    // 門の制圧 35 秒 → 28.5％／30.6％、高所から射る矢 ×1.35 → 36.5％／33.0％（拠点を先にも 34.0％）。どれも準備した方が得にならないので、
+    // データは変えずに記録として残す（釣り合いの担当へ）
+    it('記録：弓も能力も使わない 5 隊の一斉の攻めは、準備した正面攻撃より 60 秒以上早く勝つ。準備した方が得をするのは騎馬を残す副目標だけ', () => {
+        const all5 = sixteen(ALL5);
+        expect(wins(all5)).toBeGreaterThanOrEqual(14);
+        expect(winT(all5)).toBeLessThan(winT(front) - 60);
+        expect(n(front, 'siege_cavalry')).toBeGreaterThanOrEqual(n(all5, 'siege_cavalry') + 3);
     }, 300000);
 
     it('副目標が作戦で分かれる：拠点の弓は拠点を先にだけ（16／0／0）、損害 3 割は準備した正面攻撃がいちばん多く（10／14／7）、騎馬を残すのは急ぐと 0（9／10／0）', () => {
