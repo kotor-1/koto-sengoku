@@ -960,6 +960,9 @@ async function labelsOne(kind, id) {
         const near = await page.evaluate(([x, z]) => window.__battle.state.units.some((u) => u.present && u.status !== 'destroyed' && Math.hypot(u.x - x, u.z - z) < 25), [g.x, g.z]);
         const lim = await page.evaluate(() => ({ w: window.__battle.state.map.width / 2 - 4, d: window.__battle.state.map.depth / 2 - 4 }));
         if (near || Math.abs(g.x) > lim.w || Math.abs(g.z) > lim.d || !(await passable(page, g.x, g.z))) continue;
+        // 第4群：弓隊から道の無い地面（城攻め前面の内の石垣の北など）への移動は受けない（理由を出す）ので、道のある地面の上の名札にする
+        const blocked = await page.evaluate(async ([x, z]) => (await import('/src/battle/sim.ts')).moveBlockReason(window.__battle.state, 'a_yumi', x, z), [g.x, g.z]);
+        if (blocked) continue;
         // 名札の上で、部隊の名札・画面の部品に当たらない点か
         const lh = await hitAt(page, x, y);
         if (lh) continue;
