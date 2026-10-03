@@ -177,7 +177,7 @@ describe('向きの指定の効き目（早送り）', () => {
         expect(north.at30.mor).toBeGreaterThan(south.at30.mor + 30);
         expect(south.status).toBe('routed');
         expect(north.status).toBe('ready');
-    });
+    }, 60_000);
 });
 
 describe('道があるか（pathfind.ts の pathExists。通れる升のつながりで見る）', () => {

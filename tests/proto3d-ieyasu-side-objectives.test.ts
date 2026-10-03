@@ -121,7 +121,7 @@ describe('副目標を足しても、同じ命令なら Version 11 と同じ勝�
             }
             expect([...got].sort()).toEqual([false, true]);
         }
-    });
+    }, 60_000);
 });
 
 describe('章の状態と画面：勝敗・副目標・約束は別々の欄', () => {

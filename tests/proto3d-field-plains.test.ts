@@ -184,7 +184,7 @@ describe('大平原：無計画な攻撃・地形に合わない作戦と、地�
         // 記録
         expect(r.o.result).toBe('defeat');
         expect(r.o.units.find((u) => u.id === 'a_sakakibara')!.status).toBe('routed');
-    });
+    }, 60_000);
 
     it('全部隊で先手へ攻めかかる（無計画）→ 地形に合った作戦・準備した正面攻撃と違い、主目標に届かず、副目標（予備隊）も落とす（記録：同じ敵の正面に重なって効かず、負ける）', () => {
         const r = run(FIGHTERS.map((id) => [0, id, atk('e_sente')] as Step));

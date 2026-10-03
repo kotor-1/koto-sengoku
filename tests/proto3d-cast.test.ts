@@ -136,14 +136,14 @@ describe('置き場所', () => {
             const canReach = reachable([...WALLS, ...castColliders(cast)]);
             for (const m of cast) expect(talkable(m, canReach), `${name}：${m.id} に話しかけられない`).toBe(true);
         }
-    });
+    }, 60_000);
     it('人物を置いても、開始の位置から城門をくぐって城内へ抜けられる', () => {
         for (const { name, s } of states) {
             const canReach = reachable([...WALLS, ...castColliders(castFor(s))]);
             expect(canReach(GATE.x, GATE.z + 1.5), `${name}：門の手前`).toBe(true);
             expect(canReach(GATE.x, GATE.z - 4), `${name}：門の奥`).toBe(true);
         }
-    });
+    }, 60_000);
     it('人物は主人公がすり抜けない大きさ（当たり判定がある）。城門の出陣の場所は通れる', () => {
         const cast = castFor(toMuster('tashiro'));
         for (const m of cast) {

@@ -69,7 +69,7 @@ describe('20 種の分類と一覧', () => {
 
     it('全戦場が検査を通る（配置・退き口への道・目標の区域・援軍の地点・部隊数の上限・id の重なり）', () => {
         for (const f of FIELDS) expect([f.id, validateField(f)]).toEqual([f.id, []]);
-    });
+    }, 60_000);
 
     it('各戦場のデータに、依頼の項目（地形・通行・速さ・視界・高低差・配置・援軍・撤退地点・主目標・副目標・特殊ルール）の置き場がある', () => {
         for (const f of practiceFields()) {

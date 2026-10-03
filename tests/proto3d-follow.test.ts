@@ -74,7 +74,7 @@ describe('3D 比較版：肩越しのカメラ', () => {
         // 町家の間では、壁に当たって縮む場面が実際にある（調べた範囲が意味を持っている）
         expect(checked).toBeGreaterThan(5000);
         expect(shortened).toBeGreaterThan(checked * 0.05);
-    });
+    }, 60_000);
 
     it('土塀のすぐ内側に立ち、カメラが塀の向こう側に回っても、カメラは塀を越えず主人公の側に残る', () => {
         const o = createOrbit(0, 0.1); // 北を見る＝カメラは南（塀の外側）へ行こうとする

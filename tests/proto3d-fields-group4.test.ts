@@ -60,7 +60,7 @@ describe('第4群の 5 戦場のデータ', () => {
         expect(sh.terrain.some((a) => a.kind === 'river' && a.rect && a.rect.x1 >= sh.width / 2)).toBe(true);
         expect(sh.terrain.some((a) => a.kind === 'cliff')).toBe(true);
         expect(sh.terrain.some((a) => a.kind === 'hill')).toBe(true);
-    });
+    }, 60_000);
 
     it('既存の 15 戦場・国境の原・歴史分岐・架空の章は、終わり方の判定の順・夜を持たない（今までの判定のまま）。追い討ちは歴史分岐だけ', () => {
         for (const f of FIELDS.filter((x) => !G4.includes(x.id))) {
@@ -420,7 +420,7 @@ describe('判定の順（endRules）はデータのとおり', () => {
         step(t, 1);
         expect(t.result).toBeNull();
         expect(t.events.some((e) => e.text.includes('敵の部隊はすべて崩れた'))).toBe(true);
-    });
+    }, 60_000);
 });
 
 describe('演習の追い討ち（pursuit をデータで）', () => {

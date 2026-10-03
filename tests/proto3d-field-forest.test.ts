@@ -197,7 +197,7 @@ describe('森林：無計画な攻撃・地形に合わない作戦と、地形�
         expect(r.o.result).toBe('retreat');
         expect(r.o.reason).toBe('nightfall');
         expect(statusOf(r, 'a_lost')).toBe('routed');
-    });
+    }, 60_000);
 
     it('全部隊で敵勢の本陣へ攻めかかる（無計画に中央の道を攻め上る）→ 地形に合った作戦より損害が大きく、主目標に届かず、準備した正面攻撃より崩せる敵が少ない（記録：道の両脇の伏兵に横を突かれ、弓に射られて負ける）', () => {
         const r = run(ALL_HQ);
@@ -211,7 +211,7 @@ describe('森林：無計画な攻撃・地形に合わない作戦と、地形�
         expect(r.left.e_hq).toBe(350);
         // 伏兵が林から不意を突いた
         expect(r.events.some((e) => e.kind === 'ambush' && e.unitId?.startsWith('e_ambush'))).toBe(true);
-    });
+    }, 60_000);
 
     it('全部隊で中央の道の中ほどへ出てから本陣へ（無計画）→ 地形に合った作戦より損害が大きく、主目標に届かない（記録：負ける）', () => {
         const r = run([...LOST_WOODS, ...FIGHTERS.map((id) => [0, id, mv(0, -60)] as Step), ...FIGHTERS.map((id) => [90, id, atk('e_hq')] as Step)]);

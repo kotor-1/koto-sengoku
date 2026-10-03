@@ -258,7 +258,7 @@ describe('門（gates）', () => {
         const bad3: BattlefieldDef = structuredClone(base);
         bad3.terrain.push({ kind: 'wall', rect: { x0: -12, x1: 12, z0: -66, z1: -56 } });
         expect(validateField(bad3).some((t) => t.includes('開いても門の所が通れない'))).toBe(true);
-    });
+    }, 60_000);
 });
 
 describe('乾いた足場（dry）と湿地の泥（arrowDealMul・noCharge）', () => {
@@ -474,7 +474,7 @@ describe('検査（validateField）', () => {
                 expect(pr.units.filter((u) => u.side === 'enemy').length).toBeLessThanOrEqual(RULES.maxUnitsPerSide.enemy);
             }
         }
-    });
+    }, 60_000);
 });
 
 describe('既存の戦場は新しい仕組みを持たない（計算に入らない）', () => {

@@ -275,5 +275,5 @@ describe('城下の配役', () => {
             const canReach = reachable([...WALLS, ...solids]);
             for (const m of cast) expect(talkable(m, canReach), `${name}：${m.id} に話しかけられない`).toBe(true);
         }
-    });
+    }, 60_000);
 });

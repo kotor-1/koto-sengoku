@@ -219,7 +219,7 @@ describe('丘陵：無計画な攻撃・地形に合わない作戦と、地形�
         expect(r.o.reason).toBe('nightfall');
         expect(statusOf(r, 'a_sakai')).toBe('destroyed');
         expect(secondaryOf(r)).toBe(false);
-    });
+    }, 60_000);
 
     it('全部隊で始めから頂へ真っすぐ向かう（無計画）→ 先に頂を取る作戦・準備した正面攻撃より 16 通りの勝ちが少なく、損害が大きい（記録：敵と同時に頂で組み合い、高所の有利が無いまま崩されて負ける。16 通りすべて）', () => {
         const all: Step[] = ['a_sakakibara', 'a_tadakatsu', 'a_sakai', 'a_ishikawa', 'a_yumi'].map((id, i) => [2 * i, id, mv(0, -20)] as Step);

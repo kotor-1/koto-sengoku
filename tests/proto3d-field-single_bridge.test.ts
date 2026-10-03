@@ -247,7 +247,7 @@ describe('一本橋：無計画な攻撃・地形に合わない作戦と、地�
         // 記録
         expect(r.o.result).toBe('retreat');
         expect(r.o.reason).toBe('nightfall');
-    });
+    }, 60_000);
 
     it('全部隊で橋頭へ押し込む（無計画。弓は橋の守りを射る）→ 準備した正面攻撃・地形に合った作戦より損害が大きく、主目標に届かず、副目標も落とす（記録：橋の上で守りに一隊ずつ当たり、両の弓に射られて負けるか日没。作った時 235 秒で負け・48％）', () => {
         const r = run(PUSH);
@@ -265,7 +265,7 @@ describe('一本橋：無計画な攻撃・地形に合わない作戦と、地�
         // 敵の弓はどちらも無傷のまま（橋の上の隊は射られるだけ）
         expect(r.left.e_yumi_w).toBe(260);
         expect(r.left.e_yumi_e).toBe(260);
-    });
+    }, 60_000);
 
     it('弓も一緒に全部隊で橋頭へ（無計画）→ 準備した正面攻撃より損害が大きく、主目標に届かず、陽動の弓隊も残せない（記録：負ける。作った時 146 秒）', () => {
         const r = run([...MELEE, 'a_yumi'].map((id) => [0, id, HEAD] as Step));
@@ -459,7 +459,7 @@ describe('一本橋：武将の能力の価値が地形で変わる（早送り�
         // 同じ能力で、削った相手の兵 ÷ 失った自分の兵：浅瀬は 1 を大きく超え、橋の上は 1 を大きく下回る
         expect(fordUse.tgtLost / fordUse.sakaLost).toBeGreaterThan(3);
         expect(bridgeUse.tgtLost / bridgeUse.sakaLost).toBeLessThan(0.5);
-    });
+    }, 60_000);
 
     // 忠勝の退路の守護（範囲 100 m で退く味方の受ける損害 −80%・追っ手を忠勝隊へ引きつける。忠勝隊は動けない）
     // 酒井隊・石川隊が橋を渡って橋の守りへ当たり（北の口で一隊ずつ）、50 秒に退かせる。忠勝隊は橋の南の口の手前 (0,20) で待つ
@@ -493,7 +493,7 @@ describe('一本橋：武将の能力の価値が地形で変わる（早送り�
         expect(statusOf(no.r, 'a_sakai')).toBe('routed');
         expect(statusOf(use.r, 'a_sakai')).toBe('withdrawn');
         expect(Object.keys(use.r.o.abilitiesUsed ?? {})).toEqual(['a_tadakatsu']);
-    });
+    }, 60_000);
 });
 
 describe('一本橋：準備した正面攻撃（早送り）', () => {

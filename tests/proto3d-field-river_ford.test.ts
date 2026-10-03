@@ -204,7 +204,7 @@ describe('河川・浅瀬：無計画な攻撃・地形に合わない作戦と�
         expect(r.o.reason).toBe('nightfall');
         expect(statusOf(r, 'a_yumi')).toBe('routed');
         expect(r.left.e_yumi).toBe(200);
-    });
+    }, 60_000);
 
     it('全部隊で向こう岸の地点へ真っすぐ向かう（無計画）→ 地形に合った作戦・準備した正面攻撃より損害が大きく、主目標に届かず、副目標も落とす（記録：浅瀬で矢と先手に崩されて負ける）', () => {
         const r = run(FIGHTERS.map((id) => [0, id, HILL] as Step));

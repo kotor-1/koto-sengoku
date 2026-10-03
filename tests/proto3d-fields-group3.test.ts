@@ -213,5 +213,5 @@ describe('記録（演習の保存）：段階目標はどの段まで届いた�
         // 結果の画面の主目標の行に「（段階 0／2 まで）」
         const info = practiceResultInfo(f, lose.o, { ok: false, reason: 'unavailable', message: '' });
         expect(info.primary.label).toBe('外門を制圧し、最初の曲輪を確保する（段階 0／2 まで）');
-    });
+    }, 60_000);
 });

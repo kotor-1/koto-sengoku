@@ -352,8 +352,17 @@ describe('計算の重さ（早送り。ここでの値は開発機の目安で�
         expect(units.filter((u) => u.side === 'ally')).toHaveLength(8);
         expect(units.filter((u) => u.side === 'enemy')).toHaveLength(10);
         const s = createBattle(buildBattleSetup(f, units));
-        // 味方の全部隊が、見えている敵へ次々に攻めかかる（道を作り直し続ける重い場合）
-        const t0 = performance.now();
+        // 味方の全部隊が、見えている敵へ次々に攻めかかる（道を作り直し続ける重い場合）。
+        // 測るのは、このテストの処理（vitest の 1 ファイル＝1 つの子プロセス）が使った CPU の時間（process.cpuUsage。無ければ経過時間）。
+        // 負荷が高い（ほかの処理と CPU を取り合う）ときの経過時間は、CPU の順番を待つ時間を含んで何倍にも延び、計算の重さを表さないため
+        // （第4群の確かめ：負荷 10 以上で経過時間が上限を超えた）。上限 3 ms はそのまま
+        const cpu = (globalThis as { process?: { cpuUsage?: () => { user: number; system: number } } }).process?.cpuUsage;
+        const now = () => {
+            if (!cpu) return performance.now();
+            const c = cpu();
+            return (c.user + c.system) / 1000;
+        };
+        const t0 = now();
         runToEnd(s, (st) => {
             for (const u of st.units) {
                 if (u.side !== 'ally' || !u.present || u.status !== 'ready' || u.order.type === 'attack') continue;
@@ -361,7 +370,7 @@ describe('計算の重さ（早送り。ここでの値は開発機の目安で�
                 if (e) issueOrder(st, u.id, { type: 'attack', targetId: e.id });
             }
         });
-        const perTick = (performance.now() - t0) / s.tick;
+        const perTick = (now() - t0) / s.tick;
         expect(perTick).toBeLessThan(3);
-    });
+    }, 60_000);
 });

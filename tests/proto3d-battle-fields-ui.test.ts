@@ -168,7 +168,7 @@ describe('目標の欄・勝ち負けの条件・結果の行', () => {
         // 目標の無い合戦は結果の行なし
         const ch = createBattle(demoSetup('tashiro'));
         expect(objectiveResultModel(runToEnd(ch))).toBeNull();
-    });
+    }, 60_000);
 });
 
 describe('演習の言葉（敵が架空の「敵勢」）', () => {

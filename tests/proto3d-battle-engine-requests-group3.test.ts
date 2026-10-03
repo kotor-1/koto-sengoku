@@ -183,7 +183,7 @@ describe('validateField：射線を遮る高さ（寺社周辺の要望）', () 
         expect(msgs[0]).toContain(`地形 ${i}（building）`);
         // 平地の家屋（高さ 6 m）は知らせない（村落）
         expect(validateField(getField('village')!).filter((x) => x.includes('射線を遮る高さ'))).toEqual([]);
-    });
+    }, 60_000);
 });
 
 describe('道探しの直し（湿地の要望。pathfind.ts）', () => {

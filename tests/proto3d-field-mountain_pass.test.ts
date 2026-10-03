@@ -198,7 +198,7 @@ describe('山道・峠：無計画な攻撃・地形に合わない作戦と、�
         expect(r.o.reason).toBe('ally_hq_routed');
         expect(r.o.elapsedSec).toBeLessThan(200);
         expect(r.loss).toBeGreaterThan(0.4);
-    });
+    }, 60_000);
 
     it('全部隊で北へ攻め出る（無計画に峠道を抜けて北の開けた所へ）→ 峠道の中で迎え撃つ準備した正面攻撃・関の守りと違い、援軍が着く前に主目標を落とす（記録：大軍に押し潰され、150 秒より前に負ける）', () => {
         const r = run(NORTH);
@@ -209,7 +209,7 @@ describe('山道・峠：無計画な攻撃・地形に合わない作戦と、�
         expect(r.o.elapsedSec).toBeLessThan(150);
         // 敵の一番手はほとんど減らない
         expect(r.left.e_w1a).toBeGreaterThan(500);
-    });
+    }, 60_000);
 
     it('峠道の北の出口の外で迎え撃つ → 出口の 20 m 手前（峠道の中）で迎え撃つ準備した正面攻撃と違い、3 部隊以上に囲まれ、主目標に届かない（記録：負ける）', () => {
         const r = run([

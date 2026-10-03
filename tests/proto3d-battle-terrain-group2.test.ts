@@ -382,7 +382,7 @@ describe('第2群の 5 戦場の最初の案（早送りの台本）', () => {
         expect(fit.o.result).toBe('victory');
         expect(push.o.result).not.toBe('victory');
         expect(fit.loss).toBeLessThan(push.loss - 0.08);
-    });
+    }, 60_000);
 
     it('複数橋：敵の主力が東へ集まるのを見て忠勝隊・石川隊・弓を東の橋へ寄せ、西が片付いたら酒井隊で中を埋める → 300 秒しのいで勝つ。均等に置いたまま → 本陣が崩れて負ける', () => {
         const fit = play('multi_bridge', [
@@ -399,7 +399,7 @@ describe('第2群の 5 戦場の最初の案（早送りの台本）', () => {
         expect(fit.o.result).toBe('victory');
         const even = play('multi_bridge', []);
         expect(even.o.result).toBe('defeat');
-    });
+    }, 60_000);
 
     it('尾根：西の登り道から尾根に登り、肩の隊を破って尾根の上を横に進み頂へ → 勝つ（作った時 319 秒・損害 21％）。何もしない → 日没', () => {
         const fit = play('ridge', [
@@ -431,7 +431,7 @@ describe('第2群の 5 戦場の最初の案（早送りの台本）', () => {
         expect(fit.o.result).toBe('victory');
         expect(fit.loss).toBeLessThan(0.4);
         expect(play('ridge', []).o.reason).toBe('nightfall');
-    });
+    }, 60_000);
 
     // 谷間は釣り合いを整えた（細かい台本・±15 秒の 16 通り・能力の比べは tests/proto3d-field-valley.test.ts）。
     // 最初の案の台本（高地と谷底を並んで北へ進み、出口の塞ぎを破ってから抜ける。作った時 436 秒）は、釣り合いの後は勝てない
@@ -466,7 +466,7 @@ describe('第2群の 5 戦場の最初の案（早送りの台本）', () => {
         const rush = play('valley', ['a_tadakatsu', 'a_sakakibara', 'a_sakai', 'a_ishikawa', 'a_kiba', 'a_yumi'].map((id, i) => [0, id, mv(-20 + (i % 3) * 20, -195)] as Step));
         expect(rush.o.result).toBe('defeat');
         expect(rush.loss).toBeGreaterThan(0.4);
-    });
+    }, 60_000);
 
     // 水田は釣り合いを整えた（細かい台本・±15 秒の 16 通り・能力の比べは tests/proto3d-field-paddy.test.ts）。
     // 最初の案の台本（荷駄隊が北西の畦道から水田を南へ横切り、中の交わりを押さえる。作った時 234 秒・損害 6％で勝ち）は、釣り合いの後は

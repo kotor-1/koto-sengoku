@@ -307,7 +307,7 @@ describe('尾根：無計画な攻撃・地形に合わない作戦と、地形�
         // 記録
         expect(r.o.result).toBe('retreat');
         expect(r.o.reason).toBe('nightfall');
-    });
+    }, 60_000);
 
     it('正面突破：五隊で頂へ（無計画。弓は頂の弓を射る）→ 地形に合った作戦より損害が大きく、主目標に届かない（記録：急坂の上の口で一隊ずつ迎えられ、日没。作った時 43.8％。五隊とも敗走）', () => {
         const r = run(PUSH);
@@ -335,7 +335,7 @@ describe('尾根：無計画な攻撃・地形に合わない作戦と、地形�
         // 記録
         expect(r2.o.result).not.toBe('victory');
         expect(r2.loss).toBeGreaterThan(0.4);
-    });
+    }, 60_000);
 
     it('弓も一緒に全部隊で頂の守り（西）へ（無計画）→ 弓で崩してから入れ替えて登る準備した正面攻撃より損害が大きく、主目標に届かない。30 秒ごとに近い敵へ当て直しても同じ（記録：負ける。作った時 414 秒・損害 67％）', () => {
         const all: Step[] = [...MELEE, 'a_yumi'].map((id) => [0, id, atk('e_summit_w')] as Step);
@@ -353,7 +353,7 @@ describe('尾根：無計画な攻撃・地形に合わない作戦と、地形�
         // 記録
         expect(r2.o.result).not.toBe('victory');
         expect(r2.loss).toBeGreaterThan(0.4);
-    });
+    }, 60_000);
 
     it('正面突破で能力も使う（榊原の先駆け・酒井の両翼・家康の号令。弓で崩さず五隊同時）→ 準備した正面攻撃より損害が大きく、主目標に届かない（記録：日没。作った時 損害 41.7％）', () => {
         const r = run([...PUSH, [25, 'a_sakakibara', 'ability'], [60, 'a_ieyasu', 'ability'], [100, 'a_sakai', 'ability']]);
@@ -425,7 +425,7 @@ describe('尾根：副目標は作戦で分かれる（早送り）', () => {
         expect([secondaryOf(fit, 'ridge_losses'), secondaryOf(fit, 'ridge_east')]).toEqual([true, false]);
         expect([secondaryOf(both, 'ridge_losses'), secondaryOf(both, 'ridge_east')]).toEqual([false, true]);
         expect(both.loss).toBeGreaterThan(fit.loss);
-    });
+    }, 60_000);
 
     it('±15 秒の 16 通り：西から横は東の肩を崩さず、損害 25％以内が多い。西と東の両方からは東の肩を必ず崩し、損害 25％以内は少ない（確かめた時 15・0 と 1・16）', () => {
         const fit = jitterWins(FIT);
@@ -495,7 +495,7 @@ describe('尾根：武将の能力の価値が地形で変わる（早送り）'
         // 急坂だけでは、使っても最後の兵の残りはほとんど同じ（作った時 酒井隊 138 → 139・頂の守り（西）242 → 243）
         expect(Math.abs(frontUse.r.left.a_sakai! - frontNo.r.left.a_sakai!)).toBeLessThan(10);
         expect(Math.abs(frontUse.r.left.e_summit_w! - frontNo.r.left.e_summit_w!)).toBeLessThan(10);
-    });
+    }, 60_000);
 
     // 西から横の台本の後の当て直し（250 秒）は、使わない時の守りの崩れる早さに合わせている。使うと守りが早く崩れ、ずらさない台本では
     // 次の命令までの間に頂の弓に射られて、全体の損害は 20.0 → 25.7％に増える（人なら崩れたらすぐ次へ当てる）。
@@ -528,7 +528,7 @@ describe('尾根：武将の能力の価値が地形で変わる（早送り）'
         // 同じ能力で、削った敵の兵 ÷ 失った自分の兵：尾根の上は 1 を大きく超え、急坂は 1 を大きく下回る
         expect(crestUse.foeLost / crestUse.sakaLost).toBeGreaterThan(4);
         expect(slopeUse.foeLost / slopeUse.sakaLost).toBeLessThan(0.3);
-    });
+    }, 60_000);
 });
 
 // 尾根の準備した正面攻撃は、急坂の上の口で一隊ずつしか当たれない地形でも、弓で崩し・号令と采配で支え・予備を入れ替えて登れば、

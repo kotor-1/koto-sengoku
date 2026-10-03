@@ -192,7 +192,7 @@ describe('複数橋のデータ', () => {
         const r = play([]);
         expect(r.o.objectives!.secondary.map((x) => [x.id, x.type])).toEqual([['mb_bridges', 'defend_zones']]);
         expect(r.o.objectives!.primary!.id).toBe('mb_defend');
-    });
+    }, 60_000);
 
     it('敵の考え：主力（槍 2・騎馬）と二番手は本陣へ攻め込む。主力の弓は東の橋の北の口から外れた岸で射る（主力の槍の道を塞がない）', () => {
         const us = presetUnits(MB, 'standard').filter((u) => u.side === 'enemy');
@@ -229,7 +229,7 @@ describe('複数橋：無計画な攻撃・地形に合わない作戦と、地�
         expect(r.o.reason).toBe('ally_hq_routed');
         expect(lostAt(r, '東の橋')).toBeLessThan(150);
         expect(r.o.elapsedSec).toBeLessThan(240);
-    });
+    }, 60_000);
 
     it('均等に増やす（予備の石川隊を中、騎馬を西、弓を東の後ろへ。どの橋も 2 隊ずつ）→ 主力の来る東へ寄せる地形に合った作戦と違い、主目標に届かず、橋も残らない（記録：東が押し切られて負ける）', () => {
         const r = once([
@@ -352,7 +352,7 @@ describe('複数橋：副目標（橋ごとの守り）が作戦で分かれる�
         expect(lostAt(near, '中の橋')).toBeLessThan(90);
         // 2 本目（東）を失った時に副目標は果たせなくなる
         expect(near.s.events.find((e) => e.text === '副目標「3 本の橋のうち 2 本以上を最後まで守る」は果たせなくなった')?.t).toBe(lostAt(near, '東の橋'));
-    });
+    }, 60_000);
 
     it('16 通りずらしても分かれ方は同じ（本陣の近くで受けると 2 本以上を守る並びは 0、FIT は 14 通り以上）', () => {
         const near = jittered(NEAR_HQ);
@@ -423,7 +423,7 @@ describe('複数橋：能力の値打ちが地形で変わる', () => {
         expect(on.s.encircled).toEqual([]);
         expect(Math.abs(on.left.e_second2! - off.left.e_second2!)).toBeLessThanOrEqual(5);
         expect(Math.abs(on.loss - off.loss)).toBeLessThan(0.01);
-    });
+    }, 60_000);
 
     it('石川の後詰めの差配（早送り）：中の口で踏みとどまる石川隊から 150 m 先の東の口の忠勝隊を支える → 忠勝隊が最後まで立つ（使わない時は 263.9 秒に敗走）', () => {
         const off = play(CORE);

@@ -890,7 +890,7 @@ describe('作戦（早送り）', () => {
                 const x = play(p(J0), undefined, every);
                 expect(won(x), `${every}秒 ${brief(x)}`).toBe(true);
             }
-    });
+    }, 60_000);
 
     it('台本は人が画面でできる程度：命令は 50 回以下、10 秒に 8 回以下。移動の後の向き（face）は使わない', () => {
         for (const [k, x] of Object.entries(r)) {
