@@ -4,7 +4,7 @@
  *   （開発サーバー：proto3d/blender/tools/vite.nohmr.mjs。既定の出力先 e2e-out/fields-group3）
  *   PARTS=start,phone,gate,village,labels,conflict で一部だけ（既定はすべて）。FIELDS=village,siege_front で第3群の戦場を絞る（start・phone・labels）。
  *
- * a. start（PC 1280×720・マウス）：タイトル →「合戦場の演習」→ 一覧に 15 戦場 → 戦場ごとに「出陣」→ 合戦の画面。
+ * a. start（PC 1280×720・マウス）：タイトル →「合戦場の演習」→ 一覧に 20 戦場（第4群まで。出陣は第3群までの 15 戦場） → 戦場ごとに「出陣」→ 合戦の画面。
  *    第3群の 5 戦場では続けて：味方の部隊を地図の上の体を押してそれぞれ選ぶ（漏れない）・選んだ部隊へ地面の押しで移動の命令・
  *    点滅する名札（止めていても明るさが変わる）・印 1 回で能力（漏れない）。終わりは全軍撤退 → 早送り → 結果 → 演習の結果 → 一覧（どれもクリック）。
  *    phone（スマホ横 844×390・タッチ）：第3群の 5 戦場を、タイトルからタップで始め、上と同じ確かめをタップで。
@@ -61,6 +61,8 @@ const OUT = process.argv[2] || 'e2e-out/fields-group3';
 mkdirSync(OUT, { recursive: true });
 const PARTS = (process.env.PARTS || 'start,phone,gate,village,labels,conflict').split(',');
 const FIELD_IDS = ['plains', 'river_ford', 'hills', 'forest', 'mountain_pass', 'single_bridge', 'multi_bridge', 'ridge', 'valley', 'paddy', 'marsh', 'village', 'temple', 'town_edge', 'siege_front'];
+/** 演習の一覧に並ぶ全戦場（第4群の 5 戦場が後ろに足されて 20。この e2e が出陣するのは上の FIELD_IDS の 15 戦場だけ） */
+const LIST_IDS = [...FIELD_IDS, 'besieged_camp', 'relief', 'rearguard', 'night_raid', 'shore'];
 const GROUP3 = (process.env.FIELDS || 'marsh,village,temple,town_edge,siege_front').split(',');
 const GENERALS = ['a_ieyasu', 'a_tadakatsu', 'a_sakakibara', 'a_sakai', 'a_ishikawa'];
 const failures = [];
@@ -190,7 +192,7 @@ async function titleToList(p) {
     await waitSheet(p.page, 'practice-list');
     await p.page.waitForTimeout(300);
     const fields = await p.page.evaluate(() => [...document.querySelectorAll('.g-pr-field')].map((e) => e.dataset.field));
-    check(JSON.stringify(fields) === JSON.stringify(FIELD_IDS), `[${p.kind}] タイトル →「合戦場の演習」→ 一覧に 15 戦場（第1群 5・第2群 5・第3群 5）`, fields.join(','));
+    check(JSON.stringify(fields) === JSON.stringify(LIST_IDS), `[${p.kind}] タイトル →「合戦場の演習」→ 一覧に 20 戦場（第1群 5・第2群 5・第3群 5・第4群 5）`, fields.join(','));
 }
 
 /** 一覧 → 説明 → 出陣 → 合戦の画面 → 開始して「指揮」で止める（開始の瞬間だけ時の進みを 0。止めた後に ×1 へ戻す）。説明の文を返す */
@@ -452,7 +454,8 @@ async function phonePart() {
  * - losBad／meleeBad：射る相手・斬り合う相手への射線が通らない（前の刻みの位置＝その刻みの計画を立てた位置で見る）
  * - blockedInRange：弓の部隊が、射程の中に見えている敵がいるのに射線が通らなかった刻みの数（部隊ごと）
  * - stuck：移動・攻撃の命令のまま、斬り合い・射撃なしで 10 秒以上 1.5 m も動かない（行き先まで 8 m より遠い）。
- *   順番待ち（攻撃の相手が 45 m 以内で味方と斬り合っている）・道の無い行き先（閉じた門の向こう）は分けて数える
+ *   順番待ち（攻撃の相手が 45 m 以内で味方と斬り合っている）・道の無い行き先（閉じた門の向こう）・開門待ち（第4群。閉じた門の先への移動で、
+ *   門の前で待つ）は分けて数える
  */
 async function installMonitor(page, tag) {
     await page.evaluate(async (tag) => {
@@ -462,7 +465,7 @@ async function installMonitor(page, tag) {
         const obst = s0.map.terrain.filter((a) => KINDS.includes(a.kind));
         const inA = (a, x, z, m) =>
             a.rect ? x > a.rect.x0 + m && x < a.rect.x1 - m && z > a.rect.z0 + m && z < a.rect.z1 - m : a.circle ? Math.hypot(x - a.circle.cx, z - a.circle.cz) < a.circle.r - m : false;
-        const M = { tag, ticks: 0, insideN: 0, inside: [], losBad: [], meleeBad: [], shots: 0, melees: 0, blockedInRange: {}, shotAt: {}, shotLog: [], blockedLog: [], underAttack: {}, still: {}, stuck: [], queue: [], blockedGoal: [], prev: null, capsules: obst.filter((a) => a.capsule).length };
+        const M = { tag, ticks: 0, insideN: 0, inside: [], losBad: [], meleeBad: [], shots: 0, melees: 0, blockedInRange: {}, shotAt: {}, shotLog: [], blockedLog: [], underAttack: {}, still: {}, stuck: [], queue: [], blockedGoal: [], gateWait: [], prev: null, capsules: obst.filter((a) => a.capsule).length };
         const d = (a, c) => Math.hypot(a.x - c.x, a.z - c.z);
         M.tick = (st) => {
             M.ticks++;
@@ -538,6 +541,8 @@ async function installMonitor(page, tag) {
                 a.ev = ev;
                 if (tgt && tgt.engagedWith && by.get(tgt.engagedWith)?.side === u.side && d(u, tgt) < 45) M.queue.push(ev);
                 else if (u.path?.none) M.blockedGoal.push(ev);
+                // 第4群：閉じた門の先への移動は「開門待ち」（門の前で待つ。sim.ts の awaitingGate）。止まりとは分けて記録する
+                else if (o.type === 'move' && o.awaitGate && st.field.gates.some((g) => g.def.id === o.awaitGate && !g.open)) M.gateWait.push(ev);
                 else M.stuck.push(ev);
             }
             // 崩れた・退いた部隊の見張りを閉じる
@@ -555,14 +560,15 @@ async function installMonitor(page, tag) {
 const monitor = (page) =>
     page.evaluate(() => {
         const M = window.__g3mon;
-        return { tag: M.tag, ticks: M.ticks, insideN: M.insideN, inside: M.inside, losBad: M.losBad, meleeBad: M.meleeBad, shots: M.shots, melees: M.melees, blockedInRange: M.blockedInRange, shotAt: M.shotAt, shotLog: M.shotLog, blockedLog: M.blockedLog, underAttack: M.underAttack, stuck: M.stuck, queue: M.queue, blockedGoal: M.blockedGoal, capsules: M.capsules };
+        return { tag: M.tag, ticks: M.ticks, insideN: M.insideN, inside: M.inside, losBad: M.losBad, meleeBad: M.meleeBad, shots: M.shots, melees: M.melees, blockedInRange: M.blockedInRange, shotAt: M.shotAt, shotLog: M.shotLog, blockedLog: M.blockedLog, underAttack: M.underAttack, stuck: M.stuck, queue: M.queue, blockedGoal: M.blockedGoal, gateWait: M.gateWait, capsules: M.capsules };
     });
 function checkMonitor(kind, tag, m) {
     check(m.insideN === 0, `[${kind}] ${tag}：建物・柵・石垣・閉じた門の中・通れない升へ入った部隊なし（${m.ticks} 刻み）`, m.inside.slice(0, 5).join(' '));
     if (m.capsules) log(`    （記録）カプセルの形の障害物 ${m.capsules} 個は四角・円の見張りでは見ない（通れない升の見張りだけ）`);
     check(m.losBad.length === 0 && m.shots > 0, `[${kind}] ${tag}：射る相手はどれも射線が通る（射撃 ${m.shots} 刻み）`, m.losBad.slice(0, 5).join(' '));
     check(m.meleeBad.length === 0, `[${kind}] ${tag}：斬り合う相手はどれも射線が通る（建物・石垣を挟んで斬り合わない。斬り合い ${m.melees} 刻み）`, m.meleeBad.slice(0, 5).join(' '));
-    check(m.stuck.length === 0, `[${kind}] ${tag}：移動・攻撃の命令のまま 10 秒以上動かない部隊なし（順番待ち ${m.queue.length}・道の無い行き先 ${m.blockedGoal.length} は別に記録）`, JSON.stringify(m.stuck.slice(0, 5)));
+    check(m.stuck.length === 0, `[${kind}] ${tag}：移動・攻撃の命令のまま 10 秒以上動かない部隊なし（順番待ち ${m.queue.length}・道の無い行き先 ${m.blockedGoal.length}・開門待ち ${m.gateWait.length} は別に記録）`, JSON.stringify(m.stuck.slice(0, 5)));
+    if (m.gateWait.length) log(`    （記録）開門待ち（閉じた門の前で待つ移動）：${m.gateWait.map((e) => `${e.id} ${e.t} 秒 (${e.x},${e.z}) ${e.dur ?? '―'} 秒`).join('／')}`);
     if (m.queue.length) log(`    （記録）順番待ち：${m.queue.map((e) => `${e.id} ${e.t} 秒 (${e.x},${e.z})`).join('／')}`);
     if (m.blockedGoal.length) log(`    （記録）道の無い行き先で待つ：${m.blockedGoal.map((e) => `${e.id} ${e.t} 秒 (${e.x},${e.z})`).join('／')}`);
     log(`    射線が通らず射なかった刻み（弓・見えている敵）：${JSON.stringify(m.blockedInRange)}`);
@@ -902,7 +908,8 @@ const measureLabels = (page) =>
             const bb = R(a);
             for (const m of onScreen) if (ov(bb, m)) badgeUnderMap.push(`${e.dataset.id}×${m.text}`);
         }
-        const quietPe = ['.b-toast', '.b-abil', '.b-abnote', '.b-pausepill', '.b-inspect', '.b-hint', '.b-labels'].every((s) => { const e = document.querySelector(s); return !e || getComputedStyle(e).pointerEvents === 'none'; });
+        // 能力の説明の欄（.b-abil）は第4群から押し・なぞりを欄で使い切る（地図へ通さない。docs/fields-group4-design.md §2）ので、ここには入れない
+        const quietPe = ['.b-toast', '.b-abnote', '.b-pausepill', '.b-inspect', '.b-hint', '.b-labels'].every((s) => { const e = document.querySelector(s); return !e || getComputedStyle(e).pointerEvents === 'none'; });
         const g = document.querySelector('.b-goals');
         const sum = document.querySelector('.b-goals-sum');
         return {

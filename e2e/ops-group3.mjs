@@ -296,12 +296,14 @@ async function run(kind) {
             const vis = (e) => e && !e.hidden && getComputedStyle(e).display !== 'none';
             const R = (s) => { const e = document.querySelector(s); if (!vis(e)) return null; const r = e.getBoundingClientRect(); return { t: r.top, b: r.bottom, h: r.height }; };
             const pe = {};
-            for (const s of ['.b-toast', '.b-abil', '.b-abnote', '.b-pausepill', '.b-inspect', '.b-labels', '.b-hint']) { const e = document.querySelector(s); if (e) pe[s] = getComputedStyle(e).pointerEvents; }
+            // 第4群：能力の説明の欄（.b-abil）は押し・なぞりを欄で使い切る（地図へ通さない）ので、ここ（押しを地図へ通す表示）には入れない。下で別に見る
+            for (const s of ['.b-toast', '.b-abnote', '.b-pausepill', '.b-inspect', '.b-labels', '.b-hint']) { const e = document.querySelector(s); if (e) pe[s] = getComputedStyle(e).pointerEvents; }
+            pe.abilSink = getComputedStyle(document.querySelector('.b-abil')).pointerEvents;
             return { abil: R('.b-abil'), cards: R('.b-cards'), goalsHead: R('.b-goals-head'), goalsClosed: document.querySelector('.b-goals')?.classList.contains('closed'), sum: document.querySelector('.b-goals-sum')?.textContent ?? '', pe };
         });
         log(`[${kind}] 能力の欄の高さ ${m.abil?.h.toFixed(0)} px（下端 ${m.abil?.b.toFixed(0)}・札の列の上端 ${m.cards?.t.toFixed(0)}）`);
         check(!!m.abil && m.abil.b < m.cards.t, `[${kind}] 家康本陣を選んだ能力の欄は札の列に届かない`);
-        check(Object.values(m.pe).every((v) => v === 'none'), `[${kind}] 操作の要らない表示は押しを奪わない（pointer-events: none）`, JSON.stringify(m.pe));
+        check(Object.entries(m.pe).every(([k, v]) => (k === 'abilSink' ? v === 'auto' : v === 'none')), `[${kind}] 操作の要らない表示は押しを奪わない（pointer-events: none）。能力の説明の欄は押しを欄で使い切る（auto。第4群）`, JSON.stringify(m.pe));
         if (p.phone) {
             check(m.goalsClosed && m.goalsHead.h <= 32 && m.sum.length > 0, `[${kind}] 目標は畳んだまま 1 行で進みが見える`, `${m.goalsHead.h.toFixed(0)} px「${m.sum}」`);
             await page.evaluate(() => window.__battle.fastForward(60));
@@ -346,7 +348,8 @@ async function shots() {
                 for (const k of steal) if (ov(bb, k)) hidden.push(`${e.dataset.id}×${k.s}`);
                 for (const k of quiet) if (ov(bb, k)) covered.push(`${e.dataset.id}×${k.s}`);
             }
-            const quietPe = ['.b-toast', '.b-abil', '.b-abnote', '.b-pausepill', '.b-inspect', '.b-hint'].every((s) => { const e = document.querySelector(s); return !e || getComputedStyle(e).pointerEvents === 'none'; });
+            // 能力の説明の欄（.b-abil）は第4群から押しを欄で使い切る（地図へ通さない）ので、ここには入れない
+            const quietPe = ['.b-toast', '.b-abnote', '.b-pausepill', '.b-inspect', '.b-hint'].every((s) => { const e = document.querySelector(s); return !e || getComputedStyle(e).pointerEvents === 'none'; });
             // 畳んだ目標の見出し：1 行に収まり、進みの文が省略（…）で切れていないか
             const g = document.querySelector('.b-goals');
             const head = g?.querySelector('.b-goals-head');

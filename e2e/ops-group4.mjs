@@ -374,10 +374,13 @@ async function partF() {
         const g = await ground(page, x, z);
         await pointAt(p, g.x, g.y, 400);
         const o = (await unit(page, id)).order;
-        // 押した点が家屋などの通れない所なら、行き先はいちばん近い通れる所（sim.ts の applyOrder）
-        const free = await page.evaluate(async ([x, z]) => (await import('/src/battle/sim.ts')).passableAt(window.__battle.state, x, z), [x, z]);
-        const ok = o.type === 'move' && Math.hypot(o.x - x, o.z - z) < (free ? 4 : 10);
-        if (!ok) log(`  ${id} の命令 ${JSON.stringify(o)}（押した所 (${x},${z})・通れる ${free}）`);
+        // 押した点が家屋などの通れない所なら、行き先はいちばん近い通れる所（sim.ts の applyOrder と同じ nearestPassable。台本の issueOrder も同じ）
+        const want = await page.evaluate(async ([x, z]) => {
+            const st = window.__battle.state;
+            return st.field.nav ? (await import('/src/battle/pathfind.ts')).nearestPassable(st.field.nav, x, z) : { x, z };
+        }, [x, z]);
+        const ok = o.type === 'move' && Math.hypot(o.x - want.x, o.z - want.z) < 4;
+        if (!ok || Math.hypot(want.x - x, want.z - z) > 0.5) log(`  ${id} の命令 ${JSON.stringify(o)}（押した所 (${x},${z})・通れる所へ寄せた行き先 (${want.x},${want.z})）`);
         issued.push(ok);
     }
     check(issued.every(Boolean), '[desktop] F：9 つの移動をどれも画面の操作（札 → 移動 → 地面）で出せた', JSON.stringify(issued));
