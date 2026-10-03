@@ -15,6 +15,15 @@
  * - 直す前（f40f775。squeezeHoldSec 12 秒）：石川隊が 58.1 秒に (-56.3,29.7) で、西の通りの口で待機する酒井隊の 18 m 手前に止まり、
  *   12.1 秒後の 70.2 秒にすり抜けを始め、80 秒に (-68.2,0.6)。止まっていた最長 12.5 秒（e2e の見張りは 10 秒で NG）。
  * - 直した後（allyBlockSec 2 秒）：下の「村落の再現」のテストの記録（止まっていた最長・辻へ着いた時刻）。
+ *
+ * すれ違いの詰まり（第4群のエンジンの要望。反対向きに動く味方どうしにも allyBlockSec の調整を効かせた）の、戦場のテストへの影響（早送り。
+ * 第3群・第4群の 12 のテストのファイルの runToEnd 1858 回を、直しの前後で結果・終わった時刻・損害の割合で比べた。既存の 10 戦場・V11 は
+ * refinedMoves を付けないので 1 刻みも同じ）：変わったのは 148 回（夜襲の「準備した正面攻撃」の台本の 16 通りと、先駆けの比べの 64 回が大半）。
+ * - 夜襲・奇襲の準備した正面攻撃：1 通り 329 秒・29.9％ → 322 秒・29.6％。16 通り 311 秒・24.2％・損害 3 割 14／16 → 308 秒・22.8％・15／16（16 勝のまま）。
+ * - 寺社周辺の準備した正面攻撃の 16 通りの 1 通り：399.8 秒・25.1％ → 399.5 秒・25.0％。城下町外縁の 3 通り：損害 ±0.1％・時刻 ±0.5 秒。
+ * - 村落の通りの口で受ける台本の 16 通りのうち 1 通り：420 秒で勝ち・35.6％ → 420 秒で勝ち・46.4％（同じ 1 通りを使う比べのテストでは 37.7％ → 53.6％）。
+ * - 湖・河岸・包囲された陣・援軍救出・退却戦・湿地・城攻め前面のテストの台本は 1 刻みも同じ。勝ち数・比べのテストはどれも通る
+ *   （夜襲の先駆けの損害の比べだけ、理由を書いて直した。tests/proto3d-field-night_raid.test.ts）。
  */
 import { describe, expect, it } from 'vitest';
 import { RULES, awaitingGate, createBattle, issueOrder, orderLabel, stepBattle, unitById, type BattleState } from '../proto3d/src/battle/sim';
@@ -203,6 +212,114 @@ describe('短い迂回を先に使い、無ければ 2 秒ですり抜ける（�
         const r = runGap(s, 40);
         expect(r.squeezed).toBe(false);
         expect(r.friendMoved).toBeLessThan(0.5);
+    });
+});
+
+/**
+ * すれ違いの詰まり（第4群の要望。湖・河岸の担当の報告）：反対向きに動く味方二隊は、互いに押し戻されて squeezeMove m 以上動くので、
+ * 止まっている味方の決まり（stall）では数えられず、崖の南の端で約 20 秒もつれていた。行き先までの残りの道のりを縮められない時間で数え、
+ * 行く手に反対向き（行き先どうしも反対の側）に動く味方だけがいれば、allyBlockSec ですり抜ける（sim.ts の headOnAlly）。
+ * 刻みごとに見る：互いに 30 m 以内で、どちらかが行き先へ 1 m も近づけない時間の最長
+ */
+function crossWatch(s: BattleState, a: string, b: string) {
+    const prog: Record<string, { best: number; t: number }> = {};
+    let longest = 0;
+    let squeezed = false;
+    return {
+        step() {
+            const ua = unitById(s, a)!;
+            const ub = unitById(s, b)!;
+            squeezed ||= !!ua.squeeze?.on || !!ub.squeeze?.on;
+            for (const u of [ua, ub]) {
+                const o = u.order;
+                if (o.type !== 'move') continue;
+                const d = Math.hypot(u.x - o.x, u.z - o.z);
+                const p = (prog[u.id] ??= { best: d, t: s.t });
+                if (d <= p.best - 1) {
+                    p.best = d;
+                    p.t = s.t;
+                } else if (Math.hypot(ua.x - ub.x, ua.z - ub.z) < 30) longest = Math.max(longest, s.t - p.t);
+                else p.t = s.t;
+            }
+        },
+        get longest() {
+            return longest;
+        },
+        get squeezed() {
+            return squeezed;
+        },
+    };
+}
+
+describe('すれ違いの詰まり：反対向きに動く味方どうし（状態を直接操作・早送り）', () => {
+    it('湖・河岸の再現（敵を外す）：崖の南の端で、南へ下る忠勝隊と北へ上る騎馬がもつれず、どちらも行き先へ着く（直す前は 20.3 秒もつれて 72.1 秒に着いた）', () => {
+        const s = createBattle(buildBattleSetup(getField('shore')!, 'standard'));
+        for (const u of s.units)
+            if (u.side === 'enemy') {
+                u.present = false;
+                u.arrived = false;
+                (u as { arriveAt: number }).arriveAt = 1e9;
+            }
+        expect(issueOrder(s, 'a_kiba', { type: 'move', x: 120, z: -60 })).toBe(true);
+        expect(issueOrder(s, 'a_tadakatsu', { type: 'move', x: 60, z: 130 })).toBe(true);
+        const w = crossWatch(s, 'a_tadakatsu', 'a_kiba');
+        const yumi = unitById(s, 'a_yumi')!;
+        const y0 = { x: yumi.x, z: yumi.z };
+        let done = -1;
+        for (let k = 0; k < 1200 && done < 0; k++) {
+            stepBattle(s, RULES.tick);
+            w.step();
+            if (unitById(s, 'a_tadakatsu')!.order.type === 'hold' && unitById(s, 'a_kiba')!.order.type === 'hold') done = s.t;
+        }
+        // 記録：もつれ 20.3 秒 → 2.5 秒。両方が着いたのは 72.1 秒 → 54.3 秒
+        expect(w.squeezed).toBe(true);
+        expect(w.longest).toBeLessThan(RULES.allyBlockSec + 1.5);
+        expect(done).toBeGreaterThan(0);
+        expect(done).toBeLessThan(60);
+        // 口のそばで待機している弓隊は動かさない（すり抜ける側が通るだけ）
+        expect(Math.hypot(yumi.x - y0.x, yumi.z - y0.z)).toBeLessThan(0.5);
+    });
+
+    it('幅 30 m の通り（両側は石垣）で向かい合って進む二隊は、長くもつれずにすれ違う。同じ向きに続いて進む二隊はすり抜けない', () => {
+        const terrain = [wall(-150, -15, -60, 60), wall(15, 150, -60, 60)];
+        const s = createBattle(field(terrain, [...HQS(), U('a_n', 'ally', 'yari', 0, 70), U('a_s', 'ally', 'yari', 0, -70)]));
+        for (const u of s.units) u.initiative = null;
+        expect(issueOrder(s, 'a_n', { type: 'move', x: 0, z: -110 })).toBe(true);
+        expect(issueOrder(s, 'a_s', { type: 'move', x: 0, z: 110 })).toBe(true);
+        const w = crossWatch(s, 'a_n', 'a_s');
+        for (let k = 0; k < 900; k++) {
+            stepBattle(s, RULES.tick);
+            w.step();
+        }
+        expect(w.longest).toBeLessThan(RULES.allyBlockSec + 1.5);
+        expect(unitById(s, 'a_n')!.z).toBeLessThan(-100);
+        expect(unitById(s, 'a_s')!.z).toBeGreaterThan(100);
+        // 同じ向き（行き先も同じ側）に続いて進む二隊：すれ違いではないので、すり抜けは始めない
+        const t = createBattle(field(terrain, [...HQS(), U('a_1', 'ally', 'yari', 0, 70), U('a_2', 'ally', 'yari', 0, 92)]));
+        for (const u of t.units) u.initiative = null;
+        expect(issueOrder(t, 'a_1', { type: 'move', x: 0, z: -110 })).toBe(true);
+        expect(issueOrder(t, 'a_2', { type: 'move', x: 0, z: -90 })).toBe(true);
+        let on = false;
+        for (let k = 0; k < 900; k++) {
+            stepBattle(t, RULES.tick);
+            on ||= t.units.some((u) => !!u.squeeze?.on);
+        }
+        expect(on).toBe(false);
+    });
+
+    it('近く（36 m）に戦える敵がいるときは、すれ違いでもすり抜けない', () => {
+        const terrain = [wall(-150, -15, -60, 60), wall(15, 150, -60, 60)];
+        const s = createBattle(field(terrain, [...HQS(), U('a_n', 'ally', 'yari', 0, 70), U('a_s', 'ally', 'yari', 0, -70), U('e_x', 'enemy', 'yari', 0, 0, { aiRole: 'guard_hq', strength: 5000 })]));
+        for (const u of s.units) u.initiative = null;
+        // 敵は通りの真ん中で動かない（押し離しでも動かないよう兵を多く）。味方は敵の手前で止まる
+        expect(issueOrder(s, 'a_n', { type: 'move', x: 0, z: -110 })).toBe(true);
+        expect(issueOrder(s, 'a_s', { type: 'move', x: 0, z: 110 })).toBe(true);
+        let on = false;
+        for (let k = 0; k < 300; k++) {
+            stepBattle(s, RULES.tick);
+            on ||= s.units.some((u) => u.side === 'ally' && !!u.squeeze?.on);
+        }
+        expect(on).toBe(false);
     });
 });
 

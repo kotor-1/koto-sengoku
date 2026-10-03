@@ -228,6 +228,8 @@ export const RULES = {
      * 1. この秒数の半分で、短い通れる迂回（塞いでいる味方の隊のまわりを避けた道。長さが今の道の allyDetourRatio 倍以内）を探し、あれば先に使う。
      * 2. 味方だけに塞がれた状態がこの秒数続いたら、その味方の中をすり抜ける（通過の調整。塞いでいる味方＝防衛・待機を命じた味方も動かさない。
      *    すり抜けは斬り合いの数に入らず、狭い正面の同時に斬りかかれる数・順番待ちは変えない）。
+     * すれ違い（反対向きに動く味方どうしの押し合い。行き先どうしも反対の側で、どちらも行き先まで spacing × 2 m より遠い）も、行き先までの残りの
+     * 道のりを縮められない時間がこの秒数続けば、すり抜ける（sim.ts の headOnAlly。相手が動くので短い迂回は探さない）。
      * 調整できる初期値（2 秒）。前の決まり（待機の味方に 12 秒塞がれてからすり抜ける squeezeHoldSec・止まっている味方に 20 秒塞がれてから
      * すり抜ける squeezeStallSec）は、これに置き換えた。物理的に道が無い行き先（味方が退いても通れない）への移動は、すり抜けさせず、
      * 命令の時に理由を出して受けない（moveBlockReason）。閉じた門の向こうは「開門待ち」（Order の awaitGate）
@@ -1744,7 +1746,7 @@ function trackSqueeze(s: BattleState, u: UnitState, left: number, aim: { x: numb
         // 塞いでいる味方が、押し合って進めない（jammed）だけで反対向きに動いている味方なら、すれ違いとして扱う
         // （行き先の近く＝spacing × 2 m 以内で行き過ぎを戻る小さな動きは、すれ違いにしない）
         const far = left > RULES.spacing * 2;
-        let head = far && block && block.moving && opposite(s, u, aim, block) ? block : null;
+        let head = far && block && block.moving && opposite(s, u, aim, block, goal) ? block : null;
         if (head) block = null;
         else if (far && !block && noGain >= RULES.allyBlockSec * 0.5 - 1e-9) head = headOnAlly(s, u, aim, goal);
         if (!block && !head) return;
@@ -1759,7 +1761,6 @@ function trackSqueeze(s: BattleState, u: UnitState, left: number, aim: { x: numb
             }
         }
         if ((block ? stall : noGain) < RULES.allyBlockSec - 1e-9) return;
-        if (head) (globalThis as any).__headLog?.push(`${u.id}>${head.id} t=${s.t.toFixed(1)} (${u.x.toFixed(0)},${u.z.toFixed(0)}) jam=${!!(block === null && head && head.moving)}`); // DEBUGHEAD
     }
     q.on = true;
     q.x = u.x;
@@ -1843,12 +1844,14 @@ function heading(s: BattleState, o: UnitState): { x: number; z: number } | null 
 }
 
 /**
- * 味方 o が、u の向かう向き（u から aim）と反対向き（向かう向きどうしの角度が 107 度より大きい）に向かっている。
+ * 味方 o が、u の向かう向き（u から aim）と反対向き（向かう向きどうしの角度が 107 度より大きい）に向かい、行き先どうしも反対の側にある。
  * o の行き先（移動の行き先・攻撃の相手）が spacing × 2 m 以内（着く間際の小さな動き）なら false
  */
-function opposite(s: BattleState, u: UnitState, aim: { x: number; z: number }, o: UnitState): boolean {
+function opposite(s: BattleState, u: UnitState, aim: { x: number; z: number }, o: UnitState, goal: { x: number; z: number }): boolean {
     const g = o.order.type === 'move' ? o.order : o.order.type === 'attack' ? unitById(s, o.order.targetId) : undefined;
     if (!g || dist(o, g) <= RULES.spacing * 2) return false;
+    // 行き先どうしも反対の側（同じ出口・同じ相手へ向かう二隊が、道の曲がりで次の点だけ逆を向いているのは、すれ違いではない）
+    if ((g.x - o.x) * (goal.x - u.x) + (g.z - o.z) * (goal.z - u.z) >= 0) return false;
     const h = heading(s, o);
     const L = Math.hypot(aim.x - u.x, aim.z - u.z);
     if (!h || L < 1e-6) return false;
@@ -1875,7 +1878,7 @@ function headOnAlly(s: BattleState, u: UnitState, aim: { x: number; z: number },
         const ox = o.x - u.x;
         const oz = o.z - u.z;
         if (ox * fx + oz * fz <= 0 || Math.abs(ox * -fz + oz * fx) >= R) continue;
-        if (!opposite(s, u, aim, o)) continue;
+        if (!opposite(s, u, aim, o, goal)) continue;
         if (s.units.some((e) => e.side !== u.side && isActive(e) && dist(e, o) < RULES.spacing * 2)) continue;
         if (!best || dist(o, u) < dist(best, u)) best = o;
     }
