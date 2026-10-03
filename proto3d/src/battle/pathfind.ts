@@ -450,6 +450,54 @@ export function pathExists(nav: NavGrid, fx: number, fz: number, tx: number, tz:
     return lab[cellOf(nav, a.x, a.z)] === lab[cellOf(nav, b.x, b.z)];
 }
 
+/** その点のつながりの番号（通れない所に立つ点は、いちばん近い通れる升の番号）。同じ番号の点どうしは道がある（pathExists と同じ） */
+export function regionAt(nav: NavGrid, x: number, z: number): number {
+    const p = nearestPassable(nav, x, z);
+    return regionsOf(nav)[cellOf(nav, p.x, p.z)]!;
+}
+
+/**
+ * 味方の隊を避けた道（第4群の設計 §1：味方だけに塞がれたときの短い迂回。sim.ts の tryAllyDetour）。avoid の円の中に中心がある升を
+ * 通れないものとして findPath で道を探す（出発点・行き先の升は塞がない）。格子はすぐ元に戻す。道が無ければ null
+ */
+export function findPathAvoiding(
+    nav: NavGrid,
+    kind: UnitKind,
+    fx: number,
+    fz: number,
+    tx: number,
+    tz: number,
+    avoid: readonly { x: number; z: number; r: number }[],
+): { x: number; z: number }[] | null {
+    // 速さの表は塞ぐ前に作っておく（塞いだ升の速さを 0 のまま覚えないように。buildNav が 4 種類とも作るので、ふつうは作り済み）
+    nav.speedOf(kind);
+    const keepA = cellOf(nav, fx, fz);
+    const g = nearestPassable(nav, tx, tz);
+    const keepB = cellOf(nav, g.x, g.z);
+    const changed: number[] = [];
+    for (const c of avoid) {
+        const c0 = Math.max(0, Math.floor((c.x - c.r - nav.x0) / nav.cell));
+        const c1 = Math.min(nav.cols - 1, Math.floor((c.x + c.r - nav.x0) / nav.cell));
+        const r0 = Math.max(0, Math.floor((c.z - c.r - nav.z0) / nav.cell));
+        const r1 = Math.min(nav.rows - 1, Math.floor((c.z + c.r - nav.z0) / nav.cell));
+        for (let r = r0; r <= r1; r++) {
+            for (let k = c0; k <= c1; k++) {
+                const i = r * nav.cols + k;
+                if (nav.blocked[i] || i === keepA || i === keepB) continue;
+                const p = centerOf(nav, i);
+                if (Math.hypot(p.x - c.x, p.z - c.z) >= c.r) continue;
+                nav.blocked[i] = 1;
+                changed.push(i);
+            }
+        }
+    }
+    try {
+        return findPath(nav, kind, fx, fz, tx, tz);
+    } finally {
+        for (const i of changed) nav.blocked[i] = 0;
+    }
+}
+
 /** start から goal まで道があるか（戦場データの検査用） */
 export function reachable(nav: NavGrid, kind: UnitKind, fx: number, fz: number, tx: number, tz: number): boolean {
     if (!isPassable(nav, tx, tz)) return false;

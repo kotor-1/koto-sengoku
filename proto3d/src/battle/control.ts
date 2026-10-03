@@ -8,7 +8,7 @@
  * - 見下ろしカメラの範囲。
  */
 import type { AbilityId, BattleEndReason, BattleMap, BattleOutcome, BattleResultKind, GateDef, ObjectiveDef, Order, Side, UnitKind, Zone } from './types';
-import { STATUS_LABEL, attackDir, canCommand, engagementLabel, hqOf, isActive, issueOrder, meleeUnreachable, orderLabel, pledgeProgress, timeLeft, unitById, type BattleEvent, type BattleState, type UnitState } from './sim';
+import { STATUS_LABEL, attackDir, awaitingGate, canCommand, engagementLabel, hqOf, isActive, issueOrder, meleeUnreachable, moveBlockReason, orderLabel, pledgeProgress, timeLeft, unitById, type BattleEvent, type BattleState, type UnitState } from './sim';
 import { ABILITY_DATA, ABILITY_FICTION_NOTE, abilityInfo, abilityMarks, abilityShortText, isRooted, type AbilityInfo } from './abilities';
 import { objectiveProgress, type ObjectiveRole, type ObjectiveRun, type ObjectiveState } from './objectives';
 import { zoneCenter } from './fieldRules';
@@ -229,6 +229,11 @@ export function refusalText(s: BattleState, unitId: string, order: Order): strin
         if (t.side === u.side) return '味方は攻撃できません';
         if (meleeUnreachable(s, u, t)) return `${t.name}へは道が無く、斬りかかれません（石垣・櫓台・閉じた門の向こう）。弓なら届けば射られます`;
     }
+    // 物理的に道が無い行き先（第4群。閉じた門の向こうは「開門待ち」で受けるので、ここへは来ない）
+    if (order.type === 'move') {
+        const why = moveBlockReason(s, u.id, order.x, order.z);
+        if (why) return why;
+    }
     return '命令を出せませんでした';
 }
 
@@ -257,6 +262,11 @@ export function orderAck(s: BattleState, unitId: string, order: Order): string {
         case 'move':
             // 向きの指定（今いる所への移動に向きを付けたもの）
             if (order.face !== undefined && u && Math.hypot(order.x - u.x, order.z - u.z) < 2) return `${name}：${compassName(order.face)}へ向き直る`;
+            // 閉じた門の向こうへの移動（第4群）：門の前で開くのを待ち、開いたら道を引き直して行き先へ
+            {
+                const g = u ? awaitingGate(s, u) : null;
+                if (g) return `${name}：移動（開門待ち：${g.def.name}が閉じている。門の前で待ち、開いたら行き先へ）`;
+            }
             return `${name}：移動`;
         case 'attack':
             return `${name}：${unitById(s, order.targetId)?.name ?? '敵'}へ攻撃`;
@@ -788,6 +798,31 @@ export const LABEL_HIT_PX = { mouse: 36, touch: 48 };
 export const TAP_GUARD_SEC = 0.5;
 
 /**
+ * 移動先指定の素早い 2 回（第4群の設計 §2）：移動先指定（pending 'move'）で行き先を押して移動の命令を出した後、この秒数のあいだの次の押しは、
+ * 選び直し・能力の発動（点滅する名札・部隊の体の確かめ）にしない。1 回目の点の近く（当たりの半分の半径）なら何もしない（同じ点の移動の重ね）、
+ * 離れていれば、移動先指定のまま、その点への移動にする。続けて押す間は延ばす。時間は実時間
+ */
+export const MOVE_ECHO_SEC = 0.6;
+
+/** 移動先指定で行き先を押した直後の印（画面の点・選んでいた部隊・この時刻まで・同じ点とみなす半径 px） */
+export interface MoveEcho {
+    x: number;
+    y: number;
+    unitId: string;
+    until: number;
+    r: number;
+}
+
+/**
+ * 移動先指定の直後の押しの扱い：'same'＝1 回目の近く（何もしない）、'move'＝離れた所（その点への移動）、null＝ふつうの押し
+ * （印が無い・時間切れ・選んでいる部隊が変わった）
+ */
+export function moveEchoDecision(e: MoveEcho | null, x: number, y: number, now: number, selectedId: string | null): 'same' | 'move' | null {
+    if (!e || now >= e.until || selectedId !== e.unitId) return null;
+    return Math.hypot(x - e.x, y - e.y) <= e.r ? 'same' : 'move';
+}
+
+/**
  * 点滅している武将の名札の名前・部隊の体を押したとき（印の外）：その部隊を選び、短い確かめ（名札に「もう一度で◆号令」）を出す。
  * windowSec のあいだに同じ武将（名札・体）をもう一度押すと使う（対象の要る能力は対象選びへ）。minGapSec より早い 2 回目（指の震え・連打）は何もしない。
  * 時間は実時間（一時停止中も進む）。印（◆号令）を押せば、今までどおり 1 回で使う。
@@ -1294,6 +1329,8 @@ export interface ObjectiveZoneMark {
     zone: Zone;
     /** 短い名前（例：確保する地点。defend_zones は区域の名前） */
     name: string;
+    /** 区域の用途（地図の名札の頭に出す。第4群：突破を抑える目標の出口は「敵の突破口」。味方の退き口と分ける） */
+    use?: string;
 }
 
 export function objectiveZoneMarks(s: BattleState): ObjectiveZoneMark[] {
@@ -1307,7 +1344,7 @@ export function objectiveZoneMarks(s: BattleState): ObjectiveZoneMark[] {
             return;
         }
         if (d.type === 'limit_breakthrough') {
-            d.exits.forEach((zone, i) => out.push({ id: `${d.id}#${i}`, role: r.role, zone, name: prefix + (d.names?.[i] ?? ZONE_NAME.limit_breakthrough!) }));
+            d.exits.forEach((zone, i) => out.push({ id: `${d.id}#${i}`, role: r.role, zone, name: prefix + (d.names?.[i] ?? ZONE_NAME.limit_breakthrough!), use: '敵の突破口' }));
             return;
         }
         if (d.type === 'escape' || d.type === 'withdraw') {
@@ -1543,7 +1580,9 @@ export function mapLabels(s: BattleState): MapLabel[] {
         const north = m.zone.circle ? c.z - m.zone.circle.r : m.zone.rect ? m.zone.rect.z0 : c.z;
         // 南の縁が戦場の外（南の端の陣など）なら、北の縁の内側に
         const z = south + 4 <= s.map.depth / 2 - 6 ? south + 4 : north + 12;
-        out.push({ id: `obj-${m.id}`, text: `${m.role === 'primary' ? '主目標' : '副目標'}：${m.name}`, x: c.x, z, y: 0.5 });
+        // 用途のある区域（敵の突破口）は用途を頭に出す（味方の退き口と見分ける。第4群）
+        const role = m.role === 'primary' ? '主目標' : '副目標';
+        out.push({ id: `obj-${m.id}`, text: m.use ? `${m.use}：${m.name}（${role}）` : `${role}：${m.name}`, x: c.x, z, y: 0.5 });
     }
     // 援軍の出る所（部隊の名札と重ならないよう西へずらす）。
     // 同じ所（5 m 以内）から何度も出る援軍は 1 つの名札に時刻を並べる（城下町外縁の大通り：「開始 0:10・1:30」）。

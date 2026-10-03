@@ -262,9 +262,15 @@ body.mode-battle #build { display: none !important; }
 .b-goal-rules { margin-top: 2px; padding-top: 4px; border-top: 1px solid var(--hairline); font-size: 10.5px; line-height: 1.4; color: var(--ink-soft); }
 .b-goal-rules div::before { content: "・"; }
 
-/* 選んだ部隊の特殊能力（ゲーム用の創作） */
+/* 選んだ部隊の特殊能力（ゲーム用の創作）。説明の欄の押し・なぞりは欄の中で使い切る（第4群の設計 §2：下の地図への移動・攻撃にしない。
+   はみ出したら欄の中を縦に送る）。操作の要らない知らせ（.b-toast・.b-abnote・案内の帯の文）は今までどおり押しを地図へ通す */
 .b-abil {
-    pointer-events: none;
+    pointer-events: auto;
+    cursor: default;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    max-height: calc(100vh - 230px);
     background: var(--panel);
     border: 1px solid var(--hairline);
     border-left: 3px solid #ffd76a;
@@ -370,6 +376,12 @@ body.mode-battle #build { display: none !important; }
 .b-abnote[data-kind="end"] b { font-size: 12.5px; font-weight: 500; color: #e8dfc6; }
 .b-abnote[hidden] { display: none; }
 .b-abnote.fade { opacity: 0; }
+/* 上の知らせが選んでいる名札・点滅している名札を覆うとき（battleUi.ts の tuckNotices。第4群）：
+   1 段目は新しい知らせ 1 つだけを 1 行に（発動の知らせは見出しだけ）、2 段目は隠す */
+.b-topmid[data-fold="1"] .b-toast:nth-child(n + 2) { display: none; }
+.b-topmid[data-fold="1"] .b-toast { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-top: 2px; padding-bottom: 2px; }
+.b-topmid[data-fold="1"] .b-abnote span { display: none; }
+.b-topmid[data-fold="2"] .b-toasts, .b-topmid[data-fold="2"] .b-abnote { visibility: hidden; }
 .b-ab-r.b-ab-left { color: #c4f8ef; }
 
 /* ---- 右上：一時停止・速さ・全軍撤退 ---- */
@@ -673,7 +685,7 @@ body.mode-battle #build { display: none !important; }
     .b-cmds.with-ability { grid-template-columns: repeat(3, auto); }
     .b-cmds.with-ability .b-cmd { min-width: 58px; padding: 7px 6px; }
     .b-pledge { margin: 0 6px 5px; padding: 3px 7px; font-size: 10.5px; line-height: 1.35; }
-    .b-abil { padding: 4px 8px 5px; font-size: 11px; line-height: 1.35; }
+    .b-abil { padding: 4px 8px 5px; font-size: 11px; line-height: 1.35; max-height: calc(100vh - 190px); }
     .b-ab-st { font-size: 10px; }
     .b-ab-why, .b-ab-r { font-size: 10.5px; }
     .b-ab-r i { font-size: 9.5px; margin-right: 4px; }

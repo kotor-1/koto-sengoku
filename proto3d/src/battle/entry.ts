@@ -49,6 +49,9 @@ import {
     eventTone,
     fmtClock,
     guardTap,
+    moveEchoDecision,
+    MOVE_ECHO_SEC,
+    type MoveEcho,
     labelAbilityModel,
     labelHit,
     labelTapCandidates,
@@ -168,6 +171,8 @@ class BattleRun implements Mode {
     private readonly unitMarks: Map<string, string>;
     /** 能力を使った・名札を押した直後の守り（この点の近くのタップを少しの間なにもしない。実時間 performance.now() の秒で。realT は 1 フレーム 0.1 秒で頭打ちなので使わない） */
     private tapGuard: TapGuard | null = null;
+    /** 移動先指定で行き先を押した直後の印（素早い 2 回目を、選び直し・能力の発動にしない。control.ts の moveEchoDecision） */
+    private moveEcho: MoveEcho | null = null;
     /** 点滅している武将の名札の名前・部隊の体を押した後の確かめ（もう一度押すと使う。実時間の秒。control.ts の ABILITY_ARM） */
     private arm: AbilityArm | null = null;
     /** 対象選びに入った：次のフレームで、持ち主と選べる対象が画面の部品に隠れていれば、見える所へ地図を動かす */
@@ -374,6 +379,8 @@ class BattleRun implements Mode {
         // 特殊能力のある合戦：部隊の名札の重なりをほどき、密集したら優先の低い名札を小さく・一時的に隠す（点滅する印が別の名札に隠れないように。
         // 優先は 選んだ > 点滅 > 重要な武将 > 画面の中央に近い。labelLayout.ts）。架空の第一章は Version 12 のまま
         this.ui.declutterLabels(hasAbilities);
+        // 上の知らせが選んでいる名札・点滅している名札を覆うなら畳む（第4群）
+        this.ui.tuckNotices();
     }
 
     // ---------------------------------------------------------------- 命令
@@ -898,6 +905,14 @@ class BattleRun implements Mode {
         this.guardHere(x, y);
     }
 
+    /** 移動先指定で行き先を押した印を付ける（MOVE_ECHO_SEC のあいだ。半径は名札の当たりの半分） */
+    private setMoveEcho(x: number, y: number): void {
+        const id = this.selectedId;
+        if (!id) return;
+        const hitPx = this.ctx.touch ? LABEL_HIT_PX.touch : LABEL_HIT_PX.mouse;
+        this.moveEcho = { x, y, unitId: id, until: performance.now() / 1000 + MOVE_ECHO_SEC, r: hitPx / 2 };
+    }
+
     /** 同じ所のタップの守り（TAP_GUARD_SEC の間、この点の近くの連打の 2 回目は何もしない。control.ts の guardTap） */
     private guardHere(x: number, y: number): void {
         const hitPx = this.ctx.touch ? LABEL_HIT_PX.touch : LABEL_HIT_PX.mouse;
@@ -941,6 +956,26 @@ class BattleRun implements Mode {
         const gt = guardTap(this.tapGuard, x, y, performance.now() / 1000);
         this.tapGuard = gt.guard;
         if (gt.swallow) return;
+        // 移動先指定の素早い 2 回目（第4群）：選び直し・能力の発動（名札・体の確かめ）にしない。1 回目の近くなら何もしない（同じ点の移動の重ね）、
+        // 離れていれば、移動先指定のまま、その点への移動にする（control.ts の moveEchoDecision）
+        if (!command && this.moveEcho) {
+            const now = performance.now() / 1000;
+            const ed = moveEchoDecision(this.moveEcho, x, y, now, this.selectedId);
+            if (ed) {
+                this.arm = null;
+                if (ed === 'same') {
+                    this.moveEcho = { ...this.moveEcho, until: now + MOVE_ECHO_SEC };
+                    return;
+                }
+                const g = this.view.groundAt(x, y);
+                const sel = this.selected();
+                if (!g || !sel || !sel.commandable) return;
+                if (this.order(this.orderTargets(), { type: 'move', x: g.x, z: g.z })) this.setMoveEcho(x, y);
+                return;
+            }
+            this.moveEcho = null;
+        }
+        const wasMove = this.pending === 'move';
         // 確かめ（もう一度押すと使う）は、同じ武将をもう一度押したときだけ続く。ほかのタップで消える
         const arm = this.arm;
         this.arm = null;
@@ -1039,7 +1074,9 @@ class BattleRun implements Mode {
                     }
                 }
                 // act.unitId は先頭の部隊。命令は選んでいる並びの部隊へ出す（今は同じ 1 部隊）
-                this.order(this.selection.includes(act.unitId) ? this.orderTargets() : [act.unitId], o, note);
+                const ok = this.order(this.selection.includes(act.unitId) ? this.orderTargets() : [act.unitId], o, note);
+                // 移動先指定で出した移動：素早い 2 回目を選び直し・能力の発動にしない（moveEcho）
+                if (ok && wasMove && o.type === 'move') this.setMoveEcho(x, y);
                 break;
             }
             case 'face': {
@@ -1263,6 +1300,12 @@ function exposeDev(run: BattleRun): void {
                 return { id: u.id, fit: run.ui.labelFit(u.id), shown: !!e && !e.hidden, sel: !!e?.classList.contains('sel'), ab: e?.dataset.ab ?? '', imp: !!(u.generalId || u.leaderId) || u.isHq };
             });
         },
+        /** 上の知らせに 1 つ出す（確認用。知らせの畳み＝tuckNotices の確かめに使う。報告では「直接操作」と書く） */
+        toast(text: string, tone: 'good' | 'bad' | 'warn' | 'info' = 'info') {
+            run.ui.toast(text, tone);
+        },
+        /** 上の知らせの畳み方（0 そのまま・1 新しい 1 つだけ・2 隠す。battleUi.ts の tuckNotices。読むだけ） */
+        noticeFold: () => Number((document.querySelector('.b-topmid') as HTMLElement | null)?.dataset.fold ?? 0),
         /** 兵士の表示の数え上げ（直前のフレーム）：見えている兵士の数・部隊ごとの人数・描画の呼び出しの数・InstancedMesh ごとの数 */
         troopStats: () => run.view.troopStats(),
         info() {

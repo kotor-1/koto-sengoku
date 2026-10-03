@@ -80,7 +80,7 @@ import {
     type FieldEnv,
     type GateRun,
 } from './fieldRules';
-import { findPath, isPassable, nearestPassable, pathExists } from './pathfind';
+import { findPath, findPathAvoiding, isPassable, nearestPassable, pathExists, regionAt } from './pathfind';
 import { activeObjectiveZones, createObjectiveTrack, finalObjectives, isLeaveObjective, refreshObjective, trackObjectives, withdrawalKind, type ObjectiveTrack } from './objectives';
 import { nightSeen } from './night';
 import {
@@ -222,18 +222,19 @@ export const RULES = {
     squeezeNear: 8,
     squeezeClear: 6,
     /**
-     * 第3群の直し（FieldRules.refinedMoves）だけ：橋の無い所で、止まっている（斬り合っていない）味方に塞がれて、この秒数のあいだ行き先までの
-     * 残りの道のりを 1 m も縮められない部隊は、味方の中をすり抜ける（門の口・家並みの間の道を味方が埋めて、移動・攻撃の命令の部隊が動けないまま
-     * 止まらないように。橋の 3 秒より長く待つ：味方がどくのを待つ間は今までどおり）
+     * 味方同士の詰まり（第4群の設計 §1。第3群の直し FieldRules.refinedMoves の戦場の、橋の口の外。sim.ts の trackSqueeze・allyOnlyBlock）：
+     * 移動・攻撃の命令の部隊が行き先までの残りの道のりを 1 m も縮められず、その原因が「止まっている（斬り合っていない）味方だけ」のとき
+     * （壁・閉じた門・深い川・崖・敵部隊・斬り合いの順番を待つ味方では使わない）、
+     * 1. この秒数の半分で、短い通れる迂回（塞いでいる味方の隊のまわりを避けた道。長さが今の道の allyDetourRatio 倍以内）を探し、あれば先に使う。
+     * 2. 味方だけに塞がれた状態がこの秒数続いたら、その味方の中をすり抜ける（通過の調整。塞いでいる味方＝防衛・待機を命じた味方も動かさない。
+     *    すり抜けは斬り合いの数に入らず、狭い正面の同時に斬りかかれる数・順番待ちは変えない）。
+     * 調整できる初期値（2 秒）。前の決まり（待機の味方に 12 秒塞がれてからすり抜ける squeezeHoldSec・止まっている味方に 20 秒塞がれてから
+     * すり抜ける squeezeStallSec）は、これに置き換えた。物理的に道が無い行き先（味方が退いても通れない）への移動は、すり抜けさせず、
+     * 命令の時に理由を出して受けない（moveBlockReason）。閉じた門の向こうは「開門待ち」（Order の awaitGate）
      */
-    squeezeStallSec: 20,
-    /**
-     * 同じ（第3群の直しの戦場だけ）：行き先から遠い所で、待機（hold）か能力でその場を動けない（rooted）味方に塞がれて、移動の命令の部隊が
-     * この秒数のあいだ行き先へ 1 m も近づけないときは、行き詰まりの待機にせず、その味方の中をすり抜ける（sim.ts の stuckNearGoal）。
-     * 遠くで行き詰まって待機にする時（settleSec × 2 秒）と同じにして、待機にしていた場面だけを変える（6・8 秒で試すと、少し待てば
-     * 味方がどいて進めた場面まで変わり、寺社周辺・城攻め前面の作戦の比べが動いた）
-     */
-    squeezeHoldSec: 12,
+    allyBlockSec: 2,
+    /** 味方同士の詰まりの、短い迂回とみなす道の長さの上限（今の道の残りの長さに対する倍率。allyBlockSec の 1.） */
+    allyDetourRatio: 1.5,
 } as const;
 
 /** 種類ごとの性質 */
@@ -376,7 +377,7 @@ export interface UnitState {
      * 橋の詰まり（RULES.squeezeSec）：進みを数え始めた位置・時刻・最後に見た時刻。on なら味方の中をすり抜けている
      * （味方をよけず、味方と押し離さない）。動こうとしていない刻みには null
      */
-    squeeze: { x: number; z: number; t: number; seen: number; on: boolean; best?: number; bt?: number } | null;
+    squeeze: { x: number; z: number; t: number; seen: number; on: boolean; best?: number; bt?: number; detoured?: boolean } | null;
     /**
      * 号令の守り（兵の下限つきの能力）に守られている間の、号令が無かったときの士気の見積もり（守られ始めた時の士気・使った時の +40 の前
      * から、号令の軽減・士気の床なしに下げる）。守りが外れた（兵が下限を切った）とき、士気をここまで下げてから普通の決まりで見る。
@@ -384,7 +385,7 @@ export interface UnitState {
      */
     rallyShadow: number | null;
     /** 道探しでたどっている道（通れない所がある戦場だけ。goal は作ったときの行き先、pts は通る点、idx は次に向かう点） */
-    path: { goalX: number; goalZ: number; builtT: number; pts: { x: number; z: number }[]; idx: number; none?: boolean } | null;
+    path: { goalX: number; goalZ: number; builtT: number; pts: { x: number; z: number }[]; idx: number; none?: boolean; detour?: boolean } | null;
     /** 移動の進み（新しい動きの決まりの戦場だけ）：行き先・それまでに近づいた一番近い距離・その距離を 1 m 縮めた時刻・最後に見た時刻 */
     moveProg: { gx: number; gz: number; best: number; bestLeft: number; t: number; seen: number } | null;
     /** 戦場にいて相手から隠れていたことがあり、まだ見つかっていない（林の奇襲の判定） */
@@ -647,8 +648,11 @@ export function orderLabel(s: BattleState, u: UnitState): string {
         case 'hold':
             // 命令を受けていない待機（武将の基本方針で持ち場の近くを自分から動くことがある）は、命じた「防衛・待機」（動かない）と分けて出す
             return rootedLabel(s, u.id) ?? (u.initiative?.free ? FREE_HOLD_LABEL : '防衛・待機');
-        case 'move':
-            return `移動${own}`;
+        case 'move': {
+            // 閉じた門の向こうへの移動（第4群）：門の前で開くのを待つ
+            const g = awaitingGate(s, u);
+            return g ? `移動（開門待ち：${g.def.name}）${own}` : `移動${own}`;
+        }
         case 'attack':
             return `攻撃：${unitById(s, u.order.targetId)?.name ?? '？'}${own}`;
         case 'retreat':
@@ -808,6 +812,11 @@ function applyOrder(s: BattleState, u: UnitState, order: Order): boolean {
                 o.z = p.z;
             }
             if (order.face !== undefined && Number.isFinite(order.face)) o.face = norm(order.face);
+            // 第4群（第3群の直しの戦場の味方だけ）：行き先へ通じる道が無いとき、閉じた門を開けば通じるなら「開門待ち」を命令に持たせる
+            // （門の前で待ち、開いたら道を引き直して続ける）。門でも通じない（物理的に道が無い）なら受けない（理由は control.ts の refusalText）
+            const reach = moveReach(s, u, o.x, o.z);
+            if (reach === 'none') return false;
+            if (reach !== 'ok') o.awaitGate = reach.def.id;
             u.order = o;
             break;
         }
@@ -837,6 +846,85 @@ export function meleeUnreachable(s: BattleState, u: UnitState, t: UnitState): bo
     if (!s.field.refined || !nav || u.kind === 'yumi') return false;
     if (dist(u, t) <= RULES.meleeRange + 10 && hasLineOfSight(s, u, t)) return false;
     return !pathExists(nav, u.x, u.z, t.x, t.z);
+}
+
+/**
+ * 移動の行き先へ道があるか（第4群。第3群の直し FieldRules.refinedMoves の戦場の味方だけ。ほかはいつも 'ok'）：
+ * 'ok'＝道がある、門（GateRun）＝閉じたその門を開けば通じる（開門待ち）、'none'＝門を開いても通じない（物理的に道が無い）。
+ * x・z は通れる所へ寄せた後の行き先（applyOrder と同じ）
+ */
+function moveReach(s: BattleState, u: UnitState, x: number, z: number): 'ok' | 'none' | GateRun {
+    const nav = s.field.nav;
+    if (!s.field.refined || !nav || u.side !== 'ally' || pathExists(nav, u.x, u.z, x, z)) return 'ok';
+    const from = regionAt(nav, u.x, u.z);
+    const to = regionAt(nav, x, z);
+    for (const g of s.field.gates) {
+        if (g.open) continue;
+        const ids = gateSides(s, g).map((p) => p.region);
+        if (ids.includes(from) && ids.includes(to)) return g;
+    }
+    return 'none';
+}
+
+/**
+ * 閉じた門の両側（門の四角の 4 辺の真ん中から外へ GATE_WAIT_M m の点のうち、通れる点）と、そのつながりの番号。
+ * 門が開くと格子を作り直すので、格子ごとに覚える
+ */
+const GATE_WAIT_M = 8;
+const gateSideMemo = new WeakMap<object, Map<string, { x: number; z: number; region: number }[]>>();
+function gateSides(s: BattleState, g: GateRun): { x: number; z: number; region: number }[] {
+    const nav = s.field.nav!;
+    let m = gateSideMemo.get(nav);
+    if (!m) gateSideMemo.set(nav, (m = new Map()));
+    let out = m.get(g.def.id);
+    if (out) return out;
+    const r = g.def.rect;
+    const cx = (r.x0 + r.x1) / 2;
+    const cz = (r.z0 + r.z1) / 2;
+    const cand = [
+        { x: cx, z: r.z0 - GATE_WAIT_M },
+        { x: cx, z: r.z1 + GATE_WAIT_M },
+        { x: r.x0 - GATE_WAIT_M, z: cz },
+        { x: r.x1 + GATE_WAIT_M, z: cz },
+    ];
+    out = cand.filter((p) => isPassable(nav, p.x, p.z)).map((p) => ({ ...p, region: regionAt(nav, p.x, p.z) }));
+    m.set(g.def.id, out);
+    return out;
+}
+
+/** 開門待ちの移動の、閉じている門（開門待ちでない・門が開いた後は null） */
+export function awaitingGate(s: BattleState, u: UnitState): GateRun | null {
+    const o = u.order;
+    if (o.type !== 'move' || !o.awaitGate) return null;
+    const g = s.field.gates.find((x) => x.def.id === o.awaitGate);
+    return g && !g.open ? g : null;
+}
+
+/** 開門待ちの部隊が門の前で待つ点（門の、その部隊の側の外。無ければ部隊の今の位置） */
+function gateWaitPoint(s: BattleState, u: UnitState, g: GateRun): { x: number; z: number } {
+    const nav = s.field.nav;
+    if (!nav) return { x: u.x, z: u.z };
+    const mine = regionAt(nav, u.x, u.z);
+    const p = gateSides(s, g).find((q) => q.region === mine);
+    return p ? { x: p.x, z: p.z } : { x: u.x, z: u.z };
+}
+
+/**
+ * 移動の命令を受けない理由（物理的に道が無い行き先。第4群）。受けるなら null。control.ts の refusalText が出す。
+ * 閉じた門の向こうは受ける（開門待ち）ので null
+ */
+export function moveBlockReason(s: BattleState, unitId: string, x: number, z: number): string | null {
+    const u = unitById(s, unitId);
+    if (!u || !Number.isFinite(x) || !Number.isFinite(z)) return null;
+    let gx = clamp(x, -s.map.width / 2 + 2, s.map.width / 2 - 2);
+    let gz = clamp(z, -s.map.depth / 2 + 2, s.map.depth / 2 - 2);
+    if (s.field.nav) {
+        const p = nearestPassable(s.field.nav, gx, gz);
+        gx = p.x;
+        gz = p.z;
+    }
+    if (moveReach(s, u, gx, gz) !== 'none') return null;
+    return `${u.name}：その行き先へ通じる道が無い（石垣・家屋・柵・川・崖に囲まれている）。味方がどいても通れないので、通れる所を押してください`;
 }
 
 /** 全軍撤退（味方のすべての部隊を退き口へ。まだ着いていない部隊は来ない）。出せたら true */
@@ -1338,10 +1426,26 @@ function planFor(s: BattleState, u: UnitState): Plan {
 
     const order = u.order;
     if (order.type === 'move') {
-        const heading = headingTo(u.x, u.z, order.x, order.z);
-        const block = dist(u, order) > 1.5 ? inFront(heading) : holdMelee();
+        // 開門待ち（第4群）：門が閉じている間は、門のこちら側の前の点へ向かって待つ。開いたら開門待ちを外し、行き先へ（道は門が開いた時に
+        // trackGates が引き直す。ほかにも閉じた門があれば、その門の開門待ちにする）
+        let dest: { x: number; z: number } = order;
+        if (order.awaitGate) {
+            const g = awaitingGate(s, u);
+            if (g) dest = gateWaitPoint(s, u, g);
+            else {
+                const o: Order = { type: 'move', x: order.x, z: order.z };
+                if (order.face !== undefined) o.face = order.face;
+                const reach = moveReach(s, u, o.x, o.z);
+                if (reach !== 'ok' && reach !== 'none') o.awaitGate = reach.def.id;
+                u.order = o;
+                u.moveProg = null;
+                return planFor(s, u);
+            }
+        }
+        const heading = headingTo(u.x, u.z, dest.x, dest.z);
+        const block = dist(u, dest) > 1.5 ? inFront(heading) : holdMelee();
         if (block) return { melee: block, ranged: null, goal: null };
-        return { melee: null, ranged: null, goal: { x: order.x, z: order.z, stopAt: 0 } };
+        return { melee: null, ranged: null, goal: { x: dest.x, z: dest.z, stopAt: 0 } };
     }
     if (order.type === 'attack') {
         const tgt = unitById(s, order.targetId)!;
@@ -1509,7 +1613,8 @@ function moveUnit(s: BattleState, u: UnitState, p: Plan, dt: number): void {
         // 行き先が止まっている味方のすぐ隣で、もうその味方に触れる所まで来た：ここで着いたことにする（押しのけない）
         if (room > 0.05 && u.status === 'ready' && u.order.type === 'move' && friendHoldsGoal(s, u, p.goal)) room = 0;
         // 新しい動きの決まりの戦場：行き先の近くで進めなくなった移動は、着いたことにする
-        if (room > 0.05 && s.field.settleMoves && u.status === 'ready' && u.order.type === 'move' && stuckNearGoal(s, u, p.goal, d, pathLeft(u, p.goal, d))) room = 0;
+        // （開門待ちの間は着いたことにしない：門の前で待ち続ける）
+        if (room > 0.05 && s.field.settleMoves && u.status === 'ready' && u.order.type === 'move' && !u.order.awaitGate && stuckNearGoal(s, u, p.goal, d, pathLeft(u, p.goal, d))) room = 0;
         // 通れない所がある戦場では、道探しの道の次の点へ向かう（無い戦場では行き先へまっすぐ）
         const aim = s.field.nav && room > 0.05 ? pathAim(s, u, p.goal) : p.goal;
         const direct = headingTo(u.x, u.z, aim.x, aim.z);
@@ -1518,7 +1623,8 @@ function moveUnit(s: BattleState, u: UnitState, p: Plan, dt: number): void {
             const backStep = u.status === 'ready' && u.order.type === 'move' && room < 20 && Math.abs(angleDiff(u.facing, direct)) > 120 * DEG;
             // 橋の上・橋の口で味方に挟まれて進めない：味方の中をすり抜ける（戦える部隊だけ。撤退・敗走はもとから味方の間をすり抜ける）。
             // 第3群の直し（FieldRules.refinedMoves）の戦場では、橋の近くに限らず、止まっている味方の間・家並みの間の狭い道で進めないときも同じ
-            if (s.field.nav && (hasBridge(s.map) || s.field.refined) && u.status === 'ready' && u.order.type !== 'retreat') trackSqueeze(s, u, pathLeft(u, p.goal, d));
+            // 第4群：味方同士の詰まり（RULES.allyBlockSec。短い迂回を先に使い、味方だけに塞がれた状態が続けばすり抜ける）
+            if (s.field.nav && (hasBridge(s.map) || s.field.refined) && u.status === 'ready' && u.order.type !== 'retreat') trackSqueeze(s, u, pathLeft(u, p.goal, d), aim, p.goal);
             else u.squeeze = null;
             // 止まっている味方の部隊が行く手にあれば、横へよけて通る（戦える部隊だけ。撤退・敗走は味方の間をすり抜ける）
             const want = backStep || u.status !== 'ready' || u.order.type === 'retreat' ? direct : steerAround(s, u, aim, u.order.type === 'attack', p.goal);
@@ -1560,8 +1666,8 @@ function moveUnit(s: BattleState, u: UnitState, p: Plan, dt: number): void {
             u.moving = Math.hypot(nx - u.x, nz - u.z) > 1e-4;
             u.x = nx;
             u.z = nz;
-        } else if (u.status === 'ready' && u.order.type === 'move') {
-            // 着いた：待機に変える（向き直りの指定があれば、そちらへ向き直る）
+        } else if (u.status === 'ready' && u.order.type === 'move' && !u.order.awaitGate) {
+            // 着いた：待機に変える（向き直りの指定があれば、そちらへ向き直る）。開門待ちの移動は門の前で待ち続ける（命令のまま）
             u.faceGoal = u.order.face ?? null;
             u.order = { type: 'hold' };
             u.moveProg = null;
@@ -1585,13 +1691,16 @@ function moveUnit(s: BattleState, u: UnitState, p: Plan, dt: number): void {
 }
 
 /**
- * 橋の詰まり（RULES.squeezeSec）を数える。動こうとしている刻みに毎回呼ぶ（橋のある戦場の、戦える部隊だけ）。
- * - 進みを数え始めた位置から squeezeMove m 動いたら、今の位置・時刻から数え直す。
- * - squeezeSec 秒のあいだ進めず、spacing + 2 m 以内に味方がいて、橋の区域から squeezeNear m 以内にいれば、すり抜けを始める。
+ * 橋の詰まり（RULES.squeezeSec）と味方同士の詰まり（RULES.allyBlockSec）を数える。動こうとしている刻みに毎回呼ぶ（橋のある戦場・第3群の直しの
+ * 戦場の、戦える部隊だけ）。aim は道探しの次の点、goal は行き先。
+ * - 橋の上・橋の口：進みを数え始めた位置から squeezeMove m 動いたら、今の位置・時刻から数え直す。squeezeSec 秒のあいだ進めず、
+ *   spacing + 2 m 以内に味方がいれば、すり抜けを始める（今までどおり）。
+ * - 第3群の直しの戦場の、それ以外の所：行き先までの残りの道のり left を 1 m も縮められない時間を数え、塞いでいるのが味方だけ（allyOnlyBlock）なら、
+ *   allyBlockSec の半分で短い迂回（tryAllyDetour）を 1 回探して、あれば使う。味方だけに塞がれた状態が allyBlockSec 秒続いたら、すり抜けを始める。
  * - すり抜けは、始めた所から squeezeClear m 進み、spacing m 以内に味方がいなくなったら終わる。
  * 続けて呼ばれなかった（止まった・斬り合った）ときは数え直す。広い所や、味方がいない所（敵に塞がれている）では始めない
  */
-function trackSqueeze(s: BattleState, u: UnitState, left: number): void {
+function trackSqueeze(s: BattleState, u: UnitState, left: number, aim: { x: number; z: number }, goal: { x: number; z: number }): void {
     const q = u.squeeze;
     if (!q || s.t - q.seen > RULES.tick * 1.5) {
         u.squeeze = { x: u.x, z: u.z, t: s.t, seen: s.t, on: false, best: left, bt: s.t };
@@ -1602,6 +1711,7 @@ function trackSqueeze(s: BattleState, u: UnitState, left: number): void {
     if (q.best === undefined || left <= q.best - 1) {
         q.best = left;
         q.bt = s.t;
+        q.detoured = false;
     }
     const moved = Math.hypot(u.x - q.x, u.z - q.z);
     const friendNear = (r: number) => s.units.some((o) => o !== u && o.side === u.side && isActive(o) && o.order.type !== 'retreat' && dist(o, u) < r);
@@ -1613,23 +1723,136 @@ function trackSqueeze(s: BattleState, u: UnitState, left: number): void {
         q.x = u.x;
         q.z = u.z;
         q.t = s.t;
-        return;
+        if (hasBridge(s.map) && nearBridge(s.map, u)) return;
     }
     if (hasBridge(s.map) && nearBridge(s.map, u)) {
         if (s.t - q.t < RULES.squeezeSec - 1e-9 || !friendNear(RULES.spacing + 2)) return;
     } else {
-        // 第3群の直し（FieldRules.refinedMoves）：橋の無い所では、止まっていて斬り合っていない味方に塞がれて（門の口・家並みの間の道を
-        // 味方が埋めている）squeezeStallSec 秒進めず、近く（spacing × 2 m）に戦える敵がいないときだけすり抜ける
-        // （斬り合っている味方の後ろで順を待つ列・敵に塞がれた所では始めない）
-        if (!s.field.refined || s.t - (q.bt ?? s.t) < RULES.squeezeStallSec - 1e-9) return;
-        const idleFriend = s.units.some((o) => o !== u && o.side === u.side && isActive(o) && o.order.type !== 'retreat' && !o.moving && !o.engagedWith && dist(o, u) < RULES.spacing + 2);
-        const foeNear = s.units.some((o) => o.side !== u.side && isActive(o) && dist(o, u) < RULES.spacing * 2);
-        if (!idleFriend || foeNear) return;
+        // 第4群（第3群の直しの戦場だけ）：味方同士の詰まり。塞いでいるのが止まっている味方だけのとき、短い迂回を先に探し、
+        // それでも allyBlockSec 秒進めなければ、その味方の中をすり抜ける（壁・閉じた門・川・崖・敵部隊・順番待ちの味方では始めない）
+        if (!s.field.refined) return;
+        // 塞がれている時間：行き先までの残りの道のりを 1 m も縮められず、かつ squeezeMove m も動いていない時間（味方の横をよけて回っている間・
+        // 押し合って行き来している間は数えない）。半分で、塞いでいるのが味方だけなら短い迂回を 1 回探し（進みを縮めるまで 1 回だけ）、
+        // allyBlockSec 秒になってもまだ味方だけに塞がれていれば、すり抜ける
+        const stall = s.t - Math.max(q.bt ?? s.t, q.t);
+        if (stall < RULES.allyBlockSec * 0.5 - 1e-9) return;
+        if (!allyOnlyBlock(s, u, aim, goal)) return;
+        if (!q.detoured) {
+            q.detoured = true;
+            if (tryAllyDetour(s, u, goal, left)) {
+                q.best = pathLeft(u, goal, dist(u, goal));
+                q.bt = s.t;
+                return;
+            }
+        }
+        if (stall < RULES.allyBlockSec - 1e-9) return;
     }
     q.on = true;
     q.x = u.x;
     q.z = u.z;
     q.t = s.t;
+}
+
+/**
+ * 行き先へ進めない原因が「止まっている味方だけ」か（第4群の設計 §1）。塞いでいる味方（行く手＝次の点へ向かう筋の上の、spacing + 2 m 以内にいて、
+ * 動いていない・斬り合っていない・撤退していない味方）を返す。次のどれかなら null（味方のすり抜けは使わない）：
+ * - 道探しの道が無い（閉じた門の向こう・囲まれた所）・開門待ち・次の点までまっすぐ通れない（壁・川・崖が間にある）。
+ * - 近く（spacing × 2 m）に戦える敵がいる（敵部隊に塞がれている）。塞いでいる味方の近くに敵がいる（前の味方が敵に止められている列）。
+ * - 行く手の筋の上（avoidLook m まで）に斬り合っている味方がいる・攻撃の相手が味方と斬り合っている（斬り合いの順番待ち。狭い正面の順番を変えない）。
+ * - 塞いでいる味方が、攻撃の相手の間合いの近くで斬り合いの順番を待っている。
+ * 移動の行き先のすぐ近く（spacing × 2 m 以内）の味方は数えない（同じ所へ二隊を重ねて置くときは、その後ろで待つ）
+ */
+function allyOnlyBlock(s: BattleState, u: UnitState, aim: { x: number; z: number }, goal: { x: number; z: number }): UnitState | null {
+    const nav = s.field.nav;
+    if (!nav || u.path?.none || awaitingGate(s, u)) return null;
+    const foeNear = (p: { x: number; z: number }) => s.units.some((o) => o.side !== u.side && isActive(o) && dist(o, p) < RULES.spacing * 2);
+    if (foeNear(u)) return null;
+    if (!lineClear(nav, u, aim)) return null;
+    // 攻撃の相手が、もう味方と斬り合っている（その後ろで順番を待つ）
+    if (u.order.type === 'attack') {
+        const t = unitById(s, u.order.targetId);
+        if (t && s.units.some((o) => o.side === u.side && o !== u && isActive(o) && (o.engagedWith === t.id || t.engagedWith === o.id))) return null;
+    }
+    const L = Math.hypot(aim.x - u.x, aim.z - u.z);
+    if (L < 1e-6) return null;
+    const fx = (aim.x - u.x) / L;
+    const fz = (aim.z - u.z) / L;
+    const R = RULES.spacing + 2;
+    let block: UnitState | null = null;
+    for (const o of s.units) {
+        if (o === u || o.side !== u.side || !isActive(o) || o.order.type === 'retreat') continue;
+        const ox = o.x - u.x;
+        const oz = o.z - u.z;
+        const along = ox * fx + oz * fz;
+        const perp = Math.abs(ox * -fz + oz * fx);
+        // 行く手の筋の上（次の点の向きの前、横に R m 以内）
+        if (along <= 0 || perp >= R) continue;
+        // 筋の上で斬り合っている味方：その先は戦いの順番待ち
+        if (o.engagedWith && along <= RULES.avoidLook) return null;
+        // 動いている味方は、どくのを待つ（ただし自分も行き先へ進めずに押し合っている味方＝jammed は、止まっている味方と同じ）
+        if ((o.moving && !jammed(s, o)) || o.engagedWith || dist(o, u) >= R) continue;
+        // 移動の行き先のすぐ近くの味方（同じ所へ二隊を重ねて置く）は数えない：その後ろで着いたことにして待つ（stuckNearGoal）。
+        // ただし中で戦うと不利な地形（泥・水田・浅瀬）の中では着いたことにしないので、数える（足場の上の味方の中をすり抜けて足場へ上がる）
+        if (u.order.type === 'move' && dist(o, goal) <= RULES.spacing * 2 && !inBadFooting(s, u)) continue;
+        if (foeNear(o)) return null;
+        if (o.order.type === 'attack') {
+            const t = unitById(s, o.order.targetId);
+            if (t && isActive(t) && dist(o, t) <= RULES.meleeRange + RULES.spacing) return null;
+        }
+        if (!block || dist(o, u) < dist(block, u)) block = o;
+    }
+    return block;
+}
+
+/**
+ * 動こうとしているのに、行き先までの残りの道のりを縮められず、squeezeMove m も動けないまま allyBlockSec の半分を過ぎた（味方どうしで押し合って
+ * 進めない。動きの印 moving は小さく押されるだけで立つので、それでは見分けない）
+ */
+function jammed(s: BattleState, o: UnitState): boolean {
+    const q = o.squeeze;
+    if (!q || q.on || s.t - q.seen > RULES.tick * 1.5) return false;
+    return s.t - Math.max(q.bt ?? s.t, q.t) >= RULES.allyBlockSec * 0.5 - 1e-9;
+}
+
+/** 第3群の直しの戦場で、中で戦うと不利な地形（泥・水田・浅瀬。受ける損害が増える所）にいる（stuckNearGoal が着いたことにしない所） */
+function inBadFooting(s: BattleState, u: UnitState): boolean {
+    return s.field.refined && takeMulIn(s.map, s.field, u.x, u.z) > 1 + 1e-9;
+}
+
+/**
+ * 味方だけに塞がれたときの短い迂回（第4群の設計 §1）：止まっている味方の隊（u から avoidLook m 以内。移動の行き先のすぐ近くの味方は除く）の
+ * まわり spacing m を避けた道を探し、長さが今の道の残り left の allyDetourRatio 倍以内なら、その道にする（true）。無ければ false
+ */
+function tryAllyDetour(s: BattleState, u: UnitState, goal: { x: number; z: number }, left: number): boolean {
+    const nav = s.field.nav;
+    if (!nav) return false;
+    const avoid: { x: number; z: number; r: number }[] = [];
+    for (const o of s.units) {
+        const still = isFriendObstacle(u, o) || (o !== u && o.side === u.side && isActive(o) && o.order.type !== 'retreat' && jammed(s, o));
+        if (!still || o.engagedWith || dist(o, u) > RULES.avoidLook) continue;
+        if (u.order.type === 'move' && dist(o, goal) <= RULES.spacing * 2) continue;
+        avoid.push({ x: o.x, z: o.z, r: RULES.spacing });
+    }
+    if (avoid.length === 0) return false;
+    const pts = findPathAvoiding(nav, u.kind, u.x, u.z, goal.x, goal.z, avoid);
+    if (!pts) return false;
+    let len = 0;
+    let px = u.x;
+    let pz = u.z;
+    for (const p of pts) {
+        len += Math.hypot(p.x - px, p.z - pz);
+        px = p.x;
+        pz = p.z;
+    }
+    if (len > left * RULES.allyDetourRatio + 1e-9) return false;
+    u.path = { goalX: goal.x, goalZ: goal.z, builtT: s.t, pts, idx: 0, detour: true };
+    u.avoid = null;
+    // 回り道で行き先から遠ざかる間も、移動の進みを数え直す（stuckNearGoal が回り道の途中で待機にしないように）
+    if (u.moveProg) {
+        u.moveProg.bestLeft = len;
+        u.moveProg.t = s.t;
+    }
+    return true;
 }
 
 /** 橋のある戦場か（地図ごとに 1 回だけ数える） */
@@ -1663,7 +1886,8 @@ function pathAim(s: BattleState, u: UnitState, goal: { x: number; z: number }): 
     const chasing = u.status === 'ready' && u.order.type === 'attack';
     let P = u.path;
     const moved = P ? Math.hypot(P.goalX - goal.x, P.goalZ - goal.z) : Infinity;
-    let stale = !P || (chasing ? moved >= RULES.repathMove || s.t - P.builtT >= RULES.repathSec - 1e-9 : moved > 0.5);
+    // 味方だけに塞がれて選んだ短い迂回（第4群。P.detour）は、攻撃の相手が repathMove m 動くまで作り直さない（1 秒ごとに元の道へ戻らないように）
+    let stale = !P || (chasing ? moved >= RULES.repathMove || (s.t - P.builtT >= RULES.repathSec - 1e-9 && !P.detour) : moved > 0.5);
     // 味方に押されるなどして道から外れ、次の点へまっすぐ行けなくなった（崖の角の陰に入った）：作り直す（RULES.repathSec 秒に 1 回まで）
     if (!stale && s.t - P!.builtT >= RULES.repathSec - 1e-9 && !lineClear(nav, u, P!.pts[P!.idx]!)) stale = true;
     if (stale) {
@@ -1781,21 +2005,7 @@ function stuckNearGoal(s: BattleState, u: UnitState, goal: { x: number; z: numbe
     const fighting = friends.some((o) => !!o.engagedWith);
     if (d <= RULES.settleNear) return still >= RULES.settleSec * (moving ? 3 : 1) - 1e-9;
     if (fighting || moving) return false;
-    // 第3群の直し（FieldRules.refinedMoves）：行き先から遠い所で、待機（防衛・待機の命令・着いた）か能力でその場を動けない味方に塞がれて
-    // 進めない（狭い通りの口・大通りをその味方が埋めている）：自分からはどかないので、行き詰まりの待機にせず、その味方の中をすり抜ける
-    // （村落：西の通りの口で待機する酒井隊の後ろで、西の辻へ向かう石川隊が止まって「道を塞がれて先へ進めない」の待機になり、辻へ
-    // 着かなかった。e2e/fields-group3.mjs の見張りで見つけた）。近くに戦える敵がいれば今までどおり（敵に塞がれた所では始めない）
-    if (s.field.refined && !u.squeeze?.on && still >= RULES.squeezeHoldSec - 1e-9) {
-        // 塞いでいる味方が行き先の近く（spacing × 2 m 以内）にいるとき（同じ所へ二隊を重ねて置く）は、今までどおりその後ろで待機にする
-        const stays = friends.some(
-            (o) => !o.moving && !o.engagedWith && o.order.type !== 'retreat' && dist(o, u) < RULES.spacing + 2 && dist(o, goal) > RULES.spacing * 2 && (o.order.type === 'hold' || isRooted(s, o.id)),
-        );
-        if (stays && !foeNear) {
-            u.squeeze = { x: u.x, z: u.z, t: s.t, seen: s.t, on: true };
-            m.t = s.t;
-            return false;
-        }
-    }
+    // （第3群の直しの、待機の味方に 12 秒塞がれてからすり抜ける決まりは、第4群で味方同士の詰まり RULES.allyBlockSec（trackSqueeze）に置き換えた）
     if (still < RULES.settleSec * 2 - 1e-9) return false;
     // 第3群の直し（FieldRules.refinedMoves）：行き先から遠い所で行き詰まって待機にするときは、味方の部隊なら知らせる（黙って止まらない）
     if (s.field.refined && u.side === 'ally') log(s, 'lost', `${u.name}：道を塞がれて先へ進めない。ここで待機する`, u.id);
@@ -1936,8 +2146,12 @@ function separate(s: BattleState): void {
             const gap = b.side === a.side ? RULES.spacing : ENEMY_GAP;
             if (d >= gap) continue;
             if (a.passThrough === b.id || b.passThrough === a.id) continue;
-            // 橋の詰まりで味方の中をすり抜けている部隊（trackSqueeze）は、味方と押し離さない
-            if (b.side === a.side && (a.squeeze?.on || b.squeeze?.on)) continue;
+            // 橋の詰まり・味方同士の詰まりで味方の中をすり抜けている部隊（trackSqueeze）は、味方と押し離さない。
+            // 第3群の直しの戦場（味方同士の詰まり。第4群）では、斬り合っている味方とは今までどおり押し離す（戦いの列の中までは抜けない）
+            if (b.side === a.side && (a.squeeze?.on || b.squeeze?.on)) {
+                const engagedPair = refined && ((a.squeeze?.on && !b.squeeze?.on && !!b.engagedWith) || (b.squeeze?.on && !a.squeeze?.on && !!a.engagedWith));
+                if (!engagedPair) continue;
+            }
             let ux: number;
             let uz: number;
             if (d < 1e-6) {

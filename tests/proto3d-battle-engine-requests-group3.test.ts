@@ -275,8 +275,9 @@ describe('止まっている味方に塞がれた移動・攻撃（城攻め前�
     };
 
     // 移動の命令は、近くの味方が斬り合っていなければ 12 秒で「遠くで行き詰まった」と待機になる（下のテスト）。攻撃の命令には待機にする決まりが無く、
-    // 直す前は攻撃の命令のまま動けなかった（城攻め前面：門の裏の槍への攻撃の命令の忠勝隊が 300 秒動けない）
-    it('早送り：直しの後は 20 秒進めなければ味方の中をすり抜けて、北の敵と斬り合う。直しの前は攻撃の命令のまま石垣の南で動けなかった', () => {
+    // 直す前は攻撃の命令のまま動けなかった（城攻め前面：門の裏の槍への攻撃の命令の忠勝隊が 300 秒動けない）。
+    // 第4群：前は 20 秒（squeezeStallSec）進めなければすり抜けた。味方同士の詰まりの決まり（RULES.allyBlockSec・2 秒）に置き換えた（tests/proto3d-battle-ally-block.test.ts）
+    it('早送り：直しの後は味方だけに塞がれて allyBlockSec 秒進めなければ味方の中をすり抜けて、北の敵と斬り合う。直しの前は攻撃の命令のまま石垣の南で動けなかった', () => {
         const atk = setup(true, 'attack');
         const m = unitById(atk, 'm')!;
         expect(m.z).toBeLessThan(-50);
@@ -312,7 +313,7 @@ describe('止まっている味方に塞がれた移動・攻撃（城攻め前�
         // 直しを付けない戦場：12 秒ほどで黙って待機になる
         expect(old.settledAt).toBeGreaterThan(0);
         expect(note(old.s)).toEqual([]);
-        // 直しの戦場：待機になる前に 20 秒で味方の中をすり抜けるか、待機にするなら知らせる
+        // 直しの戦場：待機になる前に味方の中をすり抜ける（第4群から allyBlockSec・2 秒。前は 20 秒）か、待機にするなら知らせる
         if (now.settledAt > 0) expect(note(now.s).length).toBe(1);
         else expect(unitById(now.s, 'm')!.z).toBeLessThan(-20);
     });

@@ -197,6 +197,12 @@ export class BattleUi {
     private readonly objArmy: Record<Side, HTMLElement>;
     private readonly inspect: HTMLDivElement;
     private readonly toasts: HTMLDivElement;
+    /** 上の真ん中（一時停止の印・発動の知らせ・知らせの列）。重要な名札を覆うときは畳む（tuckNotices） */
+    private readonly topmid: HTMLDivElement;
+    /** 知らせの畳み方（0 そのまま・1 新しい 1 つだけを 1 行に・2 隠す）と、畳まずに出していたときの知らせの四角・最後に重なっていた時刻 */
+    private noticeFold: 0 | 1 | 2 = 0;
+    private noticeFull: { l: number; t: number; r: number; b: number } | null = null;
+    private noticeHitT = -1e9;
     private readonly pausePill: HTMLDivElement;
     private readonly pauseBtn: HTMLButtonElement;
     private readonly speedBtns: Record<1 | 2, HTMLButtonElement>;
@@ -281,6 +287,7 @@ export class BattleUi {
         this.inspect.hidden = true;
         this.abil = el('div', 'b-abil');
         this.abil.hidden = true;
+        this.bindPanelSink(this.abil);
         const left = el('div', 'b-topleft');
         left.append(obj);
         // 目標の欄（主目標・副目標・戦場の特殊ルール）。約束の行とは別の欄。スマホでは畳んで主目標の一行だけ
@@ -315,6 +322,7 @@ export class BattleUi {
 
         // ---- 上の真ん中：一時停止の印・知らせ ----
         const mid = el('div', 'b-topmid');
+        this.topmid = mid;
         this.pausePill = el('div', 'b-pausepill');
         this.pausePill.innerHTML = '<b>指揮中（一時停止）</b><span>　命令を出せます</span>';
         this.toasts = el('div', 'b-toasts');
@@ -491,6 +499,26 @@ export class BattleUi {
         // 指でなぞる間、ページ全体の touchmove の抑止（main.ts）まで届かせない
         list.addEventListener('touchmove', (e) => e.stopPropagation(), { passive: true });
         list.addEventListener('scroll', () => this.updateCardEdges(), { passive: true });
+    }
+
+    /**
+     * 説明の欄（能力の欄）の押し・なぞりは、欄の中で使い切る（第4群の設計 §2）：下の地図への移動・攻撃・選び直し・地図の動きにしない
+     * （battle.css で押せる欄にし、下の地図の面 input へは届かない）。なぞりは欄の縦の送り（はみ出したとき）だけ。ホイールも欄の中だけ。
+     * 操作の要らない知らせ（.b-toast・発動の知らせ・案内の帯の文）は今までどおり押しを地図へ通す（pointer-events: none）。これとは別
+     */
+    private bindPanelSink(panel: HTMLElement): void {
+        panel.dataset.sink = '1';
+        const stop = (e: Event) => e.stopPropagation();
+        panel.addEventListener('pointerdown', stop);
+        panel.addEventListener('pointerup', stop);
+        panel.addEventListener('click', stop);
+        panel.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        });
+        panel.addEventListener('wheel', stop, { passive: true });
+        // 指でなぞって欄を送る間、ページ全体の touchmove の抑止（main.ts）まで届かせない
+        panel.addEventListener('touchmove', stop, { passive: true });
     }
 
     /** 札の列の左右に、まだ札があることの影（はみ出していなければ付けない） */
@@ -875,6 +903,49 @@ export class BattleUi {
         }
     }
 
+    /**
+     * 上の知らせ（知らせの列・発動の知らせ）が、重要な名札（選んでいる名札・能力の印が点滅している／対象選びの名札）を覆うときは畳む
+     * （第4群の設計 §2。つなぎが毎フレーム、名札を置いた後に呼ぶ）。
+     * 1 段目：新しい知らせ 1 つだけを 1 行に（data-fold="1"）。畳んでもまだ覆えば 2 段目：知らせを隠す（data-fold="2"）。
+     * 名札が畳む前の知らせの四角から外れて NOTICE_CLEAR_MS ミリ秒たったら元に戻す（畳む・戻すを毎フレーム繰り返さないように）。
+     * 知らせは押しを地図へ通すので、押しは前から妨げない（見えるようにするための畳み）
+     */
+    tuckNotices(): void {
+        const now = performance.now();
+        const imp: DOMRect[] = [];
+        for (const l of this.labelEls.values()) {
+            if (!l.e.dataset.id || !l.shown || l.e.hidden || l.fit === 'hide') continue;
+            const key = l.e.classList.contains('sel') || l.abMode === 'ready' || l.abMode === 'choosing' || l.abMode === 'target';
+            if (!key) continue;
+            const r = l.e.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0) imp.push(r);
+        }
+        // 今の知らせの四角（見えている知らせ・発動の知らせを合わせた外枠）
+        let cur: { l: number; t: number; r: number; b: number } | null = null;
+        const add = (e: Element) => {
+            const r = e.getBoundingClientRect();
+            if (!(r.width > 0 && r.height > 0)) return;
+            cur = cur ? { l: Math.min(cur.l, r.left), t: Math.min(cur.t, r.top), r: Math.max(cur.r, r.right), b: Math.max(cur.b, r.bottom) } : { l: r.left, t: r.top, r: r.right, b: r.bottom };
+        };
+        for (const c of Array.from(this.toasts.children)) add(c);
+        if (!this.abNote.hidden) add(this.abNote);
+        const box = cur as { l: number; t: number; r: number; b: number } | null;
+        if (this.noticeFold === 0) this.noticeFull = box;
+        const hits = (b: { l: number; t: number; r: number; b: number } | null) => !!b && imp.some((r) => r.left < b.r && r.right > b.l && r.top < b.b && r.bottom > b.t);
+        let fold = this.noticeFold;
+        if (hits(box) || (fold > 0 && hits(this.noticeFull))) {
+            this.noticeHitT = now;
+            if (fold === 0) fold = 1;
+            else if (fold === 1 && hits(box)) fold = 2;
+        } else if (fold > 0 && now - this.noticeHitT > NOTICE_CLEAR_MS) fold = 0;
+        if (!box && fold === 0) this.noticeFull = null;
+        if (fold !== this.noticeFold) {
+            this.noticeFold = fold;
+            if (fold === 0) delete this.topmid.dataset.fold;
+            else this.topmid.dataset.fold = String(fold);
+        }
+    }
+
     /** 名札の優先表示の見せ方を書く（data-fit：mini＝名前だけ小さく・hide＝一時的に隠す。full は付けない） */
     private setFit(l: LabelEls, fit: LabelFit): void {
         l.fit = fit;
@@ -1244,6 +1315,9 @@ export class BattleUi {
         this.root.remove();
     }
 }
+
+/** 畳んだ知らせを元に戻すまでの、重要な名札が知らせから外れている時間（ミリ秒） */
+const NOTICE_CLEAR_MS = 600;
 
 function escapeHtml(s: string): string {
     return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
