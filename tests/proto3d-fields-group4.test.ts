@@ -179,30 +179,46 @@ describe('脱出（escape）：総大将が出口から離れても負けにな�
         expect(t.result?.objectives?.primary?.count).toEqual({ done: 0, total: 4 });
     });
 
-    it('早送り：東の回り道で脱出する台本は、主目標を果たして勝つ（総大将の脱出の後も合戦が続き、負けにならない）', () => {
+    // 包囲された陣の調整（後の担当。tests/proto3d-field-besieged_camp.test.ts）で、東の道の北に騎馬・東の抜け道の狭まり・200 秒の後詰めの騎馬を足した。
+    // 前の台本（0 秒に家康を道の (150,0) へ出し、東の守りが崩れたら全部隊で出口へ）は、前は約 141 秒に勝ち。調整の後は、道で待つ家康が
+    // 後詰めの騎馬に捕まって 273.8 秒に負け（主目標の失敗）＝総大将を先に出した形。ここは「東を開いてから総大将を出す」台本に置き換えた
+    // （数え方を見るのが目的。作戦の比べは戦場のテスト）
+    it('早送り：東の回り道で脱出する台本（東を開いてから総大将を出す）は、主目標を果たして勝つ（総大将の脱出の後も合戦が続き、負けにならない）', () => {
         const s = battle('besieged_camp');
-        const mv = (id: string, x: number, z: number) => {
-            const u = U(s, id);
-            if (u.status === 'ready' && !(u.order.type === 'move' && u.order.x === x && u.order.z === z)) issueOrder(s, id, { type: 'move', x, z });
-        };
-        const r = runToEnd(s, (st) => {
-            if (st.tick === 1) {
-                mv('a_sakakibara', 190, 100);
-                mv('a_kiba', 190, 60);
-                mv('a_ieyasu', 150, 0);
-                mv('a_yumi', 120, 0);
-                mv('a_ishikawa', 80, 0);
+        const done = new Set<string>();
+        const once = (key: string, cond: boolean, f: () => void) => {
+            if (cond && !done.has(key)) {
+                done.add(key);
+                f();
             }
-            const east = U(st, 'e_east');
-            if (st.t > 20 && isActive(east)) for (const id of ['a_sakakibara', 'a_kiba']) if (U(st, id).order.type !== 'attack') issueOrder(st, id, { type: 'attack', targetId: 'e_east' });
-            if (st.t > 20 && !isActive(east)) for (const id of ['a_ieyasu', 'a_yumi', 'a_ishikawa', 'a_sakakibara', 'a_kiba', 'a_tadakatsu', 'a_sakai']) mv(id, 192, 212);
+        };
+        const near = (st: BattleState, id: string, x: number, z: number, r: number) => isActive(U(st, id)) && Math.hypot(U(st, id).x - x, U(st, id).z - z) <= r;
+        const r = runToEnd(s, (st) => {
+            once('open', true, () => {
+                issueOrder(st, 'a_sakakibara', { type: 'move', x: 190, z: 60 });
+                issueOrder(st, 'a_kiba', { type: 'move', x: 175, z: 40 });
+            });
+            once('atk', near(st, 'a_sakakibara', 190, 60, 12), () => {
+                for (const id of ['a_sakakibara', 'a_kiba']) issueOrder(st, id, { type: 'attack', targetId: 'e_east' });
+            });
+            const opened = !isActive(U(st, 'e_east'));
+            once('out1', opened, () => {
+                for (const id of ['a_sakakibara', 'a_kiba']) issueOrder(st, id, { type: 'retreat' });
+            });
+            once('go', opened && !isActive(U(st, 'e_west_kiba')), () => {
+                for (const id of ['a_ieyasu', 'a_yumi', 'a_ishikawa']) issueOrder(st, id, { type: 'retreat' });
+                issueOrder(st, 'a_tadakatsu', { type: 'move', x: 110, z: 0 });
+            });
+            once('guard', near(st, 'a_tadakatsu', 110, 0, 12), () => expect(useAbility(st, 'a_tadakatsu').ok).toBe(true));
+            once('last', near(st, 'a_ieyasu', 150, 0, 15), () => issueOrder(st, 'a_sakai', { type: 'retreat' }));
         });
         expect(r.result).toBe('victory');
         expect(r.reason).toBe('objective_done');
+        expect(r.withdrawal).toBe('objective');
         const hqOut = s.events.find((e) => e.text.startsWith('家康本陣が東の回り道の出口から脱出した'))!;
         expect(hqOut).toBeDefined();
         expect(hqOut.t).toBeLessThan(r.elapsedSec);
-        expect(s.events.some((e) => e.text.includes('味方の本陣が崩れた'))).toBe(false);
+        expect(s.events.some((e) => e.kind === 'rout' && e.text.includes('家康本陣'))).toBe(false);
     }, 20_000);
 });
 
