@@ -719,7 +719,7 @@ function failWhy(d: ObjectiveDef): string {
             return `守る地点が ${d.minHeld} か所より少なくなる`;
         case 'hold_point':
         case 'hold_zones':
-            return '（確保の目標は日没まで続く）';
+            return '確保の目標は途中で失敗にならず、日没まで続く';
         default:
             return '目標の条件が満たせなくなる';
     }
