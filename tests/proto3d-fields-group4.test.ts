@@ -418,12 +418,13 @@ describe('夜（視界と発見）', () => {
         expect(hidden).toEqual(expect.arrayContaining(['e_hq', 'e_camp', 'e_camp_yumi', 'e_reserve', 'e_watch', 'e_patrol']));
         expect(s.units.filter((u) => u.side === 'ally').every((u) => !u.seenBy.enemy)).toBe(true);
         expect(issueOrder(s, 'a_tadakatsu', { type: 'attack', targetId: 'e_camp' })).toBe(false);
-        // 篝火の外の見回りの騎馬（130,-40）：90 m では見つけず、70 m まで近づくと見つける。見つけた後は攻撃できる
+        // 篝火の外の見回りの騎馬（80,-50）：90 m では見つけず、70 m まで近づくと見つける。見つけた後は攻撃できる
+        // （夜襲の調整で見回りの騎馬を (130,-40) から物見の東 (80,-50) へ移した。置く所も同じ 90 m・65 m のまま騎馬の真南へ移した）
         expect(issueOrder(s, 'a_tadakatsu', { type: 'attack', targetId: 'e_patrol' })).toBe(false);
-        place(s, 'a_tadakatsu', 130, 50);
+        place(s, 'a_tadakatsu', 80, 40);
         step(s, 0.2);
         expect(U(s, 'e_patrol').seenBy.ally).toBe(false);
-        place(s, 'a_tadakatsu', 130, 25);
+        place(s, 'a_tadakatsu', 80, 15);
         step(s, 0.2);
         expect(U(s, 'e_patrol').seenBy.ally).toBe(true);
         expect(issueOrder(s, 'a_tadakatsu', { type: 'attack', targetId: 'e_patrol' })).toBe(true);
@@ -434,7 +435,7 @@ describe('夜（視界と発見）', () => {
         expect(s.events.some((e) => e.kind === 'spotted' && e.text.includes('暗がりに'))).toBe(true);
     });
 
-    it('状態を直接操作：見つけた相手は sight（120 m）の中なら見え続け、離れると見失う。篝火の中は 160 m から見つかる。物見は 150 m 先まで見つける', () => {
+    it('状態を直接操作：見つけた相手は sight（120 m）の中なら見え続け、離れると見失う。篝火の中は 160 m から見つかる。物見は 110 m 先まで見つける', () => {
         const s = battle('night_raid');
         freezeEnemies(s);
         const camp = U(s, 'e_camp');
@@ -455,10 +456,11 @@ describe('夜（視界と発見）', () => {
         place(t, 'e_hq', 0, -110 - 150);
         step(t, 0.1);
         expect(U(t, 'a_kiba').seenBy.enemy).toBe(true);
-        // 物見：150 m 先の味方を見つける（ほかの敵は 70 m まで）
+        // 物見：110 m 先まで味方を見つける（ほかの敵は 70 m まで）。夜襲の調整で物見を街道の東の丘 (40,-30)・110 m にした
+        // （前は街道の真ん中 (0,-40)・150 m で、西の林の端から陣の西の口まで見えていた）。置く所は物見から 105 m（前は 140 m）
         const w = battle('night_raid');
         for (const u of w.units) if (u.side === 'enemy' && u.id !== 'e_watch') u.present = false;
-        place(w, 'a_kiba', 140, -40);
+        place(w, 'a_kiba', 145, -30);
         step(w, 0.1);
         expect(U(w, 'a_kiba').seenBy.enemy).toBe(true);
     });
@@ -466,7 +468,7 @@ describe('夜（視界と発見）', () => {
     it('早送り：敵の考えも、発見していない味方は狙わない・追わない（物見の外で待つ味方には打って出ない。見つけた後は当たる）', () => {
         const s = battle('night_raid');
         // 番兵（hold_line・持ち場 (0,25) から 75 m の相手に打って出る）から 72 m（打って出る距離の中、夜に見つける 70 m の外）、篝火の外に味方を置く。
-        // 物見（150 m 先まで見つける）は外す
+        // 物見（110 m 先まで見つける）は外す
         for (const u of s.units) if (u.side === 'ally' && u.id !== 'a_kiba') u.present = false;
         U(s, 'e_watch').present = false;
         place(s, 'a_kiba', 50, 77);
