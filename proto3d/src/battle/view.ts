@@ -69,6 +69,12 @@ const OBJ_COLOR = { primary: '#ffd76a', secondary: '#9fd0ff', done: '#8ed57a', f
 const NARROW_COLOR = '#f0a040';
 /** 目標でない門の制圧の区域の縁（第3群。目標の門は目標の色の輪で描く） */
 const GATE_ZONE_COLOR = '#e8dcc0';
+/** 夜（第4群）：篝火の区域の縁の色 */
+const TORCH_COLOR = '#ff9a3c';
+/**
+ * 夜（第4群）：画面の暗さ。新しい照明・美術は作らず、今の光の明るさ・空の色を少し落とすだけ（地形・部隊の色が見分けられる程度）
+ */
+const NIGHT_LIGHT = { hemi: 0.55, sun: 0.4, bg: '#26301f' };
 /** 約束の安全地点と対象の輪の色 */
 const PLEDGE_COLOR = '#5fe0c0';
 
@@ -171,6 +177,8 @@ export class BattleView {
     /** 通れる範囲（fieldRules.passable。無ければ null） */
     private readonly passable: { x0: number; x1: number; z0: number; z1: number } | null;
     private time = 0;
+    /** 夜の合戦（第4群）。発見していない敵の位置を表示の層に残さない */
+    private readonly night: boolean;
     private readonly m4 = new THREE.Matrix4();
     private readonly q = new THREE.Quaternion();
     private readonly v3 = new THREE.Vector3();
@@ -181,16 +189,17 @@ export class BattleView {
 
     constructor(s: BattleState, opts: ViewOptions) {
         this.map = s.map;
+        this.night = !!s.setup.night;
         this.low = opts.low;
         this.passable = s.setup.fieldRules?.passable ?? null;
-        const bg = new THREE.Color('#56653f');
+        const bg = new THREE.Color(s.setup.night ? NIGHT_LIGHT.bg : '#56653f');
         this.scene.background = bg;
         this.scene.fog = new THREE.Fog(bg, 600, 1400);
         this.camera = new THREE.PerspectiveCamera(CAM.fovDeg, 1, 1, 5000);
 
         // 光：空の明るさと、南西の高い日差し（影は落とさない）
-        const hemi = new THREE.HemisphereLight('#e4edf5', '#6b5c42', 1.5);
-        const sun = new THREE.DirectionalLight('#fff0d6', 1.7);
+        const hemi = new THREE.HemisphereLight('#e4edf5', '#6b5c42', 1.5 * (s.setup.night ? NIGHT_LIGHT.hemi : 1));
+        const sun = new THREE.DirectionalLight(s.setup.night ? '#c8d4ff' : '#fff0d6', 1.7 * (s.setup.night ? NIGHT_LIGHT.sun : 1));
         sun.position.set(-160, 260, 120);
         this.scene.add(hemi, sun);
 
@@ -210,6 +219,8 @@ export class BattleView {
         for (const u of s.units) {
             // 部隊の輪・押す判定の広さは Version 12 と同じ（兵士の人数によらない）
             const ext = formationExtent(u.kind, figureCount(u.startStrength));
+            // 夜（第4群）の敵は、最初の位置も表示の層に持たない（見つけた時に置く）
+            const hide = this.night && u.side === 'enemy';
             this.vis.push({
                 id: u.id,
                 side: u.side,
@@ -217,16 +228,16 @@ export class BattleView {
                 halfW: ext.halfW,
                 halfD: ext.halfD,
                 hq: u.isHq,
-                px: u.x,
-                pz: u.z,
+                px: hide ? NaN : u.x,
+                pz: hide ? NaN : u.z,
                 face: u.facing,
                 sx: 0,
                 sz: 0,
                 routT: -1,
                 shown: false,
-                flagX: u.x,
+                flagX: hide ? NaN : u.x,
                 flagY: 0,
-                flagZ: u.z,
+                flagZ: hide ? NaN : u.z,
                 flagTilt: 0,
                 bannerYaw: 0,
                 seed: hash01(u.id, 7) * 100,
@@ -944,6 +955,17 @@ export class BattleView {
             this.scene.add(rm);
             this.gateZones.push({ id: g.def.id, mesh: rm });
         }
+        // 夜（第4群）：篝火の区域の縁（橙）
+        for (const z of s.setup.night?.torchZones ?? []) {
+            const mat = this.own(new THREE.MeshBasicMaterial({ color: TORCH_COLOR, transparent: true, opacity: 0.55, depthTest: false, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
+            const { ring, fill } = this.zoneShapes(z, 1.5);
+            const fm = this.own(new THREE.MeshBasicMaterial({ color: TORCH_COLOR, transparent: true, opacity: 0.08, depthTest: false, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
+            const rm = new THREE.Mesh(this.own(ring), mat);
+            const fmm = new THREE.Mesh(this.own(fill), fm);
+            rm.renderOrder = 5;
+            fmm.renderOrder = 4;
+            this.scene.add(fmm, rm);
+        }
         // 援軍の出る所：地面の菱形と、細い竿の小旗（陣営の色）
         for (const r of reinforcementMarks(s)) {
             const mat = this.own(new THREE.MeshBasicMaterial({ color: SIDE_COLOR[r.side], transparent: true, opacity: 0.85, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
@@ -1257,6 +1279,8 @@ export class BattleView {
                 v.sx = v.sz = 0;
             }
             v.shown = visible;
+            // 夜（第4群）：発見していない敵は、表示の層に位置を残さない（最後に見えた所・最初の位置も持たない。window.__battle.view からも読めない）
+            if (!visible && this.night && u.side === 'enemy') v.px = v.pz = v.flagX = v.flagZ = NaN;
             if (visible) {
                 v.px += (u.x - v.px) * kPos;
                 v.pz += (u.z - v.pz) * kPos;

@@ -18,6 +18,7 @@ import { LOS_BLOCK_KINDS, LOS_EYE, OBSTACLE_HEIGHT, OBSTACLE_KINDS, areaCenter, 
 import { NAV_CELL, isPassable, reachable } from '../pathfind';
 import { generalById } from '../generals';
 import { ABILITY_DATA } from '../abilities';
+import { DEFAULT_END_ORDER, endRuleBriefingLine, isLeaveObjective } from '../objectives';
 import type { BattlefieldDef, FieldPreset, PresetUnit } from './types';
 
 export interface BuildOptions {
@@ -113,7 +114,10 @@ export function buildBattleSetup(field: BattlefieldDef, presetOrUnits: string | 
         timeLimitSec: opts.timeLimitSec ?? field.timeLimitSec,
         briefing: opts.briefing ?? [...field.briefing],
     };
-    if (opts.pursuit) setup.pursuit = true;
+    // 追い討ち：章が渡す値、無ければ戦場のデータ（第4群の退却戦・包囲された陣）
+    if (opts.pursuit ?? field.pursuit) setup.pursuit = true;
+    if (field.night) setup.night = field.night;
+    if (field.endRules) setup.endRules = { order: [...field.endRules.order], allRetreat: field.endRules.allRetreat };
     if (opts.pledge) setup.pledge = opts.pledge;
     if (opts.generalInitiative ?? field.generalInitiative) setup.generalInitiative = true;
     const rules = fieldRulesOf(field);
@@ -130,6 +134,11 @@ export function buildBattleSetup(field: BattlefieldDef, presetOrUnits: string | 
         }))
         .filter((r) => r.unitIds.length > 0);
     if (reinf.length) setup.reinforcements = reinf;
+    // 終わり方の判定の順（第4群）：合戦の前の説明の終わりに足す（説明を渡された合戦には足さない）
+    if (!opts.briefing && setup.endRules) {
+        const line = endRuleBriefingLine(setup);
+        if (line) setup.briefing.push(line);
+    }
     return setup;
 }
 
@@ -138,6 +147,9 @@ function objectiveZones(o: ObjectiveDef): Zone[] {
     if (o.type === 'defend_zones' || o.type === 'hold_zones') return o.zones;
     if (o.type === 'limit_breakthrough') return o.exits;
     if (o.type === 'sequence') return o.steps.flatMap(objectiveZones);
+    if (o.type === 'escape') return o.exits;
+    if (o.type === 'withdraw') return [o.exit];
+    if (o.type === 'rescue_escort') return [o.meetZone, o.safeZone];
     return 'zone' in o && o.zone ? [o.zone] : [];
 }
 
@@ -150,13 +162,16 @@ function allyZoneObjective(o: ObjectiveDef): boolean {
         (o.type === 'defend_time' && !!o.zone) ||
         o.type === 'defend_zones' ||
         o.type === 'hold_zones' ||
-        o.type === 'limit_breakthrough'
+        o.type === 'limit_breakthrough' ||
+        o.type === 'escape' ||
+        o.type === 'withdraw' ||
+        o.type === 'rescue_escort'
     );
 }
 
 /** 目標の指す部隊が、どちらの陣営でなければならないか（部隊を指さない目標は null） */
 function objectiveUnitSide(o: ObjectiveDef): Side | null {
-    if (o.type === 'rescue' || o.type === 'preserve_unit') return 'ally';
+    if (o.type === 'rescue' || o.type === 'preserve_unit' || o.type === 'rescue_escort') return 'ally';
     if (o.type === 'break_unit') return 'enemy';
     return null;
 }
@@ -456,6 +471,7 @@ export function validateField(field: BattlefieldDef): string[] {
             if (!(r.firstStrikeMul > 0 && r.sec > 0)) out.push('林の奇襲の数値が正しくない');
         }
     }
+    out.push(...validateGroup4(field, objs, okOpen));
     if (field.presets.length === 0) out.push('演習の編成がない');
     const pids = new Set<string>();
     for (const pr of field.presets) {
@@ -569,6 +585,71 @@ function validatePreset(
     for (const u of pr.units) {
         const d = u.slot ? field.deployments[u.side].find((x) => x.id === u.slot) : field.reinforcements?.find((r) => r.id === u.reinforcement)?.point;
         if (d && !Number.isFinite(elevationAt(fieldMap(field), d.x, d.z))) out.push(`${tag}：部隊 ${u.id} の地点の高さが数でない`);
+    }
+    return out;
+}
+
+/**
+ * 第4群で足した検査（docs/fields-group4-design.md §3・§4）：
+ * - 脱出・離脱（escape・withdraw）：count は 0 以上の整数で、編成の本陣のほかの味方の部隊の数以下。味方の退き口が出口（退き口）の区域の中
+ *   （撤退の命令で退いた部隊も数えるため）。出口は戦場の縁に届く（通り道の途中で部隊が勝手に離れないように）。names の数。
+ * - 救出（rescue_escort）：minRatio は 0 より大きく 1 以下・meetSec は正。合流区域と安全区域は離れている（中心が互いの区域の外）。
+ * - 夜（night）：発見の距離は斬り合いの間合い＋5 m 以上、見失う距離は発見の距離以上、篝火の距離は正・篝火の区域の中心は通れる、
+ *   物見の部隊は編成の部隊。
+ * - 終わり方の判定の順（endRules）：6 つの判定をちょうど 1 回ずつ。allRetreat 'count' は主目標が脱出・離脱の戦場だけ。
+ */
+function validateGroup4(field: BattlefieldDef, objs: ObjectiveDef[], okOpen: (x: number, z: number) => boolean): string[] {
+    const out: string[] = [];
+    const W = field.width / 2;
+    const D = field.depth / 2;
+    const touchesEdge = (z: Zone) => {
+        if (z.rect) return z.rect.x0 <= -W + 1 || z.rect.x1 >= W - 1 || z.rect.z0 <= -D + 1 || z.rect.z1 >= D - 1;
+        if (z.circle) return Math.abs(z.circle.cx) + z.circle.r >= W - 1 || Math.abs(z.circle.cz) + z.circle.r >= D - 1;
+        return false;
+    };
+    for (const o of objs) {
+        if (o.type === 'escape' || o.type === 'withdraw') {
+            const exits = o.type === 'escape' ? o.exits : [o.exit];
+            if (exits.length === 0) out.push(`目標 ${o.id} の出口がない`);
+            if (!(Number.isInteger(o.count) && o.count >= 0)) out.push(`目標 ${o.id} の count は 0 以上の整数`);
+            for (const pr of field.presets) {
+                const others = pr.units.filter((u) => u.side === 'ally' && u.kind !== 'honjin').length;
+                if (o.count > others) out.push(`編成 ${pr.id}：目標 ${o.id} の count ${o.count} が本陣のほかの味方の部隊の数 ${others} より多い`);
+            }
+            const e = field.exits.ally;
+            if (!exits.some((z) => inZone(z, e.x, e.z))) out.push(`目標 ${o.id}：味方の退き口が出口の区域の中にない（撤退の命令で退いた部隊を数えられない）`);
+            exits.forEach((z, i) => {
+                if (!touchesEdge(z)) out.push(`目標 ${o.id} の出口 ${i + 1} が戦場の縁に届いていない`);
+            });
+            if (o.type === 'escape' && o.names && o.names.length !== o.exits.length) out.push(`目標 ${o.id} の names の数が出口の数と違う`);
+        } else if (o.type === 'rescue_escort') {
+            if (!(o.minRatio > 0 && o.minRatio <= 1)) out.push(`目標 ${o.id} の minRatio は 0 より大きく 1 以下`);
+            if (o.meetSec !== undefined && !(o.meetSec > 0)) out.push(`目標 ${o.id} の meetSec は 0 より大きい数`);
+            const mc = zoneCenter(o.meetZone);
+            const sc = zoneCenter(o.safeZone);
+            if (inZone(o.meetZone, sc.x, sc.z) || inZone(o.safeZone, mc.x, mc.z)) out.push(`目標 ${o.id} の合流区域と安全区域が重なっている（分ける）`);
+        }
+    }
+    const n = field.night;
+    if (n) {
+        if (!(Number.isFinite(n.detectRange) && n.detectRange >= RULES.meleeRange + 5)) out.push(`夜の detectRange は斬り合いの間合い＋5 m（${RULES.meleeRange + 5}）以上`);
+        if (!(Number.isFinite(n.sight) && n.sight >= n.detectRange)) out.push('夜の sight は detectRange 以上');
+        if (n.torchRange !== undefined && !(n.torchRange > 0)) out.push('夜の torchRange は 0 より大きい数');
+        (n.torchZones ?? []).forEach((z, i) => {
+            const c = zoneCenter(z);
+            if (!okOpen(c.x, c.z)) out.push(`夜の篝火の区域 ${i + 1} の中心が通れる所にない`);
+        });
+        if (n.torchNames && n.torchNames.length !== (n.torchZones ?? []).length) out.push('夜の torchNames の数が篝火の区域の数と違う');
+        for (const l of n.lookouts ?? []) {
+            if (!(l.range > 0)) out.push(`夜の物見 ${l.unitId} の range は 0 より大きい数`);
+            for (const pr of field.presets) if (!pr.units.some((u) => u.id === l.unitId)) out.push(`編成 ${pr.id}：夜の物見の部隊 ${l.unitId} がない`);
+        }
+    }
+    const er = field.endRules;
+    if (er) {
+        const want = [...DEFAULT_END_ORDER].sort();
+        if (JSON.stringify([...er.order].sort()) !== JSON.stringify(want)) out.push(`終わり方の判定の順（endRules.order）は ${DEFAULT_END_ORDER.join('・')} をちょうど 1 回ずつ`);
+        if (er.allRetreat === 'count' && !isLeaveObjective(field.objectives.primary)) out.push("endRules.allRetreat 'count' は主目標が脱出・離脱（escape・withdraw）の戦場だけ");
     }
     return out;
 }

@@ -30,6 +30,8 @@ import { loadModel } from '../app/models';
 import type { BattleOutcome, BattleRunHooks, BattleSetup, Order } from './types';
 import { canCommand, createBattle, elevationAt, isActive, issueOrder, meleeUnreachable, orderAllRetreat, stepBattle, unitById, type BattleEvent, type BattleState } from './sim';
 import { BattleView } from './view';
+import { nightLabels } from './night';
+import { withdrawalNote } from './objectives';
 import { BattleUi, type CommandKind } from './battleUi';
 import { abilityEffectTargets, abilityInfo, useAbility } from './abilities';
 import {
@@ -191,7 +193,8 @@ class BattleRun implements Mode {
             zoom: (d) => this.zoomButton(d),
             continueAfterResult: () => this.finish(),
         }, { touch: this.ctx.touch });
-        this.terrainLabels = mapLabels(this.s);
+        // 夜（第4群）は篝火の区域の名札も足す（夜でない合戦では何も足さない）
+        this.terrainLabels = [...mapLabels(this.s), ...nightLabels(this.s.setup)];
         this.unitMarks = objectiveUnitMarks(this.s);
 
         enterMode('battle', this);
@@ -621,7 +624,8 @@ class BattleRun implements Mode {
         this.ui.showResult({
             kind: o.result,
             title: RESULT_LABEL[o.result],
-            reason: sc.reasons[o.reason],
+            // 第4群：目標を果たした撤収と、合戦の放棄を分けて添える（区別の無い結果では何も足さない）
+            reason: sc.reasons[o.reason] + (withdrawalNote(o) ? `（${withdrawalNote(o)}）` : ''),
             time: fmtClock(o.elapsedSec),
             rows,
             lost,
@@ -1209,6 +1213,8 @@ function exposeDev(run: BattleRun): void {
             if (i < 0) return null;
             const p = run.view.unitPos(i);
             const u = run.s.units[i];
+            // 夜（第4群）：発見していない敵の画面の位置は出さない（表示の層から漏らさない）
+            if (run.s.setup.night && u.side === 'enemy' && !p.shown) return null;
             const r = appContext().renderer.domElement.getBoundingClientRect();
             const x = p.shown ? p.x : u.x;
             const z = p.shown ? p.z : u.z;

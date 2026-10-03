@@ -3,7 +3,7 @@
  *
  * - FIELDS：すべての戦場（国境の原を含む）。
  * - PRACTICE_ORDER：合戦場の演習に出す順（第1群の 5 戦場と、第2群の 5 戦場（一本橋・複数橋・尾根・谷間・水田）と、
- *   第3群の 5 戦場（湿地・村落・寺社周辺・城下町外縁・城攻め前面））。
+ *   第3群の 5 戦場（湿地・村落・寺社周辺・城下町外縁・城攻め前面）と、第4群の 5 戦場（包囲された陣・援軍救出・退却戦・夜襲・奇襲・湖・河岸））。
  * - getField(id)：戦場を引く（無ければ undefined）。
  */
 import type { BattlefieldDef } from './types';
@@ -23,10 +23,15 @@ import { VILLAGE } from './village';
 import { TEMPLE } from './temple';
 import { TOWN_EDGE } from './town_edge';
 import { SIEGE_FRONT } from './siege_front';
+import { BESIEGED_CAMP } from './besieged_camp';
+import { RELIEF } from './relief';
+import { REARGUARD } from './rearguard';
+import { NIGHT_RAID } from './night_raid';
+import { SHORE } from './shore';
 
-export const FIELDS: readonly BattlefieldDef[] = [PLAINS, RIVER_FORD, HILLS, FOREST, MOUNTAIN_PASS, SINGLE_BRIDGE, MULTI_BRIDGE, RIDGE, VALLEY, PADDY, MARSH, VILLAGE, TEMPLE, TOWN_EDGE, SIEGE_FRONT, BORDER_FIELD_DEF];
+export const FIELDS: readonly BattlefieldDef[] = [PLAINS, RIVER_FORD, HILLS, FOREST, MOUNTAIN_PASS, SINGLE_BRIDGE, MULTI_BRIDGE, RIDGE, VALLEY, PADDY, MARSH, VILLAGE, TEMPLE, TOWN_EDGE, SIEGE_FRONT, BESIEGED_CAMP, RELIEF, REARGUARD, NIGHT_RAID, SHORE, BORDER_FIELD_DEF];
 
-/** 演習に出す順（戦場 id）。第1群の 5 戦場の後に第2群の 5 戦場、その後に第3群の 5 戦場 */
+/** 演習に出す順（戦場 id）。第1群の 5 戦場の後に第2群の 5 戦場、その後に第3群の 5 戦場、その後に第4群の 5 戦場（合わせて 20） */
 export const PRACTICE_ORDER: readonly string[] = [
     'plains',
     'river_ford',
@@ -43,6 +48,11 @@ export const PRACTICE_ORDER: readonly string[] = [
     'temple',
     'town_edge',
     'siege_front',
+    'besieged_camp',
+    'relief',
+    'rearguard',
+    'night_raid',
+    'shore',
 ];
 
 export function getField(id: string): BattlefieldDef | undefined {

@@ -81,7 +81,8 @@ import {
     type GateRun,
 } from './fieldRules';
 import { findPath, isPassable, nearestPassable, pathExists } from './pathfind';
-import { activeObjectiveZones, createObjectiveTrack, finalObjectives, refreshObjective, trackObjectives, type ObjectiveTrack } from './objectives';
+import { activeObjectiveZones, createObjectiveTrack, finalObjectives, isLeaveObjective, refreshObjective, trackObjectives, withdrawalKind, type ObjectiveTrack } from './objectives';
+import { nightSeen } from './night';
 import {
     abilitiesUsedRecord,
     abilityDealMul,
@@ -915,7 +916,8 @@ function tick(s: BattleState): void {
         const woods = inTerrain(s.map, 'woods', u.x, u.z);
         if (u.side === 'ally') {
             log(s, 'arrive', woods ? `${u.name}が林に着いた（まだ敵に気づかれていない）` : `${u.name}が戦場に着いた`, u.id);
-        } else if (s.setup.reinforcements?.some((r) => r.side === 'enemy' && r.unitIds.includes(u.id))) {
+        } else if (s.setup.reinforcements?.some((r) => r.side === 'enemy' && r.unitIds.includes(u.id)) && !s.setup.night) {
+            // 夜（第4群）は、敵の援軍が着いたことを知らせない（発見したときに「現れた」と知らせる）
             log(s, 'arrive', `敵の援軍（${u.name}）が現れた`, u.id);
         }
     }
@@ -1254,6 +1256,8 @@ function updateVisibility(s: BattleState, events: BattleEvent[] | null): void {
         // 隠れる地形（既定は林 60 m）の中の部隊は、相手の戦える部隊がその距離に来るまで見えない。高所の相手は sightBonus だけ遠くから見つける
         const hide = u.present ? hideSightIn(s.map, s.field, u.x, u.z) : null;
         if (!u.present) seen = false;
+        // 夜（第4群。BattleSetup.night の合戦だけ）：発見の距離・篝火・物見・見失う距離で決める（night.ts）
+        else if (s.setup.night) seen = nightSeen(s, u, u.seenBy[opp]);
         else if (hide === null) seen = true;
         else if (high.sightBonus > 0) seen = s.units.some((o) => o.side === opp && isActive(o) && dist(o, u) <= hide + (elevationAt(s.map, o.x, o.z) >= high.minDiff ? high.sightBonus : 0));
         else seen = s.units.some((o) => o.side === opp && isActive(o) && dist(o, u) <= hide);
@@ -1274,7 +1278,7 @@ function updateVisibility(s: BattleState, events: BattleEvent[] | null): void {
         if (last !== undefined && s.t - last < 15) continue;
         if (u.side === 'enemy') {
             const woods = inTerrain(s.map, 'woods', u.x, u.z) || wasInWoodsRecently(s, u);
-            log(s, 'spotted', woods ? `${u.name}が林から現れた` : `${u.name}が現れた`, u.id);
+            log(s, 'spotted', s.setup.night ? `暗がりに${u.name}を見つけた` : woods ? `${u.name}が林から現れた` : `${u.name}が現れた`, u.id);
         } else if (u.arrived && s.t > 0) {
             log(s, 'discovered', `敵が${u.name}に気づいた`, u.id);
         }
@@ -2013,6 +2017,9 @@ function finish(s: BattleState, result: BattleResultKind, reason: BattleEndReaso
     if (s.abilityList.length > 0) s.result.abilitiesUsed = abilitiesUsedRecord(s);
     const objs = finalObjectives(s, result, reason);
     if (objs) s.result.objectives = objs;
+    // 第4群（endRules のある合戦だけ）：目標を果たした撤収と、合戦の放棄を分けて記録する
+    const wd = withdrawalKind(s.setup, result, reason);
+    if (wd) s.result.withdrawal = wd;
     if (s.pledge) {
         const p = pledgeProgress(s)!;
         // 勝利・日没（戦場に踏みとどまった）では約束の場面は要らない。撤退・敗北で終わるときは、場面になっていなければ守ったことにならない
@@ -2026,9 +2033,9 @@ function finish(s: BattleState, result: BattleResultKind, reason: BattleEndReaso
         enemy_army_broken: '敵の諸隊が崩れた。勝利',
         ally_hq_routed: `味方の本陣が崩れた。敗北（${lord}は落ち延びる）`,
         ally_army_broken: `味方の諸隊が崩れた。敗北（${lord}は落ち延びる）`,
-        ordered_retreat: '兵をまとめて退いた。撤退',
+        ordered_retreat: wd === 'abandoned' ? '主目標を果たす前に兵を退いた。撤退（合戦の放棄）' : '兵をまとめて退いた。撤退',
         nightfall: '日が暮れた。両軍が兵を引く（撤退）',
-        objective_done: `主目標「${s.objectives?.primary?.def.label ?? ''}」を果たした。勝利`,
+        objective_done: `主目標「${s.objectives?.primary?.def.label ?? ''}」を果たした。勝利${wd === 'objective' ? '（目標を果たした撤収）' : ''}`,
         objective_failed: `主目標「${s.objectives?.primary?.def.label ?? ''}」を果たせなかった。敗北（${lord}は落ち延びる）`,
     };
     log(s, reason === 'nightfall' ? 'nightfall' : 'end', text[reason]);
@@ -2036,6 +2043,8 @@ function finish(s: BattleState, result: BattleResultKind, reason: BattleEndReaso
 
 function decide(s: BattleState): void {
     if (s.result) return;
+    // 第4群：終わり方の判定の順をデータで持つ合戦（BattleSetup.endRules）。既存の 15 戦場・歴史分岐・架空の章は下の今までの決まりのまま
+    if (s.setup.endRules && s.objectives?.primary) return decideByEndRules(s);
     if (s.objectives?.primary) return decideByObjective(s);
     const t = s.t;
     // 全軍撤退：味方が戦場を離れ切ったか、待つ時間が過ぎたら終わる（その間は勝ち負けを決めない）
@@ -2156,6 +2165,77 @@ function decideByObjective(s: BattleState): void {
         return finish(s, 'defeat', 'ally_army_broken');
     }
     if (s.tick >= Math.round(s.timeLimitSec / RULES.tick)) return endRetreat('nightfall');
+}
+
+/**
+ * 終わり方の判定の順をデータで持つ合戦（第4群。BattleSetup.endRules・docs/fields-group4-design.md §3）。order の順に見て、最初に当てはまったもので決める。
+ * - objective_done／objective_failed：主目標の達成（勝利）・果たせなくなった（敗北）。
+ * - hq_lost：味方の本陣の敗走・全滅（敗北）。脱出・離脱の目標の出口から離れた本陣は喪失ではない（合戦は続く）。
+ *   目標に数えない所から本陣が撤退したときは、合戦の放棄（撤退）。
+ * - army_broken：味方の部隊（まだ着いていない部隊も）がすべて戦えない：戦場を離れた部隊が崩れた部隊より少なくなければ放棄（撤退）、
+ *   崩れた部隊の方が多ければ敗北。出口から離れた部隊も「戦場を離れた」に数える（目標を果たしていれば、先に objective_done で勝ちになる）。
+ * - nightfall：日没（撤退）。
+ * - all_retreat：全軍撤退。allRetreat 'end' は今までどおり、命令から RULES.retreatGraceSec 秒（または味方が戦場からいなくなった時）で撤退。
+ *   'count' は、味方が戦場からいなくなるまで打ち切らない（退き口から離れた部隊は主目標に数える）。
+ * 敵の部隊がすべて崩れても勝ちにしない（主目標は自分で果たす。日没まで）。
+ */
+function decideByEndRules(s: BattleState): void {
+    const P = s.objectives!.primary!;
+    const er = s.setup.endRules!;
+    const allyHq = hqOf(s, 'ally');
+    const allies = s.units.filter((u) => u.side === 'ally');
+    const withdrawRest = () => {
+        for (const u of allies) {
+            if (!isActive(u)) continue;
+            u.status = 'withdrawn';
+            u.present = false;
+            u.engagedWith = null;
+            u.shootingAt = null;
+        }
+    };
+    for (const k of er.order) {
+        switch (k) {
+            case 'objective_done':
+                if (P.state === 'done') return finish(s, 'victory', 'objective_done');
+                break;
+            case 'objective_failed':
+                if (P.state === 'failed') return finish(s, 'defeat', 'objective_failed');
+                break;
+            case 'hq_lost':
+                if (allyHq && (allyHq.status === 'routed' || allyHq.status === 'destroyed')) return finish(s, 'defeat', 'ally_hq_routed');
+                // 出口から離れた（脱出・離脱の目標に数えた）総大将は、本陣の喪失ではない
+                if (allyHq && allyHq.status === 'withdrawn' && !(isLeaveObjective(P.def) && P.entered.includes(allyHq.id))) {
+                    withdrawRest();
+                    return finish(s, 'retreat', 'ordered_retreat');
+                }
+                break;
+            case 'army_broken':
+                if (allies.length > 0 && !allies.some(able)) {
+                    const withdrawn = allies.filter((u) => u.status === 'withdrawn').length;
+                    return withdrawn >= allies.length - withdrawn ? finish(s, 'retreat', 'ordered_retreat') : finish(s, 'defeat', 'ally_army_broken');
+                }
+                break;
+            case 'nightfall':
+                if (s.tick >= Math.round(s.timeLimitSec / RULES.tick)) return finish(s, 'retreat', 'nightfall');
+                break;
+            case 'all_retreat':
+                if (s.allRetreatAt !== null) {
+                    const still = allies.filter(isActive);
+                    const timeUp = er.allRetreat === 'end' && s.t - s.allRetreatAt >= RULES.retreatGraceSec - 1e-9;
+                    if (still.length === 0 || timeUp) {
+                        withdrawRest();
+                        return finish(s, 'retreat', 'ordered_retreat');
+                    }
+                }
+                break;
+        }
+    }
+    const enemies = s.units.filter((u) => u.side === 'enemy');
+    const tr = s.objectives!;
+    if (enemies.length > 0 && !enemies.some(able) && tr.armyBrokenT === undefined) {
+        tr.armyBrokenT = s.t;
+        log(s, 'objective', `敵の部隊はすべて崩れた。主目標「${P.def.label}」を果たせば勝ち（日没まで）`);
+    }
 }
 
 /** 敵がすべて崩れても、味方が自分で果たさなければならない主目標（区域の確保・門の制圧・出口への突破。段階目標はその段のどれかがそうなら） */

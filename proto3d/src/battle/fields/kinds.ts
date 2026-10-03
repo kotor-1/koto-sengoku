@@ -30,11 +30,11 @@ export const FIELD_KINDS: readonly FieldKindInfo[] = [
     { kind: 'temple', name: '寺社', uses: 'hill（四角の台地）・cliff・石段（narrow_frontage）・building・hold_zones', implemented: true },
     { kind: 'town_edge', name: '城下町外縁', uses: 'building・wall（門口）・road・limit_breakthrough', implemented: true },
     { kind: 'siege_front', name: '城攻め前面', uses: 'wall・gates（門の制圧）・hill（櫓）・fence・sequence（open_gate → hold_point）', implemented: true },
-    { kind: 'besieged_camp', name: '包囲された陣', uses: 'defend_time', implemented: false },
-    { kind: 'relief', name: '援軍救出', uses: 'rescue', implemented: false },
-    { kind: 'rearguard', name: '退却戦', uses: 'retreat_success', implemented: false },
-    { kind: 'night_raid', name: '夜襲・奇襲', uses: '視界を狭める（hideSight の上書き）・woods_ambush', implemented: false },
-    { kind: 'shore', name: '湖・海・河岸', uses: 'river（片側）・ford', implemented: false },
+    { kind: 'besieged_camp', name: '包囲された陣', uses: 'escape（総大将と指定数の脱出・出口 2 つ）・fence（陣）・cliff（突破口）・narrow_frontage・pursuit・endRules', implemented: true },
+    { kind: 'relief', name: '援軍救出', uses: 'rescue_escort（合流区域 → 安全区域・最低兵力）・woods（隠れた回り道）・時間差の援軍・endRules', implemented: true },
+    { kind: 'rearguard', name: '退却戦', uses: 'withdraw（総大将と指定数の離脱）・pursuit（追い討ち）・cliff（切れ目）・narrow_frontage・endRules（全軍撤退も数える）', implemented: true },
+    { kind: 'night_raid', name: '夜襲・奇襲', uses: 'night（視界と発見・篝火・物見）・woods（見つかりにくい道）・fence（陣）・hold_point・endRules', implemented: true },
+    { kind: 'shore', name: '湖・海・河岸', uses: 'river（片側の湖）・cliff（岸の狭い道）・hill（内陸の高地）・defend_zones・narrow_frontage・endRules', implemented: true },
 ];
 
 export function fieldKindInfo(kind: FieldKind): FieldKindInfo {

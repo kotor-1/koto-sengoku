@@ -252,6 +252,14 @@ export interface FieldRules {
  * - open_gate：門 gateId を制圧して開く（門の制圧の条件は GateDef.capture）
  * - sequence：段階目標。steps を順に果たす（今の段だけを数える。どれかの段が果たせなくなれば果たせない。最後の段で果たす）。
  *   結果には、どの段まで届いたか（ObjectiveResult.steps）も入れる
+ * 第4群で足した種類（docs/fields-group4-design.md §3。どれも、味方の戦える部隊が出口・退き口の区域に入ると、その部隊は戦場を離れて
+ * 「撤退済み」になり、目標に数える。撤退の命令で退き口から離れた部隊も、退き口がその区域の中なら数える）：
+ * - escape：総大将（味方の本陣）と、本陣のほかの count 部隊が、出口 exits のどれかから離れる（包囲の外へ脱出）。総大将が出口から離れても
+ *   本陣の喪失ではない（合戦は続く）。総大将が崩れる（敗走・全滅）か、離れられる部隊が count に足りなくなれば果たせない。names は出口ごとの名前
+ * - rescue_escort：味方の部隊 unitId（孤立した味方）と、ほかの味方の部隊が合流区域 meetZone に一緒に meetSec 秒（省けば 5 秒）いて合流し、
+ *   その後に unitId が安全区域 safeZone に戦える状態で入る。兵は最初の minRatio 以上。合流の前に安全区域へ入っても数えない（接触だけ・
+ *   能力だけでは果たさない）。対象が崩れる・撤退する・兵が minRatio を切ると果たせない
+ * - withdraw：総大将と、本陣のほかの count 部隊が、退き口 exit から離脱する（退却戦）。数え方は escape と同じで、出口が 1 つ。name は退き口の名前
  */
 export type ObjectiveDef = { id: string; label: string } & (
     | { type: 'destroy_hq' }
@@ -269,6 +277,9 @@ export type ObjectiveDef = { id: string; label: string } & (
     | { type: 'limit_breakthrough'; exits: Zone[]; maxCount: number; untilSec?: number; names?: string[] }
     | { type: 'open_gate'; gateId: string }
     | { type: 'sequence'; steps: ObjectiveDef[] }
+    | { type: 'escape'; exits: Zone[]; count: number; names?: string[] }
+    | { type: 'rescue_escort'; unitId: string; meetZone: Zone; safeZone: Zone; minRatio: number; meetSec?: number }
+    | { type: 'withdraw'; exit: Zone; count: number; name?: string }
 );
 export type ObjectiveType = ObjectiveDef['type'];
 
@@ -280,6 +291,49 @@ export interface ObjectiveResult {
     achieved: boolean;
     /** 段階目標（sequence）だけ：果たした段の数と段の数 */
     steps?: { done: number; total: number };
+    /** 脱出・離脱（escape・withdraw）だけ：出口から離れた部隊の数（総大将を含む）と、要る数（総大将＋count） */
+    count?: { done: number; total: number };
+    /** 救出（rescue_escort）だけ：合流したか */
+    met?: boolean;
+}
+
+/**
+ * 終わり方の判定の順（第4群。docs/fields-group4-design.md §3）。BattleSetup.endRules の order に、先に見るものから並べる。
+ * - objective_done：主目標を果たした → 勝利
+ * - objective_failed：主目標が果たせなくなった（総大将が崩れた・救出の対象が崩れた、など） → 敗北
+ * - hq_lost：味方の本陣が崩れた（敗走・全滅） → 敗北。本陣が脱出・離脱の目標の出口から離れたのは「脱出」で、喪失ではない。
+ *   目標に数えない所から本陣が撤退したときは、合戦の放棄（撤退）
+ * - army_broken：味方の部隊がすべて戦えない（戦場を離れた部隊の方が多ければ放棄＝撤退、崩れた部隊の方が多ければ敗北）
+ * - nightfall：日没 → 撤退
+ * - all_retreat：全軍撤退の命令 → 撤退（放棄）。allRetreat が 'count' なら、命令した部隊も出口・退き口の判定に入り、
+ *   味方が戦場からいなくなるまで（目標を果たせば、その時に勝利）打ち切らない。'end' なら今までどおり命令から RULES.retreatGraceSec 秒で打ち切る
+ */
+export type EndRuleKind = 'objective_done' | 'objective_failed' | 'hq_lost' | 'army_broken' | 'nightfall' | 'all_retreat';
+export interface EndRules {
+    /** 判定の順（先に見るものから。6 つすべてを 1 回ずつ） */
+    order: EndRuleKind[];
+    /** 全軍撤退の扱い（上の all_retreat） */
+    allRetreat: 'end' | 'count';
+}
+
+/**
+ * 夜（第4群。docs/fields-group4-design.md §4）。BattleSetup.night があると、両軍とも「発見済み」の相手だけが見える（seenBy）。
+ * - 未発見の相手は、こちらの戦える部隊のどれかから detectRange m 以内に来たら発見する（林など隠れる地形の中なら、その距離との短い方）。
+ * - 篝火の区域 torchZones の中にいる部隊は、torchRange m（省けば detectRange の 2 倍）から見つかる（隠れる地形の中でも）。
+ * - 物見 lookouts の部隊は、range m から見つける。
+ * - 発見済みの相手は、こちらの戦える部隊のどれかから sight m 以内にいる間は見え続ける（離れると見失う）。
+ * - 斬り合う・矢を射ると、その相手の陣営に発見される。
+ * 発見していない相手は、攻撃の命令の相手にならず、敵の考え・武将の自由な動きも狙わない・追わない（見えている相手だけを見る今までの決まりのまま）。
+ * 画面では、発見していない敵の名札・兵士・札・地図の印を出さず、色を少し暗くする。
+ */
+export interface NightRule {
+    sight: number;
+    detectRange: number;
+    torchZones?: Zone[];
+    torchRange?: number;
+    /** 篝火の区域の短い名前（地図の名札。省けば「篝火」） */
+    torchNames?: string[];
+    lookouts?: { unitId: string; range: number }[];
 }
 
 /** 戦場 */
@@ -339,6 +393,10 @@ export interface BattleSetup {
      * 省けば使わない（歴史分岐・架空の第一章は今までどおり）
      */
     generalInitiative?: boolean;
+    /** 終わり方の判定の順（第4群の戦場だけ。省けば今までの決まり＝decide・decideByObjective のまま） */
+    endRules?: EndRules;
+    /** 夜（第4群の夜襲の戦場だけ。省けば昼＝今までの視界のまま） */
+    night?: NightRule;
 }
 
 /** 合戦の結果の種類 */
@@ -380,6 +438,11 @@ export interface BattleOutcome {
     abilitiesUsed?: Record<string, number>;
     /** 目標の達成（BattleSetup.objectives があったときだけ）。勝敗・約束とは別の欄 */
     objectives?: { primary?: ObjectiveResult; secondary: ObjectiveResult[] };
+    /**
+     * 退いて終わった合戦の区別（BattleSetup.endRules のある合戦だけ）：'objective'＝主目標（脱出・離脱）を果たした撤収（勝利）／
+     * 'abandoned'＝主目標を果たす前に全軍撤退・本陣の撤退・諸隊の撤退で合戦を放棄した（撤退）。ほかの終わり方では入れない
+     */
+    withdrawal?: 'objective' | 'abandoned';
 }
 
 /** 合戦の画面を呼ぶ側（章の進行）への知らせ */

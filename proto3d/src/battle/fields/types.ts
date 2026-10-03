@@ -9,9 +9,11 @@
 import type {
     AbilityId,
     ClanId,
+    EndRules,
     GateDef,
     HighGroundRule,
     ObjectiveDef,
+    NightRule,
     Order,
     Side,
     SpecialRule,
@@ -165,4 +167,15 @@ export interface BattlefieldDef {
      * 演習の 5 戦場だけが付ける。国境の原（架空の第一章・歴史分岐の章）は付けない
      */
     generalInitiative?: boolean;
+    /**
+     * 第4群：true なら、演習でも追い討ち（BattleSetup.pursuit。歴史分岐の追い討ちと同じ決まり）を使う。敵は撤退の命令で退く部隊を追って
+     * 斬りかかり、退路の守護の範囲の中では守護の部隊に阻まれる。省けば使わない（既存の 15 戦場は今までどおり）
+     */
+    pursuit?: boolean;
+    /** 第4群：夜（BattleSetup.night。視界と発見・篝火・物見）。省けば昼 */
+    night?: NightRule;
+    /**
+     * 第4群：終わり方の判定の順（BattleSetup.endRules）。合戦の前の説明・結果に出す。省けば今までの決まり（既存の 15 戦場はこのまま）
+     */
+    endRules?: EndRules;
 }

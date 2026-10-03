@@ -14,9 +14,14 @@
  * - limit_breakthrough：敵の戦える部隊が出口へ届いた数（部隊単位）を maxCount 以内に抑える。届いた部隊は戦場を抜けて離れる（撤退済み）。
  * - open_gate：門を制圧して開く（数えるのは sim.ts の trackGates。ここは門が開いたかを見るだけ）。
  * - sequence：段階目標。今の段だけを数え、果たしたら次の段へ（次の段の時間は、その段が始まった時から数える）。
+ * 第4群で足した種類（docs/fields-group4-design.md §3）：
+ * - escape・withdraw：味方の戦える部隊が出口（退き口）の区域に入ると、その部隊は戦場を離れて撤退済みになり、数える（撤退の命令で、区域の中の
+ *   退き口から離れた部隊も数える）。総大将と、ほかの count 部隊が離れたら果たす。総大将が出口から離れても合戦は続く（本陣の喪失ではない）。
+ * - rescue_escort：合流（対象とほかの味方が合流区域に一緒に meetSec 秒）→ 対象が安全区域に戦える状態で入る（兵は minRatio 以上）。
+ * 終わり方の判定の順（BattleSetup.endRules）の説明の文（endRuleItems・endRuleBriefingLine・endRuleConditions）と、退いて終わった合戦の区別（withdrawalKind）もここに置く。
  * sim.ts を実行時に import しない（sim.ts がこのファイルを import するため）。
  */
-import type { BattleEndReason, BattleResultKind, BattleSetup, ObjectiveDef, ObjectiveResult, Side, Zone } from './types';
+import type { BattleEndReason, BattleOutcome, BattleResultKind, BattleSetup, EndRuleKind, ObjectiveDef, ObjectiveResult, Side, Zone } from './types';
 import type { BattleState, UnitState } from './sim';
 import { inZone } from './fieldRules';
 
@@ -46,6 +51,8 @@ export interface ObjectiveRun {
     stepIdx: number;
     /** 段階目標の段なら、その段階目標 */
     parent: ObjectiveRun | null;
+    /** rescue_escort：合流した時刻（まだなら null。合流を数えている秒数は sec） */
+    metT: number | null;
 }
 
 export interface ObjectiveTrack {
@@ -140,7 +147,7 @@ export function createObjectiveTrack(setup: BattleSetup): ObjectiveTrack | null 
         if (seen.has(def.id)) throw new Error(`目標の id が重なっています: ${def.id}`);
         seen.add(def.id);
         if ('unitId' in def && !ids.has(def.unitId)) throw new Error(`目標 ${def.id} の部隊がありません: ${def.unitId}`);
-        const want = def.type === 'break_unit' ? 'enemy' : def.type === 'rescue' || def.type === 'preserve_unit' ? 'ally' : null;
+        const want = def.type === 'break_unit' ? 'enemy' : def.type === 'rescue' || def.type === 'preserve_unit' || def.type === 'rescue_escort' ? 'ally' : null;
         if (want && 'unitId' in def && sideOf.get(def.unitId) !== want) throw new Error(`目標 ${def.id}（${def.type}）の部隊 ${def.unitId} は ${want} の部隊ではありません`);
         if (def.type === 'survive_until' && !setup.reinforcements?.some((r) => r.id === def.reinforcementId)) {
             throw new Error(`目標 ${def.id} の援軍がありません: ${def.reinforcementId}`);
@@ -153,6 +160,9 @@ export function createObjectiveTrack(setup: BattleSetup): ObjectiveTrack | null 
         if (def.type === 'sequence' && def.steps.length === 0) throw new Error(`目標 ${def.id} の段階がありません`);
         if (def.type === 'hold_zones' && def.zones.length === 0) throw new Error(`目標 ${def.id} の区域がありません`);
         if (def.type === 'limit_breakthrough' && def.exits.length === 0) throw new Error(`目標 ${def.id} の出口がありません`);
+        if (def.type === 'escape' && def.exits.length === 0) throw new Error(`目標 ${def.id} の出口がありません`);
+        if ((def.type === 'escape' || def.type === 'withdraw') && !(Number.isInteger(def.count) && def.count >= 0)) throw new Error(`目標 ${def.id} の count は 0 以上の整数にしてください`);
+        if ((def.type === 'escape' || def.type === 'withdraw') && !setup.units.some((u) => u.side === 'ally' && u.kind === 'honjin')) throw new Error(`目標 ${def.id} の総大将（味方の本陣）がありません`);
         const run: ObjectiveRun = {
             def,
             role,
@@ -167,6 +177,7 @@ export function createObjectiveTrack(setup: BattleSetup): ObjectiveTrack | null 
             steps: [],
             stepIdx: 0,
             parent: null,
+            metT: null,
         };
         if (def.type === 'sequence') {
             run.steps = def.steps.map((d) => mk(d, role));
@@ -363,7 +374,82 @@ function update(s: BattleState, r: ObjectiveRun, dt: number, log: (text: string)
             if (next.state === 'done' || next.state === 'failed') update(s, r, 0, log);
             return;
         }
+        case 'escape':
+        case 'withdraw':
+            return updateLeave(s, r, log);
+        case 'rescue_escort': {
+            const u = byId(s, d.unitId);
+            if (!u) return;
+            if (broken(u)) return settle(s, r, 'failed', log);
+            // 安全区域へ届く前に戦場を離れた（撤退の命令など）：もう連れ帰れない
+            if (u.status === 'withdrawn') return settle(s, r, 'failed', log);
+            if (u.startStrength > 0 && u.strength / u.startStrength < d.minRatio - 1e-9) return settle(s, r, 'failed', log);
+            if (r.metT === null) {
+                // 合流：対象とほかの味方が、合流区域に一緒にいる秒数（離れると 0 に戻る。触れただけでは合流にならない）
+                const together = active(u) && inZone(d.meetZone, u.x, u.z) && s.units.some((o) => o !== u && o.side === 'ally' && active(o) && inZone(d.meetZone, o.x, o.z));
+                r.sec = together ? r.sec + dt : 0;
+                if (r.sec >= (d.meetSec ?? 5) - 1e-9) {
+                    r.metT = t;
+                    log(`${r.role === 'primary' ? '主目標' : '副目標'}「${r.def.label}」：${u.name}と合流した。安全地点（輪）まで連れ帰る`);
+                }
+                return;
+            }
+            if (active(u) && inZone(d.safeZone, u.x, u.z)) settle(s, r, 'done', log);
+            return;
+        }
     }
+}
+
+/** escape・withdraw の出口（区域の並び） */
+export function leaveExits(d: ObjectiveDef): Zone[] {
+    if (d.type === 'escape') return d.exits;
+    if (d.type === 'withdraw') return [d.exit];
+    return [];
+}
+/** escape・withdraw の出口 k の名前 */
+function leaveExitName(d: ObjectiveDef, k: number): string {
+    if (d.type === 'escape') return d.names?.[k] ?? '出口';
+    if (d.type === 'withdraw') return d.name ?? '退き口';
+    return '出口';
+}
+/** escape・withdraw：離れた部隊のうち総大将でないものの数 */
+function leftOthers(s: BattleState, r: ObjectiveRun): number {
+    const h = hq(s, 'ally');
+    return r.entered.filter((id) => id !== h?.id).length;
+}
+
+/**
+ * 脱出・離脱（escape・withdraw）：出口（退き口）の区域に入った味方の戦える部隊は、戦場を離れて撤退済みになり、数える。撤退の命令で
+ * 区域の中の退き口から離れた部隊（sim.ts が先に撤退済みにする）も数える。総大将とほかの count 部隊が離れたら果たす。
+ * 総大将が崩れた・目標に数えない所から退いた、または離れられる部隊が足りなくなれば果たせない
+ */
+function updateLeave(s: BattleState, r: ObjectiveRun, log: (text: string) => void): void {
+    const d = r.def as Extract<ObjectiveDef, { type: 'escape' | 'withdraw' }>;
+    const exits = leaveExits(d);
+    const h = hq(s, 'ally');
+    const verb = d.type === 'escape' ? '脱出した' : '離脱した';
+    for (const u of s.units) {
+        if (u.side !== 'ally' || r.entered.includes(u.id)) continue;
+        const k = exits.findIndex((z) => inZone(z, u.x, u.z));
+        if (k < 0) continue;
+        if (u.present && u.status === 'ready') {
+            // 出口に入った：その部隊は戦場を離れる（撤退済み。兵は残る）
+            u.status = 'withdrawn';
+            u.present = false;
+            u.engagedWith = null;
+            u.shootingAt = null;
+        } else if (!(u.status === 'withdrawn' && !u.present)) continue;
+        r.entered.push(u.id);
+        const n = leftOthers(s, r);
+        const hqOut = !!h && r.entered.includes(h.id);
+        log(`${u.name}が${leaveExitName(d, k)}から${verb}（総大将 ${hqOut ? '済み' : 'まだ'}・ほか ${Math.min(n, d.count)}／${d.count} 部隊）`);
+    }
+    if (h && broken(h)) return settle(s, r, 'failed', log);
+    if (h && h.status === 'withdrawn' && !r.entered.includes(h.id)) return settle(s, r, 'failed', log);
+    const others = leftOthers(s, r);
+    if ((!h || r.entered.includes(h.id)) && others >= d.count) return settle(s, r, 'done', log);
+    const can = s.units.filter((u) => u.side === 'ally' && u !== h && u.status === 'ready' && !r.entered.includes(u.id)).length;
+    if (others + can < d.count) settle(s, r, 'failed', log);
 }
 
 /** 1 つの目標だけを今の状態で確かめ直す（時間は進めない。sim.ts が撤退で兵を離し切った後に使う） */
@@ -441,6 +527,9 @@ export function finalObjectives(
         const out: ObjectiveResult = { id: r.def.id, type: r.def.type, label: r.def.label, achieved };
         // 段階目標は、どの段まで届いたか（果たした段の数）も記録する
         if (r.def.type === 'sequence') out.steps = { done: stepsDone(r), total: r.steps.length };
+        // 脱出・離脱は、出口から離れた部隊の数（総大将を含む）も記録する（日没・放棄で終えたときに、どこまで届いたか）
+        if (r.def.type === 'escape' || r.def.type === 'withdraw') out.count = { done: r.entered.length, total: r.def.count + 1 };
+        if (r.def.type === 'rescue_escort') out.met = r.metT !== null;
         return out;
     };
     const out: { primary?: ObjectiveResult; secondary: ObjectiveResult[] } = { secondary: [] };
@@ -537,6 +626,21 @@ function progressText(s: BattleState, r: ObjectiveRun): string {
         }
         case 'open_gate':
             return gateProgressText(s, d.gateId);
+        case 'escape':
+        case 'withdraw': {
+            // 例：「総大将 まだ・ほか 1／3 部隊が脱出（出口の輪に入った部隊は戦場を離れる）」
+            const h = hq(s, 'ally');
+            const hqOut = !!h && r.entered.includes(h.id);
+            const verb = d.type === 'escape' ? '脱出' : '離脱';
+            return `総大将 ${hqOut ? '済み' : 'まだ'}・ほか ${Math.min(leftOthers(s, r), d.count)}／${d.count} 部隊が${verb}（${d.type === 'escape' ? '出口' : '退き口'}の輪に入った部隊は戦場を離れる）`;
+        }
+        case 'rescue_escort': {
+            const u = byId(s, d.unitId);
+            if (!u) return '';
+            const ratio = `兵 ${Math.round(u.startStrength > 0 ? (u.strength / u.startStrength) * 100 : 0)}％／${Math.round(d.minRatio * 100)}％ 以上`;
+            if (r.metT === null) return `合流 ${Math.floor(r.sec)}／${d.meetSec ?? 5} 秒・${ratio}（合流の輪に${u.name}とほかの味方が一緒にいる間だけ数える。安全地点はその後）`;
+            return `合流した・${u.name}を安全地点へ・${ratio}（安全地点の輪に入れば果たす）`;
+        }
         case 'sequence': {
             // 例：「段階 1／2：外門の制圧・外門 制圧 5／20 秒（次：最初の曲輪の確保）」
             const cur = r.steps[r.stepIdx];
@@ -572,6 +676,8 @@ function pushActiveZones(s: BattleState, r: ObjectiveRun, out: Zone[]): void {
     else if (d.type === 'defend_time' && d.zone) out.push(d.zone);
     else if (d.type === 'defend_zones') d.zones.forEach((z, i) => !r.zoneLost[i] && out.push(z));
     else if (d.type === 'hold_zones') out.push(...d.zones);
+    else if (d.type === 'escape' || d.type === 'withdraw') out.push(...leaveExits(d));
+    else if (d.type === 'rescue_escort') out.push(r.metT === null ? d.meetZone : d.safeZone);
     else if (d.type === 'open_gate') {
         const g = gateOf(s, d.gateId);
         if (g && !g.open) out.push(g.def.capture.zone);
@@ -589,4 +695,113 @@ export function primaryState(s: BattleState): ObjectiveState | null {
 /** 目標の時刻の丸め（記録用） */
 export function settledAt(r: ObjectiveRun): number | null {
     return r.settledT === null ? null : r1(r.settledT);
+}
+
+// ---------------------------------------------------------------- 終わり方の判定の順（第4群。BattleSetup.endRules）
+
+/** 終わり方の判定の順の既定（設計 docs/fields-group4-design.md §3 の順） */
+export const DEFAULT_END_ORDER: readonly EndRuleKind[] = ['objective_done', 'objective_failed', 'hq_lost', 'army_broken', 'nightfall', 'all_retreat'];
+
+/** 主目標が脱出・離脱（出口から離れて果たす目標）か */
+export function isLeaveObjective(d: ObjectiveDef | undefined): boolean {
+    return !!d && (d.type === 'escape' || d.type === 'withdraw');
+}
+
+/** 主目標が果たせなくなる時の短い説明（種類ごと） */
+function failWhy(d: ObjectiveDef): string {
+    switch (d.type) {
+        case 'escape':
+        case 'withdraw':
+            return '総大将が崩れる・離れられる部隊が足りなくなる';
+        case 'rescue_escort':
+            return `救出の対象が崩れる・安全地点の前に撤退する・兵が ${Math.round(d.minRatio * 100)}％ を切る`;
+        case 'defend_zones':
+            return `守る地点が ${d.minHeld} か所より少なくなる`;
+        case 'hold_point':
+        case 'hold_zones':
+            return '（確保の目標は日没まで続く）';
+        default:
+            return '目標の条件が満たせなくなる';
+    }
+}
+
+/** 判定の 1 つの説明の文 */
+function endRuleText(k: EndRuleKind, setup: BattleSetup): string {
+    const p = setup.objectives?.primary;
+    const leave = isLeaveObjective(p);
+    const allRetreat = setup.endRules?.allRetreat ?? 'end';
+    switch (k) {
+        case 'objective_done':
+            return p ? `主目標「${p.label}」を果たす → 勝利${leave ? '（目標を果たした撤収）' : ''}` : '主目標を果たす → 勝利';
+        case 'objective_failed':
+            return `主目標が果たせなくなる → 敗北（${p ? failWhy(p) : '目標の条件が満たせなくなる'}）`;
+        case 'hq_lost':
+            return `味方の本陣が崩れる → 敗北${leave ? '。総大将が出口から離れるのは脱出で、本陣の喪失ではない（合戦は続く）' : ''}`;
+        case 'army_broken':
+            return '味方の部隊がすべて戦えない → 敗北（戦場を離れた部隊の方が多ければ、合戦の放棄＝撤退）';
+        case 'nightfall':
+            return `日没（${Math.floor(setup.timeLimitSec / 60)}:${String(Math.floor(setup.timeLimitSec % 60)).padStart(2, '0')}）→ 撤退（主目標は未達成。どこまで届いたかを記録する）`;
+        case 'all_retreat':
+            return allRetreat === 'count'
+                ? `全軍撤退 → 退き口から離れた部隊も主目標に数え、味方が戦場からいなくなるまで打ち切らない（目標を果たせば勝利の撤収、届かなければ合戦の放棄＝撤退）`
+                : '全軍撤退 → まもなく打ち切り、撤退（合戦の放棄）';
+    }
+}
+
+/** 終わり方の判定の順の項目（先に見るものから。endRules の無い合戦は空） */
+export function endRuleItems(setup: BattleSetup): string[] {
+    const er = setup.endRules;
+    if (!er) return [];
+    return er.order.map((k) => endRuleText(k, setup));
+}
+
+/** 合戦の前の説明に足す 1 行（endRules の無い合戦は null） */
+export function endRuleBriefingLine(setup: BattleSetup): string | null {
+    const items = endRuleItems(setup);
+    if (!items.length) return null;
+    const mark = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧'];
+    return `勝ち負けの判定の順（先に当てはまったもので決まる）：${items.map((t, i) => `${mark[i] ?? `${i + 1}.`} ${t}`).join('　')}`;
+}
+
+/** 合戦の画面の上の「勝ち負けの条件」（endRules のある合戦。control.ts の conditionsFor が使う） */
+export function endRuleConditions(s: BattleState): { label: string; text: string; tone: 'good' | 'bad' | 'info' }[] {
+    const setup = s.setup;
+    const p = setup.objectives?.primary;
+    const leave = isLeaveObjective(p);
+    const short: Record<EndRuleKind, string> = {
+        objective_done: '主目標の達成',
+        objective_failed: '主目標の失敗',
+        hq_lost: '本陣の崩れ',
+        army_broken: '諸隊が戦えない',
+        nightfall: '日没',
+        all_retreat: '全軍撤退',
+    };
+    return [
+        { label: '勝利', text: p ? `主目標「${p.label}」を果たす${leave ? '（総大将が出口から離れるのは脱出。負けではない）' : ''}` : '主目標を果たす', tone: 'good' },
+        { label: '敗北', text: `主目標が果たせない（${p ? failWhy(p) : ''}）／味方本陣が崩れる／味方の部隊がすべて戦えない`, tone: 'bad' },
+        {
+            label: '撤退',
+            text: setup.endRules?.allRetreat === 'count' ? '日没／全軍撤退（退き口から離れた部隊も目標に数える。目標の前に味方がいなくなれば放棄）' : '日没／全軍撤退（合戦の放棄）',
+            tone: 'info',
+        },
+        { label: '判定の順', text: (setup.endRules?.order ?? DEFAULT_END_ORDER).map((k) => short[k]).join(' → '), tone: 'info' },
+    ];
+}
+
+/**
+ * 退いて終わった合戦の区別（endRules のある合戦だけ。BattleOutcome.withdrawal）：主目標（脱出・離脱）を果たした撤収＝'objective'、
+ * 主目標の前に全軍撤退・本陣の撤退・諸隊の撤退で終えた＝'abandoned'。ほかは undefined
+ */
+export function withdrawalKind(setup: BattleSetup, result: BattleResultKind, reason: BattleEndReason): BattleOutcome['withdrawal'] {
+    if (!setup.endRules) return undefined;
+    if (result === 'victory' && reason === 'objective_done' && isLeaveObjective(setup.objectives?.primary)) return 'objective';
+    if (reason === 'ordered_retreat') return 'abandoned';
+    return undefined;
+}
+
+/** 結果の画面に添える、退いて終わった合戦の区別の文（区別の無い結果は空） */
+export function withdrawalNote(o: Pick<BattleOutcome, 'withdrawal'>): string {
+    if (o.withdrawal === 'objective') return '目標を果たした撤収（脱出・離脱で勝利。合戦の放棄ではない）';
+    if (o.withdrawal === 'abandoned') return '主目標を果たす前に兵を退いた（合戦の放棄。撤退）';
+    return '';
 }

@@ -105,6 +105,14 @@ export class PracticeDomView implements PracticeView {
             rules.append(ul);
         } else rules.append(el('p', undefined, '特別な決まりはありません（ふつうの野戦）。'));
         left.append(rules);
+        // 勝ち負けの判定の順（第4群の戦場だけ。先に当てはまったもので決まる）
+        if (info.endRules.length) {
+            const ends = section('勝ち負けの判定の順', 'ends');
+            const ol = el('ol');
+            for (const r of info.endRules) ol.append(el('li', undefined, r));
+            ends.append(ol);
+            left.append(ends);
+        }
         // 編成
         const units = section('味方の編成', 'units');
         const table = el('table', 'g-pr-units');
@@ -167,6 +175,12 @@ export class PracticeDomView implements PracticeView {
         res.dataset.outcome = info.result;
         dl.append(el('dt', undefined, '勝敗'), res);
         if (info.reasonText) dl.append(el('dt', undefined, '終わり方'), el('dd', undefined, info.reasonText));
+        // 第4群：目標を果たした撤収と、合戦の放棄の区別
+        if (info.withdrawalText) {
+            const wd = el('dd', undefined, info.withdrawalText);
+            wd.dataset.withdrawal = '1';
+            dl.append(el('dt', undefined, '退き方'), wd);
+        }
         const mark = (ok: boolean) => (ok ? '達成' : '未達成');
         const pd = el('dd', info.primary.achieved ? 'ok' : 'ng', `${mark(info.primary.achieved)}：${info.primary.label}`);
         pd.dataset.objective = 'primary';

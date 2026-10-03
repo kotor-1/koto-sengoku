@@ -479,7 +479,8 @@ describe('検査（validateField）', () => {
 
 describe('既存の戦場は新しい仕組みを持たない（計算に入らない）', () => {
     it('状態を直接操作：既存の 10 戦場と国境の原は、射線の格子・門・乾いた足場・泥の弓・突撃の決まりが無い', () => {
-        const old = FIELDS.filter((f) => !['marsh', 'village', 'temple', 'town_edge', 'siege_front'].includes(f.id));
+        // 第4群の 5 戦場（新しい戦場。柵などを使う）も除く
+        const old = FIELDS.filter((f) => !['marsh', 'village', 'temple', 'town_edge', 'siege_front', 'besieged_camp', 'relief', 'rearguard', 'night_raid', 'shore'].includes(f.id));
         expect(old).toHaveLength(11);
         for (const f of old) {
             const env = createFieldEnv(fieldMap(f), fieldRulesOf(f));

@@ -13,6 +13,9 @@ import { ABILITY_DATA, ABILITY_FICTION_NOTE, abilityInfo, abilityMarks, abilityS
 import { objectiveProgress, type ObjectiveRole, type ObjectiveRun, type ObjectiveState } from './objectives';
 import { zoneCenter } from './fieldRules';
 import { GENERAL_ROLE_LABELS, RELATION_SELF, generalById } from './generals';
+// 第4群：終わり方の判定の順・脱出／離脱の出口・夜と追い討ちの決まりの文
+import { endRuleConditions, leaveExits } from './objectives';
+import { nightRuleTexts } from './night';
 
 // ---------------------------------------------------------------- 部隊の見た目
 
@@ -421,6 +424,8 @@ export const CONDITIONS: { label: string; text: string; tone: 'good' | 'bad' | '
 export function conditionsFor(s: BattleState): typeof CONDITIONS {
     const p = s.objectives?.primary?.def;
     if (!p) return CONDITIONS;
+    // 第4群：終わり方の判定の順をデータで持つ戦場は、その順を出す（objectives.ts の endRuleConditions）
+    if (s.setup.endRules) return endRuleConditions(s);
     const win =
         p.type === 'destroy_hq'
             ? '敵本陣を敗走させる／敵の本陣以外をすべて崩す'
@@ -1223,7 +1228,8 @@ export function fieldRuleTexts(s: BattleState): string[] {
     if (s.map.terrain.some((a) => a.kind === 'river')) {
         const ford = s.map.terrain.some((a) => a.kind === 'ford');
         const bridge = s.map.terrain.some((a) => a.kind === 'bridge');
-        out.push(bridge ? `深い川は渡れない（${ford ? '浅瀬と橋' : '橋'}だけ渡れる）` : '深い川は渡れない（浅瀬だけ渡れる）');
+        // 浅瀬も橋も無い水面（第4群の湖・河岸）は「渡れない水面」
+        out.push(bridge ? `深い川は渡れない（${ford ? '浅瀬と橋' : '橋'}だけ渡れる）` : ford ? '深い川は渡れない（浅瀬だけ渡れる）' : '湖（深い水面）は渡れない（船は無い。水辺の陸戦）');
     }
     if (s.map.terrain.some((a) => a.kind === 'cliff')) out.push('崖は通れない');
     // 第3群：湿地の泥（弓・突撃）・乾いた足場・障害物・門
@@ -1242,6 +1248,8 @@ export function fieldRuleTexts(s: BattleState): string[] {
     if (obstacles.length) out.push(`${obstacles.join('・')}は通れず、矢も通さない（陰の相手は射られない。高い所からは越えて射られる）`);
     if (s.map.terrain.some((a) => a.kind === 'fence')) out.push('柵は通れないが、矢は通す');
     for (const g of s.field.gates) out.push(`${g.def.name}：閉じている間は通れず、矢も通さない。${gateLabelText(g.def).slice(g.def.name.length + 1)}（開いた門は閉じない）`);
+    // 第4群：夜（視界と発見・篝火・物見）・追い討ち（データで演習にも）。どちらも無い戦場では何も足さない
+    out.push(...nightRuleTexts(s.setup));
     return out;
 }
 
@@ -1272,6 +1280,10 @@ const ZONE_NAME: Partial<Record<ObjectiveDef['type'], string>> = {
     hold_zones: '確保する地点',
     limit_breakthrough: '敵に抜かせない出口',
     open_gate: '門の制圧',
+    // 第4群
+    escape: '脱出の出口',
+    withdraw: '離脱の退き口',
+    rescue_escort: '合流の輪',
 };
 
 /** 地図に描く目標の区域（区域を持つ目標だけ。主目標 → 副目標の順） */
@@ -1296,6 +1308,16 @@ export function objectiveZoneMarks(s: BattleState): ObjectiveZoneMark[] {
         }
         if (d.type === 'limit_breakthrough') {
             d.exits.forEach((zone, i) => out.push({ id: `${d.id}#${i}`, role: r.role, zone, name: prefix + (d.names?.[i] ?? ZONE_NAME.limit_breakthrough!) }));
+            return;
+        }
+        if (d.type === 'escape' || d.type === 'withdraw') {
+            // 第4群：脱出の出口・離脱の退き口（入った味方の部隊は戦場を離れる）
+            leaveExits(d).forEach((zone, i) => out.push({ id: `${d.id}#${i}`, role: r.role, zone, name: prefix + (d.type === 'escape' ? (d.names?.[i] ?? ZONE_NAME.escape!) : (d.name ?? ZONE_NAME.withdraw!)) }));
+            return;
+        }
+        if (d.type === 'rescue_escort') {
+            // 第4群：合流の輪と安全地点の輪（別々の区域）
+            out.push({ id: `${d.id}#0`, role: r.role, zone: d.meetZone, name: `${prefix}合流の輪` }, { id: `${d.id}#1`, role: r.role, zone: d.safeZone, name: `${prefix}安全地点（連れ帰る先）` });
             return;
         }
         if (d.type === 'open_gate') {
@@ -1372,6 +1394,8 @@ export interface ReinforcementMark {
 export function reinforcementMarks(s: BattleState): ReinforcementMark[] {
     const out: ReinforcementMark[] = [];
     for (const r of s.setup.reinforcements ?? []) {
+        // 夜（第4群）：敵の援軍の出る所は地図に出さない（見つけるまで分からない）
+        if (s.setup.night && r.side === 'enemy') continue;
         const defs = r.unitIds.map((id) => s.setup.units.find((u) => u.id === id)).filter((u): u is NonNullable<typeof u> => !!u);
         if (defs.length === 0) continue;
         out.push({ id: r.id, side: r.side, x: defs[0].x, z: defs[0].z, at: Math.min(...defs.map((u) => u.arriveAt ?? 0)) });
@@ -1384,8 +1408,9 @@ export function objectiveUnitMarks(s: BattleState): Map<string, string> {
     const m = new Map<string, string>();
     for (const r of s.objectives?.list ?? []) {
         const d = r.def;
-        if (d.type === 'rescue') m.set(d.unitId, '救出');
-        else if (d.type === 'preserve_unit') m.set(d.unitId, '守る');
+        if (d.type === 'rescue' || d.type === 'rescue_escort') m.set(d.unitId, '救出');
+        // 救出の対象に「部隊を残す」の副目標も付いているとき（第4群の援軍救出）は「救出」のまま
+        else if (d.type === 'preserve_unit' && m.get(d.unitId) !== '救出') m.set(d.unitId, '守る');
         else if (d.type === 'break_unit') m.set(d.unitId, '崩す');
     }
     return m;
@@ -1484,7 +1509,8 @@ export function mapLabels(s: BattleState): MapLabel[] {
             }
             if (a.kind === 'river') {
                 const p = rectLabelPoint(s, r, fords);
-                out.push({ id: `t${i}`, text: name, x: p.x, z: p.z, y: 0.5 });
+                // 浅瀬も橋も無い水面（第4群の湖・河岸）は「湖」
+                out.push({ id: `t${i}`, text: fords.length ? name : '湖（深い水面。渡れない）', x: p.x, z: p.z, y: 0.5 });
             } else if (a.kind === 'ford') out.push({ id: `t${i}`, text: name, x: (r.x0 + r.x1) / 2, z: r.z1 + 6, y: 0.5 });
             else if (a.kind === 'hill') {
                 // 四角の丘（第3群の台地・櫓の台）：大きい台地は「台地（高い）」と真ん中より少し南に。小さい台（櫓）は、上に立つ部隊の名札と

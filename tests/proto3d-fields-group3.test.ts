@@ -191,8 +191,9 @@ describe('記録（演習の保存）：段階目標はどの段まで届いた�
         const win = play('siege_front', SIEGE_PLANS.bastion);
         const rl = recordFromOutcome(lose.o, f.objectives.primary.id, new Date(0));
         const rw = recordFromOutcome(win.o, f.objectives.primary.id, new Date(0));
-        expect(rl.primary).toEqual({ id: 'siege_seq', achieved: false, steps: { done: 0, total: 2 } });
-        expect(rw.primary).toEqual({ id: 'siege_seq', achieved: true, steps: { done: 2, total: 2 } });
+        // 第4群：記録に目標の種類（type）も入れる
+        expect(rl.primary).toEqual({ id: 'siege_seq', achieved: false, steps: { done: 0, total: 2 }, type: 'sequence' });
+        expect(rw.primary).toEqual({ id: 'siege_seq', achieved: true, steps: { done: 2, total: 2 }, type: 'sequence' });
         const json = JSON.stringify({ version: 1, records: { siege_front: { plays: 2, last: rl, best: rw } } });
         expect(parsePracticeData(json)?.records.siege_front?.last.primary.steps).toEqual({ done: 0, total: 2 });
         // 段の無い古い記録（第1群・第2群）は今までどおり読める。段の数がおかしい記録は読まない

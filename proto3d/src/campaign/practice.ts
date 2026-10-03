@@ -12,7 +12,7 @@
  *
  * 演習はゲーム用の演習（架空の相手）。敵はすべて架空の「敵勢」（家 rival）で、史実の合戦の再現ではない。
  */
-import type { BattleEndReason, BattleOutcome, BattleResultKind, BattleRunHooks, BattleSetup } from '../battle/types';
+import type { BattleEndReason, BattleOutcome, BattleResultKind, BattleRunHooks, BattleSetup, ObjectiveType } from '../battle/types';
 import { buildBattleSetup, getField, practiceFields, type BattlefieldDef } from '../battle/fields';
 import { createBattle } from '../battle/sim';
 import { KIND_SHORT, RESULT_LABEL, fieldRuleTexts, fmtClock, scenarioTexts } from '../battle/control';
@@ -20,6 +20,7 @@ import { ABILITY_DATA, abilityDisplayName, resolveAbilityId } from '../battle/ab
 import { generalById } from '../battle/generals';
 import { CAMPAIGN_SAVE_KEY, LEGACY_2D_SAVE_KEY, saveFailureMessage, writeVerified, type SaveFailureReason, type StorageLike } from './save';
 import { formatSavedTime } from './scenario';
+import { endRuleItems, withdrawalNote } from '../battle/objectives';
 
 // ================= 保存 =================
 
@@ -36,10 +37,16 @@ export const PRACTICE_NOTE = 'ゲーム用の演習（架空の相手）';
 export interface PracticeResultRecord {
     result: BattleResultKind;
     reason: BattleEndReason;
-    /** 主目標（達成は勝利かどうかと同じ）。段階目標（第3群の城攻め前面など）は、果たした段の数と段の数も（無い記録もそのまま読める） */
-    primary: { id: string; achieved: boolean; steps?: { done: number; total: number } };
-    /** 副目標（1 つずつ） */
-    secondary: { id: string; label: string; achieved: boolean }[];
+    /**
+     * 主目標（達成は勝利かどうかと同じ）。段階目標（第3群の城攻め前面など）は、果たした段の数と段の数も（無い記録もそのまま読める）。
+     * 第4群で足した欄（どれも省ける。前の記録はそのまま読める）：type＝目標の種類（例：escape）、count＝脱出・離脱で出口から離れた部隊の数
+     * （総大将を含む）と要る数、met＝救出で合流したか
+     */
+    primary: { id: string; achieved: boolean; steps?: { done: number; total: number }; type?: ObjectiveType; count?: { done: number; total: number }; met?: boolean };
+    /** 副目標（1 つずつ。type は第4群で足した目標の種類。省ける） */
+    secondary: { id: string; label: string; achieved: boolean; type?: ObjectiveType }[];
+    /** 退いて終わった合戦の区別（第4群の戦場だけ。'objective'＝目標を果たした撤収／'abandoned'＝合戦の放棄）。省ける */
+    withdrawal?: 'objective' | 'abandoned';
     /** 合戦にかかった時間（秒。0.1 秒で丸める） */
     elapsedSec: number;
     /** 記録した日時（ISO） */
@@ -82,11 +89,18 @@ const REASONS: readonly BattleEndReason[] = [
 ];
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+/** 目標の種類の欄（第4群）：文字列なら受け取る（知らない種類の名前でも、記録を読めなくしない） */
+const isType = (v: unknown): boolean => v === undefined || (typeof v === 'string' && v.length > 0 && v.length <= 40);
+/** 数の組（done ≤ total の 0 以上の整数）か */
+function parseCount(v: unknown): { done: number; total: number } | null {
+    if (!isObj(v) || !Number.isInteger(v.done) || !Number.isInteger(v.total) || (v.done as number) < 0 || (v.done as number) > (v.total as number)) return null;
+    return { done: v.done as number, total: v.total as number };
+}
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
 function parseResult(v: unknown): PracticeResultRecord | null {
     if (!isObj(v)) return null;
-    const { result, reason, primary, secondary, elapsedSec, at } = v;
+    const { result, reason, primary, secondary, elapsedSec, at, withdrawal } = v;
     if (!RESULTS.includes(result as BattleResultKind) || !REASONS.includes(reason as BattleEndReason)) return null;
     if (!isObj(primary) || typeof primary.id !== 'string' || typeof primary.achieved !== 'boolean') return null;
     // 段階目標の段（省けば無し。あれば 0 以上の整数で done ≤ total）
@@ -96,14 +110,32 @@ function parseResult(v: unknown): PracticeResultRecord | null {
         if (!isObj(st) || !Number.isInteger(st.done) || !Number.isInteger(st.total) || (st.done as number) < 0 || (st.done as number) > (st.total as number)) return null;
         steps = { done: st.done as number, total: st.total as number };
     }
+    // 第4群の欄（省ける）
+    if (!isType(primary.type)) return null;
+    let count: { done: number; total: number } | null = null;
+    if (primary.count !== undefined && !(count = parseCount(primary.count))) return null;
+    if (primary.met !== undefined && typeof primary.met !== 'boolean') return null;
+    if (withdrawal !== undefined && withdrawal !== 'objective' && withdrawal !== 'abandoned') return null;
     if (!Array.isArray(secondary)) return null;
     const sec: PracticeResultRecord['secondary'] = [];
     for (const s of secondary) {
-        if (!isObj(s) || typeof s.id !== 'string' || typeof s.label !== 'string' || typeof s.achieved !== 'boolean') return null;
-        sec.push({ id: s.id, label: s.label, achieved: s.achieved });
+        if (!isObj(s) || typeof s.id !== 'string' || typeof s.label !== 'string' || typeof s.achieved !== 'boolean' || !isType(s.type)) return null;
+        sec.push({ id: s.id, label: s.label, achieved: s.achieved, ...(s.type !== undefined ? { type: s.type as ObjectiveType } : {}) });
     }
     if (!isNum(elapsedSec) || elapsedSec < 0 || typeof at !== 'string' || Number.isNaN(Date.parse(at))) return null;
-    return { result: result as BattleResultKind, reason: reason as BattleEndReason, primary: { id: primary.id, achieved: primary.achieved, ...(steps ? { steps } : {}) }, secondary: sec, elapsedSec, at };
+    const prim: PracticeResultRecord['primary'] = { id: primary.id, achieved: primary.achieved, ...(steps ? { steps } : {}) };
+    if (primary.type !== undefined) prim.type = primary.type as ObjectiveType;
+    if (count) prim.count = count;
+    if (primary.met !== undefined) prim.met = primary.met as boolean;
+    return {
+        result: result as BattleResultKind,
+        reason: reason as BattleEndReason,
+        primary: prim,
+        secondary: sec,
+        elapsedSec,
+        at,
+        ...(withdrawal !== undefined ? { withdrawal: withdrawal as 'objective' | 'abandoned' } : {}),
+    };
 }
 
 /** 保存の文字列を読む（形が違えば null） */
@@ -129,15 +161,25 @@ export function parsePracticeData(json: string): PracticeSaveData | null {
 /** 合戦の結果から 1 回分の記録を作る（主目標が無い合戦は、戦場の主目標 id と勝利かどうか） */
 export function recordFromOutcome(o: BattleOutcome, primaryId: string, now: Date): PracticeResultRecord {
     const ob = o.objectives;
+    const p = ob?.primary;
     return {
         result: o.result,
         reason: o.reason,
-        primary: ob?.primary
-            ? { id: ob.primary.id, achieved: ob.primary.achieved, ...(ob.primary.steps ? { steps: { ...ob.primary.steps } } : {}) }
+        primary: p
+            ? {
+                  id: p.id,
+                  achieved: p.achieved,
+                  ...(p.steps ? { steps: { ...p.steps } } : {}),
+                  // 目標の種類（第4群で足した欄）と、脱出・離脱の数・救出の合流
+                  type: p.type,
+                  ...(p.count ? { count: { ...p.count } } : {}),
+                  ...(p.met !== undefined ? { met: p.met } : {}),
+              }
             : { id: primaryId, achieved: o.result === 'victory' },
-        secondary: (ob?.secondary ?? []).map((s) => ({ id: s.id, label: s.label, achieved: s.achieved })),
+        secondary: (ob?.secondary ?? []).map((s) => ({ id: s.id, label: s.label, achieved: s.achieved, type: s.type })),
         elapsedSec: Math.round(Math.max(0, o.elapsedSec) * 10) / 10,
         at: now.toISOString(),
+        ...(o.withdrawal ? { withdrawal: o.withdrawal } : {}),
     };
 }
 
@@ -271,6 +313,8 @@ export interface PracticeBriefingInfo {
     secondary: string[];
     /** 特殊ルール・戦場の決まり（無ければ空） */
     rules: string[];
+    /** 勝ち負けの判定の順（第4群の戦場だけ。先に見るものから。無ければ空） */
+    endRules: string[];
     /** 日没までの時間（例：8:00） */
     timeLimit: string;
     allies: PracticeUnitLine[];
@@ -286,6 +330,8 @@ export interface PracticeResultInfo {
     reason: BattleEndReason;
     /** 終わり方の文（合戦の画面と同じ演習の言葉） */
     reasonText: string;
+    /** 退いて終わった合戦の区別の文（第4群：目標を果たした撤収／合戦の放棄。無ければ空） */
+    withdrawalText: string;
     primary: { label: string; achieved: boolean };
     secondary: { label: string; achieved: boolean }[];
     elapsed: string;
@@ -360,6 +406,7 @@ export function practiceBriefingInfo(field: BattlefieldDef): PracticeBriefingInf
         primary: field.objectives.primary.label,
         secondary: field.objectives.secondary.map((o) => o.label),
         rules,
+        endRules: endRuleItems(setup),
         timeLimit: fmtClock(setup.timeLimitSec),
         allies,
         enemies: `敵勢（架空の相手）${enemies.length} 部隊・兵 ${enemyMen}${late ? `（うち ${late} 部隊は後から来る）` : ''}`,
@@ -496,9 +543,15 @@ export function practiceResultInfo(field: BattlefieldDef, o: BattleOutcome, r: P
         resultLabel: RESULT_LABEL[o.result],
         reason: o.reason,
         reasonText: texts.reasons[o.reason] ?? '',
+        withdrawalText: withdrawalNote(o),
         primary: {
             // 段階目標で全部の段に届かなかったときは、どの段まで届いたかを添える（例：「…（段階 1／2 まで）」）
-            label: (o.objectives?.primary?.label ?? field.objectives.primary.label) + (rec.primary.steps && rec.primary.steps.done < rec.primary.steps.total ? `（段階 ${rec.primary.steps.done}／${rec.primary.steps.total} まで）` : ''),
+            label:
+                (o.objectives?.primary?.label ?? field.objectives.primary.label) +
+                (rec.primary.steps && rec.primary.steps.done < rec.primary.steps.total ? `（段階 ${rec.primary.steps.done}／${rec.primary.steps.total} まで）` : '') +
+                // 第4群：脱出・離脱でどこまで離れたか、救出で合流したか（果たせなかったときだけ）
+                (!rec.primary.achieved && rec.primary.count ? `（離れた部隊 ${rec.primary.count.done}／${rec.primary.count.total}。総大将を含む）` : '') +
+                (!rec.primary.achieved && rec.primary.met !== undefined ? (rec.primary.met ? '（合流までは果たした）' : '（合流の前）') : ''),
             achieved: rec.primary.achieved,
         },
         secondary: (o.objectives?.secondary ?? []).map((s) => ({ label: s.label, achieved: s.achieved })),

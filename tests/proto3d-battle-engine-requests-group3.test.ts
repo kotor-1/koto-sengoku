@@ -41,13 +41,15 @@ const run = (s: BattleState, sec: number, each?: (s: BattleState) => void) => {
     }
 };
 const G3 = ['marsh', 'village', 'temple', 'town_edge', 'siege_front'];
+/** 第4群の 5 戦場（新しい戦場なので、第3群の直しも付く） */
+const G4 = ['besieged_camp', 'relief', 'rearguard', 'night_raid', 'shore'];
 
 describe('第3群の動きの直しを付ける戦場（FieldRules.refinedMoves）', () => {
-    it('状態を直接操作：第3群の 5 戦場だけに付く。既存の 10 戦場（keepGroup2Movement）と国境の原（keepV11Movement）には付かない', () => {
+    it('状態を直接操作：第3群の 5 戦場（と、その後の新しい第4群の 5 戦場）だけに付く。既存の 10 戦場（keepGroup2Movement）と国境の原（keepV11Movement）には付かない', () => {
         for (const f of FIELDS) {
             const on = !!fieldRulesOf(f)?.refinedMoves;
-            expect([f.id, on]).toEqual([f.id, G3.includes(f.id)]);
-            expect([f.id, createFieldEnv(fieldMap(f), fieldRulesOf(f)).refined]).toEqual([f.id, G3.includes(f.id)]);
+            expect([f.id, on]).toEqual([f.id, G3.includes(f.id) || G4.includes(f.id)]);
+            expect([f.id, createFieldEnv(fieldMap(f), fieldRulesOf(f)).refined]).toEqual([f.id, G3.includes(f.id) || G4.includes(f.id)]);
         }
         expect(FIELDS.filter((f) => f.keepGroup2Movement).length).toBe(10);
     });

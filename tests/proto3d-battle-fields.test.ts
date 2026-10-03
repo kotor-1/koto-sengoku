@@ -1,6 +1,6 @@
 /**
  * 合戦場のデータ（proto3d/src/battle/fields/）：20 種の分類・全戦場の検査（validateField）・組み立て（buildBattleSetup）・
- * 国境の原のデータ化・演習の 15 戦場（第1群・第2群・第3群）の案が動いて決着がつくこと。
+ * 国境の原のデータ化・演習の 20 戦場（第1群・第2群・第3群・第4群）の案が動いて決着がつくこと。
  * 検査はデータを読むだけ。合戦は「早送り」（runToEnd で一気に進める）。釣り合いの調整はここでは確かめない（戦場ごとに後で行う）。
  */
 import { describe, expect, it } from 'vitest';
@@ -12,20 +12,25 @@ import { BORDER_FIELD_DEF } from '../proto3d/src/battle/fields/border_field';
 const clone = (f: BattlefieldDef): BattlefieldDef => structuredClone(f);
 
 describe('20 種の分類と一覧', () => {
-    it('分類は 20 種で重ならない。印の付いた 15 種（第1群 5・第2群 5・第3群 5。国境の原は plains）だけ戦場データがある', () => {
+    it('分類は 20 種で重ならない。20 種すべて（第1群 5・第2群 5・第3群 5・第4群 5。国境の原は plains）に戦場データがある', () => {
         expect(FIELD_KINDS).toHaveLength(20);
         expect(new Set(FIELD_KINDS.map((k) => k.kind)).size).toBe(20);
         const implemented = FIELD_KINDS.filter((k) => k.implemented).map((k) => k.kind).sort();
         expect(implemented).toEqual([
+            'besieged_camp',
             'forest',
             'hills',
             'marsh',
             'mountain_pass',
             'multi_bridge',
+            'night_raid',
             'paddy',
             'plains',
+            'rearguard',
+            'relief',
             'ridge',
             'river_ford',
+            'shore',
             'siege_front',
             'single_bridge',
             'temple',
@@ -34,7 +39,7 @@ describe('20 種の分類と一覧', () => {
             'village',
         ]);
         for (const f of FIELDS) expect(implemented).toContain(f.kind);
-        // 演習は第1群の 5 戦場の後に第2群の 5 戦場、その後に第3群の 5 戦場（前の群の順は変えない）
+        // 演習は第1群の 5 戦場の後に第2群の 5 戦場、その後に第3群の 5 戦場、その後に第4群の 5 戦場（前の群の順は変えない）
         expect(PRACTICE_ORDER).toEqual([
             'plains',
             'river_ford',
@@ -51,6 +56,11 @@ describe('20 種の分類と一覧', () => {
             'temple',
             'town_edge',
             'siege_front',
+            'besieged_camp',
+            'relief',
+            'rearguard',
+            'night_raid',
+            'shore',
         ]);
         expect(practiceFields().map((f) => f.id)).toEqual([...PRACTICE_ORDER]);
         expect(new Set(FIELDS.map((f) => f.id)).size).toBe(FIELDS.length);
@@ -85,7 +95,8 @@ describe('20 種の分類と一覧', () => {
     });
 
     it('演習の編成：部隊数は上限まで（味方 8・敵 10）。大平原は味方 7 部隊。武将の部隊は generalId と leaderId が同じで、表示名は「〜隊」「家康本陣」', () => {
-        const names: Record<string, string> = { ieyasu: '家康本陣', tadakatsu: '本多忠勝隊', sakai: '酒井忠次隊', ishikawa: '石川数正隊', sakakibara: '榊原康政隊' };
+        // 浅井長政隊（第4群の援軍救出の救出の対象）を足した 6 人
+        const names: Record<string, string> = { ieyasu: '家康本陣', tadakatsu: '本多忠勝隊', sakai: '酒井忠次隊', ishikawa: '石川数正隊', sakakibara: '榊原康政隊', nagamasa: '浅井長政隊' };
         for (const f of practiceFields()) {
             for (const pr of f.presets) {
                 const us = presetUnits(f, pr.id);
@@ -224,7 +235,7 @@ describe('組み立て（buildBattleSetup）', () => {
     });
 });
 
-describe('演習の 15 戦場（第1群・第2群・第3群）の案が動いて、決着がつく（早送り。釣り合いは後で戦場ごとに調整する）', () => {
+describe('演習の 20 戦場（第1群・第2群・第3群・第4群）の案が動いて、決着がつく（早送り。釣り合いは後で戦場ごとに調整する）', () => {
     for (const id of PRACTICE_ORDER) {
         it(`${id}：何もしない・全軍で近い敵へ攻めかかる、のどちらでも最後まで進み、主目標・副目標が結果に入る`, () => {
             const f = getField(id)!;

@@ -759,6 +759,15 @@ export class BattleUi {
         if (l.shown !== shown) {
             l.shown = shown;
             l.e.hidden = !shown;
+            // 隠した名札は、名前・兵の数・位置を DOM に残さない（第4群の夜：発見していない敵の名札が、隠れた要素から読めないように）
+            if (!shown && side !== 'terrain') {
+                l.text = '';
+                setText(l.name, '');
+                setText(l.small, '');
+                l.small.hidden = true;
+                l.px = l.py = NaN;
+                l.e.style.transform = '';
+            }
         }
         if (!shown) return;
         if (l.text !== text + '\u0000' + extra) {
