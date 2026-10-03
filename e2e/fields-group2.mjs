@@ -5,7 +5,7 @@
  *   PARTS=start,phone,plan,rally で一部だけ（既定はすべて）。FIELDS=single_bridge,ridge で第2群の戦場を絞る（既定は 5 つ）。
  *
  * start（PC 1280×720・マウス）：
- *   - タイトル →「合戦場の演習」→ 一覧に 10 戦場（第1群 5・第2群 5）→ 戦場ごとに「出陣」→ 合戦の画面（戦場 id・部隊の数・札の数）。
+ *   - タイトル →「合戦場の演習」→ 一覧に 15 戦場（第1群 5・第2群 5・第3群 5）→ 第1群・第2群の 10 戦場ごとに「出陣」→ 合戦の画面（戦場 id・部隊の数・札の数）。
  *     終わりは全軍撤退のボタン（確かめも）→ 早送り → 合戦の結果 →「続ける」→ 演習の結果 →「一覧へ」（どれもクリック）。
  *   - 第2群の各戦場では、続けて（g2 の確かめ）：
  *     a. 味方の部隊を、地図の上の体をクリックしてそれぞれ選ぶ（選択だけが変わり、命令・位置に漏れない）。
@@ -65,6 +65,8 @@ const OUT = process.argv[2] || 'e2e-out/fields-group2';
 mkdirSync(OUT, { recursive: true });
 const PARTS = (process.env.PARTS || 'start,phone,plan,rally').split(',');
 const FIELD_IDS = ['plains', 'river_ford', 'hills', 'forest', 'mountain_pass', 'single_bridge', 'multi_bridge', 'ridge', 'valley', 'paddy'];
+/** 演習の一覧に並ぶ全戦場（第3群の 5 戦場が足されて 15。この e2e が出陣するのは上の FIELD_IDS の 10 戦場だけ） */
+const LIST_IDS = [...FIELD_IDS, 'marsh', 'village', 'temple', 'town_edge', 'siege_front'];
 const GROUP2 = (process.env.FIELDS || 'single_bridge,multi_bridge,ridge,valley,paddy').split(',');
 const GENERALS = ['a_ieyasu', 'a_tadakatsu', 'a_sakakibara', 'a_sakai', 'a_ishikawa'];
 const failures = [];
@@ -153,7 +155,7 @@ async function titleToList(p) {
     await waitSheet(p.page, 'practice-list');
     await p.page.waitForTimeout(300);
     const fields = await p.page.evaluate(() => [...document.querySelectorAll('.g-pr-field')].map((e) => e.dataset.field));
-    check(JSON.stringify(fields) === JSON.stringify(FIELD_IDS), `[${p.kind}] タイトル →「合戦場の演習」→ 一覧に 10 戦場（第1群 5・第2群 5）`, fields.join(','));
+    check(JSON.stringify(fields) === JSON.stringify(LIST_IDS), `[${p.kind}] タイトル →「合戦場の演習」→ 一覧に 15 戦場（第1群 5・第2群 5・第3群 5）`, fields.join(','));
 }
 
 /** 一覧 → 説明 → 出陣 → 合戦の画面 → 開始して「指揮」で止める（開始の瞬間だけ時の進みを 0。止めた後に ×1 へ戻す） */
@@ -391,10 +393,14 @@ async function group2Checks(p, id) {
     if (user) {
         const u = await unit(page, user);
         await center(p, u.x, u.z, p.phone ? 150 : 180);
-        const b1 = (await label(page, user))?.blink;
-        await page.waitForTimeout(450);
-        const b2 = (await label(page, user))?.blink;
-        check(b1 !== undefined && b1 !== b2, `[${kind}] ${id}：止めたままでも${user}の名札の明るさが変わる（点滅）`, `${b1} → ${b2}`);
+        // 明るさは周期 1.6 秒の cos なので、2 回だけ見ると、谷（または山）を挟んで左右対称の時刻に当たって同じ値になることがある
+        // （第3群の最終の確認で single_bridge が 0.66 → 0.66。0.66 は谷から ±0.26 秒＝間が 0.53 秒のときの値）。間を 450・300 ミリ秒と変えて 3 回見て、どれかが違えば点滅している
+        const bs = [(await label(page, user))?.blink];
+        for (const w of [450, 300]) {
+            await page.waitForTimeout(w);
+            bs.push((await label(page, user))?.blink);
+        }
+        check(bs.every((b) => b !== undefined) && new Set(bs).size > 1, `[${kind}] ${id}：止めたままでも${user}の名札の明るさが変わる（点滅）`, bs.join(' → '));
         const r = await pressBadge(p, user, p.phone ? 150 : 180);
         check(r.ok && r.hit?.id === user && r.hit?.part === 'badge' && !r.leak && r.selKept, `[${kind}] ${id}：${user}の名札の印を 1 回押す → 能力を使う（選択・全部隊の位置と命令に漏れない）`, JSON.stringify({ hit: r.hit, leak: r.leak, sel: [r.sel0, r.sel1], why: r.why }));
         rec.ability = user;
