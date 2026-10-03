@@ -18,20 +18,20 @@
  * 作った時の結果（早送り。16 通りは上の揺らぎ。副目標は 損害 2 割以内／弓隊 5 割／南の守りを崩す。守れる部隊＝最後に崩れていない（戦える・脱出した）
  * 味方の部隊の数／7）：
  * | 作戦 | 1 通り | 16 通り |
- * | 東を開いてから総大将を出す（EAST・撤退の命令＋退路の守護） | 282.6 秒・損害 9.8％・勝ち・✓✓✗・7／7 | 16 勝・平均 294.3 秒（286.6〜304.3）・10.2％・7.00 |
- * | 同じく全軍撤退で退く（EAST_ALL） | 274.7 秒・11.7％・勝ち・✓✓✗・7／7（命令から 113 秒） | 16 勝・286.4 秒（278.7〜296.4）・12.2％ |
- * | 東（能力なし。後詰めの騎馬に当たる。EAST_PLAIN） | 282.4 秒・9.8％・勝ち・✓✓✗・7／7 | 16 勝・296.2 秒（286.9〜314.0）・12.4％ |
- * | 南の厚い口を準備して破る（SOUTH・準備した正面攻撃） | 125.4 秒・20.3％・勝ち・✗✓✓・6／7 | 15 勝・133.9 秒（125.3〜150.7）・21.5％・6.50 |
- * | 南の準備（能力なし。SOUTH_NA） | 117.6 秒・14.1％・勝ち・✓✓✓・7／7 | 12 勝・134.2 秒（123.1〜147.5）・22.3％・6.00 |
- * | 無計画：南へ一斉（家康も。RUSH） | 120.3 秒・27.4％・勝ち・✗✓✓・6／7（騎馬隊が槍の正面に当たって全滅） | （時刻の行が 0 秒だけなので 16 通りとも同じ） |
- * | 無計画：東へ一斉（家康も） | 81.1 秒に負け・34.8％・3／7 | |
- * | 無計画：一番近い敵へ当て直すだけ | 日没・56.6％・4／7 | |
- * | 待つ | 日没（撤退）・1.4％ | |
- * | 総大将だけを先に出す（東／南） | 36.9 秒／68.7 秒に負け（家康が崩れる） | |
+ * | 東を開いてから総大将を出す（EAST・撤退の命令＋退路の守護） | 282.8 秒・損害 9.5％・勝ち・✓✓✗・7／7 | 16 勝・平均 294.5 秒（286.8〜304.5）・9.9％・7.00 |
+ * | 同じく全軍撤退で退く（EAST_ALL） | 274.7 秒・11.5％・勝ち・✓✓✗・7／7（命令から 113 秒） | 16 勝・286.4 秒（278.7〜296.4）・11.7％ |
+ * | 東（能力なし。後詰めの騎馬に当たる。EAST_PLAIN） | 281.3 秒・9.5％・勝ち・✓✓✗・7／7 | 15 勝・293.3 秒（285.5〜303.0）・11.5％ |
+ * | 南の厚い口を準備して破る（SOUTH・準備した正面攻撃） | 105.6 秒・21.7％・勝ち・✗✗✓・6／7（弓隊が西の騎馬に崩される） | 16 勝・133.8 秒（120.6〜149.9）・19.6％・6.81（弓 ✓ 15） |
+ * | 南の準備（能力なし。SOUTH_NA） | 119.9 秒・19.1％・勝ち・✗✓✓・6／7 | 10 勝・137.7 秒・25.0％・5.75（負けはどれも、槍の列の後ろの家康が西の騎馬に突かれて崩れる） |
+ * | 無計画：南へ一斉（家康も。RUSH） | 130.0 秒に負け・39.3％・3／7（騎馬隊が槍の正面に当たって全滅） | （時刻の行が 0 秒だけなので 16 通りとも同じ） |
+ * | 無計画：東へ一斉（家康も） | 101.1 秒に負け・37.0％・3／7 | |
+ * | 無計画：一番近い敵へ当て直すだけ | 日没・52.8％・4／7 | |
+ * | 待つ | 日没（撤退）・損害 0 | |
+ * | 総大将だけを先に出す（東／南） | 36.9 秒／65.2 秒に負け（家康が崩れる） | |
  * | 東を開く前に家康を出す（EAST_ALL に 0 秒の家康） | 153.4 秒に負け | |
  * | 始めに全軍撤退（1 秒） | 46.4 秒に負け（追い討ちで家康が崩れる） | |
- * 南の準備の能力（先駆けの号・立て直しの号令）は、1 通りでは損害を減らさない（能力なしの方が 14.1％と少ない）が、16 通りの勝ちを 12 → 15 に増やす
- * （見てから押す遅れで列が乱れたときに崩れにくい）。
+ * 南の準備の能力（先駆けの号・立て直しの号令）は、16 通りの勝ちを 10 → 16 に増やす（号令の間は、列の後ろの家康が西の騎馬に突かれても崩れない）。
+ * 1 通りの損害は能力なしの方が少ない（19.1％。先駆けの榊原隊は受ける損害 ×1.2）。
  *
  * 武将の能力の価値が場面で変わる比べ：本多忠勝の退路の守護（東の道で撤退の列の後ろ／南の切れ目で攻める最中）。
  */
@@ -288,7 +288,7 @@ const EAST_ALL: Plan = (j) => {
 
 /**
  * 準備した南の正面（準備した正面攻撃。弓・予備・能力・兵種を使う）。命令は 21 回：
- * - 0 秒：弓隊は切れ目の手前 (-18,70) へ（着いたら守りを射る）。忠勝隊・榊原隊は守りへ。家康は南の出口を押す（槍の列の後ろについて進む）。
+ * - 0 秒：弓隊は陣の南の口の外 (-6,64) へ（陣の北西から。着いたら 64 m 先の守りを射る。奥の弓は届くが弱まる）。忠勝隊・榊原隊は守りへ。家康は南の出口を押す（槍の列の後ろについて進む）。
  * - 10 秒：酒井隊・石川隊も守りへ（切れ目で同時に斬りかかれるのは 2 部隊まで。あふれた隊は後ろで待つ）。
  * - 榊原隊が守りの 45 m に来たら先駆けの号。忠勝隊が斬り合い始めたら家康の立て直しの号令。
  * - 守りが崩れたら：槍 4 と弓で二の手へ。
@@ -299,8 +299,8 @@ const SOUTH: Plan = (j) => {
     const g1 = W(gone('e_south'));
     const g2 = W(gone('e_south2'));
     return [
-        [0, 'a_yumi', tap(-18, 70)],
-        [W(near('a_yumi', -18, 70, 10)), 'a_yumi', atk('e_south')],
+        [0, 'a_yumi', tap(-6, 64)],
+        [W(near('a_yumi', -6, 64, 10)), 'a_yumi', atk('e_south')],
         [0, 'a_tadakatsu', atk('e_south')],
         [0, 'a_sakakibara', atk('e_south')],
         [0, 'a_ieyasu', tap(...SX)],
@@ -414,7 +414,7 @@ describe('包囲された陣のデータ', () => {
 // ---------------------------------------------------------------- 作戦
 
 describe('包囲された陣：主目標に届く作戦（早送り）', () => {
-    // 作った時：東を開いてから総大将を出す 282.6 秒・損害 9.8％・勝ち・損害 ✓ 弓 ✓ 南の守り ✗・7／7（家康は 274.3 秒に脱出、弓隊はその後）
+    // 作った時：東を開いてから総大将を出す 282.8 秒・損害 9.5％・勝ち・損害 ✓ 弓 ✓ 南の守り ✗・7／7（家康は 274.3 秒に脱出、石川隊がその後に出て勝ち）
     it('東を開いてから総大将を出す：榊原隊・騎馬で東を開き、西の騎馬を陣で受けてから家康・弓・石川に撤退、忠勝は道で退路の守護 → 勝つ。遅いが損害は 1 割ほど（総大将の脱出の後も合戦は続く）', () => {
         const r = run1(EAST);
         expect(won(r), brief(r)).toBe(true);
@@ -435,7 +435,7 @@ describe('包囲された陣：主目標に届く作戦（早送り）', () => {
         expect(r.left.e_south_yumi).toBe(220);
     }, 60_000);
 
-    // 作った時：南の準備 125.4 秒・損害 20.3％・勝ち・損害 ✗ 弓 ✓ 南の守り ✓・6／7（榊原隊が敗走。忠勝隊は 194、家康は 234 まで減る）
+    // 作った時：南の準備 105.6 秒・損害 21.7％・勝ち・損害 ✗ 弓 ✗ 南の守り ✓・6／7（弓隊が西の騎馬に崩される。16 通りでは弓 ✓ が 15）
     it('南の厚い口を準備して破る（準備した正面攻撃）：弓で守りを射て、槍 4 でまとめて当たり（先駆け・号令）、騎馬は二の手が崩れてから弓へ → 勝つ。東より 2 分以上早いが、損害が大きい', () => {
         const r = run1(SOUTH);
         const e = run1(EAST);
@@ -444,7 +444,8 @@ describe('包囲された陣：主目標に届く作戦（早送り）', () => {
         expect(Object.keys(r.o.abilitiesUsed ?? {}).sort()).toEqual(['a_ieyasu', 'a_sakakibara']);
         expect(r.t).toBeLessThan(e.t - 120);
         expect(r.loss).toBeGreaterThan(e.loss + 0.08);
-        expect(secondaries(r)).toEqual([false, true, true]);
+        expect(secondaryOf(r, 'camp_losses')).toBe(false);
+        expect(secondaryOf(r, 'camp_break')).toBe(true);
         // 守り・二の手・弓の 3 つを崩して抜けた（出口は南）
         for (const id of ['e_south', 'e_south2', 'e_south_yumi']) expect(statusOf(r, id)).not.toBe('ready');
         expect(r.s.events.some((ev) => ev.text.startsWith('家康本陣が南の突破口の出口から脱出した'))).toBe(true);
@@ -457,7 +458,7 @@ describe('包囲された陣：主目標に届く作戦（早送り）', () => {
         const r = run1(EAST_ALL);
         expect(won(r), brief(r)).toBe(true);
         expect(r.allRetreatAt).not.toBeNull();
-        // 作った時：161.3 秒に全軍撤退を命じ、274.7 秒に勝ち（命令から 113 秒）
+        // 作った時：161.3 秒に全軍撤退を命じ、274.7 秒に勝ち（命令から 113 秒・損害 11.5％）
         expect(r.t - r.allRetreatAt!).toBeGreaterThan(RULES.retreatGraceSec + 30);
         expect(r.o.reason).toBe('objective_done');
         expect(r.o.withdrawal).toBe('objective');
@@ -472,11 +473,10 @@ describe('包囲された陣：主目標に届く作戦（早送り）', () => {
         expect(secondaries(r)).toEqual([true, true, false]);
     }, 60_000);
 
-    // 揺らぎの 16 通り（作った時）：東 16 勝（平均 294.3 秒・損害 10.2％・守れる 7.00）、全軍撤退 16 勝（286.4 秒・12.2％）、東（能力なし）16 勝（296.2 秒・12.4％）、
-    // 南の準備 15 勝（133.9 秒・21.5％・6.50。負けた k=5 は、見てから押す遅れで槍が二の手へ当たるのが遅れ、出口を押していた家康が先に二の手・奥の弓と
-    // 斬り合って 135 秒に崩れた＝総大将が先頭に立った形。弓隊も西の騎馬に崩された）、
-    // 南の準備（能力なし）12 勝（134.2 秒・22.3％）
-    it('安定性（±15 秒・見てから押すまでの遅れ 0〜15 秒の 16 通り）：東・全軍撤退・東（能力なし）は 14 勝以上、南の準備は 13 勝以上、南の準備（能力なし）は 10 勝以上', () => {
+    // 揺らぎの 16 通り（作った時）：東 16 勝（平均 294.5 秒・損害 9.9％・守れる 7.00）、全軍撤退 16 勝（286.4 秒・11.7％）、東（能力なし）15 勝（293.3 秒・11.5％。
+    // 負けた k=7 は、忠勝隊・酒井隊が当たる前に後詰めの騎馬が家康の列に追いつき、家康が崩れた）、南の準備 16 勝（133.8 秒・19.6％・6.81。損害 ✓ 0・弓 ✓ 15・南の守り ✓ 16）、
+    // 南の準備（能力なし）10 勝（137.7 秒・25.0％）
+    it('安定性（±15 秒・見てから押すまでの遅れ 0〜15 秒の 16 通り）：東・全軍撤退・東（能力なし）は 14 勝以上、南の準備は 14 勝以上。南の準備（能力なし）は記録（10 勝）', () => {
         const e = run16(EAST);
         const a = run16(EAST_ALL);
         const p = run16(EAST_PLAIN);
@@ -485,8 +485,10 @@ describe('包囲された陣：主目標に届く作戦（早送り）', () => {
         expect(winsOf(e)).toBeGreaterThanOrEqual(14);
         expect(winsOf(a)).toBeGreaterThanOrEqual(14);
         expect(winsOf(p)).toBeGreaterThanOrEqual(14);
-        expect(winsOf(sp)).toBeGreaterThanOrEqual(13);
-        expect(winsOf(sn)).toBeGreaterThanOrEqual(10);
+        expect(winsOf(sp)).toBeGreaterThanOrEqual(14);
+        // 記録（能力なしの南は家康が西の騎馬に突かれて崩れやすい。号令のある準備した南より少ない）
+        expect(winsOf(sn)).toBeGreaterThanOrEqual(7);
+        expect(winsOf(sn)).toBeLessThan(winsOf(sp));
         // 16 通りの平均でも、東は遅く損害が少なく、南は早く損害が大きい
         expect(meanOf(sp.filter(won), (r) => r.t)).toBeLessThan(meanOf(e.filter(won), (r) => r.t) - 120);
         expect(meanOf(sp, (r) => r.loss)).toBeGreaterThan(meanOf(e, (r) => r.loss) + 0.08);
@@ -494,7 +496,7 @@ describe('包囲された陣：主目標に届く作戦（早送り）', () => {
         expect(e.filter((r) => secondaryOf(r, 'camp_losses')).length).toBe(16);
         expect(e.filter((r) => secondaryOf(r, 'camp_break')).length).toBe(0);
         expect(sp.filter((r) => secondaryOf(r, 'camp_break')).length).toBe(16);
-        expect(sp.filter((r) => secondaryOf(r, 'camp_losses')).length).toBeLessThanOrEqual(8);
+        expect(sp.filter((r) => secondaryOf(r, 'camp_losses')).length).toBeLessThanOrEqual(3);
         // 守れる部隊：東は 7 隊とも崩れずに出る
         expect(meanOf(e, standing)).toBeGreaterThan(meanOf(sp, standing));
     }, 180_000);
@@ -502,29 +504,29 @@ describe('包囲された陣：主目標に届く作戦（早送り）', () => {
 
 // 合格条件は「正面なら負ける」ではなく、同じ台本・同じ数字での比べ。無計画な攻撃・総大将を先に出した結果は「記録」として残す
 describe('包囲された陣：無計画な攻撃・総大将を先に出す（早送り）', () => {
-    it('無計画（南へ一斉。家康も 0 秒に出口を押す）→ 準備した南より少し早いが、損害が大きく、騎馬隊が槍の正面に当たって全滅する（記録：120.3 秒に勝ち・損害 27.4％・6／7）', () => {
+    it('無計画（南へ一斉。家康も 0 秒に出口を押す）→ 切れ目で詰まり、騎馬隊が槍の正面に当たって全滅し、西の騎馬に後ろを突かれて負け。準備した南は同じ口で勝ち、損害も 15 点以上少ない（記録：130.0 秒に負け・損害 39.3％・3／7）', () => {
         const r = run1(RUSH);
         const p = run1(SOUTH);
         expect(r.refused).toEqual([]);
-        expect(r.loss).toBeGreaterThan(p.loss + 0.05);
+        expect(r.loss).toBeGreaterThan(p.loss + 0.15);
+        expect(standing(r)).toBeLessThan(standing(p) - 2);
         expect(statusOf(r, 'a_kiba')).toBe('destroyed');
         expect(statusOf(p, 'a_kiba')).not.toBe('destroyed');
         // 16 通りの平均（準備した南）と比べても損害が大きい（一斉は時刻の行が 0 秒だけなので 16 通りとも同じ）
-        expect(r.loss).toBeGreaterThan(meanOf(run16(SOUTH), (x) => x.loss) + 0.04);
+        expect(r.loss).toBeGreaterThan(meanOf(run16(SOUTH), (x) => x.loss) + 0.15);
         // 記録
-        expect(r.o.result).toBe('victory');
-        expect(r.t).toBeLessThan(p.t);
-        expect(secondaryOf(r, 'camp_losses')).toBe(false);
+        expect([r.o.result, r.o.reason]).toEqual(['defeat', 'objective_failed']);
+        expect(won(p)).toBe(true);
     }, 60_000);
 
-    it('無計画（東へ一斉。家康も）→ 狭い抜け道で列が止まり、道の北の騎馬に横を突かれて、出られる部隊が足りなくなって負け（記録：81.1 秒・損害 34.8％）。東を開いてから出す台本は勝つ', () => {
+    it('無計画（東へ一斉。家康も）→ 狭い抜け道で列が止まり、道の北の騎馬に横を突かれて、出られる部隊が足りなくなって負け（記録：101.1 秒・損害 37.0％・3／7）。東を開いてから出す台本は勝つ', () => {
         const r = run1(RUSH_EAST);
         expect([r.o.result, r.o.reason]).toEqual(['defeat', 'objective_failed']);
         expect(r.loss).toBeGreaterThan(run1(EAST).loss + 0.15);
         expect(standing(r)).toBeLessThan(standing(run1(EAST)) - 2);
     }, 60_000);
 
-    it('一番近い敵へ当て直すだけ → 主目標に届かず、損害が大きい（記録：日没・損害 56.6％・4／7）。待つだけ → 日没（撤退）・損害 1.4％', () => {
+    it('一番近い敵へ当て直すだけ → 主目標に届かず、損害が大きい（記録：日没・損害 52.8％・4／7）。待つだけ → 日没（撤退）・損害 0', () => {
         const r = run1(NEAREST);
         expect(r.o.objectives!.primary!.achieved).toBe(false);
         expect(r.o.reason).toBe('nightfall');
@@ -535,7 +537,7 @@ describe('包囲された陣：無計画な攻撃・総大将を先に出す（�
         expect(h.loss).toBeLessThan(0.05);
     }, 60_000);
 
-    it('総大将だけを先に出す → 東は道の北の騎馬に、南は切れ目の守りに捕まって崩れ、負け（記録：東 36.9 秒・南 68.7 秒）。東を開く前に家康を出した全軍撤退の台本も負け（153.4 秒。開いてから出せば勝つ）', () => {
+    it('総大将だけを先に出す → 東は道の北の騎馬に、南は切れ目の守りに捕まって崩れ、負け（記録：東 36.9 秒・南 65.2 秒）。東を開く前に家康を出した全軍撤退の台本も負け（153.4 秒。開いてから出せば勝つ）', () => {
         for (const p of [HQ_ALONE_EAST, HQ_ALONE_SOUTH, EAST_HQ_FIRST]) {
             const r = run1(p);
             expect([r.o.result, r.o.reason], brief(r)).toEqual(['defeat', 'objective_failed']);
@@ -616,21 +618,22 @@ describe('包囲された陣：総大将の脱出と数え方（状態を直接�
 
 describe('包囲された陣：武将の能力の価値が場面で変わる（早送り）', () => {
     // 本多忠勝の退路の守護（50 秒。忠勝隊はその場で踏みとどまる。範囲 100 m で退く味方の受ける損害 −80％、追っ手を忠勝隊へ引きつける）
-    it('退路の守護：東の道で撤退の列の後ろに置くと、後詰めの騎馬が忠勝隊へ引きつけられ、列は無事に出る（使わないと列が追われて崩れ、日没）。南の切れ目で攻める最中に使うと、退く味方がいないので何も引きつけず、忠勝隊が二の手へ動けなくなる', () => {
+    it('退路の守護：東の道で撤退の列の後ろに置くと、後詰めの騎馬が忠勝隊へ引きつけられ、列は無事に出る（使わないと列が追われて崩れ、日没）。南の切れ目で攻める最中に使うと、退く味方がいないので何も引きつけず、忠勝隊は踏みとどまったまま削られる', () => {
         const g = run1(EAST);
         const n = run1(EAST_NO_GUARD);
-        // 東：使う（作った時）＝勝ち・損害 9.8％・列（家康・弓・石川・酒井）の兵 1313／1350。使わない＝日没・36.3％・列の兵 625
+        // 東：使う（作った時）＝勝ち・損害 9.5％・引きつけ 1・列（家康・弓・石川・酒井）の兵 1319／1350。使わない＝日没・36.3％・列の兵 627
         const column = (r: Run) => ['a_ieyasu', 'a_yumi', 'a_ishikawa', 'a_sakai'].reduce((a, id) => a + r.left[id]!, 0);
         expect(g.lured).toBeGreaterThan(0);
         expect(n.lured).toBe(0);
         expect(won(g)).toBe(true);
         expect(won(n)).toBe(false);
         expect(column(g)).toBeGreaterThan(column(n) + 400);
-        // 南：使う（作った時）＝勝ち・損害 24.9％・引きつけ 0・忠勝隊への二の手の攻撃の命令が断られる。使わない（SOUTH）＝20.3％
+        // 南：使う（作った時）＝引きつけ 0・忠勝隊は踏みとどまったまま、二の手への攻撃・出口への命令が断られ、兵 144 まで減る（受ける損害 ×1.4）。
+        // 使わない（SOUTH）＝忠勝隊の兵 290
         const sg = run1(SOUTH_GUARD);
         const sp = run1(SOUTH);
         expect(sg.lured).toBe(0);
         expect(sg.refused.some((x) => x.endsWith(':a_tadakatsu'))).toBe(true);
-        expect(sg.loss).toBeGreaterThan(sp.loss);
+        expect(sg.left.a_tadakatsu!).toBeLessThan(sp.left.a_tadakatsu! - 100);
     }, 60_000);
 });
