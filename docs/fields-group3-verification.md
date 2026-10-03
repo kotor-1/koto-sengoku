@@ -3,7 +3,7 @@
 設計 `docs/fields-group3-design.md` §5 の「固定したビルドでの確認」の記録。再起動の後は、この表を見て「未」「影響あり」の項目から再開する。
 
 - **固定のコミット：** `ad22471`（作業ツリーは空。この後のコミットはこの記録のファイルだけ）
-  - **固定し直し（2026-10-03 00:40）：** `1ee8b83`。fields-group2 の失敗（下の「失敗と原因」2）で `e2e/fields-group2.mjs` を直した。
+  - **固定し直し（2026-10-03 00:30）：** `1ee8b83`。fields-group2 の失敗（下の「失敗と原因」2）で `e2e/fields-group2.mjs` を直した。
     `git diff ad22471..1ee8b83` は `e2e/fields-group2.mjs` とこの記録だけで、製品のコード・テスト・データは同じ。
     そのため、ad22471 で済んだ項目（型・単体テスト・fields-group3・fields-group3-plans・ops-group3・fields-practice・fields-ui・fields-group2-fixes・label-priority・review-group3）はそのまま有効とし、
     影響のある fields-group2 だけを 1ee8b83 でやり直す。本番ビルドは表示を合わせるため 1ee8b83 で作り直す。
@@ -34,10 +34,10 @@
 | fields-group2 | ad22471 | 2026-10-03 00:05〜00:19 | ok 325・**NG 5**（一覧の 10 戦場の期待 ×4・single_bridge の点滅 0.66 → 0.66 ×1。どちらも e2e の古い期待・測り方。下の「失敗と原因」2）→ 1ee8b83 でやり直す | 330 | 本物の入力（待ちは早送り） |
 | fields-group2-fixes | ad22471 | 2026-10-03 00:19〜00:22 | ok 18・NG 0 | 18 | 本物の入力（待ちは早送り） |
 | label-priority | ad22471 | 2026-10-03 00:22〜00:25 | ok 70・NG 0（PC・スマホ、plains・mountain_pass） | 70 | 本物の入力（待ちは早送り） |
-| ability-ui | | | 未 | | |
-| ability-fixes | | | 未 | | |
-| troops | | | 未 | | |
-| troops-abilities | | | 未 | | |
+| ability-ui | ad22471 | 2026-10-03 00:25〜00:31 | ok 78・NG 0（PC・スマホ） | 78 | 本物の入力（待ちは早送り） |
+| ability-fixes | 1ee8b83 | 2026-10-03 00:31〜00:35 | ok 54・NG 0（PC・スマホ） | 54 | 本物の入力（待ちは早送り） |
+| troops | 1ee8b83 | 2026-10-03 00:35〜00:41 | ok 36・NG 0（軍勢の表示。描画の時間などはコンテナのソフトウェア描画の記録で、実機の性能ではない） | 36 | 本物の入力（待ちは早送り） |
+| troops-abilities | 1ee8b83 | 2026-10-03 00:41〜00:49 | ok 171・NG 0 | 171 | 本物の入力（待ちは早送り） |
 | ieyasu-routes | | | 未 | | |
 | ieyasu-battle-ui | | | 未 | | |
 | chapter1-routes | | | 未 | | |
