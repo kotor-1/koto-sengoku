@@ -534,25 +534,42 @@ describe('夜（視界と発見）', () => {
 });
 
 describe('湖・河岸', () => {
-    it('早送り：岸の狭まりと南の宿場に分けて受け、内陸は西へ向けて受ける台本は 7 分守り抜く。何もしないと岸の狭まりを失って負け', () => {
+    // 湖・河岸の調整（地形・配置・敵の時刻。tests/proto3d-field-shore.test.ts）で、前の台本（狭まりと宿場に分けて受け、内陸は西へ向けて受ける。
+    // 移動の後の向きを使う）は 420 秒の勝ち → 168.6 秒に岸の狭まりを失う負けになった（内陸の騎馬が 70 秒に現れ、崖の南の端を回って狭まりを
+    // 後ろから突く。高地は崖のすぐ西へ移した）。何もしないと 52 秒に負け → 167.4 秒に負け（忠勝隊が狭まりの小高い所から始まる）。
+    // 台本を、向きを使わない「岸を固め、高地に予備」（tests/proto3d-field-shore.test.ts の KISHI の 1 通り）に置き換えた。
+    it('早送り：岸を固め、高地に予備を置く台本は 7 分守り抜く。何もしないと岸の狭まりを失って負けるが、最初の命令を出す間はある', () => {
         const a = runToEnd(battle('shore'));
         expect([a.result, a.reason]).toEqual(['defeat', 'objective_failed']);
+        expect(a.elapsedSec).toBeGreaterThan(120);
         const s = battle('shore');
+        const done = new Set<string>();
+        const once = (key: string, cond: boolean, f: () => boolean) => {
+            if (done.has(key) || !cond) return;
+            done.add(key);
+            expect([key, f()]).toEqual([key, true]);
+        };
+        const seen = (st: BattleState, id: string) => {
+            const e = U(st, id);
+            return e.arrived && isActive(e) && e.seenBy.ally;
+        };
+        const near = (st: BattleState, a: string, b: string, r: number) => Math.hypot(U(st, a).x - U(st, b).x, U(st, a).z - U(st, b).z) <= r;
         const r = runToEnd(s, (st) => {
-            const mv = (id: string, x: number, z: number, face?: number) => issueOrder(st, id, face === undefined ? { type: 'move', x, z } : { type: 'move', x, z, face });
-            if (st.tick === 1) {
-                mv('a_tadakatsu', 115, -40);
-                mv('a_kiba', 125, -10);
-                mv('a_yumi', 118, 15);
-                mv('a_sakai', 25, 105, -2.2);
-                mv('a_ishikawa', 45, 125, -1.9);
-                mv('a_ieyasu', 60, 150, -1.6);
-                mv('a_sakakibara', -20, 160, -0.8);
-            }
-            const u = U(st, 'a_sakakibara');
-            if (u.status !== 'ready' || u.order.type === 'attack' || u.engagedWith) return;
-            const e = st.units.filter((x) => x.side === 'enemy' && isActive(x) && x.seenBy.ally && x.engagedWith && x.x < 100).sort((p, q) => Math.hypot(p.x - u.x, p.z - u.z) - Math.hypot(q.x - u.x, q.z - u.z))[0];
-            if (e) issueOrder(st, 'a_sakakibara', { type: 'attack', targetId: e.id });
+            const mv = (id: string, x: number, z: number) => issueOrder(st, id, { type: 'move', x, z });
+            const at = (id: string, targetId: string) => issueOrder(st, id, { type: 'attack', targetId });
+            // 2 秒おきに 1 部隊ずつ：弓は高地の東の肩、騎馬は狭まりの後ろ、酒井隊は内陸の道の正面、榊原隊は高地の上、石川隊は二の備え
+            once('yumi', st.t >= 2, () => mv('a_yumi', 62, -55));
+            once('kiba', st.t >= 4, () => mv('a_kiba', 125, 0));
+            once('sakai', st.t >= 6, () => mv('a_sakai', -30, 5));
+            once('sakakibara', st.t >= 8, () => mv('a_sakakibara', 0, -35));
+            once('ishikawa', st.t >= 10, () => mv('a_ishikawa', -5, 40));
+            once('ieyasu', st.t >= 12, () => mv('a_ieyasu', 40, 155));
+            // 見てから押す：弓は着いてから岸の弓へ、騎馬は忠勝隊が斬り合ったら岸の槍へ、内陸の槍・騎馬は近づいたのを見て当たる
+            once('bow', st.t > 5 && U(st, 'a_yumi').order.type === 'hold' && seen(st, 'e_shore_yumi'), () => at('a_yumi', 'e_shore_yumi'));
+            once('kiba2', !!U(st, 'a_tadakatsu').engagedWith && seen(st, 'e_shore_yari'), () => at('a_kiba', 'e_shore_yari'));
+            once('sakai2', seen(st, 'e_inland_yari') && near(st, 'e_inland_yari', 'a_sakai', 70), () => at('a_sakai', 'e_inland_yari'));
+            once('sakakibara2', U(st, 'e_inland_yari').engagedWith === 'a_sakai' && U(st, 'a_sakakibara').status === 'ready', () => at('a_sakakibara', 'e_inland_yari'));
+            once('ishikawa2', seen(st, 'e_inland_kiba') && near(st, 'e_inland_kiba', 'a_ishikawa', 80) && U(st, 'a_ishikawa').status === 'ready', () => at('a_ishikawa', 'e_inland_kiba'));
         });
         expect([r.result, r.reason]).toEqual(['victory', 'objective_done']);
         expect(r.elapsedSec).toBe(420);
