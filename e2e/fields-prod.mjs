@@ -9,7 +9,8 @@
 // この中で、次のヘッダー付きの簡易サーバーを立てる：
 //   content-security-policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'
 // 経路：タイトル →「合戦場の演習」→ 一覧 → 戦場を選ぶ → 説明 → 出陣 → 合戦（合戦を始める・×2・全軍撤退）→ 結果 → 続ける → 演習の結果（勝敗・主目標・副目標・保存）
-//       → 一覧へ、を 15 戦場（第1群・第2群・第3群）で。最後に開き直して、15 戦場の記録が一覧に残ること。演習の画面の塊（practiceView-*.js）を選んだときに読むこと。
+//       → 一覧へ、を 20 戦場（第1群・第2群・第3群・第4群）で。最後に開き直して、20 戦場の記録が一覧に残ること。演習の画面の塊（practiceView-*.js）を選んだときに読むこと。
+//       第4群の包囲された陣・退却戦は、全軍撤退も退き口の判定に入り、目標の前に打ち切らない（endRules.allRetreat 'count'）ので、合戦の結果どおりの勝敗を見る。
 //       CSP の違反・ページの誤り・読めなかったファイル・data: の URL が無いこと。
 import { createServer } from 'node:http';
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -22,7 +23,10 @@ const PORT = Number(process.env.PORT || 8133);
 const [VW, VH] = (process.env.VIEW || '1280x720').split('x').map(Number);
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'";
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.glb': 'model/gltf-binary' };
-const FIELD_IDS = ['plains', 'river_ford', 'hills', 'forest', 'mountain_pass', 'single_bridge', 'multi_bridge', 'ridge', 'valley', 'paddy', 'marsh', 'village', 'temple', 'town_edge', 'siege_front'];
+const FIELD_IDS = ['plains', 'river_ford', 'hills', 'forest', 'mountain_pass', 'single_bridge', 'multi_bridge', 'ridge', 'valley', 'paddy', 'marsh', 'village', 'temple', 'town_edge', 'siege_front', 'besieged_camp', 'relief', 'rearguard', 'night_raid', 'shore'];
+/** 全軍撤退も退き口の判定に入り、目標の前に打ち切らない戦場（第4群） */
+const COUNT_RETREAT_IDS = ['besieged_camp', 'rearguard'];
+const RESULT_JA = { victory: '勝利', defeat: '敗北', retreat: '撤退' };
 
 if (!existsSync(join(DIST, 'index.html'))) throw new Error(`${DIST}/index.html が無い（先に本番ビルド）`);
 const served = [];
@@ -92,7 +96,7 @@ try {
   await sheet('practice-list').waitFor({ state: 'visible' });
   check('演習の一覧が出る（選んだときに演習の画面の塊を読む）', served.some((p) => /practiceView-.*\.js$/.test(p)), served.filter((p) => /practiceView/.test(p)).join(' '));
   const listed = await page.evaluate(() => [...document.querySelectorAll('.g-pr-field')].map((e) => e.dataset.field));
-  check(`一覧に ${FIELD_IDS.length} 戦場（第1群・第2群・第3群）`, JSON.stringify(listed) === JSON.stringify(FIELD_IDS), listed.join(','));
+  check(`一覧に ${FIELD_IDS.length} 戦場（第1群・第2群・第3群・第4群）`, JSON.stringify(listed) === JSON.stringify(FIELD_IDS), listed.join(','));
   await shot('P01-list');
   for (const id of FIELD_IDS) {
     console.log(`--- ${id}`);
@@ -115,7 +119,9 @@ try {
     await page.locator('.b-result').waitFor({ state: 'visible', timeout: 600000 });
     await sleep(500);
     const rows = await page.evaluate(() => [...document.querySelectorAll('.b-robj-row')].map((r) => r.dataset.role));
-    check(`${id}：合戦の結果（撤退）に主目標・副目標の行`, (await page.textContent('.b-result h2')) === '撤退' && rows.length >= 2 && rows[0] === 'primary' && rows.slice(1).every((r) => r === 'secondary'), rows.join(','));
+    const counting = COUNT_RETREAT_IDS.includes(id);
+    const h2 = await page.textContent('.b-result h2');
+    check(`${id}：合戦の結果（${counting ? '全軍撤退も目標に数える：結果どおり' : '撤退'}）に主目標・副目標の行`, (counting ? Object.values(RESULT_JA).includes(h2) : h2 === '撤退') && rows.length >= 2 && rows[0] === 'primary' && rows.slice(1).every((r) => r === 'secondary'), `${h2} ${rows.join(',')}`);
     await shot(`P11-${id}-result`);
     await page.locator('.b-primary', { hasText: '続ける' }).click();
     await sheet('practice-result').waitFor({ state: 'visible' });
@@ -126,7 +132,8 @@ try {
       saved: document.querySelector('.g-pr-result [data-saved]')?.dataset.saved,
     }));
     const rec = await records();
-    check(`${id}：演習の結果（撤退・主目標・副目標・保存が別の行）と記録`, res.outcome === 'retreat' && res.primary === 'false' && res.secondary >= 1 && res.secondary === rows.length - 1 && res.saved === 'true' && rec?.version === 1 && rec.records[id]?.last.result === 'retreat', JSON.stringify(res));
+    const want = counting ? Object.keys(RESULT_JA).find((k) => RESULT_JA[k] === h2) : 'retreat';
+    check(`${id}：演習の結果（${RESULT_JA[want] ?? want}・主目標・副目標・保存が別の行）と記録`, res.outcome === want && res.primary === String(want === 'victory') && res.secondary >= 1 && res.secondary === rows.length - 1 && res.saved === 'true' && rec?.version === 1 && rec.records[id]?.last.result === want, JSON.stringify(res));
     await pressIn('.g-layer[data-sheet="practice-result"]', '.g-btn[data-id="list"]');
     await sheet('practice-list').waitFor({ state: 'visible' });
   }
@@ -137,7 +144,7 @@ try {
   await sheet('practice-list').waitFor({ state: 'visible' });
   const recs = await page.evaluate(() => [...document.querySelectorAll('.g-pr-field')].map((e) => `${e.dataset.field}:${e.querySelector('.rec')?.textContent ?? ''}`));
   const rec = await records();
-  check(`開き直した後も ${FIELD_IDS.length} 戦場の記録が残る（一覧と保存）`, recs.every((r) => r.includes('撤退')) && Object.keys(rec?.records ?? {}).length === FIELD_IDS.length, recs.join(' / '));
+  check(`開き直した後も ${FIELD_IDS.length} 戦場の記録が残る（一覧と保存）`, recs.every((r) => COUNT_RETREAT_IDS.some((c) => r.startsWith(`${c}:`)) ? /勝利|敗北|撤退/.test(r) : r.includes('撤退')) && Object.keys(rec?.records ?? {}).length === FIELD_IDS.length, recs.join(' / '));
   const keys = await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('koto-sengoku')));
   check('書いたキーは koto-sengoku/3d-fields だけ', JSON.stringify(keys) === JSON.stringify(['koto-sengoku/3d-fields']), keys.join(','));
   await shot('P20-list-after-reload');

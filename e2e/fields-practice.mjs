@@ -6,7 +6,8 @@
  *
  * desktop（PC 1280×720、マウスとキー）：
  *   - 一覧・説明の画面の中身と並び（横にはみ出さない・札が重ならない・ボタンが画面の中）。説明の「一覧へ戻る」。
- *   - 15 戦場（第1群・第2群・第3群）すべてを、タイトルから「合戦場の演習 → 戦場を選ぶ → 出陣」して合戦の画面が出る（戦場 id・部隊数・敵はすべて敵勢）。
+ *   - 20 戦場（第1群・第2群・第3群・第4群）すべてを、タイトルから「合戦場の演習 → 戦場を選ぶ → 出陣」して合戦の画面が出る（戦場 id・部隊数・敵はすべて敵勢）。
+ *     第4群の 5 戦場は、説明に「勝ち負けの判定の順」の欄（6 行）が出る。
  *   - 大平原（味方 7 部隊）：キー 1〜8・札のクリックで選ぶ、地面のクリックで移動、A → 敵のクリックで攻撃、H で防衛・待機、R で撤退。
  *     命令が届いたことを合戦の状態（window.__battle.state の部隊の order）で確かめる。
  *   - 地形が効いていること（戦場ごとに 1 枚撮る：出力先/terrain-<戦場id>.png）。命令は札のクリックと地面のクリックで出し、
@@ -19,10 +20,15 @@
  *       第3群：湿地：泥の中は土手道より動きがとても遅い。村落：家屋の中へ入らず、通りを通って屋敷前の広場へ着く。
  *       寺社周辺：騎馬が崖・建物の中へ入らず、東の脇道を回って境内の東の口の手前へ着く。城下町外縁：家屋の中へ入らず、大通りを北の口へ。
  *       城攻め前面：閉じた外門の奥（曲輪）へ移動を命じても、石垣・門を通り抜けない（門の前で止まる）。
+ *       第4群：包囲された陣：柵・崖の中へ入らず、陣の東の口から東の道へ出る。援軍救出：林の中は動きが遅い（街道と比べる）。
+ *       退却戦：崖の中へ入らず、切れ目を通って南へ下る。夜襲・奇襲：始めは陣の守りなど遠くの敵が見えない（名札も出ない）。
+ *       湖・河岸：湖（深い水面）・崖の中へ入らず、岸の道を北へ上る。
  *   - 丘陵は、通常の速さ（×1。一時停止しない）のまま、札と地面のクリックで先に頂を取る作戦（命令 6 回）を出してから、早送りで決着まで進め、勝つ。
  *     合戦の結果の画面（勝敗・主目標・副目標が別の行）→ 続ける → 演習の結果（勝敗・主目標・副目標・保存が別の行）→ 一覧。
- *   - ほかの 14 戦場は、全軍撤退のボタン（確かめのボタンも）を押してから早送りで終える（撤退の記録）。
- *   - 最後に開き直し（再読み込み）て、15 戦場の記録（丘陵は決着の結果）が一覧と保存に残っていることを確かめる。書いたキーは koto-sengoku/3d-fields だけ。
+ *   - ほかの 19 戦場は、全軍撤退のボタン（確かめのボタンも）を押してから早送りで終える（撤退の記録）。ただし、全軍撤退も退き口の判定に入る
+ *     第4群の包囲された陣・退却戦（endRules.allRetreat 'count'）は、目標の前に打ち切らないので、合戦の結果どおりの勝敗で記録する
+ *     （記録の主目標に目標の種類、退き方（撤収／放棄）が入る）。
+ *   - 最後に開き直し（再読み込み）て、20 戦場の記録（丘陵は決着の結果）が一覧と保存に残っていることを確かめる。書いたキーは koto-sengoku/3d-fields だけ。
  * phone（スマホ横 844×390、hasTouch・isMobile、タップ）：
  *   - 一覧・説明の画面の中身と並び。大平原に出陣。札の列を横になぞってずらす（なぞっても選ばない）→ 7 番目の札をタップで選ぶ、
  *     地図のタップで移動、「攻撃」→ 敵のタップで攻撃、「防衛・待機」、「撤退」。全軍撤退 → 早送り → 結果 → 演習の結果 → 一覧（どれもタップ）。
@@ -42,8 +48,12 @@ import { mkdirSync } from 'node:fs';
 const OUT = process.argv[2] || 'e2e-out/fields-practice';
 mkdirSync(OUT, { recursive: true });
 const PARTS = (process.env.PARTS || 'desktop,phone,eight,oldsaves').split(',');
-/** 演習の 15 戦場（第1群 5・第2群 5・第3群 5。演習の一覧の順） */
-const FIELD_IDS = ['plains', 'river_ford', 'hills', 'forest', 'mountain_pass', 'single_bridge', 'multi_bridge', 'ridge', 'valley', 'paddy', 'marsh', 'village', 'temple', 'town_edge', 'siege_front'];
+/** 演習の 20 戦場（第1群 5・第2群 5・第3群 5・第4群 5。演習の一覧の順） */
+const FIELD_IDS = ['plains', 'river_ford', 'hills', 'forest', 'mountain_pass', 'single_bridge', 'multi_bridge', 'ridge', 'valley', 'paddy', 'marsh', 'village', 'temple', 'town_edge', 'siege_front', 'besieged_camp', 'relief', 'rearguard', 'night_raid', 'shore'];
+/** 第4群の 5 戦場（説明に判定の順の欄がある） */
+const G4_IDS = ['besieged_camp', 'relief', 'rearguard', 'night_raid', 'shore'];
+/** 全軍撤退も退き口の判定に入り、目標の前に打ち切らない戦場（endRules.allRetreat 'count'） */
+const COUNT_RETREAT_IDS = ['besieged_camp', 'rearguard'];
 /** 通常の速さで動かしてから早送りで決着まで進める戦場 */
 const DECIDE_FIELD = 'hills';
 const failures = [];
@@ -264,6 +274,9 @@ async function listToBattle(p, id, detailed) {
         secondary: [...document.querySelectorAll('.g-pr-brief [data-objective="secondary"]')].map((e) => e.textContent),
     }));
     check(brief.field === id && brief.primary.length > 0 && brief.secondary.length >= 1, `[${kind}] ${id} の説明：主目標と副目標が別の行`, `${brief.primary} / ${brief.secondary.join('')}`);
+    // 第4群：勝ち負けの判定の順（6 行）。ほかの戦場には出ない
+    const ends = await page.evaluate(() => [...document.querySelectorAll('.g-pr-brief .g-pr-sec.ends li')].map((e) => e.textContent));
+    check(G4_IDS.includes(id) ? ends.length === 6 && ends[0].includes('勝利') : ends.length === 0, `[${kind}] ${id} の説明：勝ち負けの判定の順の欄${G4_IDS.includes(id) ? '（6 行）' : 'は無い'}`, ends.join(' / ').slice(0, 200));
     if (detailed) {
         check(brief.units.length === 7, `[${kind}] 味方の編成 7 部隊`, brief.units.join(','));
         check(brief.prov >= 2, `[${kind}] 仮の能力に「仮」の印`, `${brief.prov}`);
@@ -725,6 +738,61 @@ const TERRAIN = {
         check(u.z > -56 && gate[0] && gate[0].open === false, '[desktop] 城攻め前面：外門が閉じている間は門を通り抜けない（門の前で止まる）', `${u.x.toFixed(0)},${u.z.toFixed(0)}・門 ${JSON.stringify(gate)}`);
         await shot(p, 'terrain-siege_front', 0, -50, 300);
     },
+    // ---- 第4群
+    async besieged_camp(p) {
+        // 榊原隊を陣の東の口から東の道の (150,0) へ。柵・崖の中へは入らない
+        const r = await walkAvoiding(p, 'a_sakakibara', 150, 0, 50, ['fence', 'cliff']);
+        check(r.bad.length === 0, '[desktop] 包囲された陣：柵・崖の中へ入らない（1 秒ごとに確かめた）', r.bad.slice(0, 5).join(' '));
+        check(r.arrived, '[desktop] 包囲された陣：陣の東の口から東の道へ出る', r.where);
+        await shot(p, 'terrain-besieged_camp', 0, 20, 420);
+    },
+    async relief(p) {
+        const { page } = p;
+        // 酒井隊（林の南）を林の奥 (-110,0) へ、石川隊（予備）を街道の (0,40) へ（どちらも槍）。林へ入ってからの 10 秒で、林の中の酒井隊の進みは
+        // 街道の石川隊より短い
+        await bpress(p, '.b-card[data-id="a_sakai"]');
+        await clickGround(p, -110, 0, 340);
+        await bpress(p, '.b-card[data-id="a_ishikawa"]');
+        await clickGround(p, 0, 40, 340);
+        await ff(page, 14);
+        const s0 = await unit(page, 'a_sakai');
+        const t0 = await unit(page, 'a_ishikawa');
+        await ff(page, 10);
+        const s1 = await unit(page, 'a_sakai');
+        const t1 = await unit(page, 'a_ishikawa');
+        const ds = dist2(s0, s1);
+        const dt = dist2(t0, t1);
+        check(s0.z < 115 && ds > 1 && ds < dt * 0.8, '[desktop] 援軍救出：林の中は街道より動きが遅い（早送り・状態を読む）', `林 ${ds.toFixed(1)} m（${s0.x.toFixed(0)},${s0.z.toFixed(0)} から）／街道 ${dt.toFixed(1)} m`);
+        await shot(p, 'terrain-relief', 30, -20, 460);
+    },
+    async rearguard(p) {
+        // 徳川騎馬隊（予備）を切れ目の南 (0,160) へ。崖の中へは入らない
+        const r = await walkAvoiding(p, 'a_kiba', 0, 160, 50, ['cliff']);
+        check(r.bad.length === 0, '[desktop] 退却戦：崖の中へ入らない（1 秒ごとに確かめた）', r.bad.slice(0, 5).join(' '));
+        check(r.arrived, '[desktop] 退却戦：崖の切れ目を通って南へ下る', r.where);
+        await shot(p, 'terrain-rearguard', 0, 40, 440);
+    },
+    async night_raid(p) {
+        const { page } = p;
+        // 夜：始めは陣の守り・本陣など遠くの敵が見えない（名札も出ない・画面の位置も出ない）
+        const v = await page.evaluate(() => {
+            const s = window.__battle.state;
+            return ['e_camp', 'e_hq', 'e_reserve', 'e_patrol'].map((id) => {
+                const u = s.units.find((x) => x.id === id);
+                const l = document.querySelector(`.b-label[data-id="${id}"]`);
+                return { id, seen: u.seenBy.ally, label: window.__battle.labelOf(id), screen: window.__battle.screenOf(id), text: l?.textContent ?? '', hidden: !l || l.hidden };
+            });
+        });
+        check(v.every((x) => !x.seen && x.label === null && x.screen === null && x.text === '' && x.hidden), '[desktop] 夜襲・奇襲：遠くの敵は見えず、名札・画面の位置も出ない', JSON.stringify(v));
+        await shot(p, 'terrain-night_raid', 0, 0, 440);
+    },
+    async shore(p) {
+        // 忠勝隊を岸の道の北 (120,-60) へ。湖・崖の中へは入らない
+        const r = await walkAvoiding(p, 'a_tadakatsu', 120, -60, 40, ['river', 'cliff']);
+        check(r.bad.length === 0, '[desktop] 湖・河岸：湖・崖の中へ入らない（1 秒ごとに確かめた）', r.bad.slice(0, 5).join(' '));
+        check(r.arrived, '[desktop] 湖・河岸：岸の道を北へ上る', r.where);
+        await shot(p, 'terrain-shore', 60, 0, 460);
+    },
 };
 
 /**
@@ -786,7 +854,7 @@ async function crossRiver(p, id, x, z, river, spans, sec) {
     return { onBridge, crossed, where: u ? `${u.x.toFixed(0)},${u.z.toFixed(0)}` : '（いない）' };
 }
 
-// ================================================================ PC：15 戦場の通し
+// ================================================================ PC：20 戦場の通し
 
 async function desktop() {
     log(`== desktop：${FIELD_IDS.length} 戦場の通し`);
@@ -808,7 +876,14 @@ async function desktop() {
             log(`   ${id} の決着：${JSON.stringify(decided[id])}`);
         } else {
             await retreatAndFinish(p);
-            decided[id] = await resultToTitle(p, id, 'retreat');
+            // 退き口の判定に全軍撤退も入る戦場（第4群の包囲された陣・退却戦）は、合戦の結果どおり（目標を果たした撤収なら勝ち）
+            decided[id] = await resultToTitle(p, id, COUNT_RETREAT_IDS.includes(id) ? null : 'retreat');
+        }
+        if (G4_IDS.includes(id)) {
+            const rec = await page.evaluate((id) => (window.__practice.records?.status === 'ok' ? window.__practice.records.data.records[id]?.last : null), id);
+            const wantType = { besieged_camp: 'escape', relief: 'rescue_escort', rearguard: 'withdraw', night_raid: 'hold_point', shore: 'defend_zones' }[id];
+            const okWd = rec && (rec.result === 'victory' ? rec.withdrawal === undefined || rec.withdrawal === 'objective' : rec.result === 'retreat' ? rec.withdrawal === 'abandoned' : rec.withdrawal === undefined);
+            check(!!rec && rec.primary?.type === wantType && rec.secondary.every((x) => typeof x.type === 'string') && okWd, `[desktop] ${id}：記録に目標の種類（${wantType}）と退き方（撤収／放棄）が入る`, JSON.stringify(rec && { result: rec.result, reason: rec.reason, primary: rec.primary, withdrawal: rec.withdrawal }));
         }
     }
     // 開き直す → 記録が残っている

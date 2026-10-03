@@ -1,18 +1,22 @@
 /**
  * 合戦場の画面（データ駆動の戦場・6〜10 部隊）の表示と操作を、実際のブラウザで実際のクリック・キー・タップで確かめる。
  *   BASE=http://localhost:8172 node e2e/fields-ui.mjs [出力先]   （開発サーバー：proto3d/blender/tools/vite.nohmr.mjs）
- * - ?dev=field&id=<戦場id> で 15 戦場（第1群・第2群・第3群）をそれぞれ開き、PC（1280×720）とスマホ横（844×390、タッチ）で 1 枚ずつ撮る（出力先/<id>-desktop.png・<id>-phone.png）。
+ * - ?dev=field&id=<戦場id> で 20 戦場（第1群・第2群・第3群・第4群）をそれぞれ開き、PC（1280×720）とスマホ横（844×390、タッチ）で 1 枚ずつ撮る（出力先/<id>-desktop.png・<id>-phone.png）。
+ *   IDS=besieged_camp,relief のように戦場を絞れる（既定は 20 戦場）。
  * - 画面の部品（左上の欄・目標の欄・右上・右・札・命令のボタン・案内）が重ならない・はみ出さないことを、四角の位置で確かめる。
  * - 大平原（plains。味方 7 部隊）：PC は 1〜7 キーで選ぶ・札の数・武将の行（名前・役割・固有能力の「仮」）・移動・攻撃・防衛・撤退を
  *   クリックとキーで出す。スマホは札を横になぞってずらす（なぞっても選ばない）・札をタップで選ぶ・地図のタップで移動・目標の欄を開く／畳む。
  * - 結果の画面：全軍撤退で終え、勝敗・主目標・副目標の行が別々に出る（約束は演習に無い）。
- * - スマホ（goals）：15 戦場で、部隊の札をタップ → 目標の見出しを開く（能力の欄は隠れ、左上の列が札の列に重ならない）→ 別の部隊を選ぶ
+ * - スマホ（goals）：20 戦場で、部隊の札をタップ → 目標の見出しを開く（能力の欄は隠れ、左上の列が札の列に重ならない）→ 別の部隊を選ぶ
  *   （目標の欄を畳み、能力の欄が戻る。左上の列の下端が札の列より上）。
  * - PC（orders）：河川・浅瀬で、中央を弓で開ける作戦の命令をすべて札と地図のクリックで出し、丘の守りと斬り合う味方がいる丘の輪の端へ
  *   四隊を移して勝つ（目標の欄の進みの文が、数えていない理由を出す）。森林で、物見隊を選んで輪の真ん中（家康本陣）を押すと本陣が選び直され、
  *   輪の中の空いた地面を押すと物見隊が動く（説明・進みの文どおり）。
  * 待つ時間だけは開発用の早送り（window.__battle.fastForward）を使う。命令は画面のクリック・タップ・キーで出す。状態は window.__battle から読むだけ。
- * PARTS=shots,desktop,phone,goals,orders で一部だけ（既定はすべて）。
+ * - 夜（night。第4群の夜襲・奇襲、PC とスマホ）：合戦を始めた後、発見していない敵は、名札（DOM の .b-label。名前・兵の数・位置の transform が空）・
+ *   兵士（troopStats の perUnit が 0）・画面の位置（screenOf・labelOf が null）・表示の層の位置（view の vis が NaN）のどれからも分からない。
+ *   篝火の中の見えている敵（番兵）は、名札・兵士が出る。味方の部隊を札と地面のクリック・タップで番兵の近くへ動かし、新しく見つけた敵の名札が出る。
+ * PARTS=shots,desktop,phone,goals,orders,night で一部だけ（既定はすべて）。
  */
 import { launchBrowser, BASE } from './lib.mjs';
 import { mkdirSync } from 'node:fs';
@@ -25,8 +29,9 @@ function check(ok, what, extra = '') {
     log(`${ok ? '  ok ' : '  NG '} ${what}${extra ? `  ${extra}` : ''}`);
     if (!ok) failures.push(what);
 }
-const PARTS = (process.env.PARTS || 'shots,desktop,phone,goals,orders').split(',');
-const FIELD_IDS = ['plains', 'river_ford', 'hills', 'forest', 'mountain_pass', 'single_bridge', 'multi_bridge', 'ridge', 'valley', 'paddy', 'marsh', 'village', 'temple', 'town_edge', 'siege_front'];
+const PARTS = (process.env.PARTS || 'shots,desktop,phone,goals,orders,night').split(',');
+const ALL_FIELD_IDS = ['plains', 'river_ford', 'hills', 'forest', 'mountain_pass', 'single_bridge', 'multi_bridge', 'ridge', 'valley', 'paddy', 'marsh', 'village', 'temple', 'town_edge', 'siege_front', 'besieged_camp', 'relief', 'rearguard', 'night_raid', 'shore'];
+const FIELD_IDS = process.env.IDS ? process.env.IDS.split(',') : ALL_FIELD_IDS;
 
 const b = await launchBrowser();
 
@@ -89,7 +94,7 @@ async function start(p) {
     await press(p, '.b-pause');
 }
 
-// ================================================================ 15 戦場を開いて撮る
+// ================================================================ 20 戦場を開いて撮る
 if (PARTS.includes('shots')) {
     for (const kind of ['desktop', 'phone']) {
         for (const id of FIELD_IDS) {
@@ -378,6 +383,81 @@ if (PARTS.includes('orders')) {
         const st = await page.evaluate(() => [...document.querySelectorAll('.b-goal[data-role="secondary"]')].map((g) => g.dataset.state).join(','));
         log('   200 秒の副目標（救出）', st);
         check(st === 'done', '物見隊を林の中を通して輪まで連れ帰る（副目標：救出）', st);
+        await p.ctx.close();
+    }
+}
+
+// ================================================================ 夜（第4群の夜襲・奇襲）：未発見の敵の情報が表示の層から漏れない
+if (PARTS.includes('night')) {
+    /** 敵ごとの、見えているか（合戦の状態）と表示の層の様子（名札の DOM・兵士・画面の位置・表示の層の位置） */
+    const enemyLayers = (page) =>
+        page.evaluate(() => {
+            const B = window.__battle;
+            const st = B.troopStats();
+            const vis = B.view.vis;
+            return B.state.units
+                .map((u, i) => ({ u, i }))
+                .filter(({ u }) => u.side === 'enemy' && u.present)
+                .map(({ u, i }) => {
+                    const l = document.querySelector(`.b-label[data-id="${u.id}"]`);
+                    return {
+                        id: u.id,
+                        seen: u.seenBy.ally,
+                        labelShown: !!l && !l.hidden,
+                        labelText: l?.textContent ?? '',
+                        labelTransform: l?.style.transform ?? '',
+                        labelOf: B.labelOf(u.id),
+                        screen: B.screenOf(u.id),
+                        drawn: st.perUnit[u.id] ?? 0,
+                        visX: vis[i].px,
+                        visZ: vis[i].pz,
+                        flagX: vis[i].flagX,
+                    };
+                });
+        });
+    /** 漏れ：見えていない敵の、名札・兵士・画面の位置・表示の層の位置のどれかが読める */
+    const leaks = (rows) => rows.filter((r) => !r.seen && (r.labelShown || r.labelText !== '' || r.labelTransform !== '' || r.labelOf !== null || r.screen !== null || r.drawn > 0 || Number.isFinite(r.visX) || Number.isFinite(r.visZ) || Number.isFinite(r.flagX)));
+    for (const kind of ['desktop', 'phone']) {
+        log(`== 夜襲・奇襲：未発見の敵の情報が漏れない（${kind}）`);
+        const p = await openPage(kind, 'night_raid');
+        const { page } = p;
+        await start(p);
+        // 表示を 1 コマ以上進める（止めたまま描く）
+        await page.waitForTimeout(600);
+        let rows = await enemyLayers(page);
+        const hiddenIds = rows.filter((r) => !r.seen).map((r) => r.id);
+        check(hiddenIds.length >= 5, `[${kind}] 夜：始めは遠くの敵の多くが見えない`, hiddenIds.join(','));
+        check(leaks(rows).length === 0, `[${kind}] 夜：見えていない敵の名札・兵士・画面の位置・表示の層の位置が出ない（window.__battle の表示の読み取りでも）`, JSON.stringify(leaks(rows)).slice(0, 400));
+        const seenNow = rows.filter((r) => r.seen);
+        check(seenNow.length >= 1 && seenNow.every((r) => r.labelShown && r.labelText.length > 0 && r.drawn > 0), `[${kind}] 夜：篝火の中の見えている敵（番兵）は名札・兵士が出る`, JSON.stringify(seenNow.map((r) => ({ id: r.id, l: r.labelShown, d: r.drawn }))));
+        // 地図の印：敵の援軍の印は無い（夜襲の敵に援軍は無いが、篝火の名札は出る）
+        const torch = await page.evaluate(() => [...document.querySelectorAll('.b-label.terrain')].map((e) => e.textContent).filter((t) => t.includes('篝火')));
+        check(torch.length === 2, `[${kind}] 夜：篝火の区域の名札が 2 つ`, torch.join(' / '));
+        await page.screenshot({ path: `${OUT}/night_raid-${kind}-night-start.png` });
+        // 騎馬（徳川騎馬隊）を札と地面のクリック・タップで、見回りの騎馬 (130,-40) の手前 (70,-30) へ動かす（水田を避けて西の縁を下る）。着いた頃に見回りを見つける
+        await page.evaluate((u) => document.querySelector(`.b-card[data-id="${u}"]`).scrollIntoView({ inline: 'nearest', block: 'nearest' }), 'a_kiba');
+        await press(p, '.b-card[data-id="a_kiba"]');
+        check((await ui(page)).selectedId === 'a_kiba', `[${kind}] 夜：札で徳川騎馬隊を選ぶ`);
+        await page.evaluate(() => window.__battle.centerOn(70, -30));
+        await page.waitForTimeout(200);
+        const g = await page.evaluate(() => window.__battle.screenOfGround(70, -30));
+        if (p.phone) await page.touchscreen.tap(g.x, g.y);
+        else await page.mouse.click(g.x, g.y);
+        await page.waitForTimeout(200);
+        const o = await page.evaluate(() => window.__battle.state.units.find((u) => u.id === 'a_kiba').order);
+        check(o.type === 'move', `[${kind}] 夜：地面の${p.phone ? 'タップ' : 'クリック'}で移動の命令`, JSON.stringify(o));
+        let found = false;
+        for (let i = 0; i < 70 && !found; i++) {
+            await page.evaluate(() => window.__battle.fastForward(1));
+            found = await page.evaluate(() => window.__battle.state.units.find((u) => u.id === 'e_patrol').seenBy.ally);
+        }
+        await page.evaluate(() => window.__battle.centerOn(130, -10));
+        await page.waitForTimeout(700);
+        rows = await enemyLayers(page);
+        const patrol = rows.find((r) => r.id === 'e_patrol');
+        check(found && patrol.labelShown && patrol.labelText.includes('見回り') && patrol.screen !== null && patrol.drawn > 0, `[${kind}] 夜：近づいて見つけた敵（見回りの騎馬）は、名札・兵士・画面の位置が出る（早送り）`, JSON.stringify({ found, l: patrol.labelShown, t: patrol.labelText, d: patrol.drawn }));
+        check(leaks(rows).length === 0, `[${kind}] 夜：まだ見つけていない敵は、見つけた後も漏れない`, JSON.stringify(leaks(rows)).slice(0, 400));
+        await page.screenshot({ path: `${OUT}/night_raid-${kind}-night-found.png` });
         await p.ctx.close();
     }
 }

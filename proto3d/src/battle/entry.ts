@@ -543,7 +543,12 @@ class BattleRun implements Mode {
         if (this.s.result || !this.started || this.s.allRetreatAt !== null || this.ui.modalOpen) return;
         const was = this.paused;
         this.paused = true;
-        const yes = await this.ui.confirm('全軍撤退しますか？', '味方の全部隊が南の退き口へ下がります。戦場を離れると合戦は「撤退」で終わります（兵は残ります）。', '撤退する', 'やめる');
+        // 第4群：全軍撤退も退き口の判定に入る戦場（endRules.allRetreat 'count'）は、目標に数えることを添える
+        const counting = this.s.setup.endRules?.allRetreat === 'count';
+        const body = counting
+            ? '味方の全部隊が退き口へ下がります。退き口から離れた部隊は主目標に数え、味方が戦場からいなくなるまで合戦は続きます（目標を果たせば勝利の撤収、届かなければ合戦の放棄）。'
+            : '味方の全部隊が南の退き口へ下がります。戦場を離れると合戦は「撤退」で終わります（兵は残ります）。';
+        const yes = await this.ui.confirm('全軍撤退しますか？', body, '撤退する', 'やめる');
         if (this.finished) return;
         if (yes && orderAllRetreat(this.s)) {
             this.pending = 'none';
