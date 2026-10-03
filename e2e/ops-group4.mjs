@@ -374,7 +374,11 @@ async function partF() {
         const g = await ground(page, x, z);
         await pointAt(p, g.x, g.y, 400);
         const o = (await unit(page, id)).order;
-        issued.push(o.type === 'move' && Math.hypot(o.x - x, o.z - z) < 4);
+        // 押した点が家屋などの通れない所なら、行き先はいちばん近い通れる所（sim.ts の applyOrder）
+        const free = await page.evaluate(async ([x, z]) => (await import('/src/battle/sim.ts')).passableAt(window.__battle.state, x, z), [x, z]);
+        const ok = o.type === 'move' && Math.hypot(o.x - x, o.z - z) < (free ? 4 : 10);
+        if (!ok) log(`  ${id} の命令 ${JSON.stringify(o)}（押した所 (${x},${z})・通れる ${free}）`);
+        issued.push(ok);
     }
     check(issued.every(Boolean), '[desktop] F：9 つの移動をどれも画面の操作（札 → 移動 → 地面）で出せた', JSON.stringify(issued));
     await page.evaluate(() => window.__battle.fastForward(100 - window.__battle.state.t, (st) => window.__g4still.tick(st)));

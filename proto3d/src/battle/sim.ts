@@ -233,7 +233,7 @@ export const RULES = {
      * 命令の時に理由を出して受けない（moveBlockReason）。閉じた門の向こうは「開門待ち」（Order の awaitGate）
      */
     allyBlockSec: 2,
-    /** 味方同士の詰まりの、短い迂回とみなす道の長さの上限（今の道の残りの長さに対する倍率。allyBlockSec の 1.） */
+    /** 味方同士の詰まりの、短い迂回とみなす道の長さの上限（今の道の残りの長さに対する倍率。allyBlockSec の説明の 1.） */
     allyDetourRatio: 1.5,
 } as const;
 
