@@ -417,7 +417,11 @@ describe('演習の追い討ち（pursuit をデータで）', () => {
         expect(s.events.some((e) => e.kind === 'ai' && e.text.includes('追い討ち'))).toBe(true);
         const t = battle('rearguard');
         for (const id of ['a_ishikawa', 'a_sakai', 'a_yumi']) issueOrder(t, id, { type: 'retreat' });
-        step(t, 6);
+        // 退却戦の調整（tests/proto3d-field-rearguard.test.ts）で、追っ手は北 150 m の騎馬になった。前は 6 秒に守護を使って 50 秒のうちに
+        // 「阻む」が出たが、今は 6 秒だと騎馬がまだ原の味方に着かず、先に殿の忠勝隊へ当たるので、追い討ちが始まってから守護を使う
+        // （人が「追い討ち」の知らせを見てから押すのと同じ。今の版は 17 秒に追い討ち、18 秒に守護、すぐ「阻む」）
+        for (let i = 0; i < 60 && !t.events.some((e) => e.kind === 'ai' && e.text.includes('追い討ちをかける')); i++) step(t, 1);
+        expect(t.events.some((e) => e.kind === 'ai' && e.text.includes('追い討ちをかける'))).toBe(true);
         expect(useAbility(t, 'a_tadakatsu').ok).toBe(true);
         step(t, 50);
         expect(t.events.some((e) => e.kind === 'ai' && (e.text.includes('が阻む') || e.text.includes('引きつけられた')))).toBe(true);
