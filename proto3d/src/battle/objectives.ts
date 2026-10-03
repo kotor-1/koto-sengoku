@@ -133,6 +133,17 @@ function zoneHolders(s: BattleState, zone: Zone): { allyIn: boolean; enemyIn: bo
         enemyIn: s.units.some((u) => u.side === 'enemy' && active(u) && inZone(zone, u.x, u.z)),
     };
 }
+/**
+ * 画面向け：区域の中に、味方から見えている（発見済みの）戦える敵がいるか。進みの文・地図の輪の脈打ち・目標の欄は、未発見の敵を数えない
+ * （夜・林の中の敵の位置が、表示から漏れないように。第4群の夜襲の確かめ。判定＝zoneHolders は変えない）
+ */
+export function seenEnemyIn(s: BattleState, zone: Zone): boolean {
+    return s.units.some((u) => u.side === 'enemy' && active(u) && u.seenBy.ally && inZone(zone, u.x, u.z));
+}
+/** 画面向け：区域の中に、味方から見えている戦える部隊がいるか（味方はいつも見えている） */
+function seenIn(s: BattleState, side: Side, zone: Zone): boolean {
+    return side === 'ally' ? s.units.some((u) => u.side === 'ally' && active(u) && inZone(zone, u.x, u.z)) : seenEnemyIn(s, zone);
+}
 
 // ---------------------------------------------------------------- 作る
 
@@ -542,8 +553,8 @@ export function finalObjectives(
 
 /** 区域ごとの ○（敵のいない区域に味方がいる）・敵（敵がいる）・空（味方がいない） */
 function zoneMark(s: BattleState, z: Zone): string {
-    const { allyIn, enemyIn } = zoneHolders(s, z);
-    return enemyIn ? '敵' : allyIn ? '○' : '空';
+    const { allyIn } = zoneHolders(s, z);
+    return seenEnemyIn(s, z) ? '敵' : allyIn ? '○' : '空';
 }
 
 /** 門の制圧の進みの文（例：「外門 制圧 5／20 秒・門の前に敵がいる」） */
@@ -554,8 +565,9 @@ export function gateProgressText(s: BattleState, id: string): string {
     const head = `${g.def.name} 制圧 ${Math.floor(g.sec)}／${g.def.capture.sec} 秒`;
     const taker = g.holder === 'enemy' ? 'ally' : 'enemy';
     const z = g.def.capture.zone;
-    const holderIn = s.units.some((u) => u.side === g.holder && active(u) && inZone(z, u.x, u.z));
-    const takerIn = s.units.some((u) => u.side === taker && active(u) && inZone(z, u.x, u.z));
+    // 未発見の敵は数えない（表示だけ。判定は sim.ts の門の制圧）
+    const holderIn = seenIn(s, g.holder, z);
+    const takerIn = seenIn(s, taker, z);
     if (holderIn) return `${head}・門の前に敵がいる（追い出すと数え始める）`;
     if (!takerIn) return `${head}・門の前に味方がいない（門の前の輪へ移動させる）`;
     return `${head}（門の前の輪を、敵のいない間に味方が占めて数える）`;
@@ -573,19 +585,21 @@ function progressText(s: BattleState, r: ObjectiveRun): string {
         case 'hold_point': {
             // 数えていないときは、なぜ数えていないか（区域に敵がいる・味方がいない）を出す（畳んだ見出しでも読めるよう括弧の外に）
             const head = `確保 ${Math.floor(r.sec)}／${d.sec} 秒`;
-            const { allyIn, enemyIn } = zoneHolders(s, d.zone);
-            if (enemyIn) return `${head}・区域に敵がいる（敵を追い出すと数え始める）`;
+            // 未発見の敵（夜・林の中）は数えない（表示だけ。判定は zoneHolders のまま）
+            const { allyIn } = zoneHolders(s, d.zone);
+            if (seenEnemyIn(s, d.zone)) return `${head}・区域に敵がいる（敵を追い出すと数え始める）`;
             if (!allyIn) return `${head}・区域に味方がいない（輪の中へ移動させる）`;
             return `${head}（敵のいない区域に味方がいる間だけ数える）`;
         }
         case 'defend_time':
-            return `残り ${Math.max(0, Math.ceil(r.startT + d.sec - s.t))} 秒` + (d.zone && r.sec > 0 ? `（区域を敵に奪われている：${Math.floor(r.sec)}／${d.loseSec ?? 10} 秒）` : '');
+            // 奪われている秒は、見えている敵が区域にいる間だけ出す（未発見の敵の位置を漏らさない）
+            return `残り ${Math.max(0, Math.ceil(r.startT + d.sec - s.t))} 秒` + (d.zone && r.sec > 0 && seenEnemyIn(s, d.zone) ? `（区域を敵に奪われている：${Math.floor(r.sec)}／${d.loseSec ?? 10} 秒）` : '');
         case 'defend_zones': {
             // 例：「守っている 3／3（2 以上で残り 120 秒）・西の口 ○・中の口 ○・東の口 ✕（中の口を敵に奪われている：4／10 秒）」
             const marks = d.zones.map((_, i) => `${zoneName(d, i)} ${r.zoneLost[i] ? '✕' : '○'}`).join('・');
             const taking = d.zones
                 .map((_, i) => i)
-                .filter((i) => !r.zoneLost[i] && r.zoneSec[i]! > 0)
+                .filter((i) => !r.zoneLost[i] && r.zoneSec[i]! > 0 && seenEnemyIn(s, d.zones[i]!))
                 .map((i) => `${zoneName(d, i)}を敵に奪われている：${Math.floor(r.zoneSec[i]!)}／${d.loseSec ?? 10} 秒`);
             return `守っている ${heldCount(r)}／${d.zones.length}（${d.minHeld} 以上で残り ${Math.max(0, Math.ceil(r.startT + d.sec - s.t))} 秒）・${marks}` + (taking.length ? `（${taking.join('・')}）` : '');
         }

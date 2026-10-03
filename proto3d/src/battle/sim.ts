@@ -305,6 +305,8 @@ export interface BattleEvent {
     targetId?: string;
     /** 特殊能力の知らせ（ability・ability_end）なら、その能力 */
     ability?: AbilityId;
+    /** 夜（第4群）：味方から見えていない敵の部隊の出来事（画面の知らせに出さない。eventTone が null を返す） */
+    unseen?: true;
 }
 
 /** 合戦中の部隊の状態（画面は読むだけ。書き換えは issueOrder・stepBattle だけ） */
@@ -354,6 +356,11 @@ export interface UnitState {
     attackers: string[];
     /** それぞれの陣営から見えているか（林の中は近づかれるまで見えない） */
     seenBy: Record<Side, boolean>;
+    /**
+     * 相手の陣営が最後にこの部隊を見た時刻（t。見たことが無ければ -1）と、そのときの状態（見失う直前の刻みに崩れた・全滅した・退いたのも含む）。
+     * 夜（第4群）の画面が、未発見の敵の知らせ・陣営の様子・結果の表を出さないのに使う（動きには使わない）
+     */
+    intel: { t: number; status: UnitStatus };
     /** この刻みに動いた */
     moving: boolean;
     /** 着いたら向き直る向き（move の face） */
@@ -718,6 +725,7 @@ export function createBattle(setup: BattleSetup): BattleState {
             shootingAt: null,
             attackers: [],
             seenBy: { ally: d.side === 'ally', enemy: d.side === 'enemy' },
+            intel: { t: -1, status: 'ready' },
             moving: false,
             faceGoal: null,
             lastHitT: -999,
@@ -996,6 +1004,7 @@ function round1(v: number): number {
 }
 
 function tick(s: BattleState): void {
+    const ev0 = s.events.length;
     s.tick++;
     s.t = s.tick * RULES.tick;
     const dt = RULES.tick;
@@ -1276,6 +1285,24 @@ function tick(s: BattleState): void {
 
     // 10. 勝ち負け
     decide(s);
+    if (s.setup.night) markUnseen(s, ev0);
+}
+
+/**
+ * 夜（第4群）：この刻みの出来事のうち、主な部隊が味方でなく、主な部隊か相手の部隊が味方から見えていない（この刻みに見えていない）敵の部隊の
+ * ものに印を付ける
+ * （未発見の敵が崩れた・逃れ去った・能力を使った、などを知らせに出さない。勝ち負け・目標の知らせ＝部隊の無い出来事はそのまま）
+ */
+function markUnseen(s: BattleState, from: number): void {
+    for (let i = from; i < s.events.length; i++) {
+        const e = s.events[i]!;
+        // 味方の部隊の出来事（「〇〇を見失った」など）は出す
+        if (e.unitId && unitById(s, e.unitId)?.side === 'ally') continue;
+        for (const id of [e.unitId, e.targetId]) {
+            const u = id ? unitById(s, id) : undefined;
+            if (u && u.side === 'enemy' && !u.seenBy.ally && u.intel.t < s.t - 1e-9) e.unseen = true;
+        }
+    }
 }
 
 /**
@@ -1358,6 +1385,10 @@ function updateVisibility(s: BattleState, events: BattleEvent[] | null): void {
         const was = u.seenBy[opp];
         u.seenBy[opp] = seen;
         u.seenBy[u.side] = u.present;
+        // 相手の陣営が知っていること：見えている間は今の状態。前の刻みまで見えていて、この刻みに見えなくなった（崩れて逃れ去った・全滅した・
+        // 退き口から離れた）ときは、その最後の様子も見たことにする
+        if (seen) u.intel = { t: s.t, status: u.status };
+        else if (was && u.intel.t >= 0) u.intel = { t: u.intel.t, status: u.status };
         // 林の奇襲の判定：隠れていた部隊が見つかった時刻
         if (u.present && !seen) u.wasHidden = true;
         else if (seen && u.wasHidden) {

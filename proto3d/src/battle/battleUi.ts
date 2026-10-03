@@ -1258,7 +1258,9 @@ export class BattleUi {
             pl.append(el('b', '', m.pledge.title), el('span', '', m.pledge.text));
             box.append(pl);
         }
-        box.append(el('p', 'b-rtime', `合戦の時間 ${m.time}・味方の失った兵 ${m.lost.ally} / ${m.start.ally}・敵の失った兵 ${m.lost.enemy} / ${m.start.enemy}`));
+        // 夜（第4群）：見つけなかった敵の部隊は、敵の合計に入れていない
+        const unknownN = m.rows.filter((r) => r.unknown).length;
+        box.append(el('p', 'b-rtime', `合戦の時間 ${m.time}・味方の失った兵 ${m.lost.ally} / ${m.start.ally}・敵の失った兵 ${m.lost.enemy} / ${m.start.enemy}${unknownN ? `（見つけていない ${unknownN} 部隊を除く）` : ''}`));
         const table = el('table', 'b-rtable');
         const thead = el('tr');
         for (const t of ['部隊', '兵（始め→終わり）', '状態']) thead.append(el('th', '', t));
@@ -1271,7 +1273,7 @@ export class BattleUi {
             table.append(sep);
             for (const r of m.rows.filter((x) => x.side === side)) {
                 const tr = el('tr', side);
-                tr.append(el('td', '', r.name), el('td', 'num', `${r.start} → ${r.end}（-${r.lost}）`), el('td', '', r.status));
+                tr.append(el('td', '', r.name), el('td', 'num', r.unknown ? '―' : `${r.start} → ${r.end}（-${r.lost}）`), el('td', '', r.status));
                 table.append(tr);
             }
         }

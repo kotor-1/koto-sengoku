@@ -10,7 +10,7 @@
 import type { AbilityId, BattleEndReason, BattleMap, BattleOutcome, BattleResultKind, GateDef, ObjectiveDef, Order, Side, UnitKind, Zone } from './types';
 import { STATUS_LABEL, attackDir, awaitingGate, canCommand, engagementLabel, hqOf, isActive, issueOrder, meleeUnreachable, moveBlockReason, orderLabel, pledgeProgress, timeLeft, unitById, type BattleEvent, type BattleState, type UnitState } from './sim';
 import { ABILITY_DATA, ABILITY_FICTION_NOTE, abilityInfo, abilityMarks, abilityShortText, isRooted, type AbilityInfo } from './abilities';
-import { objectiveProgress, type ObjectiveRole, type ObjectiveRun, type ObjectiveState } from './objectives';
+import { objectiveProgress, seenEnemyIn, type ObjectiveRole, type ObjectiveRun, type ObjectiveState } from './objectives';
 import { zoneCenter } from './fieldRules';
 import { GENERAL_ROLE_LABELS, RELATION_SELF, generalById } from './generals';
 // 第4群：終わり方の判定の順・脱出／離脱の出口・夜と追い討ちの決まりの文
@@ -416,6 +416,11 @@ export function cardModel(s: BattleState, u: UnitState): CardModel {
 export function armySummary(s: BattleState, side: Side): { hq: string; able: number; total: number } {
     const hq = hqOf(s, side);
     const rest = s.units.filter((u) => u.side === side && !u.isHq);
+    // 夜（第4群）の敵：味方が最後に見た様子で数える（見ていない間に崩れた・着いた敵を漏らさない。sim.ts の intel）
+    if (s.setup.night && side === 'enemy') {
+        const hqText = !hq ? '―' : hq.intel.status === 'ready' ? '健在' : STATUS_LABEL[hq.intel.status];
+        return { hq: hqText, able: rest.filter((u) => u.intel.status === 'ready').length, total: rest.length };
+    }
     const hqText = !hq ? '―' : hq.status === 'ready' ? (hq.present ? '健在' : '到着待ち') : STATUS_LABEL[hq.status];
     return { hq: hqText, able: rest.filter((u) => u.status === 'ready').length, total: rest.length };
 }
@@ -468,6 +473,8 @@ export interface ResultRow {
     end: number;
     lost: number;
     status: string;
+    /** 夜（第4群）：一度も見つけなかった敵の部隊（兵の数は出さない） */
+    unknown?: true;
 }
 /** 結果の表（部隊ごとの最初と最後の兵・失った兵・状態）と陣営ごとの合計 */
 export function resultRows(s: BattleState, o: BattleOutcome): { rows: ResultRow[]; lost: Record<Side, number>; start: Record<Side, number> } {
@@ -478,6 +485,11 @@ export function resultRows(s: BattleState, o: BattleOutcome): { rows: ResultRow[
         const u = unitById(s, r.id);
         const st = Math.round(r.startStrength);
         const en = Math.round(r.endStrength);
+        // 夜（第4群）：一度も見つけなかった敵の部隊は、兵の数・状態を出さず（「見つけていない」）、敵の合計にも入れない
+        if (s.setup.night && r.side === 'enemy' && u && u.intel.t < 0) {
+            rows.push({ id: r.id, name: u.name, side: r.side, start: 0, end: 0, lost: 0, status: '見つけていない', unknown: true });
+            continue;
+        }
         rows.push({ id: r.id, name: u?.name ?? r.id, side: r.side, start: st, end: en, lost: st - en, status: r.status === 'ready' ? '健在' : STATUS_LABEL[r.status] });
         lost[r.side] += st - en;
         start[r.side] += st;
@@ -488,6 +500,8 @@ export function resultRows(s: BattleState, o: BattleOutcome): { rows: ResultRow[
 /** 知らせの色分け（味方に良い・悪い・ふつう）。出さない知らせは null */
 export function eventTone(s: BattleState, e: BattleEvent): 'good' | 'bad' | 'warn' | 'info' | null {
     if (e.kind === 'start' || e.kind === 'end') return null;
+    // 夜（第4群）：味方から見えていない敵の出来事は出さない（sim.ts の markUnseen）
+    if (e.unseen) return null;
     const side = e.unitId ? unitById(s, e.unitId)?.side : undefined;
     const mine = side === 'ally';
     switch (e.kind) {
@@ -1233,7 +1247,9 @@ export function fieldRuleTexts(s: BattleState): string[] {
             if (n === 0) continue;
             narrowCount.set(r.maxEngaged, 0);
             out.push(`狭い正面${n > 1 ? `（${n} か所）` : ''}：区域の中では、同じ相手に斬りかかれるのは ${r.maxEngaged} 部隊まで`);
-        } else if (r.type === 'woods_ambush') out.push(`林の奇襲：見られていない部隊の最初の当たり ×${r.firstStrikeMul}（${r.sec} 秒）`);
+        }
+        // 林の奇襲：夜（第4群）は林の外でも見られていない部隊がいるので「奇襲」（夜は林の外でも働く）
+        else if (r.type === 'woods_ambush') out.push(`${s.setup.night ? '奇襲（夜は林の外でも）' : '林の奇襲'}：見られていない部隊の最初の当たり ×${r.firstStrikeMul}（${r.sec} 秒）`);
     }
     const tr = fr.terrainRules ?? {};
     const ford = tr.ford;
@@ -1413,8 +1429,15 @@ export function objectiveZoneCounting(s: BattleState, id: string): boolean {
     // 段階目標の段は、今の段だけ
     if (run.parent && run.parent.steps[run.parent.stepIdx] !== run) return false;
     if (d.type === 'limit_breakthrough') return false;
-    if (d.type === 'open_gate') return (s.field.gates.find((g) => g.def.id === d.gateId)?.sec ?? 0) > 0;
+    if (d.type === 'open_gate') {
+        const g = s.field.gates.find((x) => x.def.id === d.gateId);
+        // 味方の門を敵が制圧しかけている：見えている敵が輪にいる間だけ脈打たせる（未発見の敵の位置を漏らさない）
+        return !!g && g.sec > 0 && (g.holder !== 'ally' || seenEnemyIn(s, g.def.capture.zone));
+    }
     if (d.type === 'hold_zones') return run.sec > 0;
+    // 守る区域を敵に奪われかけている（defend_time・defend_zones）：見えている敵が区域にいる間だけ（夜・林の中の未発見の敵は数えない。判定は変えない）
+    if (d.type === 'defend_zones') return i >= 0 && (run.zoneSec[i] ?? 0) > 0 && seenEnemyIn(s, d.zones[i]!);
+    if (d.type === 'defend_time') return run.sec > 0 && !!d.zone && seenEnemyIn(s, d.zone);
     return i >= 0 ? (run.zoneSec[i] ?? 0) > 0 : run.sec > 0;
 }
 
