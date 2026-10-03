@@ -296,23 +296,39 @@ describe('救出（rescue_escort）：接触だけ・能力だけでは救出に
                 if (u.order.type === 'attack' && u.order.targetId === t) return true;
                 return issueOrder(st, id, { type: 'attack', targetId: t });
             };
+            // 援軍救出の調整（丘の囲みの役割を分けた）の後の台本：東の原を上がり、騎馬で東の原の弓を崩し、4 部隊と弓で丘の南の囲みを破って
+            // 合流し、長政隊を東の原から下げる（前の台本は東の囲みの騎馬へ騎馬 2 隊を回し、合流の前に崩されて負けるようになった。
+            // 前：勝ち 195 秒 → 前の台本のまま：負け。この台本：勝ち。数字は tests/proto3d-field-relief.test.ts）
             if (st.tick === 1) {
-                mv('a_yumi', -10, 70);
-                mv('a_sakakibara', 150, -90);
-                mv('a_kiba', 150, -70);
-                mv('a_sakai', 60, -40);
+                atk('a_sakakibara', 'e_block_yumi');
+                mv('a_kiba', 95, 0);
+                mv('a_sakai', 60, 15);
+                mv('a_ishikawa', 85, 20);
+                mv('a_tadakatsu', 50, 30);
+                mv('a_yumi', 60, 40);
             }
-            atk('a_tadakatsu', 'e_block');
-            atk('a_ishikawa', 'e_block');
             const met = st.objectives!.primary!.metT !== null;
-            if (st.t > 30 && !met) {
-                if (!atk('a_sakakibara', 'e_attack')) mv('a_sakakibara', 70, -160);
-                if (!atk('a_kiba', 'e_attack')) mv('a_kiba', 50, -140);
+            const ringS = U(st, 'e_ring_s');
+            if (st.t > 45 && U(st, 'e_block_yumi').status !== 'ready' && ringS.status === 'ready') {
+                for (const id of ['a_tadakatsu', 'a_sakai', 'a_ishikawa', 'a_yumi']) atk(id, 'e_ring_s');
+                // 騎馬は忠勝隊が斬り合ってから（先に当たると東の囲みの騎馬に横を突かれて崩れる）
+                if (U(st, 'a_tadakatsu').engagedWith) for (const id of ['a_sakakibara', 'a_kiba']) atk(id, 'e_ring_s');
+            }
+            if (ringS.status !== 'ready' && !met) {
+                mv('a_sakakibara', 60, -125);
+                mv('a_sakai', 50, -110);
             }
             if (met) {
-                mv('a_nagamasa', 0, 175);
-                mv('a_sakakibara', 10, 160);
-                mv('a_kiba', -10, 160);
+                const n = U(st, 'a_nagamasa');
+                const legs: [number, number][] = [
+                    [50, -60],
+                    [40, 60],
+                    [20, 170],
+                ];
+                const leg = n.z < -70 ? legs[0]! : n.z < 50 ? legs[1]! : legs[2]!;
+                mv('a_nagamasa', leg[0], leg[1]);
+                mv('a_sakakibara', 75, -60);
+                mv('a_tadakatsu', 95, -50);
             }
         });
         expect(r.result).toBe('victory');
@@ -601,7 +617,8 @@ describe('地図の印・記録', () => {
         const o = runToEnd(s);
         const rec = recordFromOutcome(o, 'relief_escort', new Date('2026-10-03T00:00:00Z'));
         expect(rec.primary).toEqual({ id: 'relief_escort', achieved: false, type: 'rescue_escort', met: false });
-        expect(rec.secondary.map((x) => x.type)).toEqual(['limit_losses', 'preserve_unit']);
+        // 援軍救出の調整で副目標に「丘の南の囲みを崩す」（break_unit）を足した（前は limit_losses・preserve_unit の 2 つ）
+        expect(rec.secondary.map((x) => x.type)).toEqual(['limit_losses', 'preserve_unit', 'break_unit']);
         expect(rec.withdrawal).toBe('abandoned');
         const back = parsePracticeData(JSON.stringify({ version: 1, records: { relief: { plays: 1, last: rec, best: rec } } }));
         expect(back?.records.relief?.last).toEqual(rec);

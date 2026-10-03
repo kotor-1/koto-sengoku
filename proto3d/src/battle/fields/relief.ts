@@ -8,12 +8,12 @@
  * - 丘を囲む敵勢（それぞれ持ち場の役割が違う）：
  *   - 丘の南の囲み（槍・強い）：丘の南（60,-85）の区域を守る。南から真っすぐ丘へ上がる道を塞ぐ。崩せば南の退き道が開く。
  *   - 丘の西の囲み（槍）：西（-35,-150）の持ち場を保つ。矢を浴び続けると射手へ打って出て、持ち場から 200 m まで追う（弓で誘い出せる）。
- *   - 丘の東の囲み（騎馬）：南の囲みの東（110,-100）の区域を守る。南の囲みへ東から当たる隊を横から突く。
+ *   - 丘の東の囲み（騎馬）：南の囲みの東（120,-95）の区域を守る。南の囲みへ東から当たる隊を横から突く。
  *   - 丘の攻め手（槍・弱い）：始めに長政隊へ攻めかかるが、丘の上の長政隊が退ける。
  * - 中央（10,-5）に敵勢の押さえ（槍・強い。小さな区域だけを守る）、東の原（100,-30）に敵勢の弓。南の陣から丘へ真っすぐ向かうと押さえに当たる。
  *   西は広い林（-220〜-70。中は近づかないと見えない）、林の東の縁に沿って西の筋（x -58 あたり）が北へ通る。西の筋の小丘（-60,30）。東は湿地。
  * - 敵の本陣は北西の林の奥（-140,-225）。4 分（240 秒）で、北東（200,-220）から敵の援軍（槍）が丘へ攻めかかる（合流が遅れると長政隊が危ない）。
- * - 主目標：長政隊と合流し、安全地点まで退かせる（rescue_escort）。副目標：損害を 1 割 5 分以内・長政隊の兵を 7 割以上・丘の南の囲みを崩す。
+ * - 主目標：長政隊と合流し、安全地点まで退かせる（rescue_escort）。副目標：損害を 1 割以内・長政隊の兵を 7 割以上・丘の南の囲みを崩す。
  * - 編成：味方 7＋救出の対象 1 ＝ 8 部隊（同時に戦場にいる部隊の上限 8 に、救出の対象も数える）。敵 9（援軍を含む。上限 10）。
  * - 終わり方の判定の順（endRules）：主目標の達成 → 主目標の失敗 → 本陣の崩れ → 諸隊が戦えない → 日没 → 全軍撤退（合戦の放棄）。
  * - 道探しの格子（pathfinding）を付ける：通れない所は無いが、味方同士の詰まりの決まり（RULES.allyBlockSec の短い迂回・すり抜け）は
@@ -69,7 +69,7 @@ export const RELIEF: BattlefieldDef = {
             { id: 'hq_kiba', x: -105, z: -215, facing: S, note: '本陣の騎馬' },
             { id: 'attack', x: 60, z: -205, facing: S, note: '丘の攻め手（北）' },
             { id: 'ring_w', x: -35, z: -150, facing: EAST, note: '丘の西の囲み（矢を嫌うと打って出て遠くまで追う）' },
-            { id: 'ring_e', x: 110, z: -100, facing: WEST, note: '丘の東の囲み（騎馬）' },
+            { id: 'ring_e', x: 120, z: -95, facing: WEST, note: '丘の東の囲み（騎馬）' },
             { id: 'ring_s', x: 60, z: -85, facing: S, note: '丘の南の囲み' },
             { id: 'block', x: 10, z: -5, facing: S, note: '中央の押さえ' },
             { id: 'block_yumi', x: 100, z: -30, facing: S, note: '東の原の弓' },
@@ -80,7 +80,7 @@ export const RELIEF: BattlefieldDef = {
     objectives: {
         primary: { id: 'relief_escort', type: 'rescue_escort', label: '長政隊と合流し、南の安全地点まで連れ帰る（兵 4 割以上）', unitId: 'a_nagamasa', meetZone: MEET, safeZone: SAFE, minRatio: 0.4, meetSec: 5 },
         secondary: [
-            { id: 'relief_losses', type: 'limit_losses', label: '損害を 1 割 5 分以内に抑える', maxRatio: 0.15 },
+            { id: 'relief_losses', type: 'limit_losses', label: '損害を 1 割以内に抑える', maxRatio: 0.1 },
             { id: 'relief_keep', type: 'preserve_unit', label: '長政隊の兵を 7 割以上残す', unitId: 'a_nagamasa', minRatio: 0.7 },
             { id: 'relief_break', type: 'break_unit', label: '丘の南の囲みを崩す（南の退き道を開く）', unitId: 'e_ring_s' },
         ],
@@ -95,7 +95,7 @@ export const RELIEF: BattlefieldDef = {
         '丘の囲み：南の囲み（槍・強い）が南の道を塞ぎ、その東に騎馬が控える。西の囲み（槍）は持ち場を保つが、矢を浴び続けると射手へ打って出て遠くまで追う（誘い出せる）。',
         '道：中央に敵勢の押さえ（真っすぐ丘へ向かうと当たる）、東の原に敵勢の弓。西は広い林（中は近づかないと見えない）、林の東の縁に沿って西の筋が北へ通る。東は湿地。',
         '4 分で、北東から敵の援軍が丘へ攻めかかる。それまでに合流しておく。',
-        '副目標：損害を 1 割 5 分以内に抑える・長政隊の兵を 7 割以上残す・丘の南の囲みを崩す。',
+        '副目標：損害を 1 割以内に抑える・長政隊の兵を 7 割以上残す・丘の南の囲みを崩す。',
     ],
     tactics: [
         '急いで直接救う：東の原を上がり、騎馬で東の原の弓を崩してから、4 部隊と弓で南の囲みを一度に破る。合流したら長政隊を東の原から下げる（速いが損害が大きい）',
@@ -122,7 +122,7 @@ export const RELIEF: BattlefieldDef = {
                 // 西の囲み：持ち場を保つ（hold_line）。矢を浴び続けると射手へ打って出て、持ち場から 200 m まで追う（弓で誘い出せる）。
                 // 持ち場は丘の上の長政隊から 90 m より離す（近くに相手の槍がいると持ち場を離れない＝誘い出せない。ai.ts の provokeCalm）
                 E('e_ring_w', 'yari', '敵勢の丘の西の囲み', 480, 85, 'ring_w', { aiRole: 'hold_line', aiLeash: 200 }),
-                E('e_ring_e', 'kiba', '敵勢の丘の東の囲み', 280, 80, 'ring_e', { aiRole: 'hold_zone', aiTarget: { x: 110, z: -100, r: 35 }, aiLeash: 60 }),
+                E('e_ring_e', 'kiba', '敵勢の丘の東の囲み', 280, 80, 'ring_e', { aiRole: 'hold_zone', aiTarget: { x: 120, z: -95, r: 30 }, aiLeash: 60 }),
                 E('e_ring_s', 'yari', '敵勢の丘の南の囲み', 600, 85, 'ring_s', { aiRole: 'hold_zone', aiTarget: { x: 60, z: -85, r: 30 }, aiLeash: 70 }),
                 E('e_block', 'yari', '敵勢の中央の押さえ', 600, 85, 'block', { aiRole: 'hold_zone', aiTarget: { x: 10, z: -5, r: 18 }, aiLeash: 35 }),
                 E('e_block_yumi', 'yumi', '敵勢の東の原の弓', 280, 80, 'block_yumi', { aiRole: 'hold_line' }),
