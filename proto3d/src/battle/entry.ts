@@ -28,7 +28,7 @@
 import { appContext, enterMode, exitMode, registerBattleRunner, type AppContext, type Mode } from '../app/modes';
 import { loadModel } from '../app/models';
 import type { BattleOutcome, BattleRunHooks, BattleSetup, Order } from './types';
-import { canCommand, createBattle, elevationAt, isActive, issueOrder, meleeUnreachable, orderAllRetreat, stepBattle, unitById, type BattleEvent, type BattleState } from './sim';
+import { canCommand, createBattle, elevationAt, isActive, issueOrder, meleeUnreachable, orderAllRetreat, stepBattle, unitById, waitReason, type BattleEvent, type BattleState } from './sim';
 import { BattleView } from './view';
 import { nightLabels } from './night';
 import { withdrawalNote } from './objectives';
@@ -1218,6 +1218,14 @@ function exposeDev(run: BattleRun): void {
         /** 表示（three の場面・カメラ）。確認用 */
         get view() {
             return run.view;
+        },
+        /**
+         * 部隊が待っている理由（sim.ts の waitReason。順番待ち queue・開門待ち gate・道が無い noPath・近くの敵 foe・壁 wall・止まっている味方 ally・
+         * 何も無い null）。e2e の「10 秒以上動かない部隊」の見張りが、sim.ts と同じ定義で順番待ちを分けるのに使う（読むだけ）
+         */
+        waitReason(unitId: string) {
+            const u = unitById(run.s, unitId);
+            return u ? waitReason(run.s, u) : null;
         },
         /** 合戦の時間を一気に進める（命令の台本 script を刻みごとに呼べる） */
         fastForward(seconds: number, script?: (s: BattleState) => void) {

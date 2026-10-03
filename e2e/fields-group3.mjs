@@ -454,8 +454,10 @@ async function phonePart() {
  * - losBad／meleeBad：射る相手・斬り合う相手への射線が通らない（前の刻みの位置＝その刻みの計画を立てた位置で見る）
  * - blockedInRange：弓の部隊が、射程の中に見えている敵がいるのに射線が通らなかった刻みの数（部隊ごと）
  * - stuck：移動・攻撃の命令のまま、斬り合い・射撃なしで 10 秒以上 1.5 m も動かない（行き先まで 8 m より遠い）。
- *   順番待ち（攻撃の相手が 45 m 以内で味方と斬り合っている）・道の無い行き先（閉じた門の向こう）・開門待ち（第4群。閉じた門の先への移動で、
- *   門の前で待つ）は分けて数える
+ *   順番待ち・道の無い行き先（閉じた門の向こう）・開門待ち（第4群。閉じた門の先への移動で、門の前で待つ）は分けて数える。
+ *   分け方は sim.ts の waitReason（開発用の窓の変数 window.__battle.waitReason）をそのまま使う（第4群のエンジンの要望で、e2e だけの分け方
+ *   「攻撃の相手が 45 m 以内で味方と斬り合っている」から、sim.ts の順番待ちと同じ定義にした。狭い道で前の味方の斬り合いの後ろに詰まった部隊は
+ *   順番待ち。味方だけに塞がれた・近くの敵・壁・理由の無い止まりは、今までどおり止まりとして NG）
  */
 async function installMonitor(page, tag) {
     await page.evaluate(async (tag) => {
@@ -539,10 +541,14 @@ async function installMonitor(page, tag) {
                 a.done = true;
                 const ev = { id: u.id, t: +a.t.toFixed(1), x: +u.x.toFixed(1), z: +u.z.toFixed(1), order: oj, goalDist: +d(u, goal).toFixed(1), dur: null };
                 a.ev = ev;
-                if (tgt && tgt.engagedWith && by.get(tgt.engagedWith)?.side === u.side && d(u, tgt) < 45) M.queue.push(ev);
-                else if (u.path?.none) M.blockedGoal.push(ev);
-                // 第4群：閉じた門の先への移動は「開門待ち」（門の前で待つ。sim.ts の awaitingGate）。止まりとは分けて記録する
-                else if (o.type === 'move' && o.awaitGate && st.field.gates.some((g) => g.def.id === o.awaitGate && !g.open)) M.gateWait.push(ev);
+                // 待っている理由は sim.ts の決まりそのもの（開発用の窓の変数 window.__battle.waitReason。sim.ts の waitReason）で分ける：
+                // 順番待ち queue（狭い正面であふれた・攻撃の相手が味方と斬り合っている・行く手で味方が斬り合っている・前の味方が敵に止められている）、
+                // 道の無い行き先 noPath、開門待ち gate（第4群）。それ以外（味方だけに塞がれた ally・近くの敵 foe・壁 wall・何も無い null）は止まり
+                const why = window.__battle.waitReason(u.id);
+                ev.why = why;
+                if (why === 'queue') M.queue.push(ev);
+                else if (why === 'noPath') M.blockedGoal.push(ev);
+                else if (why === 'gate') M.gateWait.push(ev);
                 else M.stuck.push(ev);
             }
             // 崩れた・退いた部隊の見張りを閉じる

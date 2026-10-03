@@ -26,7 +26,7 @@
  *   （夜襲の先駆けの損害の比べだけ、理由を書いて直した。tests/proto3d-field-night_raid.test.ts）。
  */
 import { describe, expect, it } from 'vitest';
-import { RULES, awaitingGate, createBattle, issueOrder, orderLabel, stepBattle, unitById, type BattleState } from '../proto3d/src/battle/sim';
+import { RULES, awaitingGate, createBattle, issueOrder, orderLabel, stepBattle, unitById, waitReason, type BattleState } from '../proto3d/src/battle/sim';
 import { orderAck, refusalText } from '../proto3d/src/battle/control';
 import { buildBattleSetup, getField } from '../proto3d/src/battle/fields';
 import type { BattleSetup, FieldRules, Side, TerrainArea, UnitDef, UnitKind } from '../proto3d/src/battle/types';
@@ -370,6 +370,46 @@ describe('狭い正面の同時に斬りかかれる数と順番待ちは変え�
         }
         expect(maxEngaged).toBe(1);
         expect(squeezedWhileQueued).toBe(0);
+    });
+});
+
+describe('待っている理由（sim.ts の waitReason。e2e の止まりの見張りが同じ定義で順番待ちを分ける。状態を直接操作・早送り）', () => {
+    it('狭い正面で斬り合いの順番を待つ隊は queue。味方だけに塞がれた隊は ally（すり抜けの前）。道の無い所の無い戦場でも攻撃の相手が斬り合っていれば queue', () => {
+        const terrain = [wall(-150, -10, -60, 60), wall(10, 150, -60, 60)];
+        const s = createBattle(
+            field(terrain, [...HQS(), U('e_t', 'enemy', 'yari', 0, -75, { aiRole: 'guard_hq', strength: 900 }), U('a_1', 'ally', 'yari', 0, -30), U('a_2', 'ally', 'yari', 0, -5), U('a_3', 'ally', 'kiba', 0, 20)], {
+                specialRules: [{ type: 'narrow_frontage', zone: { rect: { x0: -30, x1: 30, z0: -100, z1: 60 } }, maxEngaged: 1 }],
+            }),
+        );
+        for (const u of s.units) {
+            u.initiative = null;
+            if (u.side === 'enemy') u.seenBy.ally = true;
+        }
+        for (const id of ['a_1', 'a_2', 'a_3']) expect(issueOrder(s, id, { type: 'attack', targetId: 'e_t' })).toBe(true);
+        const seen = new Set<string>();
+        for (let k = 0; k < 300; k++) {
+            stepBattle(s, RULES.tick);
+            const eng = s.units.some((u) => u.side === 'ally' && u.engagedWith === 'e_t');
+            for (const u of s.units) if (u.side === 'ally' && !u.isHq && eng && !u.engagedWith && !u.moving) seen.add(String(waitReason(s, u)));
+        }
+        // 斬り合いが始まった後に止まっている隊は、どれも順番待ち
+        expect([...seen]).toEqual(['queue']);
+        // 味方だけに塞がれた（口に待機の二隊。迂回なし）：すり抜けの前は ally
+        const g = gapScene(false);
+        expect(issueOrder(g, 'a_m', { type: 'move', x: 5, z: -120 })).toBe(true);
+        let ally = false;
+        for (let k = 0; k < 200 && !unitById(g, 'a_m')!.squeeze?.on; k++) {
+            stepBattle(g, RULES.tick);
+            ally ||= waitReason(g, unitById(g, 'a_m')!) === 'ally';
+        }
+        expect(ally).toBe(true);
+        // 道探しの格子の無い戦場
+        const open = createBattle({ ...field([], [...HQS(), U('e_t', 'enemy', 'yari', 0, -40, { aiRole: 'guard_hq' }), U('a_1', 'ally', 'yari', 0, -20), U('a_2', 'ally', 'yari', 0, 40)]), fieldRules: {} });
+        for (const u of open.units) if (u.side === 'enemy') u.seenBy.ally = true;
+        expect(open.field.nav).toBeFalsy();
+        expect(issueOrder(open, 'a_2', { type: 'attack', targetId: 'e_t' })).toBe(true);
+        unitById(open, 'a_1')!.engagedWith = 'e_t';
+        expect(waitReason(open, unitById(open, 'a_2')!)).toBe('queue');
     });
 });
 

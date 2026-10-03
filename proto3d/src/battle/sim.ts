@@ -362,6 +362,8 @@ export interface UnitState {
     lastHitT: number;
     /** 最後に矢を受けた時刻・射てきた部隊（敵の考えが使う） */
     lastArrowT: number;
+    /** 狭い正面（narrow_frontage）であふれて、斬り合わずに順番を待った最後の時刻（waitReason が読む。動きには使わない） */
+    frontageWaitT: number;
     lastShooterId: string | null;
     /** 最後に斬り合っていた時刻 */
     lastMeleeT: number;
@@ -720,6 +722,7 @@ export function createBattle(setup: BattleSetup): BattleState {
             faceGoal: null,
             lastHitT: -999,
             lastArrowT: -999,
+            frontageWaitT: -999,
             lastShooterId: null,
             lastMeleeT: -999,
             chargeUntil: -1,
@@ -1307,6 +1310,7 @@ function narrowFrontage(s: BattleState, plans: Map<UnitState, Plan>): void {
                 const p = plans.get(list[k]!)!;
                 p.melee = null;
                 p.goal = null;
+                list[k]!.frontageWaitT = s.t;
             }
         }
     }
@@ -1833,6 +1837,30 @@ function blockCause(s: BattleState, u: UnitState, aim: { x: number; z: number },
         if (!block || dist(o, u) < dist(block, u)) block = o;
     }
     return block ? { kind: 'ally', unit: block } : null;
+}
+
+/**
+ * 止まっている（行き先へ進めない）部隊の、待っている理由（開発用の窓の変数 window.__battle.waitReason と e2e の止まりの見張りが読む。
+ * 動きは変えない）。sim.ts の決まりと同じ分け方：
+ * - queue：斬り合いの順番待ち（狭い正面であふれた・攻撃の相手が味方と斬り合っている・行く手の筋の上で味方が斬り合っている・
+ *   前の味方が敵に止められている・前の味方が相手の間合いの近くで順番を待っている）。
+ * - gate：開門待ち。noPath：道探しの道が無い。foe：近くに戦える敵がいる。wall：次の点までまっすぐ通れない。
+ * - ally：止まっている味方だけに塞がれている（allyBlockSec ですり抜ける対象）。null：行く手に何も無い（それでも止まっていれば詰まり）
+ */
+export type WaitReason = 'queue' | 'gate' | 'noPath' | 'foe' | 'wall' | 'ally';
+export function waitReason(s: BattleState, u: UnitState): WaitReason | null {
+    if (u.frontageWaitT >= s.t - RULES.tick * 1.5 - 1e-9) return 'queue';
+    if (awaitingGate(s, u)) return 'gate';
+    const goal = u.order.type === 'move' ? u.order : u.order.type === 'attack' ? unitById(s, u.order.targetId) : undefined;
+    if (!goal) return null;
+    // 通れない所の無い戦場（道探しの格子が無い）：攻撃の相手が味方と斬り合っていれば順番待ち（blockCause と同じ決まり）
+    if (!s.field.nav) {
+        const t = u.order.type === 'attack' ? unitById(s, u.order.targetId) : undefined;
+        return t && s.units.some((o) => o.side === u.side && o !== u && isActive(o) && (o.engagedWith === t.id || t.engagedWith === o.id)) ? 'queue' : null;
+    }
+    const P = u.path;
+    const aim = P && !P.none && P.idx < P.pts.length && Math.hypot(P.goalX - goal.x, P.goalZ - goal.z) <= RULES.repathMove ? P.pts[P.idx]! : goal;
+    return blockCause(s, u, aim, goal)?.kind ?? null;
 }
 
 /** 部隊が今向かっている点（道探しの道の次の点。道が無ければ命令の行き先・攻撃の相手）。行き先の無い部隊は null */

@@ -49,7 +49,7 @@
  * （0 勝・16 通りとも同じ、など）だけにした。
  */
 import { describe, expect, it } from 'vitest';
-import { createBattle, issueOrder, meleeUnreachable, runToEnd, RULES, bowRangeFor, type BattleState } from '../proto3d/src/battle/sim';
+import { createBattle, issueOrder, meleeUnreachable, runToEnd, RULES, bowRangeFor, waitReason, type BattleState } from '../proto3d/src/battle/sim';
 import { useAbility } from '../proto3d/src/battle/abilities';
 import { findPath, isPassable } from '../proto3d/src/battle/pathfind';
 import { buildBattleSetup, getField, validateField } from '../proto3d/src/battle/fields';
@@ -163,7 +163,7 @@ interface Run {
     lake: string[];
     /** 命令のまま 10 秒以上 1.5 m も動かなかった味方（狭い正面の順番待ちを除く。e2e/fields-group3.mjs と同じ分け方） */
     stuck: string[];
-    /** 狭い正面の順番待ち（相手が味方と斬り合っていて 45 m 以内・行く手で味方が斬り合っている）で 10 秒以上待った味方 */
+    /** 斬り合いの順番待ち（sim.ts の waitReason が queue）で 10 秒以上待った味方 */
     queue: string[];
     /** 止まっていた最長（秒。順番待ちを除く） */
     still: number;
@@ -224,12 +224,9 @@ function play(steps: Step[], each?: (s: BattleState) => void): Run {
                 continue;
             }
             if (Math.hypot(u.x - goal.x, u.z - goal.z) <= 8) continue;
-            // 順番待ち：攻撃の相手が味方と斬り合っていて 45 m 以内（e2e/fields-group3.mjs と同じ）、または行く手（40 m 以内・行き先の側）で
-            // 味方が斬り合っている（sim.ts の「斬り合いの順番待ち」。狭い道で、前の味方の斬り合いの後ろで待つ。すり抜けの対象にしない）
-            const ahead = st.units.some(
-                (b) => b !== u && b.side === u.side && b.present && b.status === 'ready' && !!b.engagedWith && Math.hypot(b.x - u.x, b.z - u.z) < 40 && (b.x - u.x) * (goal.x - u.x) + (b.z - u.z) * (goal.z - u.z) > 0,
-            );
-            const inQueue = (!!tg && !!tg.engagedWith && unitOf(st, tg.engagedWith)?.side === u.side && Math.hypot(u.x - tg.x, u.z - tg.z) < 45) || ahead;
+            // 順番待ち：sim.ts の waitReason（e2e/fields-group3.mjs の見張りと同じ。狭い正面であふれた・攻撃の相手が味方と斬り合っている・
+            // 行く手の筋の上で味方が斬り合っている・前の味方が敵に止められている。すり抜けの対象にしない）
+            const inQueue = waitReason(st, u) === 'queue';
             if (!inQueue) still = Math.max(still, st.t - a.t);
             if (a.done || st.t - a.t < 10) continue;
             a.done = true;
