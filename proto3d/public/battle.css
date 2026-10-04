@@ -161,9 +161,9 @@ body.mode-battle #build { display: none !important; }
     text-align: left;
     touch-action: none;
 }
-.b-obj-name { color: var(--gold); letter-spacing: 0.1em; white-space: nowrap; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-/* 名前が長い戦場でも、残り時間と「条件 ▾」は切らない（第4群の確かめ：PC で「条件」が欄の外へ切れた）。先に札（演習・仮シナリオ）を縮め、
-   次に名前を「…」で縮める */
+.b-obj-name { color: var(--gold); letter-spacing: 0.1em; white-space: nowrap; flex: 0 0 auto; max-width: 60%; overflow: hidden; text-overflow: ellipsis; }
+/* 名前が長い戦場でも、残り時間と「条件 ▾」は切らない（第4群の確かめ：PC で「条件」が欄の外へ切れた）。札（演習・仮シナリオ）を「…」で縮める。
+   名前は欄の 6 割までそのまま（それより長い名前だけ「…」） */
 .b-obj-head .b-tag { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .b-time { margin-left: auto; font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0; }
 .b-caret { font-size: 11px; color: var(--ink-soft); white-space: nowrap; flex-shrink: 0; }
