@@ -5,7 +5,7 @@
  *   PARTS=start,phone,plan,rally で一部だけ（既定はすべて）。FIELDS=single_bridge,ridge で第2群の戦場を絞る（既定は 5 つ）。
  *
  * start（PC 1280×720・マウス）：
- *   - タイトル →「合戦場の演習」→ 一覧に 15 戦場（第1群 5・第2群 5・第3群 5）→ 第1群・第2群の 10 戦場ごとに「出陣」→ 合戦の画面（戦場 id・部隊の数・札の数）。
+ *   - タイトル →「合戦場の演習」→ 一覧に 20 戦場（第1群 5・第2群 5・第3群 5・第4群 5）→ 第1群・第2群の 10 戦場ごとに「出陣」→ 合戦の画面（戦場 id・部隊の数・札の数）。
  *     終わりは全軍撤退のボタン（確かめも）→ 早送り → 合戦の結果 →「続ける」→ 演習の結果 →「一覧へ」（どれもクリック）。
  *   - 第2群の各戦場では、続けて（g2 の確かめ）：
  *     a. 味方の部隊を、地図の上の体をクリックしてそれぞれ選ぶ（選択だけが変わり、命令・位置に漏れない）。
@@ -65,8 +65,8 @@ const OUT = process.argv[2] || 'e2e-out/fields-group2';
 mkdirSync(OUT, { recursive: true });
 const PARTS = (process.env.PARTS || 'start,phone,plan,rally').split(',');
 const FIELD_IDS = ['plains', 'river_ford', 'hills', 'forest', 'mountain_pass', 'single_bridge', 'multi_bridge', 'ridge', 'valley', 'paddy'];
-/** 演習の一覧に並ぶ全戦場（第3群の 5 戦場が足されて 15。この e2e が出陣するのは上の FIELD_IDS の 10 戦場だけ） */
-const LIST_IDS = [...FIELD_IDS, 'marsh', 'village', 'temple', 'town_edge', 'siege_front'];
+/** 演習の一覧に並ぶ全戦場（第3群・第4群の 5 戦場ずつが足されて 20。この e2e が出陣するのは上の FIELD_IDS の 10 戦場だけ） */
+const LIST_IDS = [...FIELD_IDS, 'marsh', 'village', 'temple', 'town_edge', 'siege_front', 'besieged_camp', 'relief', 'rearguard', 'night_raid', 'shore'];
 const GROUP2 = (process.env.FIELDS || 'single_bridge,multi_bridge,ridge,valley,paddy').split(',');
 const GENERALS = ['a_ieyasu', 'a_tadakatsu', 'a_sakakibara', 'a_sakai', 'a_ishikawa'];
 const failures = [];
@@ -155,7 +155,7 @@ async function titleToList(p) {
     await waitSheet(p.page, 'practice-list');
     await p.page.waitForTimeout(300);
     const fields = await p.page.evaluate(() => [...document.querySelectorAll('.g-pr-field')].map((e) => e.dataset.field));
-    check(JSON.stringify(fields) === JSON.stringify(LIST_IDS), `[${p.kind}] タイトル →「合戦場の演習」→ 一覧に 15 戦場（第1群 5・第2群 5・第3群 5）`, fields.join(','));
+    check(JSON.stringify(fields) === JSON.stringify(LIST_IDS), `[${p.kind}] タイトル →「合戦場の演習」→ 一覧に 20 戦場（第1群 5・第2群 5・第3群 5・第4群 5）`, fields.join(','));
 }
 
 /** 一覧 → 説明 → 出陣 → 合戦の画面 → 開始して「指揮」で止める（開始の瞬間だけ時の進みを 0。止めた後に ×1 へ戻す） */
