@@ -315,7 +315,17 @@ async function finish(p, max = 900) {
 /** 合戦の結果の画面 →「続ける」→ 演習の結果 →「一覧へ」。結果の行と退き方の文を返す */
 async function resultToList(p, id, name) {
     const { page, kind } = p;
-    if ((await ui(page)).paused) await bpress(p, '.b-pause', 200);
+    // 止めたままなら再開して結果の画面を待つ。結果の画面は止めていても終わりから実時間 1.6 秒で出る（battle/entry.ts）ので、
+    // 見張りの読みに時間のかかった通し（スマホ相当の夜襲）では、先に結果の画面が「指揮」のボタンを覆う。そのときは押さない
+    const u0 = await ui(page);
+    if (u0.paused && !u0.resultShown) {
+        try {
+            if (p.phone) await page.tap('.b-pause', { timeout: 5000 });
+            else await page.click('.b-pause', { timeout: 5000 });
+        } catch (e) {
+            if (!(await ui(page)).resultShown) throw e;
+        }
+    }
     await page.waitForFunction(() => window.__battle.ui.resultShown, null, POLL);
     await page.waitForTimeout(500);
     const res = await page.evaluate(() => {

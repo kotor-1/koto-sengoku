@@ -417,6 +417,40 @@ describe('待っている理由（sim.ts の waitReason。e2e の止まりの見
         unitById(open, 'a_1')!.engagedWith = 'e_t';
         expect(waitReason(open, unitById(open, 'a_2')!)).toBe('queue');
     });
+
+    it('攻撃の相手が味方と斬り合っていて、その相手が近く（spacing × 2 m 以内）にいるだけの隊は queue（foe にしない）。ほかの戦える敵が近ければ foe', () => {
+        // e2e/fields-group4.mjs（包囲された陣の EAST を 1 秒ごとの命令で）：1 部隊ずつの狭い正面の手前で、榊原隊と斬り合う東の守りを待つ騎馬隊が、
+        // 相手まで 34 m（36 m 以内）なので「近くの敵」に分けられ、止まりの見張りが詰まりと数えた。動き（allyOnlyBlock・headOnAlly）は
+        // どちらも「味方だけの塞ぎではない」なので変わらない。状態を直接操作（斬り合いの印を書く）
+        const terrain = [wall(-150, -10, -60, 60), wall(10, 150, -60, 60)];
+        const s = createBattle(
+            field(terrain, [...HQS(), U('e_t', 'enemy', 'yari', 0, -75, { aiRole: 'guard_hq', strength: 900 }), U('a_1', 'ally', 'yari', 0, -60), U('a_3', 'ally', 'kiba', 0, -45)], {
+                specialRules: [{ type: 'narrow_frontage', zone: { rect: { x0: -30, x1: 30, z0: -100, z1: -70 } }, maxEngaged: 1 }],
+            }),
+        );
+        for (const u of s.units) {
+            u.initiative = null;
+            if (u.side === 'enemy') u.seenBy.ally = true;
+        }
+        expect(issueOrder(s, 'a_3', { type: 'attack', targetId: 'e_t' })).toBe(true);
+        const a3 = unitById(s, 'a_3')!;
+        const t = unitById(s, 'e_t')!;
+        unitById(s, 'a_1')!.engagedWith = 'e_t';
+        t.engagedWith = 'a_1';
+        expect(Math.hypot(a3.x - t.x, a3.z - t.z)).toBeLessThan(RULES.spacing * 2);
+        expect(waitReason(s, a3)).toBe('queue');
+        // 相手が誰とも斬り合っていなければ、近くの敵（foe）のまま
+        unitById(s, 'a_1')!.engagedWith = null;
+        t.engagedWith = null;
+        expect(waitReason(s, a3)).toBe('foe');
+        // 相手は斬り合っているが、ほかの戦える敵が近くにいる：foe のまま
+        unitById(s, 'a_1')!.engagedWith = 'e_t';
+        t.engagedWith = 'a_1';
+        const hq = unitById(s, 'e_hq')!;
+        hq.x = 0;
+        hq.z = -30;
+        expect(waitReason(s, a3)).toBe('foe');
+    });
 });
 
 describe('閉じた門の先への移動は「開門待ち」（城攻め前面。状態を直接操作・早送り）', () => {

@@ -1831,14 +1831,14 @@ function blockCause(s: BattleState, u: UnitState, aim: { x: number; z: number },
     if (!nav) return null;
     if (u.path?.none) return { kind: 'noPath' };
     if (awaitingGate(s, u)) return { kind: 'gate' };
-    const foeNear = (p: { x: number; z: number }) => s.units.some((o) => o.side !== u.side && isActive(o) && dist(o, p) < RULES.spacing * 2);
+    // 攻撃の相手が、もう味方と斬り合っている（その後ろで順番を待つ）。その相手が近く（spacing × 2 m）にいるだけなら「近くの敵」にはしない
+    // （1 部隊ずつの狭い正面の手前で、斬り合う味方の後ろに着いた隊。包囲された陣の東の抜け道。ほかの戦える敵が近ければ foe のまま）
+    const tgt = u.order.type === 'attack' ? unitById(s, u.order.targetId) : undefined;
+    const queued = !!tgt && s.units.some((o) => o.side === u.side && o !== u && isActive(o) && (o.engagedWith === tgt.id || tgt.engagedWith === o.id));
+    const foeNear = (p: { x: number; z: number }) => s.units.some((o) => o.side !== u.side && isActive(o) && !(queued && o === tgt) && dist(o, p) < RULES.spacing * 2);
     if (foeNear(u)) return { kind: 'foe' };
     if (!lineClear(nav, u, aim)) return { kind: 'wall' };
-    // 攻撃の相手が、もう味方と斬り合っている（その後ろで順番を待つ）
-    if (u.order.type === 'attack') {
-        const t = unitById(s, u.order.targetId);
-        if (t && s.units.some((o) => o.side === u.side && o !== u && isActive(o) && (o.engagedWith === t.id || t.engagedWith === o.id))) return { kind: 'queue' };
-    }
+    if (queued) return { kind: 'queue' };
     const L = Math.hypot(aim.x - u.x, aim.z - u.z);
     if (L < 1e-6) return null;
     const fx = (aim.x - u.x) / L;

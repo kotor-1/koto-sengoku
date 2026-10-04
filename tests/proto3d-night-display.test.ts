@@ -68,6 +68,26 @@ describe('進みの文・目標の欄：未発見の敵を数えない（判定�
         expect(primaryText(s)).toContain('岸の狭まりを敵に奪われている：5／15 秒');
         expect(objectiveZoneCounting(s, mark.id)).toBe(true);
     });
+
+    it('敵の部隊を崩す副目標（break_unit）の進みの文は、一度も見つけていない敵の名前を出さない。見つけた後は名前を出す。昼は今までどおり', () => {
+        // e2e/fields-group4.mjs（夜襲の画面の操作）で、目標の欄に見つけていない物見の名前「敵勢の物見」が出ていた
+        const s = night();
+        stepBattle(s, RULES.tick);
+        const w = unitById(s, 'e_watch')!;
+        const text = () => objectiveProgress(s).find((p) => p.id === 'raid_watch')!.progressText;
+        expect(w.intel.t).toBeLessThan(0);
+        expect(text()).not.toContain(w.name);
+        expect(text()).toBe('まだ見つけていない');
+        expect(JSON.stringify(objectivePanelModel(s))).not.toContain(w.name);
+        // 見つけた（状態を直接操作：見た様子を書く）：名前を出す
+        w.intel = { t: s.t, status: 'ready' };
+        expect(text()).toBe(`${w.name}を崩す`);
+        // 昼の戦場（夜の決まりの無い戦場）は見たかどうかによらず名前を出す（今までどおり）
+        const d = createBattle(buildBattleSetup(getField('besieged_camp')!, 'standard'));
+        const south = unitById(d, 'e_south')!;
+        south.intel = { t: -1, status: 'ready' };
+        expect(objectiveProgress(d).find((p) => p.id === 'camp_break')!.progressText).toBe(`${south.name}を崩す`);
+    });
 });
 
 describe('知らせ・陣営の様子・結果の表（夜）', () => {

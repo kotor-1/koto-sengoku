@@ -626,6 +626,8 @@ function progressText(s: BattleState, r: ObjectiveRun): string {
             return `損害 ${Math.round(allyLossRatio(s) * 100)}％（${Math.round(d.maxRatio * 100)}％ 以内で終える・撤退は不可）`;
         case 'break_unit': {
             const u = byId(s, d.unitId);
+            // 夜：一度も見つけていない敵は名前を出さない（未発見の敵の情報を漏らさない。見出しの label は戦場の文のまま。判定は変えない）
+            if (u && s.setup.night && u.side === 'enemy' && u.intel.t < 0) return 'まだ見つけていない';
             return u ? `${u.name}を崩す` : '';
         }
         case 'hold_zones': {
