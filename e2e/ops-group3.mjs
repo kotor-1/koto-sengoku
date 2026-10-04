@@ -9,7 +9,8 @@
  *      - 弓隊を札で選び、「移動」（PC は M）→ 案内の帯に「移動先指定中」→ 騎馬隊の体を押す → 選び直さず、弓隊がその点へ移動。
  *      - 同じく、家康本陣（点滅している武将）の体を押す → 弓隊がその点へ移動（確かめ・号令にならない）。
  *      - 同じく、家康本陣の名札の名前の所を押す → 弓隊がその点へ移動（号令にならない）。
- *      - 同じく、酒井の名札の印（◆両翼）を押す → 能力（両翼の采配）を使う。弓隊の命令は変わらない。
+ *      - 同じく、酒井の名札の印（◆両翼）を押す → 能力（両翼の采配）にせず、弓隊がその点へ移動（選び直さない）。
+ *        （第4群の確かめの決定（fdd1fa1）：移動先指定の最中は名札の印も能力にせず、その点への移動。前は「能力を使う。弓隊の命令は変わらない」を確かめていた）
  *      - 指定なしで地面を押す → 今までどおり移動。
  *      - 移動先指定の間、案内の帯の文の真ん中を押す → 帯は押しを奪わず、その下の地面へ移動（押せるのは「やめる」だけ）。
  *   2. 対象選びは能力が先：石川の印 → 地面を素早く 2 回（連打）→ 1 回目で対象選びをやめ、2 回目は何もしない（石川隊に移動は出ない）。
@@ -183,14 +184,21 @@ async function run(kind) {
     o = await orderOf(page, 'a_yumi');
     check(u.selectedId === 'a_yumi' && movedTo(o, g) && (await ab(page, 'a_ieyasu')).usedAt === null, `[${kind}] 移動先指定で家康本陣の名札の名前を押す → 弓隊がその点へ移動（選び直し・号令にならない）`, `選択 ${u.selectedId}・命令 ${JSON.stringify(o)}`);
 
-    // 移動先指定：酒井の名札の印を押す → 能力（両翼の采配）。弓隊の命令は変わらない
+    // 移動先指定：酒井の名札の印を押す → 能力（両翼の采配）にせず、弓隊がその点へ移動（選び直さない）
+    // （第4群の確かめの決定（fdd1fa1）。前は「能力を使う。弓隊の命令は変わらない」。大平原はどこも通れるので、印の下の地面そのものへの移動）
     await moveMode(p);
-    const yumiBefore = JSON.stringify(await orderOf(page, 'a_yumi'));
     const before = await snapshot(page);
     const sk = (await label(page, 'a_sakai')).badge;
+    g = await groundUnder(page, sk.x, sk.y);
     await pointAt(p, sk.x, sk.y);
     const after = await snapshot(page);
-    check((await ab(page, 'a_sakai')).usedAt !== null && JSON.stringify(await orderOf(page, 'a_yumi')) === yumiBefore && sameExcept(before, after, []).length === 0, `[${kind}] 移動先指定の間に酒井の名札の印を押す → 両翼の采配を使う（移動の命令にならない）`, `pending ${(await ui(page)).pending}`);
+    u = await ui(page);
+    o = await orderOf(page, 'a_yumi');
+    check(
+        (await ab(page, 'a_sakai')).usedAt === null && u.selectedId === 'a_yumi' && movedTo(o, g) && sameExcept(before, after, ['a_yumi']).length === 0,
+        `[${kind}] 移動先指定の間に酒井の名札の印を押す → 両翼の采配にせず、弓隊がその点へ移動（選び直さない）`,
+        `pending ${u.pending}・選択 ${u.selectedId}・命令 ${JSON.stringify(o)}・地面 ${g && `${g.x.toFixed(1)},${g.z.toFixed(1)}`}・変わった ${sameExcept(before, after, ['a_yumi']).join(',')}`,
+    );
 
     // 指定なしで地面を押す → 今までどおり移動
     await selectCard(p, 'a_yumi');
