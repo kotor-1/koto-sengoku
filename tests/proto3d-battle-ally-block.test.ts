@@ -28,7 +28,7 @@
 import { describe, expect, it } from 'vitest';
 import { RULES, awaitingGate, createBattle, issueOrder, orderLabel, stepBattle, unitById, waitReason, type BattleState } from '../proto3d/src/battle/sim';
 import { orderAck, refusalText } from '../proto3d/src/battle/control';
-import { buildBattleSetup, getField } from '../proto3d/src/battle/fields';
+import { buildBattleSetup, FIELDS, getField } from '../proto3d/src/battle/fields';
 import type { BattleSetup, FieldRules, Side, TerrainArea, UnitDef, UnitKind } from '../proto3d/src/battle/types';
 
 function field(terrain: TerrainArea[], units: UnitDef[], rules: FieldRules = {}): BattleSetup {
@@ -79,6 +79,12 @@ function stillWatch(s: BattleState, id: string) {
 }
 
 describe('1 か所の定義', () => {
+    it('状態を直接見る：味方同士の詰まりの決まりは道探しの格子のある戦場で働く。refinedMoves の戦場（第3群・第4群の 10 戦場）はどれも格子を持つ（漏れが無い）。既存の 10 戦場は refinedMoves を持たない', () => {
+        const refined = FIELDS.filter((f) => f.id !== 'border_field').map((f) => createBattle(buildBattleSetup(f, f.presets[0]!.id))).filter((s) => s.field.refined);
+        expect(refined.map((s) => s.setup.map.id).sort()).toEqual(['besieged_camp', 'marsh', 'night_raid', 'rearguard', 'relief', 'shore', 'siege_front', 'temple', 'town_edge', 'village']);
+        for (const s of refined) expect([s.setup.map.id, !!s.field.nav]).toEqual([s.setup.map.id, true]);
+    });
+
     it('状態を直接見る：味方だけに塞がれてからすり抜けるまでは RULES.allyBlockSec（既定 2 秒）。前の 12 秒・20 秒の決まりは無い。迂回の長さの上限は allyDetourRatio', () => {
         expect(RULES.allyBlockSec).toBe(2);
         expect(RULES.allyDetourRatio).toBe(1.5);

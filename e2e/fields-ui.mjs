@@ -13,7 +13,8 @@
  *   四隊を移して勝つ（目標の欄の進みの文が、数えていない理由を出す）。森林で、物見隊を選んで輪の真ん中（家康本陣）を押すと本陣が選び直され、
  *   輪の中の空いた地面を押すと物見隊が動く（説明・進みの文どおり）。
  * 待つ時間だけは開発用の早送り（window.__battle.fastForward）を使う。命令は画面のクリック・タップ・キーで出す。状態は window.__battle から読むだけ。
- * - 夜（night。第4群の夜襲・奇襲、PC とスマホ）：合戦を始めた後、発見していない敵は、名札（DOM の .b-label。名前・兵の数・位置の transform が空）・
+ * - 夜（night。第4群の夜襲・奇襲、PC とスマホ）：目標の欄が未発見の陣の守りを「区域に敵がいる」と数えない・敵の陣営の様子・決まりの文「奇襲」・
+ *   知らせに見つけていない敵の名前が出ない。合戦を始めた後、発見していない敵は、名札（DOM の .b-label。名前・兵の数・位置の transform が空）・
  *   兵士（troopStats の perUnit が 0）・画面の位置（screenOf・labelOf が null）・表示の層の位置（view の vis が NaN）のどれからも分からない。
  *   篝火の中の見えている敵（番兵）は、名札・兵士が出る。味方の部隊を札と地面のクリック・タップで番兵の近くへ動かし、新しく見つけた敵の名札が出る。
  * PARTS=shots,desktop,phone,goals,orders,night で一部だけ（既定はすべて）。
@@ -433,6 +434,14 @@ if (PARTS.includes('night')) {
         // 地図の印：敵の援軍の印は無い（夜襲の敵に援軍は無いが、篝火の名札は出る）
         const torch = await page.evaluate(() => [...document.querySelectorAll('.b-label.terrain')].map((e) => e.textContent).filter((t) => t.includes('篝火')));
         check(torch.length === 2, `[${kind}] 夜：篝火の区域の名札が 2 つ`, torch.join(' / '));
+        // 目標の欄（見出し・開いた欄の文）・陣営の様子・決まりの文：陣の守り（未発見）が敵陣の輪にいても「区域に敵がいる」と出さない（第4群のエンジンの要望）
+        const goalText = await page.evaluate(() => [document.querySelector('.b-goals-sum')?.textContent ?? '', ...[...document.querySelectorAll('.b-goal-p')].map((e) => e.textContent)].join(' / '));
+        const campIn = await page.evaluate(() => { const u = window.__battle.state.units.find((x) => x.id === 'e_camp'); return !u.seenBy.ally && Math.hypot(u.x, u.z + 120) <= 40; });
+        check(campIn && !goalText.includes('敵がいる') && goalText.includes('区域に味方がいない'), `[${kind}] 夜：目標の欄は、未発見の陣の守りが輪にいても「区域に敵がいる」と出さない`, goalText);
+        const army = await page.evaluate(() => document.querySelector('.b-army.enemy')?.textContent ?? '');
+        check(army.includes('7 部隊のうち 7 が戦える'), `[${kind}] 夜：敵の陣営の様子は見た様子で数える`, army);
+        const rulesText = await page.evaluate(() => [...document.querySelectorAll('.b-goal-rules')].map((e) => e.textContent).join(' '));
+        check(rulesText.includes('奇襲（夜は林の外でも）') && !rulesText.includes('林の奇襲'), `[${kind}] 夜：決まりの文は「奇襲（夜は林の外でも）」`, rulesText.slice(0, 200));
         await page.screenshot({ path: `${OUT}/night_raid-${kind}-night-start.png` });
         // 騎馬（徳川騎馬隊）を札と地面のクリック・タップで、見回りの騎馬 (130,-40) の手前 (70,-30) へ動かす（水田を避けて西の縁を下る）。着いた頃に見回りを見つける
         await page.evaluate((u) => document.querySelector(`.b-card[data-id="${u}"]`).scrollIntoView({ inline: 'nearest', block: 'nearest' }), 'a_kiba');
@@ -457,6 +466,13 @@ if (PARTS.includes('night')) {
         const patrol = rows.find((r) => r.id === 'e_patrol');
         check(found && patrol.labelShown && patrol.labelText.includes('見回り') && patrol.screen !== null && patrol.drawn > 0, `[${kind}] 夜：近づいて見つけた敵（見回りの騎馬）は、名札・兵士・画面の位置が出る（早送り）`, JSON.stringify({ found, l: patrol.labelShown, t: patrol.labelText, d: patrol.drawn }));
         check(leaks(rows).length === 0, `[${kind}] 夜：まだ見つけていない敵は、見つけた後も漏れない`, JSON.stringify(leaks(rows)).slice(0, 400));
+        // 知らせ：画面の知らせ（.b-toast）に、見つけていない敵の名前が出ていない
+        const toastLeak = await page.evaluate(() => {
+            const names = window.__battle.state.units.filter((u) => u.side === 'enemy' && u.intel.t < 0).map((u) => u.name);
+            const texts = [...document.querySelectorAll('.b-toast')].map((e) => e.textContent);
+            return texts.filter((t) => names.some((n) => t.includes(n)));
+        });
+        check(toastLeak.length === 0, `[${kind}] 夜：知らせに、見つけていない敵の名前が出ない`, toastLeak.join(' / '));
         await page.screenshot({ path: `${OUT}/night_raid-${kind}-night-found.png` });
         await p.ctx.close();
     }
