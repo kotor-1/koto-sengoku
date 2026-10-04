@@ -34,7 +34,7 @@
  *     地図のタップで移動、「攻撃」→ 敵のタップで攻撃、「防衛・待機」、「撤退」。全軍撤退 → 早送り → 結果 → 演習の結果 → 一覧（どれもタップ）。
  * eight（開発用の入口 ?dev=field&id=plains&allies=8 で味方を 8 部隊にする）：
  *   - PC：キー 8・8 番目の札のクリックで選ぶ。スマホ：札の列を横になぞって 7・8 番目の札を出し、タップで選ぶ。
- * oldsaves（PC）：古い保存を全部入れた状態（歴史分岐 版 1・架空の第一章 版 1・2D 版）で開き、演習を 1 回遊んでも古い保存は 1 字も変わらない。
+ * oldsaves（PC）：古い保存を全部入れた状態（歴史分岐 版 1・架空の第一章 版 1・2D 版、前の版の演習の記録＝脱出の数が範囲の外）で開き、演習を 1 回遊んでも古い保存は 1 字も変わらない。
  *   歴史分岐・架空の第一章をそれぞれ「つづきから」で続けられ（中身が壊れない。田代・大森のまま）、読むだけでは書き換えない。
  *   架空の第一章をメニューから保存し直した版 2 と、歴史分岐の版 1・2D 版を並べても同じ。2D 版のキー koto-sengoku/save は最後まで同じ。
  *
@@ -1048,12 +1048,16 @@ async function oldsaves() {
     log('== oldsaves（PC）：古い保存を全部入れた状態');
     const p = await openTitle('desktop');
     const { page } = p;
-    await page.evaluate(([a, b, c]) => {
+    // 第4群の確かめの指摘（must-1）：前の版で出来た、脱出の数の欄が範囲の外（done 6 > total 4）の演習の記録も入れておく。読めること・消えないこと
+    const overRec = { result: 'victory', reason: 'objective_done', primary: { id: 'camp_escape', achieved: true, type: 'escape', count: { done: 6, total: 4 } }, secondary: [], elapsedSec: 290, at: '2026-10-03T00:00:00.000Z', withdrawal: 'objective' };
+    const OVER = JSON.stringify({ version: 1, records: { besieged_camp: { plays: 1, last: overRec, best: overRec } } });
+    await page.evaluate(([a, b, c, d]) => {
         localStorage.clear();
         localStorage.setItem(a[0], a[1]);
         localStorage.setItem(b[0], b[1]);
         localStorage.setItem(c[0], c[1]);
-    }, [[KEY_IE, V1_IEYASU], [KEY_FIC, V1_FICTIONAL], [KEY_2D, SAVE_2D]]);
+        localStorage.setItem(d[0], d[1]);
+    }, [[KEY_IE, V1_IEYASU], [KEY_FIC, V1_FICTIONAL], [KEY_2D, SAVE_2D], [KEY_FIELDS, OVER]]);
     await reloadTitle(page);
     const subs = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('.g-title-layer .g-btn')].map((b) => [b.dataset.id, { text: b.textContent, disabled: b.disabled }])));
     check(!subs['continue:ieyasu1570'].disabled && subs['continue:ieyasu1570'].text.includes('戦の後') && !subs['continue:fictional'].disabled, '[oldsaves] タイトル：歴史分岐（版 1）・架空の第一章（版 1）の「つづきから」が押せる', JSON.stringify(subs));
@@ -1063,11 +1067,19 @@ async function oldsaves() {
     };
     // 演習を 1 回（大平原に出陣 → 全軍撤退 → 早送り → 結果 → 一覧 → タイトル）
     await titleToList(p, false);
+    {
+        const l = await page.evaluate(() => ({ rec: document.querySelector('.g-pr-field[data-field="besieged_camp"] .rec:not(.none)')?.textContent ?? '', body: document.body.innerText }));
+        check(l.rec.trim().length > 0 && !l.rec.includes('まだ遊んでいません') && !l.body.includes('演習の記録が壊れているか'), '[oldsaves] 前の版の脱出の数が範囲の外の記録（done 6 > total 4）も読め、一覧に包囲された陣の記録が出る（「壊れている」にならない）', JSON.stringify(l.rec));
+    }
     await listToBattle(p, 'plains', false);
     await retreatAndFinish(p);
     await resultToTitle(p, 'plains', 'retreat');
     await same('演習を 1 回遊んだ後', V1_FICTIONAL);
     check((await page.evaluate((k) => JSON.parse(localStorage.getItem(k) || 'null')?.records?.plains?.plays, KEY_FIELDS)) === 1, '[oldsaves] 演習の記録は koto-sengoku/3d-fields に別に入る');
+    {
+        const r = await page.evaluate((k) => ({ d: JSON.parse(localStorage.getItem(k) || 'null'), broken: localStorage.getItem(k + '/broken') }), KEY_FIELDS);
+        check(r.d?.records?.besieged_camp?.plays === 1 && r.broken === null, '[oldsaves] 演習を 1 回記録しても、前の版の包囲された陣の記録は残り、控え（/broken）へ退かさない', JSON.stringify({ camp: r.d?.records?.besieged_camp?.best?.primary, broken: r.broken !== null }));
+    }
     // 歴史分岐（版 1）を続ける
     const ie = await continueFrom(p, 'ieyasu1570');
     check(ie.sc === 'ieyasu1570' && ie.phase === 'aftermath' && ie.result === 'retreat' && ie.pledge === 'kept' && JSON.stringify(ie.trust) === JSON.stringify({ oda: 0, asai: 35, tadakatsu: 40, sakai: 40, ishikawa: 40, sakakibara: 40 }) && ie.side === null,
