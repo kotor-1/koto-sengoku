@@ -182,14 +182,18 @@ describe('城攻め前面（早送り）', () => {
     // 押し離しの直し（sim.ts の separate：押す先までまっすぐ通れるときだけ押す。門の前の部隊が石垣を越えて曲輪へ抜けていた）の前は、
     // 無計画は 459 秒に負け（ally_army_broken）・61.0％・拠点の弓 ✗。直しの後は 448 秒に敵の諸隊をすべて崩して勝つ（enemy_army_broken）・
     // 53.0％・拠点の弓 ✓（すべて崩したので）。「無計画は拠点の弓を崩さない」を外し、計画した作戦どうしの分かれ方と損害の比べにした
-    it('比べ：計画した作戦では、拠点を先に落とす作戦だけが副目標（拠点の弓を崩す）を果たす。弓で櫓を射すくめる作戦は、無計画な攻撃より損害が小さい（記録：無計画は門を開けず日没・損害 31.6％。直しの前は敵の諸隊をすべて崩して勝つ・53.0％）', () => {
+    // 第4群の釣り合いの直し（櫓の弓 150 → 200・西の櫓の前の小さな林）の後：この簡単な台本（弓を林でなく (-40,30) に出す・60 秒に槍 3 隊で当たる）は
+    // 弓で櫓を射すくめる 25.5 → 30.8％・拠点を先に 28.0 → 33.4％・無計画 31.6 → 38.2％。16 通りの勝ちは 16 のまま。釣り合いの比べは
+    // tests/proto3d-field-siege_front.test.ts（林から射る台本・急ぐ形 6 つ）
+    it('比べ：計画した作戦では、拠点を先に落とす作戦だけが副目標（拠点の弓を崩す）を果たす。弓で櫓を射すくめる作戦は、無計画な攻撃より損害が小さい（記録：無計画は門を開けず日没・損害 38.2％。直しの前は敵の諸隊をすべて崩して勝つ・53.0％）', () => {
         expect(secondaryOf(r.bastion!, 'siege_bastion')).toBe(true);
         expect(secondaryOf(r.archers!, 'siege_bastion')).toBe(false);
         expect(r.archers!.loss).toBeLessThan(r.unplanned!.loss);
         expect(r.hold!.o.objectives!.primary!.steps).toEqual({ done: 0, total: 2 });
     });
-    it('安定性：弓で櫓を射すくめる作戦は ±15 秒の 16 通りで 10 勝以上（作った時 12 勝。釣り合いの担当が上げる）', () => {
-        expect(wins(jitter('siege_front', SIEGE_PLANS.archers))).toBeGreaterThanOrEqual(10);
+    // 作った時 12 勝・第4群の釣り合いの直しの前後とも 16 勝。10 → 14 勝以上に上げる
+    it('安定性：弓で櫓を射すくめる作戦は ±15 秒の 16 通りで 14 勝以上（記録：16 勝）', () => {
+        expect(wins(jitter('siege_front', SIEGE_PLANS.archers))).toBeGreaterThanOrEqual(14);
     }, 120000);
 });
 
