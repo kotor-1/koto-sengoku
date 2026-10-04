@@ -23,7 +23,9 @@
  *    - 援軍救出：触れてすぐ離れる（TOUCH）・能力だけ（ABIL_ONLY）は、長政隊が安全地点の輪に入っても勝たない（TOUCH は 60 秒待ってから全軍撤退＝放棄の記録、
  *      ABIL_ONLY は終わりまで）。DIRECT は合流の後、安全地点の輪に入った刻みに勝つ。出陣前の説明に生存と兵 4 割以上の条件。
  *    - 退却戦：GUARD（忠勝の退路の守護を名札の印で）と GUARD_NO（同じ命令から守護を抜く）で、追い討ちの出来事と退く隊の損害。
- *      ALLRET（全軍撤退のボタン）は、目標の前に合戦を打ち切らない。目標を果たした撤収（勝利）と合戦の放棄（援軍救出の TOUCH・a の全軍撤退）の記録と文の違い。
+ *      ALLRET_EARLY（開始直後の全軍撤退のボタン）は、目標の前に合戦を打ち切らない。勝っても損害が 1 割を超える（追い討ちで崩れる）。
+ *      目標を果たした撤収（勝利）と合戦の放棄（援軍救出の TOUCH・a の全軍撤退）の記録と文の違い。
+ *      TWO_REAR（殿 2 隊：忠勝隊＋酒井隊を丘に残して順に退く。いちばん良い作戦）は守護を使わずに勝ち、追い討ちの出来事が出ない。
  *    - 夜襲（STEALTH。PC とスマホ相当）：5 秒ごとに、見えていない敵の名札・兵士・画面の位置・表示の層の位置が出ない、一度も見つけていない敵の名前が
  *      合戦の画面の文（札・目標の欄・知らせ・陣営の様子）に出ない、目標の欄が見えていない敵を「区域に敵がいる」と数えない。見つけた敵は名札・兵士が出る。
  *      敵が見つけていない味方を攻撃の相手にした刻み 0。結果の表は、見つけていない敵を「見つけていない」（兵の数を出さない）。
@@ -65,7 +67,8 @@ const RUNS_DEFAULT = [
     'desktop:shore:KISHI',
     'phone:night_raid:STEALTH',
     'desktop:rearguard:GUARD_NO',
-    'desktop:rearguard:ALLRET',
+    'desktop:rearguard:ALLRET_EARLY',
+    'desktop:rearguard:TWO_REAR',
     'desktop:relief:TOUCH',
     'desktop:relief:ABIL_ONLY',
     'desktop:village:POST',
@@ -78,7 +81,7 @@ const MAIN = { besieged_camp: 'EAST', relief: 'DIRECT', rearguard: 'GUARD', nigh
 const NAMES = {
     besieged_camp: { EAST: '東を開いてから総大将を出す（撤退の命令＋退路の守護）', EAST_ALL: '東を開いてから全軍撤退', SOUTH: '南の厚い口を準備して破る' },
     relief: { DIRECT: '急いで直接救う（準備した正面攻撃）', LURE: '引き離してから救う', TOUCH: '合流の輪に触れてすぐ離れる（救出にならない確かめ）', ABIL_ONLY: '後詰めの差配を使うだけ（救出にならない確かめ）' },
-    rearguard: { GUARD: '撤退の命令の列＋退路の守護（名札の印）', GUARD_NO: '撤退の命令の列（守護なし）', ALLRET: '全軍撤退のボタン', REAR: '殿＋騎馬の横槍', STAY: '殿を前に残すだけ' },
+    rearguard: { GUARD: '撤退の命令の列＋退路の守護（名札の印）', GUARD_NO: '撤退の命令の列（守護なし）', ALLRET: '全軍撤退のボタン（5 秒）', ALLRET_EARLY: '開始直後の全軍撤退のボタン', TWO_REAR: '殿 2 隊（忠勝隊＋酒井隊）で順に退く', REAR: '殿＋騎馬の横槍', STAY: '殿を前に残すだけ' },
     night_raid: { STEALTH: '隠れて近づく（林の 4 隊）', FEINT: '陽動して隠れて近づく', FRONT: '準備した正面攻撃' },
     shore: { KISHI: '岸を固め、高地に予備', TAKADAI: '高地に主力、岸は忠勝隊だけ', FRONTAL: '岸の外へ打って出る' },
     village: { POST: '西の辻に二隊＋柵の内側の弓（詰まりの再現の 150 秒まで）' },
@@ -1276,8 +1279,13 @@ async function fieldChecks(p, { kind, field, plan, name, rec, C, mon, res }) {
             const g = rec.cmds.find((x) => x.id === 'a_tadakatsu' && x.key === 'ability');
             check(!!g?.ok && g.how === '名札の印', `[${kind}] ${name}：忠勝の退路の守護を名札の印で使った（${g?.t} 秒）`, g?.how ?? '使っていない');
         }
-        if (plan === 'GUARD_NO' || plan === 'ALLRET') check(C.pursuit > 0, `[${kind}] ${name}：敵が実際に退く隊へ追い討ちをかける（出来事 ${C.pursuit} 回・退く隊の損害 ${C.colLoss}％）`);
-        if (plan === 'ALLRET') {
+        if (plan === 'GUARD_NO' || plan === 'ALLRET' || plan === 'ALLRET_EARLY') check(C.pursuit > 0, `[${kind}] ${name}：敵が実際に退く隊へ追い討ちをかける（出来事 ${C.pursuit} 回・退く隊の損害 ${C.colLoss}％）`);
+        if (plan === 'ALLRET_EARLY') check(C.loss > 10, `[${kind}] ${name}：開始直後の全軍撤退は、勝っても損害が 1 割を超える（${C.loss}％・${C.result}）`);
+        if (plan === 'TWO_REAR') {
+            const ab = rec.cmds.filter((x) => x.key === 'ability');
+            check(C.result === 'victory' && ab.length === 0 && C.pursuit === 0 && C.loss < 10, `[${kind}] ${name}：殿 2 隊で順に退くと、守護を使わずに勝ち（追い討ちの出来事 0）、損害が 1 割以内（${C.loss}％）`, `${C.result}・能力 ${ab.length}・追い討ち ${C.pursuit}`);
+        }
+        if (plan === 'ALLRET' || plan === 'ALLRET_EARLY') {
             const a = rec.cmds.find((x) => x.key === 'allRetreat');
             check(!!a?.ok && a.resultRightAfter === null && C.t > a.t + 1 && C.withdrawal !== null, `[${kind}] ${name}：全軍撤退のボタン（${a?.t} 秒）で合戦を打ち切らず、退き口の判定で終わる（${C.t} 秒・${C.result}・${C.withdrawal}）`, a?.body ?? '');
             check(/目標に数え/.test(a?.body ?? ''), `[${kind}] ${name}：全軍撤退の確かめに「退き口から離れた部隊は主目標に数え、合戦は続く」の説明`, a?.body ?? '');
@@ -1309,7 +1317,7 @@ function compareRuns() {
         log(`    守護なし：${n.result}・損害 ${n.loss}％・退く隊 ${n.colLoss}％・追い討ち ${n.pursuit}・阻む／引きつけ ${n.guarded}・副目標 ${n.secondary.join(' ')}`);
         check(g.colLoss < n.colLoss && g.pursuit < n.pursuit && g.guarded > 0, '[desktop] 退却戦：同じ画面の操作で、忠勝の守護を使うと追い討ちが減り（阻む・引きつけ）、退く隊の損害が減る', `退く隊 ${g.colLoss}％ 対 ${n.colLoss}％・追い討ち ${g.pursuit} 対 ${n.pursuit}`);
     }
-    const a = get('desktop', 'rearguard', 'ALLRET');
+    const a = get('desktop', 'rearguard', 'ALLRET_EARLY') ?? get('desktop', 'rearguard', 'ALLRET');
     const t = get('desktop', 'relief', 'TOUCH');
     if (a && t) {
         log(`\n== 退き方の記録：退却戦の全軍撤退 ${a.result}・${a.withdrawal}／援軍救出の触れただけの後の全軍撤退 ${t.result}・${t.withdrawal}`);
