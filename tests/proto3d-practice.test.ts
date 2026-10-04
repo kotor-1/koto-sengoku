@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { BattleOutcome, BattleSetup } from '../proto3d/src/battle/types';
-import { createBattle, orderAllRetreat, runToEnd } from '../proto3d/src/battle/sim';
+import { RULES, createBattle, orderAllRetreat, runToEnd, stepBattle } from '../proto3d/src/battle/sim';
 import { PRACTICE_ORDER, getField } from '../proto3d/src/battle/fields';
 import {
     PRACTICE_BROKEN_KEY,
@@ -172,6 +172,65 @@ describe('演習の記録の保存（koto-sengoku/3d-fields 版 1）', () => {
         store.record('plains', rec());
         const d = parsePracticeData(storage.data.get(PRACTICE_SAVE_KEY)!)!;
         expect(Object.keys(d.records).sort()).toEqual(['future_field', 'plains']);
+    });
+
+    it('脱出・離脱：count より多くの部隊が離れても、記録の数は total を超えず、保存して読み戻せる（状態を直接操作）', () => {
+        for (const fid of ['besieged_camp', 'rearguard']) {
+            const f = getField(fid)!;
+            const b = createBattle(practiceSetup(f));
+            const prim = f.objectives.primary;
+            if (prim.type !== 'escape' && prim.type !== 'withdraw') throw new Error(fid);
+            const ex = prim.type === 'escape' ? prim.exits[0]! : prim.exit;
+            const c = ex.rect ? { x: (ex.rect.x0 + ex.rect.x1) / 2, z: (ex.rect.z0 + ex.rect.z1) / 2 } : { x: ex.circle!.cx, z: ex.circle!.cz };
+            const step = (sec: number) => {
+                for (let i = 0; i < Math.round(sec / RULES.tick) && !b.result; i++) stepBattle(b, RULES.tick);
+            };
+            // 総大将より先に、ほかの味方をすべて出口へ置く（count より多い）→ 後から総大将
+            const others = b.units.filter((u) => u.side === 'ally' && !u.isHq);
+            expect(others.length).toBeGreaterThan(prim.count);
+            for (const u of others) {
+                u.x = c.x;
+                u.z = c.z;
+            }
+            step(1);
+            const h = b.units.find((u) => u.side === 'ally' && u.isHq)!;
+            h.x = c.x;
+            h.z = c.z;
+            step(1);
+            const o = b.result!;
+            expect(o.objectives!.primary).toMatchObject({ achieved: true, count: { done: prim.count + 1, total: prim.count + 1 } });
+            const storage = new MemoryStorage();
+            const store = new PracticeRecordStore(storage);
+            const r = store.record(fid, recordFromOutcome(o, prim.id, AT));
+            expect(r.ok).toBe(true);
+            const l = store.load();
+            expect(l.status).toBe('ok');
+            expect(l.status === 'ok' && l.data.records[fid]!.best.primary.count).toEqual({ done: prim.count + 1, total: prim.count + 1 });
+        }
+    });
+
+    it('前の版で出来た数の欄が範囲の外の記録（done > total）も読める：数は total に詰め、記録全体は捨てない。読めない形の数の欄は省く', () => {
+        const over = rec({ primary: { id: 'besieged_escape', achieved: true, type: 'escape', count: { done: 6, total: 4 } } });
+        const bad = rec({ primary: { id: 'rg_withdraw', achieved: false, type: 'withdraw', count: { done: -1, total: 'x' } as unknown as { done: number; total: number } } });
+        const json = JSON.stringify({
+            version: 1,
+            records: { besieged_camp: { plays: 2, last: over, best: over }, rearguard: { plays: 1, last: bad, best: bad }, plains: { plays: 1, last: rec(), best: rec() } },
+        });
+        const storage = new MemoryStorage();
+        storage.setItem(PRACTICE_SAVE_KEY, json);
+        const store = new PracticeRecordStore(storage);
+        const l = store.load();
+        expect(l.status).toBe('ok');
+        if (l.status !== 'ok') return;
+        expect(l.data.records.besieged_camp!.best.primary).toEqual({ id: 'besieged_escape', achieved: true, type: 'escape', count: { done: 4, total: 4 } });
+        expect(l.data.records.rearguard!.best.primary).toEqual({ id: 'rg_withdraw', achieved: false, type: 'withdraw' });
+        expect(l.data.records.plains!.plays).toBe(1);
+        // 次の保存でも控えへ退かさず、ほかの戦場の記録を残したまま足す
+        const r = store.record('plains', rec());
+        expect(r.ok).toBe(true);
+        expect(storage.data.has(PRACTICE_BROKEN_KEY)).toBe(false);
+        const l2 = store.load();
+        expect(l2.status === 'ok' && Object.keys(l2.data.records).sort()).toEqual(['besieged_camp', 'plains', 'rearguard']);
     });
 
     it('最高の記録の比べ方：勝敗 → 主目標 → 副目標の数 → 勝利どうしは早い方', () => {

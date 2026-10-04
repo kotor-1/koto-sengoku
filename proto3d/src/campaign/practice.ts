@@ -91,10 +91,16 @@ const REASONS: readonly BattleEndReason[] = [
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 /** 目標の種類の欄（第4群）：文字列なら受け取る（知らない種類の名前でも、記録を読めなくしない） */
 const isType = (v: unknown): boolean => v === undefined || (typeof v === 'string' && v.length > 0 && v.length <= 40);
-/** 数の組（done ≤ total の 0 以上の整数）か */
-function parseCount(v: unknown): { done: number; total: number } | null {
-    if (!isObj(v) || !Number.isInteger(v.done) || !Number.isInteger(v.total) || (v.done as number) < 0 || (v.done as number) > (v.total as number)) return null;
-    return { done: v.done as number, total: v.total as number };
+/**
+ * 脱出・離脱の数の組を読む（done ≤ total の 0 以上の整数）。この欄は説明のための付け足しなので、形が違っても記録全体は捨てない：
+ * done が total を超える（前の版で、count より多くの部隊が離れたときに出来た記録）なら total に詰め、読めない形なら欄を省く（undefined）
+ */
+function parseCount(v: unknown): { done: number; total: number } | undefined {
+    if (!isObj(v) || !Number.isInteger(v.done) || !Number.isInteger(v.total)) return undefined;
+    const done = v.done as number;
+    const total = v.total as number;
+    if (done < 0 || total < 1) return undefined;
+    return { done: Math.min(done, total), total };
 }
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
@@ -112,8 +118,7 @@ function parseResult(v: unknown): PracticeResultRecord | null {
     }
     // 第4群の欄（省ける）
     if (!isType(primary.type)) return null;
-    let count: { done: number; total: number } | null = null;
-    if (primary.count !== undefined && !(count = parseCount(primary.count))) return null;
+    const count = primary.count !== undefined ? parseCount(primary.count) : undefined;
     if (primary.met !== undefined && typeof primary.met !== 'boolean') return null;
     if (withdrawal !== undefined && withdrawal !== 'objective' && withdrawal !== 'abandoned') return null;
     if (!Array.isArray(secondary)) return null;

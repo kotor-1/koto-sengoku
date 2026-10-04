@@ -538,8 +538,13 @@ export function finalObjectives(
         const out: ObjectiveResult = { id: r.def.id, type: r.def.type, label: r.def.label, achieved };
         // 段階目標は、どの段まで届いたか（果たした段の数）も記録する
         if (r.def.type === 'sequence') out.steps = { done: stepsDone(r), total: r.steps.length };
-        // 脱出・離脱は、出口から離れた部隊の数（総大将を含む）も記録する（日没・放棄で終えたときに、どこまで届いたか）
-        if (r.def.type === 'escape' || r.def.type === 'withdraw') out.count = { done: r.entered.length, total: r.def.count + 1 };
+        // 脱出・離脱は、出口から離れた部隊の数（総大将を含む）も記録する（日没・放棄で終えたときに、どこまで届いたか）。
+        // 総大将（離れたら 1）＋ほかの部隊（目標の count まで）。count より多く離れても total（count＋1）を超えない
+        if (r.def.type === 'escape' || r.def.type === 'withdraw') {
+            const h = hq(s, 'ally');
+            const hqOut = !!h && r.entered.includes(h.id) ? 1 : 0;
+            out.count = { done: hqOut + Math.min(leftOthers(s, r), r.def.count), total: r.def.count + 1 };
+        }
         if (r.def.type === 'rescue_escort') out.met = r.metT !== null;
         return out;
     };
