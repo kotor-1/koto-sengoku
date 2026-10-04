@@ -63,8 +63,8 @@
 
 | 項目 | コミット | 日時（UTC） | 結果 | 項目数 | 種類 |
 |---|---|---|---|---|---|
-| ビルド（`git worktree add --detach` の作業木で `VITE_MODEL_EXT=.json npm run proto3d:build`・glb を消して gltf を json へ。dist を本体の直下へ） | 8e249a2 | | 未 | ― | ― |
-| dist の合計 | 8e249a2 | | 未 | ― | ― |
+| ビルド（`git worktree add --detach` の作業木で `VITE_MODEL_EXT=.json npm run proto3d:build`・glb を消して gltf を json へ。dist を本体の直下へ） | 8e249a2 | 2026-10-04 16:12 | 済。本体の HEAD は記録だけのコミットで先へ進んでいるので、`git worktree add --detach <scratchpad>/g4/wt-018`（018ea95 で作り、8e249a2 へ checkout。node_modules は本体への symlink）で `VITE_MODEL_EXT=.json npm run proto3d:build`（3.8 秒）→ `rm -f dist-proto3d/models/*.glb` → `node proto3d/tools/glb-to-gltf.mjs proto3d/public/models dist-proto3d/models ground_v2 gate_v2 walls_v2 keep inner machiya_a machiya_b machiya_d tree_pine tree_sakura tree_pine_far hero_v3_mpfb hero_v2`、できた `dist-proto3d` を本体の直下の古いものと置き換えた。作業木は空（`git status --porcelain --untracked-files=no` が 0 行）・`proto3d/public` は本体と同じ（diff -rq）。ビルドの表示は `"8e249a2"`（「+変更あり」なし。dist の中に「変更あり」の字は無い）。dist の models に .glb は 0 | ― | ― |
+| dist の合計 | 8e249a2 | 2026-10-04 16:13 | 60,775,170 バイト（57.96 MiB）・132 ファイル。64 MB 未満。内訳：models 122 ファイル 59,343,596 バイト、models 以外 10 ファイル 1,431,574 バイト（index.html 1,921・style.css 6,791・battle.css 38,346・favicon.png 354・assets/ の index-CjeA99ZO.js 488,981・three-FxgsyV0n.js 604,716・practiceView-0irVhRIa.js 132,260・entry-CnM4FT3O.js 107,016・control-DnqYe67E.js 34,308・index-BSNbx7Ps.css 16,881） | ― | ― |
 | fields-prod（20 戦場） | 8e249a2 | | 未 | | |
 | ieyasu-prod | 8e249a2 | | 未 | | |
 | chapter1-prod | 8e249a2 | | 未 | | |
