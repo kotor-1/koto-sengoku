@@ -622,8 +622,9 @@ describe('地図の印・記録', () => {
         const o = runToEnd(s);
         const rec = recordFromOutcome(o, 'relief_escort', new Date('2026-10-03T00:00:00Z'));
         expect(rec.primary).toEqual({ id: 'relief_escort', achieved: false, type: 'rescue_escort', met: false });
-        // 援軍救出の調整で副目標に「丘の南の囲みを崩す」（break_unit）を足した（前は limit_losses・preserve_unit の 2 つ）
-        expect(rec.secondary.map((x) => x.type)).toEqual(['limit_losses', 'preserve_unit', 'break_unit']);
+        // 援軍救出の調整で副目標に「丘の南の囲みを崩す」（break_unit）を足した（前は limit_losses・preserve_unit の 2 つ）。
+        // 作戦の多様さの直しで「長政隊の兵を 7 割以上」（preserve_unit）を「損害を 2 割以内」（limit_losses）に替えた（どの作戦でも 85〜87％ で分けなかった）
+        expect(rec.secondary.map((x) => x.type)).toEqual(['limit_losses', 'limit_losses', 'break_unit']);
         expect(rec.withdrawal).toBe('abandoned');
         const back = parsePracticeData(JSON.stringify({ version: 1, records: { relief: { plays: 1, last: rec, best: rec } } }));
         expect(back?.records.relief?.last).toEqual(rec);

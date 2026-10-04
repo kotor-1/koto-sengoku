@@ -18,25 +18,30 @@
  * 揺らぎ（16 通り）：時刻の行は ±15 秒（乱数の種 7 から。第2群・第3群のテストと同じ作り方）、「見てから押す」行には人が見てから押すまでの
  * 遅れ 0〜15 秒を足す（同じ乱数から。tests/proto3d-field-siege_front.test.ts と同じ作り方）。
  *
- * 今の結果（早送り。守れる部隊＝最後に戦える味方の部隊の数／8。副目標は 損害 1 割・長政隊 7 割・南の囲みを崩す）：
+ * 今の結果（早送り。守れる部隊＝最後に戦える味方の部隊の数／8。副目標は 損害 1 割・損害 2 割・南の囲みを崩す）：
  * | 作戦 | 1 通り | 16 通り |
- * | 急いで直接救う＝準備した正面攻撃（DIRECT。騎馬で東の原の弓・4 部隊と弓で南の囲み・両翼の采配・後詰めの差配で長政隊を下げる） | 合流 110 秒・勝ち 190 秒・損害 13.8％・長政隊 87％・✗✓✓・7／8 | 16 勝・勝ち 251 秒（223〜281）・損害 13.9％（9.2〜17.6）・長政隊 85.3％・守れる 7.1・副目標 1／16／16 |
- * | 引き離してから救う（LURE。弓で西の囲みを誘い出し、西の筋の伏せで叩く。林の北の縁の騎馬が丘の西から合流） | 合流 168 秒・勝ち 284 秒・5.3％・87％・✓✓✗・8／8（西の囲みは持ち場から 133 m まで出た） | 16 勝・341 秒（325〜399）・6.6％（4.1〜8.3）・87.0％・守れる 8.0・副目標 16／16／0 |
- * | 無計画：全部隊で丘へ一斉、あとは 10 秒ごとに一番近い敵へ当て直すだけ（UNPLANNED） | 合流 187 秒・勝ち 286 秒・31.9％・長政隊 87％・✗✓✓・6／8 | 16 勝・295 秒（290〜301）・32.2％（31.9〜32.9）・87.1％・守れる 6.0・副目標 0／16／16 |
+ * | 急いで直接救う＝準備した正面攻撃（DIRECT。騎馬で東の原の弓・4 部隊と弓で南の囲み・両翼の采配・後詰めの差配で長政隊を下げる） | 合流 110 秒・勝ち 190 秒・損害 13.8％・長政隊 87％・✗✓✓・7／8 | 16 勝・勝ち 251 秒（223〜281）・損害 14.6％（9.2〜20.0）・長政隊 85.3％・守れる 7.0・副目標 1／15／16 |
+ * | 引き離してから救う（LURE。弓で西の囲みを誘い出し、西の筋の伏せで叩く。林の北の縁の騎馬が丘の西から合流） | 合流 168 秒・勝ち 284 秒・5.3％・87％・✓✓✗・8／8（西の囲みは持ち場から 133 m まで出た） | 16 勝・341 秒（319〜397）・6.6％（4.1〜8.3）・87.0％・守れる 8.0・副目標 16／16／0 |
+ * | 無計画：全部隊で丘へ一斉、あとは 10 秒ごとに（同じ時刻に）一番近い敵へ当て直すだけ（UNPLANNED） | 合流 187 秒・勝ち 286 秒・31.9％・長政隊 87％・✗✗✓・6／8 | 16 勝・295 秒（290〜301）・32.2％（31.9〜32.9）・87.1％・守れる 6.0・副目標 0／0／16 |
+ * | 無計画：当て直しを部隊ごとにずらす・10 秒ごと（UNPLANNED_U10） | | 16 勝・272 秒（231〜325）・31.1％（28.0〜35.5）・守れる 5.8・副目標 0／0／16 |
+ * | 無計画：当て直しを部隊ごとにずらす・15 秒ごと（UNPLANNED_U15） | | 16 勝・286 秒（242〜314）・29.9％（22.7〜34.5）・守れる 5.8・副目標 0／0／16 |
+ * | 無計画：丘へ向かわず始めから近い敵へ・部隊ごとにずらす 10 秒ごと（UNPLANNED_NEAR） | | 16 勝・303 秒（267〜334）・31.3％（27.4〜41.4）・守れる 5.8・副目標 0／0／16 |
+ * | 長政隊を先に丘から出す（5 秒に南へ） | 救い手が着く前に囲みに挟まれて崩れ、負け | 0 勝（31〜46 秒にどれも負け） |
  * | 待つ（HOLD） | 始めの攻め手は丘の上の長政隊が退けるが、4 分の敵の援軍に攻められ、347 秒に兵が 4 割を切って負け（主目標の失敗） | |
- * 作戦の違い：急いで直接救うは合流が早く（平均 135 対 183 秒）、勝つのも 90 秒ほど早いが、強い南の囲みと東の囲みの騎馬と戦うので損害が倍
- * ほどで、損害 1 割を 16 通りで 1 回しか守れない（南の囲みを崩す副目標は果たす）。引き離してから救うは西の囲みを伏せへ引き込んで叩くだけで
- * 損害が小さく、8 部隊すべてが残るが、南の囲みは崩さない。無計画な攻撃も 16 通りで勝つが、中央の押さえ・東の原の弓・南の囲み・東の囲みと
- * 次々に正面から戦い、損害は準備した正面攻撃の 2 倍以上（32.2％ 対 13.9％）で、勝つのも遅く、守れる部隊も少ない。
- * 長政隊の兵は、どの作戦でも合流の前の丘の戦いで 87％ ほどになり、合流の後の退きでほとんど減らない（急いで直接救うで東の囲みに横を突かれた
- * 時だけ減る。1 通りの前の版では 71％）。
+ * 作戦の違い：急いで直接救うは合流が早く（平均 136 対 182 秒）、勝つのも 90 秒ほど早いが、強い南の囲みと東の囲みの騎馬と戦うので損害が倍
+ * ほどで、損害 1 割を 16 通りで 1 回しか守れない（損害 2 割と南の囲みを崩す副目標は果たす）。引き離してから救うは西の囲みを伏せへ引き込んで
+ * 叩くだけで損害が小さく、8 部隊すべてが残るが、南の囲みは崩さない。無計画な攻撃も（どの形でも）16 通りで勝つ（一律の負けではない）が、
+ * 中央の押さえ・東の原の弓・南の囲み・東の囲みと次々に正面から戦い、損害は準備した正面攻撃の 2 倍ほど（30〜32％ 対 14.6％）で、2 部隊ほどが
+ * 崩れ（守れる 5.8〜6.0 対 7.0・8.0）、損害の副目標を 1 割・2 割とも 1 回も守れない（準備の価値が副目標と守れる部隊に出る）。
+ * 副目標の 2 つ目は前は「長政隊の兵を 7 割以上」だった。長政隊の兵はどの作戦でも合流の前の丘の戦いで 85〜87％ になり、合流の後の退きで
+ * ほとんど減らないので、作戦を分けなかった（前の数字：急いで直接救う 16・引き離してから救う 16・無計画 16／16）。損害 2 割に替えた。
  *
  * 武将の能力の価値が場面で変わる比べ（同じ 16 通り）：
  * - 石川の後詰めの差配（長政隊の動き ×1.8・士気 +30・敗走の線 5・同盟なので士気の低下をさらに抑える）：
  *   追っ手のいない西の筋を下げるとき（引き離してから救う）は、使っても使わなくても 16 勝（勝ち 341 対 348 秒）。
- *   騎馬が丘へ向かうのを 240 秒まで待って合流が遅れ、敵の援軍が丘へ攻めかかる頃に重なると、使えば 14 勝・使わなければ 5 勝
- *   （長政隊の兵 58.7％ 対 52.3％）。東の原を下げる急いで直接救うでは、合流から安全地点までが 115.7 秒 → 使わないと 130.2 秒。
- * - 能力を使わなくても主目標に届く：酒井・石川の能力を使わない急いで直接救う 16 勝（271 秒・14.6％）、引き離してから救う 16 勝（348 秒・6.8％）。
+ *   騎馬が丘へ向かうのを 240 秒まで待って合流が遅れ、敵の援軍が丘へ攻めかかる頃に重なると、使えば 13 勝・使わなければ 5 勝
+ *   （長政隊の兵 58.2％ 対 52.3％）。東の原を下げる急いで直接救うでは、合流から安全地点までが 115.5 秒 → 使わないと 129.3 秒。
+ * - 能力を使わなくても主目標に届く：酒井・石川の能力を使わない急いで直接救う 15 勝（269 秒・15.6％）、引き離してから救う 16 勝（348 秒・6.8％）。
  *
  * 救出の決まりの確かめ（早送り）：南の囲みを破った後に石川隊が合流の輪の縁へ入ってすぐ出る（一緒にいたのは 4 秒）・石川隊の後詰めの差配を
  * 長政隊に使うだけ・合流せずに撤退を命じる（安全地点の輪を通って退き口から離れる）のどれも、長政隊が安全地点の輪に入っても勝たない。
@@ -397,7 +402,7 @@ function summary(rs: Run[]): string {
     return (
         `${ws.length} 勝・勝ち ${mean(ts).toFixed(0)} 秒（${Math.min(...ts).toFixed(0)}〜${Math.max(...ts).toFixed(0)}）・損害 ${pct(mean(rs.map((r) => r.loss)))}％` +
         `（${pct(Math.min(...rs.map((r) => r.loss)))}〜${pct(Math.max(...rs.map((r) => r.loss)))}）・長政隊 ${pct(mean(rs.map((r) => r.nagaRatio)))}％・守れる ${mean(rs.map(standing)).toFixed(1)}` +
-        `・副目標 ${count(rs, (r) => sec(r, 'relief_losses'))}／${count(rs, (r) => sec(r, 'relief_keep'))}／${count(rs, (r) => sec(r, 'relief_break'))}` +
+        `・副目標 ${count(rs, (r) => sec(r, 'relief_losses'))}／${count(rs, (r) => sec(r, 'relief_cost'))}／${count(rs, (r) => sec(r, 'relief_break'))}` +
         `・結果 ${[...new Set(rs.map((r) => r.o.reason))].join(',')}`
     );
 }
@@ -474,16 +479,32 @@ const lure =
 const LURE = lure();
 
 const MELEE = ['a_tadakatsu', 'a_sakai', 'a_ishikawa', 'a_sakakibara', 'a_kiba', 'a_yumi'];
-/** 無計画（UNPLANNED）：全部隊で丘へ一斉、あとは 10 秒ごとに見えている一番近い敵へ当て直すだけ。合流の知らせを見たら長政隊を安全地点へ */
-const UNPLANNED: Plan = (j) => {
-    const o: Step[] = [];
-    for (const id of MELEE) {
-        o.push([0, id, tap(HILL_X, HILL_Z)]);
-        for (let t = 10; t < 600; t += 10) o.push([t, id, 'nearest']);
-    }
-    o.push([w(met, j), 'a_nagamasa', tap(0, 175)]);
-    return o;
-};
+/**
+ * 無計画な攻撃：（hillFirst なら）全部隊で丘へ一斉に向かい、あとは period 秒ごとに見えている一番近い敵へ当て直すだけ。合流の知らせを見たら
+ * 長政隊を安全地点へ。perUnit なら当て直す時刻を部隊ごとにずらす（揺らぎの乱数から 0〜period 秒。全部隊が同じ時刻に押す 1 形だけだと
+ * たまたまの結果になりやすいので、比べには形を変えて使う）
+ */
+const unplanned =
+    (period: number, perUnit: boolean, hillFirst = true): Plan =>
+    (j) => {
+        const o: Step[] = [];
+        MELEE.forEach((id, i) => {
+            if (hillFirst) o.push([0, id, tap(HILL_X, HILL_Z)]);
+            const off = perUnit ? Math.abs(j.t(100 + i) - 100 - i) % period : 0;
+            for (let t = 10 + off; t < 600; t += period) o.push([t, id, 'nearest']);
+        });
+        o.push([w(met, j), 'a_nagamasa', tap(0, 175)]);
+        return o;
+    };
+/** 無計画（UNPLANNED）：全部隊で丘へ一斉、あとは 10 秒ごとに（全部隊が同じ時刻に）一番近い敵へ当て直す */
+const UNPLANNED = unplanned(10, false);
+/** 無計画のほかの形：当て直しを部隊ごとにずらす（10 秒ごと・15 秒ごと）、丘へ向かわず始めから近い敵へ（部隊ごとにずらす 10 秒ごと） */
+const UNPLANNED_FORMS: [string, Plan][] = [
+    ['UNPLANNED', UNPLANNED],
+    ['UNPLANNED_U10', unplanned(10, true)],
+    ['UNPLANNED_U15', unplanned(15, true)],
+    ['UNPLANNED_NEAR', unplanned(10, true, false)],
+];
 const HILL_X = 60;
 const HILL_Z = -150;
 
@@ -501,7 +522,12 @@ describe('援軍救出のデータ', () => {
         expect(PRIMARY).toMatchObject({ type: 'rescue_escort', unitId: 'a_nagamasa', minRatio: 0.4, meetSec: 5 });
         expect(inZone(MEET, 0, 175)).toBe(false);
         expect(inZone(SAFE, HILL_X, HILL_Z)).toBe(false);
-        expect(RF.objectives.secondary.map((x) => x.type)).toEqual(['limit_losses', 'preserve_unit', 'break_unit']);
+        // 2 つ目は前は「長政隊の兵を 7 割以上」（preserve_unit）。どの作戦でも 85〜87％ で作戦を分けなかったので、損害 2 割に替えた
+        expect(RF.objectives.secondary.map((x) => [x.type, 'maxRatio' in x ? x.maxRatio : null])).toEqual([
+            ['limit_losses', 0.1],
+            ['limit_losses', 0.2],
+            ['break_unit', null],
+        ]);
         const units = RF.presets[0]!.units;
         expect(units.filter((u) => u.side === 'ally')).toHaveLength(8);
         expect(units.filter((u) => u.side === 'enemy')).toHaveLength(9);
@@ -518,6 +544,7 @@ describe('援軍救出のデータ', () => {
         expect(info.primary).toContain('兵 4 割以上');
         expect(info.terrain.join('')).toContain('崩れる・撤退する・兵が 4 割を切ると負け');
         expect(info.terrain.join('')).toContain('合流の前に長政隊だけを下げても数えない');
+        expect(info.terrain.join('')).toContain('救い手が着く前に丘を離れると囲みに挟まれて崩れる');
         expect(info.endRules).toHaveLength(6);
     });
 
@@ -599,6 +626,17 @@ describe('救出の決まり：接触だけ・能力だけでは救出になら�
         expect(r.metT).toBeNull();
     });
 
+    it('長政隊を先に丘から出す（5 秒に南へ。迎えに来させる）：16 通りとも、救い手が着く前に囲みに挟まれて崩れ、主目標の失敗で負け（合戦の前の説明に出す）', () => {
+        const rs = sixteenOf('NAGA_OUT', (j) => [[j.t(5), 'a_nagamasa', tap(HILL_X, -60)]]);
+        log('NAGA_OUT', summary(rs), rs.map((r) => r.t.toFixed(0)).join(','));
+        for (const r of rs) {
+            expect([r.o.result, r.o.reason]).toEqual(['defeat', 'objective_failed']);
+            expect(r.t).toBeLessThan(90);
+            expect(r.metT).toBeNull();
+            expect(r.o.units.find((u) => u.id === 'a_nagamasa')!.status).not.toBe('ready');
+        }
+    }, 60_000);
+
     it('待つ：長政隊は丘で始めの攻め手を退けるが、4 分の敵の援軍に攻められて兵が 4 割を切り、主目標の失敗で負け（記録：347 秒・長政隊 40％）', () => {
         const r = play([]);
         expect([r.o.result, r.o.reason]).toEqual(['defeat', 'objective_failed']);
@@ -666,8 +704,8 @@ describe('作戦（早送り・1 通り）', () => {
         for (const [name, plan] of [
             ['DIRECT', DIRECT],
             ['LURE', LURE],
-            ['UNPLANNED', UNPLANNED],
-        ] as const) {
+            ...UNPLANNED_FORMS,
+        ] as [string, Plan][]) {
             for (const k of [-1, 0, 5, 11]) {
                 const steps = plan(k < 0 ? J0 : jitterOf(k));
                 expect(steps.some((x) => typeof x[2] === 'object' && 'type' in x[2] && x[2].type === 'move' && 'face' in x[2])).toBe(false);
@@ -713,7 +751,7 @@ describe('作戦の安定性と比べ（早送り・±15 秒と見てから押�
 
     it('副目標が作戦で分かれる：南の囲みを崩すのは急いで直接救うだけ、損害 1 割は引き離してから救うがほとんど守り、急いで直接救うはほとんど守れない', () => {
         const by = (rs: Run[], id: string) => count(rs, (r) => sec(r, id));
-        log('sec D', by(D(), 'relief_losses'), by(D(), 'relief_keep'), by(D(), 'relief_break'), 'L', by(L(), 'relief_losses'), by(L(), 'relief_keep'), by(L(), 'relief_break'));
+        log('sec D', by(D(), 'relief_losses'), by(D(), 'relief_cost'), by(D(), 'relief_break'), 'L', by(L(), 'relief_losses'), by(L(), 'relief_cost'), by(L(), 'relief_break'));
         expect(by(D(), 'relief_break')).toBeGreaterThanOrEqual(14);
         expect(by(L(), 'relief_break')).toBe(0);
         expect(by(L(), 'relief_losses')).toBeGreaterThanOrEqual(14);
@@ -729,6 +767,22 @@ describe('作戦の安定性と比べ（早送り・±15 秒と見てから押�
         expect(mean(D().map(standing))).toBeGreaterThan(mean(U().map(standing)));
         expect(count(U(), (r) => sec(r, 'relief_losses'))).toBe(0);
     }, 120_000);
+
+    it('準備の価値が副目標と守れる部隊に出る：損害 2 割は準備した 2 作戦が 16 通りで 12 回以上守り、無計画（同時に押す・部隊ごとにずらす 2 通り・丘へ向かわず近い敵へ）はどの形も 1 回も守れず、守れる部隊も少ない（無計画も勝つのは記録）', () => {
+        const by = (rs: Run[], id: string) => count(rs, (r) => sec(r, id));
+        log('cost D', by(D(), 'relief_cost'), 'L', by(L(), 'relief_cost'), 'standing', mean(D().map(standing)), mean(L().map(standing)));
+        expect(by(D(), 'relief_cost'), summary(D())).toBeGreaterThanOrEqual(12);
+        expect(by(L(), 'relief_cost'), summary(L())).toBeGreaterThanOrEqual(12);
+        const fewest = Math.min(mean(D().map(standing)), mean(L().map(standing)));
+        for (const [name, plan] of UNPLANNED_FORMS) {
+            const rs = sixteenOf(name, plan);
+            log(name, summary(rs));
+            expect([name, by(rs, 'relief_cost')]).toEqual([name, 0]);
+            expect([name, by(rs, 'relief_losses')]).toEqual([name, 0]);
+            expect([name, mean(rs.map(standing)) < fewest - 0.5]).toEqual([name, true]);
+            expect([name, mean(rs.map((r) => r.loss)) > mean(D().map((r) => r.loss)) + 0.08]).toEqual([name, true]);
+        }
+    }, 240_000);
 });
 
 describe('武将の能力の価値が場面で変わる・能力は勝ちに必須ではない（早送り・16 通り）', () => {
