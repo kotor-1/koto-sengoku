@@ -4,6 +4,7 @@
  * 2. 最初の曲輪（門の奥の輪）を、敵のいない状態で味方が 45 秒確保する（hold_point）。敵本陣の撃破ではない。
  * 外門は閉じている間は通れず矢も通さない。開いた後は通れ、道探しの格子と進んでいる道が引き直される。門の左右の櫓（櫓台の石垣の上の弓）は
  * 門の前を射下ろし、外からは斬り合いも届かない。東の外の側面の拠点（丘・南と西は柵）の弓は門の前の輪の東半分まで届く。
+ * 西の櫓の前（南西）に小さな林（第4群の釣り合いの直しで足した。林の中の部隊は 60 m まで見えないので、林の中の弓は西の櫓を射返されにくい）。
  * 城壁の破壊・梯子・攻城兵器は無い。
  *
  * 合格条件は「正面なら負ける」ではなく、作戦どうしの比べ（損害・時間・副目標・守れる部隊）と、主目標に届く作戦の安定性。
@@ -18,7 +19,7 @@
  * 揺らぎ（16 通り）：時刻の行は ±15 秒（乱数の種 7 から。第2群・第3群のテストと同じ作り方）、「見てから押す」行には人が見てから押すまでの
  * 遅れ 0〜15 秒を足す（同じ乱数から。tests/proto3d-field-temple.test.ts・marsh と同じ作り方）。
  *
- * 作った時の結果（早送り。16 通りは上の揺らぎ。守れる部隊＝最後に戦える味方の部隊の数／7。副目標は 損害 3 割・拠点の弓・騎馬 6 割）：
+ * 作った時の結果（第3群。第4群の釣り合いの直しの後の数字は、16 通りの比べの describe の前の表。早送り。16 通りは上の揺らぎ。守れる部隊＝最後に戦える味方の部隊の数／7。副目標は 損害 3 割・拠点の弓・騎馬 6 割）：
  * | 作戦 | 1 通り | 16 通り |
  * | 側面の拠点を先に（BASTION） | 門 161 秒・勝ち 289 秒・損害 22.5％・✓✓✓・7／7 | 16 勝・勝ち 371 秒（320〜400）・門 214 秒（180〜252）・損害 29.3％（24.8〜36.2）・守れる 6.4・副目標 10／16／9 |
  * | 準備した正面攻撃（FRONT。弓で櫓を射すくめてから全軍） | 門 171 秒・勝ち 288 秒・27.8％・✓✗✓・6／7 | 16 勝・331 秒（310〜348）・門 195 秒（175〜208）・28.0％（24.0〜31.0）・6.4・14／0／10 |
@@ -46,7 +47,7 @@
  * - 敗走した出張りは、閉じた門に押し付けられて門の前に残る（戦えないので輪の制圧は止めない）。
  */
 import { describe, expect, it } from 'vitest';
-import { bowRangeFor, createBattle, hasLineOfSight, isActive, issueOrder, meleeUnreachable, passableAt, runToEnd, unitById, RULES, type BattleState } from '../proto3d/src/battle/sim';
+import { bowRangeFor, createBattle, hasLineOfSight, isActive, issueOrder, meleeUnreachable, passableAt, runToEnd, stepBattle, unitById, RULES, type BattleState } from '../proto3d/src/battle/sim';
 import { useAbility } from '../proto3d/src/battle/abilities';
 import { inZone, openAllGates } from '../proto3d/src/battle/fieldRules';
 import { reachable } from '../proto3d/src/battle/pathfind';
@@ -383,9 +384,19 @@ function inside(first: string, rest: string[], j: J): Step[] {
 }
 const INSIDE_ORDER = ['a_sakai', 'a_kiba', 'a_sakakibara', 'a_ishikawa'];
 
+/** 西の櫓の前の小さな林の中の弓の持ち場（林の中の部隊は 60 m まで見えない。西の櫓から 77 m・東の櫓・拠点の弓からは届かない） */
+const GROVE: [number, number] = [-106, 0];
+/** 弓：西の櫓の前の林へ入り、着いて待機になったのを見て西の櫓の弓を射る。西の櫓の弓が崩れたのを見て東の櫓の弓へ（林を出て射る） */
+const archersFromGrove = (j: J): Step[] => [
+    ...route('a_yumi', [GROVE], 0, j),
+    [w(all(near('a_yumi', ...GROVE, 12), idle('a_yumi')), j), 'a_yumi', atk('e_tower_w')],
+    [w(gone('e_tower_w'), j), 'a_yumi', atk('e_tower_e')],
+];
+
 /**
- * 側面の拠点を先に（BASTION）：酒井隊・榊原隊・騎馬で東へ回り、拠点の東の口から入って槍と弓を崩す（榊原隊は弓へ）。忠勝隊・石川隊・弓は
- * 櫓の届かない所で待つ。拠点が崩れたのを見て、忠勝隊・石川隊・酒井隊で出張りへ、弓は東の櫓を射る。出張りが崩れたら門の前の輪を占める
+ * 側面の拠点を先に（BASTION）：酒井隊・榊原隊・騎馬で東へ回り、拠点の東の口から入って槍と弓を崩す（榊原隊は弓へ）。忠勝隊・石川隊は
+ * 櫓の届かない所で待ち、弓は西の櫓の前の林から西の櫓を射る。拠点が崩れたのを見て、忠勝隊・石川隊・酒井隊で出張りへ。出張りが崩れたら
+ * 門の前の輪を占める
  */
 const BASTION: Plan = (j) => [
     ...squad(
@@ -410,11 +421,12 @@ const BASTION: Plan = (j) => [
     [w(near('a_sakai', 140, 0, 20), j), 'a_kiba', atk('e_bast_yari')],
     [0, 'a_tadakatsu', tap(0, 85)],
     [0, 'a_ishikawa', tap(25, 95)],
-    [0, 'a_yumi', tap(-25, 90)],
+    ...route('a_yumi', [GROVE], 0, j),
+    [w(all(near('a_yumi', ...GROVE, 12), idle('a_yumi')), j), 'a_yumi', atk('e_tower_w')],
     [w(all(gone('e_bast_yari'), gone('e_bast_yumi')), j), 'a_tadakatsu', atk('e_sortie')],
     [w(all(gone('e_bast_yari'), gone('e_bast_yumi')), j), 'a_ishikawa', atk('e_sortie')],
     [w(all(gone('e_bast_yari'), gone('e_bast_yumi')), j), 'a_sakai', atk('e_sortie')],
-    [w(all(gone('e_bast_yari'), gone('e_bast_yumi')), j), 'a_yumi', atk('e_tower_e')],
+    [w(gone('e_tower_w'), j), 'a_yumi', atk('e_tower_e')],
     ...toFront('a_tadakatsu', F1, j),
     ...toFront('a_ishikawa', F2, j),
     ...toFront('a_sakai', F3, j),
@@ -422,21 +434,19 @@ const BASTION: Plan = (j) => [
 ];
 
 /**
- * 準備した正面攻撃（FRONT）：弓で西の櫓の弓を射すくめ（弱ったら東の櫓へ）、ほかは櫓の届かない所で待つ。西の櫓の弓が弱ったのを見て、
- * 槍・騎馬の 5 部隊で出張りへ一度に当たる。出張りが崩れたら、拠点の弓の届かない輪の西の側を忠勝隊・酒井隊で占め、騎馬は脇へよける。
- * 門が開いたら石川隊の後詰めの差配で支えて門の裏の槍へ
+ * 準備した正面攻撃（FRONT）：弓は西の櫓の前の林から西の櫓の弓を射すくめ（崩れたら東の櫓へ）、ほかは櫓・拠点の弓の届かない所で待つ（予備の
+ * 石川隊も）。西の櫓の弓が弱ったのを見て、槍・騎馬の 5 部隊で出張りへ一度に当たる。出張りが崩れたら、拠点の弓の届かない輪の西の側を
+ * 忠勝隊・酒井隊で占め、騎馬・榊原隊・石川隊は拠点の弓の届かない西へよける。門が開いたら石川隊の後詰めの差配で支えて門の裏の槍へ
  */
 const FRONT: Plan = (j) => {
     const ready = low('e_tower_w', 30);
     return [
-        ...route('a_yumi', [[-45, 12]], 0, j),
-        [w(all(near('a_yumi', -45, 12, 12), idle('a_yumi')), j), 'a_yumi', atk('e_tower_w')],
-        [w(low('e_tower_w', 30), j), 'a_yumi', atk('e_tower_e')],
+        ...archersFromGrove(j),
         [0, 'a_tadakatsu', tap(0, 90)],
         [0, 'a_sakai', tap(-30, 90)],
-        [0, 'a_ishikawa', tap(25, 100)],
+        [0, 'a_ishikawa', tap(15, 105)],
         [0, 'a_kiba', tap(-55, 100)],
-        [0, 'a_sakakibara', tap(50, 100)],
+        [0, 'a_sakakibara', tap(30, 110)],
         [w(ready, j), 'a_tadakatsu', atk('e_sortie')],
         [w(ready, j), 'a_sakai', atk('e_sortie')],
         [w(ready, j), 'a_ishikawa', atk('e_sortie')],
@@ -444,9 +454,9 @@ const FRONT: Plan = (j) => {
         [w(ready, j), 'a_sakakibara', atk('e_sortie')],
         ...toFront('a_tadakatsu', F1, j),
         ...toFront('a_sakai', F3, j),
-        [w(gone('e_sortie'), j), 'a_kiba', tap(-45, 0)],
-        [w(gone('e_sortie'), j), 'a_sakakibara', tap(40, 5)],
-        [w(gone('e_sortie'), j), 'a_ishikawa', tap(20, 15)],
+        [w(gone('e_sortie'), j), 'a_kiba', tap(-45, 10)],
+        [w(gone('e_sortie'), j), 'a_sakakibara', tap(-20, 25)],
+        [w(gone('e_sortie'), j), 'a_ishikawa', tap(-40, 30)],
         ...inside('a_tadakatsu', INSIDE_ORDER, j),
     ];
 };
@@ -466,7 +476,7 @@ const RUSH: Plan = (j) => [
 ];
 
 /**
- * 準備なしの 5 隊の一斉（ALL5。確かめの担当が見つけた形）：弓も能力も使わず、槍・騎馬の 5 隊で 5 秒に出張りへ当たり、崩れたら 3 隊で輪を占め、
+ * 準備なしの 5 隊の一斉（ALL5。確かめの担当が見つけた形。急いで門への 1 形として比べる）：弓も能力も使わず、槍・騎馬の 5 隊で 5 秒に出張りへ当たり、崩れたら 3 隊で輪を占め、
  * 門が開いたら 5 隊で門の裏の槍、崩れたら曲輪の槍、崩れたら曲輪の輪の持ち場へ（急いで門へ＝RUSH との違い：弓を前へ出さない・差配を使わない・
  * 門の裏の槍へ 5 隊が一度に当たる）
  */
@@ -480,6 +490,36 @@ const ALL5: Plan = (j) => {
     ids.slice(0, 3).forEach((id, i) => o.push(...go(id, ...posts[i]!, gone('e_inner'), j)));
     return o;
 };
+
+/**
+ * 急いで門へを部隊ごとに時刻をずらした形（無計画な攻めの比べは、同じ時刻に押す 1 形だけだとたまたまの結果になりやすいので、ずらした形を 2 通り
+ * ずつ足す）。槍・騎馬の 5 部隊それぞれに、出張りのいる所（門の前の道 (0,-24)）を ids の順に offs 秒に押す（出張りが 20 m 以内にいればその
+ * 攻撃、崩れて離れていればそこへの移動。画面と同じ）。あとは RUSH（弓は道の上まで出る・差配で支える）か ALL5（弓も能力も使わない）と同じ
+ */
+function staggered(ids: string[], offs: number[], withBow: boolean): Plan {
+    return (j) => {
+        const o: Step[] = ids.map((id, i) => [j.t(offs[i]!), id, tap(0, -24)] as Step);
+        if (withBow) o.push([j.t(offs[5] ?? 0), 'a_yumi', tap(0, 20)]);
+        o.push(...toFront('a_tadakatsu', F1, j), ...toFront('a_ishikawa', F2, j), ...toFront('a_sakai', F3, j));
+        if (withBow) {
+            o.push(...inside('a_tadakatsu', INSIDE_ORDER, j));
+            return o;
+        }
+        for (const id of ids) o.push([w(opened, j), id, atk('e_gate_guard')]);
+        for (const id of ids) o.push([w(gone('e_gate_guard'), j), id, atk('e_inner')]);
+        const posts = [B1, B2, B3];
+        ['a_tadakatsu', 'a_sakai', 'a_ishikawa'].forEach((id, i) => o.push(...go(id, ...posts[i]!, gone('e_inner'), j)));
+        return o;
+    };
+}
+/** 急いで門へ（ずらし A）：忠勝隊から 10 秒おきに（忠勝・石川・酒井・騎馬・榊原、弓は始めに道へ） */
+const RUSH_STAG_A = staggered(['a_tadakatsu', 'a_ishikawa', 'a_sakai', 'a_kiba', 'a_sakakibara'], [0, 10, 20, 30, 40, 0], true);
+/** 急いで門へ（ずらし B）：騎馬から先に（騎馬 0・榊原 5・酒井 10・石川 20・忠勝 30 秒、弓は 15 秒） */
+const RUSH_STAG_B = staggered(['a_tadakatsu', 'a_ishikawa', 'a_sakai', 'a_kiba', 'a_sakakibara'], [30, 20, 10, 0, 5, 15], true);
+/** 5 隊の一斉（ずらし A）：忠勝・酒井・石川・騎馬・榊原を 5・15・25・35・45 秒に */
+const ALL5_STAG_A = staggered(['a_tadakatsu', 'a_sakai', 'a_ishikawa', 'a_kiba', 'a_sakakibara'], [5, 15, 25, 35, 45], false);
+/** 5 隊の一斉（ずらし B）：榊原・騎馬・石川・酒井・忠勝を 3・10・20・32・45 秒に */
+const ALL5_STAG_B = staggered(['a_sakakibara', 'a_kiba', 'a_ishikawa', 'a_sakai', 'a_tadakatsu'], [3, 10, 20, 32, 45], false);
 
 /** 無計画（UNPLANNED）：全部隊で門の前へ一斉、あとは 10 秒ごとに見えている一番近い敵へ当て直すだけ（地形を見ない。本陣は動かさない） */
 const UNPLANNED: Plan = () => {
@@ -674,6 +714,35 @@ describe('城攻め前面のデータ', () => {
         expect(hasLineOfSight(s, { x: 0, z: -45 }, { x: 0, z: -80 })).toBe(false);
     });
 
+    it('西の櫓の前の小さな林：林の中の弓は西の櫓を射られる所にいるが、西の櫓からは見えない（60 m より遠い）。東の櫓・拠点の弓からは届かない。門の前の輪・門への道とは重ならない（状態を直接操作）', () => {
+        const s = createBattle(buildBattleSetup(SF, 'standard'));
+        const tw = unitById(s, 'e_tower_w')!;
+        const yumi = unitById(s, 'a_yumi')!;
+        expect([tw.strength, unitById(s, 'e_tower_e')!.strength]).toEqual([200, 200]);
+        [yumi.x, yumi.z] = GROVE;
+        const d = Math.hypot(tw.x - yumi.x, tw.z - yumi.z);
+        expect(d).toBeGreaterThan(60);
+        expect(d).toBeLessThanOrEqual(bowRangeFor(s, yumi, tw));
+        expect(hasLineOfSight(s, yumi, tw)).toBe(true);
+        for (let i = 0; i < 3; i++) stepBattle(s, RULES.tick);
+        // 林の中の弓は櫓から見えない（射返されない）。弓からは櫓が見えている
+        expect(yumi.seenBy.enemy).toBe(false);
+        expect(tw.seenBy.ally).toBe(true);
+        expect(issueOrder(s, 'a_yumi', atk('e_tower_w'))).toBe(true);
+        for (let i = 0; i < 100; i++) stepBattle(s, RULES.tick);
+        expect(tw.strength).toBeLessThan(200);
+        expect(yumi.strength).toBe(350);
+        // 東の櫓・拠点の弓（射程 +20 m の高所）からは届かない
+        for (const id of ['e_tower_e', 'e_bast_yumi']) {
+            const e = unitById(s, id)!;
+            expect(Math.hypot(e.x - GROVE[0], e.z - GROVE[1]), id).toBeGreaterThan(bowRangeFor(s, e, { x: GROVE[0], z: GROVE[1] }));
+        }
+        // 林は門の前の輪（x -24〜24）・門へ向かう道（x -8〜8）から 60 m 以上離れている
+        const grove = SF.terrain.filter((t) => t.kind === 'woods' && t.rect && inZone({ rect: t.rect }, ...GROVE));
+        expect(grove.length).toBe(1);
+        expect(-24 - grove[0]!.rect!.x1).toBeGreaterThanOrEqual(60);
+    });
+
     it('側面の拠点：南と西（門の側）は柵で、口は東だけ（門の前の輪から拠点へは東へ回る）', () => {
         const s = createBattle(buildBattleSetup(SF, 'standard'));
         // 柵の筋（西 x 83・南 z 13）は通れない。東の口（x 160）は通れる
@@ -694,24 +763,29 @@ describe('作戦（早送り）', () => {
         hold: play(HOLD(J0)),
     };
 
-    it('側面の拠点を先に：外門を開き、曲輪を確保して勝つ（段階 2／2。記録：門 161 秒・勝ち 289 秒・損害 22.5％・副目標 3 つとも ✓）', () => {
+    // 第4群の釣り合いの直し（櫓の弓 150 → 200・西の櫓の前の小さな林。台本は弓を林へ・待つ所を拠点の弓の届かない所へ）の前：門 161 秒・勝ち 289 秒・22.5％・✓✓✓
+    it('側面の拠点を先に：外門を開き、曲輪を確保して勝つ（段階 2／2。記録：門 160 秒・勝ち 289 秒・損害 26.2％・副目標 3 つとも ✓）', () => {
         expect(won(r.bastion), brief(r.bastion)).toBe(true);
         expect(r.bastion.o.objectives!.primary!.steps).toEqual({ done: 2, total: 2 });
         expect(sec(r.bastion, 'siege_bastion')).toBe(true);
     });
 
-    it('準備した正面攻撃（弓で櫓を射すくめてから全軍で出張りへ）：勝つ（記録：門 171 秒・勝ち 288 秒・損害 27.8％・拠点の弓 ✗）', () => {
+    // 釣り合いの直しの前：門 171 秒・勝ち 288 秒・27.8％・✓✗✓
+    it('準備した正面攻撃（林の中の弓で西の櫓を射すくめてから全軍で出張りへ）：勝つ（記録：門 191 秒・勝ち 301 秒・損害 22.5％・✓✗✗）', () => {
         expect(won(r.front), brief(r.front)).toBe(true);
         expect(r.front.o.objectives!.primary!.steps).toEqual({ done: 2, total: 2 });
         expect(sec(r.front, 'siege_bastion')).toBe(false);
     });
 
     // 第3群の動きの直し（FieldRules.refinedMoves：閉じた門の外で敗走した出張りが、その場から逃れ去る・止まった味方の中のすり抜け など）の後、
-    // この 1 通りは 386 秒・39.4％・副目標 ✗✗✗ → 211 秒・24.8％・損害 ✓（門は 80 秒のまま）。拠点の弓・騎馬を残すは ✗ のまま
-    it('急いで門へ：門はいちばん早く開く（記録：門 80 秒。この 1 通りは勝つが 386 秒・損害 39.4％・副目標 ✗✗✗。動きの直しの後 211 秒・24.8％・✓✗✗）', () => {
+    // この 1 通りは 386 秒・39.4％・副目標 ✗✗✗ → 211 秒・24.8％・損害 ✓（門は 80 秒のまま）。拠点の弓・騎馬を残すは ✗ のまま。
+    // 第4群の釣り合いの直しの後：門 74 秒・185 秒・28.1％・✓✗✗（この 1 通りは損害 3 割を守るが、16 通りでは 2 回だけ。下の比べ）
+    it('急いで門へ：門はいちばん早く開き、この 1 通りも勝つ（負けにしない）。準備した正面攻撃より損害が大きい（記録：門 74 秒・勝ち 185 秒・損害 28.1％・✓✗✗）', () => {
+        expect(won(r.rush), brief(r.rush)).toBe(true);
         expect(r.rush.gateT!).toBeLessThan(r.bastion.gateT! - 60);
         expect(r.rush.gateT!).toBeLessThan(r.front.gateT! - 60);
         expect([sec(r.rush, 'siege_bastion'), sec(r.rush, 'siege_cavalry')], brief(r.rush)).toEqual([false, false]);
+        expect(r.rush.loss).toBeGreaterThan(r.front.loss + 0.03);
     });
 
     // 押し離しの直し（sim.ts の separate：第3群の直しの戦場では、押す先までまっすぐ通れるときだけ押す）の前は、門の前で味方と重なった部隊が
@@ -719,17 +793,19 @@ describe('作戦（早送り）', () => {
     // 無計画な攻撃は直しの前：門 205 秒・曲輪へ届かず 463 秒に総崩れ（ally_army_broken）・損害 63.0％・残る部隊 1。
     // 直しの後：門 195 秒・曲輪の確保（段階 2）の前に敵の諸隊をすべて崩して 439 秒に勝つ（enemy_army_broken。主目標は勝敗と同じで ✓、段は 1／2）・
     // 損害 53.4％・残る部隊 4。比べを「主目標まで届くか」から「段階 2 まで届くか・時間・損害・残る部隊」に直し、残る部隊の差を 3 → 2 にした
-    // （準備した正面攻撃は 286 秒・27.7％・残る部隊 6 のまま）
-    it('比べ：準備した正面攻撃は、無計画な攻撃より損害が小さく、守れる部隊が多く、曲輪の確保（段階 2）まで届く（記録：無計画は門を開けず日没・損害 31.7％・残る部隊 5）', () => {
-        expect(r.unplanned.loss).toBeGreaterThan(r.front.loss + 0.02);
-        expect(standing(r.unplanned)).toBeLessThan(standing(r.front));
+    // （準備した正面攻撃は 286 秒・27.7％・残る部隊 6 のまま）。
+    // 第4群の釣り合いの直しの後：無計画は日没・38.4％・残る部隊 4（前は 31.7％・5）、準備した正面攻撃は 22.5％・7（前は 27.7％・6）。
+    // 損害の幅を 2 点 → 10 点、残る部隊を「少ない」→「2 部隊以上少ない」に戻す
+    it('比べ：準備した正面攻撃は、無計画な攻撃より損害が小さく、守れる部隊が多く、曲輪の確保（段階 2）まで届く（記録：無計画は門を開けず日没・損害 38.4％・残る部隊 4）', () => {
+        expect(r.unplanned.loss).toBeGreaterThan(r.front.loss + 0.1);
+        expect(standing(r.unplanned)).toBeLessThanOrEqual(standing(r.front) - 2);
         expect(r.unplanned.o.objectives!.primary!.steps!.done).toBeLessThan(2);
         expect(r.front.o.objectives!.primary!.steps).toEqual({ done: 2, total: 2 });
         // 記録（確かめの指摘への直しの後）：道の無い相手（櫓の上の弓・閉じた門の向こうの槍）への攻撃は断られるので、一番近い「斬りかかれる」敵へ
         // 当て直す（前は櫓台の足元で道が無いまま立ち続けた）。外の敵（出張り・拠点）を崩した後は当たれる敵がいなくなり、門の前の輪を
-        // 占めないまま日没（門 ✗・段 0／2・損害 31.7％・残る部隊 5）。前は門を 195 秒に開き、曲輪の確保の前に敵の諸隊をすべて崩して 439 秒に
+        // 占めないまま日没（門 ✗・段 0／2）。前は門を 195 秒に開き、曲輪の確保の前に敵の諸隊をすべて崩して 439 秒に
         // 勝っていた（enemy_army_broken・損害 53.4％・残る部隊 4）。直しの後は、取る目標（段階目標）のある合戦では敵がすべて崩れても、
-        // 主目標を果たすまで勝ちにならない（sim.ts の needsOwnDeed）。比べの幅は、損害 20 点 → 2 点・残る部隊 2 少ない → 少ない、に直した
+        // 主目標を果たすまで勝ちにならない（sim.ts の needsOwnDeed）
         expect(r.unplanned.o.reason).toBe('nightfall');
         // 待つだけは日没（門は開かない・損害 0）
         expect([r.hold.o.reason, r.hold.loss, r.hold.gateT]).toEqual(['nightfall', 0, null]);
@@ -737,73 +813,112 @@ describe('作戦（早送り）', () => {
     });
 
     it('台本は人が画面でできる程度：命令は 50 回以下、10 秒に 8 回以下。移動の後の向き（face）は使わない', () => {
-        for (const [k, x] of Object.entries(r)) {
+        const more = { all5: play(ALL5(J0)), rushA: play(RUSH_STAG_A(J0)), rushB: play(RUSH_STAG_B(J0)), all5A: play(ALL5_STAG_A(J0)), all5B: play(ALL5_STAG_B(J0)) };
+        for (const [k, x] of Object.entries({ ...r, ...more })) {
             expect(x.cmds.length, k).toBeLessThanOrEqual(50);
             const most = Math.max(0, ...x.cmds.map((t) => x.cmds.filter((y) => y >= t && y < t + 10).length));
             expect(most, k).toBeLessThanOrEqual(8);
         }
-        for (const p of [BASTION, FRONT, RUSH, UNPLANNED]) for (const st of p(J0)) expect(typeof st[2] === 'object' && 'face' in st[2]).toBe(false);
-    });
+        for (const p of [BASTION, FRONT, RUSH, ALL5, RUSH_STAG_A, RUSH_STAG_B, ALL5_STAG_A, ALL5_STAG_B, UNPLANNED])
+            for (const st of p(J0)) expect(typeof st[2] === 'object' && 'face' in st[2]).toBe(false);
+    }, 60_000);
 });
 
+/*
+ * 16 通りの比べ（第4群の釣り合いの直し。確かめの指摘 should-1「急いで門へと準備した正面攻撃の損害の差がほぼ消えた（平均 0.8 点・最大 1.3 点）」）。
+ * 直したこと（データ）：櫓の弓 150 → 200（門の前の輪と、門が開いた後の門の裏・曲輪の手前を射る矢が、急いで当たる部隊に効くように）と、
+ * 西の櫓の前の小さな林（中心 (-106,0)。林の中の部隊は 60 m まで見えないので、林の中の弓は西の櫓から射返されにくい）。台本：準備した正面攻撃の弓を
+ * 林へ、待つ所を拠点の弓の届かない所へ（前の台本は弓を両方の櫓が届く (-45,12) に出し、榊原隊・石川隊を拠点の弓の届く (50,100)・(20,15) に
+ * 待たせていた。拠点の弓だけで 16 通りの平均 178 の損害）。拠点を先にの弓も林から西の櫓を射る。
+ * 前後の数字（16 通り。勝ち・勝ちの秒・門の秒・損害の平均（最小〜最大）・守れる部隊・副目標 損害／拠点／騎馬）：
+ * | 作戦 | 直しの前（10ca516） | 直しの後 |
+ * | 準備した正面攻撃 FRONT | 16・330・196・27.8（24.1〜31.2）・6.38・13／0／11 | 16・338・203・21.1（17.7〜25.7）・6.75・16／0／9 |
+ * | 側面の拠点を先に BASTION | 16・368・214・28.9（24.3〜33.9）・6.44・12／16／6 | 16・361・205・31.0（28.2〜35.2）・6.44・7／16／9 |
+ * | 急いで門へ RUSH | 16・217・81・28.5（25.2〜31.7）・6.75・14／0／0 | 16・218・81・31.8（28.9〜35.0）・6.63・2／0／0 |
+ * | 5 隊の一斉 ALL5 | 16・210・89・28.3（22.5〜31.0）・5.88・13／0／3 | 16・210・88・32.5（26.3〜41.3）・5.50・1／0／3 |
+ * | 急いで門へ・ずらし A | 16・247・102・38.7（35.5〜42.4）・6.56・0／0／5 | 16・251・102・45.0（41.1〜48.8）・6.00・0／0／2 |
+ * | 急いで門へ・ずらし B | 16・251・97・36.0（29.0〜43.1）・5.63・1／0／0 | 16・256・97・41.6（32.8〜55.7）・5.38・0／0／0 |
+ * | 5 隊の一斉・ずらし A | 16・218・107・28.2（22.3〜32.5）・6.69・11／0／7 | 16・219・108・32.2（26.1〜38.3）・6.63・4／0／6 |
+ * | 5 隊の一斉・ずらし B | 16・227・107・29.9（25.8〜36.6）・6.00・10／0／0 | 16・232・108・35.3（30.7〜42.0）・5.75・0／0／0 |
+ * （直しの前のずらしの 4 行は、今の台本を直しの前のデータで流した数字。直しの前の FRONT・BASTION は前の台本）
+ * 台本だけ・データだけの分け：今の FRONT・BASTION の台本を直しの前のデータで流すと 20.0％（17.0〜25.6）・16／0／10、28.5％（23.7〜34.0）・12／16／9。
+ * 準備した正面攻撃の損害の差の多くは台本（弓の置き場・待つ所）による。データ（櫓の弓 200・林）は、急ぐ形の損害を 3〜6 点上げ、損害 3 割を
+ * 守れる回数を 10〜14 → 0〜4 に下げる（準備した方は 16 のまま）ことで、副目標の分かれを戻す。
+ * 急いで門へ（どの形も）は 16 通りとも勝ち、門は 100 秒ほど早く開き、勝つのも 80 秒以上早い（一律の負けではない）。代わりに損害が 10 点ほど大きく、
+ * 損害 3 割を守れるのは 16 通りで 0〜4 回（準備した正面攻撃は 16 回）。拠点を先には一番遅く、損害は急ぐ形と同じくらいだが、拠点の弓を必ず崩し、
+ * 騎馬を残しやすい。
+ */
 describe('作戦の安定性と比べ（早送り・±15 秒と見てから押す遅れの 16 通り）', () => {
     const bastion = sixteen(BASTION);
     const front = sixteen(FRONT);
     const rush = sixteen(RUSH);
+    const all5 = sixteen(ALL5);
+    /** 急いで門へ（弓も能力も使わない 5 隊の一斉を含む。同じ時刻に押す 2 形と、部隊ごとに時刻をずらした 4 形） */
+    const hurried: Record<string, Run[]> = {
+        rush,
+        all5,
+        rushA: sixteen(RUSH_STAG_A),
+        rushB: sixteen(RUSH_STAG_B),
+        all5A: sixteen(ALL5_STAG_A),
+        all5B: sixteen(ALL5_STAG_B),
+    };
     const wins = (rs: Run[]) => count(rs, won);
     const winT = (rs: Run[]) => mean(rs.filter(won).map((x) => x.t));
     const gateT = (rs: Run[]) => mean(rs.map((x) => x.gateT ?? 660));
     const lossMean = (rs: Run[]) => mean(rs.map((x) => x.loss));
     const lossMax = (rs: Run[]) => Math.max(...rs.map((x) => x.loss));
     const n = (rs: Run[], id: string) => count(rs, (x) => sec(x, id));
+    const stand = (rs: Run[]) => mean(rs.map(standing));
 
-    it('主目標に届く作戦 2 つ：側面の拠点を先に・準備した正面攻撃は 16 通りで 12 勝以上（記録：16 勝・16 勝）', () => {
-        expect(wins(bastion)).toBeGreaterThanOrEqual(12);
-        expect(wins(front)).toBeGreaterThanOrEqual(12);
+    // 釣り合いの直しの前は 12 勝以上（記録 16・16）。直しの後も 16・16 なので 15 勝以上にする
+    it('主目標に届く作戦 2 つ：側面の拠点を先に・準備した正面攻撃は 16 通りで 15 勝以上（記録：16 勝・16 勝）', () => {
+        expect(wins(bastion)).toBeGreaterThanOrEqual(15);
+        expect(wins(front)).toBeGreaterThanOrEqual(15);
     }, 300000);
 
-    it('時間：急いで門へは門が 100 秒ほど早く開き、勝つのも早い。拠点を先には遠回りの分いちばん遅い（記録：門 88・195・214 秒、勝ち 249・331・371 秒）', () => {
-        expect(gateT(rush)).toBeLessThan(gateT(front) - 60);
+    it('急いで門へは一律の負けではない：同じ時刻に押す形も、部隊ごとに時刻をずらした形も 16 通りで 14 勝以上（記録：6 形とも 16 勝）', () => {
+        for (const [k, rs] of Object.entries(hurried)) expect(wins(rs), k).toBeGreaterThanOrEqual(14);
+    }, 600000);
+
+    it('時間：急いで門へ（どの形も）は門が 60 秒以上早く開き、勝つのも 40 秒以上早い。拠点を先には遠回りの分いちばん遅い（記録：門 81〜108・203・205 秒、勝ち 210〜256・338・361 秒）', () => {
+        for (const [k, rs] of Object.entries(hurried)) {
+            expect(gateT(rs), k).toBeLessThan(gateT(front) - 60);
+            expect(winT(rs), k).toBeLessThan(winT(front) - 40);
+        }
         expect(gateT(front)).toBeLessThan(gateT(bastion));
-        expect(winT(rush)).toBeLessThan(winT(front) - 40);
         expect(winT(front)).toBeLessThan(winT(bastion));
     }, 300000);
 
-    // 第3群の動きの直しの後：平均 30.5％ 対 27.8％、最大 38.1％ 対 31.2％、急ぐ方も 16 勝（日没だった 1 通りも勝つ）。
-    // 悪い時の差の幅を 8 点 → 5 点にし、勝ちの数の比べ（急ぐ方が少ない）は記録（15 勝以上）にする。
-    // 第4群の味方同士の詰まりの決まり（RULES.allyBlockSec 2 秒。前は待機の味方に 12 秒・止まっている味方に 20 秒塞がれてからすり抜けた）の後：
-    // 急ぐ方は平均 30.5 → 28.6％・最大 36.5 → 32.5％・勝ち 233.9 → 218.0 秒・損害 3 割以内 7 → 14 回、準備した正面攻撃は 27.7 → 27.8％・最大 31.2 → 31.2％。
-    // 急ぐ方の損害の多くは、門へ向かう忠勝隊が待機の騎馬隊の脇で 17 秒ほど止まっていた間（直す前は 66〜69 秒にすり抜け、直した後は 48〜52 秒）に
-    // 櫓・拠点から射られた分だった。急ぐ方が損害は大きい向きは残るが、差は平均 0.8 点・最大 1.3 点に縮んだ（幅を外して向きだけにする。報告済み：
-    // 「急ぐと損害大」は今の数字ではほぼ成り立たない。釣り合いの担当へ）
-    it('損害：急いで門へは準備した正面攻撃より損害が大きく、悪い時も大きい（記録：平均 31.9％ 対 28.0％、最大 44.3％ 対 31.0％。急ぐ方は 16 通りで 15 勝＝1 回は日没。動きの直しの後 30.5％ 対 27.8％、38.1％ 対 31.2％、16 勝。味方同士の詰まりの直しの後 28.6％ 対 27.8％、32.5％ 対 31.2％、16 勝）', () => {
-        expect(lossMean(rush)).toBeGreaterThan(lossMean(front));
-        expect(lossMax(rush)).toBeGreaterThan(lossMax(front));
-        expect(wins(rush)).toBeGreaterThanOrEqual(15);
+    // 直しの前の幅：平均 +2 点・最大 +5 点（第3群の動きの直しの後）→ 味方同士の詰まりの直しの後、差が平均 0.8 点・最大 1.3 点に縮み、幅を外して
+    // 向きだけにしていた。釣り合いの直しの後：平均の差は 10.7〜23.9 点、最大の差は 9.3〜30.0 点。幅を戻し、平均 +6 点・最大 +5 点にする
+    it('損害：急いで門へ（どの形も）は準備した正面攻撃より損害が平均で 6 点以上大きく、悪い時も 5 点以上大きい（記録：準備 21.1％（最大 25.7）、急ぐ形 31.8〜45.0％（最大 35.0〜55.7））', () => {
+        for (const [k, rs] of Object.entries(hurried)) {
+            expect(lossMean(rs), k).toBeGreaterThan(lossMean(front) + 0.06);
+            expect(lossMax(rs), k).toBeGreaterThan(lossMax(front) + 0.05);
+        }
     }, 300000);
 
-    // 確かめの指摘（釣り合い）：弓も能力も使わない 5 隊の一斉の攻めが、準備した作戦より早く、損害も変わらない。16 通り（作った時）：
-    // 一斉 16 勝・勝ち 211 秒・損害 27.7％（最大 32.0）・戦える 6.13・副目標 13／0／6、準備した正面攻撃 16 勝・331 秒・27.7％・6.38・13／0／10。
-    // 櫓の上の弓は 150 で、出張りを破って輪を占める 20 秒の間に与える損害が小さく、射すくめる準備（弓の撃ち合いで弓隊が 110 ほど失う・120 秒ほど
-    // かかる）が時間でも損害でも得にならない。準備が得になるのは騎馬を残す副目標だけ（10 対 6）。設計 §4 の「正面に急いで門へ（損害大）」は
-    // 成り立っていない。釣り合いを試した数字（早送り・16 通りの損害の平均。準備した正面攻撃 ／一斉。試しの一斉は 5 秒の行をずらさない形）：櫓の弓 250 → 0 勝（射すくめる条件の
-    // 士気 30 を切らず日没）／36.7％、櫓の弓 280・士気 45 → 41.1％／36.7％、250・55 → 43.6％／35.8％、220・50 → 34.2％／31.0％、
-    // 門の制圧 35 秒 → 28.5％／30.6％、高所から射る矢 ×1.35 → 36.5％／33.0％（拠点を先にも 34.0％）。どれも準備した方が得にならないので、
-    // データは変えずに記録として残す（釣り合いの担当へ）
-    it('記録：弓も能力も使わない 5 隊の一斉の攻めは、準備した正面攻撃より 60 秒以上早く勝つ。準備した方が得をするのは騎馬を残す副目標だけ', () => {
-        const all5 = sixteen(ALL5);
-        expect(wins(all5)).toBeGreaterThanOrEqual(14);
-        expect(winT(all5)).toBeLessThan(winT(front) - 60);
-        expect(n(front, 'siege_cavalry')).toBeGreaterThanOrEqual(n(all5, 'siege_cavalry') + 3);
+    it('守れる部隊：準備した正面攻撃は急ぐどの形より少なくなく、急ぐ形の平均より 0.4 部隊以上多い。拠点を先にも急ぐ形の平均より多い（記録：6.75・6.44 対 5.38〜6.63（平均 5.98））', () => {
+        const avg = mean(Object.values(hurried).map(stand));
+        for (const [k, rs] of Object.entries(hurried)) expect(stand(front), k).toBeGreaterThanOrEqual(stand(rs));
+        expect(stand(front)).toBeGreaterThan(avg + 0.4);
+        expect(stand(bastion)).toBeGreaterThan(avg);
+        // 拠点を先にの損害は、急ぐ形の平均より小さい（記録：31.0％ 対 36.4％）
+        expect(lossMean(bastion)).toBeLessThan(mean(Object.values(hurried).map(lossMean)) - 0.03);
     }, 300000);
 
-    // 第4群の味方同士の詰まりの決まりの後：損害 3 割以内は 拠点を先に 11・準備した正面攻撃 13・急いで門へ 7 → 14（急ぐ方が門の前で止まらなくなった。
-    // 上の損害の比べと同じ理由）。「準備した正面攻撃がいちばん多い」は崩れた（報告済み）ので、急ぐ方との比べを外し、拠点を先にとの比べだけ残す
-    it('副目標が作戦で分かれる：拠点の弓は拠点を先にだけ（16／0／0）、損害 3 割は準備した正面攻撃が拠点を先により多い（11／13／14。前は 10／14／7）、騎馬を残すのは急ぐと 0（6／10／0）', () => {
-        expect([n(bastion, 'siege_bastion'), n(front, 'siege_bastion'), n(rush, 'siege_bastion')]).toEqual([16, 0, 0]);
-        expect(n(front, 'siege_losses')).toBeGreaterThan(n(bastion, 'siege_losses'));
+    // 直しの前：損害 3 割以内は 拠点を先に 11・準備した正面攻撃 13・急いで門へ 14（「準備した正面攻撃がいちばん多い」が崩れ、急ぐ方との比べを外していた）。
+    // 直しの後：16・7・急ぐ形 0〜4。急ぐ方との比べを戻し、幅を 8 回にする
+    it('副目標が作戦で分かれる：拠点の弓は拠点を先にだけ（16／0／急ぐ形 0）、損害 3 割は準備した正面攻撃が急ぐどの形より 8 回以上多い（16 対 0〜4）、騎馬を残すのは急ぐどの形より準備・拠点を先にが多い（9・9 対 0〜6）', () => {
+        expect([n(bastion, 'siege_bastion'), n(front, 'siege_bastion')]).toEqual([16, 0]);
+        for (const [k, rs] of Object.entries(hurried)) {
+            expect(n(rs, 'siege_bastion'), k).toBe(0);
+            expect(n(front, 'siege_losses'), k).toBeGreaterThanOrEqual(n(rs, 'siege_losses') + 8);
+            expect(n(front, 'siege_cavalry'), k).toBeGreaterThan(n(rs, 'siege_cavalry'));
+            expect(n(bastion, 'siege_cavalry'), k).toBeGreaterThan(n(rs, 'siege_cavalry'));
+        }
         expect(n(rush, 'siege_cavalry')).toBe(0);
-        expect(Math.min(n(bastion, 'siege_cavalry'), n(front, 'siege_cavalry'))).toBeGreaterThan(4);
+        expect(n(front, 'siege_losses')).toBeGreaterThan(n(bastion, 'siege_losses'));
     }, 300000);
 });
 

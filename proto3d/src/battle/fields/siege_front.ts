@@ -79,6 +79,9 @@ export const SIEGE_FRONT: BattlefieldDef = {
         { kind: 'road', rect: { x0: -8, x1: 8, z0: -56, z1: 220 } },
         // 南西の林
         { kind: 'woods', rect: { x0: -200, x1: -120, z0: 60, z1: 160 } },
+        // 西の櫓の前の小さな林（中心 (-106,0)。西の櫓から 70〜90 m・東の櫓・拠点の弓からは届かない。林の中の部隊は 60 m まで見えないので、
+        // 林の中から櫓を射る弓は射返されにくい。門の前の輪・門へ向かう道からは離れている）
+        { kind: 'woods', rect: { x0: -125, x1: -88, z0: -15, z1: 15 } },
     ],
     gates: [{ id: 'outer_gate', name: '外門', rect: { x0: -10, x1: 10, z0: -66, z1: -56 }, height: 6, capture: { zone: GATE_FRONT, sec: 20 } }],
     highGround: { defenseVsLower: 0.7, minDiff: 2, rangeBonus: 20 },
@@ -155,8 +158,8 @@ export const SIEGE_FRONT: BattlefieldDef = {
                 E('e_sortie', 'yari', '敵勢の門の前の出張り', 400, 80, 'sortie', { aiRole: 'hold_zone', aiTarget: { x: 0, z: -24, r: 22 } }),
                 E('e_gate_guard', 'yari', '敵勢の門の裏の槍', 380, 80, 'gate_guard', { aiRole: 'hold_zone', aiTarget: { x: 0, z: -110, r: 16 } }),
                 E('e_inner', 'yari', '敵勢の曲輪の槍', 330, 78, 'inner', { aiRole: 'hold_zone', aiTarget: { x: 0, z: -125, r: 25 } }),
-                E('e_tower_w', 'yumi', '敵勢の西の櫓の弓', 150, 70, 'tower_w', { aiRole: 'hold_line' }),
-                E('e_tower_e', 'yumi', '敵勢の東の櫓の弓', 150, 70, 'tower_e', { aiRole: 'hold_line' }),
+                E('e_tower_w', 'yumi', '敵勢の西の櫓の弓', 200, 70, 'tower_w', { aiRole: 'hold_line' }),
+                E('e_tower_e', 'yumi', '敵勢の東の櫓の弓', 200, 70, 'tower_e', { aiRole: 'hold_line' }),
                 E('e_bast_yari', 'yari', '敵勢の側面の拠点の槍', 350, 78, 'bast_yari', { aiRole: 'hold_zone', aiTarget: { x: 112, z: -15, r: 28 }, aiLeash: 30 }),
                 E('e_bast_yumi', 'yumi', '敵勢の側面の拠点の弓', 200, 70, 'bast_yumi', { aiRole: 'hold_line' }),
             ],

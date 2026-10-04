@@ -174,12 +174,34 @@ const sixteen = (p: Step[]) => {
 // ---------------------------------------------------------------- 台本
 
 const exitTap = (x: number) => tap(x, EXIT_Z);
+const RET: Order = { type: 'retreat' };
+/** 忠勝隊が戦える（崩れた隊へは命令を押さない。人が画面で見て押すのと同じ） */
+const tadaUp = (s: BattleState) => isActive(U(s, 'a_tadakatsu'));
+/** 伏兵の騎馬が現れて見えている */
+const ambSeen = (s: BattleState) => {
+    const u = U(s, 'e_amb');
+    return u.arrived && isActive(u) && u.seenBy.ally;
+};
 /** 列を移動で退き口へ（酒井隊・石川隊（両脇）→ 弓 → 本陣 の順に 1 秒おき） */
 const COLUMN: Step[] = [
     [1, 'a_sakai', exitTap(-30)],
     [2, 'a_ishikawa', exitTap(30)],
     [3, 'a_yumi', exitTap(-15)],
     [4, 'a_ieyasu', exitTap(0)],
+];
+/**
+ * 殿 2 隊（命令 8 回）：酒井隊を忠勝隊の西 (-25,-10) へ寄せて殿を 2 隊にし、石川隊・弓・本陣・騎馬 2 隊を順に退き口へ。
+ * 追っ手の騎馬が 2 つとも崩れたら、殿の 2 隊も退き口へ（いちばん損害が少なく、忠勝隊も残る）
+ */
+const TWO_REAR: Step[] = [
+    [1, 'a_sakai', tap(-25, -10)],
+    [2, 'a_ishikawa', exitTap(30)],
+    [3, 'a_yumi', exitTap(-15)],
+    [4, 'a_ieyasu', exitTap(0)],
+    [5, 'a_kiba', exitTap(-45)],
+    [6, 'a_sakakibara', exitTap(45)],
+    [broken(...KIBA), 'a_tadakatsu', exitTap(10)],
+    [later(broken(...KIBA), 1), 'a_sakai', exitTap(-30)],
 ];
 /**
  * 殿＋騎馬の横槍（命令 9 回）：列を順に下げ、忠勝隊は北の丘（持ち場のまま）で追っ手の騎馬を受ける。追っ手の騎馬が殿に当たったのを見て、
@@ -189,7 +211,7 @@ const REAR: Step[] = [
     ...COLUMN,
     [later(kibaEngaged, 1), 'a_sakakibara', atk('e_kiba_r')],
     [later(kibaEngaged, 2), 'a_kiba', atk('e_kiba_l')],
-    [broken(...KIBA), 'a_tadakatsu', exitTap(10)],
+    [(s) => broken(...KIBA)(s) && tadaUp(s), 'a_tadakatsu', exitTap(10)],
     [later(broken(...KIBA), 1), 'a_sakakibara', exitTap(45)],
     [later(broken(...KIBA), 2), 'a_kiba', exitTap(-45)],
 ];
@@ -199,24 +221,83 @@ const stay = (post?: [number, number]): Step[] => [
     ...COLUMN,
     [5, 'a_kiba', exitTap(-45)],
     [6, 'a_sakakibara', exitTap(45)],
-    [broken(...KIBA), 'a_tadakatsu', exitTap(10)],
+    [(s) => broken(...KIBA)(s) && tadaUp(s), 'a_tadakatsu', exitTap(10)],
 ];
 const STAY = stay();
 /** 殿を列の後ろ（切れ目の北の口）に置く：始めに忠勝隊を (0,72) へ（列が殿より北に残る） */
 const STAY_CUT = stay([0, 72]);
 /** 殿を脇（西）に置く：始めに忠勝隊を (-70,20) へ */
 const STAY_WEST = stay([-70, 20]);
-/** 撤退の命令の列（6 部隊。1 秒おき）。guard なら 10 秒に退路の守護、効果が終わってから殿を退き口へ。守護なしなら追っ手の騎馬が崩れてから殿を下げる */
-const retreatColumn = (guard: boolean): Step[] => [
-    ...['a_sakai', 'a_ishikawa', 'a_yumi', 'a_ieyasu', 'a_kiba', 'a_sakakibara'].map((id, i) => [1 + i, id, { type: 'retreat' }] as Step),
-    ...(guard ? [[10, 'a_tadakatsu', 'ability'] as Step, [afterGuard(51), 'a_tadakatsu', exitTap(10)] as Step] : [[broken(...KIBA), 'a_tadakatsu', exitTap(10)] as Step]),
+/** 列の順を変える（殿は忠勝隊 1 隊）：騎馬を先に、足の遅い隊（槍・弓）と総大将を後に（2 秒おき） */
+const SLOW_LAST: Step[] = [
+    [1, 'a_kiba', exitTap(-45)],
+    [3, 'a_sakakibara', exitTap(45)],
+    [5, 'a_sakai', exitTap(-30)],
+    [7, 'a_ishikawa', exitTap(30)],
+    [9, 'a_yumi', exitTap(-15)],
+    [11, 'a_ieyasu', exitTap(0)],
+    [(s) => broken(...KIBA)(s) && tadaUp(s), 'a_tadakatsu', exitTap(10)],
 ];
+/** 列の順を変える（殿は忠勝隊 1 隊）：総大将を殿と一緒に残し、追っ手の騎馬が崩れてから下げる */
+const HQ_WITH_REAR: Step[] = [
+    [1, 'a_sakai', exitTap(-30)],
+    [2, 'a_ishikawa', exitTap(30)],
+    [3, 'a_yumi', exitTap(-15)],
+    [5, 'a_kiba', exitTap(-45)],
+    [6, 'a_sakakibara', exitTap(45)],
+    [(s) => broken(...KIBA)(s) && tadaUp(s), 'a_tadakatsu', exitTap(10)],
+    [later(broken(...KIBA), 1), 'a_ieyasu', exitTap(0)],
+];
+/** 殿 2 隊で、列の順を変える */
+const two = (col: Step[]): Step[] => [
+    [1, 'a_sakai', tap(-25, -10)],
+    ...col,
+    [broken(...KIBA), 'a_tadakatsu', exitTap(10)],
+    [later(broken(...KIBA), 1), 'a_sakai', exitTap(-30)],
+];
+/** 殿 2 隊・騎馬を先に、足の遅い隊と総大将を後に（2 秒おき） */
+const TWO_SLOW_LAST = two([
+    [2, 'a_kiba', exitTap(-45)],
+    [4, 'a_sakakibara', exitTap(45)],
+    [6, 'a_ishikawa', exitTap(30)],
+    [8, 'a_yumi', exitTap(-15)],
+    [10, 'a_ieyasu', exitTap(0)],
+]);
+/** 殿 2 隊・総大将を殿と一緒に残し、追っ手の騎馬が崩れてから下げる */
+const TWO_HQ_WITH: Step[] = [
+    ...two([
+        [2, 'a_ishikawa', exitTap(30)],
+        [3, 'a_yumi', exitTap(-15)],
+        [5, 'a_kiba', exitTap(-45)],
+        [6, 'a_sakakibara', exitTap(45)],
+    ]),
+    [later(broken(...KIBA), 2), 'a_ieyasu', exitTap(0)],
+];
+/**
+ * 撤退の命令の列（6 部隊。1 秒おき）。guard なら 7 秒に退路の守護、効果が終わってから殿を退き口へ。守護なしなら追っ手の騎馬が崩れてから殿を下げる。
+ * （追っ手の騎馬が 20 秒ほどで丘に着くようになったので、守護は前の 10 秒から 7 秒へ早めた）
+ */
+const retreatColumn = (guard: boolean): Step[] => [
+    ...['a_sakai', 'a_ishikawa', 'a_yumi', 'a_ieyasu', 'a_kiba', 'a_sakakibara'].map((id, i) => [1 + i, id, RET] as Step),
+    ...(guard
+        ? [[7, 'a_tadakatsu', 'ability'] as Step, [(s: BattleState) => afterGuard51(s) && tadaUp(s), 'a_tadakatsu', exitTap(10)] as Step]
+        : [[(s: BattleState) => broken(...KIBA)(s) && tadaUp(s), 'a_tadakatsu', exitTap(10)] as Step]),
+];
+const afterGuard51 = afterGuard(51);
 const GUARD = retreatColumn(true);
 const GUARD_NO = retreatColumn(false);
-/** 移動の列（STAY と同じ）＋退路の守護（10 秒）。効果が終わってから殿を下げる（能力の価値の比べ） */
-const GUARD_MOVE: Step[] = [...COLUMN, [5, 'a_kiba', exitTap(-45)], [6, 'a_sakakibara', exitTap(45)], [10, 'a_tadakatsu', 'ability'], [afterGuard(51), 'a_tadakatsu', exitTap(10)]];
+/** 移動の列（STAY と同じ）＋退路の守護（7 秒）。効果が終わってから殿を下げる（能力の価値の比べ） */
+const GUARD_MOVE: Step[] = [
+    ...COLUMN,
+    [5, 'a_kiba', exitTap(-45)],
+    [6, 'a_sakakibara', exitTap(45)],
+    [7, 'a_tadakatsu', 'ability'],
+    [(s) => afterGuard51(s) && tadaUp(s), 'a_tadakatsu', exitTap(10)],
+];
 /** 全軍撤退の号令（5 秒。命令 1 回） */
 const ALLRET: Step[] = [[5, '*', 'allRetreat']];
+/** 開始直後の全軍撤退の号令（1 秒。命令 1 回）。16 通りは押す時刻を 0.1・1・2・3 秒に（sixteenEarly） */
+const ALLRET_EARLY: Step[] = [[1, '*', 'allRetreat']];
 /** 全部隊を同時に退き口へ（移動。殿なし。1 秒おきに 7 部隊） */
 const MOVEALL: Step[] = [
     [1, 'a_ieyasu', exitTap(0)],
@@ -228,15 +309,19 @@ const MOVEALL: Step[] = [
     [7, 'a_kiba', exitTap(-45)],
 ];
 /**
- * 準備した正面攻撃（命令 8 回）：弓を丘の脇 (-20,0) へ、酒井隊・石川隊を忠勝隊の両脇へ出して受ける。追っ手の騎馬が殿に当たったら騎馬 2 隊で
- * 横を突き、槍の追っ手と斬り合い始めたら家康の号令。槍の追っ手が 2 つとも崩れたら全軍撤退の号令
+ * 準備した正面攻撃（命令 10 回）：弓を丘の脇 (-20,0) へ、石川隊・酒井隊を忠勝隊の両脇へ出し、本陣を原の東 (20,15) へ寄せて（伏兵の通り道から離す）受ける。
+ * 追っ手の騎馬が殿に当たったら騎馬 2 隊で横を突き、伏兵の騎馬が見えたら騎馬 2 隊でそちらへ当たる。槍の追っ手と斬り合い始めたら家康の号令。
+ * 槍の追っ手が 2 つとも崩れたら全軍撤退の号令
  */
 const FRONT: Step[] = [
     [1, 'a_yumi', tap(-20, 0)],
     [2, 'a_ishikawa', tap(35, -5)],
     [3, 'a_sakai', tap(-35, -5)],
+    [4, 'a_ieyasu', tap(20, 15)],
     [later(kibaEngaged, 1), 'a_sakakibara', atk('e_kiba_r')],
     [later(kibaEngaged, 2), 'a_kiba', atk('e_kiba_l')],
+    [later(ambSeen, 1), 'a_sakakibara', atk('e_amb')],
+    [later(ambSeen, 2), 'a_kiba', atk('e_amb')],
     [later(vanEngaged, 1), 'a_ieyasu', 'ability'],
     [later(broken('e_van_l', 'e_van_r'), 2), '*', 'allRetreat'],
 ];
@@ -245,8 +330,42 @@ const FRONT_NO_AB: Step[] = FRONT.filter((x) => x[2] !== 'ability');
 /** 無計画：全部隊で、見えている一番近い敵へ 10 秒ごとに当て直すだけ（退かない） */
 const UNPLANNED: Step[] = [];
 for (const id of ['a_tadakatsu', 'a_sakai', 'a_ishikawa', 'a_sakakibara', 'a_kiba', 'a_yumi']) for (let t = 1; t < 540; t += 10) UNPLANNED.push([t, id, 'nearest']);
+/** 無計画（部隊ごとにずらす 1）：部隊ごとに 3 秒ずつ遅らせて、10 秒ごとに近い敵へ */
+const UNPLANNED_STAG1: Step[] = [];
+['a_tadakatsu', 'a_sakai', 'a_ishikawa', 'a_sakakibara', 'a_kiba', 'a_yumi'].forEach((id, i) => {
+    for (let t = 1 + i * 3; t < 540; t += 10) UNPLANNED_STAG1.push([t, id, 'nearest']);
+});
+/** 無計画（部隊ごとにずらす 2）：部隊ごとに 7 秒ずつ遅らせて始め、15〜19 秒ごとに近い敵へ */
+const UNPLANNED_STAG2: Step[] = [];
+['a_tadakatsu', 'a_sakai', 'a_ishikawa', 'a_sakakibara', 'a_kiba', 'a_yumi'].forEach((id, i) => {
+    for (let t = 2 + i * 7; t < 540; t += 15 + (i % 3) * 2) UNPLANNED_STAG2.push([t, id, 'nearest']);
+});
 
-const ALL_PLANS: Record<string, Step[]> = { REAR, STAY, STAY_CUT, STAY_WEST, GUARD, GUARD_NO, GUARD_MOVE, ALLRET, MOVEALL, FRONT, FRONT_NO_AB };
+const ALL_PLANS: Record<string, Step[]> = {
+    TWO_REAR,
+    REAR,
+    STAY,
+    STAY_CUT,
+    STAY_WEST,
+    SLOW_LAST,
+    HQ_WITH_REAR,
+    TWO_SLOW_LAST,
+    TWO_HQ_WITH,
+    GUARD,
+    GUARD_NO,
+    GUARD_MOVE,
+    ALLRET,
+    ALLRET_EARLY,
+    MOVEALL,
+    FRONT,
+    FRONT_NO_AB,
+};
+
+/** 開始直後の全軍撤退の 16 通り：押す時刻を 0.1・1・2・3 秒に（4 回ずつ。人が出陣してすぐ押す） */
+let early: Run[] | null = null;
+const sixteenEarly = () => (early ??= Array.from({ length: 16 }, (_, k) => play([[[0.1, 1, 2, 3][k % 4]!, '*', 'allRetreat']])));
+/** 伏兵の騎馬が味方へ襲いかかった回数 */
+const ambushHits = (r: Run) => r.s.events.filter((e) => e.kind === 'ai' && e.text.startsWith('敵勢の伏兵の騎馬が') && e.text.includes('へ襲いかかった')).length;
 
 
 // ---------------------------------------------------------------- テスト
@@ -307,46 +426,111 @@ describe('退却戦の作戦（早送り）', () => {
         }
     }, 120_000);
 
-    it('主目標に届く作戦が 4 つ（殿＋騎馬の横槍・殿を前に残すだけ・撤退の命令の列＋退路の守護・準備した正面攻撃）。どれも 16 通りで 13 勝以上', () => {
-        for (const p of [REAR, STAY, GUARD, FRONT]) expect(won(once(p)), brief(once(p))).toBe(true);
-        for (const [name, p] of Object.entries({ REAR, STAY, GUARD, FRONT })) expect([name, wins(sixteen(p))]).toEqual([name, expect.any(Number)]);
+    it('主目標に届く作戦が 5 つ（殿 2 隊・殿＋騎馬の横槍・殿を前に残すだけ・撤退の命令の列＋退路の守護・準備した正面攻撃）。どれも 16 通りで 13 勝以上', () => {
+        for (const p of [TWO_REAR, REAR, STAY, GUARD, FRONT]) expect(won(once(p)), brief(once(p))).toBe(true);
+        expect(wins(sixteen(TWO_REAR))).toBeGreaterThanOrEqual(15);
         expect(wins(sixteen(REAR))).toBeGreaterThanOrEqual(15);
         expect(wins(sixteen(STAY))).toBeGreaterThanOrEqual(14);
         expect(wins(sixteen(GUARD))).toBeGreaterThanOrEqual(13);
         expect(wins(sixteen(FRONT))).toBeGreaterThanOrEqual(14);
         // 勝った合戦は「目標を果たした撤収」として記録する
-        for (const r of sixteen(REAR).filter(won)) expect(r.o.withdrawal).toBe('objective');
+        for (const r of sixteen(TWO_REAR).filter(won)) expect(r.o.withdrawal).toBe('objective');
     }, 300_000);
 
-    it('作戦どうしの違い：殿＋騎馬の横槍は忠勝隊も残り、崩れる隊がほとんど無い。殿を残すだけは忠勝隊が崩れやすい。守護の列は損害が大きいが早い。正面攻撃は時間がかかる', () => {
+    it('殿を置いて順に退く作戦がいちばん良い：殿 2 隊（忠勝＋酒井）は損害の平均がどの作戦より小さく、副目標を 2 つとも果たす数がいちばん多い。忠勝の守護は使わない（勝ちの必須ではない）', () => {
+        const best = sixteen(TWO_REAR);
+        const both = (rs: Run[]) => rs.filter((r) => sec(r, 'rear_losses') && sec(r, 'rear_tadakatsu')).length;
+        // 今の版：殿 2 隊 16 勝・7.3％・副目標 2 つ 15／16・崩れ 0.06
+        expect(wins(best)).toBe(16);
+        expect(mean(best, (r) => r.loss)).toBeLessThan(0.09);
+        expect(both(best)).toBeGreaterThanOrEqual(14);
+        expect(mean(best, routed)).toBeLessThan(0.3);
+        for (const [name, p] of Object.entries(ALL_PLANS)) {
+            if (p === TWO_REAR || p === ALLRET_EARLY) continue;
+            const rs = sixteen(p);
+            expect([name, mean(rs, (r) => r.loss) > mean(best, (r) => r.loss)]).toEqual([name, true]);
+            expect([name, both(rs) < both(best)]).toEqual([name, true]);
+        }
+        // 開始直後の全軍撤退（16 通り）とも比べる
+        expect(mean(sixteenEarly(), (r) => r.loss)).toBeGreaterThan(mean(best, (r) => r.loss));
+        expect(both(sixteenEarly())).toBeLessThan(both(best));
+        // 殿 2 隊・殿を残すだけは、能力を使わずに 16 勝（守護は役に立つが、勝ちの必須ではない）
+        for (const p of [TWO_REAR, STAY]) expect(p.some((x) => x[2] === 'ability')).toBe(false);
+        expect(wins(sixteen(STAY))).toBe(16);
+    }, 300_000);
+
+    it('作戦どうしの違い：殿 2 隊は忠勝隊も残り、崩れる隊がほとんど無い。殿を残すだけは忠勝隊が崩れる。殿＋騎馬の横槍は騎馬が伏兵に当たり損害が増える。守護の列は損害が大きいが早い。正面攻撃は時間がかかる', () => {
+        const tw = sixteen(TWO_REAR);
         const rear = sixteen(REAR);
         const st = sixteen(STAY);
         const gd = sixteen(GUARD);
         const fr = sixteen(FRONT);
-        // 忠勝隊を崩さずに退く（16 通り。今の版：横槍 16 ／残すだけ 6）。崩れた味方の隊（平均。横槍 0.06 ／残すだけ 0.63）
-        expect(count(rear, 'rear_tadakatsu')).toBeGreaterThanOrEqual(15);
+        // 忠勝隊を崩さずに退く（16 通り。今の版：殿 2 隊 16 ／横槍 7 ／残すだけ 0）。崩れた味方の隊（平均。殿 2 隊 0.06 ／残すだけ 1.06）
+        expect(count(tw, 'rear_tadakatsu')).toBeGreaterThanOrEqual(15);
         expect(count(st, 'rear_tadakatsu')).toBeLessThanOrEqual(8);
-        expect(mean(rear, routed)).toBeLessThan(mean(st, routed) - 0.3);
-        // 損害（平均。今の版：横槍 6.4％・残すだけ 7.3％ < 守護の列 12.1％・正面攻撃 18.0％）
-        expect(mean(rear, (r) => r.loss)).toBeLessThan(0.1);
+        expect(count(rear, 'rear_tadakatsu')).toBeLessThan(count(tw, 'rear_tadakatsu'));
+        expect(mean(tw, routed)).toBeLessThan(mean(st, routed) - 0.3);
+        // 横槍の騎馬は殿と一緒に戻るので、45 秒に出る伏兵に当たる（伏兵が襲いかかった回数の平均。今の版：横槍 1.25 ／殿 2 隊 0.75 ／残すだけ 0.06）
+        expect(mean(rear, ambushHits)).toBeGreaterThan(mean(st, ambushHits) + 0.5);
+        // 損害（平均。今の版：殿 2 隊 7.3％・残すだけ 7.8％ < 横槍 11.7％ < 守護の列 14.0％ < 正面攻撃 21.0％）
+        expect(mean(st, (r) => r.loss)).toBeLessThan(0.1);
+        expect(mean(st, (r) => r.loss)).toBeLessThan(mean(rear, (r) => r.loss) - 0.02);
         expect(mean(st, (r) => r.loss)).toBeLessThan(mean(gd, (r) => r.loss) - 0.03);
         expect(mean(st, (r) => r.loss)).toBeLessThan(mean(fr, (r) => r.loss) - 0.05);
-        // 時間（平均。今の版：守護の列 61 秒 < 残すだけ 67 秒 < 横槍 89 秒 < 正面攻撃 191 秒）
+        // 時間（平均。今の版：守護の列 61 秒 < 残すだけ 67 秒 < 殿 2 隊 71 秒 < 横槍 84 秒 < 正面攻撃 182 秒）
         expect(mean(gd, (r) => r.t)).toBeLessThan(mean(rear, (r) => r.t));
+        expect(mean(gd, (r) => r.t)).toBeLessThan(mean(tw, (r) => r.t));
         expect(mean(fr, (r) => r.t)).toBeGreaterThan(150);
         expect(mean(rear, (r) => r.t)).toBeLessThan(110);
     }, 300_000);
 
+    it('開始直後（0〜3 秒）の全軍撤退は勝つこともあるが（一律の負けではない）、殿を置いて順に退くより勝ちが少なく、損害・崩れが目に見えて大きく、損害 1 割以内を果たさない', () => {
+        const ea = sixteenEarly();
+        const tw = sixteen(TWO_REAR);
+        const st = sixteen(STAY);
+        // 今の版：開始直後の全軍撤退 12 勝（0.1〜2 秒に押せば勝ち、3 秒では届かない）・損害 12.5％・崩れ 1.75・損害 1 割以内 0／16
+        expect(wins(ea)).toBeGreaterThanOrEqual(1);
+        expect(wins(ea)).toBeLessThan(wins(tw));
+        expect(mean(ea, (r) => r.loss)).toBeGreaterThan(mean(tw, (r) => r.loss) + 0.04);
+        expect(mean(ea, (r) => r.loss)).toBeGreaterThan(mean(st, (r) => r.loss) + 0.03);
+        expect(mean(ea, routed)).toBeGreaterThan(mean(tw, routed) + 1);
+        expect(count(ea, 'rear_losses')).toBeLessThanOrEqual(2);
+        expect(count(tw, 'rear_losses')).toBeGreaterThanOrEqual(13);
+        // 追っ手の騎馬が退く列に追い討ちをかける（列の損害。今の版：開始直後の全軍撤退 13.3％ ／殿 2 隊 4.1％）
+        expect(mean(ea, pursuits)).toBeGreaterThan(1);
+        expect(mean(ea, (r) => r.colLoss)).toBeGreaterThan(mean(tw, (r) => r.colLoss) + 0.05);
+        // 勝った合戦も、崩れた隊が出る（勝ちの中の崩れの平均が 1 隊以上）
+        expect(mean(ea.filter(won), routed)).toBeGreaterThanOrEqual(1);
+    }, 300_000);
+
+    it('列の中の順番で結果が変わる：足の遅い隊（槍・弓）と総大将を後にすると伏兵に当たって損害が増え、総大将を殿と一緒に残すと負けが増える（殿 1 隊・殿 2 隊のどちらでも）', () => {
+        const st = sixteen(STAY);
+        const tw = sixteen(TWO_REAR);
+        const sl = sixteen(SLOW_LAST);
+        const tsl = sixteen(TWO_SLOW_LAST);
+        // 足の遅い隊を後に（今の版：殿 1 隊 7.8％ → 9.9％・損害 1 割以内 15 → 9／殿 2 隊 7.3％ → 9.2％・15 → 9）
+        expect(mean(sl, (r) => r.loss)).toBeGreaterThan(mean(st, (r) => r.loss) + 0.01);
+        expect(count(sl, 'rear_losses')).toBeLessThan(count(st, 'rear_losses') - 3);
+        expect(mean(tsl, (r) => r.loss)).toBeGreaterThan(mean(tw, (r) => r.loss) + 0.01);
+        expect(count(tsl, 'rear_losses')).toBeLessThan(count(tw, 'rear_losses') - 3);
+        // 伏兵が襲いかかる回数（今の版：殿 1 隊 0.06 → 0.38）
+        expect(mean(sl, ambushHits)).toBeGreaterThan(mean(st, ambushHits));
+        // 総大将を殿と一緒に残す（今の版：殿 1 隊 16 → 0 勝／殿 2 隊 16 → 6 勝）
+        expect(wins(sixteen(HQ_WITH_REAR))).toBeLessThanOrEqual(2);
+        expect(wins(sixteen(TWO_HQ_WITH))).toBeLessThan(wins(tw) - 6);
+        for (const r of sixteen(HQ_WITH_REAR).filter((x) => !won(x))) expect(r.o.reason).toBe('objective_failed');
+    }, 300_000);
+
     it('全軍で一気に退く（全軍撤退の号令・全部隊を同時に退き口へ）は、殿を置いて順に下げるより損害が大きく、崩れる隊が多く、要る数に届かないこともある（一律の負けではない）', () => {
-        const rear = sixteen(REAR);
+        const tw = sixteen(TWO_REAR);
         const st = sixteen(STAY);
         for (const [name, p] of Object.entries({ ALLRET, MOVEALL })) {
             const rs = sixteen(p);
             // 一律の負けではない（勝つ合戦もある）が、殿を置いた作戦より勝ちが少ない
             expect([name, wins(rs) >= 1]).toEqual([name, true]);
             expect([name, wins(rs) < wins(st)]).toEqual([name, true]);
-            // 損害（平均）は殿＋横槍・殿を残すだけより 5 ポイント以上大きい。崩れる味方の隊も多い
-            expect([name, mean(rs, (r) => r.loss) > mean(rear, (r) => r.loss) + 0.05]).toEqual([name, true]);
+            // 損害（平均）は殿 2 隊より 5 ポイント以上、殿を残すだけより 3 ポイント以上大きい。崩れる味方の隊も多い
+            expect([name, mean(rs, (r) => r.loss) > mean(tw, (r) => r.loss) + 0.05]).toEqual([name, true]);
             expect([name, mean(rs, (r) => r.loss) > mean(st, (r) => r.loss) + 0.03]).toEqual([name, true]);
             expect([name, mean(rs, routed) > mean(st, routed) + 0.5]).toEqual([name, true]);
             // 負けた合戦は、退き口から離れた部隊が要る数（総大将＋4）に届かなかった
@@ -357,12 +541,12 @@ describe('退却戦の作戦（早送り）', () => {
     it('敵は実際に追い討ちをかける：全軍撤退の号令で退く隊に追い討ちが入り、列の損害・崩れる隊が殿を残す作戦より多い。移動で下げた列には追い討ちの知らせは出ない', () => {
         const ar = sixteen(ALLRET);
         const st = sixteen(STAY);
-        // 追い討ち（16 通りの平均の回数。今の版 2.25）
+        // 追い討ち（16 通りの平均の回数。今の版 2.50）
         expect(mean(ar, pursuits)).toBeGreaterThan(1.5);
         expect(ar.filter((r) => pursuits(r) > 0).length).toBeGreaterThanOrEqual(14);
-        // 忠勝隊を除く 6 部隊の損害（平均。今の版：全軍撤退 12.3％ ／殿を残すだけ 0.0％）
+        // 忠勝隊を除く 6 部隊の損害（平均。今の版：全軍撤退 15.0％ ／殿を残すだけ 0.2％）
         expect(mean(ar, (r) => r.colLoss)).toBeGreaterThan(mean(st, (r) => r.colLoss) + 0.08);
-        // 崩れた隊（平均。今の版：全軍撤退 1.56 ／殿を残すだけ 0.63。殿を残すだけで崩れるのは殿の忠勝隊だけ）
+        // 崩れた隊（平均。今の版：全軍撤退 1.81 ／殿を残すだけ 1.06。殿を残すだけで崩れるのは殿の忠勝隊だけ）
         expect(mean(ar, routed)).toBeGreaterThan(mean(st, routed) + 0.5);
         for (const r of st) for (const u of r.o.units.filter((x) => x.side === 'ally' && x.id !== 'a_tadakatsu')) expect([u.id, ['withdrawn', 'ready'].includes(u.status)]).toEqual([u.id, true]);
         // 移動で下げた列（殿を残すだけ）は追い討ちの知らせが出ない（追い討ちは撤退の命令で退く隊だけ）
@@ -372,9 +556,9 @@ describe('退却戦の作戦（早送り）', () => {
     it('退路の守護を使う／使わない：撤退の命令で下げる列は、守護があると追っ手が忠勝隊に阻まれ、列の損害・崩れる隊が減り、勝ち数が大きく増える', () => {
         const g = sixteen(GUARD);
         const n = sixteen(GUARD_NO);
-        // 勝ち数（今の版）：守護あり 14 ／なし 9
+        // 勝ち数（今の版）：守護あり 13 ／なし 1
         expect(wins(g)).toBeGreaterThan(wins(n) + 3);
-        // 列（忠勝隊を除く 6 部隊）の損害の平均（今の版：守護あり 4.2％ ／なし 9.5％）。崩れた隊（1.25 ／2.19。守護ありで崩れるのは多くが忠勝隊）
+        // 列（忠勝隊を除く 6 部隊）の損害の平均（今の版：守護あり 6.4％ ／なし 16.9％）。崩れた隊（1.50 ／2.81。守護ありで崩れるのは多くが忠勝隊）
         expect(mean(g, (r) => r.colLoss)).toBeLessThan(mean(n, (r) => r.colLoss) - 0.03);
         expect(mean(g, routed)).toBeLessThan(mean(n, routed) - 0.5);
         // 守護ありは「阻む」「引きつけられた」の知らせが出る（守護なしは出ない）
@@ -385,9 +569,9 @@ describe('退却戦の作戦（早送り）', () => {
     it('能力の価値が場面で変わる（退路の守護）：撤退の命令で下げる列には勝敗を分けるほど効き、移動で下げる列にはほとんど効かない（殿が動けない分、忠勝隊が崩れやすい）', () => {
         const gainRetreat = wins(sixteen(GUARD)) - wins(sixteen(GUARD_NO));
         const gainMove = wins(sixteen(GUARD_MOVE)) - wins(sixteen(STAY));
-        // 今の版：撤退の命令の列 +5 勝（9 → 14）／移動の列 ±0（16 → 16）
+        // 今の版：撤退の命令の列 +12 勝（1 → 13）／移動の列 ±0（16 → 16）
         expect(gainRetreat).toBeGreaterThan(gainMove + 3);
-        // 移動の列：守護ありでも損害の差は小さい（±3 ポイント）。忠勝隊が残る数は守護ありの方が少ない
+        // 移動の列：守護ありでも損害の差は小さい（±3 ポイント。今の版 10.6％ 対 7.8％）。忠勝隊が残る数は守護ありの方が多くない（殿が動けない）
         expect(Math.abs(mean(sixteen(GUARD_MOVE), (r) => r.loss) - mean(sixteen(STAY), (r) => r.loss))).toBeLessThan(0.03);
         expect(count(sixteen(GUARD_MOVE), 'rear_tadakatsu')).toBeLessThanOrEqual(count(sixteen(STAY), 'rear_tadakatsu'));
     }, 300_000);
@@ -402,23 +586,30 @@ describe('退却戦の作戦（早送り）', () => {
         }
     }, 300_000);
 
-    it('副目標が作戦で分かれる：殿を残すだけは損害 1 割以内を果たすが忠勝隊を失いやすい。準備した正面攻撃は忠勝隊を残すが損害が 1 割を超える', () => {
+    it('副目標が作戦で分かれる：殿を残すだけは損害 1 割以内を果たすが忠勝隊を失う。準備した正面攻撃は忠勝隊を残すが損害が 1 割を超える。殿 2 隊は両方', () => {
         const st = sixteen(STAY);
         const fr = sixteen(FRONT);
+        const tw = sixteen(TWO_REAR);
         expect(count(st, 'rear_losses')).toBeGreaterThanOrEqual(14);
         expect(count(st, 'rear_tadakatsu')).toBeLessThanOrEqual(8);
         expect(count(fr, 'rear_losses')).toBeLessThanOrEqual(2);
         expect(count(fr, 'rear_tadakatsu')).toBeGreaterThanOrEqual(14);
+        expect(count(tw, 'rear_losses')).toBeGreaterThanOrEqual(13);
+        expect(count(tw, 'rear_tadakatsu')).toBeGreaterThanOrEqual(15);
     }, 300_000);
 
-    it('準備した正面攻撃と無計画な攻撃の比べ：準備した方は主目標に届き、崩れる隊が少ない。無計画は退かないので主目標に届かない（結果は記録）', () => {
+    it('準備した正面攻撃と無計画な攻撃（全部隊同時・部隊ごとにずらす 2 通り）の比べ：準備した方は主目標に届き、崩れる隊が少ない。無計画は退かないので主目標に届かない（結果は記録）', () => {
         const fr = sixteen(FRONT);
-        const raw = sixteen(UNPLANNED);
-        expect(wins(raw)).toBe(0);
-        expect(wins(fr)).toBeGreaterThan(wins(raw) + 12);
-        expect(mean(fr, routed)).toBeLessThan(mean(raw, routed) - 1);
-        expect(mean(fr, (r) => r.loss)).toBeLessThan(mean(raw, (r) => r.loss));
-        // 準備の中身：同じ配置で家康の号令を使わない（記録。勝ち数は下がる）
+        for (const [name, p] of Object.entries({ UNPLANNED, UNPLANNED_STAG1, UNPLANNED_STAG2 })) {
+            const raw = sixteen(p);
+            // 今の版：無計画 0 勝（損害 21.3％・崩れ 2.13）／ずらす 1：0 勝（26.2％・2.38）／ずらす 2：0 勝（35.4％・2.63）。
+            // どれも伏兵の騎馬が原に残った本陣・弓へ後ろから当たり、本陣か 3 部隊が崩れて主目標の失敗（ずらす 2 の 2 回は日没）
+            expect([name, wins(raw)]).toEqual([name, 0]);
+            expect([name, wins(fr) > wins(raw) + 12]).toEqual([name, true]);
+            expect([name, mean(fr, routed) < mean(raw, routed) - 1]).toEqual([name, true]);
+            expect([name, mean(fr, (r) => r.loss) < mean(raw, (r) => r.loss)]).toEqual([name, true]);
+        }
+        // 準備の中身：同じ配置で家康の号令を使わない（記録。今の版 14 勝・24.9％。勝ち数は下がる）
         expect(wins(sixteen(FRONT_NO_AB))).toBeLessThanOrEqual(wins(fr));
     }, 300_000);
 });

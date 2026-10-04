@@ -36,6 +36,8 @@ const S = Math.PI;
 const EXIT = { rect: { x0: -60, x1: 60, z0: 190, z1: 220 } };
 /** 敵勢の攻め進む先（切れ目の北の口） */
 const NECK = { x: 0, z: 72, r: 30 };
+/** 伏兵の攻め進む先（切れ目の北の口の中ほど） */
+const NECK_MOUTH = { x: 0, z: 80, r: 25 };
 
 export const REARGUARD: BattlefieldDef = {
     id: 'rearguard',
@@ -54,6 +56,8 @@ export const REARGUARD: BattlefieldDef = {
         // 原の東西の林（遅い）
         { kind: 'woods', rect: { x0: -200, x1: -120, z0: -160, z1: 60 } },
         { kind: 'woods', rect: { x0: 120, x1: 200, z0: -160, z1: 60 } },
+        // 切れ目の北の口の西の小さな林（伏兵の潜む所。45 秒で騎馬が出て、切れ目の口へ攻め進む）
+        { kind: 'woods', rect: { x0: -120, x1: -60, z0: 45, z1: 88 } },
         // 切れ目の南の湿地（退き口への道の脇。道を外れると遅い）
         { kind: 'marsh', rect: { x0: -200, x1: -40, z0: 140, z1: 185 } },
         { kind: 'marsh', rect: { x0: 40, x1: 200, z0: 140, z1: 185 } },
@@ -71,13 +75,14 @@ export const REARGUARD: BattlefieldDef = {
         ],
         enemy: [
             { id: 'hq', x: 0, z: -200, facing: S, note: '本陣（北）' },
-            { id: 'kiba_l', x: -40, z: -150, facing: S, note: '追っ手の騎馬（左）' },
-            { id: 'kiba_r', x: 40, z: -150, facing: S, note: '追っ手の騎馬（右）' },
+            { id: 'kiba_l', x: -40, z: -125, facing: S, note: '追っ手の騎馬（左）' },
+            { id: 'kiba_r', x: 40, z: -125, facing: S, note: '追っ手の騎馬（右）' },
             { id: 'yumi', x: 0, z: -120, facing: S, note: '弓' },
             { id: 'van_l', x: -50, z: -190, facing: S, note: '槍の追っ手（左）' },
             { id: 'van_r', x: 50, z: -190, facing: S, note: '槍の追っ手（右）' },
             { id: 'late', x: 0, z: -210, facing: S, note: '後詰め' },
             { id: 'late_kiba', x: 40, z: -210, facing: S, note: '後詰めの騎馬' },
+            { id: 'amb', x: -90, z: 65, facing: Math.PI / 2, note: '伏兵（切れ目の北の口の西の林）' },
         ],
     },
     exits: { ally: { x: 0, z: 210 }, enemy: { x: 0, z: -215 } },
@@ -127,6 +132,7 @@ export const REARGUARD: BattlefieldDef = {
                 E('e_van_r', 'yari', '敵勢の槍の追っ手（右）', 380, 80, 'van_r', { aiRole: 'assault', aiTarget: NECK }),
                 E('e_late', 'yari', '敵勢の後詰め', 400, 80, 'late', { aiRole: 'assault', aiTarget: NECK, arriveAt: 100 }),
                 E('e_late_kiba', 'kiba', '敵勢の後詰めの騎馬', 200, 80, 'late_kiba', { aiRole: 'assault', aiTarget: NECK, arriveAt: 130 }),
+                E('e_amb', 'kiba', '敵勢の伏兵の騎馬', 200, 80, 'amb', { aiRole: 'assault', aiTarget: NECK_MOUTH, arriveAt: 45 }),
             ],
         },
     ],
