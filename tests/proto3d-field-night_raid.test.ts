@@ -1,7 +1,7 @@
 /**
  * 戦場「夜襲・奇襲」（night_raid）の釣り合い（docs/fields-group4-design.md §4・§5、依頼本文 docs/fields-group4-request.md の「19. 夜襲・奇襲」）。
  * 主目標：夜のうちに北の敵陣（(0,-120)・半径 40 m の輪）を、敵のいない状態で味方が 45 秒続けて占める（hold_point。敵本陣の撃破ではない）。
- * 副目標：損害を 3 割以内に抑える・街道の物見を崩す。判定の順（endRules）：主目標の達成 → 主目標の失敗 → 本陣の崩れ → 諸隊 → 日没 → 全軍撤退。
+ * 副目標：損害を 2 割 5 分以内に抑える・街道の物見を崩す・徳川騎馬隊を兵 6 割以上で残す。判定の順（endRules）：主目標の達成 → 主目標の失敗 → 本陣の崩れ → 諸隊 → 日没 → 全軍撤退。
  * 夜：敵も味方も発見した相手だけが見える（70 m・夜の林の中は 40 m・篝火の中は 160 m・物見は 110 m・見失うのは 120 m）。発見していない相手は
  * 攻撃の相手にならない（敵の考えも同じ）。奇襲（woods_ambush。夜は林の外でも）：未発見・見つかって 15 秒以内の最初の当たりは 8 秒 ×1.5（敵も同じ）。
  *
@@ -17,7 +17,8 @@
  * 揺らぎ（16 通り）：時刻の行は ±15 秒（乱数の種 7 から。第2群・第3群のテストと同じ作り方）、「見てから押す」行には人が見てから押すまでの
  * 遅れ 0〜15 秒を足す（同じ乱数から）。
  *
- * 作った時の結果（早送り。16 通りは上の揺らぎ。守れる部隊＝最後に戦える味方の部隊の数／7。副目標は 損害 3 割・物見）：
+ * 作った時の結果（早送り。16 通りは上の揺らぎ。守れる部隊＝最後に戦える味方の部隊の数／7。副目標は 損害 3 割・物見。
+ * 今の副目標（損害 2 割 5 分・物見・騎馬 6 割）の数は下の「作戦の多様さの検証の直し」）：
  * | 作戦 | 1 通り | 16 通り |
  * | 隠れて近づく（STEALTH。林の 4 隊。弓・騎馬・本陣は南の陣に残す） | 勝ち 289 秒・18.0％・✓✗・6／7 | 16 勝・337 秒（296〜394）・20.3％（8.7〜31.4）・守れる 5.7・副目標 15／0 |
  * | 陽動して隠れて近づく（FEINT。林の 4 隊＋弓と騎馬で辻の番兵を押す） | 296 秒・13.9％・✓✗・7／7 | 16 勝・322 秒（303〜353）・13.6％（7.4〜23.9）・6.4・16／0 |
@@ -33,10 +34,22 @@
  * 準備した正面攻撃 308.1 秒・22.8％・5.81・損害 3 割以内 15 → 325.6 秒・23.4％・5.69・14、無計画 247.4 秒・29.0％ → 247.0 秒・25.7％（守れる 5.0・16 勝は同じ）。
  * 比べ（無計画は早いが損害が大きく守れる部隊が少ない・陽動の損害がいちばん小さい）はどれも保つ。
  *
- * 準備した正面攻撃と無計画の比べ（記録）：無計画は全 6 隊が一度に一番近い敵へ当たるので、ばらばらに出てくる敵を数で押し、いちばん早く勝つ
+ * 作戦の多様さの検証の直し（should-2。副目標と無計画の比べ。合戦の動きは変えていないので、勝ち・時間・損害・守れる部隊は 1 刻みも同じ）：
+ * - 前は、テストの無計画が全 6 隊を同じ時刻に押す 1 形だけで、その形がたまたま有利だった（16 勝・247 秒・25.7％・守れる 5）。部隊ごとに押す時刻を
+ *   ずらすと勝ちも損害も悪くなる。いまは同時の形に加えて、ずらした 3 形を比べる（16 通り。勝ち・平均の時間（勝った回）・平均の損害・守れる部隊）：
+ *   2 秒ずつ（STEP2）11 勝・344.6 秒・37.1％・2.88、3 秒ずつ（STEP3）15 勝・277.5 秒・30.0％・4.50、部隊ごとにばらばら（EACH）10 勝・297.5 秒・37.7％・3.06。
+ *   ずらした形は、準備した正面攻撃（16 勝・325.6 秒・23.4％・5.69）より早いとは限らない（同時の形だけが早い）。
+ * - 副目標は、隠れて近づく作戦の得（弓・騎馬を南の陣に残せる）が点にならなかった。損害の上限を 3 割 → 2 割 5 分にし、「徳川騎馬隊を兵 6 割以上で残す」
+ *   （preserve_unit。途中で 6 割を切ったら果たせない）を足した。16 通りで果たした数（損害／物見／騎馬）：
+ *   隠れて近づく 15／0 → 13／0／16、陽動 16／0 → 16／0／15、準備した正面攻撃 14／16 → 13／16／1、
+ *   無計画（同時）16／16 → 0／16／0、ずらした 3 形（前の上限 3 割で 0・8・3）→ どれも 0／16／0。
+ *   1 通りの準備した正面攻撃は損害 29.6％ なので、損害の副目標を果たさなくなった（✓✓ → ✗✓、騎馬 ✓）。
+ *
+ * 準備した正面攻撃と無計画の比べ（記録。全 6 隊を同じ時刻に押す形。ずらした形は上の「作戦の多様さの検証の直し」）：無計画は全 6 隊が一度に一番近い敵へ当たるので、ばらばらに出てくる敵を数で押し、いちばん早く勝つ
  * （16 通りで 247 秒）。損害は準備した正面攻撃より大きく（29.0％ 対 平均 22.8％）、守れる部隊は少ない（5 対 5.8）。騎馬を斬り合いの真ん中へ
  * 入れるので、騎馬 2 隊のどちらかを必ず失う。損害 3 割の副目標は、無計画の方が 16 通りで安定して守る（16 対 15。準備した正面攻撃は悪い時に
  * 36.2％まで失う）。準備した正面攻撃は騎馬を予備に置き、芯の槍と斬り合う敵の横へだけ出す。
+ * （上限を 2 割 5 分にした後は、同時の形の 25.7％ は上限を超えるので 16 対 13 → 0 対 13。）
  *
  * 武将の能力の価値が場面で変わる比べ（同じ 16 通り）：
  * - 榊原の先駆けの号（騎馬で陣の弓へ）：林の端から（見つかる前の急襲。陣の弓まで 100 m ほど）は、命じてから陣の弓を崩すまで平均 23.4 秒
@@ -509,6 +522,34 @@ const UNPLANNED: Plan = (j) => {
         }
     return o;
 };
+/**
+ * 無計画で、部隊ごとに押す時刻をずらす形（同時に押す 1 形はたまたまの結果になりやすい）。period 秒ごとに見えている一番近い敵へ、待機なら陣へ。
+ * step があれば i 番目の部隊を（揺らぎの 0〜period−1 秒に）i×step 秒ずらす（人が 6 隊を順に押していく）。無ければ部隊ごとに別の揺らぎ
+ */
+function unplannedStagger(period: number, step?: number): Plan {
+    return (j) => {
+        const base = (((j.t(100) - 100) % period) + period) % period;
+        const o: Step[] = [];
+        ALL6.forEach((id, i) => {
+            const off = step !== undefined ? (base + i * step) % period : (((j.t(100 + i) - 100 - i) % period) + period) % period;
+            for (let t = 1 + off; t < 600; t += period) {
+                o.push([t, id, 'nearest']);
+                o.push([t + 1, id, { idleTap: [0, -120] }]);
+            }
+        });
+        return o;
+    };
+}
+const UNPLANNED_STEP2 = unplannedStagger(10, 2);
+const UNPLANNED_STEP3 = unplannedStagger(10, 3);
+const UNPLANNED_EACH = unplannedStagger(10);
+/** 無計画の比べに使う形：全部隊同時・2 秒ずつ・3 秒ずつ・部隊ごとにばらばら */
+const UNPLANNED_FORMS: [string, Plan][] = [
+    ['同時', UNPLANNED],
+    ['2 秒ずつ', UNPLANNED_STEP2],
+    ['3 秒ずつ', UNPLANNED_STEP3],
+    ['ばらばら', UNPLANNED_EACH],
+];
 /** 待つ：命令を出さない */
 const HOLD: Plan = () => [];
 
@@ -540,10 +581,11 @@ function vanguardTimes(plan: Plan) {
 // ---------------------------------------------------------------- データ
 
 describe('夜襲・奇襲のデータ', () => {
-    it('検査を通る。主目標は敵陣の確保（hold_point。敵本陣の撃破ではない）。副目標 2 つ。部隊は上限以内（味方 7・敵 8・援軍なし）', () => {
+    it('検査を通る。主目標は敵陣の確保（hold_point。敵本陣の撃破ではない）。副目標 3 つ（損害 2 割 5 分・物見・騎馬 6 割）。部隊は上限以内（味方 7・敵 8・援軍なし）', () => {
         expect(validateField(NR)).toEqual([]);
         expect(NR.objectives.primary).toMatchObject({ type: 'hold_point', sec: 45, zone: { circle: { cx: 0, cz: -120, r: 40 } } });
-        expect(NR.objectives.secondary.map((o) => o.type)).toEqual(['limit_losses', 'break_unit']);
+        expect(NR.objectives.secondary.map((o) => o.type)).toEqual(['limit_losses', 'break_unit', 'preserve_unit']);
+        expect(NR.objectives.secondary).toMatchObject([{ maxRatio: 0.25 }, { unitId: 'e_watch' }, { unitId: 'a_kiba', minRatio: 0.6 }]);
         const u = NR.presets[0]!.units;
         expect([u.filter((x) => x.side === 'ally').length, u.filter((x) => x.side === 'enemy').length]).toEqual([7, 8]);
         expect(u.some((x) => x.reinforcement || x.arriveAt)).toBe(false);
@@ -611,7 +653,7 @@ describe('夜襲・奇襲のデータ', () => {
 // ---------------------------------------------------------------- 作戦（1 通り）
 
 describe('作戦（早送り・1 通り）', () => {
-    it('隠れて近づく：林の 4 隊が見つからずに林の端へ着き（敵に気づかれるのは陣の真ん中から 80 m より内・180 秒の後）、陣を取って勝つ（記録：289 秒・18.0％・物見 ✗・敵に気づかれるのは 197〜252 秒・74〜75 m）', () => {
+    it('隠れて近づく：林の 4 隊が見つからずに林の端へ着き（敵に気づかれるのは陣の真ん中から 80 m より内・180 秒の後）、陣を取って勝つ（記録：289 秒・18.0％・損害 ✓・物見 ✗・騎馬 ✓・敵に気づかれるのは 197〜252 秒・74〜75 m）', () => {
         const r = play(STEALTH(J0));
         expect(won(r), brief(r)).toBe(true);
         for (const id of SQUAD) {
@@ -621,6 +663,8 @@ describe('作戦（早送り・1 通り）', () => {
         // 弓・騎馬・本陣は南の陣に残り、見つからない
         for (const id of ['a_yumi', 'a_kiba', 'a_ieyasu']) expect(r.found[id]).toBeUndefined();
         expect(sec(r, 'raid_watch')).toBe(false);
+        // 南の陣に残した徳川騎馬隊は兵を減らさない
+        expect(sec(r, 'raid_kiba')).toBe(true);
         expect(r.blindAttacks).toBe(0);
         expect([Math.round(r.t), Math.round(r.loss * 1000) / 10]).toEqual([289, 18]);
     }, 20_000);
@@ -641,7 +685,7 @@ describe('作戦（早送り・1 通り）', () => {
         expect([Math.round(r.t), Math.round(r.loss * 1000) / 10, standing(r)]).toEqual([296, 13.9, 7]);
     }, 20_000);
 
-    it('準備した正面攻撃：番兵を誘い出して崩し、街道を押し上がって物見も崩し、陣を取って勝つ（記録：322 秒・29.6％・✓✓。すれ違いの直しの前は 329 秒・29.9％）', () => {
+    it('準備した正面攻撃：番兵を誘い出して崩し、街道を押し上がって物見も崩し、陣を取って勝つ（記録：322 秒・29.6％・損害 ✗（上限 3 割の時は ✓）・物見 ✓・騎馬 ✓。すれ違いの直しの前は 329 秒・29.9％）', () => {
         const r = play(FRONT(J0));
         expect(won(r), brief(r)).toBe(true);
         expect(sec(r, 'raid_watch')).toBe(true);
@@ -657,7 +701,7 @@ describe('作戦（早送り・1 通り）', () => {
     }, 20_000);
 
     it('台本は人が画面でできる程度：命令は 70 回以下、10 秒に 8 回以下。移動の後の向き（face）は使わない', () => {
-        for (const plan of [STEALTH, FEINT, FRONT, UNPLANNED]) {
+        for (const plan of [STEALTH, FEINT, FRONT, ...UNPLANNED_FORMS.map((x) => x[1])]) {
             for (const k of [0, 5, 11]) {
                 const r = play(plan(jitterOf(k)));
                 expect(r.cmds.length).toBeLessThanOrEqual(70);
@@ -696,13 +740,20 @@ describe('作戦の安定性と比べ（早送り・±15 秒と見てから押�
         for (const plan of [STEALTH, FEINT, FRONT]) expect(sixteen(plan).reduce((a, r) => a + r.blindAttacks, 0)).toBe(0);
     }, 120_000);
 
-    it('副目標が作戦で分かれる：物見を崩すのは正面攻撃だけ（記録：0／0／16）。損害 3 割以内は陽動がいちばん多い（15／16／14）', () => {
+    it('副目標が作戦で分かれる：物見を崩すのは正面攻撃（記録：0／0／16）。騎馬 6 割を残すのは隠れて近づく・陽動（16／15／1）。損害 2 割 5 分以内は陽動がいちばん多い（13／16／13）', () => {
         const st = sixteen(STEALTH);
         const fe = sixteen(FEINT);
         const fr = sixteen(FRONT);
         expect([count(st, (r) => sec(r, 'raid_watch')), count(fe, (r) => sec(r, 'raid_watch'))]).toEqual([0, 0]);
         expect(count(fr, (r) => sec(r, 'raid_watch'))).toBeGreaterThanOrEqual(14);
         expect(count(fe, (r) => sec(r, 'raid_losses'))).toBeGreaterThanOrEqual(Math.max(count(st, (r) => sec(r, 'raid_losses')), count(fr, (r) => sec(r, 'raid_losses'))));
+        // 隠れて近づく作戦は、騎馬を南の陣に残せる（陽動は騎馬で番兵の横を突くが、たいてい 6 割を残す）。正面は騎馬を予備から斬り合いの横へ出すので、途中で 6 割を切る
+        const kiba = (rs: Run[]) => count(rs, (r) => sec(r, 'raid_kiba'));
+        expect(kiba(st)).toBeGreaterThanOrEqual(14);
+        expect(kiba(fe)).toBeGreaterThanOrEqual(12);
+        expect(kiba(fr)).toBeLessThan(Math.min(kiba(st), kiba(fe)));
+        // 3 つの作戦が、それぞれ別の副目標で一番になる（損害は陽動・物見は正面・騎馬は隠れて近づく）
+        expect(kiba(st)).toBeGreaterThanOrEqual(Math.max(kiba(fe), kiba(fr)));
     }, 120_000);
 
     it('損害と守れる部隊：陽動して隠れて近づくは損害がいちばん小さく、守れる部隊がいちばん多い（記録：13.6％・6.4 対 隠れて 20.3％・5.7、正面 24.2％・5.7）', () => {
@@ -718,7 +769,7 @@ describe('作戦の安定性と比べ（早送り・±15 秒と見てから押�
         expect(T(FRONT)).toBeLessThan(T(STEALTH));
     }, 120_000);
 
-    it('準備した正面攻撃と無計画の比べ：無計画は早く勝つが（記録：247 秒 対 311 秒 → 直しの後 247 秒 対 326 秒）、損害が大きく守れる部隊が少ない（29.0％・5 対 平均 24.2％・5.7 → 25.7％・5 対 23.4％・5.7）', () => {
+    it('準備した正面攻撃と無計画（全部隊同時の形）の比べ：同時の形は早く勝つが（記録：247 秒 対 311 秒 → 直しの後 247 秒 対 326 秒）、損害が大きく守れる部隊が少ない（29.0％・5 対 平均 24.2％・5.7 → 25.7％・5 対 23.4％・5.7）', () => {
         const fr = sixteen(FRONT);
         const un = sixteen(UNPLANNED);
         expect(count(un, won)).toBeGreaterThanOrEqual(12);
@@ -726,6 +777,21 @@ describe('作戦の安定性と比べ（早送り・±15 秒と見てから押�
         expect(mean(un.map(standing))).toBeLessThan(mean(fr.map(standing)));
         expect(mean(un.map((r) => r.t))).toBeLessThan(mean(fr.filter(won).map((r) => r.t)));
     }, 120_000);
+
+    it('無計画は押す時刻をずらすと（2 秒ずつ・3 秒ずつ・部隊ごとにばらばら）、準備した作戦より損害が大きく守れる部隊が少ない。損害・騎馬の副目標は準備した作戦より少ない（記録：11・15・10 勝、37.1・30.0・37.7％、守れる 2.88・4.50・3.06、損害の副目標 0・0・0、騎馬 0・0・0、物見 16・16・16）', () => {
+        const fr = sixteen(FRONT);
+        const fe = sixteen(FEINT);
+        const st = sixteen(STEALTH);
+        const best = (id: string) => Math.max(...[st, fe, fr].map((rs) => count(rs, (r) => sec(r, id))));
+        for (const [name, plan] of UNPLANNED_FORMS) {
+            const un = sixteen(plan);
+            const msg = `${name}：${count(un, won)} 勝・${(mean(un.map((r) => r.loss)) * 100).toFixed(1)}％・守れる ${mean(un.map(standing)).toFixed(2)}`;
+            expect(mean(un.map((r) => r.loss)), msg).toBeGreaterThan(mean(fr.map((r) => r.loss)));
+            expect(mean(un.map(standing)), msg).toBeLessThan(mean(fr.map(standing)));
+            expect(count(un, (r) => sec(r, 'raid_losses')), msg).toBeLessThan(best('raid_losses'));
+            expect(count(un, (r) => sec(r, 'raid_kiba')), msg).toBeLessThan(best('raid_kiba'));
+        }
+    }, 180_000);
 });
 
 describe('武将の能力の価値が場面で変わる（早送り・16 通り）', () => {
