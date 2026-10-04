@@ -23,8 +23,10 @@
  * | 東（能力なし。後詰めの騎馬に当たる。EAST_PLAIN） | 281.3 秒・9.5％・勝ち・✓✓✗・7／7 | 15 勝・293.3 秒（285.5〜303.0）・11.5％ |
  * | 南の厚い口を準備して破る（SOUTH・準備した正面攻撃） | 105.6 秒・21.7％・勝ち・✗✗✓・6／7（弓隊が西の騎馬に崩される） | 16 勝・133.8 秒（120.6〜149.9）・19.6％・6.81（弓 ✓ 15） |
  * | 南の準備（能力なし。SOUTH_NA） | 119.9 秒・19.1％・勝ち・✗✓✓・6／7 | 10 勝・137.7 秒・25.0％・5.75（負けはどれも、槍の列の後ろの家康が西の騎馬に突かれて崩れる） |
- * | 無計画：南へ一斉（家康も。RUSH） | 132.4 秒に勝ち・24.9％・5／7（騎馬隊が槍の正面に当たって全滅。第4群の確かめの直しの前は 130.0 秒に負け・39.3％・3／7） | （時刻の行が 0 秒だけなので 16 通りとも同じ） |
+ * | 無計画：南へ一斉（家康も。RUSH） | 132.4 秒に勝ち・24.9％・5／7（騎馬隊が槍の正面に当たって全滅。第4群の確かめの直しの前は 130.0 秒に負け・39.3％・3／7） | （時刻の行が 0 秒だけなので 16 通りとも同じ。たまたまの結果になりやすい） |
+ * | 無計画：南へ、部隊ごとに時刻をずらす 4 形（近い順・家康が先・槍から・おおよそ同時） | | 合わせて 42／64 勝・損害 26.7％（勝ちだけ 26.3％）・5.06・家康崩 15／64・騎馬隊崩 25／64・弓 ✓ 34／64 |
  * | 無計画：東へ一斉（家康も） | 101.1 秒に負け・37.0％・3／7 | |
+ * | 無計画：東へ、部隊ごとに時刻をずらす 2 形（道に近い順・騎馬から） | | 3 勝・31.2％・3.81 ／ 1 勝・23.4％・4.25（家康崩 9 ／ 15） |
  * | 無計画：一番近い敵へ当て直すだけ | 日没・52.8％・4／7 | |
  * | 待つ | 日没（撤退）・損害 0 | |
  * | 総大将だけを先に出す（東／南） | 36.9 秒／65.2 秒に負け（家康が崩れる） | |
@@ -332,6 +334,26 @@ const MOVERS = ['a_tadakatsu', 'a_sakai', 'a_ishikawa', 'a_sakakibara', 'a_kiba'
 const RUSH: Plan = () => [...MOVERS, 'a_ieyasu'].map((id) => [0, id, tap(...SX)] as Step);
 /** 無計画（東へ一斉）：0 秒に家康を含む 7 部隊で東の回り道の出口を押す */
 const RUSH_EAST: Plan = () => [...MOVERS, 'a_ieyasu'].map((id) => [0, id, tap(...EX)] as Step);
+/**
+ * 無計画（部隊ごとに時刻をずらす）：order の順に gap 秒ずつ遅らせて、家康を含む 7 部隊で出口を押すだけ（後は何もしない。命令は 7 回）。
+ * 時刻の行なので、16 通りでは 2 つ目からの時刻が ±15 秒ずれる（押す順も入れ替わることがある）
+ */
+const staggered =
+    (order: string[], gap: number, ex: [number, number]): Plan =>
+    (j) =>
+        order.map((id, i) => [i === 0 ? 0 : j.t(i * gap), id, tap(...ex)] as Step);
+/** 無計画（南・陣の南の口に近い順）：忠勝隊・騎馬隊・榊原隊・酒井隊・石川隊・弓隊・家康を 10 秒ずつ（家康は最後） */
+const RUSH_NEAR = staggered(['a_tadakatsu', 'a_kiba', 'a_sakakibara', 'a_sakai', 'a_ishikawa', 'a_yumi', 'a_ieyasu'], 10, SX);
+/** 無計画（南・家康が先）：家康・忠勝隊・榊原隊・騎馬隊・酒井隊・弓隊・石川隊を 8 秒ずつ */
+const RUSH_HQ = staggered(['a_ieyasu', 'a_tadakatsu', 'a_sakakibara', 'a_kiba', 'a_sakai', 'a_yumi', 'a_ishikawa'], 8, SX);
+/** 無計画（南・槍から）：榊原隊・忠勝隊・酒井隊・石川隊・騎馬隊・弓隊・家康を 15 秒ずつ */
+const RUSH_YARI = staggered(['a_sakakibara', 'a_tadakatsu', 'a_sakai', 'a_ishikawa', 'a_kiba', 'a_yumi', 'a_ieyasu'], 15, SX);
+/** 無計画（南・おおよそ同時）：7 部隊がそれぞれ 0〜30 秒（15 秒 ±15 秒）に押す（順はばらばら） */
+const RUSH_LOOSE: Plan = (j) => [...MOVERS, 'a_ieyasu'].map((id) => [j.t(15), id, tap(...SX)] as Step);
+/** 無計画（東・道に近い順）：榊原隊・騎馬隊・忠勝隊・酒井隊・石川隊・弓隊・家康を 10 秒ずつ（家康は最後） */
+const RUSH_EAST_NEAR = staggered(['a_sakakibara', 'a_kiba', 'a_tadakatsu', 'a_sakai', 'a_ishikawa', 'a_yumi', 'a_ieyasu'], 10, EX);
+/** 無計画（東・騎馬から）：騎馬隊・榊原隊・家康・忠勝隊・弓隊・酒井隊・石川隊を 6 秒ずつ */
+const RUSH_EAST_KIBA = staggered(['a_kiba', 'a_sakakibara', 'a_ieyasu', 'a_tadakatsu', 'a_yumi', 'a_sakai', 'a_ishikawa'], 6, EX);
 /** 無計画（当て直しだけ）：10 秒ごとに、6 部隊で見えている一番近い敵へ当て直す（第3群のテストと同じ） */
 const NEAREST: Plan = () => MOVERS.flatMap((id) => Array.from({ length: 60 }, (_, k) => [1 + k * 10, id, 'nearest'] as Step));
 /** 総大将だけを先に出す：0 秒に家康だけで出口を押す（ほかは動かさない） */
@@ -504,12 +526,58 @@ describe('包囲された陣：主目標に届く作戦（早送り）', () => {
 
 // 合格条件は「正面なら負ける」ではなく、同じ台本・同じ数字での比べ。無計画な攻撃・総大将を先に出した結果は「記録」として残す
 describe('包囲された陣：無計画な攻撃・総大将を先に出す（早送り）', () => {
-    // 第4群の確かめの直し（味方だけに塞がれた時間を、よけて回る間も数える・止まっている味方だけに塞がれている間は待機にしない）の前後（早送り。1 通り）：
-    // 前は 130.0 秒に負け・損害 39.3％・3／7（家康本陣が陣の南の口で前の隊をよけ続けて列の前へ出て、南の守りと斬り合った）。
-    // 後は家康本陣が前の隊の中をすり抜けて列の後ろに残り、弓隊が守りに当たる：132.4 秒に勝ち（総大将と 2 部隊が出口から脱出、残り 1 部隊も続く）・
-    // 損害 24.9％・戦える 5（準備した南は 6）。騎馬隊が槍の正面に当たって全滅するのは同じ。準備した南（1 通り 21.7％・16 通りの平均 19.6％）との損害の差は 15 点以上 → 3 点ほどに縮んだ。
-    // 「無計画でも勝つ」は正面攻撃を一律に負けにしない決まりにも合うが、準備の価値（損害の差）が小さくなったので、戦場のデータの釣り合いの担当へ伝える。
-    // 比べは「準備した南の方が損害が少なく、騎馬隊を残す」に直し、数字は記録として固定する
+    /** 総大将（家康本陣）が崩れた／騎馬隊が崩れた（敗走・全滅） */
+    const hqDown = (r: Run) => ['routed', 'destroyed'].includes(statusOf(r, 'a_ieyasu'));
+    const kibaDown = (r: Run) => ['routed', 'destroyed'].includes(statusOf(r, 'a_kiba'));
+    const yumiKept = (r: Run) => secondaryOf(r, 'camp_yumi');
+
+    // 南の無計画は、全部隊が同じ 0 秒に押す 1 形（RUSH）だけでは、たまたまの結果になる。部隊ごとに時刻をずらした 4 形（各 16 通り＝64 回）で、
+    // 準備した南（SOUTH。16 通り）と比べる。合格条件は「無計画なら負ける」ではない（無計画でも 3 分の 2 ほどは勝つ）。
+    // 作った時（早送り。16 通り。損害は 16 通りの平均、（勝ち）は勝った回だけの平均。家康崩＝総大将が崩れた回。弓＝弓隊 5 割以上の回）：
+    // | 形 | 勝ち | 損害 | （勝ち） | 勝ちの時間 | 守れる部隊 | 家康崩 | 騎馬隊崩 | 弓 |
+    // | 準備した南（SOUTH） | 16 | 19.6％ | 19.6％ | 134.1 秒 | 6.81 | 0 | 0 | 15 |
+    // | 近い順・家康は最後（RUSH_NEAR。10 秒ずつ） | 12 | 27.5％ | 26.7％ | 142.0 秒 | 5.25 | 2 | 6 | 8 |
+    // | 家康が先（RUSH_HQ。8 秒ずつ） | 12 | 21.2％ | 23.1％ | 126.9 秒 | 5.75 | 4 | 5 | 13 |
+    // | 槍から（RUSH_YARI。15 秒ずつ） | 8 | 26.5％ | 23.7％ | 155.3 秒 | 4.69 | 6 | 2 | 5 |
+    // | おおよそ同時（RUSH_LOOSE。0〜30 秒・順はばらばら） | 10 | 31.5％ | 31.8％ | 139.6 秒 | 4.56 | 3 | 12 | 8 |
+    // 負けはどれも主目標の失敗（総大将が崩れる、または出られる部隊が 3 に足りない）。後ろに残った家康・弓隊は、押された南の守りを助けに来る
+    // 西の騎馬に突かれ、家康が先に出ると切れ目の守りに止められる（家康を先に出した形は 4 回とも 70〜115 秒に崩れて負け）。
+    it('無計画（南へ。部隊ごとに時刻をずらした 4 形 × 16 通り）は勝つこともあるが、準備した南より勝ちが少なく、勝っても損害が大きく、崩れる隊が多く、総大将が崩れることがある', () => {
+        const sp = run16(SOUTH);
+        const forms = [RUSH_NEAR, RUSH_HQ, RUSH_YARI, RUSH_LOOSE].map(run16);
+        const pool = forms.flat();
+        const wins = pool.filter(won);
+        // 一律の負けではない：どの形も勝つ回がある（合わせて 42／64）
+        for (const f of forms) expect(winsOf(f)).toBeGreaterThan(0);
+        expect(wins.length).toBeGreaterThanOrEqual(24);
+        // 勝ちの割合：無計画 42／64（66％）・準備した南 16／16
+        expect(wins.length / pool.length).toBeLessThan(winsOf(sp) / sp.length - 0.15);
+        // 損害：無計画 26.7％（勝った回だけでも 26.3％）・準備した南 19.6％
+        expect(meanOf(pool, (r) => r.loss)).toBeGreaterThan(meanOf(sp, (r) => r.loss) + 0.05);
+        expect(meanOf(wins, (r) => r.loss)).toBeGreaterThan(meanOf(sp, (r) => r.loss) + 0.05);
+        // 守れる部隊：無計画 5.06・準備した南 6.81（どの形も 0.5 以上少ない）
+        expect(meanOf(pool, standing)).toBeLessThan(meanOf(sp, standing) - 1);
+        for (const f of forms) expect(meanOf(f, standing)).toBeLessThan(meanOf(sp, standing) - 0.5);
+        // 総大将が崩れる：無計画 15／64・準備した南 0。騎馬隊が崩れる：25／64・0。弓隊を 5 割以上で残す：34／64・15／16
+        expect(pool.filter(hqDown).length).toBeGreaterThanOrEqual(8);
+        expect(sp.filter(hqDown).length).toBe(0);
+        expect(pool.filter(kibaDown).length).toBeGreaterThanOrEqual(12);
+        expect(sp.filter(kibaDown).length).toBe(0);
+        expect(pool.filter(yumiKept).length / pool.length).toBeLessThan(sp.filter(yumiKept).length / sp.length - 0.2);
+        // 家康を先に出した形：総大将が崩れる回がある（総大将を逃がす前に突破路を開く判断）
+        expect(run16(RUSH_HQ).filter(hqDown).length).toBeGreaterThanOrEqual(2);
+        // 記録（勝ちの数）
+        expect(forms.map(winsOf)).toEqual([12, 12, 8, 10]);
+    }, 180_000);
+
+    // 全部隊が同じ 0 秒に押す 1 形（RUSH）の記録。第4群の確かめの直し（10ca516 まで：味方だけに塞がれた時間を、よけて回る間も数える・止まっている
+    // 味方だけに塞がれている間は待機にしない）の前は 130.0 秒に負け・損害 39.3％・3／7（家康本陣が陣の南の口で前の隊をよけ続けて列の前へ出て、
+    // 南の守りと斬り合った）。後は家康本陣が前の隊の中をすり抜けて列の後ろに残り、132.4 秒に勝ち・損害 24.9％・5／7（騎馬隊が槍の正面で全滅・
+    // 忠勝隊が崩れる）。準備した南との損害の差は 15 点以上 → 5 点ほど（16 通りの平均と比べて）に縮んだ。
+    // この 1 形は、たまたまの結果になりやすい（早送り。戦場のデータの試し。採らなかった）：南の守り・二の手の兵（520・320）を
+    // 600・240 にすると 98 秒に負け（22.1％）、600・300 で勝ち（31.2％）、590・260 で勝ち（22.8％）、620・260 で 136 秒に負け（45.2％）と大きく揺れる。
+    // 同じ試しで、ずらした形（近い順・槍から・おおよそ同時）の損害は 27〜32％、準備した南は 18.7〜20.3％ でほとんど動かない。
+    // そのため戦場のデータは変えず、比べは上のずらした 4 形で見る（この it は 1 形の記録と、騎馬隊を槍の正面に出す損の確かめ）
     it('無計画（南へ一斉。家康も 0 秒に出口を押す）→ 騎馬隊が槍の正面に当たって全滅する。準備した南は同じ口で騎馬隊を残し、損害も少ない（記録：直しの前 130.0 秒に負け・39.3％ → 後 132.4 秒に勝ち・24.9％）', () => {
         const r = run1(RUSH);
         const p = run1(SOUTH);
@@ -531,6 +599,21 @@ describe('包囲された陣：無計画な攻撃・総大将を先に出す（�
         expect(r.loss).toBeGreaterThan(run1(EAST).loss + 0.15);
         expect(standing(r)).toBeLessThan(standing(run1(EAST)) - 2);
     }, 60_000);
+
+    // 東の無計画も、ずらした 2 形（各 16 通り）で比べる（作った時。早送り）：
+    // 道に近い順・家康は最後（RUSH_EAST_NEAR。10 秒ずつ）3 勝・損害 31.2％・守れる部隊 3.81・家康崩 9、
+    // 騎馬から・家康は 3 番目（RUSH_EAST_KIBA。6 秒ずつ）1 勝・23.4％（負けが 66〜175 秒と早い）・4.25・家康崩 15。東を開いてから出す（EAST）は 16 勝・9.9％・7.00・0
+    it('無計画（東へ。部隊ごとに時刻をずらした 2 形 × 16 通り）→ 東を開いてから総大将を出す作戦より、勝ちがずっと少なく、損害が大きく、総大将が崩れやすい', () => {
+        const e = run16(EAST);
+        const forms = [RUSH_EAST_NEAR, RUSH_EAST_KIBA].map(run16);
+        const pool = forms.flat();
+        expect(winsOf(pool)).toBeLessThanOrEqual(winsOf(e) / 2);
+        expect(meanOf(pool, (r) => r.loss)).toBeGreaterThan(meanOf(e, (r) => r.loss) + 0.1);
+        expect(meanOf(pool, standing)).toBeLessThan(meanOf(e, standing) - 2);
+        for (const f of forms) expect(f.filter(hqDown).length).toBeGreaterThan(e.filter(hqDown).length);
+        // 記録（勝ちの数）
+        expect(forms.map(winsOf)).toEqual([3, 1]);
+    }, 180_000);
 
     it('一番近い敵へ当て直すだけ → 主目標に届かず、損害が大きい（記録：日没・損害 52.8％・4／7）。待つだけ → 日没（撤退）・損害 0', () => {
         const r = run1(NEAREST);
