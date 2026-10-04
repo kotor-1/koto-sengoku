@@ -374,6 +374,11 @@ describe('当たり判定を付ける名札・知らせの文', () => {
         expect(pend).toContain('a_ishikawa');
         expect(pend.some((id) => id.startsWith('e_'))).toBe(false);
     });
+    it('移動先指定の間は、点滅している名札の印も当たりにしない（その点への移動にする。第4群の確かめの決定）。向きの指定の間は今までどおり', () => {
+        const s = plains();
+        expect(labelTapCandidates(s, 'move', 'a_yumi')).toEqual([]);
+        expect(labelTapCandidates(s, 'face', 'a_yumi').sort()).toEqual([...GENERALS].sort());
+    });
     it('発動の知らせ：能力名・武将・対象（範囲・選んだ部隊・自隊）', () => {
         const s = plains();
         useAbility(s, 'a_ieyasu');

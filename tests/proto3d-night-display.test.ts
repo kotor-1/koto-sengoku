@@ -9,8 +9,9 @@
 import { describe, expect, it } from 'vitest';
 import { createBattle, issueOrder, RULES, stepBattle, unitById, type BattleState } from '../proto3d/src/battle/sim';
 import { buildBattleSetup, getField } from '../proto3d/src/battle/fields';
-import { objectiveProgress } from '../proto3d/src/battle/objectives';
-import { armySummary, eventTone, fieldRuleTexts, objectivePanelModel, objectiveSummaryText, objectiveZoneCounting, objectiveZoneMarks, resultRows } from '../proto3d/src/battle/control';
+import { deadlineName, endRuleConditions, endRuleItems, objectiveProgress } from '../proto3d/src/battle/objectives';
+import { practiceBriefingInfo } from '../proto3d/src/campaign/practice';
+import { armySummary, eventTone, fieldRuleTexts, scenarioTexts, objectivePanelModel, objectiveSummaryText, objectiveZoneCounting, objectiveZoneMarks, resultRows } from '../proto3d/src/battle/control';
 import type { BattleOutcome } from '../proto3d/src/battle/types';
 
 const night = () => createBattle(buildBattleSetup(getField('night_raid')!, 'standard'));
@@ -130,6 +131,48 @@ describe('知らせ・陣営の様子・結果の表（夜）', () => {
         expect(armySummary(s, 'enemy').able).toBe(after.able - 1);
     });
 
+    it('見つけていない所で崩れた敵：副目標（break_unit）の達成の知らせを出さず、目標の欄もまだ果たしていない形。見つけた後に果たした形（判定は変えない）', () => {
+        const s = night();
+        stepBattle(s, RULES.tick);
+        const w = unitById(s, 'e_watch')!;
+        expect(w.seenBy.ally).toBe(false);
+        // 状態を直接操作：見えていない物見の士気を 0 にして 1 刻み
+        w.morale = 0;
+        const from = s.events.length;
+        stepBattle(s, RULES.tick);
+        expect(w.status).toBe('routed');
+        const r = s.objectives!.secondary.find((x) => x.def.id === 'raid_watch')!;
+        // 判定は変えない（果たした）
+        expect(r.state).toBe('done');
+        const note = s.events.slice(from).find((e) => e.kind === 'objective' && e.text.includes('物見'))!;
+        expect(note.unitId).toBe('e_watch');
+        expect(note.unseen).toBe(true);
+        expect(eventTone(s, note)).toBeNull();
+        const row = () => objectivePanelModel(s)!.secondary.find((x) => x.id === 'raid_watch')!;
+        expect(row().state).toBe('active');
+        expect(row().progressText).toBe('まだ見つけていない');
+        // 見つけた（状態を直接操作：崩れた様子を見た）後は、果たした形
+        w.intel = { t: s.t, status: 'routed' };
+        expect(row().state).toBe('done');
+    });
+
+    it('見つけていない所で崩れた敵がいる間は、「敵の部隊はすべて崩れた」を知らせない。崩れを知ったら知らせる', () => {
+        const s = night();
+        stepBattle(s, RULES.tick);
+        const enemies = s.units.filter((u) => u.side === 'enemy');
+        // 状態を直接操作：敵をすべて崩す（どれも見ていない）
+        for (const e of enemies) {
+            e.status = 'routed';
+            e.present = false;
+        }
+        stepBattle(s, RULES.tick);
+        const told = () => s.events.some((e) => e.kind === 'objective' && e.text.includes('敵の部隊はすべて崩れた') && eventTone(s, e) !== null);
+        expect(told()).toBe(false);
+        for (const e of enemies) e.intel = { t: s.t, status: 'routed' };
+        stepBattle(s, RULES.tick);
+        expect(told()).toBe(true);
+    });
+
     it('味方の部隊の出来事（「〇〇は△△を見失った」）は、相手の敵が見えなくなっても出す', () => {
         const s = night();
         stepBattle(s, RULES.tick);
@@ -172,5 +215,24 @@ describe('戦場の決まりの文', () => {
         expect(n).toContain('奇襲（夜は林の外でも）：見られていない部隊の最初の当たり ×1.5（8 秒）');
         expect(n).not.toContain('林の奇襲');
         expect(fieldRuleTexts(createBattle(buildBattleSetup(getField('forest')!, getField('forest')!.presets[0]!.id))).join('|')).toContain('林の奇襲：');
+    });
+
+    it('夜の時間切れは「夜明け」（データの NightRule.deadlineName）：判定の順・勝ち負けの条件・演習の説明・時間切れの結果の文。昼の戦場は「日没」のまま', () => {
+        const s = night();
+        expect(deadlineName(s.setup)).toBe('夜明け');
+        const items = endRuleItems(s.setup).join('|');
+        expect(items).toContain('夜明け（10:00）→ 撤退');
+        expect(items).not.toContain('日没');
+        expect(endRuleConditions(s).map((c) => c.text).join('|')).not.toContain('日没');
+        expect(practiceBriefingInfo(getField('night_raid')!).deadlineName).toBe('夜明け');
+        expect(scenarioTexts(s).reasons.nightfall).toBe('夜が明け、両軍とも兵を引いた');
+        // 時間切れまで進める（早送り）：終わりの知らせも夜明けの文
+        while (!s.result) stepBattle(s, RULES.tick);
+        expect(s.result.reason).toBe('nightfall');
+        expect(s.events[s.events.length - 1]!.text).toContain('夜が明け');
+        const day = createBattle(buildBattleSetup(getField('shore')!, 'standard'));
+        expect(deadlineName(day.setup)).toBe('日没');
+        expect(endRuleItems(day.setup).join('|')).toContain('日没（');
+        expect(scenarioTexts(day).reasons.nightfall).toBe('日が暮れ、両軍とも兵を引いた');
     });
 });

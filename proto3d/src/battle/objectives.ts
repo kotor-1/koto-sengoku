@@ -203,7 +203,7 @@ export function createObjectiveTrack(setup: BattleSetup): ObjectiveTrack | null 
 
 // ---------------------------------------------------------------- 毎刻み
 
-function settle(s: BattleState, r: ObjectiveRun, state: 'done' | 'failed', log: (text: string) => void): void {
+function settle(s: BattleState, r: ObjectiveRun, state: 'done' | 'failed', log: ObjectiveLog, unitId?: string): void {
     if (r.state !== 'active') return;
     r.state = state;
     r.settledT = s.t;
@@ -211,7 +211,31 @@ function settle(s: BattleState, r: ObjectiveRun, state: 'done' | 'failed', log: 
     // 段階目標の段：「主目標「…」の段階 1「外門の制圧」を果たした」
     const p = r.parent;
     const name = p ? `${head}「${p.def.label}」の段階 ${p.steps.indexOf(r) + 1}「${r.def.label}」` : `${head}「${r.def.label}」`;
-    log(state === 'done' ? `${name}を果たした` : `${name}は果たせなくなった`);
+    log(state === 'done' ? `${name}を果たした` : `${name}は果たせなくなった`, unitId);
+}
+
+/**
+ * 目標の知らせを出す関数。unitId はその知らせの元の部隊（夜に、味方から見えていない敵の部隊の知らせは sim.ts の markUnseen が画面に出さない）
+ */
+export type ObjectiveLog = (text: string, unitId?: string) => void;
+
+/**
+ * 夜（第4群の確かめの指摘）：敵の部隊を崩す目標（break_unit）を果たしたが、味方はまだその崩れを知らない（味方の陣営が知っているその部隊の様子
+ * intel.status が戦える 'ready' のまま＝見つけていない所で崩れた）。画面の目標の欄・進みの文では、まだ果たしていない形で出す（判定は変えない。
+ * 結果の表は終わった後の本当の結果）
+ */
+function unknownBreakAtNight(s: BattleState, r: ObjectiveRun): boolean {
+    if (!s.setup.night || r.def.type !== 'break_unit' || r.state !== 'done') return false;
+    const u = byId(s, r.def.unitId);
+    return !!u && u.side === 'enemy' && u.intel.status === 'ready';
+}
+
+/** 敵の部隊を崩す目標の進みの文（「〇〇を崩す」） */
+function breakUnitText(s: BattleState, d: Extract<ObjectiveDef, { type: 'break_unit' }>): string {
+    const u = byId(s, d.unitId);
+    // 夜：一度も見つけていない敵は名前を出さない（未発見の敵の情報を漏らさない。見出しの label は戦場の文のまま。判定は変えない）
+    if (u && s.setup.night && u.side === 'enemy' && u.intel.t < 0) return 'まだ見つけていない';
+    return u ? `${u.name}を崩す` : '';
 }
 
 /** 部隊が limit_breakthrough の出口を抜けた（段階目標の段も見る。突破を抑える目標の無い合戦ではいつも false） */
@@ -247,7 +271,7 @@ function heldByAlly(s: BattleState, z: Zone): boolean {
 }
 
 /** 1 つの目標を進める（毎刻み。done・failed になった目標は動かない） */
-function update(s: BattleState, r: ObjectiveRun, dt: number, log: (text: string) => void): void {
+function update(s: BattleState, r: ObjectiveRun, dt: number, log: ObjectiveLog): void {
     if (r.state !== 'active') return;
     const d = r.def;
     const t = s.t;
@@ -337,8 +361,9 @@ function update(s: BattleState, r: ObjectiveRun, dt: number, log: (text: string)
             const u = byId(s, d.unitId);
             // 出口を抜けた（limit_breakthrough で撤退済みにした）敵は、崩したことにしない。もう崩せないので果たせない
             if (u && brokeThrough(s, u.id)) return settle(s, r, 'failed', log);
-            if (u && u.arrived && u.status !== 'ready') settle(s, r, 'done', log);
-            else if (u && u.status === 'destroyed') settle(s, r, 'done', log);
+            // 知らせはその部隊の出来事にする（夜に見つけていない所で崩れたときは、知らせを画面に出さない＝sim.ts の markUnseen）
+            if (u && u.arrived && u.status !== 'ready') settle(s, r, 'done', log, u.id);
+            else if (u && u.status === 'destroyed') settle(s, r, 'done', log, u.id);
             return;
         }
         case 'hold_zones': {
@@ -434,7 +459,7 @@ function leftOthers(s: BattleState, r: ObjectiveRun): number {
  * 区域の中の退き口から離れた部隊（sim.ts が先に撤退済みにする）も数える。総大将とほかの count 部隊が離れたら果たす。
  * 総大将が崩れた・目標に数えない所から退いた、または離れられる部隊が足りなくなれば果たせない
  */
-function updateLeave(s: BattleState, r: ObjectiveRun, log: (text: string) => void): void {
+function updateLeave(s: BattleState, r: ObjectiveRun, log: ObjectiveLog): void {
     const d = r.def as Extract<ObjectiveDef, { type: 'escape' | 'withdraw' }>;
     const exits = leaveExits(d);
     const h = hq(s, 'ally');
@@ -464,12 +489,12 @@ function updateLeave(s: BattleState, r: ObjectiveRun, log: (text: string) => voi
 }
 
 /** 1 つの目標だけを今の状態で確かめ直す（時間は進めない。sim.ts が撤退で兵を離し切った後に使う） */
-export function refreshObjective(s: BattleState, r: ObjectiveRun, log: (text: string) => void): void {
+export function refreshObjective(s: BattleState, r: ObjectiveRun, log: ObjectiveLog): void {
     update(s, r, 0, log);
 }
 
 /** 毎刻み（sim.ts の tick が、退き口の確かめの後・勝ち負けの前に呼ぶ） */
-export function trackObjectives(s: BattleState, dt: number, log: (text: string) => void): void {
+export function trackObjectives(s: BattleState, dt: number, log: ObjectiveLog): void {
     const tr = s.objectives;
     if (!tr) return;
     for (const r of tr.list) update(s, r, dt, log);
@@ -480,6 +505,7 @@ export function trackObjectives(s: BattleState, dt: number, log: (text: string) 
 /**
  * 損害を抑える・部隊を残す目標（preserve_unit・limit_losses）は、戦い抜いて（勝利・敗北・日没で）終えたときだけ果たせる。
  * 全軍撤退（ordered_retreat）で終えたときは、戦わずに退いても「果たした」と読めてしまうので、果たせなかったことにする。
+ * 損害を抑える目標（limit_losses）は、さらに負けて終えたときも果たせない（finalAchieved。早く負けると損害が少なく済んでしまうため）。
  */
 function needsFoughtThrough(d: ObjectiveDef): boolean {
     return d.type === 'preserve_unit' || d.type === 'limit_losses';
@@ -509,7 +535,9 @@ function finalAchieved(s: BattleState, r: ObjectiveRun, result: BattleResultKind
             return !!u && !broken(u) && (u.startStrength <= 0 || u.strength / u.startStrength >= d.minRatio - 1e-9);
         }
         case 'limit_losses':
-            return allyLossRatio(s) <= d.maxRatio + 1e-9;
+            // 負けて終えたら果たせない（第4群の確かめの指摘：早く負けると損害が少なくて「果たした」になっていた）。
+            // 全軍撤退で終えたときも果たせない（上の needsFoughtThrough。損害 0 で退いても達成にしない）。勝利・日没で終えて損害が上限以内なら果たす
+            return result !== 'defeat' && allyLossRatio(s) <= d.maxRatio + 1e-9;
         case 'limit_breakthrough':
             // 撤退で終えたら果たせない。そうでなければ、許容の数を超えずに終えた
             return reason !== 'ordered_retreat' && r.entered.length <= d.maxCount;
@@ -628,13 +656,9 @@ function progressText(s: BattleState, r: ObjectiveRun): string {
             return u ? `${u.name}：兵 ${Math.round(u.startStrength > 0 ? (u.strength / u.startStrength) * 100 : 0)}％（${Math.round(d.minRatio * 100)}％ 以上で終える・撤退は不可）` : '';
         }
         case 'limit_losses':
-            return `損害 ${Math.round(allyLossRatio(s) * 100)}％（${Math.round(d.maxRatio * 100)}％ 以内で終える・撤退は不可）`;
-        case 'break_unit': {
-            const u = byId(s, d.unitId);
-            // 夜：一度も見つけていない敵は名前を出さない（未発見の敵の情報を漏らさない。見出しの label は戦場の文のまま。判定は変えない）
-            if (u && s.setup.night && u.side === 'enemy' && u.intel.t < 0) return 'まだ見つけていない';
-            return u ? `${u.name}を崩す` : '';
-        }
+            return `損害 ${Math.round(allyLossRatio(s) * 100)}％（${Math.round(d.maxRatio * 100)}％ 以内で終える・撤退・敗北は不可）`;
+        case 'break_unit':
+            return breakUnitText(s, d);
         case 'hold_zones': {
             // 例：「同時確保 12／60 秒・山門 ○・本堂前 敵」（どれか外れると 0 に戻る）
             const marks = d.zones.map((z, i) => `${d.names?.[i] ?? `地点 ${i + 1}`} ${zoneMark(s, z)}`).join('・');
@@ -676,7 +700,11 @@ function progressText(s: BattleState, r: ObjectiveRun): string {
 export function objectiveProgress(s: BattleState): ObjectiveProgress[] {
     const tr = s.objectives;
     if (!tr) return [];
-    return tr.list.map((r) => ({ id: r.def.id, label: r.def.label, role: r.role, state: r.state, progressText: progressText(s, r) }));
+    return tr.list.map((r) => {
+        // 夜に、見つけていない所で崩れた敵の break_unit は、まだ果たしていない形で出す（unknownBreakAtNight）
+        if (unknownBreakAtNight(s, r)) return { id: r.def.id, label: r.def.label, role: r.role, state: 'active' as const, progressText: breakUnitText(s, r.def as Extract<ObjectiveDef, { type: 'break_unit' }>) };
+        return { id: r.def.id, label: r.def.label, role: r.role, state: r.state, progressText: progressText(s, r) };
+    });
 }
 
 /** まだ果たしていない（active の）目標の、味方が入る区域（地点の確保・区域の防衛・突破・救出の陣）。sim.ts の動きが使う */
@@ -720,6 +748,15 @@ export function settledAt(r: ObjectiveRun): number | null {
 
 // ---------------------------------------------------------------- 終わり方の判定の順（第4群。BattleSetup.endRules）
 
+/** 時間切れの呼び名（夜の合戦はデータの NightRule.deadlineName。省けば「日没」） */
+export function deadlineName(setup: BattleSetup): string {
+    return setup.night?.deadlineName ?? '日没';
+}
+/** 時間切れで終わったときの文（夜の合戦はデータの NightRule.deadlineEndText。省けば日没の文） */
+export function deadlineEndText(setup: BattleSetup): string {
+    return setup.night?.deadlineEndText ?? '日が暮れ、両軍とも兵を引いた';
+}
+
 /** 終わり方の判定の順の既定（設計 docs/fields-group4-design.md §3 の順） */
 export const DEFAULT_END_ORDER: readonly EndRuleKind[] = ['objective_done', 'objective_failed', 'hq_lost', 'army_broken', 'nightfall', 'all_retreat'];
 
@@ -729,18 +766,18 @@ export function isLeaveObjective(d: ObjectiveDef | undefined): boolean {
 }
 
 /** 主目標が果たせなくなる時の短い説明（種類ごと） */
-function failWhy(d: ObjectiveDef): string {
+function failWhy(d: ObjectiveDef, setup?: BattleSetup): string {
     switch (d.type) {
         case 'escape':
         case 'withdraw':
-            return '総大将が崩れる・離れられる部隊が足りなくなる';
+            return `総大将が崩れる・総大将が${d.type === 'escape' ? '出口' : '退き口'}でない所から退く・離れられる部隊が足りなくなる`;
         case 'rescue_escort':
             return `救出の対象が崩れる・安全地点の前に撤退する・兵が ${Math.round(d.minRatio * 100)}％ を切る`;
         case 'defend_zones':
             return `守る地点が ${d.minHeld} か所より少なくなる`;
         case 'hold_point':
         case 'hold_zones':
-            return '確保の目標は途中で失敗にならず、日没まで続く';
+            return `確保の目標は途中で失敗にならず、${setup ? deadlineName(setup) : '日没'}まで続く`;
         default:
             return '目標の条件が満たせなくなる';
     }
@@ -755,17 +792,23 @@ function endRuleText(k: EndRuleKind, setup: BattleSetup): string {
         case 'objective_done':
             return p ? `主目標「${p.label}」を果たす → 勝利${leave ? '（目標を果たした撤収）' : ''}` : '主目標を果たす → 勝利';
         case 'objective_failed':
-            return `主目標が果たせなくなる → 敗北（${p ? failWhy(p) : '目標の条件が満たせなくなる'}）`;
+            return `主目標が果たせなくなる → 敗北（${p ? failWhy(p, setup) : '目標の条件が満たせなくなる'}）`;
         case 'hq_lost':
-            return `味方の本陣が崩れる → 敗北${leave ? '。総大将が出口から離れるのは脱出で、本陣の喪失ではない（合戦は続く）' : ''}`;
+            // 本陣が目標に数えない所から退いた（撤退の命令で退き口から離れた）ときは、合戦の放棄（撤退）。脱出・離脱の戦場では、出口でない所から
+            // 総大将が退くと主目標が果たせなくなる（その判定が先なら敗北）
+            return leave
+                ? `味方の本陣が崩れる → 敗北。総大将が出口から離れるのは脱出で、本陣の喪失ではない（合戦は続く）。出口でない所から本陣が退く → 撤退（合戦の放棄。ただし主目標の失敗の判定が先なら敗北）`
+                : '味方の本陣が崩れる → 敗北。本陣が退き口から退く → 撤退（合戦の放棄）';
         case 'army_broken':
             return '味方の部隊がすべて戦えない → 敗北（戦場を離れた部隊の方が多ければ、合戦の放棄＝撤退）';
         case 'nightfall':
-            return `日没（${Math.floor(setup.timeLimitSec / 60)}:${String(Math.floor(setup.timeLimitSec % 60)).padStart(2, '0')}）→ 撤退（主目標は未達成。どこまで届いたかを記録する）`;
+            return `${deadlineName(setup)}（${Math.floor(setup.timeLimitSec / 60)}:${String(Math.floor(setup.timeLimitSec % 60)).padStart(2, '0')}）→ 撤退（主目標は未達成。どこまで届いたかを記録する）`;
         case 'all_retreat':
             return allRetreat === 'count'
-                ? `全軍撤退 → 退き口から離れた部隊も主目標に数え、味方が戦場からいなくなるまで打ち切らない（目標を果たせば勝利の撤収、届かなければ合戦の放棄＝撤退）`
-                : '全軍撤退 → まもなく打ち切り、撤退（合戦の放棄）';
+                ? `全軍撤退 → 退き口から離れた部隊も主目標に数え、味方が戦場からいなくなるまで打ち切らない（要る数が離れれば勝利の撤収。途中で崩れる部隊が出て要る数に届かなくなれば、主目標の失敗＝敗北）`
+                : p?.type === 'rescue_escort'
+                  ? '全軍撤退 → まもなく打ち切り、撤退（合戦の放棄）。ただし打ち切りの前に救出の対象が安全地点の外で戦場を離れる・崩れると、主目標の失敗＝敗北'
+                  : '全軍撤退 → まもなく打ち切り、撤退（合戦の放棄）';
     }
 }
 
@@ -794,15 +837,18 @@ export function endRuleConditions(s: BattleState): { label: string; text: string
         objective_failed: '主目標の失敗',
         hq_lost: '本陣の崩れ',
         army_broken: '諸隊が戦えない',
-        nightfall: '日没',
+        nightfall: deadlineName(setup),
         all_retreat: '全軍撤退',
     };
     return [
         { label: '勝利', text: p ? `主目標「${p.label}」を果たす${leave ? '（総大将が出口から離れるのは脱出。負けではない）' : ''}` : '主目標を果たす', tone: 'good' },
-        { label: '敗北', text: `主目標が果たせない（${p ? failWhy(p) : ''}）／味方本陣が崩れる／味方の部隊がすべて戦えない`, tone: 'bad' },
+        { label: '敗北', text: `主目標が果たせない（${p ? failWhy(p, setup) : ''}）／味方本陣が崩れる／味方の部隊がすべて戦えない`, tone: 'bad' },
         {
             label: '撤退',
-            text: setup.endRules?.allRetreat === 'count' ? '日没／全軍撤退（退き口から離れた部隊も目標に数える。目標の前に味方がいなくなれば放棄）' : '日没／全軍撤退（合戦の放棄）',
+            text:
+                setup.endRules?.allRetreat === 'count'
+                    ? `${deadlineName(setup)}／全軍撤退（退き口から離れた部隊も目標に数える。要る数に届かなくなれば敗北）`
+                    : `${deadlineName(setup)}／全軍撤退（合戦の放棄）／本陣が${leave ? '出口でない所から' : '退き口から'}退く`,
             tone: 'info',
         },
         { label: '判定の順', text: (setup.endRules?.order ?? DEFAULT_END_ORDER).map((k) => short[k]).join(' → '), tone: 'info' },

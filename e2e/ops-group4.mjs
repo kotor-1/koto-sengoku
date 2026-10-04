@@ -2,17 +2,20 @@
  * 第4群の操作と配置の残件・味方同士の詰まり（docs/fields-group4-design.md §1・§2）を、実際のブラウザで本物のクリック・タップで確かめて撮る。
  *   BASE3D=http://localhost:8401 BASE=http://localhost:8401 node e2e/ops-group4.mjs [出力先]
  *   （開発サーバー：proto3d/blender/tools/vite.nohmr.mjs。既定の出力先 e2e-out/ops-group4）
- *   PARTS=desktop,phone で一部だけ（既定はすべて）。ONLY=A,B で A〜F の一部だけ
+ *   PARTS=desktop,phone で一部だけ（既定はすべて）。ONLY=A,B で A〜G の一部だけ
  * - desktop（PC 1280×720、マウス）・phone（スマホ横 844×390、タッチ）の両方：
  *   A. 能力の説明の欄（.b-abil）の押し・なぞり・ホイールは欄で使い切る：選んだ部隊の命令・選択・移動先指定・地図の位置が変わらない。
  *      操作の要らない知らせ（.b-toast）の上の押しは、今までどおり地図へ通す（移動先指定なら、その下の地面への移動になる）。
  *   B. 移動先指定の素早い 2 回（CDP で続けて送る）：能力が使える武将（名札が点滅）の体の上を移動先にして 2 回 → 選び直し・能力の発動・確かめが起きず、
  *      その点への移動になる。2 回目を少し離れた所にすると、その点への移動（選びは変わらない）。
+ *      移動先指定の最中に点滅している名札の印を 1 回押す → 能力にせず、その点への移動（第4群の確かめの決定）。移動先指定が終わった後なら同じ印で能力。
  * - desktop だけ：
  *   C. 城攻め前面：閉じた門の先（曲輪の中）の地面を押す → 命令は「開門待ち」（札・知らせ）。門の外の地面を押すと開門待ちは消える（新しい命令で捨てる）。
  *      もう一度曲輪の中を押し、門の前の敵を戦場の外へ出して（直接操作）早送り → 門の前で待った部隊が輪を占めて門が開き、道を引き直して曲輪の中へ。
  *   D. 城下町外縁：地図の名札「味方の退き口」と「敵の突破口：…」3 つが別の所にあり、重ならない。合戦の前の説明に用途の区別がある。
  *   E. 上の知らせが選んでいる名札を覆う → 知らせを畳む（data-fold）。名札を離すと元に戻す。知らせは開発用の確認の口で出す（直接操作）。
+ *   G. 開いた目標の欄の本文（.b-goals-body）の押し・なぞり・ホイールは欄で使い切る（地図・命令・選びが変わらない。スマホで長ければ欄の中が送られる）。
+ *      PC・スマホとも（下の desktop だけの所の後に、両方で流す）。
  *   F. 村落の再現（西の辻に二隊）：札を押す → 地面を押すで命令（待ちは早送り）。石川隊が酒井隊の手前で 10 秒以上止まらず、西の辻へ着く。
  * 待つ時間だけは開発用の早送り（fastForward）。C の敵を外す・E の知らせを出すのは状態の直接操作（ログに書く）。
  * コンテナはソフトウェア描画（実機・性能は未確認）。
@@ -24,8 +27,8 @@ const BASE = process.env.BASE3D || process.env.BASE || 'http://localhost:8401';
 const OUT = process.argv[2] || 'e2e-out/ops-group4';
 mkdirSync(OUT, { recursive: true });
 const PARTS = (process.env.PARTS || 'desktop,phone').split(',');
-/** ONLY=A,B で A〜F の一部だけ（既定はすべて） */
-const ONLY = (process.env.ONLY || 'A,B,C,D,E,F').split(',');
+/** ONLY=A,B で A〜G の一部だけ（既定はすべて） */
+const ONLY = (process.env.ONLY || 'A,B,C,D,E,F,G').split(',');
 const on = (k) => ONLY.includes(k);
 const failures = [];
 const log = (...a) => console.log(...a);
@@ -224,6 +227,70 @@ async function partB(kind) {
     await pointAt(p, body.x, body.y, 600);
     const st3 = await ui(page);
     check(st3.selectedId === target, `[${kind}] B：1 秒あけた 2 回目はふつうの押し（${target} を選ぶ）`, `選び ${st3.selectedId}`);
+    // 移動先指定の最中に、点滅している名札の印を 1 回押す → 能力にせず、その点（通れなければ近くの通れる所）への移動（第4群の確かめの決定）。
+    // 能力は移動先指定をやめてから（移動を出した後＝移動先指定が終わった後に、同じ印を押すと能力を使う）
+    await selectCard(p, 'a_kiba');
+    await press(p, '.b-cmd:has-text("移動")');
+    const lb = await page.evaluate((id) => window.__battle.labelOf(id), target);
+    check(!!lb?.badge && lb.ab === 'ready', `[${kind}] B：${target} の名札に能力の印（点滅）が出ている`, JSON.stringify(lb?.badge));
+    if (lb?.badge) {
+        const gb = await page.evaluate(([x, y]) => { const B = window.__battle; const r = document.querySelector('canvas').getBoundingClientRect(); const g = B.view.groundAt(x - r.left, y - r.top); return g ? { x: g.x, z: g.z } : null; }, [lb.badge.x, lb.badge.y]);
+        const usesB = await abilityUses(page);
+        await pointAt(p, lb.badge.x, lb.badge.y, 700);
+        const st4 = await ui(page);
+        const o4 = (await unit(page, 'a_kiba')).order;
+        const h4 = await hintText(page);
+        check(
+            st4.selectedId === 'a_kiba' && o4.type === 'move' && !!gb && Math.hypot(o4.x - gb.x, o4.z - gb.z) < 20 && JSON.stringify(await abilityUses(page)) === JSON.stringify(usesB) && !h4.includes('もう一度押すと'),
+            `[${kind}] B：移動先指定の最中に ${target} の名札の印を 1 回押す → 能力は使わず、騎馬隊がその点へ移動（選び直さない）`,
+            `選び ${st4.selectedId}・命令 ${JSON.stringify(o4)}・印の下の地面 ${JSON.stringify(gb)}・使った能力 ${JSON.stringify(await abilityUses(page))}・帯「${h4}」`,
+        );
+        await shot(p, 'B-badge-in-move');
+        // 移動先指定が終わった後（pending none）に同じ印を押す → 能力を使う（能力はやめてから使える）
+        await page.waitForTimeout(700);
+        const lb2 = await page.evaluate((id) => window.__battle.labelOf(id), target);
+        if (lb2?.badge && (await ui(page)).pending === 'none') {
+            await pointAt(p, lb2.badge.x, lb2.badge.y, 700);
+            const used = await abilityUses(page);
+            const st5 = await ui(page);
+            check(used.length > usesB.length || st5.pending === 'ability', `[${kind}] B：移動先指定が終わった後に同じ印を押す → 能力（使う・対象選び）になる`, `使った能力 ${JSON.stringify(used)}・指定 ${st5.pending}`);
+        } else check(false, `[${kind}] B：移動先指定が終わった後に、${target} の印が見えている`, `指定 ${(await ui(page)).pending}・${JSON.stringify(lb2?.badge)}`);
+    }
+    await p.ctx.close();
+}
+
+// ================================================================ G 開いた目標の欄の本文（押し・なぞり・ホイールは欄で使い切る）
+async function partG(kind) {
+    const p = await openPage(kind, 'rearguard');
+    const { page } = p;
+    await selectCard(p, 'a_tadakatsu');
+    const closed = await page.evaluate(() => document.querySelector('.b-goals')?.classList.contains('closed'));
+    if (closed) await press(p, '.b-goals-head');
+    const gb = await rect(page, '.b-goals-body');
+    const sc = () => page.evaluate(() => { const e = document.querySelector('.b-goals-body'); return { st: e.scrollTop, sh: e.scrollHeight, ch: e.clientHeight }; });
+    const s0 = await sc();
+    check(!!gb, `[${kind}] G：目標の欄を開くと本文が出る`, `${JSON.stringify(gb)} ${JSON.stringify(s0)}`);
+    if (!gb) return p.ctx.close();
+    const o0 = JSON.stringify((await unit(page, 'a_tadakatsu')).order);
+    const c0 = await cam(page);
+    await pointAt(p, gb.x, gb.y);
+    let st = await ui(page);
+    check(st.selectedId === 'a_tadakatsu' && JSON.stringify((await unit(page, 'a_tadakatsu')).order) === o0 && same(c0, await cam(page)), `[${kind}] G：目標の欄の本文を押す → 選び・命令・地図は変わらない`, `選び ${st.selectedId}・命令 ${JSON.stringify((await unit(page, 'a_tadakatsu')).order)}`);
+    await drag(p, gb.x, gb.b - 8, gb.x, gb.t + 8);
+    const s1 = await sc();
+    st = await ui(page);
+    const moved = JSON.stringify((await unit(page, 'a_tadakatsu')).order) !== o0;
+    check(same(c0, await cam(page)) && !moved && st.selectedId === 'a_tadakatsu', `[${kind}] G：目標の欄の本文をなぞる → 地図は動かず、命令・選びも変わらない`, `地図 ${JSON.stringify(c0)} → ${JSON.stringify(await cam(page))}`);
+    // 送れる長さがあるとき（スマホ：本文の高さの上限 150 px）は、なぞると欄の中が送られる
+    if (s0.sh > s0.ch + 4) check(s1.st > s0.st + 4, `[${kind}] G：本文が欄より長いとき、なぞると欄の中が送られる`, `${JSON.stringify(s0)} → ${JSON.stringify(s1)}`);
+    else log(`  （本文が欄に収まっている。送りは確かめない）${JSON.stringify(s0)}`);
+    if (!p.phone) {
+        await page.mouse.move(gb.x, gb.y);
+        await page.mouse.wheel(0, 300);
+        await page.waitForTimeout(400);
+        check(same(c0, await cam(page)), `[${kind}] G：目標の欄の上でホイール → 地図は寄り・引きしない`);
+    }
+    await shot(p, 'G-goals');
     await p.ctx.close();
 }
 
@@ -404,11 +471,13 @@ try {
         if (on('D')) await partD();
         if (on('E')) await partE('desktop');
         if (on('F')) await partF();
+        if (on('G')) await partG('desktop');
     }
     if (PARTS.includes('phone')) {
         if (on('A')) await partA('phone');
         if (on('B')) await partB('phone');
         if (on('E')) await partE('phone');
+        if (on('G')) await partG('phone');
     }
 } catch (e) {
     failures.push(`例外：${e.message}`);

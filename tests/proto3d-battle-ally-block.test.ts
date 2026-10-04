@@ -536,6 +536,35 @@ describe('閉じた門の先への移動は「開門待ち」（城攻め前面�
         expect(unitById(s, 'a_ishikawa')!.order).toMatchObject({ awaitGate: 'outer_gate' });
     });
 
+    it('門が直列に 2 つ（外門の先の内門の向こう）：移動を受けて手前の門の開門待ちにし、開いたら次の門の開門待ち、両方開いたら行き先へ（早送り）', () => {
+        // 南の野（味方）｜石垣と門 g1（z -5〜5）｜中の曲輪｜石垣と門 g2（z -65〜-55）｜奥の曲輪。門は味方が前の輪を 3 秒占めると開く（敵はいない）
+        const W = (z0: number, z1: number): TerrainArea[] => [wall(-150, -10, z0, z1), wall(10, 150, z0, z1)];
+        const setup = field([...W(-5, 5), ...W(-65, -55)], [...HQS(), U('a_yari', 'ally', 'yari', 0, 60)], {
+            gates: [
+                { id: 'g1', name: '一の門', rect: { x0: -10, x1: 10, z0: -5, z1: 5 }, capture: { zone: { circle: { cx: 0, cz: 13, r: 10 } }, sec: 3 } },
+                { id: 'g2', name: '二の門', rect: { x0: -10, x1: 10, z0: -65, z1: -55 }, capture: { zone: { circle: { cx: 0, cz: -47, r: 10 } }, sec: 3 } },
+            ],
+        });
+        setup.units.find((u) => u.id === 'e_hq')!.x = 140;
+        const s = createBattle(setup);
+        expect(issueOrder(s, 'a_yari', { type: 'move', x: 0, z: -110 })).toBe(true);
+        const u = unitById(s, 'a_yari')!;
+        expect(u.order).toMatchObject({ type: 'move', x: 0, z: -110, awaitGate: 'g1' });
+        const [g1, g2] = s.field.gates;
+        let awaitG2 = false;
+        let over = false;
+        for (let i = 0; i < Math.round(120 / RULES.tick) && !s.result; i++) {
+            stepBattle(s, RULES.tick);
+            if (g1!.open && !g2!.open && u.order.type === 'move' && u.order.awaitGate === 'g2') awaitG2 = true;
+            if (!g2!.open && u.z < -56) over = true;
+            if (u.order.type === 'hold') break;
+        }
+        expect(g1!.open && g2!.open).toBe(true);
+        expect(awaitG2).toBe(true);
+        expect(over).toBe(false);
+        expect(Math.hypot(u.x, u.z + 110)).toBeLessThan(6);
+    });
+
     it('敵の部隊の命令には開門待ちを付けない（敵の考えの動きは今までどおり）', () => {
         const s = createBattle(buildBattleSetup(getField('siege_front')!, 'standard'));
         expect(issueOrder(s, 'e_sortie', { type: 'move', x: 0, z: -110 })).toBe(true);

@@ -419,6 +419,11 @@ describe('判定の順（endRules）はデータのとおり', () => {
         for (const u of t.units) if (u.side === 'enemy') u.morale = 0;
         step(t, 1);
         expect(t.result).toBeNull();
+        // 夜：見つけていない所で崩れた敵がいる間は「すべて崩れた」を知らせない（第4群の確かめの指摘）。崩れを知ったら知らせる（状態を直接操作）
+        expect(t.events.some((e) => e.text.includes('敵の部隊はすべて崩れた'))).toBe(false);
+        for (const u of t.units) if (u.side === 'enemy') u.intel = { t: t.t, status: u.status };
+        step(t, 1);
+        expect(t.result).toBeNull();
         expect(t.events.some((e) => e.text.includes('敵の部隊はすべて崩れた'))).toBe(true);
     }, 60_000);
 });

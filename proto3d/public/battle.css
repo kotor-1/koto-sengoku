@@ -161,9 +161,12 @@ body.mode-battle #build { display: none !important; }
     text-align: left;
     touch-action: none;
 }
-.b-obj-name { color: var(--gold); letter-spacing: 0.1em; white-space: nowrap; }
-.b-time { margin-left: auto; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.b-caret { font-size: 11px; color: var(--ink-soft); white-space: nowrap; }
+.b-obj-name { color: var(--gold); letter-spacing: 0.1em; white-space: nowrap; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* 名前が長い戦場でも、残り時間と「条件 ▾」は切らない（第4群の確かめ：PC で「条件」が欄の外へ切れた）。先に札（演習・仮シナリオ）を縮め、
+   次に名前を「…」で縮める */
+.b-obj-head .b-tag { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.b-time { margin-left: auto; font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0; }
+.b-caret { font-size: 11px; color: var(--ink-soft); white-space: nowrap; flex-shrink: 0; }
 .b-caret::after { content: " ▴"; }
 .b-obj.closed .b-caret::after { content: " ▾"; }
 .b-obj.closed .b-obj-body { display: none; }
@@ -734,7 +737,7 @@ body.mode-battle #build { display: none !important; }
     /* 目標の欄（畳めば主目標の一行だけ） */
     .b-goals-head { padding: 4px 9px; gap: 6px; font-size: 12px; }
     .b-goals-sum { font-size: 10.5px; }
-    .b-goals-body { padding: 0 6px 6px; gap: 3px; max-height: 150px; overflow-y: auto; }
+    .b-goals-body { padding: 0 6px 6px; gap: 3px; max-height: 150px; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
     .b-goal { font-size: 11px; padding: 2px 6px; line-height: 1.35; }
     .b-goal i { font-size: 9px; padding: 0 3px; }
     .b-goal .b-goal-p { font-size: 10px; }

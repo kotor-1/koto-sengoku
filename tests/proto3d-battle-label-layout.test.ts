@@ -171,4 +171,25 @@ describe('地図の名札（地形・目標・門・援軍・退き口・狭い�
         expect([...layoutMapLabels([M('t1', 100, 100), { ...M('t2', x2, 100), prevHidden: true }])]).toEqual(['t2']);
         expect([...layoutMapLabels([M('t1', 100, 100), { ...M('t2', x2 + LABEL_HYSTERESIS, 100), prevHidden: true }])]).toEqual([]);
     });
+    it('部隊の名札と重なる地形の名前（順 5）は隠す。目標・門・援軍・退き口・狭い正面は部隊の名札と重なっても出す。上に描かれる部品（指揮中の札）に重なる名札は目標のほか隠す', () => {
+        const unit = { l: 60, t: 80, r: 160, b: 100 };
+        const items = [M('t1', 110, 100), M('exit-ally', 110, 100 + 200), M('narrow-0', 400, 100)];
+        const units = [unit, { l: 60, t: 280, r: 160, b: 300 }, { l: 350, t: 80, r: 450, b: 100 }];
+        expect([...layoutMapLabels(items, [], units)].sort()).toEqual(['t1']);
+        // 指揮中の札
+        const pill = { l: 300, t: 0, r: 500, b: 120 };
+        expect([...layoutMapLabels([M('narrow-0', 400, 100), M('obj-a', 420, 110)], [pill])]).toEqual(['narrow-0']);
+    });
+});
+
+describe('名札を置かない所（画面の上の「指揮中」の札。第4群の確かめ：スマホで敵の名札の後ろ半分が札に隠れた）', () => {
+    it('ふつうの名札は札に重なれば小さく・隠す。選んだ・点滅の名札はそのまま（ずらさない）', () => {
+        const pill = { l: 400, t: 0, r: 560, b: 30 };
+        const out = layoutLabels([L('a', 480, 40), L('b', 200, 40), L('s', 620, 40, { sel: true })], CX, CY, [{ ...pill, r: 700 }]);
+        expect(out.get('b')).toEqual({ fit: 'full', dy: 0 });
+        expect(out.get('a')!.fit).toBe('hide');
+        expect(out.get('s')).toEqual({ fit: 'full', dy: 0 });
+        // 札が無ければ今までどおり
+        expect(layoutLabels([L('a', 480, 40)], CX, CY).get('a')).toEqual({ fit: 'full', dy: 0 });
+    });
 });

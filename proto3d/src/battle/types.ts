@@ -334,6 +334,12 @@ export interface NightRule {
     /** 篝火の区域の短い名前（地図の名札。省けば「篝火」） */
     torchNames?: string[];
     lookouts?: { unitId: string; range: number }[];
+    /**
+     * 時間切れの呼び名（画面の上の「〇〇まで」・判定の順・説明。省けば「日没」）と、時間切れで終わったときの文（省けば日没の文）。
+     * 夜の合戦は「夜明け」「夜が明け、…」のように夜に合う言葉にする（第4群の確かめの指摘）
+     */
+    deadlineName?: string;
+    deadlineEndText?: string;
 }
 
 /** 戦場 */

@@ -21,7 +21,7 @@
  * d. labels（PC とスマホ相当。第3群の 5 戦場）：「全体」で引いた始めの画面と、交戦中（斬り合う部隊が 4 つ以上・最長 240 秒）の画面で、
  *    見えている地図の名札（地形・目標・門・援軍・退き口・狭い正面）どうしが重ならない・地図の名札と操作の要らない表示が押しを奪わない・
  *    点滅する印が押しを奪う部品（目標の欄・札など）に覆われない。地図の名札の上を押すと、その下の地面へ移動の命令が出る（名札は押しを通す）。
- * e. conflict（PC とスマホ相当。村落）：移動先指定の間に能力の印 → 能力（移動にならない）・移動先指定で味方の立つ所を押す → その点へ移動
+ * e. conflict（PC とスマホ相当。村落）：移動先指定の間に能力の印 → その点へ移動（能力にしない。第4群の確かめの決定）・移動先指定で味方の立つ所を押す → その点へ移動
  *    （選び直さない）・石川の対象選びの間に味方を押す → 差配（選び直し・移動に漏れない）。
  * f. 号令（e と同じ頁）：始め（家康本陣の士気 90）は点滅する。直接操作で味方の士気をみな 100 にする（敵はまだ来ていない）→ 点滅しない・札「号令 ―」・
  *    前に印のあった所を押しても使わない・「能力」（PC は F）で理由が出て使わない。早送りで第一波が近づく（直接操作なし）→ 敵が近い部隊を見て点滅が戻り、印で使える。
@@ -51,6 +51,7 @@
  * - 名札（全体の画面・交戦中）：PC・スマホとも、見えている地図の名札どうしの重なり 0、点滅する印は押しを奪う部品に覆われない、地図の名札の上を
  *   押すとその下の地面へ移動。交戦の所へ寄った画面では、画面の端の点滅する印が札の列・目標の欄の下に入ることがある（記録。地図を動かせば押せる）。
  * - 競合・号令：PC・スマホとも ok（移動先指定中の印 → 能力・味方の立つ所 → 移動・家屋の中 → 近くの通れる所・対象選び中の味方 → 差配）。
+ *   （第4群の確かめの決定で、移動先指定中の印はその点への移動に変えた。上の記録はその前のもの）
  *   号令：直接操作で士気をみな 100 → 点滅しない・「号令 ―」・押しても使わない・理由。69 秒に第一波が弓隊の 120 m 以内に来て点滅が戻り、印で使えた。
  */
 import { launchBrowser } from './lib.mjs';
@@ -1038,7 +1039,7 @@ async function conflictOne(kind) {
     const { page } = p;
     const rec = (record.conflict[kind] = {});
     const D = p.phone ? 160 : 200;
-    // e1. 移動先指定の間に酒井の印 → 両翼の采配（移動にならない）
+    // e1. 移動先指定の間に酒井の印 → その点への移動（両翼の采配にしない。第4群の確かめの決定）
     await card(p, 'a_yumi');
     await moveMode(p);
     await page.waitForFunction(() => (document.querySelector('.b-hint')?.textContent ?? '').includes('移動先指定中'), null, { timeout: 5000 }).catch(() => {});
@@ -1048,12 +1049,19 @@ async function conflictOne(kind) {
     await center(p, sk.x, sk.z, D);
     await page.waitForTimeout(500);
     const skb = (await label(page, 'a_sakai'))?.badge;
+    const gb = skb ? await groundUnder(page, skb.x, skb.y) : null;
     const b0 = await snapUnits(page);
     if (skb) await pointAt(p, skb.x, skb.y, 700);
     const a0 = await snapUnits(page);
     const u0 = await ui(page);
-    check(!!skb && (await ab(page, 'a_sakai')).usedAt !== null && changedExcept(b0, a0, []).length === 0 && u0.selectedId === 'a_yumi', `[${kind}] 村落：移動先指定の間に酒井の名札の印を押す → 両翼の采配（弓隊の移動・選び直しにならない）`, `pending ${u0.pending}・変わった ${changedExcept(b0, a0, []).join(',')}`);
-    rec.badgeInMoveMode = { used: (await ab(page, 'a_sakai')).usedAt, pending: u0.pending };
+    const ob = await orderOf(page, 'a_yumi');
+    // 第4群の確かめの決定：移動先指定の最中は、名札の印も能力として扱わず、その点（通れなければ近くの通れる所）への移動にする
+    check(
+        !!skb && (await ab(page, 'a_sakai')).usedAt === null && movedTo(ob, gb, 25) && changedExcept(b0, a0, ['a_yumi']).length === 0 && u0.selectedId === 'a_yumi',
+        `[${kind}] 村落：移動先指定の間に酒井の名札の印を押す → 両翼の采配にせず、弓隊がその点へ移動（選び直さない）`,
+        `pending ${u0.pending}・命令 ${JSON.stringify(ob)}・地面 ${gb && `${r1(gb.x)},${r1(gb.z)}`}・変わった ${changedExcept(b0, a0, ['a_yumi']).join(',')}`,
+    );
+    rec.badgeInMoveMode = { used: (await ab(page, 'a_sakai')).usedAt, pending: u0.pending, order: ob };
     // e2. 移動先指定で、味方（騎馬隊）の立つ所を押す → 弓隊がその点へ（選び直さない）
     if ((await ui(page)).selectedId !== 'a_yumi') await card(p, 'a_yumi');
     if ((await ui(page)).pending !== 'move') await moveMode(p);

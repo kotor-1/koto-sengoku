@@ -208,7 +208,7 @@ describe('副目標は勝ち負けに影響せず、終わりに判定して記�
         ]);
     });
 
-    it('preserve_unit・limit_losses は、全軍撤退で終えたら果たせない（戦わずに退いても達成にしない）。日没まで戦えば果たせる', () => {
+    it('preserve_unit・limit_losses は、全軍撤退で終えたら果たせない（戦わずに退いても達成にしない）。日没まで戦えば果たせる。limit_losses は負けて終えても果たせない', () => {
         const obj = (): BattleSetup['objectives'] => ({
             primary: { id: 'p', type: 'destroy_hq', label: '敵本陣を崩す' },
             secondary: [
@@ -231,6 +231,17 @@ describe('副目標は勝ち負けに影響せず、終わりに判定して記�
         expect(rn.objectives!.secondary.map((o) => [o.id, o.achieved])).toEqual([
             ['keep', true],
             ['loss', true],
+        ]);
+        // 負けて終えたら、損害が少なくても limit_losses は果たせない（第4群の確かめの指摘。状態を直接操作：始めに味方本陣を崩す）。
+        // preserve_unit は今までどおり（部隊が残っていれば果たす）
+        const lost = createBattle(setup(obj()));
+        advance(lost, 1);
+        lost.units.find((u) => u.side === 'ally' && u.kind === 'honjin')!.status = 'routed';
+        const rl = runToEnd(lost);
+        expect(rl.result).toBe('defeat');
+        expect(rl.objectives!.secondary.map((o) => [o.id, o.achieved])).toEqual([
+            ['keep', true],
+            ['loss', false],
         ]);
     });
 
@@ -258,7 +269,7 @@ describe('副目標は勝ち負けに影響せず、終わりに判定して記�
         const s = createBattle(setup({ primary: { id: 'p', type: 'destroy_hq', label: '敵本陣を崩す' }, secondary: [{ id: 'l', type: 'limit_losses', label: '損害 3 割以内', maxRatio: 0.3 }] }));
         expect(objectiveProgress(s)).toEqual([
             { id: 'p', label: '敵本陣を崩す', role: 'primary', state: 'active', progressText: 'e_hqを崩す' },
-            { id: 'l', label: '損害 3 割以内', role: 'secondary', state: 'active', progressText: '損害 0％（30％ 以内で終える・撤退は不可）' },
+            { id: 'l', label: '損害 3 割以内', role: 'secondary', state: 'active', progressText: '損害 0％（30％ 以内で終える・撤退・敗北は不可）' },
         ]);
     });
 });

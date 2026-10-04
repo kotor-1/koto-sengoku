@@ -17,7 +17,7 @@ import {
     unitSpeedFactor,
     type BattleState,
 } from '../proto3d/src/battle/sim';
-import { findPath, isPassable } from '../proto3d/src/battle/pathfind';
+import { findPath, findPathAvoiding, isPassable } from '../proto3d/src/battle/pathfind';
 import { TERRAIN_DEFAULTS } from '../proto3d/src/battle/fieldRules';
 import { RULES } from '../proto3d/src/battle/sim';
 import { demoSetup } from '../proto3d/src/battle/maps';
@@ -372,5 +372,46 @@ describe('計算の重さ（早送り。ここでの値は開発機の目安で�
         });
         const perTick = (now() - t0) / s.tick;
         expect(perTick).toBeLessThan(3);
+    }, 60_000);
+
+    it('味方を避けた短い迂回の探索（sim.ts の tryAllyDetour）：長さの上限を渡すと、見つからない場合も格子の全体を探さない。見つかる道は上限なしと同じ', () => {
+        const cpu = (globalThis as { process?: { cpuUsage?: () => { user: number; system: number } } }).process?.cpuUsage;
+        const now = () => {
+            if (!cpu) return performance.now();
+            const c = cpu();
+            return (c.user + c.system) / 1000;
+        };
+        const lenOf = (x: number, z: number, pts: { x: number; z: number }[] | null) => {
+            let l = 0;
+            for (const p of pts ?? []) {
+                l += Math.hypot(p.x - x, p.z - z);
+                x = p.x;
+                z = p.z;
+            }
+            return l;
+        };
+        const cases: [string, [number, number], [number, number], { x: number; z: number; r: number }[]][] = [
+            // 城下町外縁：大通りの北の口を塞ぐ味方と、両脇の口の味方（短い迂回は無い。上限なしでは格子の全体を探して 1 回 3 ms ほど）
+            ['town_edge', [0, 60], [0, 190], [{ x: 0, z: 100, r: 20 }, { x: -137, z: 100, r: 12 }, { x: 140, z: 100, r: 12 }]],
+            // 湖・河岸：岸の道の味方を内陸へよける（迂回がある）
+            ['shore', [0, 0], [0, -200], [{ x: 0, z: -100, r: 30 }]],
+        ];
+        for (const [fid, a, b, avoid] of cases) {
+            const f = getField(fid)!;
+            const nav = createBattle(buildBattleSetup(f, 'standard')).field.nav!;
+            const maxLen = lenOf(a[0], a[1], findPath(nav, 'yari', a[0], a[1], b[0], b[1])) * RULES.allyDetourRatio;
+            const free = findPathAvoiding(nav, 'yari', a[0], a[1], b[0], b[1], avoid);
+            const bounded = findPathAvoiding(nav, 'yari', a[0], a[1], b[0], b[1], avoid, maxLen);
+            // 上限の内の道なら同じ道、上限を超える道しか無ければ null（tryAllyDetour はどちらも迂回にしない）
+            if (free && lenOf(a[0], a[1], free) <= maxLen) expect(bounded).toEqual(free);
+            else expect(bounded).toBeNull();
+            // 1 回目の何回かは関数の下ごしらえ（JIT）の分だけ重いので、先に回してから測る
+            for (let i = 0; i < 10; i++) findPathAvoiding(nav, 'yari', a[0], a[1], b[0], b[1], avoid, maxLen);
+            const t0 = now();
+            for (let i = 0; i < 40; i++) findPathAvoiding(nav, 'yari', a[0], a[1], b[0], b[1], avoid, maxLen);
+            const per = (now() - t0) / 40;
+            // 開発機の空いた時：城下町外縁 0.5 ms（上限なし 3.05 ms）・湖・河岸 0.35 ms
+            expect(per, fid).toBeLessThan(1.5);
+        }
     }, 60_000);
 });

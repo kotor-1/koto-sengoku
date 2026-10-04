@@ -553,7 +553,7 @@ class BattleRun implements Mode {
         // 第4群：全軍撤退も退き口の判定に入る戦場（endRules.allRetreat 'count'）は、目標に数えることを添える
         const counting = this.s.setup.endRules?.allRetreat === 'count';
         const body = counting
-            ? '味方の全部隊が退き口へ下がります。退き口から離れた部隊は主目標に数え、味方が戦場からいなくなるまで合戦は続きます（目標を果たせば勝利の撤収、届かなければ合戦の放棄）。'
+            ? '味方の全部隊が退き口へ下がります。退き口から離れた部隊は主目標に数え、味方が戦場からいなくなるまで合戦は続きます（要る数が離れれば勝利の撤収。途中で部隊が崩れて要る数に届かなくなれば、主目標の失敗で敗北）。'
             : '味方の全部隊が南の退き口へ下がります。戦場を離れると合戦は「撤退」で終わります（兵は残ります）。';
         const yes = await this.ui.confirm('全軍撤退しますか？', body, '撤退する', 'やめる');
         if (this.finished) return;
@@ -925,7 +925,8 @@ class BattleRun implements Mode {
         const hit = this.labelAt(x, y);
         if (!hit) return false;
         if (hit.part === 'name') {
-            // 移動先指定の間は、名札の名前の所は地図を押した扱い（その点へ移動。確かめの中の 2 回目にもしない。能力の印 ◆ は能力のまま）
+            // 向きの指定の間は、名札の名前の所は地図を押した扱い（確かめの中の 2 回目にもしない。能力の印 ◆ は能力のまま）。
+            // 移動先指定の間は、名札の印・名前とも当たりにしない（labelTapCandidates が空。その点への移動）
             if (this.pending === 'move' || this.pending === 'face') return false;
             // 命令を出せる味方を選んでいる間は、名札の名前の所は今までどおり地図を押した扱い（地面の移動・部隊の選択。
             // 引いた画面では名札が地面・部隊に重なるので、移動のつもりの指を奪わない）。確かめの中のその武将の名札だけは 2 回目として使う

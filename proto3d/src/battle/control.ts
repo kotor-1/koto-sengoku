@@ -14,7 +14,7 @@ import { objectiveProgress, seenEnemyIn, type ObjectiveRole, type ObjectiveRun, 
 import { zoneCenter } from './fieldRules';
 import { GENERAL_ROLE_LABELS, RELATION_SELF, generalById } from './generals';
 // 第4群：終わり方の判定の順・脱出／離脱の出口・夜と追い討ちの決まりの文
-import { endRuleConditions, leaveExits } from './objectives';
+import { deadlineEndText, endRuleConditions, leaveExits } from './objectives';
 import { nightRuleTexts } from './night';
 
 // ---------------------------------------------------------------- 部隊の見た目
@@ -117,7 +117,8 @@ export function clashShift(d: number, halfDepthA: number, halfDepthB: number): n
  * 命令の出し方の途中（「移動」「攻撃」のボタンの後で地図を押す）。
  * move：移動先指定（「移動」・M の後。docs/fields-group3-design.md §2-1）。押した所へ移動を命じる。味方の部隊の体・すぐ近く・名札の名前を
  * 押しても選び直さない（行き先に味方が立っていても、その点へ。通れなければ近くの通れる所＝sim.ts の issueOrder が直す）。
- * 能力の印（点滅している ◆）は今までどおり能力として使う。下の札・1〜8 キーは今までどおり選び直す。
+ * 能力の印（点滅している ◆）も能力として使わず、その点への移動にする（第4群の確かめの決定。labelTapCandidates。能力はやめてから）。
+ * 下の札・1〜8 キーは今までどおり選び直す。
  * ability：対象を選ぶ特殊能力（盟友への援護・後詰めの差配）の対象選び。「能力」・F・点滅している名札の後で、対象の味方の部隊を押す
  * （Esc・やめる・地面・同じ名札をもう一度で取り消し。選んでいる部隊＝能力を使う部隊）。
  * face：向きの指定（「向き」・T の後。第3群の確かめで足した）。押した所（地面・部隊のどこでも）の方へ、その場で向き直らせる（移動の後は進んできた
@@ -602,7 +603,7 @@ export function scenarioTexts(s: BattleState): ScenarioTexts {
                 ally_hq_routed: `${lord}が崩れた（演習。大将は落ち延びる）`,
                 ally_army_broken: '味方の本陣以外の部隊が崩れ、戦える部隊がなくなった',
                 ordered_retreat: '撤退を命じ、兵をまとめて戦場を離れた',
-                nightfall: '日が暮れ、両軍とも兵を引いた',
+                nightfall: deadlineEndText(s.setup),
                 objective_done: `${primaryLabel(s)}を果たした`,
                 objective_failed: `${primaryLabel(s)}を果たせなくなった`,
             },
@@ -814,7 +815,9 @@ export const TAP_GUARD_SEC = 0.5;
 /**
  * 移動先指定の素早い 2 回（第4群の設計 §2）：移動先指定（pending 'move'）で行き先を押して移動の命令を出した後、この秒数のあいだの次の押しは、
  * 選び直し・能力の発動（点滅する名札・部隊の体の確かめ）にしない。1 回目の点の近く（当たりの半分の半径）なら何もしない（同じ点の移動の重ね）、
- * 離れていれば、移動先指定のまま、その点への移動にする。続けて押す間は延ばす。時間は実時間
+ * 離れていれば、移動先指定のまま、その点への移動にする。続けて押す間は延ばす。時間は実時間。
+ * この秒数の内は、敵の部隊の体（そのすぐ近く）を押しても攻撃にせず、その点への移動になる（素早い 2 回の 2 回目を、前の押しの続きとみなす）。
+ * 敵を攻撃させたいときは、少し（この秒数より長く）あけてから敵を押す（合戦の前の説明の「操作」に書く）
  */
 export const MOVE_ECHO_SEC = 0.6;
 
@@ -1006,9 +1009,13 @@ export function guardTap(g: TapGuard | null, x: number, y: number, now: number):
     return { swallow: true, guard: { ...g, until: now + TAP_GUARD_SEC } };
 }
 
-/** 名札の当たり判定を付ける部隊：対象選びの間は、持ち主と地図に見えている味方（対象）。そのほかは点滅している名札だけ */
+/**
+ * 名札の当たり判定を付ける部隊：対象選びの間は、持ち主と地図に見えている味方（対象）。移動先指定（pending 'move'）の間は無し
+ * （点滅している名札の印も能力として扱わず、押した点＝通れなければ近くの通れる所への移動にする。「味方の上を押しても選び直さずに移動」と
+ * 同じ扱い。能力を使うときは移動先指定をやめてから）。そのほかは点滅している名札だけ
+ */
 export function labelTapCandidates(s: BattleState, pending: Pending, selectedId: string | null): string[] {
-    if (s.result) return [];
+    if (s.result || pending === 'move') return [];
     if (pending === 'ability' && selectedId) return s.units.filter((u) => u.side === 'ally' && u.present && isActive(u)).map((u) => u.id);
     return s.abilityList.filter((r) => r.side === 'ally' && abilityInfo(s, r.unitId)?.ready).map((r) => r.unitId);
 }

@@ -246,7 +246,16 @@ function snapCell(nav: NavGrid, spd: Float32Array, kind: UnitKind, i: number, x:
  * from から to への道（通る点の並び。最後の点が行き先。from は含まない）。道が無ければ null。
  * 行き先が通れない所なら、いちばん近い通れる所を行き先にする。
  */
-export function findPath(nav: NavGrid, kind: UnitKind, fx: number, fz: number, tx: number, tz: number): { x: number; z: number }[] | null {
+export function findPath(
+    nav: NavGrid,
+    kind: UnitKind,
+    fx: number,
+    fz: number,
+    tx: number,
+    tz: number,
+    /** 探す道のかかる時間の上限（A* の f がこれを超える升は広げない。省けば上限なし＝今までと同じ） */
+    maxCost: number = Infinity,
+): { x: number; z: number }[] | null {
     const spd = nav.speedOf(kind);
     const goalPt = nearestPassable(nav, tx, tz);
     let start = cellOf(nav, fx, fz);
@@ -358,6 +367,7 @@ export function findPath(nav: NavGrid, kind: UnitKind, fx: number, fz: number, t
             const len = diag ? cell * Math.SQRT2 : cell;
             const ng = g[cur]! + (len * 0.5) / sc + (len * 0.5) / spd[ni]!;
             if (stamp[ni] === gen && ng >= g[ni]!) continue;
+            if (ng + h(ni) > maxCost) continue;
             stamp[ni] = gen;
             g[ni] = ng;
             from[ni] = cur;
@@ -456,9 +466,29 @@ export function regionAt(nav: NavGrid, x: number, z: number): number {
     return regionsOf(nav)[cellOf(nav, p.x, p.z)]!;
 }
 
+/** 種類ごとの、格子の通れる升でいちばん遅い速さ（findPathAvoiding の探す範囲の上限に使う。格子ごとに 1 回だけ数える） */
+const slowestOf = new WeakMap<NavGrid, Map<UnitKind, number>>();
+function slowestSpeed(nav: NavGrid, kind: UnitKind): number {
+    let m = slowestOf.get(nav);
+    if (!m) slowestOf.set(nav, (m = new Map()));
+    let v = m.get(kind);
+    if (v === undefined) {
+        const spd = nav.speedOf(kind);
+        v = Infinity;
+        for (let i = 0; i < spd.length; i++) if (!nav.blocked[i] && spd[i]! < v) v = spd[i]!;
+        if (!Number.isFinite(v)) v = 0.05;
+        m.set(kind, v);
+    }
+    return v;
+}
+
 /**
  * 味方の隊を避けた道（第4群の設計 §1：味方だけに塞がれたときの短い迂回。sim.ts の tryAllyDetour）。avoid の円の中に中心がある升を
- * 通れないものとして findPath で道を探す（出発点・行き先の升は塞がない）。格子はすぐ元に戻す。道が無ければ null
+ * 通れないものとして findPath で道を探す（出発点・行き先の升は塞がない）。格子はすぐ元に戻す。道が無ければ null。
+ * maxLen（道の長さの上限。m）を渡すと、それより長い道しか無いときに格子の全体を探さずに打ち切る（null）：長さ maxLen 以内の道は、格子の
+ * 升をたどる道（8 方向の歩みの分 1.0824 倍に余裕を見て 1.1 倍と、升への寄せ・角の升 4 つ分を足した長さ）を、いちばん遅い升の速さで歩いた時間を超えない。
+ * その時間を A* の上限（findPath の maxCost）にするので、長さ maxLen 以内の道があれば、上限の無いときと同じ道を返す
+ * （第4群の確かめの指摘：見つからない場合に城下町外縁で 1 回 3.4 ms かかっていた）
  */
 export function findPathAvoiding(
     nav: NavGrid,
@@ -468,7 +498,9 @@ export function findPathAvoiding(
     tx: number,
     tz: number,
     avoid: readonly { x: number; z: number; r: number }[],
+    maxLen: number = Infinity,
 ): { x: number; z: number }[] | null {
+    const maxCost = Number.isFinite(maxLen) ? (maxLen * 1.1 + nav.cell * 4 * Math.SQRT2) / slowestSpeed(nav, kind) : Infinity;
     // 速さの表は塞ぐ前に作っておく（塞いだ升の速さを 0 のまま覚えないように。buildNav が 4 種類とも作るので、ふつうは作り済み）
     nav.speedOf(kind);
     const keepA = cellOf(nav, fx, fz);
@@ -492,7 +524,7 @@ export function findPathAvoiding(
         }
     }
     try {
-        return findPath(nav, kind, fx, fz, tx, tz);
+        return findPath(nav, kind, fx, fz, tx, tz, maxCost);
     } finally {
         for (const i of changed) nav.blocked[i] = 0;
     }

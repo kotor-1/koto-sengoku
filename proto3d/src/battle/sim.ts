@@ -81,7 +81,7 @@ import {
     type GateRun,
 } from './fieldRules';
 import { findPath, findPathAvoiding, isPassable, nearestPassable, pathExists, regionAt } from './pathfind';
-import { activeObjectiveZones, createObjectiveTrack, finalObjectives, isLeaveObjective, refreshObjective, trackObjectives, withdrawalKind, type ObjectiveTrack } from './objectives';
+import { activeObjectiveZones, createObjectiveTrack, deadlineName, finalObjectives, isLeaveObjective, refreshObjective, trackObjectives, withdrawalKind, type ObjectiveTrack } from './objectives';
 import { nightSeen } from './night';
 import {
     abilitiesUsedRecord,
@@ -863,7 +863,9 @@ export function meleeUnreachable(s: BattleState, u: UnitState, t: UnitState): bo
 
 /**
  * 移動の行き先へ道があるか（第4群。第3群の直し FieldRules.refinedMoves の戦場の味方だけ。ほかはいつも 'ok'）：
- * 'ok'＝道がある、門（GateRun）＝閉じたその門を開けば通じる（開門待ち）、'none'＝門を開いても通じない（物理的に道が無い）。
+ * 'ok'＝道がある、門（GateRun）＝閉じた門を開けば通じる（開門待ち。その部隊の側でいちばん手前の門）、'none'＝門を開いても通じない
+ * （物理的に道が無い）。門が直列に並ぶ（外門の先の内門の向こう）ときも、閉じた門でつながる所を順にたどって通じるかを見る
+ * （前は 1 つの門の両側だけを見たので、2 つ目の門の向こうへの移動を「道が無い」で断っていた）。手前の門が開くと、planFor が次の門の開門待ちにする。
  * x・z は通れる所へ寄せた後の行き先（applyOrder と同じ）
  */
 function moveReach(s: BattleState, u: UnitState, x: number, z: number): 'ok' | 'none' | GateRun {
@@ -871,10 +873,23 @@ function moveReach(s: BattleState, u: UnitState, x: number, z: number): 'ok' | '
     if (!s.field.refined || !nav || u.side !== 'ally' || pathExists(nav, u.x, u.z, x, z)) return 'ok';
     const from = regionAt(nav, u.x, u.z);
     const to = regionAt(nav, x, z);
-    for (const g of s.field.gates) {
-        if (g.open) continue;
-        const ids = gateSides(s, g).map((p) => p.region);
-        if (ids.includes(from) && ids.includes(to)) return g;
+    const closed = s.field.gates.filter((g) => !g.open).map((g) => ({ g, ids: gateSides(s, g).map((p) => p.region) }));
+    // つながりの番号を、閉じた門をはさんで順にたどる（幅優先。最初の門＝部隊の側の門を覚えておく）
+    const first = new Map<number, GateRun>();
+    const queue = [from];
+    const seen = new Set([from]);
+    while (queue.length) {
+        const r = queue.shift()!;
+        for (const { g, ids } of closed) {
+            if (!ids.includes(r)) continue;
+            for (const n of ids) {
+                if (seen.has(n)) continue;
+                seen.add(n);
+                first.set(n, r === from ? g : first.get(r)!);
+                if (n === to) return first.get(n)!;
+                queue.push(n);
+            }
+        }
     }
     return 'none';
 }
@@ -1281,7 +1296,7 @@ function tick(s: BattleState): void {
     if (s.field.gates.length > 0) trackGates(s, dt);
 
     // 9d. 目標（目標のある合戦だけ）
-    if (s.objectives) trackObjectives(s, dt, (text) => log(s, 'objective', text));
+    if (s.objectives) trackObjectives(s, dt, (text, id) => log(s, 'objective', text, id));
 
     // 10. 勝ち負け
     decide(s);
@@ -1768,16 +1783,16 @@ function trackSqueeze(s: BattleState, u: UnitState, left: number, aim: { x: numb
         // 第4群（第3群の直しの戦場だけ）：味方同士の詰まり。塞いでいるのが止まっている味方だけのとき、短い迂回を先に探し、
         // それでも allyBlockSec 秒進めなければ、その味方の中をすり抜ける（壁・閉じた門・川・崖・敵部隊・順番待ちの味方では始めない）
         if (!s.field.refined) return;
-        // 塞がれている時間：行き先までの残りの道のりを 1 m も縮められず、かつ squeezeMove m も動いていない時間（味方の横をよけて回っている間・
-        // 押し合って行き来している間は数えない）。半分で、塞いでいるのが味方だけなら短い迂回を 1 回探し（進みを縮めるまで 1 回だけ）、
-        // allyBlockSec 秒になってもまだ味方だけに塞がれていれば、すり抜ける
-        const stall = s.t - Math.max(q.bt ?? s.t, q.t);
-        // すれ違いの詰まり（第4群の直し）：反対向きに動く味方と押し合っている間は、押し戻されて squeezeMove m 以上動くので stall が数え直しに
-        // なる（湖・河岸の崖の南の端で、南へ下る忠勝隊と北へ上る騎馬が約 20 秒もつれた）。そこで、残りの道のりを 1 m も縮められない時間 noGain で
-        // 数え、行く手に反対向きに動く味方だけがいる（headOnAlly。壁・閉じた門・川・崖・敵・順番待ちでは null）なら、同じ allyBlockSec の調整
-        // （半分で短い迂回 → allyBlockSec ですり抜け）を効かせる
+        // 塞がれている時間 noGain：行き先までの残りの道のりを 1 m も縮められない時間。半分で、塞いでいるのが味方だけなら短い迂回を 1 回探し
+        // （進みを縮めるまで 1 回だけ）、allyBlockSec 秒になってもまだ味方だけに塞がれていれば、すり抜ける。
+        // （前は「squeezeMove m も動いていない時間」で数えたので、止まっている味方の横・後ろへよけ続けている間は数え直しになり、2 秒の決まりが
+        // 働かなかった：城下町外縁で、榊原隊が味方 2 隊をよけながら 10 秒・45 m 逸れて「道を塞がれて先へ進めない」で待機になった。
+        // よけて回っても残りの道のりを縮められない間は、塞がれているのと同じに数える）
+        // すれ違いの詰まり（第4群の直し）：行く手に反対向きに動く味方だけがいる（headOnAlly。壁・閉じた門・川・崖・敵・順番待ちでは null）
+        // ときも、同じ noGain で allyBlockSec の調整（allyBlockSec ですり抜け）を効かせる（湖・河岸の崖の南の端で、南へ下る忠勝隊と北へ上る騎馬が
+        // 約 20 秒もつれた）
         const noGain = s.t - (q.bt ?? s.t);
-        let block = stall >= RULES.allyBlockSec * 0.5 - 1e-9 ? allyOnlyBlock(s, u, aim, goal) : null;
+        let block = noGain >= RULES.allyBlockSec * 0.5 - 1e-9 ? allyOnlyBlock(s, u, aim, goal) : null;
         // 塞いでいる味方が、押し合って進めない（jammed）だけで反対向きに動いている味方なら、すれ違いとして扱う
         // （行き先の近く＝spacing × 2 m 以内で行き過ぎを戻る小さな動きは、すれ違いにしない）
         const far = left > RULES.spacing * 2;
@@ -1795,7 +1810,7 @@ function trackSqueeze(s: BattleState, u: UnitState, left: number, aim: { x: numb
                 return;
             }
         }
-        if ((block ? stall : noGain) < RULES.allyBlockSec - 1e-9) return;
+        if (noGain < RULES.allyBlockSec - 1e-9) return;
     }
     q.on = true;
     q.x = u.x;
@@ -1820,7 +1835,7 @@ function allyOnlyBlock(s: BattleState, u: UnitState, aim: { x: number; z: number
 /**
  * 行き先へ進めない（かもしれない）原因の分け方（allyOnlyBlock の中身。開発用の waitReason と e2e の止まりの見張りも同じ分け方を使う）：
  * - noPath：道探しの道が無い（閉じた門の向こう・囲まれた所）。gate：開門待ち。
- * - foe：近く（spacing × 2 m）に戦える敵がいる。wall：次の点までまっすぐ通れない（壁・川・崖が間にある）。
+ * - foe：近く（spacing × 2 m）に、まっすぐ歩いて届く（間に通れない所の無い）戦える敵がいる。wall：次の点までまっすぐ通れない（壁・川・崖が間にある）。
  * - queue：斬り合いの順番待ち（攻撃の相手が味方と斬り合っている・行く手の筋の上に斬り合っている味方・前の味方が敵に止められている・
  *   前の味方が攻撃の相手の間合いの近くで順番を待っている）。
  * - ally：止まっている味方だけに塞がれている（その味方を unit に）。null：行く手に何も無い（または通れない所が無い戦場）
@@ -1835,7 +1850,10 @@ function blockCause(s: BattleState, u: UnitState, aim: { x: number; z: number },
     // （1 部隊ずつの狭い正面の手前で、斬り合う味方の後ろに着いた隊。包囲された陣の東の抜け道。ほかの戦える敵が近ければ foe のまま）
     const tgt = u.order.type === 'attack' ? unitById(s, u.order.targetId) : undefined;
     const queued = !!tgt && s.units.some((o) => o.side === u.side && o !== u && isActive(o) && (o.engagedWith === tgt.id || tgt.engagedWith === o.id));
-    const foeNear = (p: { x: number; z: number }) => s.units.some((o) => o.side !== u.side && isActive(o) && !(queued && o === tgt) && dist(o, p) < RULES.spacing * 2);
+    // 近くの敵は、その所からまっすぐ歩いて届く（間に石垣・家屋・塀・柵・川・崖の無い）敵だけ数える（間を通れない敵は行く手を塞いでいない。
+    // 前は距離だけで見たので、石垣・川・柵の向こうの敵でも「近くの敵」「順番待ち」になった＝第4群の確かめの指摘）
+    const foeNear = (p: { x: number; z: number }) =>
+        s.units.some((o) => o.side !== u.side && isActive(o) && !(queued && o === tgt) && dist(o, p) < RULES.spacing * 2 && lineClear(nav, p, o));
     if (foeNear(u)) return { kind: 'foe' };
     if (!lineClear(nav, u, aim)) return { kind: 'wall' };
     if (queued) return { kind: 'queue' };
@@ -1863,7 +1881,7 @@ function blockCause(s: BattleState, u: UnitState, aim: { x: number; z: number },
         if (foeNear(o)) return { kind: 'queue' };
         if (o.order.type === 'attack') {
             const t = unitById(s, o.order.targetId);
-            if (t && isActive(t) && dist(o, t) <= RULES.meleeRange + RULES.spacing) return { kind: 'queue' };
+            if (t && isActive(t) && dist(o, t) <= RULES.meleeRange + RULES.spacing && lineClear(nav, o, t)) return { kind: 'queue' };
         }
         if (!block || dist(o, u) < dist(block, u)) block = o;
     }
@@ -1889,9 +1907,13 @@ export function waitReason(s: BattleState, u: UnitState): WaitReason | null {
         const t = u.order.type === 'attack' ? unitById(s, u.order.targetId) : undefined;
         return t && s.units.some((o) => o.side === u.side && o !== u && isActive(o) && (o.engagedWith === t.id || t.engagedWith === o.id)) ? 'queue' : null;
     }
+    return blockCause(s, u, moveAim(u, goal), goal)?.kind ?? null;
+}
+
+/** 部隊が行き先 goal へ向かう今の次の点（道探しの道がその行き先のものなら道の次の点、無ければ行き先。道は引き直さない） */
+function moveAim(u: UnitState, goal: { x: number; z: number }): { x: number; z: number } {
     const P = u.path;
-    const aim = P && !P.none && P.idx < P.pts.length && Math.hypot(P.goalX - goal.x, P.goalZ - goal.z) <= RULES.repathMove ? P.pts[P.idx]! : goal;
-    return blockCause(s, u, aim, goal)?.kind ?? null;
+    return P && !P.none && P.idx < P.pts.length && Math.hypot(P.goalX - goal.x, P.goalZ - goal.z) <= RULES.repathMove ? P.pts[P.idx]! : goal;
 }
 
 /** 部隊が今向かっている点（道探しの道の次の点。道が無ければ命令の行き先・攻撃の相手）。行き先の無い部隊は null */
@@ -1974,7 +1996,8 @@ function tryAllyDetour(s: BattleState, u: UnitState, goal: { x: number; z: numbe
         avoid.push({ x: o.x, z: o.z, r: RULES.spacing });
     }
     if (avoid.length === 0) return false;
-    const pts = findPathAvoiding(nav, u.kind, u.x, u.z, goal.x, goal.z, avoid);
+    // 長さの上限（今の道の残りの allyDetourRatio 倍）より長い道しか無ければ、格子の全体を探さずに打ち切る（findPathAvoiding の maxLen）
+    const pts = findPathAvoiding(nav, u.kind, u.x, u.z, goal.x, goal.z, avoid, left * RULES.allyDetourRatio);
     if (!pts) return false;
     let len = 0;
     let px = u.x;
@@ -2147,6 +2170,9 @@ function stuckNearGoal(s: BattleState, u: UnitState, goal: { x: number; z: numbe
     if (fighting || moving) return false;
     // （第3群の直しの、待機の味方に 12 秒塞がれてからすり抜ける決まりは、第4群で味方同士の詰まり RULES.allyBlockSec（trackSqueeze）に置き換えた）
     if (still < RULES.settleSec * 2 - 1e-9) return false;
+    // 第4群の直し（第3群の直しの戦場だけ）：止まっている味方だけに塞がれている（blockCause が 'ally'）なら待機にしない。
+    // trackSqueeze が allyBlockSec で味方の中をすり抜けさせる（ここで待機にすると、すり抜ける前に「道を塞がれて先へ進めない」で止まる）
+    if (s.field.refined && blockCause(s, u, moveAim(u, goal), goal)?.kind === 'ally') return false;
     // 第3群の直し（FieldRules.refinedMoves）：行き先から遠い所で行き詰まって待機にするときは、味方の部隊なら知らせる（黙って止まらない）
     if (s.field.refined && u.side === 'ally') log(s, 'lost', `${u.name}：道を塞がれて先へ進めない。ここで待機する`, u.id);
     return true;
@@ -2388,7 +2414,7 @@ function finish(s: BattleState, result: BattleResultKind, reason: BattleEndReaso
         ally_hq_routed: `味方の本陣が崩れた。敗北（${lord}は落ち延びる）`,
         ally_army_broken: `味方の諸隊が崩れた。敗北（${lord}は落ち延びる）`,
         ordered_retreat: wd === 'abandoned' ? '主目標を果たす前に兵を退いた。撤退（合戦の放棄）' : '兵をまとめて退いた。撤退',
-        nightfall: '日が暮れた。両軍が兵を引く（撤退）',
+        nightfall: s.setup.night?.deadlineEndText ? `${s.setup.night.deadlineEndText}（撤退）` : '日が暮れた。両軍が兵を引く（撤退）',
         objective_done: `主目標「${s.objectives?.primary?.def.label ?? ''}」を果たした。勝利${wd === 'objective' ? '（目標を果たした撤収）' : ''}`,
         objective_failed: `主目標「${s.objectives?.primary?.def.label ?? ''}」を果たせなかった。敗北（${lord}は落ち延びる）`,
     };
@@ -2464,7 +2490,7 @@ function decideByObjective(s: BattleState): void {
     };
     // 撤退の成功は、兵を離し切ってから判定する（離れた兵を数え直す）
     const recheck = () => {
-        if (P.def.type === 'retreat_success') refreshObjective(s, P, (text) => log(s, 'objective', text));
+        if (P.def.type === 'retreat_success') refreshObjective(s, P, (text, id) => log(s, 'objective', text, id));
     };
     if (s.allRetreatAt !== null) {
         const still = s.units.filter((u) => u.side === 'ally' && isActive(u));
@@ -2502,9 +2528,9 @@ function decideByObjective(s: BattleState): void {
             // 守る目標（時間・区域を守る・突破を抑える）は、攻め手がいなくなれば守り切ったのと同じなので、今までどおり勝ち
             if (!(s.field.refined && needsOwnDeed(P.def))) return finish(s, 'victory', 'enemy_army_broken');
             const tr = s.objectives!;
-            if (tr.armyBrokenT === undefined) {
+            if (tr.armyBrokenT === undefined && enemyBreakKnown(s)) {
                 tr.armyBrokenT = s.t;
-                log(s, 'objective', `敵の部隊はすべて崩れた。主目標「${P.def.label}」を果たせば勝ち（日没まで）`);
+                log(s, 'objective', `敵の部隊はすべて崩れた。主目標「${P.def.label}」を果たせば勝ち（${deadlineName(s.setup)}まで）`);
             }
         }
     }
@@ -2586,10 +2612,20 @@ function decideByEndRules(s: BattleState): void {
     }
     const enemies = s.units.filter((u) => u.side === 'enemy');
     const tr = s.objectives!;
-    if (enemies.length > 0 && !enemies.some(able) && tr.armyBrokenT === undefined) {
+    if (enemies.length > 0 && !enemies.some(able) && tr.armyBrokenT === undefined && enemyBreakKnown(s)) {
         tr.armyBrokenT = s.t;
-        log(s, 'objective', `敵の部隊はすべて崩れた。主目標「${P.def.label}」を果たせば勝ち（日没まで）`);
+        log(s, 'objective', `敵の部隊はすべて崩れた。主目標「${P.def.label}」を果たせば勝ち（${deadlineName(s.setup)}まで）`);
     }
+}
+
+/**
+ * 「敵の部隊はすべて崩れた」を知らせてよいか：夜（第4群）は、味方の陣営がどの敵の崩れも知っている（その部隊の知っている様子 intel.status が
+ * 戦える 'ready' でない。まだ現れていない部隊は除く）ときだけ（見つけていない所で崩れた敵を、この知らせで漏らさない。第4群の確かめの指摘）。
+ * 知らない敵がいる間は知らせを待ち、知ったら出す。夜でない合戦はいつも true（今までどおり）
+ */
+function enemyBreakKnown(s: BattleState): boolean {
+    if (!s.setup.night) return true;
+    return s.units.every((u) => u.side !== 'enemy' || !u.arrived || u.intel.status !== 'ready');
 }
 
 /** 敵がすべて崩れても、味方が自分で果たさなければならない主目標（区域の確保・門の制圧・出口への突破。段階目標はその段のどれかがそうなら） */

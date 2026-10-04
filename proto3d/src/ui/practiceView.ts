@@ -90,7 +90,7 @@ export class PracticeDomView implements PracticeView {
             sd.dataset.objective = 'secondary';
             dl.append(el('dt', undefined, '副目標'), sd);
         }
-        dl.append(el('dt', undefined, '日没'), el('dd', undefined, `${info.timeLimit} で両軍が兵を引く（撤退）`));
+        dl.append(el('dt', undefined, info.deadlineName), el('dd', undefined, `${info.timeLimit} で両軍が兵を引く（撤退）`));
         obj.append(dl);
         left.append(obj);
         // 地形・状況

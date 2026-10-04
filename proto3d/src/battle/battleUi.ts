@@ -45,7 +45,8 @@ import {
     type ResultRow,
 } from './control';
 import type { Side } from './types';
-import { layoutLabels, layoutMapLabels, type LabelFit, type LabelLayoutItem, type MapLabelItem } from './labelLayout';
+import { deadlineName } from './objectives';
+import { boxOf, layoutLabels, layoutMapLabels, type Box, type LabelFit, type LabelLayoutItem, type MapLabelItem } from './labelLayout';
 
 export type CommandKind = 'move' | 'attack' | 'hold' | 'retreat' | 'face';
 
@@ -313,6 +314,9 @@ export class BattleUi {
                 gb.append(rules);
             }
             g.append(head, gb);
+            // 開いた目標の欄の本文：押し・なぞり（スマホでは長いと欄の中を送る）・ホイールは欄で使い切り、地図へ通さない（能力の説明の欄と同じ）。
+            // ページ全体の touchmove の抑止（main.ts）にも届かせない（届くと指でなぞっても欄が送れなかった）
+            this.bindPanelSink(gb);
             if (opts.touch) g.classList.add('closed');
             press(head, () => g.classList.toggle('closed'));
             this.goals = g;
@@ -375,7 +379,7 @@ export class BattleUi {
         this.bindCardList(cards);
         const cmds = el('div', 'b-cmds');
         this.cmdBtns = {
-            move: button('b-btn b-cmd', '移動', '移動先指定（この後で押した所へ移動。味方の立つ所を押しても選び直さない）'),
+            move: button('b-btn b-cmd', '移動', '移動先指定（この後で押した所へ移動。味方の立つ所・名札の印を押しても選び直さず、能力も使わない）'),
             attack: button('b-btn b-cmd', '攻撃', '攻撃（この後で敵を押す）'),
             hold: button('b-btn b-cmd', '防衛・待機', '防衛・待機'),
             retreat: button('b-btn b-cmd', '撤退', 'この部隊を撤退させる'),
@@ -544,7 +548,7 @@ export class BattleUi {
     // ---------------------------------------------------------------- 毎フレーム
 
     update(s: BattleState, st: UiState): void {
-        setText(this.objTime, `日没まで ${timeText(s)}`);
+        setText(this.objTime, `${deadlineName(s.setup)}まで ${timeText(s)}`);
         for (const side of ['enemy', 'ally'] as Side[]) {
             const a = armySummary(s, side);
             setText(this.objArmy[side], `${side === 'enemy' ? '敵' : '味方'}　本陣：${a.hq}　ほか ${a.total} 部隊のうち ${a.able} が戦える`);
@@ -605,7 +609,7 @@ export class BattleUi {
         // 命令の途中の案内（または短い知らせ）
         let hint = '';
         // 移動先指定：味方の上を押しても選び直さず、その点へ（通れなければ近くの通れる所）
-        if (st.pending === 'move') hint = `移動先指定中：${sel?.name ?? ''}の行き先を押す（味方の上も可）`;
+        if (st.pending === 'move') hint = `移動先指定中：${sel?.name ?? ''}の行き先を押す（味方・名札の印の上も移動。能力はやめてから）`;
         else if (st.pending === 'attack') hint = `${sel?.name ?? ''}：攻撃する敵の部隊を押してください`;
         else if (st.pending === 'face') hint = `向き指定中：${sel?.name ?? ''}が向く方を押す（その場で向き直る）`;
         else if (st.pending === 'ability') hint = abilityTargetHint(s, sel?.id ?? null);
@@ -827,7 +831,23 @@ export class BattleUi {
      * （まだ測っていなければ名前の幅からの見積もり）を使う。
      */
     declutterLabels(on: boolean): void {
-        this.declutterMapLabels(on);
+        // 名札の上に描かれる部品（「指揮中（一時停止）」の札）の四角：重なる名札は小さく・隠す（選んだ・点滅の名札は除く）
+        const blocked = on ? this.labelBlockers() : [];
+        const unitBoxes = this.declutterUnitLabels(on, blocked);
+        this.declutterMapLabels(on, blocked, unitBoxes);
+    }
+
+    /** 名札の入れ物から見た、名札の上に描かれる部品の四角（いま見えている「指揮中（一時停止）」の札） */
+    private labelBlockers(): Box[] {
+        if (this.pausePill.hidden) return [];
+        const r = this.pausePill.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0) return [];
+        const c = this.labels.getBoundingClientRect();
+        return [{ l: r.left - c.left, t: r.top - c.top, r: r.right - c.left, b: r.bottom - c.top }];
+    }
+
+    /** 部隊の名札の重なりをほどく（declutterLabels の中身）。返すのは、見せている部隊の名札の四角（地図の名札と比べる） */
+    private declutterUnitLabels(on: boolean, blocked: readonly Box[]): Box[] {
         const list: { l: LabelEls; it: LabelLayoutItem }[] = [];
         for (const l of this.labelEls.values()) {
             const id = l.e.dataset.id;
@@ -844,7 +864,7 @@ export class BattleUi {
             const it: LabelLayoutItem = { id, x: l.x, y: l.y, w: 0, h: 0, mw: 0, mh: 0, sel: l.e.classList.contains('sel'), ready: keep, important: l.imp, prev: l.fit };
             list.push({ l, it });
         }
-        if (list.length === 0) return;
+        if (list.length === 0) return [];
         // 選んだ・点滅の名札が小さい・隠れたままなら、測る前にそのままの見せ方へ戻す（大きさをそのままで測る）
         for (const { l, it } of list) if ((it.sel || it.ready) && l.fit !== 'full') this.setFit(l, 'full');
         for (const { l, it } of list) {
@@ -867,8 +887,9 @@ export class BattleUi {
         const W = this.labels.clientWidth || window.innerWidth;
         const H = this.labels.clientHeight || window.innerHeight;
         const items = list.map((k) => k.it);
-        const lay = layoutLabels(items, W / 2, H / 2);
+        const lay = layoutLabels(items, W / 2, H / 2, blocked);
         this.lastLayout = { items, out: [...lay].map(([id, p]) => ({ id, ...p })) };
+        const boxes: Box[] = [];
         for (const { l, it } of list) {
             const p = lay.get(it.id);
             if (!p) continue;
@@ -877,15 +898,19 @@ export class BattleUi {
                 l.dy = p.dy;
                 this.placeLabel(l);
             }
+            if (p.fit === 'full') boxes.push(boxOf(it.x, it.y + p.dy, it.w, it.h));
+            else if (p.fit === 'mini') boxes.push(boxOf(it.x, it.y + p.dy, it.mw, it.mh));
         }
+        return boxes;
     }
 
     /**
      * 地図の名札（地形・目標・門・援軍・退き口・狭い正面。data-id の無い名札）の重なりをほどく（特殊能力のある合戦だけ。架空の第一章は今までどおり）。
      * 優先の順（labelLayout.ts の mapLabelRank：目標 > 門 > 援軍 > 退き口 > 狭い正面 > 地形の名前）に置き、先に置いた名札と重なる名札は
-     * 一時的に隠す（data-fit="hide"。目標の輪の名札は隠さない）。部隊の名札とは比べない
+     * 一時的に隠す（data-fit="hide"。目標の輪の名札は隠さない）。名札の上に描かれる部品（blocked）に重なる名札も隠す。
+     * 部隊の名札（units）とは、地形の名前の名札だけを比べる（labelLayout.ts の layoutMapLabels）
      */
-    private declutterMapLabels(on: boolean): void {
+    private declutterMapLabels(on: boolean, blocked: readonly Box[] = [], units: readonly Box[] = []): void {
         const list: { l: LabelEls; it: MapLabelItem }[] = [];
         for (const [id, l] of this.labelEls) {
             if (l.e.dataset.id) continue;
@@ -896,7 +921,11 @@ export class BattleUi {
             list.push({ l, it: { id, x: l.x, y: l.y + l.dy, w: l.e.offsetWidth, h: l.e.offsetHeight, prevHidden: l.fit === 'hide' } });
         }
         if (list.length === 0) return;
-        const hidden = layoutMapLabels(list.map((k) => k.it));
+        const hidden = layoutMapLabels(
+            list.map((k) => k.it),
+            blocked,
+            units,
+        );
         for (const { l, it } of list) {
             const fit: LabelFit = hidden.has(it.id) ? 'hide' : 'full';
             if (l.fit !== fit) this.setFit(l, fit);
@@ -1166,7 +1195,7 @@ export class BattleUi {
         how.append(el('b', '', '操作'));
         const touchLines = [
             '部隊（または下の札）を押して選ぶ → 地面を押すと移動、敵を押すと攻撃（敵のすぐ近くの地面も攻撃になる。脇へ動かすには「移動」の後で地面を押す）。選んだ部隊をもう一度押すと選択を外す（敵を調べられる）。',
-            '「移動」（移動先指定）の後は、味方の立つ所を押しても選び直さず、そこへ移動する。',
+            '「移動」（移動先指定）の後は、味方の立つ所・名札の印を押しても選び直さず、そこへ移動する（能力を使うときは、移動先指定をやめてから）。行き先を押した直後（0.6 秒）の次の押しは、敵の上でもその点への移動になる（攻撃させるときは少しあけて敵を押す）。',
             ...(this.cards.size > 4 ? ['下の札は横になぞるとずらせる（隠れている部隊の札が出る）。'] : []),
             '「防衛・待機」「撤退」はボタン。1 本指で地図を動かす、2 本指で寄る・引く。',
             '「指揮（一時停止）」で時を止めて命令を出せる。',
@@ -1174,7 +1203,7 @@ export class BattleUi {
         const nCards = this.cards.size;
         const pcLines = [
             `クリック（または下の札・1〜${Math.max(1, Math.min(8, nCards))} キー）で部隊を選ぶ → 地面をクリックで移動、敵をクリックで攻撃（右クリックでも命令。敵のすぐ近くの地面も攻撃になる。脇へ動かすには M の後で地面をクリック）。`,
-            'M（移動先指定）の後は、味方の立つ所をクリックしても選び直さず、そこへ移動する。',
+            'M（移動先指定）の後は、味方の立つ所・名札の印をクリックしても選び直さず、そこへ移動する（能力を使うときは、Esc で移動先指定をやめてから）。行き先を押した直後（0.6 秒）の次のクリックは、敵の上でもその点への移動になる（攻撃させるときは少しあけて敵をクリック）。',
             'ドラッグで地図を動かす、ホイールで寄る・引く。M 移動・A 攻撃・H 防衛・待機・R 撤退・Esc 取り消し。',
             'Space で指揮（一時停止）／再開。止めたまま命令を出せる。',
         ];

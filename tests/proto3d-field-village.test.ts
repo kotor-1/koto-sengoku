@@ -33,6 +33,11 @@
  * 早送り・16 通り。前 → 後。tests/proto3d-battle-ally-block.test.ts に西の辻に二隊の再現）：広場・柵の弓・予備を回す・分ける・辻の差配は同じ。
  * 家屋の陰の弓 損害 27.0 → 27.4％・損害 3 割以内 10 → 9、西の辻に二隊 15 勝・19.8 → 19.9％・戦える 4.56 → 4.50、
  * 準備した正面攻撃 16 勝・40.2 → 39.9％・4.69 → 4.75、能力なしの正面攻撃 7 勝・45.6 → 46.8％・1.81 → 1.63（弓 5 → 4）。
+ * 第4群の確かめの直し（味方だけに塞がれた時間を、よけて回る間も「残りの道のりを縮められない時間」で数える・止まっている味方だけに塞がれている間は
+ * 「道を塞がれて」の待機にしない・損害を抑える副目標は負けて終えたら果たせない）の後（早送り・16 通り。勝ち・損害・損害 3 割以内／弓／米蔵。前 → 後）：
+ * 広場 15 勝・21.6％・16／16／0 → 15 勝・20.3％・15／16／0、柵の弓 16 勝・20.0 → 20.1％、家屋の陰の弓 27.4 → 29.9％・9 → 10／0／0、
+ * 西の辻に二隊 15 → 16 勝・19.9 → 19.6％・米蔵 15 → 16、予備を回す 28.1 → 28.3％、準備した正面攻撃 40.6 → 41.8％、分ける・無計画は負けのまま
+ * （無計画の弓 1 → 0）。比べ（柵の弓は広場より損害が少ない 20.1 対 20.3％＝差は小さい・予備を後から回すと損害が大きい・米蔵は西へ出す作戦だけ）は保つ。
  * 本物の入力（このテストの外。使い捨ての Playwright で ?dev=field&id=village を開き、札を押す → 地面を押すで POST と同じ命令を出し、待ちは
  * 開発用の早送り）：PC・スマホ相当とも 420 秒で勝ち、副目標 3 つとも果たした。家康本陣の (0,125) は、押した所に止まっている忠勝隊の体があり
  * 選び直しになった（移動先指定を使わない押し方。台本は issueOrder で直接出すので動く）。この差は結果を変えなかった。
@@ -312,8 +317,10 @@ describe('村落の作戦（早送り）', () => {
         // 損害（16 通りの平均）：柵の弓 20.0％ < 広場 21.6％。予備を回す 28.1％ > 西の辻 21.7％（後から回した酒井隊が通りで削られる）
         expect(mean(sixteen(FENCE), (r) => r.loss)).toBeLessThan(mean(sixteen(PLAZA), (r) => r.loss));
         expect(mean(sixteen(RESERVE), (r) => r.loss)).toBeGreaterThan(mean(sixteen(POST), (r) => r.loss) + 0.04);
-        // 損害を 3 割以内（16 通り）：広場 16・西の辻 14 ／予備を回す 12 前後
-        expect(count(sixteen(PLAZA), 'village_losses')).toBe(16);
+        // 損害を 3 割以内（16 通り）：広場 16・西の辻 14 ／予備を回す 12 前後。
+        // 第4群の確かめの直し（損害を抑える副目標は、負けて終えたら果たせない）の後：広場 16 → 15（負けた 1 通りを数えない。勝った 15 通りはすべて果たす）
+        expect(count(sixteen(PLAZA), 'village_losses')).toBe(wins(sixteen(PLAZA)));
+        expect(count(sixteen(PLAZA), 'village_losses')).toBe(15);
         expect(count(sixteen(RESERVE), 'village_losses')).toBeLessThan(count(sixteen(PLAZA), 'village_losses'));
     }, 300_000);
 
@@ -340,7 +347,8 @@ describe('村落の作戦（早送り）', () => {
     it('副目標が作戦で分かれる：広場を固めると損害は抑えるが米蔵を失う。通りの口で受ける（準備した正面攻撃）と米蔵は守るが損害が 3 割を超える', () => {
         const plaza = sixteen(PLAZA);
         const front = sixteen(FRONTAL);
-        expect([count(plaza, 'village_losses'), count(plaza, 'village_store')]).toEqual([16, 0]);
+        // 広場の損害 3 割以内は 16 → 15（第4群の確かめの直し：負けて終えた 1 通りを数えない）
+        expect([count(plaza, 'village_losses'), count(plaza, 'village_store')]).toEqual([15, 0]);
         expect(count(front, 'village_store')).toBe(16);
         expect(count(front, 'village_losses')).toBeLessThanOrEqual(2);
         // 1 回の台本でも同じ分かれ方

@@ -20,7 +20,7 @@ import { ABILITY_DATA, abilityDisplayName, resolveAbilityId } from '../battle/ab
 import { generalById } from '../battle/generals';
 import { CAMPAIGN_SAVE_KEY, LEGACY_2D_SAVE_KEY, saveFailureMessage, writeVerified, type SaveFailureReason, type StorageLike } from './save';
 import { formatSavedTime } from './scenario';
-import { endRuleItems, withdrawalNote } from '../battle/objectives';
+import { deadlineName, endRuleItems, withdrawalNote } from '../battle/objectives';
 
 // ================= 保存 =================
 
@@ -322,6 +322,8 @@ export interface PracticeBriefingInfo {
     endRules: string[];
     /** 日没までの時間（例：8:00） */
     timeLimit: string;
+    /** 時間切れの呼び名（夜の合戦は「夜明け」など。省けば「日没」＝objectives.ts の deadlineName） */
+    deadlineName: string;
     allies: PracticeUnitLine[];
     /** 敵の要約（例：敵勢 7 部隊・兵 2900） */
     enemies: string;
@@ -413,6 +415,7 @@ export function practiceBriefingInfo(field: BattlefieldDef): PracticeBriefingInf
         rules,
         endRules: endRuleItems(setup),
         timeLimit: fmtClock(setup.timeLimitSec),
+        deadlineName: deadlineName(setup),
         allies,
         enemies: `敵勢（架空の相手）${enemies.length} 部隊・兵 ${enemyMen}${late ? `（うち ${late} 部隊は後から来る）` : ''}`,
     };

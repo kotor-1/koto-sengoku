@@ -64,14 +64,15 @@ export function labelOrder<T extends LabelLayoutItem>(items: readonly T[], cx: n
     return [...items].sort((a, b) => labelRank(a) - labelRank(b) || key(a) - key(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
-interface Box {
+/** 画面の四角（CSS px。名札の入れ物の左上から） */
+export interface Box {
     l: number;
     t: number;
     r: number;
     b: number;
 }
 
-function boxOf(x: number, y: number, w: number, h: number): Box {
+export function boxOf(x: number, y: number, w: number, h: number): Box {
     return { l: x - w / 2, r: x + w / 2, t: y - h, b: y };
 }
 
@@ -84,9 +85,20 @@ function hits(me: Box, placed: readonly Box[], gap: number): Box | undefined {
  * keep（選んでいる・点滅）の名札はそのまま置き、重なれば上の縁から 2 px あけて上へずらす（最大で名札 4 つ分）。
  * そのほかは、その位置で重ならなければそのまま、重なれば小さく（その位置か、小さい名札 1 つ分まで上）、それでも重なれば隠す。
  */
-export function layoutLabels(items: readonly LabelLayoutItem[], cx: number, cy: number): Map<string, LabelPlacement> {
+export function layoutLabels(
+    items: readonly LabelLayoutItem[],
+    cx: number,
+    cy: number,
+    /**
+     * 名札を置かない所（画面の上の「指揮中（一時停止）」の札など、名札の上に描かれる部品の四角）。選んだ・点滅の名札のほか（小さく・隠す名札）は、
+     * ここに重なれば小さく・隠す（第4群の確かめ：スマホで「敵勢の本陣の守り」の名札の後ろ半分が札に隠れ、本陣が 2 つに見えた）。
+     * 選んだ・点滅の名札は今までどおり（ずらさない。上の知らせは tuckNotices が畳む）
+     */
+    blocked: readonly Box[] = [],
+): Map<string, LabelPlacement> {
     const out = new Map<string, LabelPlacement>();
     const placed: Box[] = [];
+    const hitsAny = (me: Box, gap: number) => hits(me, placed, gap) ?? hits(me, blocked, gap);
     for (const it of labelOrder(items, cx, cy)) {
         const keep = labelRank(it) <= 1;
         if (keep) {
@@ -107,13 +119,13 @@ export function layoutLabels(items: readonly LabelLayoutItem[], cx: number, cy: 
         const fullGap = prev === 'full' ? LABEL_GAP : LABEL_GAP + LABEL_HYSTERESIS;
         const miniGap = prev === 'hide' ? LABEL_GAP + LABEL_HYSTERESIS : LABEL_GAP;
         const full = boxOf(it.x, it.y, it.w, it.h);
-        if (!hits(full, placed, fullGap)) {
+        if (!hitsAny(full, fullGap)) {
             placed.push(full);
             out.set(it.id, { fit: 'full', dy: 0 });
             continue;
         }
         const mini = boxOf(it.x, it.y, it.mw, it.mh);
-        const hit = hits(mini, placed, miniGap);
+        const hit = hitsAny(mini, miniGap);
         if (!hit) {
             placed.push(mini);
             out.set(it.id, { fit: 'mini', dy: 0 });
@@ -123,7 +135,7 @@ export function layoutLabels(items: readonly LabelLayoutItem[], cx: number, cy: 
         const dy = hit.t - 2 - it.y;
         if (dy < 0 && dy >= -(it.mh + 2)) {
             const up = boxOf(it.x, it.y + dy, it.mw, it.mh);
-            if (!hits(up, placed, miniGap)) {
+            if (!hitsAny(up, miniGap)) {
                 placed.push(up);
                 out.set(it.id, { fit: 'mini', dy });
                 continue;
@@ -168,15 +180,19 @@ export interface MapLabelItem {
 /**
  * 地図の名札の重なりをほどく（スマホで全体を見ると、湿地の名札と島の「乾いた足場」・門の前の目標・条件・狭い正面の名札が重なって読めない）。
  * 優先の順（mapLabelRank、同じ順なら並びの順）に置き、先に置いた名札と重なる名札は一時的に隠す。目標の輪の名札（順 0）は隠さない。
- * 部隊の名札とは比べない（部隊は動くので、地形の名札が出たり消えたりしないように）。返すのは隠す名札の id
+ * blocked（名札の上に描かれる部品の四角）に重なる名札も隠す（順 0 を除く）。
+ * units（見えている部隊の名札の四角）とは、地形の名前（順 5）だけを比べ、重なれば隠す（第4群の確かめ：包囲された陣の始まりで、部隊の名札が
+ * 「湿地」「柵（通れない）」の文字に重なって読めなかった）。目標・門・援軍・退き口・狭い正面の名札は、部隊の名札と重なっても出したまま
+ * （部隊は動くので、大事な名札が出たり消えたりしないように）。出し直すときは LABEL_HYSTERESIS だけ多く空いていること。返すのは隠す名札の id
  */
-export function layoutMapLabels(items: readonly MapLabelItem[]): Set<string> {
+export function layoutMapLabels(items: readonly MapLabelItem[], blocked: readonly Box[] = [], units: readonly Box[] = []): Set<string> {
     const order = items.map((it, i) => ({ it, i, rank: mapLabelRank(it.id) })).sort((a, b) => a.rank - b.rank || a.i - b.i);
     const placed: Box[] = [];
     const hidden = new Set<string>();
     for (const { it, rank } of order) {
         const box = boxOf(it.x, it.y, it.w, it.h);
-        if (rank > 0 && hits(box, placed, it.prevHidden ? LABEL_GAP + LABEL_HYSTERESIS : LABEL_GAP)) {
+        const gap = it.prevHidden ? LABEL_GAP + LABEL_HYSTERESIS : LABEL_GAP;
+        if (rank > 0 && (hits(box, placed, gap) || hits(box, blocked, gap) || (rank >= 5 && hits(box, units, gap)))) {
             hidden.add(it.id);
             continue;
         }
