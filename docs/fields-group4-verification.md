@@ -2,11 +2,15 @@
 
 依頼本文 `docs/fields-group4-request.md` §5・設計 `docs/fields-group4-design.md` §6 の「固定したビルドでの確認」の記録。再起動の後は、この表を見て、同じ固定のコミットで済んだ項目は飛ばし、「未」「影響あり」の項目から再開する。
 
-- **固定のコミット：** `f508e95`（作業ツリーは空。この後のコミットはこの記録のファイルだけ）
+- **固定のコミット：** `f508e95`（作業ツリーは空。この後のコミットはこの記録のファイルだけ）→ `018ea95` → `8e249a2`（下の固定し直し）
   - **固定し直し（2026-10-04 12:50）：** `018ea95`。ops-group3 の NG（下の「失敗と原因」2）で `e2e/ops-group3.mjs` の古い期待を直した。
     `git diff f508e95..018ea95` は `e2e/ops-group3.mjs` とこの記録だけで、製品のコード・テスト・データ・ほかの e2e は同じ。
     そのため、f508e95 で済んだ項目（型・単体テスト・fields-group4・ops-group4・fields-group3・fields-group3-plans）はそのまま有効とし、
     影響のある ops-group3 だけを 018ea95 でやり直す。残りの項目と本番ビルドは 018ea95 で行う。
+  - **固定し直し（2026-10-04 14:45）：** `8e249a2`。fields-group2 の NG（下の「失敗と原因」3）で `e2e/fields-group2.mjs` の古い期待（演習の一覧が 15 戦場）を直した。
+    `git diff 018ea95..8e249a2` は `e2e/fields-group2.mjs` とこの記録だけで、製品のコード・テスト・データ・ほかの e2e は同じ。
+    そのため、018ea95 と f508e95 で済んだ項目（上の 6 項目・ops-group3 のやり直し・review-group3・fields-practice・fields-ui）はそのまま有効とし、
+    影響のある fields-group2 だけを 8e249a2 でやり直す。残りの項目と本番ビルド（表示を合わせるため）は 8e249a2 で行う。
 - **確かめ方の種類：**
   - 本物の入力＝画面のクリック・タップ・キー（通常速度。待ちだけ早送りのものはそう書く）
   - 早送り＝台本の命令を早送りで最後まで回す
@@ -40,29 +44,30 @@
 | review-group3 | 018ea95 | 2026-10-04 13:05〜13:10 | ok 17・NG 0（desktop・phone） | 17 | 本物の入力（待ちは早送り）・C の場面づくりだけ直接操作 |
 | fields-practice | 018ea95 | 2026-10-04 13:10〜13:28 | ok 586・NG 0（desktop・phone・eight・oldsaves。20 戦場の開始・結果・保存、開き直しで 20 戦場の記録が一覧に残る、湿地は土手道 3.60 m／秒・泥 1.05 m／秒、古い保存（歴史分岐・架空の第一章・2D 版）は演習の後も 1 字も変わらない・信頼は版 1 のまま、保存のキーは 4 つだけ） | 586 | 本物の入力（待ちは早送り） |
 | fields-ui | 018ea95 | 2026-10-04 13:28〜14:28 | ok 484・NG 0（20 戦場の PC・スマホの説明と札・画面の部品の重なり・目標の欄と能力の欄、大平原の操作、河川浅瀬の丘・森林の救出をクリックだけで、夜襲・奇襲で未発見の敵の名札・兵士・位置・名前が漏れない（PC・スマホ））。前の作業者が 13:28 に始めた回が止まらずに最後まで走ったもの（始めの負荷 2.6） | 484 | 本物の入力（待ちは早送り。夜襲の見つける所は早送り） |
-| fields-group2 | 018ea95 | | 未 | | |
-| fields-group2-fixes | 018ea95 | | 未 | | |
-| label-priority | 018ea95 | | 未 | | |
-| ability-ui | 018ea95 | | 未 | | |
-| ability-fixes | 018ea95 | | 未 | | |
-| troops | 018ea95 | | 未 | | |
-| troops-abilities | 018ea95 | | 未 | | |
-| ieyasu-routes | 018ea95 | | 未 | | |
-| ieyasu-battle-ui | 018ea95 | | 未 | | |
-| chapter1-routes | 018ea95 | | 未 | | |
-| chapter1-input | 018ea95 | | 未 | | |
-| chapter1-idempotent | 018ea95 | | 未 | | |
-| chapter1-battle | 018ea95 | | 未 | | |
+| fields-group2 | 018ea95 | 2026-10-04 14:28〜14:42 | ok 327・**NG 4**（desktop 3・phone 1 の「一覧に 15 戦場」。e2e の古い期待。下の「失敗と原因」3）→ 8e249a2 でやり直す | 331 | 本物の入力（待ちは早送り） |
+| fields-group2（やり直し） | 8e249a2 | | 未 | | |
+| fields-group2-fixes | 8e249a2 | | 未 | | |
+| label-priority | 8e249a2 | | 未 | | |
+| ability-ui | 8e249a2 | | 未 | | |
+| ability-fixes | 8e249a2 | | 未 | | |
+| troops | 8e249a2 | | 未 | | |
+| troops-abilities | 8e249a2 | | 未 | | |
+| ieyasu-routes | 8e249a2 | | 未 | | |
+| ieyasu-battle-ui | 8e249a2 | | 未 | | |
+| chapter1-routes | 8e249a2 | | 未 | | |
+| chapter1-input | 8e249a2 | | 未 | | |
+| chapter1-idempotent | 8e249a2 | | 未 | | |
+| chapter1-battle | 8e249a2 | | 未 | | |
 
 ## 本番ビルド
 
 | 項目 | コミット | 日時（UTC） | 結果 | 項目数 | 種類 |
 |---|---|---|---|---|---|
-| ビルド（`git worktree add --detach` の作業木で `VITE_MODEL_EXT=.json npm run proto3d:build`・glb を消して gltf を json へ。dist を本体の直下へ） | 018ea95 | | 未 | ― | ― |
-| dist の合計 | 018ea95 | | 未 | ― | ― |
-| fields-prod（20 戦場） | 018ea95 | | 未 | | |
-| ieyasu-prod | 018ea95 | | 未 | | |
-| chapter1-prod | 018ea95 | | 未 | | |
+| ビルド（`git worktree add --detach` の作業木で `VITE_MODEL_EXT=.json npm run proto3d:build`・glb を消して gltf を json へ。dist を本体の直下へ） | 8e249a2 | | 未 | ― | ― |
+| dist の合計 | 8e249a2 | | 未 | ― | ― |
+| fields-prod（20 戦場） | 8e249a2 | | 未 | | |
+| ieyasu-prod | 8e249a2 | | 未 | | |
+| chapter1-prod | 8e249a2 | | 未 | | |
 
 ## 失敗と原因
 
@@ -91,6 +96,12 @@ NG の原因と、NG にはならなかったが調べて原因が分かった�
      製品は今の決まりどおり（NG の時の pending は none＝押しが移動として受けられた。両翼の采配は使われていない）。依頼本文 §2 の「移動先指定の素早い 2 回操作で意図しない能力発動を起こさない」に沿う変更。
    - **直し（018ea95）：** 期待を今の決まりに替えた：能力を使わない・弓隊を選んだまま・弓隊の命令が印の下の地面への移動（6 m 以内。大平原はどこも通れる）・ほかの部隊の位置と命令は変わらない。
      確かめを緩めたのではなく、決まりの変更に合わせて逆の向きの期待にした（項目の数は同じ）。
+
+3. **fields-group2：NG 4 件（018ea95、14:28〜14:42）「[desktop]・[phone] タイトル →「合戦場の演習」→ 一覧に 15 戦場（第1群 5・第2群 5・第3群 5）」**
+   - **原因（判明）：** e2e の古い期待。第4群の 5 戦場（besieged_camp・relief・rearguard・night_raid・shore）が演習の一覧に足されて 20 戦場になったのに、
+     `e2e/fields-group2.mjs` の `LIST_IDS` だけ 15 戦場のままだった（`e2e/fields-group3.mjs`・`e2e/fields-practice.mjs`・`e2e/fields-prod.mjs` は 20 戦場に直してある）。
+     画面の一覧は第1群〜第4群の 20 戦場が順に並んでいて（NG の行に出た実際の並び）、製品は正しい。ほかの 327 項目は ok。
+   - **直し（8e249a2）：** `LIST_IDS` に第4群の 5 戦場を足し、見出しを「20 戦場（…・第4群 5）」にした。比べ方（並びまで一致）は同じで、緩めていない。
 
 ## 未解決
 
