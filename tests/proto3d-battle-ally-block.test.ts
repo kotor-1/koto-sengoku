@@ -24,6 +24,20 @@
  * - 村落の通りの口で受ける台本の 16 通りのうち 1 通り：420 秒で勝ち・35.6％ → 420 秒で勝ち・46.4％（同じ 1 通りを使う比べのテストでは 37.7％ → 53.6％）。
  * - 湖・河岸・包囲された陣・援軍救出・退却戦・湿地・城攻め前面のテストの台本は 1 刻みも同じ。勝ち数・比べのテストはどれも通る
  *   （夜襲の先駆けの損害の比べだけ、理由を書いて直した。tests/proto3d-field-night_raid.test.ts）。
+ *
+ * 第4群の確かめの指摘の直し（味方だけに塞がれた時間を、よけて回る間も「残りの道のりを縮められない時間」noGain で数える。止まっている味方だけに
+ * 塞がれている間は stuckNearGoal の「道を塞がれて」の待機にしない。待っている理由の近くの敵・順番待ちは、まっすぐ歩いて届く敵だけ。
+ * 短い迂回の探索の長さの上限。直列の門）の、戦場のテストへの影響（早送り。全テストの合戦の最後の状態を直しの前後で比べた。既存の 10 戦場・V11 は
+ * refinedMoves を付けないので 1 刻みも同じ）：変わったのは第3群・第4群の 58 のテスト。テストごとの合戦の勝ち／数・平均の損害・平均の終わった時刻（前 → 後）：
+ * - 城下町外縁：町の北の口 15 勝・33.2％・突破 0.69・戦える 4.00 → 16 勝・31.1％・0.50・4.38（allyBlockSec の前の数字に戻った）。無計画 3 → 4 勝。
+ * - 包囲された陣：南へ一斉（無計画）0／1・39.2％・130.0 秒 → 1／1・24.9％・132.4 秒（家康本陣がよけ続けて列の前へ出なくなった）。安定性 73／80・15.6 → 15.5％。
+ * - 夜襲：準備した正面攻撃 16 通り 308.1 秒・22.8％ → 325.6 秒・23.4％、無計画 29.0 → 25.7％（16 勝は同じ）。
+ * - 村落：作戦 4 つの 16 通り 62 → 63／64 勝・22.4 → 22.1％、正面と無計画の比べ 7 → 11／32 勝、家屋の陰の弓 26.7 → 29.3％。
+ * - 寺社周辺：準備した正面攻撃 16 通り 31 → 32／32 勝・357.0 → 348.1 秒。城攻め前面：一斉の攻め 27.3 → 28.3％・206.0 → 209.7 秒。
+ * - 援軍救出・退却戦・湿地・湖・河岸：勝ち数・損害の変化は 1 点未満（援軍の能力なし 32 → 31／32、後詰めの差配 35 → 34／48）。
+ * - 比べのテストは、包囲された陣の南へ一斉（勝つようになり、準備した南との損害の差 15 点以上 → 3 点）を除いて、前の幅のまま通る
+ *   （城下町外縁の幅は戻した）。南へ一斉の比べは理由と数字を書いて直した（tests/proto3d-field-besieged_camp.test.ts。釣り合いの担当へ）。
+ *   損害を抑える副目標を負けで果たさない直しで、城下町外縁の辻で挟む（損害 3 割以内 15 → 11）・村落の広場（16 → 15）の数を直した。
  */
 import { describe, expect, it } from 'vitest';
 import { RULES, awaitingGate, createBattle, issueOrder, orderLabel, stepBattle, unitById, waitReason, type BattleState } from '../proto3d/src/battle/sim';
@@ -450,6 +464,32 @@ describe('待っている理由（sim.ts の waitReason。e2e の止まりの見
         hq.x = 0;
         hq.z = -30;
         expect(waitReason(s, a3)).toBe('foe');
+    });
+
+    it('石垣・川・柵の向こうの敵は、近く（spacing × 2 m 以内）でも「近くの敵」（foe）にも、前の味方の「順番待ち」（queue）の理由にもしない（第4群の確かめの指摘）', () => {
+        // 東西の石垣（x -150〜150 の z -4〜4、真ん中だけ口）。味方は石垣の南を東へ動く。敵は石垣のすぐ北（味方から 28 m。前の味方からも 27 m）
+        const terrain = [wall(-150, -60, -4, 4), wall(-40, 150, -4, 4)];
+        const s = createBattle(
+            field(terrain, [...HQS(), U('e_n', 'enemy', 'yari', 30, -12, { aiRole: 'guard_hq' }), U('a_m', 'ally', 'yari', 20, 14), U('a_s', 'ally', 'yari', 36, 14)]),
+        );
+        for (const u of s.units) {
+            u.initiative = null;
+            if (u.side === 'enemy') u.seenBy.ally = true;
+        }
+        const m = unitById(s, 'a_m')!;
+        const e = unitById(s, 'e_n')!;
+        expect(Math.hypot(m.x - e.x, m.z - e.z)).toBeLessThan(RULES.spacing * 2);
+        expect(issueOrder(s, 'a_m', { type: 'move', x: 120, z: 14 })).toBe(true);
+        // 行く手（東）に止まっている味方 a_s だけ：石垣の向こうの敵は数えず、味方だけの塞ぎ（ally）
+        expect(waitReason(s, m)).toBe('ally');
+        // 石垣が無ければ、同じ敵は近くの敵（foe）
+        const open = createBattle(field([], [...HQS(), U('e_n', 'enemy', 'yari', 30, -12, { aiRole: 'guard_hq' }), U('a_m', 'ally', 'yari', 20, 14), U('a_s', 'ally', 'yari', 36, 14)], { pathfinding: true }));
+        for (const u of open.units) {
+            u.initiative = null;
+            if (u.side === 'enemy') u.seenBy.ally = true;
+        }
+        expect(issueOrder(open, 'a_m', { type: 'move', x: 120, z: 14 })).toBe(true);
+        expect(waitReason(open, unitById(open, 'a_m')!)).toBe('foe');
     });
 });
 

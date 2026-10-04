@@ -611,3 +611,27 @@ describe('城下町外縁の作戦（早送り）', () => {
         expect(mean(sixteen(MOUTH_SAKAI), (r) => r.loss)).toBeCloseTo(mean(sixteen(MOUTH), (r) => r.loss), 6);
     }, 300_000);
 });
+
+// 第4群の確かめの指摘（must-2）の再現：町の北の口で受けて回す（MOUTH）の 16 通りの k=10。榊原隊は (0,130) から (60,102) へ向かう途中、
+// 横道の弓隊・大通りの忠勝隊（どちらも待機）を西からよけ続け、直す前は 10 秒あまり「味方だけに塞がれた」まま 45 m 逸れて、26.2 秒に
+// 「道を塞がれて先へ進めない。ここで待機する」で止まった（よけて動く間は squeezeMove の動きで数え直しになり、2 秒の決まりが働かなかった）。
+// 直した後：よけて回っても残りの道のりを縮められない時間で数え、2 秒で弓隊の中をすり抜けて、27.5 秒に行き先へ着く
+describe('城下町外縁：味方だけに塞がれてよけ続けても、2 秒の決まりで先へ進む（早送り・MOUTH の k=10 の再現）', () => {
+    it('榊原隊は「道を塞がれて」の待機にならず、40 秒までに (60,102) へ着く。止まっていた最長（1.5 m も動かない時間）は 4 秒未満', () => {
+        let arrivedT: number | null = null;
+        let anchor: { x: number; z: number; t: number } | null = null;
+        let longest = 0;
+        const r = play(PLAN_OF.get(MOUTH)!(jitterOf(10)), (s) => {
+            const u = unitOf(s, 'a_sakakibara')!;
+            if (s.t > 40 || arrivedT !== null || u.order.type !== 'move') return;
+            if (Math.hypot(u.x - 60, u.z - 102) <= 6) arrivedT = s.t;
+            if (!anchor || Math.hypot(u.x - anchor.x, u.z - anchor.z) > 1.5) anchor = { x: u.x, z: u.z, t: s.t };
+            else longest = Math.max(longest, s.t - anchor.t);
+        });
+        const stuck = r.s.events.filter((e) => e.unitId === 'a_sakakibara' && e.text.includes('道を塞がれて'));
+        expect(stuck, JSON.stringify(stuck)).toEqual([]);
+        expect(arrivedT, brief(r)).not.toBeNull();
+        expect(arrivedT!).toBeLessThan(40);
+        expect(longest).toBeLessThan(4);
+    }, 60_000);
+});
