@@ -385,14 +385,19 @@ describe('退却戦のデータ（状態を直接見る）', () => {
         expect([RF.pursuit, RF.generalInitiative]).toEqual([true, true]);
         const us = RF.presets[0]!.units;
         expect(us.filter((u) => u.side === 'ally').length).toBe(7);
-        expect(us.filter((u) => u.side === 'enemy').length).toBe(8);
+        expect(us.filter((u) => u.side === 'enemy').length).toBe(9);
         expect(us.filter((u) => u.side === 'enemy').length).toBeLessThanOrEqual(RULES.maxUnitsPerSide.enemy);
-        // 後詰めは 100 秒（槍）・130 秒（騎馬）。追っ手はどれも切れ目の北の口へ攻め進む
+        // 後詰めは 100 秒（槍）・130 秒（騎馬）。伏兵の騎馬は 45 秒に切れ目の北の口の西の林から出る。
+        // 追っ手はどれも切れ目の北の口へ攻め進む（伏兵は口の中ほど (0,80) へ）
         expect(us.filter((u) => u.arriveAt).map((u) => [u.id, u.arriveAt])).toEqual([
             ['e_late', 100],
             ['e_late_kiba', 130],
+            ['e_amb', 45],
         ]);
-        for (const u of us.filter((x) => x.side === 'enemy' && x.aiRole === 'assault')) expect([u.id, u.aiTarget?.x, u.aiTarget?.z]).toEqual([u.id, 0, 72]);
+        for (const u of us.filter((x) => x.side === 'enemy' && x.aiRole === 'assault')) expect([u.id, u.aiTarget?.x, u.aiTarget?.z]).toEqual([u.id, 0, u.id === 'e_amb' ? 80 : 72]);
+        // 伏兵の置き場所は林の中（現れるまで見えず、現れても林の中は遠くから見えない）
+        const amb = RF.deployments.enemy.find((d) => d.id === 'amb')!;
+        expect(RF.terrain.some((t) => t.kind === 'woods' && t.rect && amb.x >= t.rect.x0 && amb.x <= t.rect.x1 && amb.z >= t.rect.z0 && amb.z <= t.rect.z1)).toBe(true);
         // 合戦の前の説明に判定の順の 1 行
         const b = practiceBriefingInfo(RF);
         expect(endRuleBriefingLine(buildBattleSetup(RF, 'standard'))).toContain('① 主目標「総大将と 4 部隊を南の退き口から離脱させる」を果たす → 勝利（目標を果たした撤収）');
@@ -546,9 +551,11 @@ describe('退却戦の作戦（早送り）', () => {
         expect(ar.filter((r) => pursuits(r) > 0).length).toBeGreaterThanOrEqual(14);
         // 忠勝隊を除く 6 部隊の損害（平均。今の版：全軍撤退 15.0％ ／殿を残すだけ 0.2％）
         expect(mean(ar, (r) => r.colLoss)).toBeGreaterThan(mean(st, (r) => r.colLoss) + 0.08);
-        // 崩れた隊（平均。今の版：全軍撤退 1.81 ／殿を残すだけ 1.06。殿を残すだけで崩れるのは殿の忠勝隊だけ）
+        // 崩れた隊（平均。今の版：全軍撤退 1.81 ／殿を残すだけ 1.06。殿を残すだけで崩れるのは、ほとんどが殿の忠勝隊）
         expect(mean(ar, routed)).toBeGreaterThan(mean(st, routed) + 0.5);
-        for (const r of st) for (const u of r.o.units.filter((x) => x.side === 'ally' && x.id !== 'a_tadakatsu')) expect([u.id, ['withdrawn', 'ready'].includes(u.status)]).toEqual([u.id, true]);
+        // 殿を残すだけで忠勝隊のほかに崩れた隊は 16 通りで 1 隊まで（伏兵を足す前は 0。今の版は 1：遅く下げ始めた酒井隊が、殿の崩れた後の追っ手の騎馬と伏兵に当たった 1 回）
+        const stOther = st.flatMap((r) => r.o.units.filter((x) => x.side === 'ally' && x.id !== 'a_tadakatsu' && !['withdrawn', 'ready'].includes(x.status)));
+        expect(stOther.length).toBeLessThanOrEqual(1);
         // 移動で下げた列（殿を残すだけ）は追い討ちの知らせが出ない（追い討ちは撤退の命令で退く隊だけ）
         expect(mean(st, pursuits)).toBe(0);
     }, 300_000);
