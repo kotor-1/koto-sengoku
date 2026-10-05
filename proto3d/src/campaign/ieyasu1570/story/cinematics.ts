@@ -65,34 +65,89 @@ export function captionSec(text: string): number {
 }
 const r1 = (x: number) => Math.round(x * 100) / 100;
 
-/** 計画から台本を作る（場面の長さは字幕の時間の和と最短の長さの大きい方。余りは字幕に均して足す） */
+/** 最初の字幕で現れる物も、場面の頭から少し遅らせて現れる様子を見せる（秒） */
+const FIRST_APPEAR_SEC = 0.3;
+
+/**
+ * 台本の場所・線が最初に現れる時刻（秒。台本の始めから。確かめ用：字幕の show から決めた時刻）。
+ * 台本の中身（CineSpec）には入れない（型は共通の物のまま）。build が作った台本ごとに覚える。
+ */
+const FIRST_SHOWN = new WeakMap<CineSpec, ReadonlyMap<string, number>>();
+export function cineFirstShown(spec: CineSpec): ReadonlyMap<string, number> | undefined {
+    return FIRST_SHOWN.get(spec);
+}
+
+/**
+ * 計画から台本を作る（場面の長さは字幕の時間の和と最短の長さの大きい方。余りは字幕に均して足す）。
+ * 地図の場所・線の出方は台本全体で決める（場面の切り替わりで一度消えて引き直されないように）：
+ * - 字幕の show にある物は、その字幕の時刻（場面の最初の字幕なら頭から 0.3 秒）に初めて現れる。それより前の地図の場面では隠れたまま
+ *   （appear を場面の長さより後にする。場面の中身は同じなので、名前の置き場所は場面が変わっても動かない）。
+ * - 前の地図の場面で現れた物は、後の地図の場面では始めから出たまま（appear を付けない）。
+ * - どの字幕の show にも無い物（背景の場所）は始めからある。線は、両端の場所が現れるまで現れない。
+ */
 function build(id: string, moment: CineMoment, title: string, plans: BeatPlan[]): CineSpec {
-    const beats: (CineMapBeat | CineStageBeat)[] = [];
-    const captions: CineCaption[] = [];
-    const info: CineSpec['info'] = {};
-    let t = 0;
-    for (const p of plans) {
+    // 1) 場面と字幕の時刻
+    const timed = plans.map((p) => {
         const secs = p.caps.map((c) => captionSec(c.text));
         const sum = secs.reduce((a, b) => a + b, 0);
         const dur = Math.max(p.min ?? 0, sum);
         const extra = p.caps.length ? (dur - sum) / p.caps.length : 0;
-        const appear: Record<string, number> = {};
-        const highlights: { at: number; ids: string[] }[] = [];
         let local = 0;
-        p.caps.forEach((c, i) => {
+        const caps = p.caps.map((c, i) => {
             const d = secs[i]! + extra;
+            const x = { c, local, d };
+            local += d;
+            return x;
+        });
+        return { p, dur, caps };
+    });
+    // 2) 台本全体で、場所・線が最初に現れる時刻（その字幕のある地図の場面の中にある物だけ）
+    const first = new Map<string, number>();
+    {
+        let t = 0;
+        for (const b of timed) {
+            if (b.p.kind === 'map') {
+                const sc = b.p.scene;
+                const has = new Set([...sc.places.map((x) => x.id), ...sc.routes.map((x) => x.id)]);
+                for (const x of b.caps) for (const s of x.c.show ?? []) if (has.has(s) && !first.has(s)) first.set(s, t + Math.max(FIRST_APPEAR_SEC, x.local));
+            }
+            t += b.dur;
+        }
+    }
+    // 線は、両端の場所が現れてから（背景の場所は始めからある）
+    const shownAt = (sc: MapScene, id: string): number | undefined => {
+        const r = sc.routes.find((x) => x.id === id);
+        if (!r) return first.get(id);
+        const ts = [first.get(id), first.get(r.from), first.get(r.to)].filter((x): x is number => x !== undefined);
+        return ts.length ? Math.max(...ts) : undefined;
+    };
+    // 3) 台本
+    const beats: (CineMapBeat | CineStageBeat)[] = [];
+    const captions: CineCaption[] = [];
+    const info: CineSpec['info'] = {};
+    const firstShown = new Map<string, number>();
+    let t = 0;
+    for (const { p, dur, caps } of timed) {
+        const highlights: { at: number; ids: string[] }[] = [];
+        for (const { c, local, d } of caps) {
             const start = r1(t + local);
             const end = r1(t + local + d);
             captions.push({ start, end, ...(c.speaker ? { speaker: c.speaker } : {}), text: c.text });
             for (const k of c.info ?? []) if (info[k] === undefined || info[k]! > start) info[k] = start;
-            // 最初の字幕で現れる物も、少し遅らせて現れる様子を見せる
-            for (const s of c.show ?? []) if (appear[s] === undefined) appear[s] = r1(Math.max(0.3, local));
             if (c.focus) highlights.push({ at: r1(local), ids: [...c.focus] });
-            local += d;
-        });
+        }
         const start = r1(t);
         const end = r1(t + dur);
         if (p.kind === 'map') {
+            const appear: Record<string, number> = {};
+            for (const id of [...p.scene.places.map((x) => x.id), ...p.scene.routes.map((x) => x.id)]) {
+                const at = shownAt(p.scene, id);
+                // 前の場面までに現れた物・背景の物は始めから出たまま
+                if (at === undefined || at < t - 1e-9) continue;
+                // この場面で初めて現れる物はその時刻に。後の場面で現れる物は、この場面の長さより後（隠れたまま）
+                appear[id] = r1(at - t);
+                if (!firstShown.has(id)) firstShown.set(id, r1(at));
+            }
             const b: CineMapBeat = { kind: 'map', start, end, scene: p.scene };
             if (Object.keys(appear).length) b.appear = appear;
             if (highlights.length) b.highlights = highlights;
@@ -102,7 +157,9 @@ function build(id: string, moment: CineMoment, title: string, plans: BeatPlan[])
         }
         t += dur;
     }
-    return { id, moment, title, duration: r1(t), beats, captions, info };
+    const spec: CineSpec = { id, moment, title, duration: r1(t), beats, captions, info };
+    FIRST_SHOWN.set(spec, firstShown);
+    return spec;
 }
 
 // ================================================================ 共通の言葉
@@ -162,7 +219,8 @@ function ch1Intro(): CineSpec {
             caps: [
                 { text: '元亀元年（1570年）。徳川の城下（三河）。', info: ['when', 'where'], show: ['home'], focus: ['home'] },
                 { text: '近江で、織田と浅井・朝倉が敵味方に分かれた。', info: ['crisis'], show: ['oda', 'asai', 'asakura', 'conflict.asai', 'conflict.asakura'], focus: ['conflict.asai', 'conflict.asakura'] },
-                { text: '国境では、浪人の一団が村を荒らしている。', show: ['border', 'field1'], focus: ['border'] },
+                // 国境の原（合戦の場所）は、ここでは出さない（判断の場面で「どの道でも国境の原で戦う」と出す）
+                { text: '国境では、浪人の一団が村を荒らしている。', show: ['border'], focus: ['border'] },
             ],
         },
         {
@@ -197,8 +255,10 @@ function ch1Intro(): CineSpec {
             caps: [
                 { text: '軍議で、進む道を一つ選ぶ。', info: ['decide'], focus: ['home'] },
                 { text: 'A：織田と組み、浅井・朝倉と戦う。', focus: ['oda', 'rel.oda'] },
-                { text: 'B：浅井と組む（史実から分かれた道）。', focus: ['asai', 'envoy.asai'] },
+                { text: 'B：浅井と組み、織田方の一隊と戦う（史実から分かれた道）。', focus: ['asai', 'envoy.asai', 'oda'] },
                 { text: 'C：両家とは戦わず、国境の浪人を討つ。', focus: ['border'] },
+                // 第一章の合戦の場所はどの方針でも同じ（geo.ts：国境の原は架空の局地戦。出陣の行き先と同じ言葉）
+                { text: 'どの道でも、戦うのは国境の原（架空の局地戦）。', show: ['field1'], focus: ['field1', 'border'] },
             ],
         },
     ]);
@@ -367,7 +427,8 @@ function departure(s: IeyasuAnyState): CineSpec | null {
     const p = s.policy;
     const troops = ch1GateTroops(s);
     // 岡崎の守備隊は城門から出ない（A・B は国元に残る。C は国境の砦にいる）。味方の部隊は先に戦場にいる
-    const second = p === 'oda' ? '織田援軍は、先に戦場の右前へ出ている。' : p === 'asai' ? '浅井長政隊は、先に戦場の左前へ出ている。' : '岡崎の守備隊は、国境の砦で待っている。';
+    // C の守備隊は、支度の文（国境の砦の守備隊が、浪人どもに囲まれかけている）と同じく、危ういまま待つ
+    const second = p === 'oda' ? '織田援軍は、先に戦場の右前へ出ている。' : p === 'asai' ? '浅井長政隊は、先に戦場の左前へ出ている。' : '岡崎の守備隊は、国境の砦で囲まれかけている。';
     const sc = scene([homePlace(), field1Place(null)], [marchRoute('field1')], { heading: '出陣：徳川の城下 → 国境の原' });
     return build(`departure.ch1.${POLICY_TAG[p]}`, 'departure', '出陣（国境の原へ）', [
         { kind: 'stage', event: { id: 'column_depart', count: visualCount(troops, VISUAL_MAX.column), mark: '徳' }, min: 6, caps: [{ text: '城門から、徳川の兵が出陣する。' }, { text: second }] },

@@ -12,14 +12,14 @@ import { describe, expect, it } from 'vitest';
 import { IEYASU_UNIT_IDS } from '../proto3d/src/battle/maps';
 import { IEYASU_LOOKS } from '../proto3d/src/campaign/ieyasu1570/scenario';
 import { ieyasuScenario } from '../proto3d/src/campaign/ieyasu1570/scenario';
-import { ieyasuCinematic, ieyasuReplays, CINE_CAPTION_MAX } from '../proto3d/src/campaign/ieyasu1570/story/cinematics';
+import { ieyasuCinematic, ieyasuReplays, CINE_CAPTION_MAX, cineFirstShown } from '../proto3d/src/campaign/ieyasu1570/story/cinematics';
 import { VISUAL_MAX, outcomeTroops, visualCount } from '../proto3d/src/campaign/ieyasu1570/story/counts';
 import { MAP_NOTE } from '../proto3d/src/campaign/ieyasu1570/story/geo';
 import type { IeyasuAnyState, Ieyasu2State } from '../proto3d/src/campaign/ieyasu1570/chapter2/state';
 import { isChapter2 } from '../proto3d/src/campaign/ieyasu1570/chapter2/state';
 import { newIeyasuGame } from '../proto3d/src/campaign/ieyasu1570/flow';
-import type { CineMoment, CineSpec, StageEvent } from '../proto3d/src/story/types';
-import { CAPTION_CHARS_PER_SEC, CAPTION_MAX_CHARS, CAPTION_MIN_SEC, INFO_KEYS } from '../proto3d/src/story/timeline';
+import type { CineMapBeat, CineMoment, CineSpec, StageEvent } from '../proto3d/src/story/types';
+import { CAPTION_CHARS_PER_SEC, CAPTION_MAX_CHARS, CAPTION_MIN_SEC, INFO_KEYS, PLACE_APPEAR_SEC, ROUTE_DRAW_SEC, frameAt, orderedBeats } from '../proto3d/src/story/timeline';
 import { ch1BeforeBattle, ch1Cases, ch1Ending, ch2Cases, ch2Starts, checkBannedWords, type Ch1Case } from './proto3d-ieyasu-story-states';
 
 const CH1 = ch1Cases();
@@ -158,6 +158,134 @@ describe('どの組み合わせでも台本の形が決まりどおり（長さ�
         expect(all.length).toBeGreaterThan(5000);
         checkBannedWords(all.join('\n'));
     }, 60_000);
+});
+
+/**
+ * 地図の出方（frameAt で確かめる。点検の指摘：後の字幕で現れる場所・線が前の場面の頭から出ていて、場面の切り替わりで一度消えて引き直されていた）：
+ * - 字幕の show で現れる物は、その時刻（cineFirstShown）より前には、どの地図の場面でも出ていない（隠れている）。
+ * - 一度出た物は、後の地図の場面の頭で消えない（その場面にある限り、頭から出ている）。現れ始めたら、現れる時間の後は出ている。
+ * - どの字幕の show にも無い物（背景の場所）は、地図の場面の頭から出ている。線は両端の場所より先に出ない。
+ * 動きを減らすとき（reduced）も同じ（現れる時刻は同じで、すぐ出る）。
+ */
+function checkAppearance(spec: CineSpec, name: string): number {
+    const shown = cineFirstShown(spec);
+    expect(shown, `${name}：現れる時刻`).toBeDefined();
+    const beats = orderedBeats(spec);
+    let checked = 0;
+    for (const b of beats) {
+        if (b.kind !== 'map') continue;
+        const mb = b as CineMapBeat;
+        const ids = [...mb.scene.places.map((p) => ({ id: p.id, route: false })), ...mb.scene.routes.map((r) => ({ id: r.id, route: true }))];
+        // 線は両端の場所より先に出ない
+        for (const r of mb.scene.routes) {
+            const tr = shown!.get(r.id) ?? -Infinity;
+            for (const end of [r.from, r.to]) expect(tr, `${name}：線 ${r.id} が端 ${end} より先に出る`).toBeGreaterThanOrEqual((shown!.get(end) ?? -Infinity) - 1e-6);
+        }
+        // 調べる時刻：場面の頭と終わりの手前・字幕の切り替わりの前後・現れる時刻の前後
+        const ts = new Set<number>([b.start + 0.01, b.end - 0.01]);
+        for (const c of spec.captions) if (c.start > b.start && c.start < b.end) ts.add(c.start - 0.01).add(c.start + 0.01);
+        for (const { id, route } of ids) {
+            const at = shown!.get(id);
+            if (at === undefined || at < b.start || at >= b.end) continue;
+            ts.add(at - 0.01);
+            ts.add(at + (route ? ROUTE_DRAW_SEC : PLACE_APPEAR_SEC) + 0.01);
+        }
+        for (const t of ts) {
+            if (t < b.start || t >= b.end) continue;
+            for (const reduced of [false, true]) {
+                const f = frameAt(spec, t, reduced, beats);
+                expect(f.beat, `${name}：t=${t}`).toBe(b);
+                for (const { id, route } of ids) {
+                    const st = (route ? f.map!.routes : f.map!.places)[id]!.state;
+                    const at = shown!.get(id);
+                    if (at !== undefined && t < at - 1e-6) expect(st, `${name}：${id} は ${at} 秒に現れる（t=${t.toFixed(2)} で出ている）`).toBe('hidden');
+                    else if (at === undefined || at < b.start) expect(st, `${name}：${id} は前から出ている（t=${t.toFixed(2)} の場面 ${b.start} の中で消えた）`).toBe('shown');
+                    else if (reduced || t >= at + (route ? ROUTE_DRAW_SEC : PLACE_APPEAR_SEC)) expect(st, `${name}：${id}（t=${t.toFixed(2)}）`).toBe('shown');
+                    else expect(st, `${name}：${id}（t=${t.toFixed(2)}）`).not.toBe('hidden');
+                    checked++;
+                }
+            }
+        }
+    }
+    // 字幕の show で現れる時刻は、その物のある地図の場面の中（場面の外の時刻を指さない）
+    for (const [id, at] of shown!) {
+        const inBeat = beats.some((b) => b.kind === 'map' && at >= b.start && at < b.end && [...b.scene.places, ...b.scene.routes].some((x) => x.id === id));
+        expect(inBeat, `${name}：${id} の現れる時刻 ${at}`).toBe(true);
+    }
+    return checked;
+}
+
+describe('地図の出方：字幕より先に出ない・場面の切り替わりで消えない（frameAt）', () => {
+    it('すべての組み合わせ（第一章の合戦の前・戦後・結末、第二章の移行・支度・出陣・戦後）', () => {
+        const uniq = new Map<string, { spec: CineSpec; name: string }>();
+        const add = (s: IeyasuAnyState, name: string) => {
+            for (const sp of allSpecs(s)) {
+                const k = JSON.stringify(sp);
+                if (!uniq.has(k)) uniq.set(k, { spec: sp, name: `${name}.${sp.moment}` });
+            }
+        };
+        for (const { name, state } of ch1BeforeBattle()) add(state, name);
+        for (const c of CH1) {
+            add(c.state, c.name);
+            add(ch1Ending(c.state), `${c.name}.ending`);
+        }
+        for (const c of CH2_STARTS) add(c.state, c.name);
+        for (const { name, state } of CH2) add(state, name);
+        let n = 0;
+        const moments = new Set<string>();
+        for (const { spec, name } of uniq.values()) {
+            n += checkAppearance(spec, name);
+            moments.add(spec.moment);
+        }
+        expect([...moments].sort()).toEqual(['ch1_intro', 'ch2_intro', 'departure', 'return']);
+        expect(uniq.size).toBeGreaterThan(100);
+        expect(n).toBeGreaterThan(10000);
+    }, 120_000);
+    it('第一章の導入：使いと協力の線は「徳川は、これまで…」「使者が来た」の字幕まで出ない。国境の原は浪人の字幕では出さず、判断の場面で「どの道でも国境の原で戦う」と出す', () => {
+        const spec = ieyasuCinematic(newIeyasuGame(), 'ch1_intro')!;
+        const cap = (re: RegExp) => spec.captions.find((c) => re.test(c.text))!;
+        const ronin = cap(/浪人の一団が村を荒らしている/);
+        const ally = cap(/これまで織田と共に動いてきた/);
+        const envoy = cap(/同じ日に使者が来た/);
+        const where = cap(/どの道でも、戦うのは国境の原/);
+        const st = (t: number, id: string) => {
+            const f = frameAt(spec, t, false);
+            return f.map ? (f.map.places[id] ?? f.map.routes[id])?.state ?? 'absent' : 'stage';
+        };
+        for (const t of [0.05, 4, ronin.start + 0.5, ally.start - 0.05]) for (const id of ['rel.oda', 'envoy.oda', 'envoy.asai']) expect(st(t, id), `t=${t} ${id}`).toBe('hidden');
+        expect(st(ally.start + 2, 'rel.oda')).toBe('shown');
+        expect(st(envoy.start - 0.05, 'envoy.oda')).toBe('hidden');
+        expect(st(envoy.start + 2, 'envoy.oda')).toBe('shown');
+        // 国境の原：浪人の字幕・使いの字幕の間は出ない。判断の場面の「どの道でも」の字幕で現れ、その間は強調
+        for (const t of [ronin.start + 0.5, ronin.end - 0.05, envoy.start + 1, where.start - 0.05]) expect(['hidden', 'stage']).toContain(st(t, 'field1'));
+        expect(st(where.start + 1, 'field1')).toBe('shown');
+        expect(frameAt(spec, where.start + 1, false).map!.highlight).toContain('field1');
+        expect(st(ronin.start + 1, 'border')).toBe('shown');
+        // B：浅井と組み、織田方と戦うと分かる字幕（強調に織田家も）
+        const b = cap(/^B：/);
+        expect(b.text).toMatch(/浅井と組み、織田方の一隊と戦う/);
+        expect(b.text).toContain('史実から分かれた道');
+        const hl = frameAt(spec, b.start + 0.5, false).map!.highlight;
+        expect(hl).toContain('asai');
+        expect(hl).toContain('oda');
+    });
+    it('第二章の移行：危機の場所・脅かす向き・出陣の進路・関係の線は、それぞれの字幕まで出ず、出た後の地図の場面では頭から出ている', () => {
+        for (const c of CH2_STARTS.filter((x) => x.ch1.loss !== 'light')) {
+            const spec = ieyasuCinematic(c.state, 'ch2_intro')!;
+            const p = c.state.policy;
+            const site = ({ oda: 'site_oda', asai: 'site_asai', home: 'site_home' } as const)[p];
+            const maps = orderedBeats(spec).filter((b): b is CineMapBeat => b.kind === 'map');
+            // 最初の地図の場面の頭：城下だけ（ほかの関係の線・危機・進路は出ていない）
+            const f0 = frameAt(spec, 0.05, false).map!;
+            for (const id of [site, `threat.${p}`, `march.${site}`, ...Object.keys(f0.routes)]) expect((f0.places[id] ?? f0.routes[id])!.state, `${c.name}：${id}`).toBe('hidden');
+            // 最後の地図の場面の頭：全部出ている（消えて引き直さない）
+            const last = maps[maps.length - 1]!;
+            const fl = frameAt(spec, last.start + 0.01, false).map!;
+            for (const id of [site, `threat.${p}`, 'home', 'field1']) expect((fl.places[id] ?? fl.routes[id])!.state, `${c.name}：${id}`).toBe('shown');
+            expect(fl.routes[`march.${site}`]!.state).toBe('hidden');
+            expect(frameAt(spec, last.start + 0.3 + ROUTE_DRAW_SEC + 0.01, false).map!.routes[`march.${site}`]!.state).toBe('shown');
+        }
+    });
 });
 
 describe('流す時が無ければ null（状態に無いことを見せない）', () => {
@@ -312,7 +440,8 @@ describe('矛盾を避ける決まり', () => {
             const gate = Math.max(50, b.troops.honjin) + b.troops.tadakatsu + b.troops.yumi;
             expect(ev.count).toBe(visualCount(gate, VISUAL_MAX.column));
             if (p === 'home') {
-                expect(texts(sp)).toContain('岡崎の守備隊は、国境の砦で待っている');
+                // 支度の文（国境の砦の守備隊が、浪人どもに囲まれかけております）・情勢の危機と同じ言い方（「待っている」では危機が弱まる）
+                expect(texts(sp)).toContain('岡崎の守備隊は、国境の砦で囲まれかけている');
                 expect(texts(sp)).not.toContain('守備隊も出陣');
             }
             // 支援・味方の部隊は戦場にいる（城下から出ない）
