@@ -165,8 +165,9 @@ runBtn.addEventListener('pointerdown', (e) => {
     updateRunUi();
 });
 // キーボード（Tab で選んで Enter／Space）で押したとき。指やマウスは pointerdown で切り替え済み
+// （タッチの 1 本指のタップは、pointerdown を preventDefault しているので click の detail が 0 になる。pointerType で分け、2 回切り替えない：ui/dom.ts の onPress と同じ）
 runBtn.addEventListener('click', (e) => {
-    if (e.detail !== 0) return;
+    if (e.detail !== 0 || (e as PointerEvent).pointerType) return;
     runMode = !runMode;
     updateRunUi();
 });
