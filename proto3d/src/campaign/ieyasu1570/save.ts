@@ -1,7 +1,7 @@
 /**
  * 歴史分岐シナリオ「元亀元年・家康」の保存と読み込み（端末内の localStorage）。設計：docs/ieyasu1570-design.md §7。
  *
- * - 保存先のキーは 'koto-sengoku/3d-ieyasu1570'（今は版 3）。データにシナリオの id（'ieyasu1570'）を入れる。
+ * - 保存先のキーは 'koto-sengoku/3d-ieyasu1570'（第一章の状態は版 3。第二章の状態は版 4：このファイルの後半）。データにシナリオの id（'ieyasu1570'）を入れる。
  *   版 2：信頼（trust）に家臣の酒井忠次・石川数正・榊原康政を足した（docs/battlefields-design.md §1）。キーは同じ。
  *   版 3：合戦の副目標の達成（sideObjectives）を、勝敗（battle）・約束（pledge）とは別の欄に足した（docs/battlefields-design.md §4）。
  *   版 1・2 も読む（版 1 は足りない信頼を初期値で補う。副目標は「記録なし」＝ null。ほかの値はそのまま）。
@@ -56,6 +56,24 @@ import {
 } from './state';
 import { IEYASU_PHASE_LABELS, POLICY_DONE_LABELS } from './story';
 import type { BattleOutcome, ObjectiveResult } from '../../battle/types';
+import type { Ch2Plan, Ch2SupportId } from './chapter2/battle';
+import { parseIeyasu2Outcome, parseObjectiveResultRow } from './chapter2/flow';
+import {
+    IEYASU2_ENDING_IDS,
+    IEYASU2_TALK_FLAGS,
+    RECOVERY_CHOICES,
+    cloneIeyasu2State,
+    isChapter2,
+    type Chapter1Record,
+    type IeyasuAnyState,
+    type Ieyasu2EndingId,
+    type Ieyasu2Result,
+    type Ieyasu2State,
+    type Ieyasu2TalkFlag,
+    type RecoveryChoice,
+    type RecoveryState,
+} from './chapter2/state';
+import { IEYASU2_PHASE_LABELS } from './chapter2/story';
 
 export const IEYASU_SAVE_KEY = 'koto-sengoku/3d-ieyasu1570';
 export const IEYASU_SAVE_ARCHIVE_KEY = 'koto-sengoku/3d-ieyasu1570/previous';
@@ -99,6 +117,9 @@ export function canSaveIeyasuAt(state: IeyasuState, point: SavePoint): boolean {
             return state.phase === 'explore' || state.phase === 'muster' || state.phase === 'aftermath';
         case 'ending':
             return state.phase === 'ending' && state.ending !== null;
+        case 'chapter':
+            // 章の始めの保存は第二章の状態だけ（第一章の状態は書かない）
+            return false;
     }
 }
 
@@ -415,5 +436,495 @@ export class IeyasuSaveStore implements ScenarioStore<IeyasuState> {
 export const IEYASU_CORRUPT_MESSAGE = '歴史分岐シナリオの保存データが壊れているか、形式が違うため読み込めません（データはそのまま残しています）。';
 
 function fail(reason: SaveFailureReason): ScenarioSaveResult<IeyasuState> {
+    return { ok: false, reason, message: saveFailureMessage(reason) };
+}
+
+// ================================================================ 第二章（版 4）
+
+/**
+ * 第二章の保存（docs/chapter2-design.md §4）。キーは第一章と同じ 'koto-sengoku/3d-ieyasu1570'。
+ * - 第一章の状態は今までどおり版 3 で書く（同じ文字列。旧版 Version 17 でも読める）。第二章の状態だけ版 4（chapter: 2）。
+ * - 版 4 の検査は版 3 と同じ厳しさ（形・範囲・段階との食い違い・第一章の記録 chapter1 の中身）。食い違えば壊れた保存として扱い、消さない。
+ * - 第一章から第二章へ移るときは saveChapterStart：第一章の結末を控えのキー 'koto-sengoku/3d-ieyasu1570/chapter1' へ版 3 で書いて確かめてから、
+ *   本来のキーへ第二章のはじめを版 4・時点 'chapter' で書いて確かめる。だめなら本来のキーを元の中身へ戻す（第一章の保存は消えない）。
+ * - 読み込んだだけでは書き換えない。2D・架空の章・演習のキーには触れない。
+ */
+export const IEYASU2_SAVE_VERSION = 4;
+/** 第一章の控え（第二章へ移るときに、第一章の結末を残す所） */
+export const IEYASU_CHAPTER1_KEY = 'koto-sengoku/3d-ieyasu1570/chapter1';
+
+export interface Ieyasu2SaveData {
+    version: typeof IEYASU2_SAVE_VERSION;
+    scenario: typeof IEYASU_SCENARIO_ID;
+    chapter: 2;
+    savedAt: string;
+    point: SavePoint;
+    playTimeSec: number;
+    phase: SavedPhase;
+    chapter1: Chapter1Record;
+    policy: Policy;
+    trust: Record<TrustId, number>;
+    troops: Record<TokugawaUnitId, number>;
+    characters: Record<IeyasuCharacterId, IeyasuCharacterStatus>;
+    talked: Partial<Record<Ieyasu2TalkFlag, boolean>>;
+    plan: Ch2Plan | null;
+    recovery: RecoveryState | null;
+    battle: BattleOutcome | null;
+    battleId: string | null;
+    appliedBattleId: string | null;
+    result: Ieyasu2Result | null;
+    ending: Ieyasu2EndingId | null;
+    explore: ExplorePose | null;
+}
+
+/** その時点の保存として、第二章のこの状態を保存してよいか */
+export function canSaveIeyasu2At(state: Ieyasu2State, point: SavePoint): boolean {
+    switch (point) {
+        case 'chapter':
+            return state.phase === 'explore' && state.battle === null && state.plan === null;
+        case 'departure':
+            return state.phase === 'battle' && state.battle === null && state.plan !== null && state.recovery !== null;
+        case 'aftermath':
+            return state.phase === 'aftermath' && state.battle !== null && state.result !== null;
+        case 'manual':
+            return state.phase === 'explore' || state.phase === 'muster' || state.phase === 'aftermath';
+        case 'ending':
+            return state.phase === 'ending' && state.ending !== null;
+    }
+}
+
+export function toIeyasu2SaveData(state: Ieyasu2State, point: SavePoint, now: Date): Ieyasu2SaveData | null {
+    if (!canSaveIeyasu2At(state, point) || state.phase === 'council') return null;
+    const inField = state.phase === 'explore' || state.phase === 'muster';
+    const c = cloneIeyasu2State(state);
+    const talked: Partial<Record<Ieyasu2TalkFlag, boolean>> = {};
+    for (const k of IEYASU2_TALK_FLAGS) if (c.talked[k] === true) talked[k] = true;
+    return {
+        version: IEYASU2_SAVE_VERSION,
+        scenario: IEYASU_SCENARIO_ID,
+        chapter: 2,
+        savedAt: now.toISOString(),
+        point,
+        playTimeSec: Math.floor(Math.max(0, Math.min(IEYASU_PLAY_TIME_MAX, c.playTimeSec))),
+        phase: c.phase as SavedPhase,
+        chapter1: c.chapter1,
+        policy: c.policy,
+        trust: c.trust,
+        troops: c.troops,
+        characters: c.characters,
+        talked,
+        plan: c.plan,
+        recovery: c.recovery,
+        battle: c.battle,
+        battleId: inField ? null : c.battleId,
+        appliedBattleId: inField ? null : c.appliedBattleId,
+        result: c.result,
+        ending: c.ending,
+        explore: c.explore,
+    };
+}
+
+const SAVE_POINTS_V4: readonly SavePoint[] = ['departure', 'aftermath', 'manual', 'ending', 'chapter'];
+const CH2_PLANS_ALL: readonly Ch2Plan[] = ['commit', 'hold'];
+const CH2_SUPPORT_IDS: readonly Ch2SupportId[] = ['oda_teppo', 'asai_guide', 'village'];
+
+function parseTroops(v: unknown): Record<TokugawaUnitId, number> | null {
+    if (!isObject(v)) return null;
+    const out = {} as Record<TokugawaUnitId, number>;
+    for (const k of TOKUGAWA_UNIT_IDS) {
+        const n = v[k];
+        if (typeof n !== 'number' || !Number.isInteger(n) || n < 0 || n > IEYASU_TROOPS_MAX) return null;
+        out[k] = n;
+    }
+    return out;
+}
+
+function parseCharacters(v: unknown): Record<IeyasuCharacterId, IeyasuCharacterStatus> | null {
+    if (!isObject(v)) return null;
+    const out = {} as Record<IeyasuCharacterId, IeyasuCharacterStatus>;
+    for (const c of IEYASU_CHARACTER_IDS) {
+        if (!IEYASU_CHARACTER_STATUSES.includes(v[c] as IeyasuCharacterStatus)) return null;
+        out[c] = v[c] as IeyasuCharacterStatus;
+    }
+    return out;
+}
+
+/** 第一章の結果と結末の id が合っているか（flow.ts の ieyasuEndingFor の決まり） */
+function ch1EndingMatches(policy: Policy, result: BattleOutcome['result'], ending: IeyasuEndingId): boolean {
+    if (result === 'victory') return ending === `${policy}_victory`;
+    if (result === 'retreat') return ending === 'retreat';
+    return ending === 'defeat_sheltered' || ending === 'defeat_mikawa';
+}
+
+/** 第一章の記録を検査して写す（版 3 の結末の保存と同じ決まり） */
+function parseChapter1Record(v: unknown): Chapter1Record | null {
+    if (!isObject(v)) return null;
+    if (!POLICIES.includes(v.policy as Policy)) return null;
+    const policy = v.policy as Policy;
+    const battle = parseIeyasuOutcome(v.battle);
+    if (!battle) return null;
+    const pledge = parsePledge(v.pledge, policy);
+    if (!pledge || pledge.result === null) return null;
+    const support = parseSupport(v.support);
+    if (!support) return null;
+    if (battle.pledge && (!pledge.accepted || battle.pledge.targetId !== pledge.targetId || battle.pledge.result !== pledge.result)) return null;
+    if ((pledge.result === 'kept') !== support.reinforcement) return null;
+    if (support.reinforcement && support.from !== pledge.partner) return null;
+    if (!('sideObjectives' in v)) return null;
+    const side = parseSideObjectives(v.sideObjectives, policy);
+    if (side === undefined) return null;
+    if (!IEYASU_ENDING_IDS.includes(v.ending as IeyasuEndingId)) return null;
+    const ending = v.ending as IeyasuEndingId;
+    if (!ch1EndingMatches(policy, battle.result, ending)) return null;
+    const trust = parseTrust(v.trust, 2);
+    const troops = parseTroops(v.troops);
+    const characters = parseCharacters(v.characters);
+    if (!trust || !troops || !characters) return null;
+    if (!isFiniteNumber(v.playTimeSec) || v.playTimeSec < 0 || v.playTimeSec > IEYASU_PLAY_TIME_MAX) return null;
+    return { policy, battle, pledge, support, sideObjectives: side, ending, trust, troops, characters, playTimeSec: v.playTimeSec };
+}
+
+function parseRecovery(v: unknown): RecoveryState | null | undefined {
+    if (v === null) return null;
+    if (!isObject(v) || !RECOVERY_CHOICES.includes(v.choice as RecoveryChoice) || !isObject(v.delta)) return undefined;
+    const choice = v.choice as RecoveryChoice;
+    const delta = {} as Record<TokugawaUnitId, number>;
+    for (const k of TOKUGAWA_UNIT_IDS) {
+        const n = v.delta[k];
+        if (typeof n !== 'number' || !Number.isInteger(n) || Math.abs(n) > IEYASU_TROOPS_MAX) return undefined;
+        delta[k] = n;
+    }
+    const total = TOKUGAWA_UNIT_IDS.reduce((n, k) => n + delta[k], 0);
+    if (choice === 'none' && TOKUGAWA_UNIT_IDS.some((k) => delta[k] !== 0)) return undefined;
+    if (choice === 'wait' && TOKUGAWA_UNIT_IDS.some((k) => delta[k] < 0)) return undefined;
+    if (choice === 'transfer' && (delta.reserve > 0 || (['honjin', 'tadakatsu', 'yumi'] as const).some((k) => delta[k] < 0) || total !== 0)) return undefined;
+    return { choice, delta };
+}
+
+function parseUnitNumbers(v: unknown, allowed: readonly TokugawaUnitId[]): Partial<Record<TokugawaUnitId, number>> | null {
+    if (!isObject(v)) return null;
+    const out: Partial<Record<TokugawaUnitId, number>> = {};
+    for (const [k, n] of Object.entries(v)) {
+        if (!allowed.includes(k as TokugawaUnitId)) return null;
+        if (typeof n !== 'number' || !Number.isInteger(n) || n < 0 || n > IEYASU_TROOPS_MAX) return null;
+        out[k as TokugawaUnitId] = n;
+    }
+    return out;
+}
+
+function parseIeyasu2Result(v: unknown): Ieyasu2Result | null | undefined {
+    if (v === null) return null;
+    if (!isObject(v)) return undefined;
+    if (!CH2_PLANS_ALL.includes(v.plan as Ch2Plan) || !RECOVERY_CHOICES.includes(v.recovery as RecoveryChoice)) return undefined;
+    if (!Array.isArray(v.sortie) || v.sortie.length === 0 || v.sortie.length > TOKUGAWA_UNIT_IDS.length) return undefined;
+    const sortie: TokugawaUnitId[] = [];
+    for (const k of v.sortie as unknown[]) {
+        if (!TOKUGAWA_UNIT_IDS.includes(k as TokugawaUnitId) || sortie.includes(k as TokugawaUnitId)) return undefined;
+        sortie.push(k as TokugawaUnitId);
+    }
+    if (!sortie.includes('honjin')) return undefined;
+    const sortieTroops = parseUnitNumbers(v.sortieTroops, sortie);
+    const lost = parseUnitNumbers(v.lost, sortie);
+    if (!sortieTroops || !lost) return undefined;
+    for (const k of sortie) if ((lost[k] ?? 0) > (sortieTroops[k] ?? 0)) return undefined;
+    if (!Array.isArray(v.support) || v.support.length > CH2_SUPPORT_IDS.length) return undefined;
+    const support: Ch2SupportId[] = [];
+    for (const x of v.support as unknown[]) {
+        if (!CH2_SUPPORT_IDS.includes(x as Ch2SupportId) || support.includes(x as Ch2SupportId)) return undefined;
+        support.push(x as Ch2SupportId);
+    }
+    if (typeof v.thin !== 'boolean') return undefined;
+    let primary: ObjectiveResult | null = null;
+    if (v.primary !== null) {
+        primary = parseObjectiveResultRow(v.primary);
+        if (!primary) return undefined;
+    }
+    if (!Array.isArray(v.secondary) || v.secondary.length > 8) return undefined;
+    const secondary: ObjectiveResult[] = [];
+    for (const r of v.secondary as unknown[]) {
+        const x = parseObjectiveResultRow(r);
+        if (!x) return undefined;
+        secondary.push(x);
+    }
+    if (v.withdrawal !== null && v.withdrawal !== 'objective' && v.withdrawal !== 'abandoned') return undefined;
+    if (!isObject(v.trustDelta)) return undefined;
+    const trustDelta = {} as Record<TrustId, number>;
+    for (const k of TRUST_IDS) {
+        const n = v.trustDelta[k];
+        if (typeof n !== 'number' || !Number.isInteger(n) || Math.abs(n) > TRUST_MAX - TRUST_MIN) return undefined;
+        trustDelta[k] = n;
+    }
+    return {
+        plan: v.plan as Ch2Plan,
+        recovery: v.recovery as RecoveryChoice,
+        sortie,
+        sortieTroops,
+        lost,
+        support,
+        thin: v.thin,
+        primary,
+        secondary,
+        withdrawal: v.withdrawal as Ieyasu2Result['withdrawal'],
+        trustDelta,
+    };
+}
+
+/** JSON 文字列を検査して第二章の保存データにする（版 4 だけ）。形・範囲・段階との食い違いがあれば null */
+export function parseIeyasu2SaveData(json: string): Ieyasu2SaveData | null {
+    let v: unknown;
+    try {
+        v = JSON.parse(json);
+    } catch {
+        return null;
+    }
+    if (!isObject(v)) return null;
+    if (v.version !== IEYASU2_SAVE_VERSION || v.scenario !== IEYASU_SCENARIO_ID || v.chapter !== 2) return null;
+    if (typeof v.savedAt !== 'string' || Number.isNaN(Date.parse(v.savedAt))) return null;
+    if (!SAVE_POINTS_V4.includes(v.point as SavePoint)) return null;
+    const point = v.point as SavePoint;
+    if (!isFiniteNumber(v.playTimeSec) || v.playTimeSec < 0 || v.playTimeSec > IEYASU_PLAY_TIME_MAX) return null;
+    if (!SAVED_PHASES.includes(v.phase as SavedPhase)) return null;
+    const phase = v.phase as SavedPhase;
+    const chapter1 = parseChapter1Record(v.chapter1);
+    if (!chapter1) return null;
+    // 遊んだ時間は第一章から引き継いで増えるだけ
+    if (chapter1.playTimeSec > v.playTimeSec) return null;
+    if (v.policy !== chapter1.policy) return null;
+    const policy = chapter1.policy;
+    const trust = parseTrust(v.trust, 2);
+    const troops = parseTroops(v.troops);
+    const characters = parseCharacters(v.characters);
+    if (!trust || !troops || !characters) return null;
+    // 負傷は第二章で治らない（第一章で負傷した人物は第二章でも負傷）
+    for (const c of IEYASU_CHARACTER_IDS) if (chapter1.characters[c] === 'wounded' && characters[c] !== 'wounded') return null;
+    if (!isObject(v.talked)) return null;
+    const talked: Partial<Record<Ieyasu2TalkFlag, boolean>> = {};
+    for (const [k, val] of Object.entries(v.talked)) {
+        if (!(IEYASU2_TALK_FLAGS as readonly string[]).includes(k) || typeof val !== 'boolean') return null;
+        if (val) talked[k as Ieyasu2TalkFlag] = true;
+    }
+    if (v.plan !== null && !CH2_PLANS_ALL.includes(v.plan as Ch2Plan)) return null;
+    const plan = v.plan as Ch2Plan | null;
+    const recovery = parseRecovery(v.recovery);
+    if (recovery === undefined) return null;
+    let battle: BattleOutcome | null = null;
+    if (v.battle !== null) {
+        battle = parseIeyasu2Outcome(v.battle);
+        if (!battle) return null;
+    }
+    const result = parseIeyasu2Result(v.result);
+    if (result === undefined) return null;
+    if (v.ending !== null && !IEYASU2_ENDING_IDS.includes(v.ending as Ieyasu2EndingId)) return null;
+    const ending = v.ending as Ieyasu2EndingId | null;
+    let explore: ExplorePose | null = null;
+    if (v.explore !== null) {
+        const e = v.explore;
+        if (!isObject(e) || !isFiniteNumber(e.x) || !isFiniteNumber(e.z) || !isFiniteNumber(e.heading)) return null;
+        if (Math.abs(e.x) > EXPLORE_LIMIT || Math.abs(e.z) > EXPLORE_LIMIT || Math.abs(e.heading) > 100) return null;
+        explore = { x: e.x, z: e.z, heading: e.heading };
+    }
+    if (v.battleId !== null && !isBattleId(v.battleId)) return null;
+    if (v.appliedBattleId !== null && !isBattleId(v.appliedBattleId)) return null;
+    const battleId = v.battleId as string | null;
+    const appliedBattleId = v.appliedBattleId as string | null;
+
+    // 段階との食い違い
+    const inField = phase === 'explore' || phase === 'muster';
+    const beforeBattle = inField || phase === 'battle';
+    if (phase === 'explore' ? plan !== null || recovery !== null : plan === null) return null;
+    if (phase === 'battle' && recovery === null) return null;
+    if (beforeBattle ? battle !== null || result !== null : battle === null || result === null || recovery === null) return null;
+    if (phase === 'ending' ? ending === null : ending !== null) return null;
+    if (ending && battle && ending !== `ch2_${policy}_${battle.result}`) return null;
+    if (result && (result.plan !== plan || result.recovery !== recovery?.choice)) return null;
+    if (inField ? battleId !== null || appliedBattleId !== null : battleId === null) return null;
+    if (phase === 'battle' && appliedBattleId !== null) return null;
+    if ((phase === 'aftermath' || phase === 'ending') && appliedBattleId !== battleId) return null;
+    const data: Ieyasu2SaveData = {
+        version: IEYASU2_SAVE_VERSION,
+        scenario: IEYASU_SCENARIO_ID,
+        chapter: 2,
+        savedAt: v.savedAt,
+        point,
+        playTimeSec: v.playTimeSec,
+        phase,
+        chapter1,
+        policy,
+        trust,
+        troops,
+        characters,
+        talked,
+        plan,
+        recovery,
+        battle,
+        battleId,
+        appliedBattleId,
+        result,
+        ending,
+        explore,
+    };
+    if (!canSaveIeyasu2At(state2Of(data), point)) return null;
+    return data;
+}
+
+function state2Of(d: Ieyasu2SaveData): Ieyasu2State {
+    return cloneIeyasu2State({
+        scenario: IEYASU_SCENARIO_ID,
+        chapter: 2,
+        phase: d.phase,
+        chapter1: d.chapter1,
+        policy: d.policy,
+        trust: d.trust,
+        troops: d.troops,
+        characters: d.characters,
+        talked: d.talked,
+        plan: d.plan,
+        pendingPlan: null,
+        recovery: d.recovery,
+        battle: d.battle,
+        battleId: d.battleId,
+        appliedBattleId: d.appliedBattleId,
+        result: d.result,
+        ending: d.ending,
+        explore: d.explore,
+        playTimeSec: d.playTimeSec,
+        savedAt: d.savedAt,
+    });
+}
+
+/** 読み込んだ第二章の保存から続きを遊ぶ状態を作る（出陣前の保存は、出陣の確認の前＝支度から。合戦の id も外す） */
+export function ieyasu2StateFromSave(d: Ieyasu2SaveData): Ieyasu2State {
+    const s = state2Of(d);
+    if (s.phase === 'battle') {
+        s.phase = 'muster';
+        s.battleId = null;
+        s.appliedBattleId = null;
+    }
+    return s;
+}
+
+/** タイトルの「つづきから」の説明（第二章・<段階>・<方針>・<時点>・<日時>・遊んだ時間 N 分） */
+export function describeIeyasu2Save(d: Ieyasu2SaveData): string {
+    const at = new Date(d.savedAt);
+    const p2 = (n: number) => String(n).padStart(2, '0');
+    const when = `${at.getFullYear()}/${p2(at.getMonth() + 1)}/${p2(at.getDate())} ${p2(at.getHours())}:${p2(at.getMinutes())}`;
+    return [IEYASU2_PHASE_LABELS[d.phase], POLICY_DONE_LABELS[d.policy], SAVE_POINT_LABELS[d.point], when, `遊んだ時間 ${Math.floor(d.playTimeSec / 60)} 分`].join('・');
+}
+
+/** 演習の記録のキー（ここでは決して触れない。名前だけ。演習の保存の仕組み campaign/practice.ts を読み込まないように、文字で持つ） */
+const PRACTICE_KEYS = ['koto-sengoku/3d-fields', 'koto-sengoku/3d-fields/broken'];
+
+/**
+ * 歴史分岐シナリオの保存先（第一章も第二章も）。シナリオ（ieyasu1570/scenario.ts）が使う。
+ * - 第一章の状態は IeyasuSaveStore（版 3）で、第二章の状態は版 4 で、同じキーに書く。
+ * - 読むときは版を見て、第一章（版 1〜3）・第二章（版 4）のどちらかの状態を返す。
+ */
+export class IeyasuCampaignStore implements ScenarioStore<IeyasuAnyState> {
+    /** 第一章の保存（今までの物。版 3 で書く） */
+    readonly ch1: IeyasuSaveStore;
+
+    constructor(
+        private readonly storage: StorageLike | null,
+        private readonly key: string = IEYASU_SAVE_KEY,
+        archiveKey: string = IEYASU_SAVE_ARCHIVE_KEY,
+        private readonly chapter1Key: string = IEYASU_CHAPTER1_KEY,
+    ) {
+        if ([...FORBIDDEN_KEYS, ...PRACTICE_KEYS].some((k) => k === key || k === archiveKey || k === chapter1Key)) throw new Error('2D 版・架空の第一章・演習の保存のキーは使えません');
+        if (chapter1Key === key || chapter1Key === archiveKey) throw new Error('第一章の控えのキーは、本来のキー・はじめからの控えと別にしてください');
+        this.ch1 = new IeyasuSaveStore(storage, key, archiveKey);
+    }
+
+    get available(): boolean {
+        return this.storage !== null;
+    }
+
+    save(state: IeyasuAnyState, point: SavePoint, now: Date = new Date()): ScenarioSaveResult<IeyasuAnyState> {
+        if (!isChapter2(state)) return this.ch1.save(state, point, now);
+        if (!this.storage) return fail2('unavailable');
+        const data = toIeyasu2SaveData(state, point, now);
+        if (!data) return fail2('not_now');
+        const w = writeVerified(this.storage, this.key, JSON.stringify(data));
+        if (w) return fail2(w);
+        return { ok: true, savedAt: data.savedAt, point, state: { ...cloneIeyasu2State(state), savedAt: data.savedAt } };
+    }
+
+    load(): ScenarioLoadResult<IeyasuAnyState> {
+        return this.read(this.key);
+    }
+
+    /** 第一章の控え（第二章へ移る前の第一章の結末）を読む */
+    loadChapter1Backup(): ScenarioLoadResult<IeyasuAnyState> {
+        return this.read(this.chapter1Key);
+    }
+
+    /** 保存データそのもの（確認用。版 1〜3 は第一章の形、版 4 は第二章の形） */
+    loadData(): IeyasuSaveData | Ieyasu2SaveData | null {
+        if (!this.storage) return null;
+        try {
+            const json = this.storage.getItem(this.key);
+            return json === null ? null : (parseIeyasuSaveData(json) ?? parseIeyasu2SaveData(json));
+        } catch {
+            return null;
+        }
+    }
+
+    archivePrevious(): boolean {
+        return this.ch1.archivePrevious();
+    }
+
+    /**
+     * 第一章の結末から第二章のはじめへ移るときの保存（二重に書かない・失敗しても元を消さない）。
+     * (1) 第一章の結末の状態を版 3 の結末の保存の形で控えのキーへ書いて読み戻す（だめなら本来のキーに触れずに失敗）。
+     * (2) 本来のキーの今の中身を控え、第二章のはじめを版 4・時点 'chapter' で書いて読み戻す。
+     * (3) だめなら本来のキーを控えの中身へ戻す（もとが無ければ消す）。失敗は理由つき。
+     */
+    saveChapterStart(prev: IeyasuAnyState, next: IeyasuAnyState, now: Date = new Date()): ScenarioSaveResult<IeyasuAnyState> {
+        if (!this.storage) return fail2('unavailable');
+        if (isChapter2(prev) || !isChapter2(next)) return fail2('not_now');
+        const d1 = toIeyasuSaveData(prev, 'ending', now);
+        const d2 = toIeyasu2SaveData(next, 'chapter', now);
+        if (!d1 || !d2) return fail2('not_now');
+        const w1 = writeVerified(this.storage, this.chapter1Key, JSON.stringify(d1));
+        if (w1) return fail2(w1);
+        let before: string | null;
+        try {
+            before = this.storage.getItem(this.key);
+        } catch {
+            return fail2('unavailable');
+        }
+        const w2 = writeVerified(this.storage, this.key, JSON.stringify(d2));
+        if (w2) {
+            let restored = true;
+            try {
+                if (before === null) this.storage.removeItem(this.key);
+                else this.storage.setItem(this.key, before);
+                restored = this.storage.getItem(this.key) === before;
+            } catch {
+                restored = false;
+            }
+            const msg = saveFailureMessage(w2);
+            return { ok: false, reason: w2, message: restored ? msg : `${msg}（元の保存へ戻せませんでした。第一章の結末の控えは残っています）` };
+        }
+        return { ok: true, savedAt: d2.savedAt, point: 'chapter', state: { ...cloneIeyasu2State(next), savedAt: d2.savedAt } };
+    }
+
+    private read(key: string): ScenarioLoadResult<IeyasuAnyState> {
+        if (!this.storage) return { status: 'unavailable', message: saveFailureMessage('unavailable') };
+        let json: string | null;
+        try {
+            json = this.storage.getItem(key);
+        } catch {
+            return { status: 'unavailable', message: saveFailureMessage('unavailable') };
+        }
+        if (json === null) return { status: 'none' };
+        const d1 = parseIeyasuSaveData(json);
+        if (d1) return { status: 'ok', state: ieyasuStateFromSave(d1), summary: describeIeyasuSave(d1) };
+        const d2 = parseIeyasu2SaveData(json);
+        if (d2) return { status: 'ok', state: ieyasu2StateFromSave(d2), summary: describeIeyasu2Save(d2) };
+        return { status: 'corrupt', message: IEYASU_CORRUPT_MESSAGE };
+    }
+}
+
+function fail2(reason: SaveFailureReason): ScenarioSaveResult<IeyasuAnyState> {
     return { ok: false, reason, message: saveFailureMessage(reason) };
 }

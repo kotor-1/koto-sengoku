@@ -12,6 +12,7 @@ import { ChapterGame, devStateFor, type BattleRunnerLike } from '../campaign/gam
 import { getBrowserStorage } from '../campaign/save';
 import { createScenarios } from '../campaign/scenarios';
 import { devIeyasuState } from '../campaign/ieyasu1570/flow';
+import { devIeyasu2State, type DevIeyasu2Options } from '../campaign/ieyasu1570/chapter2/flow';
 import type { Policy } from '../campaign/ieyasu1570/state';
 import type { Alliance, CampaignPhase } from '../campaign/state';
 import type { BattleResultKind } from '../battle/types';
@@ -158,6 +159,17 @@ export function bootChapter(host: ExploreHost): ChapterGame<any> {
                     view.devReset();
                     game.devAbandon();
                     game.begin(devIeyasuState(phase, policy, result, opts), 'ieyasu1570');
+                    return game.state?.phase;
+                },
+                /**
+                 * 確認用：歴史分岐の第二章を指定の段階から始める（テスト専用・直接状態変更。普通の遊び方と同じ関数の順で状態を作る：
+                 * 第一章の結末（opts の ch1Result・ch1Pledge・heavy。合戦は遊ばずに作った仮の結果）→ 第二章へ → 軍議の判断（plan）→ 補充（recovery）
+                 * → 出陣 → 仮の結果（result）→ 戦後 → 区切り。本番の画面には出さない）
+                 */
+                setIeyasu2Phase(phase: 'explore' | 'muster' | 'aftermath' | 'ending', policy?: Policy, opts?: DevIeyasu2Options) {
+                    view.devReset();
+                    game.devAbandon();
+                    game.begin(devIeyasu2State(phase, policy, opts), 'ieyasu1570');
                     return game.state?.phase;
                 },
                 teleport(x: number, z: number, heading = Math.PI) {

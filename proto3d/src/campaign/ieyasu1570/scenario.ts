@@ -21,8 +21,23 @@ import {
     talkIeyasu,
     withIeyasuBattleId,
 } from './flow';
-import { IeyasuSaveStore } from './save';
+import { IeyasuCampaignStore } from './save';
 import { PLEDGE_SPECS, TOKUGAWA_UNIT_IDS, type IeyasuCharacterId, type IeyasuState, type IeyasuTalkId } from './state';
+import {
+    addIeyasu2PlayTime,
+    applyIeyasu2OutcomeOnce,
+    canSaveIeyasu2Manually,
+    canTalkIeyasu2,
+    finishTalkIeyasu2,
+    ieyasu2BattleSetup,
+    setIeyasu2ExplorePose,
+    startChapter2,
+    talkIeyasu2,
+    withIeyasu2BattleId,
+} from './chapter2/flow';
+import { ieyasu2CastFor, ieyasu2StatusLines } from './chapter2/scenario';
+import { isChapter2, type IeyasuAnyState } from './chapter2/state';
+import { IEYASU2_CHAPTER_TITLE, IEYASU2_PHASE_LABELS, ieyasu2Chapter1RecordView, ieyasu2EndingView, ieyasu2Objective, ieyasu2PhaseIntro } from './chapter2/story';
 import {
     IEYASU_CHAPTER_TITLE,
     IEYASU_CHARACTER_NAMES,
@@ -161,7 +176,12 @@ export function ieyasuStatusLines(s: IeyasuState, extraPlaySec = 0): StatusLine[
 
 // ================= シナリオ =================
 
-export function ieyasuScenario(storage: StorageLike | null, store: IeyasuSaveStore = new IeyasuSaveStore(storage)): Scenario<IeyasuState> {
+/**
+ * 歴史分岐のシナリオ。状態が第二章（isChapter2）なら第二章の関数（chapter2/）へ振り分ける。第一章の状態の扱いは今までのまま。
+ * 第一章の結末の画面には「第二章へ進む」を出し（nextChapter）、押されたら startChapter2（純粋）で第二章のはじめを作る。
+ */
+export function ieyasuScenario(storage: StorageLike | null, store: IeyasuCampaignStore = new IeyasuCampaignStore(storage)): Scenario<IeyasuAnyState> {
+    const two = isChapter2;
     return {
         id: 'ieyasu1570',
         chapterTitle: IEYASU_CHAPTER_TITLE,
@@ -170,26 +190,33 @@ export function ieyasuScenario(storage: StorageLike | null, store: IeyasuSaveSto
         store,
         battleIdPrefix: 'ieyasu1570',
         newGame: newIeyasuGame,
-        cast: ieyasuCastFor,
-        canTalk: canTalkIeyasu,
-        talk: talkIeyasu,
-        finishTalk: finishTalkIeyasu,
+        cast: (s) => (two(s) ? ieyasu2CastFor(s) : ieyasuCastFor(s)),
+        canTalk: (s, id) => (two(s) ? canTalkIeyasu2(s, id) : canTalkIeyasu(s, id)),
+        talk: (s, id) => (two(s) ? talkIeyasu2(s, id) : talkIeyasu(s, id)),
+        finishTalk: (s, id, choice) => (two(s) ? finishTalkIeyasu2(s, id, choice) : finishTalkIeyasu(s, id, choice)),
         isDeparture: (id, choice) => id === 'gate' && choice === 'depart',
         depart: (s, id, choice) => {
             if (id !== 'gate' || choice !== 'depart') throw new Error('出陣は城門の「出陣する」だけです');
             // 会話の済み印も立てる（架空の第一章の finishTalk と同じ）
-            return finishTalkIeyasu(s, id, choice);
+            return two(s) ? finishTalkIeyasu2(s, id, choice) : finishTalkIeyasu(s, id, choice);
         },
-        withBattleId: withIeyasuBattleId,
-        battleSetup: ieyasuBattleSetup,
-        applyOutcomeOnce: applyIeyasuOutcomeOnce,
-        setExplorePose: setIeyasuExplorePose,
-        addPlayTime: addIeyasuPlayTime,
-        canSaveManually: canSaveIeyasuManually,
-        phaseLabel: (p) => IEYASU_PHASE_LABELS[p],
-        objective: ieyasuObjective,
-        phaseIntro: ieyasuPhaseIntro,
-        statusLines: ieyasuStatusLines,
-        endingView: ieyasuEndingView,
+        withBattleId: (s, id) => (two(s) ? withIeyasu2BattleId(s, id) : withIeyasuBattleId(s, id)),
+        battleSetup: (s) => (two(s) ? ieyasu2BattleSetup(s) : ieyasuBattleSetup(s)),
+        applyOutcomeOnce: (s, id, o) => (two(s) ? applyIeyasu2OutcomeOnce(s, id, o) : applyIeyasuOutcomeOnce(s, id, o)),
+        setExplorePose: (s, pose) => (two(s) ? setIeyasu2ExplorePose(s, pose) : setIeyasuExplorePose(s, pose)),
+        addPlayTime: (s, sec) => (two(s) ? addIeyasu2PlayTime(s, sec) : addIeyasuPlayTime(s, sec)),
+        canSaveManually: (s) => (two(s) ? canSaveIeyasu2Manually(s) : canSaveIeyasuManually(s)),
+        phaseLabel: (p, s) => (s && two(s) ? IEYASU2_PHASE_LABELS[p] : IEYASU_PHASE_LABELS[p]),
+        objective: (s) => (two(s) ? ieyasu2Objective(s) : ieyasuObjective(s)),
+        phaseIntro: (s) => (two(s) ? ieyasu2PhaseIntro(s) : ieyasuPhaseIntro(s)),
+        statusLines: (s, extra) => (two(s) ? ieyasu2StatusLines(s, extra) : ieyasuStatusLines(s, extra)),
+        endingView: (s) => (two(s) ? ieyasu2EndingView(s) : ieyasuEndingView(s)),
+        chapterTitleOf: (s) => (two(s) ? IEYASU2_CHAPTER_TITLE : IEYASU_CHAPTER_TITLE),
+        nextChapter: (s) => (!two(s) && s.phase === 'ending' && s.ending !== null ? { label: '第二章へ進む', sub: '第一章の結果（方針・兵・信頼・約束）を引き継いで続きを遊ぶ' } : null),
+        startNextChapter: (s) => {
+            if (two(s)) throw new Error('第二章の先は、まだありません');
+            return startChapter2(s);
+        },
+        chapterStartView: (s) => (two(s) && s.phase === 'explore' ? ieyasu2Chapter1RecordView(s) : null),
     };
 }

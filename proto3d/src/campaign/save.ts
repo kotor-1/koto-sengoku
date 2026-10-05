@@ -67,13 +67,14 @@ export interface StorageLike {
     removeItem(key: string): void;
 }
 
-/** どの時点の保存か */
-export type SavePoint = 'departure' | 'aftermath' | 'manual' | 'ending';
+/** どの時点の保存か（'chapter' は歴史分岐の第二章の始めの自動保存だけ。架空の章の保存は受け付けない） */
+export type SavePoint = 'departure' | 'aftermath' | 'manual' | 'ending' | 'chapter';
 export const SAVE_POINT_LABELS: Readonly<Record<SavePoint, string>> = {
     departure: '出陣前（自動保存）',
     aftermath: '戦後（自動保存）',
     manual: '手動保存',
     ending: '章の結末',
+    chapter: '第二章の始め（自動保存）',
 };
 /** 保存に入る段階（council は軍議の画面の途中なので保存しない） */
 export type SavedPhase = Exclude<CampaignPhase, 'council'>;
@@ -132,6 +133,9 @@ export function canSaveAt(state: CampaignState, point: SavePoint): boolean {
             return state.phase === 'explore' || state.phase === 'muster' || state.phase === 'aftermath';
         case 'ending':
             return state.phase === 'ending' && state.ending !== null;
+        case 'chapter':
+            // 章の始めの保存は歴史分岐の第二章だけ（架空の章には次の章が無い）
+            return false;
     }
 }
 

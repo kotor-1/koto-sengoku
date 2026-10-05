@@ -102,7 +102,11 @@ export interface EndingOptions {
     chapter: string;
     label: string;
     scenario: ScenarioId;
+    /** 「次の章へ進む」のボタン（歴史分岐の第一章の結末だけ。省けばボタンは「タイトルへ」だけ） */
+    next?: { label: string; sub?: string };
 }
+/** 結末の画面で押したボタン（'title'＝タイトルへ・'next_chapter'＝次の章へ進む） */
+export type EndingAction = 'title' | 'next_chapter';
 
 /** 画面（ui/view.ts）。待つもの（会話・選択・確認・メニュー・タイトル・結末）は Promise で結果を返す */
 export interface GameView {
@@ -111,7 +115,10 @@ export interface GameView {
     script(script: ScenarioScript, opts: ScriptOptions): Promise<string | null>;
     confirm(opts: ConfirmOptions): Promise<string>;
     menu(info: MenuInfo): Promise<MenuAction>;
-    ending(view: ScenarioEndingView, opts?: EndingOptions): Promise<void>;
+    /** 結末の画面。押したボタンを返す（返りが無い・'title' はタイトルへ。テストの偽の画面は void を返してよい） */
+    ending(view: ScenarioEndingView, opts?: EndingOptions): Promise<EndingAction | void>;
+    /** 次の章へ移った直後の、前の章の結果確認の画面（結末の画面と同じ作り。ボタンは「城下へ」だけ）。省ければ出さない */
+    record?(view: ScenarioEndingView, opts?: EndingOptions): Promise<void>;
     hud(info: HudInfo | null): void;
     prompt(p: PromptInfo | null): void;
     intro(title: string, text: string): void;
@@ -154,7 +161,7 @@ export interface GameDeps {
     practice?: () => Promise<void>;
 }
 
-export type GameScreen = 'boot' | 'title' | 'explore' | 'talk' | 'council' | 'menu' | 'battle' | 'ending' | 'practice';
+export type GameScreen = 'boot' | 'title' | 'explore' | 'talk' | 'council' | 'menu' | 'battle' | 'ending' | 'record' | 'practice';
 
 // ================= 本体 =================
 
@@ -181,6 +188,8 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
     private epoch = 0;
     /** 出陣ごとの合戦の id の通し番号 */
     private battleSeq = 0;
+    /** 次の章へ移っている途中（連打で 2 回走らないように） */
+    private advancing = false;
     /** 並べるシナリオ（タイトルの順） */
     readonly scenarios: readonly AnyScenario[];
     /** 確認用：最後に起きた誤り */
@@ -372,10 +381,16 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         world.setControl(!this.busy);
     }
 
+    /** 今の状態の章の名前（シナリオが状態ごとの名前を持てばそれ、無ければ chapterTitle） */
+    private chapterTitle(): string {
+        const sc = this.sc;
+        return sc.chapterTitleOf?.(this.st) ?? sc.chapterTitle;
+    }
+
     private hudInfo(): HudInfo {
         const s = this.st;
         const sc = this.sc;
-        return { chapter: sc.chapterTitle, phase: sc.phaseLabel(s.phase), objective: sc.objective(s), provisional: sc.label };
+        return { chapter: this.chapterTitle(), phase: sc.phaseLabel(s.phase, s), objective: sc.objective(s), provisional: sc.label };
     }
 
     private refreshField(): void {
@@ -424,7 +439,7 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
             this._screen = 'talk';
             this.deps.world.faceTalk?.(target);
             const script = this.sc.talk(this.st, target);
-            const choice = await this.deps.view.script(script, { mode: 'talk', chapter: this.sc.chapterTitle, label: this.sc.label });
+            const choice = await this.deps.view.script(script, { mode: 'talk', chapter: this.chapterTitle(), label: this.sc.label });
             if (this.sc.isDeparture(target, choice)) {
                 await this.depart(target, choice!);
                 return;
@@ -455,7 +470,7 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         view.intro(intro.title, intro.text);
         while (this.st.phase === 'council') {
             const script = this.sc.talk(this.st, 'council');
-            const choice = await view.script(script, { mode: 'council', chapter: this.sc.chapterTitle, label: this.sc.label });
+            const choice = await view.script(script, { mode: 'council', chapter: this.chapterTitle(), label: this.sc.label });
             if (!choice) throw new Error('軍議で選択肢が選ばれませんでした');
             this.st = this.sc.finishTalk(this.st, 'council', choice);
         }
@@ -580,14 +595,73 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         await this.showEnding();
     }
 
+    /**
+     * 結末の画面。シナリオに次の章があれば（nextChapter）「次の章へ進む」も出す（歴史分岐の第一章だけ）。
+     * 返りが 'next_chapter' なら次の章へ（goNextChapter）、それ以外（undefined を含む）はタイトルへ（今までと同じ）。
+     * 次の章へ移るときの保存に失敗して「結末の画面へ戻る」を選んだら、もう一度この画面。
+     */
     private async showEnding(): Promise<void> {
         const { view, world } = this.deps;
-        this._screen = 'ending';
-        this.setPrompt(null);
-        view.hud(null);
-        world.setControl(false);
-        await view.ending(this.sc.endingView(this.st), { chapter: this.sc.chapterTitle, label: this.sc.label, scenario: this.sc.id });
-        await this.title();
+        for (;;) {
+            this._screen = 'ending';
+            this.setPrompt(null);
+            view.hud(null);
+            world.setControl(false);
+            const sc = this.sc;
+            const st = this.st;
+            const next = sc.nextChapter?.(st) ?? null;
+            const act = await view.ending(sc.endingView(st), { chapter: this.chapterTitle(), label: sc.label, scenario: sc.id, ...(next ? { next } : {}) });
+            if (act === 'next_chapter' && next && sc.startNextChapter) {
+                if ((await this.goNextChapter()) === 'back') continue;
+                return;
+            }
+            await this.title();
+            return;
+        }
+    }
+
+    /**
+     * 次の章へ進む（結末の画面の「第二章へ進む」）。次の章のはじめの状態を作り（純粋）、前の章を控えに残して次の章のはじめを保存し、
+     * 前の章の結果確認の画面を 1 回出してから、次の章の城下へ。保存に失敗したら確かめる（保存せずに始める／結末の画面へ戻る）。
+     * 連打で 2 回走らない（advancing）。
+     */
+    private async goNextChapter(): Promise<'started' | 'back' | 'busy'> {
+        if (this.advancing) return 'busy';
+        this.advancing = true;
+        try {
+            const { view } = this.deps;
+            const sc = this.sc;
+            const prev = this.st;
+            let next = sc.startNextChapter!(prev);
+            const r = sc.store.saveChapterStart ? sc.store.saveChapterStart(prev, next) : sc.store.save(next, 'chapter');
+            if (r.ok) {
+                next = r.state;
+                view.toast(`保存しました：${SAVE_POINT_LABELS.chapter}`, 'ok');
+            } else {
+                const c = await view.confirm({
+                    title: '保存できませんでした',
+                    lines: ['第二章の始めを保存できませんでした。第一章の保存はそのまま残っています。', r.message],
+                    buttons: [
+                        { id: 'go', label: '保存せずに第二章を始める' },
+                        { id: 'back', label: '結末の画面へ戻る' },
+                    ],
+                    defaultIndex: 1,
+                    cancelId: 'back',
+                });
+                if (c !== 'go') return 'back';
+            }
+            this.run = { scenario: sc, state: next };
+            this.playAcc = 0;
+            const rec = sc.chapterStartView?.(next) ?? null;
+            if (rec && view.record) {
+                this._screen = 'record';
+                await view.record(rec, { chapter: this.chapterTitle(), label: sc.label, scenario: sc.id });
+            }
+            this.begin(next, sc.id);
+            return 'started';
+        } finally {
+            this.advancing = false;
+        }
     }
 
     // ---------------- メニュー・保存 ----------------
@@ -684,7 +758,7 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         const r = sc.store.save(s, 'manual');
         if (!r.ok) return { ok: false, text: `保存できませんでした：${r.message}` };
         this.st = r.state;
-        return { ok: true, text: `保存しました（${formatSavedTime(r.savedAt)}・${sc.phaseLabel(s.phase)}）。書き込んだ内容を読み戻して確かめました。` };
+        return { ok: true, text: `保存しました（${formatSavedTime(r.savedAt)}・${sc.phaseLabel(s.phase, s)}）。書き込んだ内容を読み戻して確かめました。` };
     }
 
     /** 自動保存（書いた後に読み戻して確かめる）。detail は合戦の結果の画面に出す長めの文 */

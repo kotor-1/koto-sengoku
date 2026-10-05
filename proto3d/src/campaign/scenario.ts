@@ -81,6 +81,11 @@ export interface ScenarioStore<S> {
     load(): ScenarioLoadResult<S>;
     /** 「はじめから」の前に今の保存を控えへ写す（写す物が無ければ true） */
     archivePrevious(): boolean;
+    /**
+     * 章の結末から次の章へ移るときの保存（省ける。歴史分岐の第二章だけ）。前の章の状態を控えに残してから、次の章のはじめを書く。
+     * 失敗したら本来の保存を元の中身へ戻す（前の章の保存は消えない）。省けば ChapterGame は save(next, 'chapter') を使う。
+     */
+    saveChapterStart?(prev: S, next: S, now?: Date): ScenarioSaveResult<S>;
 }
 
 // ---- 状態とシナリオ ----
@@ -128,11 +133,22 @@ export interface Scenario<S extends ScenarioStateCore = ScenarioStateCore> {
     addPlayTime(s: S, sec: number): S;
     canSaveManually(s: S): boolean;
 
-    phaseLabel(phase: CampaignPhase): string;
+    /** 段階の名前（s を渡せば、その状態の章に合わせた名前。架空の章は s を見ない） */
+    phaseLabel(phase: CampaignPhase, s?: S): string;
     objective(s: S): string;
     phaseIntro(s: S): { title: string; text: string };
     statusLines(s: S, extraPlaySec: number): StatusLine[];
     endingView(s: S): ScenarioEndingView;
+
+    // ---- 章をつなぐ口（省ける。架空の章は実装しない） ----
+    /** 状態ごとの章の名前（省けば chapterTitle） */
+    chapterTitleOf?(s: S): string;
+    /** 結末の画面に出す「次の章へ」のボタン（無ければ null） */
+    nextChapter?(s: S): { label: string; sub?: string } | null;
+    /** 次の章のはじめの状態を作る（純粋。同じ入力なら同じ結果） */
+    startNextChapter?(s: S): S;
+    /** 次の章へ移った直後に 1 回出す、前の章の結果確認の画面の中身（無ければ null） */
+    chapterStartView?(s: S): ScenarioEndingView | null;
 }
 
 /** どのシナリオでも入る箱（ChapterGame が複数のシナリオを並べるとき） */

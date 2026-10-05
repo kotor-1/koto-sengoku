@@ -10,7 +10,7 @@
  * 会話・軍議の途中も、右上の「メニュー」（Esc／M）でメニューを開ける。メニューは会話の上に重なり、閉じれば同じ行・同じ選び方に戻る（会話は進まない）。
  */
 import './ui.css';
-import type { ConfirmOptions, EndingOptions, GameView, HudInfo, MenuAction, MenuInfo, PromptInfo, ScriptOptions, TitleAction, TitleInfo, TitleScenarioInfo } from '../campaign/game';
+import type { ConfirmOptions, EndingAction, EndingOptions, GameView, HudInfo, MenuAction, MenuInfo, PromptInfo, ScriptOptions, TitleAction, TitleInfo, TitleScenarioInfo } from '../campaign/game';
 import type { ScenarioEndingView, ScenarioScript } from '../campaign/scenario';
 import { CHAPTER_TITLE, PROVISIONAL_LABEL } from '../campaign/story';
 import { PRACTICE_TITLE_TEXT, SCENARIO_TITLE_TEXT } from './scenarioTitles';
@@ -27,7 +27,7 @@ function startedAt(e: Event): number {
     return Number.isFinite(t) && t > 0 && t <= now + 1000 ? t : now;
 }
 
-type ModalKind = 'title' | 'script' | 'confirm' | 'menu' | 'ending' | 'sheet';
+type ModalKind = 'title' | 'script' | 'confirm' | 'menu' | 'ending' | 'record' | 'sheet';
 
 /** 確認用（開発ビルドの __game）：今の画面の中身と、押す操作 */
 export interface ModalProbe {
@@ -730,13 +730,33 @@ export class DomView implements GameView {
         });
     }
 
-    ending(v: ScenarioEndingView, opts?: EndingOptions): Promise<void> {
+    /**
+     * 結末の画面。opts.next があれば「次の章へ進む」（data-id 'next_chapter'。既定の選択。sub の小さな説明つき）を「タイトルへ」（'title'）の上に並べ、
+     * 押したボタンの id を返す。opts.next が無ければ今までと同じ（ボタンは「タイトルへ」1 つ・既定 'title'・返りは 'title'）。
+     */
+    ending(v: ScenarioEndingView, opts?: EndingOptions): Promise<EndingAction> {
+        const items: { id: EndingAction; label: string; sub?: string }[] = opts?.next
+            ? [{ id: 'next_chapter', label: opts.next.label, ...(opts.next.sub ? { sub: opts.next.sub } : {}) }, { id: 'title', label: 'タイトルへ' }]
+            : [{ id: 'title', label: 'タイトルへ' }];
+        return this.endingLike('ending', v, `${opts?.chapter ?? CHAPTER_TITLE}　結末`, opts, items) as Promise<EndingAction>;
+    }
+
+    /**
+     * 次の章へ移った直後の、前の章の結果確認（結末の画面と同じ作りの枠：見出し・記録の表・ボタン 1 つ「城下へ」data-id 'to_town'）。
+     */
+    record(v: ScenarioEndingView, opts?: EndingOptions): Promise<void> {
+        return this.endingLike('record', v, `${opts?.chapter ?? CHAPTER_TITLE}　はじめに`, opts, [{ id: 'to_town', label: '城下へ' }]).then(() => undefined);
+    }
+
+    /** 結末の画面と結果確認の画面の共通の作り（ボタンは見張り付きの並び。上に重なった画面が閉じたら出たばかりと同じに見張る） */
+    private endingLike(kind: 'ending' | 'record', v: ScenarioEndingView, kicker: string, opts: EndingOptions | undefined, items: { id: string; label: string; sub?: string }[]): Promise<string> {
         return new Promise((resolve) => {
-            const layer = this.open('ending', 'solid');
+            const layer = this.open(kind, 'solid');
             const scroll = el('div', 'g-ending g-scroll');
             const inner = el('div', 'g-ending-inner');
             inner.dataset.scenario = opts?.scenario ?? 'fictional';
-            inner.append(el('p', 'kicker', `${opts?.chapter ?? CHAPTER_TITLE}　結末`));
+            if (kind === 'record') inner.dataset.record = v.id;
+            inner.append(el('p', 'kicker', kicker));
             if (opts?.label) {
                 const tag = el('p', 'prov');
                 tag.append(el('span', 'g-tag', opts.label));
@@ -747,25 +767,27 @@ export class DomView implements GameView {
             for (const p of v.body) body.append(el('p', undefined, p));
             inner.append(body);
             const rec = el('div', 'record');
-            rec.append(el('h2', undefined, '記録'));
+            rec.append(el('h2', undefined, kind === 'record' ? '引き継ぐもの' : '記録'));
             const dl = el('dl', 'g-status');
             for (const r of v.record) dl.append(el('dt', undefined, r.label), el('dd', undefined, r.value));
             rec.append(dl);
-            inner.append(rec, el('p', 'footer', v.footer));
+            inner.append(rec);
+            if (v.footer) inner.append(el('p', 'footer', v.footer));
             const btns = el('div');
             inner.append(btns);
             scroll.append(inner);
             layer.append(scroll);
             const m: Modal = {
-                kind: 'ending',
+                kind,
                 layer,
                 key: (e) => void row.key(e),
-                probe: () => ({ kind: 'ending', buttons: row.buttons, text: inner.textContent ?? '' }),
+                probe: () => ({ kind, buttons: row.buttons, text: inner.textContent ?? '' }),
                 press: (id) => row.press(id),
+                reexpose: () => row.reexpose(),
             };
-            const row = this.buttonRow(btns, [{ id: 'title', label: 'タイトルへ' }], 0, () => {
+            const row = this.buttonRow(btns, items, 0, (id) => {
                 this.close(m);
-                resolve();
+                resolve(id);
             });
             this.push(m);
         });
