@@ -137,8 +137,8 @@ describe('出来事の中身（人数・負傷・旗・行き先）', () => {
             }
         }
         expect(arrivedAt).toBeGreaterThan(ARRIVAL_CUT);
-        // 場面の長さ（9 秒ほど）の中で着く
-        expect(arrivedAt).toBeLessThan(10);
+        // 場面の長さ（第一章の導入では 8 秒）の中で着く
+        expect(arrivedAt).toBeLessThan(7.9);
         const before = stageFrame(ev, arrivedAt - 0.1, false, CAST_EXPLORE).people.find((p) => p.look === 'tashiro_envoy')!;
         expect(Math.hypot(before.x - 2.0, before.z + 7.1)).toBeLessThan(0.4);
     });

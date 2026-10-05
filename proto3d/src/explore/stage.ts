@@ -253,10 +253,10 @@ export function stageFrame(ev: StageEvent, t: number, reduced: boolean, cast: re
 // ---------------- 使者・使いの到着
 
 /** 使者の画の切り替え（秒）：前は街道口の画、後は城門の前の画 */
-export const ARRIVAL_CUT = 4.6;
+export const ARRIVAL_CUT = 3.8;
 const ARRIVAL_SPEED = 1.6;
-/** 後の画の歩き（着くまでを場面の中に収める。少し急ぎ足） */
-const ARRIVAL_SPEED_B = 1.75;
+/** 後の画の歩き（着くまでを場面の中（8 秒ほど）に収める。少し急ぎ足） */
+const ARRIVAL_SPEED_B = 1.8;
 /** 街道口の画：通りの西の端から南（木戸）を見る */
 const ARRIVAL_SHOT_A0 = shot(-2.4, 2.2, 6.0, 0.6, 1.7, 16.5);
 const ARRIVAL_SHOT_A1 = shot(-2.4, 2.2, 6.0, 0.9, 1.6, 12.2);
@@ -292,7 +292,7 @@ function arrivals(who: { key: string; look: string; name: string }[], t: number,
             [lane + 0.2, 6.0 + back],
         ];
         // 後の画：通りの北（開始の位置の東）から行き先へ。南から近づく（置き場所の 1.6 m 南を経る）
-        const startB: Pt = [1.5 + (i % 2) * 1.1, 0.0 + (i % 2) * 0.9];
+        const startB: Pt = [1.7 + (i % 2) * 1.1, -1.0 + (i % 2) * 1.0];
         const pathB: Pt[] = [startB, [dest[0], dest[1] + 1.6], dest];
         const LB = pathLength(pathB);
         if (reduced) {
