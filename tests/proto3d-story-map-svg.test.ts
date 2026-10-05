@@ -117,6 +117,21 @@ describe('地図の SVG の木', () => {
         expect(byAttr(t, 'data-legend-scout')).toHaveLength(1);
         expect(byAttr(tree, 'data-legend-scout')).toHaveLength(0);
     });
+    it('物見で確かめた場所（地形）の名前は ◇（関係の記号を付けない）。その場所だけの関係は凡例に数えない', () => {
+        const t = mapSvgTree(scene, { scouted: ['field'] });
+        const sym = (root: SvgNode, id: string) => {
+            const g = byAttr(root, 'data-place', id)[0]!;
+            return findNodes(g, (n) => n.attrs['data-sym'] !== undefined).map((n) => `${String(n.attrs['data-sym'])}:${nodeText(n)}`);
+        };
+        expect(sym(t, 'field')).toEqual(['scout:◇']);
+        expect(sym(tree, 'field')).toEqual([`neutral:${SIDE_STYLE.neutral.symbol}`]);
+        expect(sym(t, 'home')).toEqual([`self:${SIDE_STYLE.self.symbol}`]);
+        // 境の原だけが「敵対していない」なので、確かめた後は凡例の関係から外れる（◇ の行で出す）
+        expect(byAttr(t, 'data-legend-side', 'neutral')).toHaveLength(0);
+        expect(byAttr(tree, 'data-legend-side', 'neutral')).toHaveLength(1);
+        expect(String(t.attrs['aria-label'])).toContain('◇境の原');
+        expect(String(t.attrs['aria-label'])).not.toContain(`${SIDE_STYLE.neutral.symbol}境の原`);
+    });
     it('場所の名前どうしは重ならない（込み合った地図でも、置き場所を選ぶ）。枠の中', () => {
         const dense: MapScene = {
             note: '模式図',

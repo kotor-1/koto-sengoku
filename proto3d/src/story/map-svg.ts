@@ -161,7 +161,7 @@ export function mapSvgTree(scene: MapScene, opts: MapSvgOptions = {}): SvgNode {
             viewBox: `0 0 ${L.w} ${L.h}`,
             preserveAspectRatio: 'xMidYMid meet',
             role: 'img',
-            'aria-label': mapAriaLabel(scene),
+            'aria-label': mapAriaLabel(scene, scouted),
             class: 'g-map',
             'data-layout': opts.noLegend ? 'full' : (opts.layout ?? 'standard'),
             ...(opts.name ? { 'data-map': opts.name } : {}),
@@ -170,10 +170,16 @@ export function mapSvgTree(scene: MapScene, opts: MapSvgOptions = {}): SvgNode {
     );
 }
 
-/** 読み上げ用の短い説明（地図の中身を文字で） */
-export function mapAriaLabel(scene: MapScene): string {
-    const parts = scene.places.map((p) => `${SIDE_STYLE[p.side].symbol}${p.name}${p.note ? `（${p.note}）` : ''}`);
+/** 読み上げ用の短い説明（地図の中身を文字で。物見で確かめた場所は ◇） */
+export function mapAriaLabel(scene: MapScene, scouted: ReadonlySet<string> | readonly string[] = []): string {
+    const sc = new Set(scouted);
+    const parts = scene.places.map((p) => `${placeSymbol(p, sc.has(p.id))}${p.name}${p.note ? `（${p.note}）` : ''}`);
     return `模式図：${parts.join('、')}。${scene.note}`;
+}
+
+/** 名前の頭の記号：関係の記号。物見で確かめた場所（地形）は関係を持たないので ◇ */
+function placeSymbol(p: MapPlace, scout: boolean): string {
+    return scout ? SCOUT_LEGEND.symbol : SIDE_STYLE[p.side].symbol;
 }
 
 // ---------------------------------------------------------------- 名前の置き場所（重ならないように）
@@ -234,11 +240,11 @@ function regionNode(p: MapPlace, L: MapLayout, placer: LabelPlacer, scout: boole
     const kids: SvgNode[] = [];
     // 広い所（国）：薄く塗った楕円（破線の縁）と、真ん中の名前
     kids.push(n('ellipse', { cx: x, cy: y, rx: 40, ry: 24, fill: st.color, 'fill-opacity': 0.1, stroke: st.color, 'stroke-opacity': 0.6, 'stroke-width': 1.4, 'stroke-dasharray': '4 4', class: 'g-map-glow-r' }));
-    const lw = textWidth(`${st.symbol}${p.name}`, MAP_FONT.label);
+    const lw = textWidth(`${placeSymbol(p, scout)}${p.name}`, MAP_FONT.label);
     const nw = p.note ? textWidth(p.note, MAP_FONT.note) : 0;
     const w = Math.max(lw + (p.mark ? 26 : 0), nw);
     placer.block(blockBox('middle', x, y + 5, w, p.note ? 2 : 1));
-    kids.push(labelNode(p, x - (p.mark ? 13 : 0), y + 5, 'middle'));
+    kids.push(labelNode(p, x - (p.mark ? 13 : 0), y + 5, 'middle', scout));
     if (p.mark) kids.push(flagNode(p.mark, st.color, x - 13 + lw / 2 + 4, y - 10));
     if (p.note) kids.push(n('text', { x, y: y + 21, 'text-anchor': 'middle', 'font-size': MAP_FONT.note, fill: INK_SOFT, class: 'g-map-pnote', ...halo() }, [p.note]));
     return n('g', attrs, kids);
@@ -256,7 +262,7 @@ function placeNode(p: MapPlace, L: MapLayout, placer: LabelPlacer, scout: boolea
     if (p.mark) kids.push(flagNode(p.mark, st.color, x + 8, y - 27));
     // 名前（＋添え書き）の置き場所：下・上・右・左・斜めの中から、重なりの少ない所
     const lines = p.note ? 2 : 1;
-    const w = Math.max(textWidth(`${st.symbol}${p.name}`, MAP_FONT.label), p.note ? textWidth(p.note, MAP_FONT.note) : 0);
+    const w = Math.max(textWidth(`${placeSymbol(p, scout)}${p.name}`, MAP_FONT.label), p.note ? textWidth(p.note, MAP_FONT.note) : 0);
     const up = (p.mark ? 30 : 16) + (lines - 1) * 16;
     const cands: { anchor: 'start' | 'middle' | 'end'; x: number; y: number }[] = [
         { anchor: 'middle', x, y: y + 27 },
@@ -270,7 +276,7 @@ function placeNode(p: MapPlace, L: MapLayout, placer: LabelPlacer, scout: boolea
     ];
     const k = placer.choose(cands.map((c) => blockBox(c.anchor, c.x, c.y, w, lines)));
     const c = cands[k]!;
-    kids.push(labelNode(p, c.x, c.y, c.anchor));
+    kids.push(labelNode(p, c.x, c.y, c.anchor, scout));
     if (p.note) kids.push(n('text', { x: c.x, y: c.y + 16, 'text-anchor': c.anchor, 'font-size': MAP_FONT.note, fill: INK_SOFT, class: 'g-map-pnote', ...halo() }, [p.note]));
     return n('g', attrs, kids);
 }
@@ -304,11 +310,11 @@ function flagNode(mark: string, color: string, x: number, y: number): SvgNode {
     ]);
 }
 
-/** 名前：関係の記号（色）＋名前（明るい字） */
-function labelNode(p: MapPlace, x: number, y: number, anchor: 'start' | 'middle' | 'end'): SvgNode {
+/** 名前：関係の記号（色）＋名前（明るい字）。物見で確かめた場所は ◇（関係の記号・色を付けない） */
+function labelNode(p: MapPlace, x: number, y: number, anchor: 'start' | 'middle' | 'end', scout = false): SvgNode {
     const st = SIDE_STYLE[p.side];
     return n('text', { x, y, 'text-anchor': anchor, 'font-size': MAP_FONT.label, 'font-weight': 600, fill: INK, class: 'g-map-label', ...halo() }, [
-        n('tspan', { fill: st.color, 'data-sym': p.side }, [st.symbol]),
+        n('tspan', { fill: scout ? INK : st.color, 'data-sym': scout ? 'scout' : p.side }, [placeSymbol(p, scout)]),
         p.name,
     ]);
 }
@@ -421,10 +427,14 @@ export type LegendEntry =
 /** 凡例の中身：使っている関係（記号＋名前＋色・旗の字）・線の種類・物見の印 */
 export function legendEntries(scene: MapScene, scouted: ReadonlySet<string> | readonly string[] = []): LegendEntry[] {
     const out: LegendEntry[] = [];
+    // 物見で確かめた場所・線（地形）は関係を持たないので、関係の凡例に数えない（◇ の行で出す）
+    const sc = new Set(scouted);
+    const places = scene.places.filter((p) => !sc.has(p.id));
+    const routes = scene.routes.filter((r) => !sc.has(r.id));
     for (const s of SIDE_ORDER) {
-        if (!scene.places.some((p) => p.side === s) && !scene.routes.some((r) => r.side === s)) continue;
+        if (!places.some((p) => p.side === s) && !routes.some((r) => r.side === s)) continue;
         const st = SIDE_STYLE[s];
-        const marks = [...new Set(scene.places.filter((p) => p.side === s && p.mark).map((p) => [...p.mark!][0]!))];
+        const marks = [...new Set(places.filter((p) => p.side === s && p.mark).map((p) => [...p.mark!][0]!))];
         out.push({ type: 'side', side: s, symbol: st.symbol, name: st.name, color: st.color, marks });
     }
     for (const k of ROUTE_ORDER) {
@@ -432,7 +442,7 @@ export function legendEntries(scene: MapScene, scouted: ReadonlySet<string> | re
         const style = ROUTE_STYLE[k];
         out.push({ type: 'route', kind: k, name: style.name, dash: style.dash, arrow: style.arrow, width: style.width });
     }
-    if ((scouted instanceof Set ? scouted.size : (scouted as readonly string[]).length) > 0) out.push({ type: 'scout', symbol: SCOUT_LEGEND.symbol, name: SCOUT_LEGEND.name });
+    if (sc.size > 0) out.push({ type: 'scout', symbol: SCOUT_LEGEND.symbol, name: SCOUT_LEGEND.name });
     return out;
 }
 
