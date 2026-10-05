@@ -222,8 +222,13 @@ async function talkDev(page, io, id) {
 }
 async function walkToGate(page, how) {
   const g = (await castOf(page)).find((m) => m.id === 'gate');
-  if (how.cdp) await walkTouch(page, how.cdp, g.x, g.z, (q) => q.ui === 'script');
-  else await walkKeys(page, g.x, g.z, (q) => q.ui === 'script');
+  const walk = (x, z, done) => (how.cdp ? walkTouch(page, how.cdp, x, z, done) : walkKeys(page, x, z, done));
+  // 道の真ん中（忠勝と使者の手前）を経て城門へ。石川の所（東）からまっすぐ向かうと使者（2.0, -7.1）に当たって止まる
+  // （2026-10-05 の chain:oda の 1 回目：支度の読み込み直しの後、石川の脇から城門へ向かって使者の前で止まり、時間切れ）
+  const W0 = { x: 0, z: -5.4 };
+  await walk(W0.x, W0.z, (q) => q.ui === 'script' || Math.hypot(q.x - W0.x, q.z - W0.z) < 0.6);
+  const end = await walk(g.x, g.z, (q) => q.ui === 'script');
+  if (end?.ui !== 'script' && (await ui(page))?.kind !== 'script') throw new Error(`城門の確認が出ない（止まった所 ${end?.x?.toFixed(1)}, ${end?.z?.toFixed(1)}）`);
   await waitUi(page, 'script');
   return readThrough(page, how.next);
 }
