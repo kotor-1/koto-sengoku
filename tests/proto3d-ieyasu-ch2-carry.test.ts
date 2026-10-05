@@ -129,7 +129,10 @@ describe('同じ方針で第一章の結果が違うと、兵・支援・会話�
             // 結果確認の「効くこと」
             const rec = states.map((s) => Object.fromEntries(ieyasu2Chapter1RecordView(s).record.map((r) => [r.label, r.value])));
             expect(rec[0]!['効くこと：支援']).not.toBe(rec[2]!['効くこと：支援']);
-            expect(rec[2]!['効くこと：兵が少ないとき']).toContain('改める見込み');
+            // 兵が少ないときの調整は、軍議で判断を決めた時に第一章の終わりの兵で確定する（補充では変わらない）と述べる
+            expect(rec[2]!['効くこと：兵が少ないとき']).toContain('この判断に決めると');
+            expect(rec[2]!['効くこと：兵が少ないとき']).toContain('で確定する');
+            expect(rec[2]!['効くこと：兵が少ないとき']).toContain('後の補充では変わらない');
             expect(rec[2]!['効くこと：負傷']).toContain('士気');
         });
     }

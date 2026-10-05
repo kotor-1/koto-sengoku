@@ -17,7 +17,7 @@ import { useAbility } from '../../../battle/abilities';
 import type { BattleResultKind, BattleSetup, Order } from '../../../battle/types';
 import type { Script } from '../../../battle/scripts';
 import type { IeyasuCharacterId, IeyasuCharacterStatus, PledgeResult, Policy, TokugawaUnitId, TrustId } from '../state';
-import { ch2PlanAvailability, type Ch2BattleInput, type Ch2Plan } from './battle';
+import { ch2DecideTerms, ch2PlanAvailability, type Ch2BattleInput, type Ch2Plan } from './battle';
 
 // ================================================================ 台本の道具
 
@@ -352,6 +352,8 @@ export function stepScript(steps: Ch2Step[], setup?: BattleSetup): Ch2Script {
  * - weak：敗北・約束を破った（兵 40% ほど。相手の信頼が負で士気 −10。敵 ×1.1。A 家康・B 忠勝と長政・C 忠勝が負傷）。補充なし
  * - weakwait：weak の後に補充「負傷兵の戻りを待つ」（失った兵の 25%（石川の信頼 35）が戻る。敵の後詰め・次の波が 40 秒早い）
  * - minimum：第一章で忠勝隊・弓隊（C は守備隊も）がほぼ全滅した敗北・約束を破った＋補充「待つ」の後（いちばん厳しい、ありうる形）
+ * 任務の条件（terms：兵が少ないときの調整・主目標の値・始めの陣）は、キャンペーンと同じく軍議の時の兵（第一章の終わり＝補充の前）で
+ * ch2DecideTerms で確定した物を渡す（weakwait・minimum で補充の後に兵が戻っても、条件は変わらない）。
  */
 export type Ch2Tier = 'strong' | 'typical' | 'weak' | 'weakwait' | 'minimum';
 export const CH2_TIERS: readonly Ch2Tier[] = ['strong', 'typical', 'weak', 'weakwait', 'minimum'];
@@ -401,7 +403,17 @@ export function ch2TierInput(policy: Policy, plan: Ch2Plan, tier: Ch2Tier, opts:
     const base = (troops: Record<TokugawaUnitId, number>, result: BattleResultKind, pledge: PledgeResult, characters: Record<IeyasuCharacterId, IeyasuCharacterStatus>, waited: boolean): Ch2BattleInput => {
         const trust = trustOf(result, pledge);
         const recover = waited && !opts.noRecovery;
-        return { policy, plan, troops: recover ? ch2WaitRecovery(troops, trust.ishikawa) : troops, characters, trust, ch1Result: result, ch1Pledge: pledge, waited: recover };
+        return {
+            policy,
+            plan,
+            troops: recover ? ch2WaitRecovery(troops, trust.ishikawa) : troops,
+            characters,
+            trust,
+            ch1Result: result,
+            ch1Pledge: pledge,
+            waited: recover,
+            terms: ch2DecideTerms(policy, plan, troops),
+        };
     };
     const reserveCh1 = (n: number) => (home ? n : CH1_START.reserve);
     switch (tier) {
