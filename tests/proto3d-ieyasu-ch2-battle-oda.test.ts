@@ -11,7 +11,9 @@
  * - 判断 1 と判断 2 で、時間・損害・残る部隊・副目標が分かれる。
  * - 目標を考えない手（何もしない・開始直後の全軍撤退・全部隊を同時に退き口へ）が、考えた作戦より明らかに良くならない
  *   （勝ち数が多い、または同じ勝ち数で損害が 1 ポイント以上少なく副目標も同じ以上、を「明らかに良い」とする）。
- *   特に、開始直後の全軍撤退が最良になっていない（殿を残す作戦より損害が大きく、殿の忠勝隊を崩さずに退く副目標を落とす）。
+ *   開始直後の全軍撤退は、撤収の対象が実際に退き口から離脱した結果の勝利なら有効な作戦の 1 つ（依頼 docs/chapter2-request-2.md【2】。
+ *   離脱の確かめは tests/proto3d-ieyasu-ch2-allretreat.test.ts）。代償として、殿を残す作戦より損害の割合・失った兵が大きく、副目標は同じ以下。
+ * - 記録（CH2_LOG=1）：勝ち数・時間（全回の平均の所要時間）・出陣／損失／残存の兵・損害の割合・残る部隊・副目標（id ごとに果たした回数／16）。
  * - 支援（織田の鉄砲隊）の有無・補充で待ったかどうかで、結果（損害・時間・勝ち数）が違う（第一章の結果が効く裏付け。数字は記録）。
  */
 import { describe, expect, it } from 'vitest';
@@ -43,6 +45,11 @@ describe('A：台本は画面で出せる命令の数・間隔', () => {
 
 describe('A：判断ごと・段階ごとに勝てる作戦がある（16 通りの過半）', () => {
     for (const { plan, tier } of cells) {
+        for (const t of ch2Tactics(P, plan, 'plan').filter((x) => x.id !== MAIN[plan])) {
+            it(`${plan}・${tier}：${t.id}（数える）`, () => {
+                log(`A ${plan} ${tier} ${t.id}: ${fmt(summarize(sixteenCh2(P, plan, tier, t.id)))}`);
+            }, 60_000);
+        }
         it(`${plan}・${tier}：${MAIN[plan]}`, () => {
             const s = summarize(sixteenCh2(P, plan, tier, MAIN[plan]));
             log(`A ${plan} ${tier} ${MAIN[plan]}: ${fmt(s)}`);
@@ -77,13 +84,18 @@ describe('A：目標を考えない手は、考えた作戦より明らかに良
                 log(`A ${plan} ${tier} 目標を考えない手 ${t.id}: ${fmt(n)} ／ 最良 ${b.id}: ${fmt(b.s)}`);
                 expect(clearlyBetter(n, b.s), `${t.id} ${fmt(n)} ／ ${b.id} ${fmt(b.s)}`).toBe(false);
             }
-            // 開始直後の全軍撤退が最良になっていない（記録として勝つことはある。殿を残す作戦より損害が大きく、副目標を落とす）
+            // 開始直後の全軍撤退は、勝てば有効な作戦の 1 つ（撤収の対象が退き口から離脱した結果。依頼【2】）。代償があることを確かめる：
+            // 殿を残す作戦より損害の割合・失った兵（徳川）が大きく、殿の忠勝隊を崩さずに退く副目標・副目標の合計は同じ以下。
+            // 前は副目標の合計が「より少ない」ことまで求めていたが、minimum は軍議の時の兵（400）で兵が少ないときの陣（本陣が切れ目寄り）に
+            // 確定するようになり、全軍撤退の損害が 2 割を切って（20.4% → 18.4%）損害の副目標を果たし、殿を残す作戦（忠勝隊は兵 120 で
+            // 3 割を保てず 0/16）と副目標の合計が並んだ（どちらも 16）。損害の代償（徳川 36.1% 対 14.5%・失った兵 240 対 96）は残る。
             if (plan === 'commit') {
                 const ar = summarize(sixteenCh2(P, plan, tier, 'all_retreat'));
                 const rh = summarize(sixteenCh2(P, plan, tier, 'rear_hold'));
                 expect(ar.loss).toBeGreaterThan(rh.loss);
+                expect(ar.tokLost).toBeGreaterThan(rh.tokLost);
                 expect(ar.sec['ch2_oda_tadakatsu'] ?? 0).toBeLessThanOrEqual(rh.sec['ch2_oda_tadakatsu'] ?? 0);
-                expect(ar.secTotal).toBeLessThan(rh.secTotal);
+                expect(ar.secTotal).toBeLessThanOrEqual(rh.secTotal);
             }
         }, 120_000);
     }

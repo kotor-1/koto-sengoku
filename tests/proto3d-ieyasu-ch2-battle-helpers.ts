@@ -19,6 +19,15 @@ export interface Ch2Run {
     loss: number;
     /** 徳川の部隊だけの損害の割合 */
     tokLoss: number;
+    /** 出陣した兵（合戦の始めの兵の合計）：徳川の部隊・味方全体（物語の味方を含む） */
+    tokStart: number;
+    allyStart: number;
+    /** 失った兵（始め − 終わり）：徳川・味方全体 */
+    tokLost: number;
+    allyLost: number;
+    /** 残った兵（終わりの兵。退き口から離れた部隊の兵も数える）：徳川・味方全体 */
+    tokEnd: number;
+    allyEnd: number;
     /** 最後に残った味方の部隊（戦える・離脱した）の数と、味方の部隊の数 */
     standing: number;
     allies: number;
@@ -54,11 +63,21 @@ export function playCh2(info: Ch2BattleInfo, policy: Policy, tactic: string, k?:
     const al = o.units.filter((u) => u.side === 'ally');
     const tok = al.filter((u) => u.clan === 'tokugawa' && u.id.startsWith('t_'));
     const sum = (a: typeof al, f: (u: (typeof al)[number]) => number) => a.reduce((x, u) => x + f(u), 0);
+    const tokStart = sum(tok, (u) => u.startStrength);
+    const tokEnd = sum(tok, (u) => u.endStrength);
+    const allyStart = sum(al, (u) => u.startStrength);
+    const allyEnd = sum(al, (u) => u.endStrength);
     return {
         o,
         t: s.t,
-        loss: 1 - sum(al, (u) => u.endStrength) / sum(al, (u) => u.startStrength),
-        tokLoss: 1 - sum(tok, (u) => u.endStrength) / Math.max(1, sum(tok, (u) => u.startStrength)),
+        loss: 1 - allyEnd / allyStart,
+        tokLoss: 1 - tokEnd / Math.max(1, tokStart),
+        tokStart,
+        allyStart,
+        tokLost: tokStart - tokEnd,
+        allyLost: allyStart - allyEnd,
+        tokEnd,
+        allyEnd,
         standing: al.filter((u) => u.status === 'ready' || u.status === 'withdrawn').length,
         allies: al.length,
         sec: Object.fromEntries((o.objectives?.secondary ?? []).map((x) => [x.id, x.achieved])),
@@ -87,8 +106,17 @@ export interface Ch2Summary {
     wins: number;
     /** 勝った回の平均の時間（勝ちが無ければ null） */
     winSec: number | null;
+    /** 16 回すべての平均の時間（負け・撤退・日没も含む所要時間） */
+    meanSec: number;
     loss: number;
     tokLoss: number;
+    /** 出陣した兵・失った兵・残った兵（16 回の平均。徳川・味方全体） */
+    tokStart: number;
+    allyStart: number;
+    tokLost: number;
+    allyLost: number;
+    tokEnd: number;
+    allyEnd: number;
     standing: number;
     /** 副目標の id → 果たした回数 */
     sec: Record<string, number>;
@@ -102,16 +130,35 @@ export function summarize(rs: Ch2Run[]): Ch2Summary {
     return {
         wins: ws.length,
         winSec: ws.length ? mean(ws.map((r) => r.t)) : null,
+        meanSec: mean(rs.map((r) => r.t)),
         loss: mean(rs.map((r) => r.loss)),
         tokLoss: mean(rs.map((r) => r.tokLoss)),
+        tokStart: mean(rs.map((r) => r.tokStart)),
+        allyStart: mean(rs.map((r) => r.allyStart)),
+        tokLost: mean(rs.map((r) => r.tokLost)),
+        allyLost: mean(rs.map((r) => r.allyLost)),
+        tokEnd: mean(rs.map((r) => r.tokEnd)),
+        allyEnd: mean(rs.map((r) => r.allyEnd)),
         standing: mean(rs.map((r) => r.standing)),
         sec,
         secTotal: Object.values(sec).reduce((a, b) => a + b, 0),
     };
 }
+/**
+ * 記録の 1 行：勝ち数・勝った回の時間（全回の平均の所要時間）・出陣／損失／残存の兵（徳川、括弧は物語の味方を含む全体。16 回の平均）・
+ * 損害の割合・最後に残った部隊・副目標（id ごとに果たした回数／16）
+ */
 export function fmt(x: Ch2Summary): string {
     const p = (v: number) => `${(v * 100).toFixed(1)}%`;
-    return `${x.wins}/16 勝・${x.winSec === null ? '—' : `${x.winSec.toFixed(0)} 秒`}・損害 ${p(x.loss)}（徳川 ${p(x.tokLoss)}）・残る ${x.standing.toFixed(1)}・副目標 ${Object.values(x.sec).join('／')}`;
+    const n = (v: number) => v.toFixed(0);
+    const sec = Object.entries(x.sec)
+        .map(([id, c]) => `${id.replace(/^ch2_[a-z]+_/, '')} ${c}/16`)
+        .join('・');
+    return (
+        `${x.wins}/16 勝・${x.winSec === null ? '—' : `${x.winSec.toFixed(0)} 秒`}（全回 ${x.meanSec.toFixed(0)} 秒）・` +
+        `出陣 ${n(x.tokStart)}（${n(x.allyStart)}）・損失 ${n(x.tokLost)}（${n(x.allyLost)}）・残存 ${n(x.tokEnd)}（${n(x.allyEnd)}）・` +
+        `損害 ${p(x.loss)}（徳川 ${p(x.tokLoss)}）・残る ${x.standing.toFixed(1)}・副目標 ${sec || 'なし'}`
+    );
 }
 
 /** 10 秒のうちに出した命令の数の最大 */

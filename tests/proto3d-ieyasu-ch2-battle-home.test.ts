@@ -97,13 +97,15 @@ describe('C：第一章の結果が効く（支援・補充）', () => {
             expect(a.loss !== b.loss || a.wins !== b.wins).toBe(true);
         }
     }, 180_000);
-    it('補充で待つ：兵が戻り（25%）、次の波が 40 秒早く着く。待たないときと結果が違う（判断 1 は兵が 650 を超えて 6 分守ることになる）', () => {
+    it('補充で待つ：兵が戻り（25%）、次の波が 40 秒早く着く。待たないときと結果が違う（判断 1 は兵が 650 を超えても、軍議で決めた 3 分のまま）', () => {
         for (const plan of ['commit', 'hold'] as Ch2Plan[]) {
             const no = bestOf(plan, 'weak');
             const wait = bestOf(plan, 'weakwait');
             log(`C 補充 ${plan}: 待たない ${no.id} ${fmt(no.s)} ／ 待つ ${wait.id} ${fmt(wait.s)}`);
             expect(no.s.loss !== wait.s.loss || no.s.winSec !== wait.s.winSec || no.s.wins !== wait.s.wins).toBe(true);
         }
-        expect(ch2Info(P, 'commit', 'weakwait').thin).toBe(false);
+        // 主目標の条件は軍議の時（補充の前）の兵で確定する（依頼 docs/chapter2-request-2.md【1】。前は補充の後の兵で求めて 6 分になっていた）
+        expect(ch2Info(P, 'commit', 'weakwait').thin).toBe(true);
+        expect(ch2Info(P, 'commit', 'weakwait').setup.objectives!.primary).toMatchObject({ type: 'defend_time', sec: 180 });
     }, 180_000);
 });
