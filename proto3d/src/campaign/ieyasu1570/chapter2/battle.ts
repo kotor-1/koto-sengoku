@@ -213,13 +213,13 @@ const A_POS: Record<Ch2Plan, { thin: boolean; at: Record<TokugawaUnitId | 'odaRe
         {
             thin: true,
             at: {
-                tadakatsu: { x: 0, z: 30, facing: N },
-                yumi: { x: -25, z: 55, facing: N },
-                reserve: { x: -50, z: 45, facing: N },
-                honjin: { x: 0, z: 70, facing: N },
-                odaRear: { x: -10, z: 140, facing: N },
-                odaBaggage: { x: 10, z: 150, facing: N },
-                odaTeppo: { x: 50, z: 45, facing: N },
+                tadakatsu: { x: 0, z: -10, facing: N },
+                yumi: { x: -25, z: 25, facing: N },
+                reserve: { x: -55, z: 15, facing: N },
+                honjin: { x: 0, z: 80, facing: N },
+                odaRear: { x: -35, z: 62, facing: N },
+                odaBaggage: { x: 35, z: 62, facing: N },
+                odaTeppo: { x: 55, z: 15, facing: N },
             },
         },
     ],
@@ -243,8 +243,8 @@ const A_POS: Record<Ch2Plan, { thin: boolean; at: Record<TokugawaUnitId | 'odaRe
                 yumi: { x: -30, z: 75, facing: N },
                 reserve: { x: 30, z: 75, facing: N },
                 honjin: { x: 0, z: 160, facing: N },
-                odaRear: { x: -40, z: 45, facing: N },
-                odaBaggage: { x: 40, z: 45, facing: N },
+                odaRear: { x: -55, z: 15, facing: N },
+                odaBaggage: { x: 55, z: 15, facing: N },
                 odaTeppo: { x: 30, z: 75, facing: N },
             },
         },
@@ -278,12 +278,13 @@ function enemiesA(input: Ch2BattleInput, f: number): UnitDef[] {
     });
     return [
         e('e_pursuit_hq', 'honjin', '浅井・朝倉の追撃の本隊', 300, 85, 0, -200, { aiRole: 'guard_hq' }),
-        e('e_asakura_kiba', 'kiba', '朝倉の騎馬', 220, 75, 40, -125, { aiRole: 'assault', aiTarget: { ...A_NECK } }),
+        e('e_asakura_kiba', 'kiba', '朝倉の騎馬', 220, 75, 40, -95, { aiRole: 'assault', aiTarget: { ...A_NECK } }),
         e('e_asai_yari1', 'yari', '浅井の追っ手（一）', 340, 80, -50, -190, { aiRole: 'assault', aiTarget: { ...A_NECK } }),
         e('e_asai_yari2', 'yari', '浅井の追っ手（二）', 340, 80, 50, -190, { aiRole: 'assault', aiTarget: { ...A_NECK } }),
         e('e_asai_yumi', 'yumi', '浅井の弓', 200, 75, 0, -120, { aiRole: 'assault', aiTarget: { ...A_NECK } }),
         e('e_asakura_amb', 'kiba', '朝倉の伏兵の騎馬', 180, 80, -90, 65, { aiRole: 'assault', aiTarget: { ...A_NECK_MOUTH }, arriveAt: 45, facing: EAST }),
-        e('e_asai_late', 'yari', '浅井の後詰め', 340, 80, 0, -210, { aiRole: 'assault', aiTarget: { ...A_NECK }, arriveAt: Math.max(1, 100 - delay) }),
+        // 後詰め：東の林を抜けて切れ目の口へ向かう騎馬（70 秒。補充で待てば 30 秒）
+        e('e_asai_late', 'kiba', '浅井の後詰めの騎馬', 200, 80, 150, 30, { aiRole: 'assault', aiTarget: { ...A_NECK }, arriveAt: Math.max(1, 70 - delay), facing: WEST }),
     ];
 }
 
@@ -368,13 +369,13 @@ function enemiesB(input: Ch2BattleInput, f: number): UnitDef[] {
     const hill = { x: B_HILL.x, z: B_HILL.z, r: 30 };
     return [
         e('e_oda_hq', 'honjin', '織田方の本陣', 350, 85, -140, -225, S, { aiRole: 'guard_hq' }),
-        e('e_oda_attack', 'yari', '織田方の丘の攻め手', 260, 75, 60, -205, S, { aiRole: 'assault', aiTarget: { ...hill } }),
-        e('e_oda_ring_w', 'yari', '織田方の丘の西の囲み', 420, 85, -35, -150, EAST, { aiRole: 'hold_line', aiLeash: 200 }),
-        e('e_oda_ring_e', 'kiba', '織田方の丘の東の囲み（騎馬）', 250, 80, 120, -95, WEST, { aiRole: 'hold_zone', aiTarget: { x: 120, z: -95, r: 30 }, aiLeash: 60 }),
-        e('e_oda_ring_s', 'yari', '織田方の丘の南の囲み', 520, 85, 60, -85, S, { aiRole: 'hold_zone', aiTarget: { x: 60, z: -85, r: 30 }, aiLeash: 70 }),
-        e('e_oda_block', 'yari', '織田方の中央の押さえ', 480, 85, 10, -5, S, { aiRole: 'hold_zone', aiTarget: { x: 10, z: -5, r: 18 }, aiLeash: 35 }),
-        e('e_oda_teppo', 'yumi', '織田方の鉄砲隊', 250, 80, 100, -30, S, { aiRole: 'hold_line' }),
-        e('e_oda_late', 'yari', '織田方の援軍', 400, 85, 200, -220, S, { aiRole: 'assault', aiTarget: { ...hill }, arriveAt: Math.max(1, 240 - delay) }),
+        e('e_oda_attack', 'yari', '織田方の丘の攻め手', 220, 75, 60, -205, S, { aiRole: 'assault', aiTarget: { ...hill } }),
+        e('e_oda_ring_w', 'yari', '織田方の丘の西の囲み', 360, 85, -35, -150, EAST, { aiRole: 'hold_line', aiLeash: 200 }),
+        e('e_oda_ring_e', 'kiba', '織田方の丘の東の囲み（騎馬）', 200, 80, 120, -95, WEST, { aiRole: 'hold_zone', aiTarget: { x: 120, z: -95, r: 30 }, aiLeash: 60 }),
+        e('e_oda_ring_s', 'yari', '織田方の丘の南の囲み', 400, 85, 60, -85, S, { aiRole: 'hold_zone', aiTarget: { x: 60, z: -85, r: 30 }, aiLeash: 70 }),
+        e('e_oda_block', 'yari', '織田方の中央の押さえ', 400, 85, 10, -5, S, { aiRole: 'hold_zone', aiTarget: { x: 10, z: -5, r: 18 }, aiLeash: 35 }),
+        e('e_oda_teppo', 'yumi', '織田方の鉄砲隊', 200, 80, 100, -30, S, { aiRole: 'hold_line' }),
+        e('e_oda_late', 'yari', '織田方の援軍', 340, 85, 200, -220, S, { aiRole: 'assault', aiTarget: { ...hill }, arriveAt: Math.max(1, 240 - delay) }),
     ];
 }
 
@@ -421,22 +422,16 @@ function setupB(input: Ch2BattleInput, sortie: TokugawaUnitId[], support: Ch2Sup
 const C_KEY: Zone = { circle: { cx: 0, cz: 42, r: 22 } };
 const C_STORE: Zone = { circle: { cx: -135, cz: -23, r: 12 } };
 
-const C_POS: Record<'normal' | 'thin', Record<TokugawaUnitId | 'village', Pos>> = {
-    normal: {
-        honjin: { x: 0, z: 175, facing: N },
-        tadakatsu: { x: 0, z: 135, facing: N },
-        yumi: { x: -32, z: 150, facing: N },
-        reserve: { x: -72, z: 135, facing: N },
-        village: { x: 72, z: 135, facing: N },
-    },
-    thin: {
-        honjin: { x: 0, z: 58, facing: N },
-        tadakatsu: { x: 0, z: 36, facing: N },
-        yumi: { x: 20, z: 50, facing: N },
-        reserve: { x: -20, z: 40, facing: N },
-        village: { x: -40, z: 50, facing: N },
-    },
+/** 徳川の陣（村の南。兵が少なくても同じ所から始める＝広場へ入る前に第一波を見る） */
+const C_POS: Record<TokugawaUnitId | 'village', Pos> = {
+    honjin: { x: 0, z: 175, facing: N },
+    tadakatsu: { x: 0, z: 135, facing: N },
+    yumi: { x: -32, z: 150, facing: N },
+    reserve: { x: -72, z: 135, facing: N },
+    village: { x: 72, z: 135, facing: N },
 };
+/** 兵が少ないときに守る時間（秒。村の者が南へ逃げ終わるまで） */
+const CH2_C_THIN_SEC = 180;
 
 function enemiesC(input: Ch2BattleInput, f: number): UnitDef[] {
     const delay = input.waited ? CH2_RULES.waitDelaySec : 0;
@@ -460,21 +455,21 @@ function enemiesC(input: Ch2BattleInput, f: number): UnitDef[] {
     const store = { x: -135, z: -23, r: 12 };
     return [
         e('e_ronin_hq', 'honjin', '浪人衆の頭', 300, 0, -180, undefined, null),
-        e('e_ronin_w1_yari', 'yari', '浪人衆の槍（一）', 360, 0, -195, at(20), key),
-        e('e_ronin_w1_yumi', 'yumi', '浪人衆の弓（一）', 180, 0, -195, at(20), lane),
-        e('e_ronin_w2_yari', 'yari', '浪人衆の槍（二）', 360, -72, -195, at(110), key),
-        e('e_ronin_w2_kiba', 'kiba', '浪人衆の騎馬', 240, -72, -195, at(110), store),
-        e('e_ronin_w3_yari', 'yari', '浪人衆の槍（三）', 340, 72, -195, at(200), key),
-        e('e_ronin_w3_yumi', 'yumi', '浪人衆の弓（二）', 160, 72, -195, at(200), lane),
+        e('e_ronin_w1_yari', 'yari', '浪人衆の槍（一）', 300, 0, -195, at(20), key),
+        e('e_ronin_w1_yumi', 'yumi', '浪人衆の弓（一）', 120, 0, -195, at(20), lane),
+        e('e_ronin_w2_yari', 'yari', '浪人衆の槍（二）', 260, -72, -195, at(110), key),
+        e('e_ronin_w2_kiba', 'kiba', '浪人衆の騎馬', 180, -72, -195, at(110), store),
+        e('e_ronin_w3_yari', 'yari', '浪人衆の槍（三）', 280, 72, -195, at(200), key),
+        e('e_ronin_w3_yumi', 'yumi', '浪人衆の弓（二）', 120, 72, -195, at(200), lane),
     ];
 }
 
 function setupC(input: Ch2BattleInput, sortie: TokugawaUnitId[], support: Ch2SupportId[], thin: boolean, f: number, adj: string[]): BattleSetup {
-    const pos = C_POS[thin ? 'thin' : 'normal'];
+    const pos = C_POS;
     const units: UnitDef[] = [...sortie.map((k) => tokugawaUnit(k, input, pos[k]))];
     if (support.includes('village')) units.push({ id: CH2_UNIT.village, side: 'ally', clan: 'tokugawa', kind: 'yari', name: '村の衆', strength: 150, morale: 70, ...pos.village });
     units.push(...enemiesC(input, f));
-    const sec = thin ? 300 : 360;
+    const sec = thin ? CH2_C_THIN_SEC : 360;
     const primary: ObjectiveDef = { id: 'ch2_home_hold', type: 'defend_time', label: `庄屋の屋敷前を ${sec / 60} 分守る`, sec, zone: C_KEY, loseSec: 15 };
     const secondary: ObjectiveDef[] = [
         { id: 'ch2_home_store', type: 'defend_zones', label: '米蔵を荒らさせない', sec, zones: [C_STORE], minHeld: 1, loseSec: 15, names: ['米蔵の前'] },
@@ -520,10 +515,10 @@ function adjustmentLines(input: Ch2BattleInput, thin: boolean, support: Ch2Suppo
     if (thin) {
         out.push(
             input.policy === 'oda'
-                ? '第一章の損害で兵が少ないため、陣を切れ目の近くへ寄せて始める（主目標は同じ）。'
+                ? '第一章の損害で兵が少ないため、家康本陣を切れ目寄り（南）から始める（主目標は同じ）。'
                 : input.policy === 'asai'
                   ? '第一章の損害で兵が少ないため、連れ帰る兵の条件を 3 割以上に改めた。'
-                  : '第一章の損害で兵が少ないため、陣を広場に寄せて始め、守る時間を 5 分に改めた。',
+                  : `第一章の損害で兵が少ないため、村の者を南へ逃がすあいだ（${CH2_C_THIN_SEC / 60} 分）だけ屋敷前を守ることに改めた（ふだんは 6 分）。`,
         );
     }
     if (support.includes('oda_teppo')) out.push('支援：織田の信頼が厚く、織田の鉄砲隊（弓の扱い）が残って加わる（指揮できる）。');
