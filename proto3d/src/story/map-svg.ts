@@ -18,19 +18,36 @@ export interface SvgNode {
     children: (SvgNode | string)[];
 }
 
-/** viewBox（幅・高さ）と、地図の枠・凡例の欄・注記の行 */
-export const MAP_VIEW = { w: 480, h: 270 } as const;
-const FRAME = { x: 4, y: 4, w: 316, h: 240 };
-const LEGEND_X = 328;
-const NOTE_Y = 262;
+/**
+ * 地図の割り付け：viewBox（幅・高さ）と、地図の枠・凡例の欄・注記の行。
+ * - standard：480×270（情勢の画面・縦長の画面）。
+ * - wide：640×270（横長の演出の画面。高さは同じなので文字の大きさは変わらず、地図の枠だけ横に広い）。
+ */
+export interface MapLayout {
+    w: number;
+    h: number;
+    frame: { x: number; y: number; w: number; h: number };
+    legendX: number;
+    legendW: number;
+    noteY: number;
+}
+export const MAP_LAYOUTS: Readonly<Record<'standard' | 'wide' | 'full', MapLayout>> = {
+    standard: { w: 480, h: 270, frame: { x: 4, y: 4, w: 316, h: 240 }, legendX: 328, legendW: 150, noteY: 262 },
+    wide: { w: 640, h: 270, frame: { x: 4, y: 4, w: 474, h: 240 }, legendX: 486, legendW: 152, noteY: 262 },
+    /** 凡例を地図の外（画面の文字）に出すとき：枠を幅いっぱいに */
+    full: { w: 480, h: 270, frame: { x: 4, y: 4, w: 472, h: 240 }, legendX: 480, legendW: 0, noteY: 262 },
+};
+/** 既定の割り付けの viewBox（互換） */
+export const MAP_VIEW = { w: MAP_LAYOUTS.standard.w, h: MAP_LAYOUTS.standard.h } as const;
 /** 文字の大きさ（単位）。どれも 14 以上 */
 export const MAP_FONT = { label: 15, note: 14, legend: 14, legendTitle: 14, mark: 14, route: 14, foot: 14 } as const;
 
 /** 地図の点（0〜100）→ 枠の中の座標 */
-export function mapPoint(x: number, y: number): { x: number; y: number } {
+export function mapPoint(x: number, y: number, layout: MapLayout = MAP_LAYOUTS.standard): { x: number; y: number } {
+    const f = layout.frame;
     const cx = Math.max(0, Math.min(100, x));
     const cy = Math.max(0, Math.min(100, y));
-    return { x: round(FRAME.x + 16 + (cx / 100) * (FRAME.w - 32)), y: round(FRAME.y + 14 + (cy / 100) * (FRAME.h - 28)) };
+    return { x: round(f.x + 22 + (cx / 100) * (f.w - 44)), y: round(f.y + 22 + (cy / 100) * (f.h - 44)) };
 }
 
 /** 関係ごとの色・記号・名前（凡例の言葉） */
@@ -67,60 +84,90 @@ export interface MapSvgOptions {
     uid?: string;
     /** 物見で確かめた場所・線の id（印を変える） */
     scouted?: ReadonlySet<string> | readonly string[];
-    /** 凡例を出さない（狭い所に小さく出すとき。注記は必ず出す） */
+    /** 凡例を地図の中に出さない（画面の側が legendEntries で文字の凡例を出す。注記は必ず出す）。枠は幅いっぱい（full） */
     noLegend?: boolean;
     /** 確かめ用の名前（svg の data-map） */
     name?: string;
+    /** 割り付け（省けば standard） */
+    layout?: 'standard' | 'wide';
 }
 
 /** 地図の 1 場面を SVG の要素の木にする（場所・線は全部入れ、出方・強調は data-state・data-hl で切り替える） */
 export function mapSvgTree(scene: MapScene, opts: MapSvgOptions = {}): SvgNode {
+    const L = MAP_LAYOUTS[opts.noLegend ? 'full' : (opts.layout ?? 'standard')];
     const uid = (opts.uid ?? 'm').replace(/[^A-Za-z0-9-]/g, '');
     const scouted = new Set(opts.scouted ?? []);
     const byId = new Map(scene.places.map((p) => [p.id, p]));
     const defs: SvgNode[] = [];
+    const f = L.frame;
     // 背景と枠
     const back: SvgNode[] = [
-        n('rect', { x: 0, y: 0, width: MAP_VIEW.w, height: MAP_VIEW.h, fill: HALO, class: 'g-map-bg' }),
-        n('rect', { x: FRAME.x, y: FRAME.y, width: FRAME.w, height: FRAME.h, rx: 8, fill: BG, stroke: 'rgba(200,168,106,0.45)', 'stroke-width': 1.2, class: 'g-map-frame' }),
+        n('rect', { x: 0, y: 0, width: L.w, height: L.h, fill: HALO, class: 'g-map-bg' }),
+        n('rect', { x: f.x, y: f.y, width: f.w, height: f.h, rx: 8, fill: BG, stroke: 'rgba(200,168,106,0.45)', 'stroke-width': 1.2, class: 'g-map-frame' }),
     ];
+    // 名前の置き場所を決める（重ならないように。先に印・国の名前を障害物として置く）
+    const placer = new LabelPlacer(f);
+    for (const p of scene.places) {
+        const { x, y } = mapPoint(p.x, p.y, L);
+        if (p.kind === 'region') continue;
+        placer.block({ x0: x - 12, y0: y - 14, x1: x + 12, y1: y + 10 });
+        if (p.mark) placer.block({ x0: x + 6, y0: y - 28, x1: x + 30, y1: y - 6 });
+    }
     // 広い所（国）は一番下、線、場所の印、名前の順に重ねる
     const regions: SvgNode[] = [];
     const routes: SvgNode[] = [];
     const marks: SvgNode[] = [];
     for (const p of scene.places) {
-        const g = placeNode(p, scouted.has(p.id));
-        if (p.kind === 'region') regions.push(g);
-        else marks.push(g);
+        if (p.kind !== 'region') continue;
+        regions.push(regionNode(p, L, placer, scouted.has(p.id)));
+    }
+    for (const p of scene.places) {
+        if (p.kind === 'region') continue;
+        marks.push(placeNode(p, L, placer, scouted.has(p.id)));
+    }
+    // 線の名前は、ほかの線の上にも置かないように（線をなぞる小さな箱を障害物に）
+    for (const r of scene.routes) {
+        const a = byId.get(r.from);
+        const b = byId.get(r.to);
+        if (!a || !b) continue;
+        const pts = [mapPoint(a.x, a.y, L), ...(r.via ?? []).map((v) => mapPoint(v.x, v.y, L)), mapPoint(b.x, b.y, L)];
+        for (let i = 1; i < pts.length; i++) {
+            const p = pts[i - 1]!;
+            const q = pts[i]!;
+            const steps = Math.max(1, Math.ceil(Math.hypot(q.x - p.x, q.y - p.y) / 8));
+            for (let k = 0; k <= steps; k++) {
+                const x = p.x + ((q.x - p.x) * k) / steps;
+                const y = p.y + ((q.y - p.y) * k) / steps;
+                placer.block({ x0: x - 2, y0: y - 2, x1: x + 2, y1: y + 2 });
+            }
+        }
     }
     for (const r of scene.routes) {
         const a = byId.get(r.from);
         const b = byId.get(r.to);
         if (!a || !b) continue;
-        const { node, mask } = routeNode(r, a, b, uid, scouted.has(r.id));
+        const { node, mask } = routeNode(r, a, b, L, uid, placer, scouted.has(r.id));
         routes.push(node);
         defs.push(mask);
     }
     const children: SvgNode[] = [n('defs', {}, defs), ...back, n('g', { class: 'g-map-regions' }, regions), n('g', { class: 'g-map-routes' }, routes), n('g', { class: 'g-map-places' }, marks)];
-    if (!opts.noLegend) children.push(legendNode(scene, scouted));
+    if (!opts.noLegend) children.push(legendNode(scene, scouted, L));
     // 模式図の注記（必ず出す）
-    children.push(
-        n('text', { x: FRAME.x + 4, y: NOTE_Y, 'font-size': MAP_FONT.foot, fill: INK_SOFT, class: 'g-map-note', 'data-note': '1' }, [scene.note || '模式図。位置と距離は正確ではない']),
-    );
-    const svg = n(
+    children.push(n('text', { x: f.x + 4, y: L.noteY, 'font-size': MAP_FONT.foot, fill: INK_SOFT, class: 'g-map-note', 'data-note': '1' }, [scene.note || '模式図。位置と距離は正確ではない']));
+    return n(
         'svg',
         {
             xmlns: 'http://www.w3.org/2000/svg',
-            viewBox: `0 0 ${MAP_VIEW.w} ${MAP_VIEW.h}`,
+            viewBox: `0 0 ${L.w} ${L.h}`,
             preserveAspectRatio: 'xMidYMid meet',
             role: 'img',
             'aria-label': mapAriaLabel(scene),
             class: 'g-map',
+            'data-layout': opts.noLegend ? 'full' : (opts.layout ?? 'standard'),
             ...(opts.name ? { 'data-map': opts.name } : {}),
         },
         children,
     );
-    return svg;
 }
 
 /** 読み上げ用の短い説明（地図の中身を文字で） */
@@ -129,31 +176,102 @@ export function mapAriaLabel(scene: MapScene): string {
     return `模式図：${parts.join('、')}。${scene.note}`;
 }
 
-function placeNode(p: MapPlace, scout: boolean): SvgNode {
+// ---------------------------------------------------------------- 名前の置き場所（重ならないように）
+
+/** 文字の幅の見積もり（全角は 1 字、半角は 0.6 字） */
+export function textWidth(s: string, size: number): number {
+    let w = 0;
+    for (const ch of s) w += (ch.codePointAt(0) ?? 0) < 0x2e80 ? size * 0.6 : size;
+    return w;
+}
+
+interface Box {
+    x0: number;
+    y0: number;
+    x1: number;
+    y1: number;
+}
+const overlapArea = (a: Box, b: Box) => Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
+
+/** 置いた物の箱を覚え、候補の中から重なりの一番少ない所を選ぶ（貪欲。純粋） */
+export class LabelPlacer {
+    readonly boxes: Box[] = [];
+    constructor(private readonly frame: { x: number; y: number; w: number; h: number }) {}
+    block(b: Box): void {
+        this.boxes.push(b);
+    }
+    /** 候補（並びが好みの順）から選んで覚える。返りは選んだ番号 */
+    choose(cands: Box[]): number {
+        let best = 0;
+        let bestScore = Infinity;
+        cands.forEach((c, i) => {
+            let score = i * 4; // 好みの順の小さな重み
+            for (const b of this.boxes) score += overlapArea(c, b);
+            // 枠の外へはみ出す分は大きく嫌う
+            const f = this.frame;
+            const out = Math.max(0, f.x + 2 - c.x0) + Math.max(0, c.x1 - (f.x + f.w - 2)) + Math.max(0, f.y + 2 - c.y0) + Math.max(0, c.y1 - (f.y + f.h - 2));
+            score += out * 400;
+            if (score < bestScore) {
+                bestScore = score;
+                best = i;
+            }
+        });
+        this.boxes.push(cands[best]!);
+        return best;
+    }
+}
+
+/** 文字の塊（1〜2 行）の箱：anchor の位置 x と、1 行目の文字の下の線 y から */
+function blockBox(anchor: 'start' | 'middle' | 'end', x: number, y: number, w: number, lines: number): Box {
+    const x0 = anchor === 'start' ? x : anchor === 'end' ? x - w : x - w / 2;
+    return { x0: x0 - 2, y0: y - MAP_FONT.label + 1, x1: x0 + w + 2, y1: y + (lines - 1) * 16 + 4 };
+}
+
+function regionNode(p: MapPlace, L: MapLayout, placer: LabelPlacer, scout: boolean): SvgNode {
     const st = SIDE_STYLE[p.side];
-    const { x, y } = mapPoint(p.x, p.y);
+    const { x, y } = mapPoint(p.x, p.y, L);
     const attrs = { 'data-place': p.id, 'data-side': p.side, 'data-kind': p.kind, 'data-state': 'shown', 'data-hl': '0', class: 'g-map-place', ...(scout ? { 'data-scout': '1' } : {}) };
     const kids: SvgNode[] = [];
-    if (p.kind === 'region') {
-        // 広い所（国）：薄く塗った楕円（破線の縁）と、真ん中の名前
-        kids.push(n('ellipse', { cx: x, cy: y, rx: 50, ry: 30, fill: st.color, 'fill-opacity': 0.1, stroke: st.color, 'stroke-opacity': 0.6, 'stroke-width': 1.4, 'stroke-dasharray': '4 4', class: 'g-map-glow-r' }));
-        kids.push(labelNode(p, x, y + 5, 'middle'));
-        if (p.mark) kids.push(flagNode(p.mark, st.color, x + labelWidth(p) / 2 + 4, y - 9));
-        if (p.note) kids.push(n('text', { x, y: y + 22, 'text-anchor': 'middle', 'font-size': MAP_FONT.note, fill: INK_SOFT, class: 'g-map-pnote', ...halo() }, [p.note]));
-        return n('g', attrs, kids);
-    }
+    // 広い所（国）：薄く塗った楕円（破線の縁）と、真ん中の名前
+    kids.push(n('ellipse', { cx: x, cy: y, rx: 40, ry: 24, fill: st.color, 'fill-opacity': 0.1, stroke: st.color, 'stroke-opacity': 0.6, 'stroke-width': 1.4, 'stroke-dasharray': '4 4', class: 'g-map-glow-r' }));
+    const lw = textWidth(`${st.symbol}${p.name}`, MAP_FONT.label);
+    const nw = p.note ? textWidth(p.note, MAP_FONT.note) : 0;
+    const w = Math.max(lw + (p.mark ? 26 : 0), nw);
+    placer.block(blockBox('middle', x, y + 5, w, p.note ? 2 : 1));
+    kids.push(labelNode(p, x - (p.mark ? 13 : 0), y + 5, 'middle'));
+    if (p.mark) kids.push(flagNode(p.mark, st.color, x - 13 + lw / 2 + 4, y - 10));
+    if (p.note) kids.push(n('text', { x, y: y + 21, 'text-anchor': 'middle', 'font-size': MAP_FONT.note, fill: INK_SOFT, class: 'g-map-pnote', ...halo() }, [p.note]));
+    return n('g', attrs, kids);
+}
+
+function placeNode(p: MapPlace, L: MapLayout, placer: LabelPlacer, scout: boolean): SvgNode {
+    const st = SIDE_STYLE[p.side];
+    const { x, y } = mapPoint(p.x, p.y, L);
+    const attrs = { 'data-place': p.id, 'data-side': p.side, 'data-kind': p.kind, 'data-state': 'shown', 'data-hl': '0', class: 'g-map-place', ...(scout ? { 'data-scout': '1' } : {}) };
+    const kids: SvgNode[] = [];
     // 強調の光（強調のときだけ見える）
     kids.push(n('circle', { cx: x, cy: y, r: 15, fill: st.color, 'fill-opacity': 0.28, class: 'g-map-glow' }));
     kids.push(symbolShape(p, x, y, st.color));
     if (scout) kids.push(n('rect', { x: x - 11, y: y - 11, width: 22, height: 22, fill: 'none', stroke: INK, 'stroke-width': 1.2, 'stroke-dasharray': '3 2', transform: `rotate(45 ${x} ${y})`, class: 'g-map-scout' }));
-    if (p.mark) kids.push(flagNode(p.mark, st.color, x + 8, y - 26));
-    // 名前は印の下（地図の下の方なら上）。左右の端では寄せる
-    const below = y < FRAME.y + FRAME.h - 46;
-    const anchor = x < FRAME.x + 56 ? 'start' : x > FRAME.x + FRAME.w - 56 ? 'end' : 'middle';
-    const lx = anchor === 'start' ? x - 8 : anchor === 'end' ? x + 8 : x;
-    const ly = below ? y + 25 : y - 15 - (p.note ? 16 : 0) - (p.mark ? 18 : 0);
-    kids.push(labelNode(p, lx, ly, anchor));
-    if (p.note) kids.push(n('text', { x: lx, y: ly + 16, 'text-anchor': anchor, 'font-size': MAP_FONT.note, fill: INK_SOFT, class: 'g-map-pnote', ...halo() }, [p.note]));
+    if (p.mark) kids.push(flagNode(p.mark, st.color, x + 8, y - 27));
+    // 名前（＋添え書き）の置き場所：下・上・右・左・斜めの中から、重なりの少ない所
+    const lines = p.note ? 2 : 1;
+    const w = Math.max(textWidth(`${st.symbol}${p.name}`, MAP_FONT.label), p.note ? textWidth(p.note, MAP_FONT.note) : 0);
+    const up = (p.mark ? 30 : 16) + (lines - 1) * 16;
+    const cands: { anchor: 'start' | 'middle' | 'end'; x: number; y: number }[] = [
+        { anchor: 'middle', x, y: y + 27 },
+        { anchor: 'middle', x, y: y - up },
+        { anchor: 'start', x: x + (p.mark ? 32 : 15), y: y + 5 - (lines - 1) * 8 },
+        { anchor: 'end', x: x - 15, y: y + 5 - (lines - 1) * 8 },
+        { anchor: 'start', x: x + 10, y: y + 27 },
+        { anchor: 'end', x: x - 10, y: y + 27 },
+        { anchor: 'start', x: x + 10, y: y - up },
+        { anchor: 'end', x: x - 10, y: y - up },
+    ];
+    const k = placer.choose(cands.map((c) => blockBox(c.anchor, c.x, c.y, w, lines)));
+    const c = cands[k]!;
+    kids.push(labelNode(p, c.x, c.y, c.anchor));
+    if (p.note) kids.push(n('text', { x: c.x, y: c.y + 16, 'text-anchor': c.anchor, 'font-size': MAP_FONT.note, fill: INK_SOFT, class: 'g-map-pnote', ...halo() }, [p.note]));
     return n('g', attrs, kids);
 }
 
@@ -195,23 +313,19 @@ function labelNode(p: MapPlace, x: number, y: number, anchor: 'start' | 'middle'
     ]);
 }
 
-function labelWidth(p: MapPlace): number {
-    return ([...p.name].length + 1) * MAP_FONT.label;
-}
-
 function halo(): Record<string, string | number> {
     return { stroke: HALO, 'stroke-width': 3.5, 'paint-order': 'stroke', 'stroke-linejoin': 'round' };
 }
 
-/** 線（進路・関係）：端は場所の印から少し離す。矢印は終わりの端。名前は真ん中に */
-function routeNode(r: MapRoute, a: MapPlace, b: MapPlace, uid: string, scout: boolean): { node: SvgNode; mask: SvgNode } {
+/** 線（進路・関係）：端は場所の印から少し離す。矢印は終わりの端。名前は線の途中の、重なりの少ない所に */
+function routeNode(r: MapRoute, a: MapPlace, b: MapPlace, L: MapLayout, uid: string, placer: LabelPlacer, scout: boolean): { node: SvgNode; mask: SvgNode } {
     const st = SIDE_STYLE[r.side];
     const style = ROUTE_STYLE[r.kind];
-    const raw = [mapPoint(a.x, a.y), ...(r.via ?? []).map((v) => mapPoint(v.x, v.y)), mapPoint(b.x, b.y)];
-    const pts = trimEnds(raw, a.kind === 'region' ? 26 : 13, b.kind === 'region' ? 26 : 15);
+    const raw = [mapPoint(a.x, a.y, L), ...(r.via ?? []).map((v) => mapPoint(v.x, v.y, L)), mapPoint(b.x, b.y, L)];
+    const pts = trimEnds(raw, a.kind === 'region' ? 20 : 13, b.kind === 'region' ? 20 : 15);
     const ptsAttr = pts.map((p) => `${p.x},${p.y}`).join(' ');
     const maskId = `${uid}-rm-${safeId(r.id)}`;
-    const mask = n('mask', { id: maskId, maskUnits: 'userSpaceOnUse', x: 0, y: 0, width: MAP_VIEW.w, height: MAP_VIEW.h }, [
+    const mask = n('mask', { id: maskId, maskUnits: 'userSpaceOnUse', x: 0, y: 0, width: L.w, height: L.h }, [
         n('polyline', { points: ptsAttr, fill: 'none', stroke: '#fff', 'stroke-width': 18, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', pathLength: 1, 'stroke-dasharray': '1 1', 'stroke-dashoffset': 0, 'data-draw': r.id }),
     ]);
     const kids: SvgNode[] = [
@@ -230,8 +344,15 @@ function routeNode(r: MapRoute, a: MapPlace, b: MapPlace, uid: string, scout: bo
     ];
     if (style.arrow && pts.length >= 2) kids.push(arrowHead(pts[pts.length - 2]!, pts[pts.length - 1]!, st.color, style.width));
     if (r.label) {
-        const m = midPoint(pts);
-        kids.push(n('text', { x: m.x, y: m.y - 7, 'text-anchor': 'middle', 'font-size': MAP_FONT.route, fill: INK, class: 'g-map-rlabel', ...halo() }, [r.label]));
+        const w = textWidth(r.label, MAP_FONT.route);
+        const cands: { x: number; y: number }[] = [];
+        for (const k of [0.5, 0.35, 0.65]) {
+            const m = pointAt(pts, k);
+            cands.push({ x: m.x, y: m.y - 7 }, { x: m.x, y: m.y + 19 });
+        }
+        const i = placer.choose(cands.map((c) => ({ x0: c.x - w / 2 - 2, y0: c.y - MAP_FONT.route + 1, x1: c.x + w / 2 + 2, y1: c.y + 4 })));
+        const c = cands[i]!;
+        kids.push(n('text', { x: c.x, y: c.y, 'text-anchor': 'middle', 'font-size': MAP_FONT.route, fill: INK, class: 'g-map-rlabel', ...halo() }, [r.label]));
     }
     return {
         node: n('g', { 'data-route': r.id, 'data-side': r.side, 'data-kind': r.kind, 'data-state': 'shown', 'data-hl': '0', class: 'g-map-route', ...(scout ? { 'data-scout': '1' } : {}) }, kids),
@@ -275,54 +396,86 @@ function trimEnds(pts: { x: number; y: number }[], d0: number, d1: number): { x:
     return out;
 }
 
-function midPoint(pts: { x: number; y: number }[]): { x: number; y: number } {
+/** 折れ線の、長さの割合 k（0〜1）の点 */
+function pointAt(pts: { x: number; y: number }[], k: number): { x: number; y: number } {
     const segs = pts.slice(1).map((p, i) => Math.hypot(p.x - pts[i]!.x, p.y - pts[i]!.y));
-    const half = segs.reduce((s, l) => s + l, 0) / 2;
+    const target = segs.reduce((s, l) => s + l, 0) * k;
     let acc = 0;
     for (let i = 0; i < segs.length; i++) {
         const l = segs[i]!;
-        if (acc + l >= half && l > 0) {
-            const k = (half - acc) / l;
-            return { x: round(pts[i]!.x + (pts[i + 1]!.x - pts[i]!.x) * k), y: round(pts[i]!.y + (pts[i + 1]!.y - pts[i]!.y) * k) };
+        if (acc + l >= target && l > 0) {
+            const t = (target - acc) / l;
+            return { x: round(pts[i]!.x + (pts[i + 1]!.x - pts[i]!.x) * t), y: round(pts[i]!.y + (pts[i + 1]!.y - pts[i]!.y) * t) };
         }
         acc += l;
     }
     return pts[0]!;
 }
 
-/** 凡例：使っている関係（記号＋名前＋色。旗の字も添える）・線の種類・物見の印 */
-function legendNode(scene: MapScene, scouted: ReadonlySet<string>): SvgNode {
-    const rows: SvgNode[] = [n('text', { x: LEGEND_X, y: 20, 'font-size': MAP_FONT.legendTitle, fill: INK_SOFT, 'font-weight': 600, class: 'g-map-legend-title' }, ['凡例'])];
-    let y = 40;
-    const sides = SIDE_ORDER.filter((s) => scene.places.some((p) => p.side === s) || scene.routes.some((r) => r.side === s));
-    for (const s of sides) {
+/** 凡例の 1 行（地図の中の凡例と、画面の文字の凡例で同じ中身） */
+export type LegendEntry =
+    | { type: 'side'; side: MapSide; symbol: string; name: string; color: string; marks: string[] }
+    | { type: 'route'; kind: MapRoute['kind']; name: string; dash: string | null; arrow: boolean; width: number }
+    | { type: 'scout'; symbol: string; name: string };
+
+/** 凡例の中身：使っている関係（記号＋名前＋色・旗の字）・線の種類・物見の印 */
+export function legendEntries(scene: MapScene, scouted: ReadonlySet<string> | readonly string[] = []): LegendEntry[] {
+    const out: LegendEntry[] = [];
+    for (const s of SIDE_ORDER) {
+        if (!scene.places.some((p) => p.side === s) && !scene.routes.some((r) => r.side === s)) continue;
         const st = SIDE_STYLE[s];
         const marks = [...new Set(scene.places.filter((p) => p.side === s && p.mark).map((p) => [...p.mark!][0]!))];
+        out.push({ type: 'side', side: s, symbol: st.symbol, name: st.name, color: st.color, marks });
+    }
+    for (const k of ROUTE_ORDER) {
+        if (!scene.routes.some((r) => r.kind === k)) continue;
+        const style = ROUTE_STYLE[k];
+        out.push({ type: 'route', kind: k, name: style.name, dash: style.dash, arrow: style.arrow, width: style.width });
+    }
+    if ((scouted instanceof Set ? scouted.size : (scouted as readonly string[]).length) > 0) out.push({ type: 'scout', symbol: SCOUT_LEGEND.symbol, name: SCOUT_LEGEND.name });
+    return out;
+}
+
+/** 凡例：使っている関係（記号＋名前＋色。旗の字も添える。長ければ 2 行）・線の種類・物見の印 */
+function legendNode(scene: MapScene, scouted: ReadonlySet<string>, L: MapLayout): SvgNode {
+    const X = L.legendX;
+    const rows: SvgNode[] = [n('text', { x: X, y: 20, 'font-size': MAP_FONT.legendTitle, fill: INK_SOFT, 'font-weight': 600, class: 'g-map-legend-title' }, ['凡例'])];
+    let y = 40;
+    const entries = legendEntries(scene, scouted);
+    for (const e of entries) {
+        if (e.type !== 'side') continue;
+        const s = e.side;
+        const st = SIDE_STYLE[s];
+        const marks = e.marks;
+        const head = ` ${st.name}`;
+        const tail = marks.length ? `（${marks.join('・')}）` : '';
+        const one = textWidth(`${st.symbol}${head}${tail}`, MAP_FONT.legend) <= L.legendW;
         rows.push(
-            n('text', { x: LEGEND_X, y, 'font-size': MAP_FONT.legend, fill: INK, 'data-legend-side': s }, [
+            n('text', { x: X, y, 'font-size': MAP_FONT.legend, fill: INK, 'data-legend-side': s }, [
                 n('tspan', { fill: st.color, 'font-weight': 700 }, [st.symbol]),
-                ` ${st.name}${marks.length ? `（${marks.join('・')}）` : ''}`,
+                one ? `${head}${tail}` : head,
+                ...(one || !tail ? [] : [n('tspan', { x: X + 16, dy: 17 }, [tail])]),
             ]),
         );
-        y += 19;
+        y += one || !tail ? 19 : 36;
     }
-    const kinds = ROUTE_ORDER.filter((k) => scene.routes.some((r) => r.kind === k));
+    const kinds = entries.flatMap((e) => (e.type === 'route' ? [e.kind] : []));
     if (kinds.length) y += 4;
     for (const k of kinds) {
         const style = ROUTE_STYLE[k];
         const ly = y - 5;
         rows.push(
             n('g', { 'data-legend-route': k }, [
-                n('line', { x1: LEGEND_X, y1: ly, x2: LEGEND_X + 24, y2: ly, stroke: INK_SOFT, 'stroke-width': style.width, ...(style.dash ? { 'stroke-dasharray': style.dash } : {}) }),
-                ...(style.arrow ? [arrowHead({ x: LEGEND_X, y: ly }, { x: LEGEND_X + 30, y: ly }, INK_SOFT, style.width - 1)] : []),
-                n('text', { x: LEGEND_X + 34, y, 'font-size': MAP_FONT.legend, fill: INK }, [style.name]),
+                n('line', { x1: X, y1: ly, x2: X + 24, y2: ly, stroke: INK_SOFT, 'stroke-width': style.width, ...(style.dash ? { 'stroke-dasharray': style.dash } : {}) }),
+                ...(style.arrow ? [arrowHead({ x: X, y: ly }, { x: X + 30, y: ly }, INK_SOFT, style.width - 1)] : []),
+                n('text', { x: X + 34, y, 'font-size': MAP_FONT.legend, fill: INK }, [style.name]),
             ]),
         );
         y += 19;
     }
     if (scouted.size > 0) {
         y += 4;
-        rows.push(n('text', { x: LEGEND_X, y, 'font-size': MAP_FONT.legend, fill: INK, 'data-legend-scout': '1' }, [SCOUT_LEGEND.symbol, ` ${SCOUT_LEGEND.name}`]));
+        rows.push(n('text', { x: X, y, 'font-size': MAP_FONT.legend, fill: INK, 'data-legend-scout': '1' }, [SCOUT_LEGEND.symbol, ` ${SCOUT_LEGEND.name}`]));
     }
     return n('g', { class: 'g-map-legend' }, rows);
 }

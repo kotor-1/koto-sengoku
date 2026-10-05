@@ -9,6 +9,7 @@ import type { CineMoment, MapScene, SituationView } from '../story/types';
 import { el, nowMs, onPress } from './dom';
 import { CHOICE_GUARD_MS, InputGate } from './guard';
 import { createMap } from './mapDom';
+import { legendEntries } from '../story/map-svg';
 import { startedAt, type LayerHost, type Modal } from './modal';
 
 export interface SituationOpenOptions {
@@ -37,10 +38,11 @@ export function openSituation(host: LayerHost, v: SituationView, o: SituationOpe
         const left = el('section', 'g-sit-left');
         const scene = withScouted(v.map, v);
         const scoutedIds = v.scouted.flatMap((s) => [...(s.places ?? []).map((p) => p.id), ...(s.routes ?? []).map((r) => r.id)]);
-        const map = createMap(scene, { name: 'situation', scouted: scoutedIds });
+        // 凡例は地図の外（文字）に出し、地図の枠を幅いっぱいに使う
+        const map = createMap(scene, { name: 'situation', scouted: scoutedIds, noLegend: true });
         const mapBox = el('div', 'g-sit-map');
         if (scene.heading) mapBox.append(el('p', 'g-sit-map-head', scene.heading));
-        mapBox.append(map.svg);
+        mapBox.append(map.svg, legendHtml(scene, scoutedIds));
         left.append(mapBox);
         const options = v.options ?? [];
         const tabs = el('div', 'g-sit-tabs');
@@ -185,6 +187,50 @@ export function openSituation(host: LayerHost, v: SituationView, o: SituationOpe
         selectTab(options.length > 0 ? (options.some((x) => x.id === o.option) ? o.option! : options[0]!.id) : null);
         host.pushModal(m);
     });
+}
+
+/** 文字の凡例（記号＋名前＋色。線は小さな見本） */
+function legendHtml(scene: MapScene, scouted: string[]): HTMLElement {
+    const box = el('div', 'g-sit-legend');
+    box.setAttribute('aria-label', '凡例');
+    box.append(el('b', 'ttl', '凡例'));
+    for (const e of legendEntries(scene, scouted)) {
+        const item = el('span', 'g-leg');
+        if (e.type === 'side') {
+            item.dataset.legendSide = e.side;
+            const sym = el('b', 'sym', e.symbol);
+            sym.style.color = e.color;
+            item.append(sym, document.createTextNode(`${e.name}${e.marks.length ? `（${e.marks.join('・')}）` : ''}`));
+        } else if (e.type === 'route') {
+            item.dataset.legendRoute = e.kind;
+            const NS = 'http://www.w3.org/2000/svg';
+            const svg = document.createElementNS(NS, 'svg');
+            svg.setAttribute('viewBox', '0 0 30 10');
+            svg.setAttribute('class', 'line');
+            svg.setAttribute('aria-hidden', 'true');
+            const line = document.createElementNS(NS, 'line');
+            line.setAttribute('x1', '1');
+            line.setAttribute('y1', '5');
+            line.setAttribute('x2', e.arrow ? '22' : '29');
+            line.setAttribute('y2', '5');
+            line.setAttribute('stroke', 'currentColor');
+            line.setAttribute('stroke-width', String(Math.max(1.6, e.width - 0.6)));
+            if (e.dash) line.setAttribute('stroke-dasharray', e.dash);
+            svg.append(line);
+            if (e.arrow) {
+                const head = document.createElementNS(NS, 'polygon');
+                head.setAttribute('points', '29,5 21,1 21,9');
+                head.setAttribute('fill', 'currentColor');
+                svg.append(head);
+            }
+            item.append(svg, document.createTextNode(e.name));
+        } else {
+            item.dataset.legendScout = '1';
+            item.append(el('b', 'sym', e.symbol), document.createTextNode(e.name));
+        }
+        box.append(item);
+    }
+    return box;
 }
 
 /** 地図に物見の記録の場所・線を足す（同じ id は足さない） */

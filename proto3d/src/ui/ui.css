@@ -559,10 +559,11 @@ body.g-cine .g-hud, body.g-cine .g-menu-btn, body.g-cine .g-sit-btn, body.g-cine
     background: rgba(14, 12, 10, 0.94);
     border-bottom: 1px solid var(--hairline);
 }
-.g-cine-head { flex: 1 1 auto; min-width: 0; }
-.g-cine-heading { margin: 0; font-size: 17px; letter-spacing: 0.1em; color: var(--gold); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.g-cine-head { flex: 1 1 0; min-width: 0; }
+/* 見出し（いつ・どこ）は切らない（長ければ 2 行まで） */
+.g-cine-heading { margin: 0; font-size: 17px; line-height: 1.3; letter-spacing: 0.08em; color: var(--gold); font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .g-cine-title { margin: 1px 0 0; font-size: 12px; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.g-cine-ctrl { flex: 0 1 auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.g-cine-ctrl { flex: 0 0 auto; display: flex; flex-wrap: nowrap; justify-content: flex-end; gap: 6px; }
 .g-cine-btn {
     min-height: 40px;
     padding: 6px 12px;
@@ -613,12 +614,19 @@ body.g-cine .g-hud, body.g-cine .g-menu-btn, body.g-cine .g-sit-btn, body.g-cine
 .g-cine-cap .who[hidden] { display: none; }
 .g-cine-hint { margin: 4px 0 0; font-size: 13px; color: #f3c9bf; text-align: center; }
 .g-cine-hint[hidden] { display: none; }
+@media (max-width: 700px) {
+    /* 縦長の画面：見出しの下に操作を並べる */
+    .g-cine-top { flex-wrap: wrap; }
+    .g-cine-head { flex: 1 1 100%; }
+    .g-cine-ctrl { flex: 1 1 100%; flex-wrap: wrap; justify-content: flex-start; }
+    .g-cine-btn { padding: 4px 8px; font-size: 13px; }
+}
 @media (max-height: 430px) {
     .g-cine-top { padding-top: calc(var(--safe-t) + 5px); padding-bottom: 4px; gap: 8px; }
-    .g-cine-heading { font-size: 15px; letter-spacing: 0.06em; }
-    .g-cine-title { font-size: 11px; }
-    .g-cine-ctrl { gap: 5px; }
-    .g-cine-btn { min-height: 38px; padding: 4px 9px; font-size: 13px; }
+    .g-cine-heading { font-size: 15px; letter-spacing: 0.04em; }
+    .g-cine-title { display: none; }
+    .g-cine-ctrl { gap: 4px; }
+    .g-cine-btn { min-height: 38px; padding: 4px 8px; font-size: 13px; letter-spacing: 0; }
     .g-cine-map { padding-top: 2px; padding-bottom: 2px; }
     .g-cine-bar { margin-bottom: 5px; }
     .g-cine-cap { font-size: 16px; line-height: 1.5; min-height: 3em; }
@@ -646,6 +654,11 @@ body.g-cine .g-hud, body.g-cine .g-menu-btn, body.g-cine .g-sit-btn, body.g-cine
 .g-sit-map { padding: 4px; border-radius: 12px; background: #0f0c09; border: 1px solid var(--hairline); }
 .g-sit-map svg { width: 100%; height: auto; max-height: calc(100vh - 120px); }
 .g-sit-map-head { margin: 4px 8px 2px; font-size: 13px; color: var(--gold); letter-spacing: 0.06em; }
+.g-sit-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; margin: 2px 6px 4px; font-size: 13px; line-height: 1.5; }
+.g-sit-legend .ttl { color: var(--ink-soft); font-weight: 600; }
+.g-sit-legend .g-leg { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.g-sit-legend .sym { font-weight: 700; }
+.g-sit-legend .line { width: 26px; height: 10px; color: var(--ink-soft); }
 .g-sit-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
 .g-sit-tabbox h2 { margin-top: 0 !important; }
 .g-sit-tab {

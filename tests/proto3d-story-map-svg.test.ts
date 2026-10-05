@@ -3,7 +3,7 @@
  * 凡例（記号＋名前＋色）・模式図の注記・確かめ用の属性・文字の大きさ・線の種類・物見の印。設定は切り替えたときだけ書く。
  */
 import { describe, expect, it } from 'vitest';
-import { MAP_FONT, MAP_VIEW, ROUTE_STYLE, SIDE_STYLE, findNodes, mapPoint, mapSvgTree, nodeText, svgToString, type SvgNode } from '../proto3d/src/story/map-svg';
+import { MAP_FONT, MAP_LAYOUTS, MAP_VIEW, ROUTE_STYLE, SIDE_STYLE, findNodes, mapPoint, mapSvgTree, nodeText, svgToString, textWidth, type SvgNode } from '../proto3d/src/story/map-svg';
 import { PREFS_KEY, StoryPrefsStore, effectiveReduced, loadStoryPrefs, saveStoryPrefs } from '../proto3d/src/story/prefs';
 import { sampleScene } from '../proto3d/src/story/sample';
 import type { MapScene } from '../proto3d/src/story/types';
@@ -116,6 +116,52 @@ describe('地図の SVG の木', () => {
         expect(byAttr(t, 'data-scout', '1').map((n) => n.attrs['data-place'] ?? n.attrs['data-route']).sort()).toEqual(['field', 'r_march']);
         expect(byAttr(t, 'data-legend-scout')).toHaveLength(1);
         expect(byAttr(tree, 'data-legend-scout')).toHaveLength(0);
+    });
+    it('場所の名前どうしは重ならない（込み合った地図でも、置き場所を選ぶ）。枠の中', () => {
+        const dense: MapScene = {
+            note: '模式図',
+            places: [
+                { id: 'a', name: '徳川の城下', x: 70, y: 60, kind: 'home', side: 'self', mark: '徳', note: '三河' },
+                { id: 'b', name: '織田家', x: 58, y: 50, kind: 'site', side: 'ally', mark: '織' },
+                { id: 'c', name: '浅井家', x: 50, y: 42, kind: 'site', side: 'enemy', mark: '浅', note: '近江' },
+                { id: 'd', name: '国境の原', x: 60, y: 70, kind: 'field', side: 'unknown', note: '架空の局地戦' },
+                { id: 'e', name: '朝倉家', x: 40, y: 30, kind: 'site', side: 'enemy' },
+                { id: 'f', name: '村', x: 95, y: 98, kind: 'village', side: 'neutral' },
+            ],
+            routes: [{ id: 'r', from: 'b', to: 'c', kind: 'hostile', side: 'enemy', label: '近江で対立' }],
+        };
+        for (const layout of ['standard', 'wide'] as const) {
+            const L = MAP_LAYOUTS[layout];
+            const t = mapSvgTree(dense, { layout });
+            expect(t.attrs['viewBox']).toBe(`0 0 ${L.w} ${L.h}`);
+            const boxes = findNodes(t, (x) => x.attrs['class'] === 'g-map-label' || x.attrs['class'] === 'g-map-rlabel').map((x) => {
+                const w = textWidth(nodeText(x), Number(x.attrs['font-size']));
+                const ax = Number(x.attrs['x']);
+                const y = Number(x.attrs['y']);
+                const a = x.attrs['text-anchor'];
+                const x0 = a === 'start' ? ax : a === 'end' ? ax - w : ax - w / 2;
+                return { x0, x1: x0 + w, y0: y - 13, y1: y + 3, id: nodeText(x) };
+            });
+            expect(boxes).toHaveLength(7);
+            for (let i = 0; i < boxes.length; i++) {
+                const p = boxes[i]!;
+                expect(p.x0, `${layout} ${p.id}`).toBeGreaterThanOrEqual(L.frame.x);
+                expect(p.x1, `${layout} ${p.id}`).toBeLessThanOrEqual(L.frame.x + L.frame.w);
+                expect(p.y0, `${layout} ${p.id}`).toBeGreaterThanOrEqual(L.frame.y);
+                expect(p.y1, `${layout} ${p.id}`).toBeLessThanOrEqual(L.frame.y + L.frame.h);
+                for (let j = i + 1; j < boxes.length; j++) {
+                    const q = boxes[j]!;
+                    const ov = Math.max(0, Math.min(p.x1, q.x1) - Math.max(p.x0, q.x0)) * Math.max(0, Math.min(p.y1, q.y1) - Math.max(p.y0, q.y0));
+                    expect(ov, `${layout}：${p.id} と ${q.id}`).toBe(0);
+                }
+            }
+        }
+    });
+    it('凡例の長い行は 2 行に折る（欄の幅を超えない）', () => {
+        const t = mapSvgTree({ note: '模式図', places: [{ id: 'a', name: 'あ', x: 1, y: 1, kind: 'site', side: 'unknown', mark: '朝' }, { id: 'b', name: 'い', x: 9, y: 9, kind: 'site', side: 'unknown', mark: '浪' }], routes: [] });
+        const row = byAttr(t, 'data-legend-side', 'unknown')[0]!;
+        expect(findNodes(row, (x) => x.tag === 'tspan' && x.attrs['dy'] !== undefined)).toHaveLength(1);
+        expect(nodeText(row)).toBe('？ まだ分からない（朝・浪）');
     });
     it('端の場所が無い線は描かない（落ちない）', () => {
         const t = mapSvgTree({ ...scene, routes: [...scene.routes, { id: 'x', from: 'home', to: 'nowhere', kind: 'march', side: 'self' }] });

@@ -155,9 +155,12 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
                         stageActive = false;
                         safeStage(null, 0);
                     }
-                    map = createMap(f.beat.scene, { name: `${spec.id}#${f.beatIndex}` });
-                    mapBox.replaceChildren(map.svg);
+                    // 横に長い所（スマホ横・PC）では地図の枠を横に広げる（文字の大きさは同じ）
                     mapBox.hidden = false;
+                    mapBox.replaceChildren();
+                    const wide = mapBox.clientWidth / Math.max(1, mapBox.clientHeight) >= 2;
+                    map = createMap(f.beat.scene, { name: `${spec.id}#${f.beatIndex}`, layout: wide ? 'wide' : 'standard' });
+                    mapBox.append(map.svg);
                 } else {
                     map = null;
                     mapBox.replaceChildren();
