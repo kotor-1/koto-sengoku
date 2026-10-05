@@ -3,6 +3,7 @@
  * - 3 つの選択肢の数・代償・1 回だけ・上限（各部隊は第一章のはじめの兵まで。守備隊は 100 未満にしない）。
  * - 判断 2 が選べないときは選択肢に出さず、理由を述べる。兵が少ないときは調整を述べる。
  * - どの第一章の結果・判断・補充でも、合戦の設定の検査（validateChapter2Setup）が空（最少の兵でも）。
+ *   検査は通れる所・行ける所を道の計算で調べるので重い（空いた時でも数秒）。その 2 件は it(…, 60_000)（vitest.config.mjs の決まり）。
  */
 import { describe, expect, it } from 'vitest';
 import { FlowError } from '../proto3d/src/campaign/flow';
@@ -192,7 +193,7 @@ describe('開始時から達成できない設定にならない（validateChapt
             }
         }
         expect(n).toBeGreaterThan(20);
-    });
+    }, 60_000);
     it('第一章の 27 通り（直接作った状態）× 判断 × 補充でも空', () => {
         for (const p of ['oda', 'asai', 'home'] as const)
             for (const r of ['victory', 'retreat', 'defeat'] as const)
@@ -209,5 +210,5 @@ describe('開始時から達成できない設定にならない（validateChapt
                             }
                         }
                     }
-    });
+    }, 60_000);
 });
