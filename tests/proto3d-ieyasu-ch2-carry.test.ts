@@ -7,7 +7,8 @@
 import { describe, expect, it } from 'vitest';
 import type { BattleResultKind } from '../proto3d/src/battle/types';
 import { IEYASU_UNIT_IDS } from '../proto3d/src/battle/maps';
-import { CH2_RULES, CH2_UNIT, ch2BattleSetup } from '../proto3d/src/campaign/ieyasu1570/chapter2/battle';
+import { CH2_RULES, CH2_UNIT, ch2BattleSetup, ch2PartnerColdMorale } from '../proto3d/src/campaign/ieyasu1570/chapter2/battle';
+import { CH2_TIERS, ch2TierInput } from '../proto3d/src/campaign/ieyasu1570/chapter2/scripts';
 import { devIeyasuCh1Ending, ieyasu2BattleInput, startChapter2, talkIeyasu2 } from '../proto3d/src/campaign/ieyasu1570/chapter2/flow';
 import type { Ieyasu2State } from '../proto3d/src/campaign/ieyasu1570/chapter2/state';
 import { ieyasu2Chapter1RecordView } from '../proto3d/src/campaign/ieyasu1570/chapter2/story';
@@ -38,13 +39,13 @@ describe('引き継ぎの表：3 方針 × 第一章の結果 × 約束', () => 
                     expect(TOKUGAWA_UNIT_IDS.map((k) => s.troops[k])).toEqual(TOKUGAWA_UNIT_IDS.map((k) => s.chapter1.troops[k]));
                     // 敵の勢い（第一章の勝敗だけ）
                     expect(info.enemyFactor).toBe(CH2_RULES.enemyFactor[r]);
-                    // 相手の部隊の士気：信頼が冷えていれば −coldMorale（差で見る）
+                    // 相手の部隊の士気（設計 §5.1）：第一章の約束を破った、または信頼が冷えていれば −coldMorale（重ねない。差で見る）
                     if (p !== 'home') {
                         const partner = p === 'oda' ? 'oda' : 'asai';
                         const id = p === 'oda' ? CH2_UNIT.odaRear : CH2_UNIT.asai;
-                        const warm = ch2BattleSetup({ ...input, trust: { ...input.trust, [partner]: CH2_RULES.coldTrust } });
+                        const warm = ch2BattleSetup({ ...input, ch1Pledge: 'declined', trust: { ...input.trust, [partner]: CH2_RULES.coldTrust } });
                         const d = unit(warm, id)!.morale - unit(info, id)!.morale;
-                        expect(d).toBe(s.trust[partner] < CH2_RULES.coldTrust ? CH2_RULES.coldMorale : 0);
+                        expect(d).toBe(s.trust[partner] < CH2_RULES.coldTrust || pl === 'broken' ? CH2_RULES.coldMorale : 0);
                     } else {
                         // C は両家の部隊を出さない
                         expect(info.setup.units.some((u) => u.side === 'ally' && (u.clan === 'oda' || u.clan === 'asai'))).toBe(false);
@@ -58,6 +59,45 @@ describe('引き継ぎの表：3 方針 × 第一章の結果 × 約束', () => 
                     expect(info.setup.briefing.join('\n')).toContain('第一章');
                 });
             }
+
+    it('約束を破った と 引き受けなかった で、A・B の合戦の条件が同じにならない（破ったら相手の部隊の士気 −10。信頼 0 未満と重ねない）', () => {
+        for (const p of ['oda', 'asai'] as const) {
+            const ids = p === 'oda' ? [CH2_UNIT.odaRear, CH2_UNIT.odaBaggage] : [CH2_UNIT.asai];
+            for (const r of RESULTS) {
+                const set = (pl: PledgeResult) => ch2BattleSetup(ieyasu2BattleInput(toCh2Muster(startChapter2(devIeyasuCh1Ending(p, r, pl)), 'commit')));
+                const broken = set('broken');
+                const declined = set('declined');
+                const dTrust = toCh2Muster(startChapter2(devIeyasuCh1Ending(p, r, 'declined')), 'commit').trust[p];
+                // 破った方は −10 が 1 回（信頼 0 未満でも重ねない）。引き受けなかった方は信頼 0 未満のときだけ −10
+                const want = CH2_RULES.coldMorale - (dTrust < CH2_RULES.coldTrust ? CH2_RULES.coldMorale : 0);
+                expect(want, `${p}・${r}：引き受けなかった方は冷えていない`).toBe(CH2_RULES.coldMorale);
+                for (const id of ids) expect(unit(declined, id)!.morale - unit(broken, id)!.morale, `${p}・${r}・${id}`).toBe(want);
+                // 破った方の士気は、信頼を 0 以上にしても同じ（破ったことで下がる）。0 未満でも −10 を重ねない
+                const bIn = ieyasu2BattleInput(toCh2Muster(startChapter2(devIeyasuCh1Ending(p, r, 'broken')), 'commit'));
+                const warmB = ch2BattleSetup({ ...bIn, trust: { ...bIn.trust, [p]: 0 } });
+                const coldB = ch2BattleSetup({ ...bIn, trust: { ...bIn.trust, [p]: -50 } });
+                for (const id of ids) {
+                    expect(unit(warmB, id)!.morale, `${p}・${r}・${id}`).toBe(unit(broken, id)!.morale);
+                    expect(unit(coldB, id)!.morale, `${p}・${r}・${id}`).toBe(unit(broken, id)!.morale);
+                }
+                // 説明にも出る
+                expect(broken.adjustments.join(''), `${p}・${r}`).toContain('約束');
+                expect(declined.adjustments.join(''), `${p}・${r}`).not.toContain('約束を破った');
+            }
+        }
+    });
+
+    it('釣り合いの段階の入力（ch2TierInput）では、約束を破った段階はもともと信頼 0 未満：士気の決まりを直しても合戦の設定は前と同じ', () => {
+        for (const p of POLICIES)
+            for (const plan of ['commit', 'hold'] as const)
+                for (const tier of CH2_TIERS) {
+                    const input = ch2TierInput(p, plan, tier);
+                    const partner = p === 'oda' ? input.trust.oda : input.trust.asai;
+                    // 前の決まり（信頼 0 未満のときだけ）と同じ値
+                    const before = p !== 'home' && partner < CH2_RULES.coldTrust ? CH2_RULES.coldMorale : 0;
+                    expect(ch2PartnerColdMorale(input), `${p}・${plan}・${tier}`).toBe(before);
+                }
+    });
 
     it('A：約束を守った勝ちは織田の鉄砲隊が加わり、破った負けは加わらず織田勢の士気が下がる', () => {
         const good = toCh2Muster(startChapter2(devIeyasuCh1Ending('oda', 'victory', 'kept')), 'commit');

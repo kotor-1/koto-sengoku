@@ -47,7 +47,7 @@ export interface Ch2BattleInput {
     trust: Record<TrustId, number>;
     /** 第一章の合戦の結果（敵の勢い） */
     ch1Result: BattleResultKind;
-    /** 第一章の約束の結果（会話と説明の区別に使う。数値は信頼を通して効く） */
+    /** 第一章の約束の結果（A・B で破ったら、相手の部隊の士気 −CH2_RULES.coldMorale。信頼 0 未満と重ねない。会話と説明の区別にも使う） */
     ch1Pledge: PledgeResult;
     /** 補充で「負傷兵の戻りを待つ」を選んだ（敵の後詰め・次の波が CH2_RULES.waitDelaySec 早く着く） */
     waited: boolean;
@@ -116,7 +116,7 @@ export const CH2_RULES = {
     enemyFactor: { victory: 0.85, retreat: 1, defeat: 1.1 } as Readonly<Record<BattleResultKind, number>>,
     /** 支援：A は織田の信頼がこれ以上で「織田の鉄砲隊」、B は浅井の信頼がこれ以上で「浅井の道案内」 */
     supportTrust: { oda: 50, asai: 40 },
-    /** 相手の家の信頼がこれより低いと、相手の部隊の士気 −coldMorale（徳川を頼みにしない） */
+    /** 相手の家の信頼がこれより低い、または第一章の約束を破ったと、相手の部隊の士気 −coldMorale（徳川を頼みにしない。どちらでも 1 回だけ） */
     coldTrust: 0,
     coldMorale: 10,
     /** 本多忠勝の信頼：hi 以上で忠勝隊の士気 +5、lo 未満で −5 */
@@ -339,8 +339,18 @@ const A_POS: Record<Ch2Plan, { thin: boolean; at: Record<TokugawaUnitId | 'odaRe
     ],
 };
 
+/**
+ * 相手の部隊（A 織田勢・B 浅井勢）の士気の下げ幅（設計 §5.1）：第一章の約束を破った、または相手の家の信頼が CH2_RULES.coldTrust 未満なら
+ * −coldMorale（どちらか・両方でも 1 回だけ。重ねない）。引き受けなかったのは約束違反ではないので、信頼だけで決まる。
+ */
+export function ch2PartnerColdMorale(input: Pick<Ch2BattleInput, 'policy' | 'trust' | 'ch1Pledge'>): number {
+    if (input.policy === 'home') return 0;
+    const t = input.policy === 'oda' ? input.trust.oda : input.trust.asai;
+    return t < CH2_RULES.coldTrust || input.ch1Pledge === 'broken' ? CH2_RULES.coldMorale : 0;
+}
+
 function odaUnits(input: Ch2BattleInput, at: (k: 'odaRear' | 'odaBaggage' | 'odaTeppo') => Pos, support: Ch2SupportId[]): UnitDef[] {
-    const cold = input.trust.oda < CH2_RULES.coldTrust ? CH2_RULES.coldMorale : 0;
+    const cold = ch2PartnerColdMorale(input);
     const out: UnitDef[] = [
         { id: CH2_UNIT.odaRear, side: 'ally', clan: 'oda', kind: 'yari', name: '織田勢の後備え', strength: 380, morale: clampMorale(75 - cold), ...at('odaRear') },
         { id: CH2_UNIT.odaBaggage, side: 'ally', clan: 'oda', kind: 'yari', name: '織田勢の小荷駄', strength: 260, morale: clampMorale(65 - cold), ...at('odaBaggage') },
@@ -438,7 +448,7 @@ const B_POS: Record<Ch2Plan, Record<TokugawaUnitId | 'guide', Pos>> = {
 };
 
 function asaiUnits(input: Ch2BattleInput, support: Ch2SupportId[], plan: Ch2Plan): UnitDef[] {
-    const cold = input.trust.asai < CH2_RULES.coldTrust ? CH2_RULES.coldMorale : 0;
+    const cold = ch2PartnerColdMorale(input);
     const nagamasa = input.characters.nagamasa === 'alive';
     const isolated: UnitDef = nagamasa
         ? { id: CH2_UNIT.asai, side: 'ally', clan: 'asai', kind: 'yari', name: '浅井長政隊', leaderId: 'nagamasa', strength: 380, morale: clampMorale(80 - cold), ability: 'nagamasa_support', x: B_HILL.x, z: B_HILL.z, facing: N }
@@ -664,8 +674,13 @@ function adjustmentLines(input: Ch2BattleInput, terms: Ch2Terms, support: Ch2Sup
     if (support.includes('oda_teppo')) out.push('支援：織田の信頼が厚く、織田の鉄砲隊（弓の扱い）が残って加わる（指揮できる）。');
     if (support.includes('asai_guide')) out.push('支援：浅井の信頼が厚く、浅井の道案内の一隊が加わる（指揮できる）。');
     if (support.includes('village')) out.push('支援：第一章で国境の浪人を退けたことを恩に感じ、村の衆が自ら加わる（指揮できる。兵は少ない）。');
-    if (input.policy === 'oda' && input.trust.oda < CH2_RULES.coldTrust) out.push('織田との間は冷えていて、織田勢は徳川を頼みにしていない（織田勢の士気 −10）。');
-    if (input.policy === 'asai' && input.trust.asai < CH2_RULES.coldTrust) out.push('浅井との間は冷えていて、孤立した浅井勢は徳川を頼みにしていない（士気 −10）。');
+    // 相手の部隊の士気（約束を破った・信頼が冷えた。重ねない）
+    if (ch2PartnerColdMorale(input) > 0) {
+        const m = CH2_RULES.coldMorale;
+        const broke = input.ch1Pledge === 'broken';
+        if (input.policy === 'oda') out.push(broke ? `第一章で約束を破ったため、織田勢は徳川を頼みにしていない（織田勢の士気 −${m}）。` : `織田との間は冷えていて、織田勢は徳川を頼みにしていない（織田勢の士気 −${m}）。`);
+        else out.push(broke ? `第一章で約束を破ったため、孤立した浅井勢は徳川を頼みにしていない（士気 −${m}）。` : `浅井との間は冷えていて、孤立した浅井勢は徳川を頼みにしていない（士気 −${m}）。`);
+    }
     if (input.characters.ieyasu === 'wounded') out.push('家康は第一章の傷が残る（家康本陣の士気 −5）。');
     if (input.characters.tadakatsu === 'wounded') out.push('忠勝は第一章の傷が残る（本多忠勝隊の士気 −10。能力は使える）。');
     return out;

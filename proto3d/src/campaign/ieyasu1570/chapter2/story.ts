@@ -48,6 +48,8 @@ export const IEYASU2_NOTE =
 export const IEYASU2_FIELD_LABEL = '第一章の直後の分岐した世界（創作）';
 export const IEYASU2_END_LABEL = '元亀元年・家康　第二章　完（歴史分岐シナリオ。この先は未実装。会話と分岐後の出来事は創作）';
 export const IEYASU2_RECORD_TITLE = '第一章の結果（第二章へ引き継ぐもの）';
+/** 第二章の終わりの画面の見出しの言葉（「…第二章　区切り」。第一章・架空の章は「結末」のまま） */
+export const IEYASU2_ENDING_HEADING = '区切り';
 
 export const IEYASU2_PHASE_LABELS: Readonly<Record<Ieyasu2State['phase'], string>> = {
     explore: '第二章・城下',
@@ -206,14 +208,23 @@ export function ch2SupportOutlook(s: Pick<Ieyasu2State, 'policy' | 'trust' | 'ch
     return s.chapter1.battle.result === 'victory' ? '村の衆が自ら加わる（第一章で国境の浪人衆を退けた）' : 'なし（第一章で浪人衆を退けられなかった）';
 }
 
-/** 相手の部隊の士気・忠勝隊の士気 */
-function moraleOutlook(s: Pick<Ieyasu2State, 'policy' | 'trust'>): string {
+/** 相手の部隊の士気・忠勝隊の士気（相手の部隊は、第一章の約束を破った・信頼が 0 未満のどちらかで −10。重ねない） */
+function moraleOutlook(s: Pick<Ieyasu2State, 'policy' | 'trust' | 'chapter1'>): string {
     const R = CH2_RULES;
     const out: string[] = [];
     const partner = ch2PartnerOf(s.policy);
     if (partner) {
         const v = s.trust[partner];
-        out.push(v < R.coldTrust ? `${s.policy === 'oda' ? '織田勢' : '浅井勢'}の士気 −${R.coldMorale}（${TRUST_NAMES[partner]}の信頼 ${v} が ${R.coldTrust} 未満。徳川を頼みにしない）` : `${s.policy === 'oda' ? '織田勢' : '浅井勢'}の士気は変わらない（${TRUST_NAMES[partner]}の信頼 ${v}）`);
+        const who = s.policy === 'oda' ? '織田勢' : '浅井勢';
+        const broke = s.chapter1.pledge.result === 'broken';
+        const cold = v < R.coldTrust;
+        out.push(
+            broke
+                ? `${who}の士気 −${R.coldMorale}（第一章で約束を破った。徳川を頼みにしない${cold ? `。${TRUST_NAMES[partner]}の信頼 ${v} も ${R.coldTrust} 未満だが、重ねない` : ''}）`
+                : cold
+                  ? `${who}の士気 −${R.coldMorale}（${TRUST_NAMES[partner]}の信頼 ${v} が ${R.coldTrust} 未満。徳川を頼みにしない）`
+                  : `${who}の士気は変わらない（${TRUST_NAMES[partner]}の信頼 ${v}${s.chapter1.pledge.result === 'declined' ? '。引き受けなかったのは約束違反ではない' : ''}）`,
+        );
     } else out.push('両家の部隊は出ない（自領の防衛）');
     const t = s.trust.tadakatsu;
     const tk = R.tadakatsuTrust;
@@ -468,7 +479,7 @@ function exploreEnvoy(state: Ieyasu2State, again: boolean): ScenarioScript {
             E(p, '織田勢が陣を引きます。その撤収を、徳川殿に支えていただきたい。'),
         );
         if (trust >= R.supportTrust.oda) lines.push(E(p, '鉄砲の一隊を残して、徳川殿の指図に従わせよと、主は申しております。'));
-        if (trust < R.coldTrust) lines.push(E(p, '……正直に申せば、織田勢の者どもは徳川殿をあまり頼みにしておりませぬ。'));
+        if (trust < R.coldTrust || pl === 'broken') lines.push(E(p, '……正直に申せば、織田勢の者どもは徳川殿をあまり頼みにしておりませぬ。'));
     } else {
         const nagamasa = state.characters.nagamasa === 'alive';
         lines.push(
@@ -482,7 +493,7 @@ function exploreEnvoy(state: Ieyasu2State, again: boolean): ScenarioScript {
                 : E(p, '主の長政は先の戦の傷が癒えず、後に残っております。丘の上で囲まれているのは、浅井勢の後備えです。どうか、救っていただきたい。'),
         );
         if (trust >= R.supportTrust.asai) lines.push(E(p, '道を知る者を一隊お付けします。徳川殿の指図に従わせます。'));
-        if (trust < R.coldTrust) lines.push(E(p, '……丘の上の者どもは、徳川殿が来るとは思うておらぬでしょう。'));
+        if (trust < R.coldTrust || pl === 'broken') lines.push(E(p, '……丘の上の者どもは、徳川殿が来るとは思うておらぬでしょう。'));
     }
     lines.push(narrate('（使者の言葉と、この頼みはゲーム用の創作）'));
     return { id: `ch2.explore.envoy.${p}.${pl}`, talk: 'envoy', lines };
