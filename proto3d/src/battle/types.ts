@@ -260,6 +260,8 @@ export interface FieldRules {
  *   その後に unitId が安全区域 safeZone に戦える状態で入る。兵は最初の minRatio 以上。合流の前に安全区域へ入っても数えない（接触だけ・
  *   能力だけでは果たさない）。対象が崩れる・撤退する・兵が minRatio を切ると果たせない
  * - withdraw：総大将と、本陣のほかの count 部隊が、退き口 exit から離脱する（退却戦）。数え方は escape と同じで、出口が 1 つ。name は退き口の名前
+ * escape・withdraw の required（省ける。歴史分岐の第二章が使う。演習の戦場は使わない）：必ず離れる味方の部隊の id。count のうちに数え、
+ * それらがすべて出口から離れるまで果たさない。どれかが崩れる・出口でない所から退くと果たせない
  */
 export type ObjectiveDef = { id: string; label: string } & (
     | { type: 'destroy_hq' }
@@ -277,9 +279,9 @@ export type ObjectiveDef = { id: string; label: string } & (
     | { type: 'limit_breakthrough'; exits: Zone[]; maxCount: number; untilSec?: number; names?: string[] }
     | { type: 'open_gate'; gateId: string }
     | { type: 'sequence'; steps: ObjectiveDef[] }
-    | { type: 'escape'; exits: Zone[]; count: number; names?: string[] }
+    | { type: 'escape'; exits: Zone[]; count: number; names?: string[]; required?: string[] }
     | { type: 'rescue_escort'; unitId: string; meetZone: Zone; safeZone: Zone; minRatio: number; meetSec?: number }
-    | { type: 'withdraw'; exit: Zone; count: number; name?: string }
+    | { type: 'withdraw'; exit: Zone; count: number; name?: string; required?: string[] }
 );
 export type ObjectiveType = ObjectiveDef['type'];
 

@@ -174,6 +174,12 @@ export function createObjectiveTrack(setup: BattleSetup): ObjectiveTrack | null 
         if (def.type === 'escape' && def.exits.length === 0) throw new Error(`目標 ${def.id} の出口がありません`);
         if ((def.type === 'escape' || def.type === 'withdraw') && !(Number.isInteger(def.count) && def.count >= 0)) throw new Error(`目標 ${def.id} の count は 0 以上の整数にしてください`);
         if ((def.type === 'escape' || def.type === 'withdraw') && !setup.units.some((u) => u.side === 'ally' && u.kind === 'honjin')) throw new Error(`目標 ${def.id} の総大将（味方の本陣）がありません`);
+        if (def.type === 'escape' || def.type === 'withdraw') {
+            for (const id of def.required ?? []) {
+                if (!setup.units.some((u) => u.id === id && u.side === 'ally' && u.kind !== 'honjin')) throw new Error(`目標 ${def.id} の必ず離れる部隊（本陣でない味方）がありません: ${id}`);
+            }
+            if ((def.required ?? []).length > def.count) throw new Error(`目標 ${def.id} の必ず離れる部隊の数が count より多くなっています`);
+        }
         const run: ObjectiveRun = {
             def,
             role,
@@ -482,8 +488,15 @@ function updateLeave(s: BattleState, r: ObjectiveRun, log: ObjectiveLog): void {
     }
     if (h && broken(h)) return settle(s, r, 'failed', log);
     if (h && h.status === 'withdrawn' && !r.entered.includes(h.id)) return settle(s, r, 'failed', log);
+    // 必ず離れる部隊（required）：崩れた・出口でない所から退いた（撤退済みで数えていない）なら果たせない
+    const required = d.required ?? [];
+    for (const id of required) {
+        if (r.entered.includes(id)) continue;
+        const u = byId(s, id);
+        if (!u || broken(u) || u.status === 'withdrawn') return settle(s, r, 'failed', log);
+    }
     const others = leftOthers(s, r);
-    if ((!h || r.entered.includes(h.id)) && others >= d.count) return settle(s, r, 'done', log);
+    if ((!h || r.entered.includes(h.id)) && others >= d.count && required.every((id) => r.entered.includes(id))) return settle(s, r, 'done', log);
     const can = s.units.filter((u) => u.side === 'ally' && u !== h && u.status === 'ready' && !r.entered.includes(u.id)).length;
     if (others + can < d.count) settle(s, r, 'failed', log);
 }
@@ -677,7 +690,10 @@ function progressText(s: BattleState, r: ObjectiveRun): string {
             const h = hq(s, 'ally');
             const hqOut = !!h && r.entered.includes(h.id);
             const verb = d.type === 'escape' ? '脱出' : '離脱';
-            return `総大将 ${hqOut ? '済み' : 'まだ'}・ほか ${Math.min(leftOthers(s, r), d.count)}／${d.count} 部隊が${verb}（${d.type === 'escape' ? '出口' : '退き口'}の輪に入った部隊は戦場を離れる）`;
+            // 必ず離れる部隊があれば、その名前と済みかどうか（例：「織田勢の後備え 済み・織田勢の小荷駄 まだ」）
+            const req = (d.required ?? []).map((id) => `${byId(s, id)?.name ?? id} ${r.entered.includes(id) ? '済み' : 'まだ'}`);
+            const reqText = req.length ? `・${req.join('・')}` : '';
+            return `総大将 ${hqOut ? '済み' : 'まだ'}・ほか ${Math.min(leftOthers(s, r), d.count)}／${d.count} 部隊が${verb}${reqText}（${d.type === 'escape' ? '出口' : '退き口'}の輪に入った部隊は戦場を離れる）`;
         }
         case 'rescue_escort': {
             const u = byId(s, d.unitId);
@@ -770,7 +786,7 @@ function failWhy(d: ObjectiveDef, setup?: BattleSetup): string {
     switch (d.type) {
         case 'escape':
         case 'withdraw':
-            return `総大将が崩れる・総大将が${d.type === 'escape' ? '出口' : '退き口'}でない所から退く・離れられる部隊が足りなくなる`;
+            return `総大将が崩れる・総大将が${d.type === 'escape' ? '出口' : '退き口'}でない所から退く・離れられる部隊が足りなくなる${d.required?.length ? '・必ず離れる部隊が崩れる／退き口でない所から退く' : ''}`;
         case 'rescue_escort':
             return `救出の対象が崩れる・安全地点の前に撤退する・兵が ${Math.round(d.minRatio * 100)}％ を切る`;
         case 'defend_zones':
