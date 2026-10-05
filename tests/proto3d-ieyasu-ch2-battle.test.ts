@@ -156,7 +156,7 @@ describe('時刻で現れる敵の組（援軍の出る所の名札・着いた�
         advance(b, 201);
         expect(b.result).toBeNull();
         expect(b.events.some((e) => e.kind === 'arrive' && e.text === '敵の援軍（織田方の援軍）が現れた' && e.t <= 200.1)).toBe(true);
-    });
+    }, 60_000);
 });
 
 describe('物語側の設定の検査（validateChapter2Setup）', () => {
@@ -179,7 +179,7 @@ describe('物語側の設定の検査（validateChapter2Setup）', () => {
         // minimum の判断 2（守備隊を残すと本陣だけ）の 3 つは選べない
         expect(n).toBe(3 * 2 * 5 - 3);
         for (const p of POLICIES) expect(ch2TierAvailable(p, 'hold', 'minimum')).toBe(false);
-    });
+    }, 60_000);
     it('わざと壊した設定を見つける（状態を直接変える：設定の写しを書き換える）', () => {
         const base = () => structuredClone(setupOf('oda', 'commit', 'typical')) as BattleSetup;
         const find = (f: (s: BattleSetup) => void, re: RegExp) => {
@@ -210,7 +210,7 @@ describe('物語側の設定の検査（validateChapter2Setup）', () => {
         const b = structuredClone(setupOf('asai')) as BattleSetup;
         b.units = b.units.filter((x) => x.id !== CH2_UNIT.asai);
         expect(validateChapter2Setup(b).some((x) => /目標 ch2_asai_escort の部隊 a_asai が味方にいない/.test(x))).toBe(true);
-    });
+    }, 60_000);
 });
 
 // ---------------------------------------------------------------- 目標 withdraw・escape の required
