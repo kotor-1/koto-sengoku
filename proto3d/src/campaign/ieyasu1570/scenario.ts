@@ -7,7 +7,7 @@ import { GATE_REACH, SPOTS, TALK_REACH, headingToward, type CastMember, type Spo
 import { START, type Rect } from '../../layout';
 import type { Scenario, StatusLine } from '../scenario';
 import { formatSavedTime, signed } from '../scenario';
-import type { CharacterId } from '../state';
+import { IEYASU_LOOKS } from './looks';
 import {
     addIeyasuPlayTime,
     applyIeyasuOutcomeOnce,
@@ -60,15 +60,16 @@ import {
     supportRecordText,
 } from './story';
 import type { StorageLike } from '../save';
+import { ieyasuAmbient } from './story/ambient';
+import { ieyasuCinematic } from './story/cinematics';
+import { lookoutCast } from './story/lookout';
+import { ieyasuScout, ieyasuScoutPoints } from './story/scout';
+import { ieyasuSituation } from './story/situation';
 
 // ================= 城下の配役 =================
 
-/** 人物の見た目（既存の人物の見た目を暫定で使う。explore/world.ts の LOOKS の鍵） */
-export const IEYASU_LOOKS: Readonly<Record<'tadakatsu' | 'oda_envoy' | 'asai_envoy', CharacterId>> = {
-    tadakatsu: 'shinpachi',
-    oda_envoy: 'tashiro_envoy',
-    asai_envoy: 'omori_envoy',
-};
+/** 人物の見た目（既存の人物の見た目を暫定で使う。explore/world.ts の LOOKS の鍵。中身は looks.ts：演出の台本と同じ物） */
+export { IEYASU_LOOKS };
 
 const WEST = -Math.PI / 2;
 const SOUTH = 0;
@@ -109,11 +110,15 @@ export function ieyasuKeyTalk(state: IeyasuState): IeyasuTalkId | null {
     }
 }
 
-export function ieyasuCastFor(state: IeyasuState): CastMember<IeyasuTalkId>[] {
+/**
+ * 城下に置く相手（話す人物・高札・城門）と、物見できる段階（探索・支度）の物見櫓（kind 'lookout'。会話の相手ではない。
+ * 目印は付けない。置き場所は town/spots.ts の LOOKOUT）。
+ */
+export function ieyasuCastFor(state: IeyasuState): CastMember<IeyasuTalkId | 'lookout'>[] {
     const phase = state.phase;
     if (phase !== 'explore' && phase !== 'muster' && phase !== 'aftermath') return [];
     const key = ieyasuKeyTalk(state);
-    const out: CastMember<IeyasuTalkId>[] = [];
+    const out: CastMember<IeyasuTalkId | 'lookout'>[] = [];
     for (const id of presentIeyasuTalks(state)) {
         if (id === 'council') continue;
         if (id === 'gate') {
@@ -147,6 +152,7 @@ export function ieyasuCastFor(state: IeyasuState): CastMember<IeyasuTalkId>[] {
             solid: rectAround(x, z, sit ? 0.4 : 0.25),
         });
     }
+    out.push(...lookoutCast(state));
     return out;
 }
 
@@ -220,5 +226,11 @@ export function ieyasuScenario(storage: StorageLike | null, store: IeyasuCampaig
             return startChapter2(s);
         },
         chapterStartView: (s) => (two(s) && s.phase === 'explore' ? ieyasu2Chapter1RecordView(s) : null),
+        // 物語の見せ方（状態を読むだけ。物見の記録だけは scout で状態に足す。兵・信頼・目標・章の進行は変えない）
+        cinematic: (s, moment) => ieyasuCinematic(s, moment),
+        situation: (s, opts) => ieyasuSituation(s, opts),
+        ambient: (s) => ieyasuAmbient(s),
+        scoutPoints: (s) => ieyasuScoutPoints(s),
+        scout: (s, pointId, marks) => ieyasuScout(s, pointId, marks),
     };
 }

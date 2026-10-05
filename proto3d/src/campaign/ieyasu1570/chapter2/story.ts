@@ -79,8 +79,8 @@ const PLAN_POS: Readonly<Record<Policy, Readonly<Record<Ch2Plan, string>>>> = {
 export const RECOVERY_LABELS: Readonly<Record<RecoveryChoice, string>> = { wait: '負傷兵の戻りを待つ', transfer: '守備隊から兵を回す', none: '今の兵で出る' };
 export const CH2_SUPPORT_NAMES: Readonly<Record<Ch2SupportId, string>> = { oda_teppo: '織田の鉄砲隊', asai_guide: '浅井の道案内', village: '村の衆' };
 
-/** 始めの陣の説明（C の判断 1 で守備隊が兵が少なく出ないときは、守備隊を並べると言わない） */
-function planPos(p: Policy, plan: Ch2Plan, sortie: readonly TokugawaUnitId[]): string {
+/** 始めの陣の説明（C の判断 1 で守備隊が兵が少なく出ないときは、守備隊を並べると言わない）。情勢の画面の判断の説明にも使う */
+export function planPos(p: Policy, plan: Ch2Plan, sortie: readonly TokugawaUnitId[]): string {
     if (p === 'home' && plan === 'commit' && !sortie.includes('reserve')) return '村の南に陣を敷く（岡崎の守備隊は兵が少なく出られない）';
     return PLAN_POS[p][plan];
 }
@@ -532,8 +532,8 @@ const CONFIRM_LINES: Readonly<Record<Policy, Readonly<Record<Ch2Plan, readonly S
     },
 };
 
-/** 確定した（またはこの判断で確定する）主目標の条件の文（主目標の名前。兵が少ないときは調整の文も） */
-function termsText(info: Ch2BattleInfo): string {
+/** 確定した（またはこの判断で確定する）主目標の条件の文（主目標の名前。兵が少ないときは調整の文も）。情勢の画面の目的にも使う */
+export function termsText(info: Ch2BattleInfo): string {
     const prim = info.setup.objectives?.primary?.label ?? '—';
     const thin = ch2ThinLine(info.terms);
     return thin ? `${prim}（${thin.replace(/。$/, '')}）` : prim;

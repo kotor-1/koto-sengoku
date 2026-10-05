@@ -220,7 +220,8 @@ async function enterChapter2(h: Harness, policy: Policy) {
     expect(h.s.policy).toBe(policy);
     expect(h.view.hudInfo?.chapter).toBe(IEYASU2_CHAPTER_TITLE);
     expect(h.view.hudInfo?.phase).toBe('第二章・城下');
-    expect(h.world.cast.map((c) => c.id).sort()).toEqual(['envoy', 'ishikawa', 'notice', 'tadakatsu']);
+    // lookout は物見櫓（物語の見せ方の改修：探索・支度の段階に物見櫓の相手 lookout を置く。kind は lookout で会話の相手ではない。docs/story-rpg-design.md §5.2）
+    expect(h.world.cast.map((c) => c.id).sort()).toEqual(['envoy', 'ishikawa', 'lookout', 'notice', 'tadakatsu']);
     expect(h.world.cast.find((c) => c.key)?.id).toBe('tadakatsu');
 }
 

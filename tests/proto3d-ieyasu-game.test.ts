@@ -178,7 +178,9 @@ async function playToMuster(h: Harness, p: Policy) {
     expect(h.game.scenarioId).toBe('ieyasu1570');
     expect(h.game.state?.scenario).toBe('ieyasu1570');
     expect(h.view.hudInfo?.provisional).toBe('歴史分岐・創作を含む');
-    expect(h.world.cast.map((c) => c.id).sort()).toEqual(['asai_envoy', 'notice', 'oda_envoy', 'tadakatsu']);
+    // 会話の相手は忠勝・両家の使者・高札。lookout は物見櫓（物語の見せ方の改修：探索・支度の段階に物見櫓の相手 lookout を置く。kind は lookout で会話の相手ではない。docs/story-rpg-design.md §5.2）
+    expect(h.world.cast.map((c) => c.id).sort()).toEqual(['asai_envoy', 'lookout', 'notice', 'oda_envoy', 'tadakatsu']);
+    expect(h.world.cast.find((c) => c.id === 'lookout')?.kind).toBe('lookout');
     await h.talkTo('oda_envoy');
     await h.talkTo('asai_envoy');
     await h.talkTo('tadakatsu', 'open_council');

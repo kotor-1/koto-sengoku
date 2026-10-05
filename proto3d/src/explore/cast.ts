@@ -15,7 +15,7 @@ import { CHARACTER_NAMES } from '../campaign/story';
 import { BOUNDS, START, type Rect } from '../layout';
 import { isFree } from '../game/motion';
 
-export type CastKind = 'person' | 'notice' | 'gate';
+export type CastKind = 'person' | 'notice' | 'gate' | 'lookout';
 
 /** 置くもの。Id は話しかける相手の id（架空の第一章は TalkId。歴史分岐シナリオは自分の id を使う） */
 export interface CastMember<Id extends string = TalkId> {

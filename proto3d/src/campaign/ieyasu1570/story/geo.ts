@@ -14,7 +14,7 @@ import type { Policy } from '../state';
 export const MAP_NOTE = '模式図。国・城・道の位置と距離は正確ではない';
 
 /** 場所の id（地図の場所・線の id に使う。演出の台本・情勢の画面・物見で同じ物） */
-export type GeoId = 'home' | 'oda' | 'omi' | 'asai' | 'asakura' | 'border' | 'field1' | 'site_oda' | 'site_asai' | 'site_home';
+export type GeoId = 'home' | 'oda' | 'asai' | 'asakura' | 'border' | 'field1' | 'site_oda' | 'site_asai' | 'site_home';
 
 /** 場所の位置（模式。向きの目安だけ） */
 export const MAP_POS: Readonly<Record<GeoId, { x: number; y: number }>> = {
@@ -22,9 +22,7 @@ export const MAP_POS: Readonly<Record<GeoId, { x: number; y: number }>> = {
     home: { x: 76, y: 64 },
     // 織田家：城下の西
     oda: { x: 56, y: 48 },
-    // 近江（織田と浅井・朝倉が敵味方に分かれた所）：さらに西
-    omi: { x: 33, y: 44 },
-    // 浅井家（近江）
+    // 浅井家（近江。織田と浅井・朝倉が敵味方に分かれた所）：さらに西
     asai: { x: 24, y: 34 },
     // 朝倉家：浅井の北（国の名前は出さない）
     asakura: { x: 20, y: 13 },

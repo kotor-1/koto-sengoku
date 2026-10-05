@@ -12,6 +12,7 @@ import type { CharacterId } from '../../state';
 import { presentIeyasu2Talks } from './flow';
 import type { Ieyasu2State, Ieyasu2TalkId } from './state';
 import { ieyasu2StatusRows, ieyasu2TalkName } from './story';
+import { lookoutCast } from '../story/lookout';
 
 const WEST = -Math.PI / 2;
 const SOUTH = 0;
@@ -55,11 +56,12 @@ export function ieyasu2KeyTalk(state: Ieyasu2State): Ieyasu2TalkId | null {
     }
 }
 
-export function ieyasu2CastFor(state: Ieyasu2State): CastMember<Ieyasu2TalkId>[] {
+/** 城下に置く相手（話す人物・高札・城門）と、物見できる段階（探索・支度）の物見櫓（kind 'lookout'。目印は付けない） */
+export function ieyasu2CastFor(state: Ieyasu2State): CastMember<Ieyasu2TalkId | 'lookout'>[] {
     const phase = state.phase;
     if (phase !== 'explore' && phase !== 'muster' && phase !== 'aftermath') return [];
     const key = ieyasu2KeyTalk(state);
-    const out: CastMember<Ieyasu2TalkId>[] = [];
+    const out: CastMember<Ieyasu2TalkId | 'lookout'>[] = [];
     for (const id of presentIeyasu2Talks(state)) {
         if (id === 'council') continue;
         if (id === 'gate') {
@@ -93,6 +95,7 @@ export function ieyasu2CastFor(state: Ieyasu2State): CastMember<Ieyasu2TalkId>[]
             solid: rectAround(x, z, sit ? 0.4 : 0.25),
         });
     }
+    out.push(...lookoutCast(state));
     return out;
 }
 

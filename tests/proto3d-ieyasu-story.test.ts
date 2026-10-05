@@ -255,7 +255,9 @@ describe('城下の配役', () => {
     }
     it('誰が居るか：探索は忠勝・両家の使者・高札（目印は忠勝）。合戦中は誰も置かない', () => {
         const c = ieyasuCastFor(newIeyasuGame());
-        expect(c.map((m) => m.id).sort()).toEqual(['asai_envoy', 'notice', 'oda_envoy', 'tadakatsu']);
+        // lookout は物見櫓（物語の見せ方の改修：探索・支度の段階に物見櫓の相手 lookout を置く。kind は lookout で会話の相手ではない。docs/story-rpg-design.md §5.2）。目印は付けない
+        expect(c.map((m) => m.id).sort()).toEqual(['asai_envoy', 'lookout', 'notice', 'oda_envoy', 'tadakatsu']);
+        expect(c.find((m) => m.id === 'lookout')).toMatchObject({ kind: 'lookout', key: false, solid: null, label: '物見櫓', verb: '物見' });
         expect(c.find((m) => m.key)?.id).toBe('tadakatsu');
         expect(ieyasuCastFor(ieyasuToBattle('oda', 'accept'))).toEqual([]);
         for (const p of POLICIES) expect(ieyasuCastFor(ieyasuToMuster(p)).find((m) => m.key)?.id).toBe(PLEDGE_SPECS[p].giver);
