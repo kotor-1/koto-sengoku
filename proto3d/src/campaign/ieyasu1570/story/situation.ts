@@ -8,7 +8,7 @@
  *   危機の「脅かす向き」は推定の向きで、正確な位置ではない）。
  * 文は既存の分岐の文（軍議の選択肢・使者・高札・結果確認）を短くした物。新しい史実・地名・日付は足さない。
  */
-import type { MapPlace, MapRoute, SituationOption, SituationView } from '../../../story/types';
+import type { MapPlace, MapRoute, MapScene, SituationOption, SituationView } from '../../../story/types';
 import type { Ch2Plan } from '../chapter2/battle';
 import { ch2ThinLine } from '../chapter2/battle';
 import { availableCh2Plans, ieyasu2BattleInfo } from '../chapter2/rules';
@@ -28,6 +28,7 @@ import {
     marchRoute,
     partyLine,
     partyPlaces,
+    prospectRoutes,
     relationRoutes,
     relationsOf,
     returnRoute,
@@ -40,6 +41,8 @@ type Opts = { from: 'explore' | 'council'; options?: { id: string; label: string
 
 const WHEN = '元亀元年（1570年）';
 const HOME = '徳川の城下（三河）';
+/** C（自領の防衛）の協力の欄：協力する家は無い。両家とは戦わないだけ（地図では △） */
+const NO_ALLY_HOME = '協力する家は無い（織田家・浅井家とは戦わない）';
 
 /** 今いる所（徳川の城下と今の段階）。段階の名前の「城下」は今いる所と重なるので省く（「徳川の城下（三河）・城下」にしない） */
 function whereOf(phaseLabel: string, extra = ''): string {
@@ -71,10 +74,14 @@ const CH1_OPTION_TEXT: Readonly<Record<Policy, string>> = {
     asai: '史実から分かれた道（創作）。国境の原で、浅井の退き口を守り、織田方の一隊の追撃を止める。味方に浅井長政隊。戦後、織田の信頼は大きく下がる。',
     home: '両家への宣戦ではない。どちらにも兵を出さず、国境の村を荒らす浪人衆を退ける。味方に岡崎の守備隊（国境の砦に孤立）。戦後、織田は不満を持つ。',
 };
+/**
+ * 方針ごとの強調：その方針を選んだ後の見込みの関係の線（map.ts の prospectRoutes。A の協力は今の協力の線 rel.oda）と、
+ * 協力する相手・合戦の場所と進路。ほかの方針の線は強調しない（地図の場所の記号は、方針を決める前の今の関係のまま）。
+ */
 const CH1_OPTION_HL: Readonly<Record<Policy, string[]>> = {
-    oda: ['oda', 'asai', 'asakura', 'field1', 'march.field1'],
-    asai: ['asai', 'oda', 'field1', 'march.field1'],
-    home: ['border', 'field1', 'march.field1'],
+    oda: ['oda', 'rel.oda', 'opt.oda.asai', 'opt.oda.asakura', 'field1', 'march.field1'],
+    asai: ['asai', 'opt.asai.asai', 'opt.asai.oda', 'field1', 'march.field1'],
+    home: ['border', 'opt.home.border', 'field1', 'march.field1'],
 };
 const POLICY_OF_CHOICE: Readonly<Record<string, Policy>> = { policy_oda: 'oda', policy_asai: 'asai', policy_home: 'home' };
 
@@ -117,6 +124,9 @@ function ch1View(s: IeyasuState, opts: Opts): SituationView {
     const routes: MapRoute[] = [...relationRoutes(p)];
     // 方針の前：近江の対立（背景）だけ。両家の使者の線は演出で見せる（情勢の地図には出さない：線が多いと場所の名前が読みにくい）
     if (!p) routes.push(...conflictRoutes().slice(0, 1));
+    // 軍議で方針を見比べるとき：方針ごとの見込みの関係の線（タブの強調でその方針の線だけを強調する。見るだけで決まらない）
+    const comparing = !p && opts.from === 'council' && !!opts.options?.length;
+    if (comparing) routes.push(...prospectRoutes('oda'), ...prospectRoutes('asai'), ...prospectRoutes('home'));
     // 進路：方針の前（軍議で見比べる）と支度は出陣の先、戦後は帰還
     if (s.phase === 'aftermath' || s.phase === 'ending') routes.push(returnRoute('field1'));
     else routes.push(marchRoute('field1'));
@@ -134,7 +144,8 @@ function ch1View(s: IeyasuState, opts: Opts): SituationView {
         allies.push(partyLine('asai', rel.asai, '史実から分かれた道'));
         enemies.push(partyLine('oda', rel.oda, '織田方の一隊'));
     } else {
-        allies.push(`${partyLine('oda', rel.oda, '戦わない')}・${partyLine('asai', rel.asai, '戦わない')}`);
+        // 戦わないだけの相手（△）は協力の欄に入れない
+        allies.push(NO_ALLY_HOME);
         enemies.push(partyLine('ronin', rel.ronin, '国境の村を荒らす'));
     }
     let crisis: string;
@@ -170,9 +181,15 @@ function ch1View(s: IeyasuState, opts: Opts): SituationView {
     if (hint) view.scoutHint = hint;
     if (opts.from === 'council' && opts.options?.length) {
         const os = opts.options.map((o) => ch1Option(s, o.id, o.label)).filter((o): o is SituationOption => !!o);
-        if (os.length) view.options = os;
+        if (os.length) view.options = os.map((o) => ({ ...o, highlight: onMap(view.map, o.highlight) }));
     }
     return view;
+}
+
+/** 地図にある場所・線の id だけ（強調に使う） */
+function onMap(m: MapScene, ids: string[]): string[] {
+    const has = new Set([...m.places.map((x) => x.id), ...m.routes.map((x) => x.id)]);
+    return ids.filter((id) => has.has(id));
 }
 
 // ================================================================ 第二章
@@ -217,7 +234,8 @@ function ch2View(s: Ieyasu2State, opts: Opts): SituationView {
     const allies: string[] = [];
     const enemies: string[] = [];
     const sup = s.result ? s.result.support : (safeInfo(s)?.support ?? null);
-    const supText = sup && sup.length ? `${sup.map((x) => CH2_SUPPORT_NAMES[x]).join('・')}が加わる` : '';
+    // 戦後・結末（合戦の後）は、加わったことの言い方に
+    const supText = sup && sup.length ? `${sup.map((x) => CH2_SUPPORT_NAMES[x]).join('・')}${s.result ? 'が加わった' : 'が加わる'}` : '';
     const cold = c.pledge.result === 'broken';
     if (p === 'oda') {
         allies.push(partyLine('oda', rel.oda, [`信頼 ${s.trust.oda}`, supText, cold || s.trust.oda < 0 ? '徳川をあまり頼みにしていない' : ''].filter(Boolean).join('・')));
@@ -226,8 +244,8 @@ function ch2View(s: Ieyasu2State, opts: Opts): SituationView {
         allies.push(partyLine('asai', rel.asai, [`史実から分かれた道・信頼 ${s.trust.asai}`, supText, cold || s.trust.asai < 0 ? '徳川をあまり頼みにしていない' : ''].filter(Boolean).join('・')));
         enemies.push(partyLine('oda', rel.oda, '丘を囲む織田方'));
     } else {
-        if (c.battle.result === 'victory') allies.push('○ 村の衆（第一章で浪人を退けた。自ら加わる）');
-        allies.push(`${partyLine('oda', rel.oda, '戦わない')}・${partyLine('asai', rel.asai, '戦わない')}`);
+        // 協力は村の衆だけ（戦わないだけの両家（△）は協力の欄に入れない）
+        allies.push(c.battle.result === 'victory' ? `○ 村の衆（第一章で浪人を退けた。自ら${s.result ? '加わった' : '加わる'}）` : NO_ALLY_HOME);
         enemies.push(partyLine('ronin', rel.ronin, '浪人衆'));
     }
     const cl = crisisLines(s);

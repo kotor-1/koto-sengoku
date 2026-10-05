@@ -191,6 +191,75 @@ describe('記録の中身は戦場の地形のデータから（存在しない�
     });
 });
 
+describe('地図の上の記録の置き場所は、記録の文の向きと同じ（模式図は北が上：y が小さいほど北、x が大きいほど東）', () => {
+    const placesOf = (s: IeyasuState | Ieyasu2State) => {
+        const v = ieyasuScenario(null).situation!(ieyasuScout(s, LOOKOUT_ID, ALL_IDS), { from: 'explore' })!;
+        const at = (id: string) => v.map.places.find((p) => p.id === id)!;
+        return { v, at };
+    };
+    const texts = (s: IeyasuState | Ieyasu2State) => new Map(scoutEntries(ieyasuScout(s, LOOKOUT_ID, ALL_IDS)).map((e) => [e.id, e.text]));
+    it('第一章（国境の原）：退き口は南・丘は北・林と湿地は西（西の林を代表に）', () => {
+        const s = newIeyasuGame();
+        const { at } = placesOf(s);
+        const t = texts(s);
+        expect(t.get('border.field')).toContain('退き口は南の端');
+        expect(t.get('border.hill')).toMatch(/^北に丘/);
+        expect(t.get('border.flanks')).toMatch(/^西の端は林/);
+        const site = at('field1');
+        expect(at('border.field').y).toBeGreaterThan(site.y);
+        expect(at('border.hill').y).toBeLessThan(site.y);
+        expect(at('border.flanks').x).toBeLessThan(site.x);
+    });
+    it('A（織田勢の退き口）：小丘（北寄り）・切れ目（原の中ほど）・南の端（退き口）の順に北から南。記録の名前は任務の名前の「退き口」と重ねない', () => {
+        const s = CH2_STARTS.find((c) => c.state.policy === 'oda')!.state;
+        const { v, at } = placesOf(s);
+        const t = texts(s);
+        expect(t.get('rear.hill')).toContain('原の北寄りに小さな丘');
+        expect(t.get('rear.field')).toContain('退き口は南の端');
+        expect(at('rear.hill').y).toBeLessThan(at('rear.neck').y);
+        expect(at('rear.neck').y).toBeLessThan(at('rear.field').y);
+        expect(at('rear.hill').y).toBeLessThan(at('site_oda').y);
+        expect(at('rear.field').y).toBeGreaterThan(at('site_oda').y);
+        const site = at('site_oda').name;
+        expect(site).toContain('退き口');
+        for (const id of SCOUT_MARK_IDS.rear) expect(at(id).name, id).not.toContain('退き口');
+        expect(at('rear.field').name).toBe('南の端');
+        // 地図の場所の名前は重ならない
+        const names = v.map.places.map((p) => p.name);
+        expect(new Set(names).size).toBe(names.length);
+    });
+    it('B（浅井勢の孤立した丘）：丘の上は北東・林の縁は西・安全地点は南。安全地点はデータにある言葉だけ（「陣の前」と書かない）', () => {
+        const s = CH2_STARTS.find((c) => c.state.policy === 'asai')!.state;
+        const { at } = placesOf(s);
+        const t = texts(s);
+        expect(t.get('relief.hill')).toMatch(/^北東に丘/);
+        expect(t.get('relief.west')).toMatch(/^西の林/);
+        expect(t.get('relief.field')).toContain('連れ帰る安全地点は南の端。');
+        expect(t.get('relief.field')).not.toContain('陣の前');
+        const site = at('site_asai');
+        expect(at('relief.hill').x).toBeGreaterThan(site.x);
+        expect(at('relief.hill').y).toBeLessThan(site.y);
+        expect(at('relief.west').x).toBeLessThan(site.x);
+        expect(at('relief.field').y).toBeGreaterThan(site.y);
+        // 安全地点は南の端（データ：安全区域の中心が原の南の 3 割より外）
+        const prim = CH2_FIELDS.asai.objectives.primary;
+        const safe = prim.type === 'rescue_escort' ? prim.safeZone : null;
+        const z = safe?.circle ? safe.circle.cz : (safe!.rect!.z0 + safe!.rect!.z1) / 2;
+        expect(z).toBeGreaterThanOrEqual(CH2_FIELDS.asai.depth * 0.3);
+    });
+    it('C（領内の村）：柵と米蔵（米蔵は西の端）は村と記録の中でいちばん西。村の通りは北・屋敷前は南', () => {
+        const s = CH2_STARTS.find((c) => c.state.policy === 'home')!.state;
+        const { at } = placesOf(s);
+        const t = texts(s);
+        expect(t.get('village.fence')).toContain('村の西の端に米蔵');
+        const site = at('site_home');
+        const xs = [site, ...SCOUT_MARK_IDS.village.map(at)].map((p) => p.x);
+        expect(at('village.fence').x).toBe(Math.min(...xs));
+        expect(at('village.field').y).toBeLessThan(site.y);
+        expect(at('village.square').y).toBeGreaterThan(site.y);
+    });
+});
+
 describe('軍議の選択肢の説明・合戦の前の説明への反映', () => {
     it('第一章：記録があれば方針の選択肢の説明の終わりに「物見：…」。無ければ今までと同じ説明（id・名前・要点は変えない）', () => {
         const open = finishTalkIeyasu(newIeyasuGame(), 'tadakatsu', 'open_council');

@@ -114,7 +114,10 @@ describe('情勢の画面：どの状態でも作れ、地図と短い説明が�
                 } else {
                     expect([side(v, 'oda'), side(v, 'asai'), side(v, 'border')]).toEqual(['neutral', 'neutral', 'enemy']);
                     expect(v.enemies.join('')).toContain('✕ 浪人の一団');
-                    expect(v.allies.join('')).toContain('△ 織田家（戦わない）');
+                    // 戦わないだけの両家（△）は協力の欄に入れない（点検の指摘：協力している相手のように読めた）。協力する家は無いと書く
+                    expect(v.allies.join(''), '協力の欄に △ を入れない').not.toMatch(/[△✕]/);
+                    if (isChapter2(s) && s.chapter1.battle.result === 'victory') expect(v.allies).toEqual([`○ 村の衆（第一章で浪人を退けた。自ら${s.result ? '加わった' : '加わる'}）`]);
+                    else expect(v.allies).toEqual(['協力する家は無い（織田家・浅井家とは戦わない）']);
                 }
             }
         }
@@ -148,6 +151,56 @@ describe('情勢の画面：どの状態でも作れ、地図と短い説明が�
     }, 60_000);
 });
 
+describe('協力の欄の言い方', () => {
+    it('C（自領の防衛）：どの段階でも協力の欄に △（戦わないだけの相手）を入れない', () => {
+        const all = [...ch1BeforeBattle().map((x) => x.state), ...CH1.map((c) => c.state), ...CH1.map((c) => ch1Ending(c.state)), ...CH2.map((x) => x.state)];
+        let n = 0;
+        for (const s of all) {
+            if (s.policy !== 'home') continue;
+            const v = ieyasuSituation(s, { from: 'explore' })!;
+            expect(v.allies.join('・')).not.toMatch(/[△✕]/);
+            expect(v.allies.length).toBe(1);
+            n++;
+        }
+        expect(n).toBeGreaterThan(100);
+    }, 60_000);
+    it('第二章の支援の部隊：戦後・結末は「加わった」、合戦の前は「加わる」', () => {
+        let after = 0;
+        let before = 0;
+        for (const { name, state } of CH2) {
+            const s = state as Ieyasu2State;
+            const allies = ieyasuSituation(s, { from: 'explore' })!.allies.join('・');
+            // 支援の部隊（織田の鉄砲隊・浅井の道案内は「…が加わる／加わった」、村の衆は「自ら加わる／加わった」）
+            if (s.result) {
+                expect(allies, name).not.toMatch(/加わる/);
+                if (s.result.support.length) {
+                    expect(allies, name).toMatch(/加わった/);
+                    after++;
+                }
+            } else if (allies.includes('加わ')) {
+                expect(allies, name).toMatch(/加わる/);
+                expect(allies, name).not.toMatch(/加わった/);
+                before++;
+            }
+        }
+        expect(after).toBeGreaterThan(5);
+        expect(before).toBeGreaterThan(5);
+    }, 60_000);
+});
+
+describe('模式図の置き場所', () => {
+    it('国境の原（第一章の合戦の場所）は国境（浪人の一団）のすぐそば（地図の上でいちばん近い場所が国境）', () => {
+        for (const p of ['oda', 'asai', 'home'] as const) {
+            const v = ieyasuSituation(ch1BeforeBattle().find((x) => x.name === `muster.${p}`)!.state, { from: 'explore' })!;
+            const f = v.map.places.find((x) => x.id === 'field1')!;
+            const others = v.map.places.filter((x) => x.id !== 'field1');
+            const nearest = [...others].sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0]!;
+            expect(nearest.id).toBe('border');
+            expect(Math.hypot(nearest.x - f.x, nearest.y - f.y)).toBeLessThanOrEqual(20);
+        }
+    });
+});
+
 describe('軍議から開いたとき：選択肢ごとの強調と説明（見るだけ。決めない）', () => {
     it('第一章：3 つの方針のタブ。方針ごとに違う所を強調し、説明に B は「史実から分かれた道」・C は「宣戦ではない」', () => {
         const council = ch1BeforeBattle().find((x) => x.name === 'council')!.state;
@@ -163,6 +216,32 @@ describe('軍議から開いたとき：選択肢ごとの強調と説明（見�
         expect(new Set(v.options!.map((o) => o.highlight.join(','))).size).toBe(3);
         expect(b!.text).toContain('史実から分かれた道');
         expect(c!.text).toContain('宣戦ではない');
+        // 方針ごとの見込みの関係の線（点検の指摘：A と B の強調がほぼ同じだった）。その方針の線だけを強調し、ほかの方針の線は強調しない
+        const route = (id: string) => v.map.routes.find((r) => r.id === id);
+        const want: Record<string, { kind: string; side: string; to: string }> = {
+            'opt.oda.asai': { kind: 'hostile', side: 'enemy', to: 'asai' },
+            'opt.oda.asakura': { kind: 'hostile', side: 'enemy', to: 'asakura' },
+            'opt.asai.asai': { kind: 'alliance', side: 'ally', to: 'asai' },
+            'opt.asai.oda': { kind: 'hostile', side: 'enemy', to: 'oda' },
+            'opt.home.border': { kind: 'hostile', side: 'enemy', to: 'border' },
+        };
+        for (const [id, w] of Object.entries(want)) expect(route(id), id).toMatchObject({ from: 'home', ...w });
+        expect(route('rel.oda')).toMatchObject({ from: 'home', to: 'oda', kind: 'alliance', side: 'ally' });
+        const lines = (o: { highlight: string[] }) => o.highlight.filter((id) => id.startsWith('opt.') || id.startsWith('rel.')).sort();
+        expect(lines(a!)).toEqual(['opt.oda.asai', 'opt.oda.asakura', 'rel.oda']);
+        expect(lines(b!)).toEqual(['opt.asai.asai', 'opt.asai.oda']);
+        expect(lines(c!)).toEqual(['opt.home.border']);
+        // B のタブでは、今の協力（○ 織田家）を強調しない（B を選ぶと織田方が敵になる線を強調する）
+        expect(b!.highlight).not.toContain('oda');
+        expect(b!.highlight).not.toContain('rel.oda');
+        // 同じ相手への線は曲げて、重ねない（A と B の浅井への線・今の協力と B の織田への線）
+        expect(route('opt.asai.asai')!.via?.length).toBeGreaterThan(0);
+        expect(route('opt.asai.oda')!.via?.length).toBeGreaterThan(0);
+        // 探索から開いたとき（タブが無い）は、見込みの線を出さない
+        expect(ieyasuSituation(council, { from: 'explore' })!.map.routes.some((r) => r.id.startsWith('opt.'))).toBe(false);
+        // 地図で見るだけ：関係の記号（場所の side）は方針を決める前の今の関係のまま
+        expect(v.map.places.find((x) => x.id === 'oda')!.side).toBe('ally');
+        expect(v.map.places.find((x) => x.id === 'asai')!.side).toBe('neutral');
         // 探索から開いたときはタブが無い
         expect(ieyasuSituation(council, { from: 'explore' })!.options).toBeUndefined();
         // 確かめの段（決める／考え直す）：決める方は選んだ方針を強調
@@ -172,6 +251,9 @@ describe('軍議から開いたとき：選択肢ごとの強調と説明（見�
             const vv = ieyasuSituation(pend, { from: 'council', options: opts })!;
             expect(vv.options!.map((o) => o.id)).toEqual(['confirm_policy', 'reconsider']);
             expect(vv.options![0]!.text).toContain('決めると変えられない');
+            // 決める方は、選んだ方針の見込みの線を強調する
+            expect(vv.options![0]!.highlight.some((id) => id.startsWith(`opt.${p}.`))).toBe(true);
+            expect(vv.options![0]!.highlight.some((id) => id.startsWith('opt.') && !id.startsWith(`opt.${p}.`))).toBe(false);
         }
     });
     it('第二章：選べる判断のタブ（確定する主目標の文・代償・物見の記録があれば「物見：」）', () => {

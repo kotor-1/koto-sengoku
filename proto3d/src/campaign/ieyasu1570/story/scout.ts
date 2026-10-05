@@ -191,7 +191,8 @@ function rearMarks(): MarkDef[] {
             label: CH2_MAP_NAMES.oda,
             text: `${CH2_MAP_NAMES.oda}：南北 ${f.depth} m の長い原。${road ? `${road.center ? '真ん中' : '原'}を南北に道が通る。` : ''}退き口は${exit.z > 0 ? '南' : '北'}の端。`,
             short: `南北に長い原・退き口は${exit.z > 0 ? '南' : '北'}の端`,
-            mapName: '退き口',
+            // 任務の場所の名前（織田勢の退き口）と重ならない言葉（退き口のある端）
+            mapName: `${exit.z > 0 ? '南' : '北'}の端`,
         },
         {
             id: 'rear.neck',
@@ -236,7 +237,7 @@ function reliefMarks(): MarkDef[] {
         {
             id: 'relief.field',
             label: CH2_MAP_NAMES.asai,
-            text: `${CH2_MAP_NAMES.asai}のある原：南北 ${f.depth} m。${wSide}は広い林${marsh ? `、${dirOf(f, centerOf(marsh).x, 0)}に湿地` : ''}。連れ帰る安全地点は${dirOf(f, safe.x, safe.z)}の陣の前。`,
+            text: `${CH2_MAP_NAMES.asai}のある原：南北 ${f.depth} m。${wSide}は広い林${marsh ? `、${dirOf(f, centerOf(marsh).x, 0)}に湿地` : ''}。連れ帰る安全地点は${dirOf(f, safe.x, safe.z)}${Math.abs(safe.z) >= f.depth * 0.3 ? 'の端' : '寄り'}。`,
             short: `${wSide}は広い林${marsh ? `・${dirOf(f, centerOf(marsh).x, 0)}に湿地` : ''}・安全地点は${dirOf(f, safe.x, safe.z)}`,
             mapName: '安全地点',
         },

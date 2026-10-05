@@ -16,7 +16,7 @@ import { CH2_MAP_NAMES } from '../chapter2/battle';
 import { isChapter2, type IeyasuAnyState } from '../chapter2/state';
 import { IEYASU_RESULT_LABELS } from '../story';
 import type { Policy } from '../state';
-import { CH2_SITE, MAP_NOTE, MAP_POS, type GeoId } from './geo';
+import { CH2_SITE, MAP_NOTE, MAP_POS, PROSPECT_VIA, ROUTE_VIA, type GeoId } from './geo';
 
 export { MAP_NOTE };
 
@@ -100,6 +100,26 @@ export function relationRoutes(policy: Policy | null): MapRoute[] {
     }
 }
 
+/**
+ * 軍議で方針を見比べる線（方針を決める前の軍議の地図だけ。その方針を選んだ後の見込みの関係。見るだけで決まらない）。
+ * A：城下→織田 協力（今の協力の線 rel.oda をそのまま使う）・城下→浅井／朝倉 敵対、B：城下→浅井 協力・城下→織田 敵対、C：城下→国境 敵対。
+ * 同じ相手への線（A と B の浅井、今の協力と B の織田）が重ならないように、曲げる点（geo.ts の PROSPECT_VIA）を付ける。
+ */
+export function prospectRoutes(policy: Policy): MapRoute[] {
+    const r = (to: GeoId, kind: 'alliance' | 'hostile'): MapRoute => {
+        const via = PROSPECT_VIA[`${policy}.${to}`];
+        return { id: `opt.${policy}.${to}`, from: 'home', to, kind, side: kind === 'alliance' ? 'ally' : 'enemy', ...(via ? { via: via.map((v) => ({ ...v })) } : {}) };
+    };
+    switch (policy) {
+        case 'oda':
+            return [r('asai', 'hostile'), r('asakura', 'hostile')];
+        case 'asai':
+            return [r('asai', 'alliance'), r('oda', 'hostile')];
+        case 'home':
+            return [r('border', 'hostile')];
+    }
+}
+
 /** 背景の対立（近江で織田と浅井・朝倉が敵味方に分かれた。徳川の関係とは別なので「敵対していない」の色） */
 export function conflictRoutes(): MapRoute[] {
     return [
@@ -139,12 +159,16 @@ export function threatRoute(policy: Policy): MapRoute {
     }
 }
 
-/** 地図の場面を組み立てる（同じ id の場所・線は 1 つにまとめる。注記は必ず付ける） */
+/** 地図の場面を組み立てる（同じ id の場所・線は 1 つにまとめる。線の曲げる点は geo.ts の ROUTE_VIA。注記は必ず付ける） */
 export function scene(places: MapPlace[], routes: MapRoute[], opts: { heading?: string; highlight?: string[] } = {}): MapScene {
     const ps = new Map<string, MapPlace>();
     for (const p of places) if (!ps.has(p.id)) ps.set(p.id, p);
     const rs = new Map<string, MapRoute>();
-    for (const r of routes) if (!rs.has(r.id) && ps.has(r.from) && ps.has(r.to)) rs.set(r.id, r);
+    for (const r of routes) {
+        if (rs.has(r.id) || !ps.has(r.from) || !ps.has(r.to)) continue;
+        const via = r.via ?? ROUTE_VIA[r.id];
+        rs.set(r.id, via ? { ...r, via: via.map((v) => ({ ...v })) } : r);
+    }
     const out: MapScene = { places: [...ps.values()], routes: [...rs.values()], note: MAP_NOTE };
     if (opts.heading) out.heading = opts.heading;
     if (opts.highlight?.length) out.highlight = opts.highlight.filter((id) => ps.has(id) || rs.has(id));
