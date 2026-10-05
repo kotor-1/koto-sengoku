@@ -16,6 +16,7 @@
 | 項目 | コミット | 日時（UTC） | 結果 | 種類 |
 |---|---|---|---|---|
 | `npm run typecheck`・`npx tsc -p proto3d` | a7b6595（作業ツリーには合戦の担当の途中の変更あり） | 2026-10-05 03:00 | 誤りなし | ― |
+| `npx vitest run`（全体） | a7b6595（作業ツリーに合戦の担当の途中の変更と、まだ入っていない `tests/proto3d-ieyasu-ch2-battle.test.ts`） | 2026-10-05 03:01〜03:12 | 95 ファイル・1723 件すべて通過（始めの負荷 4.5。時間切れなし） | 早送り・直接操作 |
 | 第二章のテスト 8 本（`tests/proto3d-ieyasu-ch2-{fixtures,transition,carry,recovery,aftermath,save,game,story}.test.ts`）と、第一章・架空の章・演習の保存に関わる既存テスト 16 本（`proto3d-ieyasu-{flow,game,routes,save,story,ui,side-objectives}`・`proto3d-game`・`proto3d-campaign-*`・`proto3d-practice`・`proto3d-generals`・`proto3d-chapter1-matrix`・`proto3d-cast`） | a7b6595（同上） | 2026-10-05 03:00 | 24 ファイル・498 件すべて通過。第一章の既存テストは 1 つも直していない | 直接操作（状態・保存を作る）・偽の画面と本物の合戦の計算（全軍撤退） |
 
 - 第二章のテストの中身（`docs/chapter2-play.md` の「確認のしかた」）：
