@@ -177,7 +177,8 @@ function tokugawaUnit(k: TokugawaUnitId, input: Ch2BattleInput, at: Pos): UnitDe
 
 /** 地図（地形・退き口は演習の戦場の物そのまま。名前だけ物語の内容） */
 function storyMap(policy: Policy): BattleMap {
-    return { ...fieldMap(CH2_FIELDS[policy]), name: CH2_MAP_NAMES[policy] };
+    const base = fieldMap(CH2_FIELDS[policy]);
+    return { ...base, id: `ieyasu2_${base.id}`, name: CH2_MAP_NAMES[policy] };
 }
 
 const FIRST_LINE = '第一章の直後の、分岐した世界での出来事（ゲーム用の創作）。特定の史実の合戦の再現ではない。戦場・兵数・配置は創作。';
