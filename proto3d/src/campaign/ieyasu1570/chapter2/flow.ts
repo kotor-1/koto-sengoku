@@ -27,7 +27,9 @@ import {
     ieyasuBattleSetup,
     ieyasuOutcomeFromSetup,
     newIeyasuGame,
+    withScoutLine,
 } from '../flow';
+import { scoutBriefingLine } from '../story/scout';
 import { IEYASU_TROOPS_MAX, PLEDGE_SPECS, TOKUGAWA_UNIT_IDS, TRUST_IDS, clampTrust, parseIeyasuOutcome, type IeyasuState, type PledgeResult, type Policy, type TokugawaUnitId, type TrustId } from '../state';
 import { CH2_UNIT, ch2DecideTerms, ch2PlanAvailability, type Ch2Plan } from './battle';
 import { availableCh2Plans, ch2RecoveryOptions, ch2TrustDelta, ieyasu2BattleInfo } from './rules';
@@ -278,7 +280,8 @@ export function withIeyasu2BattleId(state: Ieyasu2State, id: string): Ieyasu2Sta
 export function ieyasu2BattleSetup(state: Ieyasu2State): BattleSetup {
     if (state.phase !== 'battle') throw new FlowError(`今（${state.phase}）は合戦を始められません`);
     const info = ieyasu2BattleInfo(state);
-    return { ...info.setup, relations: { ...state.trust } };
+    // 物見の記録があれば、説明に「物見で確かめた：…」の 1 行を足す（説明の文だけ。部隊・目標・兵・確定した条件は変えない）
+    return { ...info.setup, briefing: withScoutLine(info.setup.briefing, scoutBriefingLine(state)), relations: { ...state.trust } };
 }
 
 const brokenStatus = (s: UnitStatus) => s === 'routed' || s === 'destroyed';
@@ -312,6 +315,8 @@ export function applyIeyasu2Outcome(state: Ieyasu2State, outcome: BattleOutcome)
     const s = cloneIeyasu2State(state);
     const plan = s.plan!;
     s.battle = cloneIeyasu2Outcome(o);
+    // 物見の記録はこの合戦の戦場の物（合戦が済んだら消す。戦後・区切りの保存には書かない）
+    delete s.scout;
 
     // 兵（出陣した部隊だけ）
     const sortieTroops: Partial<Record<TokugawaUnitId, number>> = {};

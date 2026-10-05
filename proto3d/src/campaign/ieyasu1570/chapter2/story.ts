@@ -38,6 +38,7 @@ import {
 import { CH2_RULES, CH2_TERMS_TABLE, ch2BattleSetup, ch2DecideTerms, ch2PartnerNames, ch2PlanAvailability, ch2SortieUnits, ch2ThinLine, type Ch2BattleInfo, type Ch2Plan, type Ch2SupportId } from './battle';
 import { CH2_RECOVERY, availableCh2Plans, ch2Losses, ch2PartnerOf, ch2RecoveryOptions, ch2TrustDelta, ieyasu2BattleInfo, ieyasu2BattleInput, type RecoveryOption } from './rules';
 import { ieyasu2TalkFlag, type Chapter1Record, type Ieyasu2EndingId, type Ieyasu2Result, type Ieyasu2State, type Ieyasu2TalkId, type RecoveryChoice } from './state';
+import { scoutCouncilLine } from '../story/scout';
 
 // ---- 画面に常に出す注記・名前 ----
 
@@ -563,10 +564,13 @@ export function planChoice(state: Ieyasu2State, plan: Ch2Plan): ScenarioChoice {
               ? `岡崎の守備隊も出す（城が空く。戦後、${TRUST_NAMES.ishikawa}の信頼 ${signed(dv.ishikawa)}）`
               : `岡崎の守備隊は兵が少なく（${state.troops.reserve}。${CH2_RULES.minUnitTroops} 未満）、このままでは出られない（補充しないと、出るのは${info.sortie.length === 1 ? '家康本陣だけ' : '守備隊を除く部隊'}。補充で ${CH2_RULES.minUnitTroops} 以上に戻れば守備隊も出て城が空き、戦後、${TRUST_NAMES.ishikawa}の信頼 ${signed(dv.ishikawa)}。出なければ城は空かず、信頼も動かない）`;
     const thinLine = ch2ThinLine(info.terms);
+    const id = plan === 'commit' ? 'plan_commit' : 'plan_hold';
+    // 物見の記録があれば、説明の終わりに「物見：…」の 1 行（地形だけ。主目標・条件・代償は変えない）
+    const scout = scoutCouncilLine(state, id);
     return {
-        id: plan === 'commit' ? 'plan_commit' : 'plan_hold',
+        id,
         label: CH2_PLAN_LABELS[p][plan],
-        detail: `出る部隊：${units}（合わせて ${total}）。味方：${partners.length ? partners.join('・') : 'なし'}。始めの陣：${planPos(p, plan, info.sortie)}。この判断で確定する主目標：${prim}（決めた後の補充では変わらない）。戦後の信頼：${trustText}。代償：${cost}。${thinLine ?? ''}`,
+        detail: `出る部隊：${units}（合わせて ${total}）。味方：${partners.length ? partners.join('・') : 'なし'}。始めの陣：${planPos(p, plan, info.sortie)}。この判断で確定する主目標：${prim}（決めた後の補充では変わらない）。戦後の信頼：${trustText}。代償：${cost}。${thinLine ?? ''}${scout ? `${thinLine ? ' ' : ''}${scout}` : ''}`,
         summary: `出る兵 ${total}・${plan === 'commit' ? (reserveOut ? '守備隊も出す' : '守備隊は兵が少なく出られない') : '守備隊は城に残す'}`,
     };
 }

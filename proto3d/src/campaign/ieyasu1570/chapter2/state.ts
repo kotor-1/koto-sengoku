@@ -166,6 +166,12 @@ export interface Ieyasu2State {
     explore: ExplorePose | null;
     playTimeSec: number;
     savedAt: string | null;
+    /**
+     * 物見の記録（町の物見櫓で調べた印の id の並び。省ける。設計：docs/story-rpg-design.md §5.2）。
+     * 合戦の前（探索・支度・出陣前）だけ持つ（第二章の任務の戦場の印。合戦の結果を反映すると消える）。無い・空なら記録なし。
+     * 兵・信頼・確定した条件・補充・合戦の計算には使わない。
+     */
+    scout?: string[];
 }
 
 // ================= 写し =================
@@ -241,6 +247,8 @@ export function cloneIeyasu2State(s: Ieyasu2State): Ieyasu2State {
         explore: s.explore ? { ...s.explore } : null,
         playTimeSec: s.playTimeSec,
         savedAt: s.savedAt,
+        // 物見の記録は、あるときだけ写す（無い状態に空の欄を足さない）
+        ...(s.scout && s.scout.length ? { scout: [...s.scout] } : {}),
     };
 }
 

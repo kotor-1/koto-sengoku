@@ -5,6 +5,9 @@
  *   版 2：信頼（trust）に家臣の酒井忠次・石川数正・榊原康政を足した（docs/battlefields-design.md §1）。キーは同じ。
  *   版 3：合戦の副目標の達成（sideObjectives）を、勝敗（battle）・約束（pledge）とは別の欄に足した（docs/battlefields-design.md §4）。
  *   版 1・2 も読む（版 1 は足りない信頼を初期値で補う。副目標は「記録なし」＝ null。ほかの値はそのまま）。
+ *   物見の記録（scout。docs/story-rpg-design.md §5.2）は版 3・版 4 の省ける欄：記録が無ければ書かない（今までと同じ文字列）。
+ *   あれば最後の欄として書く（旧版 Version 17・18 の読み込みは知らない欄を見ないので読める。旧版で保存し直すと記録は消える）。
+ *   読むときは、その段階・任務で有り得る印の id だけ受け付ける（違えば壊れた保存として扱い、消さない）。
  *   書くときは版 3。古い版のデータを勝手に書き換えない（利用者が保存したときだけ、その時の版で書く）。
  * - 架空の第一章のキー 'koto-sengoku/3d-chapter1' と、2D 版のキー 'koto-sengoku/save' には、読みも書きも消しもしない。
  * - 書き込んだ後に読み戻して一致を確かめ、確かめられたときだけ ok: true（失敗は理由つき。成功したように見せない）。
@@ -75,6 +78,7 @@ import {
     type RecoveryState,
 } from './chapter2/state';
 import { IEYASU2_PHASE_LABELS } from './chapter2/story';
+import { scoutMarksAllowed } from './story/scout';
 
 export const IEYASU_SAVE_KEY = 'koto-sengoku/3d-ieyasu1570';
 export const IEYASU_SAVE_ARCHIVE_KEY = 'koto-sengoku/3d-ieyasu1570/previous';
@@ -105,6 +109,8 @@ export interface IeyasuSaveData {
     sideObjectives: ObjectiveResult[] | null;
     ending: IeyasuEndingId | null;
     explore: ExplorePose | null;
+    /** 物見の記録（省ける。記録が無ければ欄ごと書かない＝今までと同じ文字列） */
+    scout?: string[];
 }
 
 /** その時点の保存として、この状態を保存してよいか */
@@ -147,7 +153,30 @@ export function toIeyasuSaveData(state: IeyasuState, point: SavePoint, now: Date
         sideObjectives: state.sideObjectives ? state.sideObjectives.map((r) => ({ ...r })) : null,
         ending: state.ending,
         explore: state.explore ? { ...state.explore } : null,
+        // 物見の記録は最後の欄として、あるときだけ（その段階で有り得る印だけ。無ければ今までと同じ文字列）
+        ...scoutField(state.scout, scoutMarksAllowed(1, state.phase, state.policy)),
     };
+}
+
+/** 保存に書く物見の記録の欄（有り得る印だけ・並びはそのまま。空なら欄を書かない） */
+function scoutField(scout: readonly string[] | undefined, allowed: readonly string[]): { scout?: string[] } {
+    const v = (scout ?? []).filter((m) => allowed.includes(m));
+    return v.length ? { scout: v } : {};
+}
+
+/**
+ * 保存の物見の記録を検査して写す。欄が無ければ []（記録なし）。配列でない・文字列でない・重なり・その段階と任務で有り得ない印があれば undefined（壊れた保存）。
+ */
+function parseScout(v: Record<string, unknown>, allowed: readonly string[]): string[] | undefined {
+    if (!('scout' in v)) return [];
+    const x = v.scout;
+    if (!Array.isArray(x) || x.length > allowed.length) return undefined;
+    const out: string[] = [];
+    for (const m of x as unknown[]) {
+        if (typeof m !== 'string' || !allowed.includes(m) || out.includes(m)) return undefined;
+        out.push(m);
+    }
+    return out;
 }
 
 function pickTalked(t: Partial<Record<IeyasuTalkFlag, boolean>>): Partial<Record<IeyasuTalkFlag, boolean>> {
@@ -295,6 +324,9 @@ export function parseIeyasuSaveData(json: string): IeyasuSaveData | null {
     if (inField ? battleId !== null || appliedBattleId !== null : battleId === null) return null;
     if (phase === 'battle' && appliedBattleId !== null) return null;
     if ((phase === 'aftermath' || phase === 'ending') && appliedBattleId !== battleId) return null;
+    // 物見の記録（版 3 の省ける欄。その段階で有り得る印だけ。戦後・結末は持たない）
+    const scout = parseScout(v, version >= 3 ? scoutMarksAllowed(1, phase, policy) : []);
+    if (scout === undefined) return null;
     const data: IeyasuSaveData = {
         version: IEYASU_SAVE_VERSION,
         scenario: IEYASU_SCENARIO_ID,
@@ -315,6 +347,7 @@ export function parseIeyasuSaveData(json: string): IeyasuSaveData | null {
         sideObjectives,
         ending,
         explore,
+        ...(scout.length ? { scout } : {}),
     };
     if (!canSaveIeyasuAt(stateOf(data), point)) return null;
     return data;
@@ -340,6 +373,7 @@ function stateOf(d: IeyasuSaveData): IeyasuState {
         explore: d.explore,
         playTimeSec: d.playTimeSec,
         savedAt: d.savedAt,
+        ...(d.scout && d.scout.length ? { scout: d.scout } : {}),
     });
 }
 
@@ -479,6 +513,8 @@ export interface Ieyasu2SaveData {
     result: Ieyasu2Result | null;
     ending: Ieyasu2EndingId | null;
     explore: ExplorePose | null;
+    /** 物見の記録（省ける。記録が無ければ欄ごと書かない） */
+    scout?: string[];
 }
 
 /** その時点の保存として、第二章のこの状態を保存してよいか */
@@ -527,6 +563,7 @@ export function toIeyasu2SaveData(state: Ieyasu2State, point: SavePoint, now: Da
         result: c.result,
         ending: c.ending,
         explore: c.explore,
+        ...scoutField(c.scout, scoutMarksAllowed(2, c.phase, c.policy)),
     };
 }
 
@@ -796,6 +833,9 @@ export function parseIeyasu2SaveData(json: string): Ieyasu2SaveData | null {
         if (!result.primary || result.primary.achieved !== (battle.result === 'victory')) return null;
     }
     if ((phase === 'aftermath' || phase === 'ending') && appliedBattleId !== battleId) return null;
+    // 物見の記録（省ける欄。第二章の任務の戦場の印で、その段階で有り得る物だけ）
+    const scout = parseScout(v, scoutMarksAllowed(2, phase, policy));
+    if (scout === undefined) return null;
     const data: Ieyasu2SaveData = {
         version: IEYASU2_SAVE_VERSION,
         scenario: IEYASU_SCENARIO_ID,
@@ -819,6 +859,7 @@ export function parseIeyasu2SaveData(json: string): Ieyasu2SaveData | null {
         result,
         ending,
         explore,
+        ...(scout.length ? { scout } : {}),
     };
     if (!canSaveIeyasu2At(state2Of(data), point)) return null;
     return data;
@@ -847,6 +888,7 @@ function state2Of(d: Ieyasu2SaveData): Ieyasu2State {
         explore: d.explore,
         playTimeSec: d.playTimeSec,
         savedAt: d.savedAt,
+        ...(d.scout && d.scout.length ? { scout: d.scout } : {}),
     });
 }
 

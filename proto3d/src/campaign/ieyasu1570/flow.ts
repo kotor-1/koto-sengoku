@@ -46,6 +46,7 @@ import {
     type TokugawaUnitId,
 } from './state';
 import { ieyasuScriptFor } from './story';
+import { scoutBriefingLine } from './story/scout';
 
 export { FlowError };
 
@@ -256,7 +257,19 @@ export function ieyasuBattleSetup(state: IeyasuState): BattleSetup {
     if (!state.pledge) throw new FlowError('約束の返事をしていません');
     const setup = withIeyasuSideObjective(ieyasu1570Setup(state.policy, { troops: { ...state.troops }, pledgeAccepted: state.pledge.accepted }), state.policy);
     // 武将の行に出す信頼（武将の relationKey で引く。合戦の計算には使わない）
-    return { ...setup, relations: { ...state.trust } };
+    return { ...setup, briefing: withScoutLine(setup.briefing, scoutBriefingLine(state)), relations: { ...state.trust } };
+}
+
+/**
+ * 合戦の前の説明に、物見の記録の 1 行「物見で確かめた：…」を足す（記録が無ければそのまま。説明を写して返す）。
+ * 勝ち負けの条件の行（「勝利：」）の前に入れる。合戦の計算には使わない（説明の文だけ。部隊・目標・兵は変えない）。
+ */
+export function withScoutLine(briefing: readonly string[], line: string | null): string[] {
+    const out = [...briefing];
+    if (!line) return out;
+    const at = out.findIndex((l) => l.startsWith('勝利'));
+    out.splice(at >= 0 ? at : out.length, 0, line);
+    return out;
 }
 
 /** 合戦の設定に、方針の副目標と、その説明の 1 行を足す（設定は写して返す） */
@@ -348,6 +361,8 @@ export function applyIeyasuOutcome(state: IeyasuState, outcome: BattleOutcome): 
     const s = cloneIeyasuState(state);
     const p = s.policy!;
     s.battle = cloneIeyasuOutcome(o);
+    // 物見の記録はこの合戦の戦場の物（合戦が済んだら消す。戦後・結末の保存には書かない）
+    delete s.scout;
 
     // 兵（出た部隊だけ）
     const inBattle = new Set(ieyasuTroopKeysInBattle(p));

@@ -179,6 +179,12 @@ export interface IeyasuState {
     explore: ExplorePose | null;
     playTimeSec: number;
     savedAt: string | null;
+    /**
+     * 物見の記録（町の物見櫓で調べた印の id の並び。省ける。設計：docs/story-rpg-design.md §5.2）。
+     * 合戦の前（探索・支度・出陣前）だけ持つ（今の任務の戦場の印。合戦の結果を反映すると消える）。無い・空なら記録なし。
+     * 兵・信頼・目標・合戦の計算には使わない（軍議の選択肢・合戦の前の説明・情勢の地図に文を足すだけ）。
+     */
+    scout?: string[];
 }
 
 export function clampTrust(v: number): number {
@@ -237,6 +243,8 @@ export function cloneIeyasuState(s: IeyasuState): IeyasuState {
         explore: s.explore ? { ...s.explore } : null,
         playTimeSec: s.playTimeSec,
         savedAt: s.savedAt,
+        // 物見の記録は、あるときだけ写す（無い状態に空の欄を足さない）
+        ...(s.scout && s.scout.length ? { scout: [...s.scout] } : {}),
     };
 }
 

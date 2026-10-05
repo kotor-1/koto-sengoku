@@ -37,6 +37,7 @@ import {
     type TokugawaUnitId,
     type TrustId,
 } from './state';
+import { scoutCouncilLine } from './story/scout';
 
 // ---- 画面に常に出す注記 ----
 
@@ -281,6 +282,14 @@ const POLICY_CHOICES: ScenarioChoice[] = [
 const POLICY_CHOICE_OF: Readonly<Record<Policy, string>> = { oda: 'policy_oda', asai: 'policy_asai', home: 'policy_home' };
 export { POLICY_CHOICE_OF };
 
+/** 軍議の方針の選択肢（物見の記録があれば、説明の終わりに「物見：…」の 1 行を足す。無ければ今までと同じ物） */
+function policyChoices(state: IeyasuState): ScenarioChoice[] {
+    return POLICY_CHOICES.map((c) => {
+        const line = scoutCouncilLine(state, c.id);
+        return line ? { ...c, detail: `${c.detail ?? ''} ${line}`.trim() } : c;
+    });
+}
+
 /**
  * 方針を選んだ後の確かめの台詞。忠勝が方針をまとめ、酒井忠次（采配）と石川数正（後詰め・兵の備え）が意見を述べる（台詞は創作）。
  * 酒井の意見は、その方針の戦場で効く采配の目安（先に当たる相手・退かせ方）に合わせてある。
@@ -324,7 +333,7 @@ function councilScript(state: IeyasuState): ScenarioScript {
         };
     }
     if (talked(state, 'council')) {
-        return { id: 'council.again', talk: 'council', lines: [T('改めて、いずれの道を取られますか。')], choices: POLICY_CHOICES, defaultChoice: 0 };
+        return { id: 'council.again', talk: 'council', lines: [T('改めて、いずれの道を取られますか。')], choices: policyChoices(state), defaultChoice: 0 };
     }
     const lines: ScenarioLine[] = [
         narrate('城の広間に、主だった者が集まった。酒井忠次・石川数正の顔も見える。（ここからの話し合いと選択は、ゲーム用の創作）'),
@@ -341,7 +350,7 @@ function councilScript(state: IeyasuState): ScenarioScript {
         IK('兵の備えも、道によって変わりまする。お決めになる前に、申し上げましょう。'),
         T('いずれを選んでも、一度の戦で家が決まるわけではございませぬ。殿、いかがなさいます。'),
     );
-    return { id: 'council', talk: 'council', lines, choices: POLICY_CHOICES, defaultChoice: 0 };
+    return { id: 'council', talk: 'council', lines, choices: policyChoices(state), defaultChoice: 0 };
 }
 
 // ================= 出陣の支度 =================
