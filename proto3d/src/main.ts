@@ -20,6 +20,7 @@ import { SKY, makeHills, makeSky } from './scenery';
 import { activeMode, setAppContext } from './app/modes';
 import { createPost, type Post } from './post';
 import { bootChapter, type ExploreHost } from './ui/boot';
+import { buildTown, type TownView } from './town/view';
 
 /**
  * カメラ：南の斜め上から北を見下ろす「正面寄りの見下ろし」（向きは固定。回転しない）。
@@ -236,8 +237,11 @@ function releaseLook(): void {
     lookPtr.id = -1;
     lookZone.classList.remove('active');
 }
+/** 物見の間の見回し（探索の操作を止めていても、見回しの面のドラッグをここへ渡す。ExploreHost.setLookHandler） */
+let lookHandler: ((dx: number, dy: number) => void) | null = null;
 lookZone.addEventListener('pointerdown', (e) => {
-    if (!tps || lookPtr.id !== -1 || !controlEnabled) return;
+    if (lookPtr.id !== -1) return;
+    if (!lookHandler && (!tps || !controlEnabled)) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     e.preventDefault();
     lookPtr.id = e.pointerId;
@@ -248,7 +252,8 @@ lookZone.addEventListener('pointerdown', (e) => {
 });
 lookZone.addEventListener('pointermove', (e) => {
     if (e.pointerId !== lookPtr.id) return;
-    look(orbit, e.clientX - lookPtr.x, e.clientY - lookPtr.y, FOLLOW.sensitivity * (e.pointerType === 'touch' ? 1.1 : 1));
+    if (lookHandler) lookHandler(e.clientX - lookPtr.x, e.clientY - lookPtr.y);
+    else look(orbit, e.clientX - lookPtr.x, e.clientY - lookPtr.y, FOLLOW.sensitivity * (e.pointerType === 'touch' ? 1.1 : 1));
     lookPtr.x = e.clientX;
     lookPtr.y = e.clientY;
 });
@@ -482,6 +487,8 @@ function fadeOccluders(dt: number): void {
     }
 }
 const hero: HeroState = createHero(START.x, START.z, START.heading);
+/** 小さな城下町で足した物（読み込みの後に作る） */
+let town: TownView | null = null;
 /** 歩きの当たり判定（壁・家・木など）と、第一章の人物・高札の分（ExploreHost.setExtraColliders） */
 const WALK_RECTS = colliders();
 let walkRects: Rect[] = WALK_RECTS;
@@ -502,6 +509,10 @@ async function start(): Promise<void> {
         // 隠れたら半透明にするのは見下ろしのときだけ（肩越しではカメラが壁の手前に来るので、建物は薄くしない）
         if (!tps && SCENE_MODELS[i] !== 'ground_v2' && SCENE_MODELS[i] !== 'keep' && SCENE_MODELS[i] !== 'inner') addOccluder(g.scene);
     });
+    // 小さな城下町で足した物（町家の写し・木戸・物見櫓・荷置き場・詰所・軍議所。town/plan.ts）。素材は読み込み済みの物を複製するだけ
+    town = buildTown(new Map(placed.map((g, i) => [SCENE_MODELS[i]!, g.scene])), prepare, low);
+    scene.add(town.root);
+    if (!tps) for (const c of town.copies) addOccluder(c);
     // 木：配置（scene.json の trees）の幹の位置へ。松は 2 本（向きと大きさを変える）
     prepare(pine.scene);
     prepare(sakura.scene);
@@ -556,7 +567,30 @@ const BACK_TREES: [number, number, number, number][] = [
 // ---- 毎フレーム ----
 const camTarget = new THREE.Vector3(hero.x, 1.0, hero.z);
 const sunCenter = new THREE.Vector3();
+/**
+ * カメラの差し替え（演出の 3D の出来事・物見の眺め・軍議所。ExploreHost.setCameraShot）。ある間は主人公の背後のカメラの代わりに、
+ * 決めた位置から決めた点を見る。影の範囲も、その見ている所に合わせる。
+ */
+let cameraShot: CameraShot | null = null;
+const shotDir = new THREE.Vector3();
+function applyShot(sh: CameraShot): void {
+    camera.position.set(sh.px, sh.py, sh.pz);
+    camera.lookAt(sh.tx, sh.ty, sh.tz);
+    camera.updateMatrixWorld();
+    if (heroView) heroView.root.visible = !sh.hideHero;
+    // 影の範囲：カメラから見ている向きへ、見る点まで（12 m まで）進んだ所を中心に
+    shotDir.set(sh.tx - sh.px, 0, sh.tz - sh.pz);
+    const d = shotDir.length();
+    if (d > 1e-6) shotDir.multiplyScalar(Math.min(12, d) / d);
+    sunCenter.set(sh.px + shotDir.x, 0, sh.pz + shotDir.z);
+    sun.position.copy(sunCenter).add(SUN_OFFSET);
+    sun.target.position.copy(sunCenter);
+}
 function placeCamera(k: number, dt = 0): void {
+    if (cameraShot) {
+        applyShot(cameraShot);
+        return;
+    }
     if (tps) {
         const pose = placeFollow(orbit, hero.x, hero.z, dt);
         camera.position.copy(pose.position);
@@ -665,6 +699,8 @@ setAppContext({
     },
 });
 
+type CameraShot = Parameters<ExploreHost['setCameraShot']>[0] & object;
+
 /** 第一章（ui/boot.ts）が探索の場面を使うための口。探索の動き・カメラ・読み込みはここ（main.ts）のまま */
 const exploreHost: ExploreHost = {
     scene,
@@ -704,6 +740,23 @@ const exploreHost: ExploreHost = {
     onFrame(fn) {
         frameHooks.push(fn);
     },
+    orbit,
+    setCameraShot(shot) {
+        cameraShot = shot ? { ...shot } : null;
+        if (cameraShot) applyShot(cameraShot);
+        else placeCamera(1);
+    },
+    renderOnce() {
+        // 確認用の手動の描画（?render=manual）では描かない（__p3.renderNow のときだけ描く決まりのまま）
+        if (manualRender || activeMode()) return;
+        placeCamera(1);
+        for (const f of frameHooks) f(0);
+        renderNow();
+    },
+    setLookHandler(fn) {
+        lookHandler = fn;
+        if (!fn) releaseLook();
+    },
     viewSize: () => ({ w: view.clientWidth || window.innerWidth, h: view.clientHeight || window.innerHeight }),
 };
 
@@ -733,6 +786,8 @@ if (import.meta.env.DEV) {
             hero, stats, camera, renderer, scene, releaseAll,
             get anim() { return { walkBlend, runBlend, stride, strideTotal, walkTime: heroView?.walk.time ?? 0, running: running(), runMode }; },
             get heroModel() { return heroKey; },
+            /** 確認用：町に足した物（まとめた形の数・三角形の数・町家の写しの数） */
+            get town() { return town?.stats ?? null; },
             orbit, tps,
             get lookActive() { return lookPtr.id !== -1; },
             look(dx: number, dy: number) { look(orbit, dx, dy); },

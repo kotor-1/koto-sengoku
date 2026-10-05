@@ -1,0 +1,62 @@
+/* 町の 3D の部品の画面（物見の眺めの操作・印の札・演出の人の名札）。見た目は第一章の画面（ui/ui.css）にそろえる。 */
+
+/* ---- 物見の眺め：探索の操作部品と HUD を隠し、見回しの面を画面いっぱいに（g-modal と同じ扱い。ただし見回しは使う） ---- */
+body.g-lookout #run-btn,
+body.g-lookout #stick-zone,
+body.g-lookout #help,
+body.g-lookout #hero-btn,
+body.g-lookout #npc-labels,
+body.g-lookout .g-hud,
+body.g-lookout .g-menu-btn,
+body.g-lookout .g-sit-btn,
+body.g-lookout .g-talk { display: none !important; }
+body.g-lookout #look-zone { display: block !important; left: 0 !important; pointer-events: auto !important; }
+
+#lookout-marks { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 4; }
+.lookout-mark { font-size: 14px !important; padding: 4px 10px !important; }
+.lookout-mark::before { content: '◇ '; }
+.lookout-mark.key { color: var(--gold); border-color: rgba(200, 168, 106, 0.85); }
+.lookout-mark.key::before { content: '◆ '; }
+.lookout-mark.done::after { content: '（調べた）'; font-size: 11px; color: var(--ink-soft); }
+
+.g-lookout-bar {
+    position: absolute;
+    left: 50%;
+    bottom: calc(var(--safe-b, 0px) + 14px);
+    transform: translateX(-50%);
+    z-index: 6;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    max-width: min(92vw, 560px);
+    padding: 8px 12px 10px;
+    border-radius: 14px;
+    background: var(--panel, rgba(20, 17, 14, 0.82));
+    border: 1px solid var(--hairline, rgba(255, 246, 225, 0.18));
+    color: var(--ink, #f3ead7);
+    font-family: var(--font, sans-serif);
+    pointer-events: auto;
+}
+.g-lookout-hint { margin: 0; font-size: 14px; line-height: 1.4; text-align: center; letter-spacing: 0.03em; }
+.g-lookout-row { display: flex; gap: 12px; }
+.g-lookout-btn {
+    min-width: 108px;
+    min-height: 46px;
+    padding: 6px 16px;
+    border-radius: 12px;
+    border: 1px solid var(--hairline, rgba(255, 246, 225, 0.25));
+    background: rgba(48, 40, 30, 0.95);
+    color: inherit;
+    font: inherit;
+    font-size: 16px;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+.g-lookout-btn.examine.ready { border-color: var(--gold, #c8a86a); background: rgba(70, 54, 26, 0.95); color: var(--gold, #e0c78f); }
+.g-lookout-btn:disabled { opacity: 0.45; cursor: default; }
+
+/* ---- 演出の 3D の場面の人の名札（会話の相手の名札とは別。演出の 3D の場面の間だけ） ---- */
+#stage-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 4; display: none; }
+body.g-cine-stage #stage-labels { display: block; }

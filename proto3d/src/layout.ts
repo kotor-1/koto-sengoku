@@ -3,9 +3,11 @@
  *   y が上、道は南北（z）。南（+z）から北（-z）へ向かうと城門。x は東。
  * 数値のもとは Blender の制作と共通の約束（proto3d/blender/scene.json）。素材ごとの細かな当たり判定・カメラ除けの箱は、
  * 素材と一緒に書き出した proto3d/blender/**\/*.meta.json から読む（無ければ scene.json の大まかな形だけ）。
+ * 小さな城下町で足した物（町家の写し・小物）の当たり判定・カメラ除けは town/plan.ts から足す（歩き・カメラ・確かめが同じ一覧を見る）。
  */
 import scene from '../blender/scene.json';
 import groundHeight from '../blender/scene/ground_height.json';
+import { townBlockers, townColliders } from './town/plan';
 
 /** 城門：中心、通れる幅の半分、鏡柱の中心の x、塀の端 */
 export const GATE = { x: scene.gate.center[0], z: scene.gate.center[1], halfOpening: scene.gate.opening_half, pillarX: scene.gate.pillar_x, wallEnd: 18 } as const;
@@ -99,6 +101,8 @@ export function colliders(): Rect[] {
     for (const t of TREES) r.push(rectOf(t.x - 0.35, t.x + 0.35, t.z - 0.35, t.z + 0.35));
     // 素材ごとの細かな当たり判定（縁台・樽・垣など）
     r.push(...metaColliders);
+    // 小さな城下町で足した物（町家の写し・木戸と柵・物見櫓・荷置き場・詰所・軍議所。town/plan.ts）
+    r.push(...townColliders());
     return r;
 }
 
@@ -128,6 +132,8 @@ export function cameraBlockers(): Box[] {
     // 木の幹
     for (const t of TREES) box(rectOf(t.x - 0.4, t.x + 0.4, t.z - 0.4, t.z + 0.4), 0, 3);
     b.push(...metaBlockers);
+    // 小さな城下町で足した物（town/plan.ts）
+    b.push(...townBlockers());
     return b;
 }
 
