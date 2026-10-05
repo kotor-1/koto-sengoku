@@ -23,7 +23,6 @@ import {
     ch1ResultOf,
     ch2SitePlace,
     conflictRoutes,
-    envoyRoutes,
     field1Place,
     homePlace,
     marchRoute,
@@ -54,7 +53,8 @@ function scoutHighlight(s: IeyasuAnyState, choice: string): string[] {
     if (!line) return [];
     // 選択肢に関わる記録（scoutCouncilLine と同じ選び方）の場所
     const marks = scoutedMarks(s);
-    return marks.filter((d) => line.includes(d.short)).flatMap((d) => d.places.map((p) => p.id));
+    // 物見の場所の id は印の id と同じ（scoutEntries）
+    return marks.filter((d) => line.includes(d.short)).map((d) => d.id);
 }
 
 // ================================================================ 第一章
@@ -109,10 +109,11 @@ function ch1View(s: IeyasuState, opts: Opts): SituationView {
     const result = ch1ResultOf(s);
     const places: MapPlace[] = [homePlace(), ...partyPlaces(p), field1Place(result)];
     const routes: MapRoute[] = [...relationRoutes(p)];
-    if (!p) routes.push(...conflictRoutes(), ...envoyRoutes());
+    // 方針の前：近江の対立（背景）だけ。両家の使者の線は演出で見せる（情勢の地図には出さない：線が多いと場所の名前が読みにくい）
+    if (!p) routes.push(...conflictRoutes().slice(0, 1));
     // 進路：方針の前（軍議で見比べる）と支度は出陣の先、戦後は帰還
     if (s.phase === 'aftermath' || s.phase === 'ending') routes.push(returnRoute('field1'));
-    else routes.push(marchRoute('field1', p ? '出陣の先' : '戦の場（どの方針でも）'));
+    else routes.push(marchRoute('field1'));
     const sc = withScout(places, routes, s);
     const highlight: string[] = p ? ['field1'] : ['oda', 'asai'];
     const allies: string[] = [];
@@ -205,7 +206,7 @@ function ch2View(s: Ieyasu2State, opts: Opts): SituationView {
     const places: MapPlace[] = [homePlace(), ...partyPlaces(p), field1Place(c.battle.result), ch2SitePlace(p, r2)];
     const routes: MapRoute[] = [...relationRoutes(p)];
     if (s.phase === 'aftermath' || s.phase === 'ending') routes.push(returnRoute(site));
-    else routes.push(threatRoute(p), marchRoute(site, s.plan ? '出陣の先' : '任務の場所'));
+    else routes.push(threatRoute(p), marchRoute(site));
     const sc = withScout(places, routes, s);
     const allies: string[] = [];
     const enemies: string[] = [];

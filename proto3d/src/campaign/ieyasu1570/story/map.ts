@@ -8,6 +8,7 @@
  *   方針の後（第二章も同じ）は A 織田と協力・浅井と朝倉は敵対／B 浅井と協力・織田は敵対（史実から分かれた道）／
  *   C 両家と戦わない・浪人は敵対。
  * - 場所の名前は今ある文の言葉だけ（徳川の城下・三河・近江・国境・国境の原・第二章の任務の名前）。城・町の名前は出さない。
+ * - 線には名前を付けない（線の種類は地図の凡例で読む。名前を付けると狭い画面で場所の名前と重なる。中身は字幕・説明の文が言う）。
  */
 import type { BattleResultKind } from '../../../battle/types';
 import type { MapPlace, MapRoute, MapScene, MapSide } from '../../../story/types';
@@ -48,7 +49,7 @@ export function ch1ResultOf(s: IeyasuAnyState): BattleResultKind | null {
 
 /** 家・一団の場所（関係は rel から） */
 export function partyPlace(id: PartyId, rel: Record<PartyId, MapSide>): MapPlace {
-    if (id === 'ronin') return { id: 'border', name: '国境', ...MAP_POS.border, kind: 'region', side: rel.ronin, mark: PARTY_MARKS.ronin, note: '浪人の一団が村を荒らす' };
+    if (id === 'ronin') return { id: 'border', name: '国境', ...MAP_POS.border, kind: 'region', side: rel.ronin, mark: PARTY_MARKS.ronin, note: '浪人の一団' };
     const pos = MAP_POS[id];
     const note = id === 'asai' ? '近江' : undefined;
     return { id, name: PARTY_NAMES[id], ...pos, kind: 'site', side: rel[id], mark: PARTY_MARKS[id], ...(note ? { note } : {}) };
@@ -82,27 +83,27 @@ export function ch2SitePlace(policy: Policy, result: BattleResultKind | null = n
 export function relationRoutes(policy: Policy | null): MapRoute[] {
     switch (policy) {
         case null:
-            return [{ id: 'rel.oda', from: 'home', to: 'oda', kind: 'alliance', side: 'ally', label: 'これまで協力' }];
+            return [{ id: 'rel.oda', from: 'home', to: 'oda', kind: 'alliance', side: 'ally' }];
         case 'oda':
             return [
-                { id: 'rel.oda', from: 'home', to: 'oda', kind: 'alliance', side: 'ally', label: '協力' },
-                { id: 'rel.asai', from: 'home', to: 'asai', kind: 'hostile', side: 'enemy', label: '敵対' },
+                { id: 'rel.oda', from: 'home', to: 'oda', kind: 'alliance', side: 'ally' },
+                { id: 'rel.asai', from: 'home', to: 'asai', kind: 'hostile', side: 'enemy' },
                 { id: 'rel.asakura', from: 'home', to: 'asakura', kind: 'hostile', side: 'enemy' },
             ];
         case 'asai':
             return [
-                { id: 'rel.asai', from: 'home', to: 'asai', kind: 'alliance', side: 'ally', label: '協力（分かれた道）' },
-                { id: 'rel.oda', from: 'home', to: 'oda', kind: 'hostile', side: 'enemy', label: '敵対' },
+                { id: 'rel.asai', from: 'home', to: 'asai', kind: 'alliance', side: 'ally' },
+                { id: 'rel.oda', from: 'home', to: 'oda', kind: 'hostile', side: 'enemy' },
             ];
         case 'home':
-            return [{ id: 'rel.border', from: 'home', to: 'border', kind: 'hostile', side: 'enemy', label: '浪人を討つ' }];
+            return [{ id: 'rel.border', from: 'home', to: 'border', kind: 'hostile', side: 'enemy' }];
     }
 }
 
 /** 背景の対立（近江で織田と浅井・朝倉が敵味方に分かれた。徳川の関係とは別なので「敵対していない」の色） */
 export function conflictRoutes(): MapRoute[] {
     return [
-        { id: 'conflict.asai', from: 'oda', to: 'asai', kind: 'hostile', side: 'neutral', label: '近江で対立' },
+        { id: 'conflict.asai', from: 'oda', to: 'asai', kind: 'hostile', side: 'neutral' },
         { id: 'conflict.asakura', from: 'oda', to: 'asakura', kind: 'hostile', side: 'neutral' },
     ];
 }
@@ -110,19 +111,19 @@ export function conflictRoutes(): MapRoute[] {
 /** 両家の使者（第一章の始め） */
 export function envoyRoutes(): MapRoute[] {
     return [
-        { id: 'envoy.oda', from: 'oda', to: 'home', kind: 'envoy', side: 'ally', label: '使者' },
-        { id: 'envoy.asai', from: 'asai', to: 'home', kind: 'envoy', side: 'neutral', label: '使者（人目を避けて）' },
+        { id: 'envoy.oda', from: 'oda', to: 'home', kind: 'envoy', side: 'ally' },
+        { id: 'envoy.asai', from: 'asai', to: 'home', kind: 'envoy', side: 'neutral' },
     ];
 }
 
 /** 出陣の進路（城下から戦場へ） */
-export function marchRoute(to: GeoId, label = '出陣'): MapRoute {
-    return { id: `march.${to}`, from: 'home', to, kind: 'march', side: 'self', label };
+export function marchRoute(to: GeoId): MapRoute {
+    return { id: `march.${to}`, from: 'home', to, kind: 'march', side: 'self' };
 }
 
 /** 帰還の進路（戦場から城下へ） */
-export function returnRoute(from: GeoId, label = '帰還'): MapRoute {
-    return { id: `return.${from}`, from, to: 'home', kind: 'withdraw', side: 'self', label };
+export function returnRoute(from: GeoId): MapRoute {
+    return { id: `return.${from}`, from, to: 'home', kind: 'withdraw', side: 'self' };
 }
 
 /** 第二章の危機の脅かす向き（誰が来るか。向きは推定で、正確な位置ではない） */
@@ -130,11 +131,11 @@ export function threatRoute(policy: Policy): MapRoute {
     const site = CH2_SITE[policy];
     switch (policy) {
         case 'oda':
-            return { id: 'threat.oda', from: 'asai', to: site, kind: 'threat', side: 'enemy', label: '浅井・朝倉の追っ手' };
+            return { id: 'threat.oda', from: 'asai', to: site, kind: 'threat', side: 'enemy' };
         case 'asai':
-            return { id: 'threat.asai', from: 'oda', to: site, kind: 'threat', side: 'enemy', label: '織田方の囲み' };
+            return { id: 'threat.asai', from: 'oda', to: site, kind: 'threat', side: 'enemy' };
         case 'home':
-            return { id: 'threat.home', from: 'border', to: site, kind: 'threat', side: 'enemy', label: '浪人衆' };
+            return { id: 'threat.home', from: 'border', to: site, kind: 'threat', side: 'enemy' };
     }
 }
 

@@ -14,11 +14,11 @@
 import { BORDER_FIELD_DEF } from '../../../battle/fields/border_field';
 import type { BattlefieldDef } from '../../../battle/fields/types';
 import type { TerrainArea, TerrainKind, Zone } from '../../../battle/types';
-import type { MapPlace, MapRoute, ScoutEntry, ScoutPoint } from '../../../story/types';
+import type { MapPlace, ScoutEntry, ScoutPoint } from '../../../story/types';
 import { CH2_FIELDS, CH2_MAP_NAMES } from '../chapter2/battle';
 import { cloneIeyasu2State, isChapter2, type IeyasuAnyState } from '../chapter2/state';
 import { cloneIeyasuState, type Policy } from '../state';
-import { CH2_SITE, MAP_POS, mapHeading, wrapAngle, type GeoId } from './geo';
+import { CH2_SITE, MAP_POS, SCOUT_SLOTS, mapHeading, wrapAngle, type GeoId } from './geo';
 
 /** 物見の地点の id（城下の配役の物見櫓の相手と同じ id） */
 export const LOOKOUT_ID = 'lookout';
@@ -39,11 +39,6 @@ const MISSION_OF_POLICY: Readonly<Record<Policy, ScoutMission>> = { oda: 'rear',
 /** 任務の戦場の名前（地図・案内に出す） */
 export function scoutMissionName(m: ScoutMission): string {
     return m === 'border' ? '国境の原' : CH2_MAP_NAMES[m === 'rear' ? 'oda' : m === 'relief' ? 'asai' : 'home'];
-}
-
-/** 戦場のデータ */
-function fieldOf(m: ScoutMission): BattlefieldDef {
-    return m === 'border' ? BORDER_FIELD_DEF : CH2_FIELDS[m === 'rear' ? 'oda' : m === 'relief' ? 'asai' : 'home'];
 }
 
 /** 地図の上の戦場の場所 */
@@ -130,10 +125,8 @@ interface MarkDef {
     text: string;
     /** 短い文（軍議の選択肢・合戦の前の説明の「物見」の行） */
     short: string;
-    /** 地図に足す場所（戦場の座標。地図の上では任務の場所のまわりに小さく置く） */
-    places: { id: string; name: string; x: number; z: number }[];
-    /** 地図に足す線（この印の場所どうし） */
-    routes?: { id: string; from: string; to: string; label: string }[];
+    /** 地図に足す場所の短い名前（地図の上では任務の場所のまわりの決まった所に置く：geo.ts の SCOUT_SLOTS） */
+    mapName: string;
 }
 
 function borderMarks(): MarkDef[] {
@@ -152,25 +145,21 @@ function borderMarks(): MarkDef[] {
             label: '国境の原',
             text: `国境の原（架空の局地戦）：東西 ${f.width} m・南北 ${f.depth} m ほどの原。${road ? `${road.center ? '真ん中' : '原'}を南北に道が通る。` : ''}味方の退き口は${exitZ > 0 ? '南' : '北'}の端。`,
             short: road ? `${road.center ? '真ん中' : '原'}を南北に道` : `東西 ${f.width} m・南北 ${f.depth} m の原`,
-            places: [{ id: 'border.field', name: '南の退き口', x: f.exits.ally.x, z: exitZ }],
+            mapName: '退き口',
         },
         {
             id: 'border.hill',
             label: `${dirOf(f, hc.x, hc.z)}の丘`,
             text: `${dirOf(f, hc.x, hc.z)}に丘（差し渡し ${Math.round((hill.circle?.r ?? 0) * 2)} m・高さ ${hill.height ?? 0} m）。上に立つ側が有利で、下から当たると不利。`,
             short: `${dirOf(f, hc.x, hc.z)}に丘（高さ ${hill.height ?? 0} m）`,
-            places: [{ id: 'border.hill', name: '丘', x: hc.x, z: hc.z }],
-            routes: [],
+            mapName: '丘',
         },
         {
             id: 'border.flanks',
             label: `${dirOf(f, wc.x, 0)}の林・${dirOf(f, mc.x, 0)}の湿地`,
             text: `${dirOf(f, wc.x, 0)}の端は林（中は外から見通せない）。${dirOf(f, mc.x, 0)}の端は湿地（足がとても遅い）。`,
             short: `${dirOf(f, wc.x, 0)}に林・${dirOf(f, mc.x, 0)}に湿地`,
-            places: [
-                { id: 'border.flanks', name: '林', x: wc.x, z: wc.z },
-                { id: 'border.flanks.marsh', name: '湿地', x: mc.x, z: mc.z },
-            ],
+            mapName: '林と湿地',
         },
     ];
 }
@@ -185,7 +174,6 @@ function rearMarks(): MarkDef[] {
     const left = cliffs[0]!;
     const right = cliffs[cliffs.length - 1]!;
     const gap = right.x0 - left.x1;
-    const gapX = (right.x0 + left.x1) / 2;
     const cliffZ = (left.z0 + left.z1) / 2;
     const narrow = f.specialRules?.find((r) => r.type === 'narrow_frontage');
     const maxEngaged = narrow && narrow.type === 'narrow_frontage' ? narrow.maxEngaged : null;
@@ -203,7 +191,7 @@ function rearMarks(): MarkDef[] {
             label: CH2_MAP_NAMES.oda,
             text: `${CH2_MAP_NAMES.oda}：南北 ${f.depth} m の長い原。${road ? `${road.center ? '真ん中' : '原'}を南北に道が通る。` : ''}退き口は${exit.z > 0 ? '南' : '北'}の端。`,
             short: `南北に長い原・退き口は${exit.z > 0 ? '南' : '北'}の端`,
-            places: [{ id: 'rear.field', name: '南の退き口', x: exit.x, z: exit.z }],
+            mapName: '退き口',
         },
         {
             id: 'rear.neck',
@@ -212,14 +200,14 @@ function rearMarks(): MarkDef[] {
                 `原の${cliffZ > 0 ? '南' : '北'}を東西に崖が塞ぎ、通れるのは切れ目（幅 ${gap} m）一つ。` +
                 `${maxEngaged ? `切れ目では、同じ相手に当たれるのは ${maxEngaged} 隊まで。` : ''}${marshSouth ? '切れ目の南は、湿地に挟まれた道。' : ''}`,
             short: `崖の切れ目（幅 ${gap} m${maxEngaged ? `・${maxEngaged} 隊まで` : ''}）`,
-            places: [{ id: 'rear.neck', name: '崖の切れ目', x: gapX, z: cliffZ }],
+            mapName: '切れ目',
         },
         {
             id: 'rear.hill',
             label: '北寄りの小丘',
             text: `原の${hc.z < cliffZ ? '北寄り' : '南寄り'}に小さな丘（高さ ${hill.height ?? 0} m）。${woodsSides ? `${woodsSides}の端は林で、中は外から見通せない。` : ''}`,
             short: `${hc.z < cliffZ ? '北寄り' : '南寄り'}の小丘（高さ ${hill.height ?? 0} m）${woodsSides ? `・${woodsSides}の林` : ''}`,
-            places: [{ id: 'rear.hill', name: '小丘', x: hc.x, z: hc.z }],
+            mapName: '小丘',
         },
     ];
 }
@@ -250,21 +238,21 @@ function reliefMarks(): MarkDef[] {
             label: CH2_MAP_NAMES.asai,
             text: `${CH2_MAP_NAMES.asai}のある原：南北 ${f.depth} m。${wSide}は広い林${marsh ? `、${dirOf(f, centerOf(marsh).x, 0)}に湿地` : ''}。連れ帰る安全地点は${dirOf(f, safe.x, safe.z)}の陣の前。`,
             short: `${wSide}は広い林${marsh ? `・${dirOf(f, centerOf(marsh).x, 0)}に湿地` : ''}・安全地点は${dirOf(f, safe.x, safe.z)}`,
-            places: [{ id: 'relief.field', name: '安全地点', x: safe.x, z: safe.z }],
+            mapName: '安全地点',
         },
         {
             id: 'relief.hill',
             label: `${dirOf(f, hc.x, hc.z)}の丘`,
             text: `${dirOf(f, hc.x, hc.z)}に丘（高さ ${hill.height ?? 0} m）。囲まれた浅井勢は、この丘の上。${direct ? `安全地点から丘までの間に、林や湿地は無い。` : ''}`,
             short: `${dirOf(f, hc.x, hc.z)}の丘（高さ ${hill.height ?? 0} m）${direct ? '・南から丘まで林や湿地は無い' : ''}`,
-            places: [{ id: 'relief.hill', name: '浅井勢の丘', x: hc.x, z: hc.z }],
+            mapName: '丘の上',
         },
         {
             id: 'relief.west',
             label: `${wSide}の林の縁`,
             text: `${wSide}の林の東の縁は${edgeOpen ? '開けていて、南北に通れる' : '林が迫っている'}。${sc && small ? `縁の近くに小丘（高さ ${small.height ?? 0} m）。` : ''}`,
             short: `${wSide}の林の縁${edgeOpen ? 'は開けている' : ''}${small ? `・小丘（高さ ${small.height ?? 0} m）` : ''}`,
-            places: [{ id: 'relief.west', name: '林の縁の小丘', x: sc?.x ?? edgeX, z: sc?.z ?? 0 }],
+            mapName: '林の縁',
         },
     ];
 }
@@ -302,31 +290,27 @@ function villageMarks(): MarkDef[] {
         if (r.x0 >= er.x1 - 1 && r.x0 <= er.x1 + 1) return '屋敷の東の抜け道';
         return `${dirOf(f, c.x, c.z)}`;
     });
-    const fc = ofKind(f, 'fence')[0];
     return [
         {
             id: 'village.field',
             label: CH2_MAP_NAMES.home,
             text: `${CH2_MAP_NAMES.home}：${wallToWall ? '家並みが東西の端まで続き、村の外を回る道は無い。' : ''}北から南へ通りが ${fromNorth.length} 本。家は通れず、矢も通さない。`,
             short: `北から南へ通りが ${fromNorth.length} 本${wallToWall ? '・村の外を回る道は無い' : ''}`,
-            places: [{ id: 'village.field', name: '村の南の口', x: 0, z: f.depth / 2 - 40 }],
+            mapName: '村の通り',
         },
         {
             id: 'village.square',
             label: '庄屋の屋敷',
             text: `${midRoad ? '真ん中の通りは、庄屋の屋敷に突き当たる。' : ''}屋敷の両脇に細い抜け道（幅 ${gap} m）。屋敷の${key.z > er.z1 ? '南' : '北'}の広場の真ん中が屋敷前。`,
             short: `庄屋の屋敷・両脇の抜け道（幅 ${gap} m）`,
-            places: [{ id: 'village.square', name: '庄屋の屋敷前', x: key.x, z: key.z }],
+            mapName: '屋敷前',
         },
         {
             id: 'village.fence',
             label: `柵と${storeName}`,
             text: `柵が ${fences.length} か所（通れないが、矢は通る）：${fences.join('・')}。${storeAt ? `村の${dirOf(f, storeAt.x, 0)}の端に${storeName}。` : ''}`,
             short: `柵 ${fences.length} か所${storeAt ? `・${dirOf(f, storeAt.x, 0)}の端に${storeName}` : ''}`,
-            places: [
-                { id: 'village.fence', name: '柵', x: fc ? centerOf(fc).x : 0, z: fc ? centerOf(fc).z : 0 },
-                ...(storeAt ? [{ id: 'village.fence.store', name: storeName, x: storeAt.x, z: storeAt.z }] : []),
-            ],
+            mapName: `柵と${storeName}`,
         },
     ];
 }
@@ -379,24 +363,21 @@ export function scoutedMarks(s: IeyasuAnyState): MarkDef[] {
     return marksOf(scoutMissionOf(s)).filter((d) => have.has(d.id));
 }
 
-/** 地図の上の位置（任務の場所のまわりに小さく置く。戦場の座標を縮める） */
-function placeOnMap(m: ScoutMission, x: number, z: number): { x: number; y: number } {
-    const f = fieldOf(m);
+/** 地図の上の位置（任務の場所のまわりの決まった所。geo.ts の SCOUT_SLOTS。向きは模式） */
+function placeOnMap(m: ScoutMission, i: number): { x: number; y: number } {
     const c = MAP_POS[siteOf(m)];
-    const k = 16;
-    const clamp = (v: number) => Math.max(2, Math.min(98, Math.round(v * 10) / 10));
-    return { x: clamp(c.x + (x / f.width) * k), y: clamp(c.y + (z / f.depth) * k) };
+    const d = SCOUT_SLOTS[siteOf(m)][i] ?? { x: 0, y: 0 };
+    const clamp = (v: number) => Math.max(2, Math.min(98, v));
+    return { x: clamp(c.x + d.x), y: clamp(c.y + d.y) };
 }
 
-/** 情勢の画面の「物見で記録したこと」（地図に足す場所・線も） */
+/** 情勢の画面の「物見で記録したこと」（地図に足す場所も。場所は印ごとに 1 つ、短い名前で） */
 export function scoutEntries(s: IeyasuAnyState): ScoutEntry[] {
     const m = scoutMissionOf(s);
+    const order = SCOUT_MARK_IDS[m];
     return scoutedMarks(s).map((d) => {
-        const places: MapPlace[] = d.places.map((p) => ({ id: p.id, name: p.name, ...placeOnMap(m, p.x, p.z), kind: 'site', side: 'neutral', note: '物見' }));
-        const routes: MapRoute[] = (d.routes ?? []).map((r) => ({ id: r.id, from: r.from, to: r.to, kind: 'march', side: 'neutral', label: r.label }));
-        const e: ScoutEntry = { id: d.id, label: d.label, text: d.text, places };
-        if (routes.length) e.routes = routes;
-        return e;
+        const places: MapPlace[] = [{ id: d.id, name: d.mapName, ...placeOnMap(m, order.indexOf(d.id)), kind: 'site', side: 'neutral' }];
+        return { id: d.id, label: d.label, text: d.text, places };
     });
 }
 

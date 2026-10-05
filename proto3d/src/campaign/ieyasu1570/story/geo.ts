@@ -18,22 +18,54 @@ export type GeoId = 'home' | 'oda' | 'asai' | 'asakura' | 'border' | 'field1' | 
 
 /** 場所の位置（模式。向きの目安だけ） */
 export const MAP_POS: Readonly<Record<GeoId, { x: number; y: number }>> = {
-    // 徳川の城下（三河）：東寄り
-    home: { x: 76, y: 64 },
+    // 徳川の城下（三河）：東
+    home: { x: 88, y: 40 },
     // 織田家：城下の西
-    oda: { x: 56, y: 48 },
-    // 浅井家（近江。織田と浅井・朝倉が敵味方に分かれた所）：さらに西
-    asai: { x: 24, y: 34 },
+    oda: { x: 56, y: 16 },
+    // 浅井家（近江。織田と浅井・朝倉が敵味方に分かれた所）：西
+    asai: { x: 8, y: 42 },
     // 朝倉家：浅井の北（国の名前は出さない）
-    asakura: { x: 20, y: 13 },
-    // 国境（浪人の一団が村を荒らす）：城下の南西
-    border: { x: 62, y: 84 },
+    asakura: { x: 6, y: 6 },
+    // 国境（浪人の一団が村を荒らす）：城下の南
+    border: { x: 88, y: 84 },
     // 第一章の合戦の場所「国境の原」（架空の局地戦）
-    field1: { x: 49, y: 73 },
+    field1: { x: 44, y: 70 },
     // 第二章の任務の場所（創作。位置は模式）
-    site_oda: { x: 42, y: 37 },
-    site_asai: { x: 27, y: 23 },
-    site_home: { x: 85, y: 80 },
+    site_oda: { x: 26, y: 24 },
+    site_asai: { x: 20, y: 62 },
+    site_home: { x: 68, y: 86 },
+};
+
+/**
+ * 物見で記録した場所を、任務の場所のまわりに置く位置（任務の場所からのずれ。地図の点の単位）。
+ * 印の並び（戦場の方角・要所 1・要所 2）の順。地図の狭い画面で名前が重ならないように、場所ごとに空いている側へ置く（向きは模式）。
+ */
+export const SCOUT_SLOTS: Readonly<Record<GeoId, readonly { x: number; y: number }[]>> = {
+    home: [],
+    oda: [],
+    asai: [],
+    asakura: [],
+    border: [],
+    field1: [
+        { x: 12, y: 14 },
+        { x: 12, y: -14 },
+        { x: -16, y: 2 },
+    ],
+    site_oda: [
+        { x: 12, y: 22 },
+        { x: 18, y: -4 },
+        { x: -4, y: 32 },
+    ],
+    site_asai: [
+        { x: 6, y: 24 },
+        { x: 14, y: 8 },
+        { x: -12, y: 20 },
+    ],
+    site_home: [
+        { x: -12, y: 8 },
+        { x: -2, y: -14 },
+        { x: 12, y: -16 },
+    ],
 };
 
 /** 第二章の任務の場所の id（方針ごと） */

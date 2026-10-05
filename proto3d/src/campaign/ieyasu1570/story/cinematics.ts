@@ -251,7 +251,7 @@ function ch2Intro(s: Ieyasu2State): CineSpec {
     const r = c.battle.result;
     const site = CH2_SITE[p];
     const places = [homePlace(), ...partyPlaces(p), field1Place(r), ch2SitePlace(p)];
-    const routes = [...relationRoutes(p), threatRoute(p), marchRoute(site, '出陣の先')];
+    const routes = [...relationRoutes(p), threatRoute(p), marchRoute(site)];
     const heading = '元亀元年（1570年）・第一章の戦から数日後';
     const base = scene(places, routes, { heading });
     const pl = c.pledge.result as PledgeResult;
