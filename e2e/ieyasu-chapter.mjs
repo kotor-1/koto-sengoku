@@ -14,7 +14,7 @@
 // 使い方：自動再読み込みなしの開発サーバーを起動して
 //   (PORT=8153 nohup npx vite --config proto3d/blender/tools/vite.nohmr.mjs > /tmp/vite-8153.log 2>&1 &)
 //   BASE3D=http://localhost:8153 node e2e/ieyasu-chapter.mjs [出力先]   （ONLY=A などで絞る）
-import { launchBrowser, outDir } from './lib.mjs';
+import { launchBrowser, outDir, skipCinematic } from './lib.mjs';
 
 const OUT = outDir(process.argv[2] || 'e2e-out/ieyasu/chapter');
 const BASE = process.env.BASE3D || 'http://localhost:8153';
@@ -186,7 +186,9 @@ async function hitEl(page, phone, locator) {
   else await locator.click();
   await sleep(250);
 }
-async function toBriefing(page, prefix) {
+async function toBriefing(page, prefix, phone = false) {
+  // 出陣の演出（出陣前の保存の後・合戦の前）：スキップのボタンを本物の入力で押す
+  await skipCinematic(page, { tap: phone, what: '出陣' });
   await page.waitForFunction(() => window.__game.screen === 'battle', null, POLL);
   const sv = await saved(page);
   check(`${prefix} 出陣前の自動保存（段階 battle・約束の答えが入る）`, sv?.point === 'departure' && sv?.phase === 'battle' && sv?.pledge !== null, JSON.stringify({ point: sv?.point, phase: sv?.phase, pledge: sv?.pledge }));
@@ -203,6 +205,8 @@ async function finishBattle(page, phone, prefix) {
   check(`${prefix} 合戦の結果の画面（${r.result} / ${r.reason} / 約束 ${r.pledge?.result ?? '-'}）`, !!r.result, title);
   await shot(page, `${prefix}-result`);
   await hitEl(page, phone, page.locator('.b-primary', { hasText: '続ける' }));
+  // 帰還の演出（戦後の保存の後）：スキップのボタンを本物の入力で押す
+  await skipCinematic(page, { tap: phone, what: '帰還' });
   await page.waitForFunction(() => window.__game.screen === 'explore' && !document.body.classList.contains('mode-battle') && !document.getElementById('battle-ui'), null, POLL);
   return r;
 }
@@ -241,6 +245,8 @@ async function runA() {
     u.text.includes('1570年の情勢を背景にした歴史分岐シナリオ。会話・能力・分岐後の出来事はゲーム用の創作'));
   await sleep(500);
   await tap('.g-btn[data-id="new:ieyasu1570"]');
+  // 第一章の導入の演出（はじめからの道だけ）：スキップのボタンを本物の入力で押す
+  await skipCinematic(page, { tap: true, what: '第一章の導入' });
   await waitScreen(page, 'explore');
   let s = await st(page);
   check('はじめから（歴史分岐）→ 城下（家康編・目的は忠勝）', s.scenario === 'ieyasu1570' && s.phase === 'explore' && (await page.textContent('.g-hud')).includes('忠勝'), await page.textContent('.g-hud'));
@@ -380,7 +386,7 @@ async function runA() {
   await shot(page, 'A06-gate');
   await sleep(500);
   await tap('.g-choice[data-id="depart"]');
-  const b = await toBriefing(page, 'A07');
+  const b = await toBriefing(page, 'A07', true);
   check('合戦 A：味方に織田援軍、敵に浅井長政隊（敵の能力）・朝倉勢。徳川の家康本陣・忠勝隊', b.units.some((x) => x.id === 'a_oda' && x.side === 'ally') && b.units.some((x) => x.id === 'e_nagamasa' && x.side === 'enemy') && b.units.some((x) => x.clan === 'asakura' && x.side === 'enemy') && b.units.some((x) => x.id === 't_honjin' && x.side === 'ally'), b.units.map((x) => `${x.id}:${x.side}`).join(','));
   await shot(page, 'A07-briefing');
   await hitEl(page, true, page.locator('.b-primary', { hasText: '合戦を始める' }));
@@ -449,11 +455,12 @@ async function runB() {
   };
   await pressBtn('new:ieyasu1570');
   // 前の保存があれば上書きの確認
-  await page.waitForFunction(() => window.__game.screen === 'explore' || window.__game.ui?.kind === 'confirm', null, POLL);
+  await page.waitForFunction(() => ['explore', 'cinematic'].includes(window.__game.screen) || window.__game.ui?.kind === 'confirm', null, POLL);
   if ((await ui(page))?.kind === 'confirm') {
     check('はじめから：前の保存（歴史分岐）の上書きを確かめる', (await ui(page)).text.includes('ほかのシナリオの保存'));
     await pressBtn('new');
   }
+  await skipCinematic(page, { what: '第一章の導入' });
   await waitScreen(page, 'explore');
   let u = await talkTo(page, 'tadakatsu', kb);
   await pick('open_council');
@@ -514,11 +521,12 @@ async function runC() {
   };
   await sleep(450);
   await page.locator('.g-btn[data-id="new:ieyasu1570"]').click();
-  await page.waitForFunction(() => window.__game.screen === 'explore' || window.__game.ui?.kind === 'confirm', null, POLL);
+  await page.waitForFunction(() => ['explore', 'cinematic'].includes(window.__game.screen) || window.__game.ui?.kind === 'confirm', null, POLL);
   if ((await ui(page))?.kind === 'confirm') {
     await sleep(450);
     await page.locator('.g-btn[data-id="new"]').click();
   }
+  await skipCinematic(page, { what: '第一章の導入' });
   await waitScreen(page, 'explore');
   await talkTo(page, 'tadakatsu', mouse);
   await pick('open_council');

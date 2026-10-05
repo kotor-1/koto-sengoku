@@ -19,7 +19,7 @@
 import { createServer } from 'node:http';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
-import { launchBrowser, outDir } from './lib.mjs';
+import { launchBrowser, outDir, skipCinematic } from './lib.mjs';
 
 const OUT = outDir(process.argv[2] || 'e2e-out/ieyasu-ch2/prod');
 const DIST = resolve(process.env.DIST || 'dist-proto3d');
@@ -204,6 +204,8 @@ try {
   check('第一章の結末の画面：「第二章へ進む」と「タイトルへ」', J(ids) === '["next_chapter","title"]', J(ids));
   await shot('P02-ch1-ending');
   await pressBtn('next_chapter');
+  // 第二章への移行の演出（保存の後・結果確認の前）：スキップのボタンを本物のクリックで押す（層の属性だけで待つ）
+  await skipCinematic(page, { what: '第二章への移行', log: note });
   await waitLayer('record');
   const rec = await page.textContent('.g-layer[data-kind="record"]');
   const sv = await save();
@@ -249,6 +251,7 @@ try {
   check('城門：確定した主目標を見せる', seen.join(' ').includes('主目標（軍議で確定）'));
   await shot('P07-gate');
   await choose('depart');
+  await skipCinematic(page, { what: '出陣', log: note });
   await page.locator('.b-primary:not(.off)', { hasText: '合戦を始める' }).waitFor({ state: 'visible', timeout: 600000 });
   const dep = await save();
   check('出陣前の自動保存（版 4・departure・条件は同じ）', dep?.version === 4 && dep.point === 'departure' && J(dep.terms) === termsJ);
@@ -274,6 +277,7 @@ try {
     aft?.version === 4 && aft.point === 'aftermath' && aft.appliedBattleId === aft.battleId && J(aft.terms) === termsJ && !!aft.result, `${aft?.battle?.result}/${aft?.battle?.reason}・${aft?.battle?.elapsedSec?.toFixed(1)} 秒`);
   note(`合戦の結果：${aft?.battle?.result}（${aft?.battle?.reason}）・合戦の時間 ${aft?.battle?.elapsedSec?.toFixed(1)} 秒・副目標 ${(aft?.result?.secondary ?? []).map((o) => `${o.label}${o.achieved ? '○' : '×'}`).join('・')}`);
   await page.locator('.b-primary', { hasText: '続ける' }).click();
+  await skipCinematic(page, { what: '帰還', log: note });
   await page.waitForFunction(() => !document.body.classList.contains('mode-battle') && !document.getElementById('battle-ui') && document.querySelector('.g-hud') && !document.querySelector('.g-hud').hidden, null, W);
   await sleep(1500);
   await shot('P11-aftermath');

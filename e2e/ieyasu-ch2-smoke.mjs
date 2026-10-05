@@ -17,7 +17,7 @@
 //   (PORT=8171 setsid nohup npx vite --config proto3d/blender/tools/vite.nohmr.mjs > /tmp/vite-8171.log 2>&1 &)
 //   BASE3D=http://localhost:8171 node e2e/ieyasu-ch2-smoke.mjs [出力先]   （ONLY=DPF で絞る）
 import { readFileSync } from 'node:fs';
-import { launchBrowser, outDir } from './lib.mjs';
+import { launchBrowser, outDir, skipCinematic } from './lib.mjs';
 
 const OUT = outDir(process.argv[2] || 'e2e-out/ieyasu/ch2-smoke');
 const BASE = process.env.BASE3D || 'http://localhost:8171';
@@ -162,6 +162,8 @@ async function enterCh2(page, io, prefix, how) {
     await sleep(500);
     await page.keyboard.press('Enter');
   } else await io.btn('next_chapter');
+  // 第二章への移行の演出（保存の後・結果確認の前）：スキップのボタンを本物の入力で押す
+  await skipCinematic(page, { tap: how === 'tap', what: '第二章への移行', log: note });
   await waitUi(page, 'record');
   await sleep(300);
   const r = await ui(page);
@@ -231,6 +233,7 @@ if (ONLY.includes('D')) {
   u = await talk(page, io, 'gate');
   check('D 城門：判断・補充・出る部隊・支援・確定した主目標をまとめて見せ、出陣できる', u.seenId === 'ch2.muster.gate' && (u.choices ?? []).includes('depart') && u.seen.join(' ').includes('支援：織田の鉄砲隊') && u.seen.join(' ').includes('主目標（軍議で確定）'), u.seen.join(' / ').slice(0, 160));
   await io.pick('depart');
+  await skipCinematic(page, { what: '出陣', log: note });
   await page.waitForFunction(() => window.__game.screen === 'battle' && !!window.__battle?.state, null, POLL);
   const dep = await saved(page);
   check('D 出陣前の自動保存（版 4・支度から）', dep?.version === 4 && dep.point === 'departure', JSON.stringify({ v: dep?.version, point: dep?.point }));
@@ -260,6 +263,7 @@ if (ONLY.includes('D')) {
   check('D 結果の画面の時点で戦後の自動保存（版 4・反映済み）', aft?.version === 4 && aft.point === 'aftermath' && aft.appliedBattleId === aft.battleId && aft.result?.sortie?.includes('honjin'), JSON.stringify({ result: out.result, reason: out.reason, point: aft?.point }));
   await shot(page, 'D-ch2-result');
   await io.press('.b-primary:has-text("続ける")');
+  await skipCinematic(page, { what: '帰還', log: note });
   await page.waitForFunction(() => window.__game.screen === 'explore' && !document.body.classList.contains('mode-battle'), null, POLL);
   // 読み込み直す → つづきから
   await reloadToTitle(page);
@@ -328,6 +332,7 @@ if (ONLY.includes('P')) {
   u = await talk(page, io, 'gate');
   check('P 城門：確定した主目標（兵 3 割以上）を見せる', u.seen.join(' ').includes('主目標（軍議で確定）') && u.seen.join(' ').includes('兵 3 割以上'), u.seen.join(' / ').slice(0, 160));
   await io.pick('depart');
+  await skipCinematic(page, { tap: true, what: '出陣', log: note });
   await page.waitForFunction(() => window.__game.screen === 'battle' && !!window.__battle?.state, null, POLL);
   const bp = await page.evaluate(() => ({ minRatio: window.__battle.state.setup.objectives.primary.minRatio, label: window.__battle.state.setup.objectives.primary.label }));
   check('P 合戦の主目標：連れ帰る兵 3 割以上（待った後の兵で求め直さない）', bp.minRatio === 0.3 && bp.label.includes('兵 3 割以上'), JSON.stringify(bp));

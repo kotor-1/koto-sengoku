@@ -20,7 +20,7 @@
 // 使い方：自動再読み込みなしの開発サーバーを起動して
 //   (PORT=8154 nohup npx vite --config proto3d/blender/tools/vite.nohmr.mjs > /tmp/vite-8154.log 2>&1 &)
 //   BASE3D=http://localhost:8154 node e2e/ieyasu-routes.mjs [出力先]   （ONLY=1234FH などで絞る）
-import { launchBrowser, outDir } from './lib.mjs';
+import { launchBrowser, outDir, skipCinematic } from './lib.mjs';
 
 const OUT = outDir(process.argv[2] || 'e2e-out/ieyasu/routes');
 const BASE = process.env.BASE3D || 'http://localhost:8154';
@@ -219,11 +219,13 @@ async function phoneIO(ctx, page) {
 // ---------------------------------------------------------------- 章の流れ（タイトル → 軍議 → 支度）
 async function newIeyasu(page, io) {
   await io.btn('new:ieyasu1570');
-  await page.waitForFunction(() => window.__game.screen === 'explore' || window.__game.ui?.kind === 'confirm', null, POLL);
+  await page.waitForFunction(() => ['explore', 'cinematic'].includes(window.__game.screen) || window.__game.ui?.kind === 'confirm', null, POLL);
   if ((await ui(page))?.kind === 'confirm') {
     check('はじめから：前の保存（歴史分岐）の上書きを確かめる（ほかのシナリオの保存には触れない）', (await ui(page)).text.includes('ほかのシナリオの保存'));
     await io.btn('new');
   }
+  // 第一章の導入の演出（はじめからの道だけ）：スキップのボタンを本物の入力で押す
+  await skipCinematic(page, { tap: io.phone, what: '第一章の導入', log: note });
   await waitScreen(page, 'explore');
 }
 async function council(page, io, policy) {
@@ -256,6 +258,8 @@ async function depart(page, io, prefix) {
   const u = await walkToGate(page, io);
   check(`${prefix} 城門の出陣の確認に、方針と約束が出る`, u.seenId === 'muster.gate' && u.seen.join(' ').includes('約束') && u.choices.includes('depart'), u.seen.join(' / ').slice(0, 140));
   await io.pick('depart');
+  // 出陣の演出（出陣前の保存の後・合戦の前）：スキップのボタンを本物の入力で押す
+  await skipCinematic(page, { tap: io.phone, what: '出陣', log: note });
   await page.waitForFunction(() => window.__game.screen === 'battle', null, POLL);
   const sv = await saved(page);
   check(`${prefix} 出陣前の自動保存（段階 battle・約束の答え・合戦の id）`, sv?.point === 'departure' && sv.phase === 'battle' && sv.pledge !== null && !!sv.battleId && sv.appliedBattleId === null);
@@ -470,6 +474,8 @@ async function waitResultPanel(page) {
 }
 async function continueFromResult(page, io) {
   await io.press('.b-primary:has-text("続ける")');
+  // 帰還の演出（戦後の保存の後）：スキップのボタンを本物の入力で押す
+  await skipCinematic(page, { tap: io.phone, what: '帰還', log: note });
   await page.waitForFunction(() => window.__game.screen === 'explore' && !document.body.classList.contains('mode-battle') && !document.getElementById('battle-ui'), null, POLL);
 }
 /** 結果の画面が出た時点で、戦後の保存が済んでいる（決着の時点の保存） */

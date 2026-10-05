@@ -16,7 +16,7 @@
 import { createServer } from 'node:http';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
-import { launchBrowser, outDir } from './lib.mjs';
+import { launchBrowser, outDir, skipCinematic } from './lib.mjs';
 
 const OUT = outDir(process.argv[2] || 'e2e-out/ieyasu/prod');
 const DIST = resolve(process.env.DIST || 'dist-proto3d');
@@ -134,6 +134,8 @@ try {
   check('ページの題（タブ）にシナリオの名前・「仮シナリオ」を付けない（タイトルではシナリオが決まっていない）', (await page.title()) === '戦国探索記 3D', await page.title());
   await shot('I01-title');
   await pressBtn('new:ieyasu1570');
+  // 第一章の導入の演出（はじめからの道だけ）：スキップのボタンを本物のクリックで押す（層の属性だけで待つ）
+  await skipCinematic(page, { what: '第一章の導入' });
   await page.locator('.g-hud').waitFor({ state: 'visible' });
   check('歴史分岐のはじめから → 城下（目的：忠勝と話す）', (await page.textContent('.g-hud')).includes('忠勝') && (await page.textContent('.g-hud')).includes('歴史分岐'), await page.textContent('.g-hud'));
   check('ページの題：元亀元年・家康（仮シナリオとは出さない）', (await page.title()).includes('元亀元年・家康') && !(await page.title()).includes('仮シナリオ'), await page.title());
@@ -194,6 +196,7 @@ try {
   const gateText = await page.textContent('.g-layer[data-kind="script"]');
   await shot('I05-gate');
   await choose('depart');
+  await skipCinematic(page, { what: '出陣' });
   await page.locator('.b-primary:not(.off)', { hasText: '合戦を始める' }).waitFor({ state: 'visible', timeout: 600000 });
   const dep = await save();
   check('出陣前の自動保存（段階 battle・約束を引き受けた）→ 合戦の説明', dep?.point === 'departure' && dep?.phase === 'battle' && dep.pledge?.accepted === true, gateText.slice(0, 60));
@@ -242,6 +245,7 @@ try {
   const decided = await save();
   check('結果の画面の時点で戦後の自動保存（撤退・約束の結果）', decided?.point === 'aftermath' && decided.battle?.result === 'retreat' && decided.pledge?.result === 'broken' && decided.appliedBattleId === decided.battleId, JSON.stringify({ p: decided?.point, r: decided?.battle?.result, pl: decided?.pledge?.result }));
   await page.locator('.b-primary', { hasText: '続ける' }).click();
+  await skipCinematic(page, { what: '帰還' });
   await page.waitForFunction(() => !document.body.classList.contains('mode-battle') && !document.getElementById('battle-ui') && document.querySelector('.g-hud') && !document.querySelector('.g-hud').hidden, null, W);
   const aft = await save();
   const kept = aft?.pledge?.result === 'kept';
