@@ -405,6 +405,20 @@ export interface BattleSetup {
     endRules?: EndRules;
     /** 夜（第4群の夜襲の戦場だけ。省けば昼＝今までの視界のまま） */
     night?: NightRule;
+    /**
+     * 物語の注記（歴史分岐の第二章の合戦だけ。省けば今までの言葉のまま＝第一章・演習・架空の章の表示は変わらない）。
+     * battle/control.ts の scenarioTexts が使う：titleNote は合戦の前の説明の題の添え書き、tag は画面の上の札、notes は結果の画面の添え書き。
+     * noPledgeRow：結果の画面に約束の欄（「約束：引き受けていない」）を出さない（その章に戦前の約束が無い）
+     */
+    story?: BattleStoryNote;
+}
+
+/** 物語の注記（BattleSetup.story） */
+export interface BattleStoryNote {
+    titleNote: string;
+    tag?: string;
+    notes?: Partial<Record<BattleResultKind, string>>;
+    noPledgeRow?: boolean;
 }
 
 /** 合戦の結果の種類 */

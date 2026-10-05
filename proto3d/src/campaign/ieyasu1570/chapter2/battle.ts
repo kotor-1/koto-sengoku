@@ -12,10 +12,13 @@
  *
  * 数値（兵・士気・閾値・敵の勢い）は CH2_RULES と各任務の表の 1 か所。釣り合いの確かめ（tests/proto3d-ieyasu-ch2-battle.test.ts）で直す。
  */
-import type { BattleMap, BattleResultKind, BattleSetup, ObjectiveDef, UnitDef, Zone } from '../../../battle/types';
+import type { BattleMap, BattleResultKind, BattleSetup, BattleStoryNote, ObjectiveDef, UnitDef, Zone } from '../../../battle/types';
 import { IEYASU_UNIT_IDS } from '../../../battle/maps';
 import { RULES } from '../../../battle/sim';
 import { buildBattleSetup, fieldMap } from '../../../battle/fields/build';
+import { createFieldEnv, inZone, zoneCenter } from '../../../battle/fieldRules';
+import { isPassable, reachable } from '../../../battle/pathfind';
+import { ABILITY_DATA } from '../../../battle/abilities';
 import { REARGUARD } from '../../../battle/fields/rearguard';
 import { RELIEF } from '../../../battle/fields/relief';
 import { VILLAGE } from '../../../battle/fields/village';
@@ -314,7 +317,11 @@ function setupA(input: Ch2BattleInput, sortie: TokugawaUnitId[], support: Ch2Sup
         `副目標：${secondary.map((d) => d.label).join('・')}。`,
         '追い討ち：撤退の命令で退く部隊は、近くの敵に追われる。本多忠勝隊の「退路の守護」の範囲で退けば、追っ手は忠勝隊に阻まれる。',
     ];
-    return finishSetup(input.policy, units, { primary, secondary }, briefing);
+    const reinf: ReinfGroup[] = [
+        { id: 'ch2_oda_ambush', unitIds: ['e_asakura_amb'] },
+        { id: 'ch2_oda_late', unitIds: ['e_asai_late'] },
+    ];
+    return finishSetup(input.policy, units, { primary, secondary }, briefing, reinf);
 }
 
 // ---------------------------------------------------------------- B：孤立した浅井勢を救う（援軍救出の地形）
@@ -414,7 +421,7 @@ function setupB(input: Ch2BattleInput, sortie: TokugawaUnitId[], support: Ch2Sup
         `副目標：${secondary.map((d) => d.label).join('・')}。`,
         '追い討ち：撤退の命令で退く部隊は、近くの敵に追われる。本多忠勝隊の「退路の守護」の範囲で退けば、追っ手は忠勝隊に阻まれる。',
     ];
-    return finishSetup(input.policy, units, { primary, secondary }, briefing);
+    return finishSetup(input.policy, units, { primary, secondary }, briefing, [{ id: 'ch2_asai_late', unitIds: ['e_oda_late'] }]);
 }
 
 // ---------------------------------------------------------------- C：領内の村を守る（村落の地形）
@@ -487,12 +494,39 @@ function setupC(input: Ch2BattleInput, sortie: TokugawaUnitId[], support: Ch2Sup
         `副目標：${secondary.map((d) => d.label).join('・')}。`,
         '追い討ち：撤退の命令で退く部隊は、近くの敵に追われる。本多忠勝隊の「退路の守護」の範囲で退けば、追っ手は忠勝隊に阻まれる。',
     ];
-    return finishSetup(input.policy, units, { primary, secondary }, briefing, sec + 60);
+    const reinf: ReinfGroup[] = [
+        { id: 'ch2_home_wave1', unitIds: ['e_ronin_w1_yari', 'e_ronin_w1_yumi'] },
+        { id: 'ch2_home_wave2', unitIds: ['e_ronin_w2_yari', 'e_ronin_w2_kiba'] },
+        { id: 'ch2_home_wave3', unitIds: ['e_ronin_w3_yari', 'e_ronin_w3_yumi'] },
+    ];
+    return finishSetup(input.policy, units, { primary, secondary }, briefing, reinf, sec + 60);
 }
 
 // ---------------------------------------------------------------- 共通
 
-function finishSetup(policy: Policy, units: UnitDef[], objectives: { primary: ObjectiveDef; secondary: ObjectiveDef[] }, briefing: string[], timeLimitSec?: number): BattleSetup {
+/** 合戦の画面の言葉（BattleSetup.story）：題の添え書き・上の札・結果の添え書き。第二章には戦前の約束が無いので約束の欄を出さない */
+export const CH2_STORY_NOTE: Readonly<BattleStoryNote> = {
+    titleNote: '第一章の直後の、分岐した世界での出来事（創作）',
+    tag: '第二章（創作）',
+    notes: {
+        victory: '第二章の任務を果たした。一度の勝ち戦で情勢が決まるわけではない。',
+        defeat: '敗れはしたが、家康は生きている。兵をまとめ直して次に備える。一度の敗北で家が滅ぶことはない。',
+        retreat: '勝敗は決まらなかった。兵を失いすぎないうちに引いた。',
+    },
+    noPledgeRow: true,
+};
+
+/** 時刻で現れる敵の組（地図の「援軍の出る所」の名札と、着いた知らせのため。補充で待って時刻が変わっても付ける） */
+type ReinfGroup = { id: string; unitIds: string[] };
+
+function finishSetup(
+    policy: Policy,
+    units: UnitDef[],
+    objectives: { primary: ObjectiveDef; secondary: ObjectiveDef[] },
+    briefing: string[],
+    reinf: ReinfGroup[],
+    timeLimitSec?: number,
+): BattleSetup {
     const field = CH2_FIELDS[policy];
     const setup = buildBattleSetup(field, units, {
         objectives,
@@ -501,7 +535,14 @@ function finishSetup(policy: Policy, units: UnitDef[], objectives: { primary: Ob
         generalInitiative: false,
         ...(timeLimitSec ? { timeLimitSec } : {}),
     });
+    // 地図は演習の戦場の地図の写し（地形・退き口は同じ物。id と名前だけ物語の物。共有の地図は書き換えない）
     setup.map = storyMap(policy);
+    // 時刻で現れる敵の組は物語側で付ける（buildBattleSetup が演習の戦場の援軍の地点・時刻から作った物は使わない）
+    const ids = new Set(units.map((u) => u.id));
+    const groups = reinf.map((g) => ({ id: g.id, side: 'enemy' as const, unitIds: g.unitIds.filter((id) => ids.has(id)) })).filter((g) => g.unitIds.length > 0);
+    if (groups.length) setup.reinforcements = groups;
+    else delete setup.reinforcements;
+    setup.story = { ...CH2_STORY_NOTE, notes: { ...CH2_STORY_NOTE.notes } };
     // 終わり方の判定の順（戦場に決まりがあるときだけ）：説明を渡したので buildBattleSetup は足さない。ここで足す
     const line = setup.endRules ? endRuleBriefingLine(setup) : null;
     if (line) setup.briefing.push(line);
@@ -550,35 +591,111 @@ export function ch2BattleSetup(input: Ch2BattleInput): Ch2BattleInfo {
 }
 
 /**
- * 物語側の合戦の設定の検査（設計 §8）。空なら問題なし。
- * 部隊数の上限・id の重なり・本陣・目標の指す部隊の陣営・離脱で要る数 ≤ 出陣できる数・援軍の時刻。
+ * 物語側の合戦の設定の検査（設計 §8）。空なら問題なし。fields/build.ts の validateField・validatePreset と同じ考え方で、
+ * 物語が自分で決めた座標（枠を使わない）も確かめる：
+ * - 部隊：id の重なり・兵・士気・陣営ごとの数の上限（味方 8・敵 10。sim は数を止めないのでここで止める）・陣営ごとの本陣・
+ *   味方の最初の本陣が家康本陣（総大将。sim は陣営の最初の本陣を総大将にする）・置き場所が戦場の中で通れる所・そこから自分の陣営の退き口へ道がある・
+ *   敵の行き先（aiTarget）が通れる所でその陣営の退き口から行ける・能力が有る。
+ * - 時刻で現れる部隊：着く時刻が合戦の時間の中・時刻で現れる敵はどれも援軍の組（setup.reinforcements）に入っている・組の部隊が有ってその陣営。
+ * - 目標：指す部隊の陣営・離脱で要る数 ≤ 本陣のほかの味方の部隊の数・必ず離れる部隊が味方にいる・区域の中心が通れて味方の退き口から行ける・
+ *   離脱の出口に味方の退き口が入る・救出の合流区域と安全区域が離れている。
+ * - 地図：演習の戦場の地図そのもの（共有の物）ではない写しで、id が ieyasu2_ で始まる。
  */
 export function validateChapter2Setup(setup: BattleSetup): string[] {
     const out: string[] = [];
+    const map = setup.map;
+    const field = Object.values(CH2_FIELDS).find((f) => map.id === `ieyasu2_${f.id}`);
+    if (!map.id.startsWith('ieyasu2_')) out.push(`地図の id ${map.id} が ieyasu2_ で始まらない（演習の戦場の地図をそのまま使っている）`);
+    if (field && map === fieldMap(field)) out.push('地図が演習の戦場の地図そのもの（共有の物）になっている');
+    const env = createFieldEnv(map, { ...(setup.fieldRules ?? {}), pathfinding: true });
+    const nav = env.nav!;
+    const inside = (x: number, z: number) => Math.abs(x) <= map.width / 2 && Math.abs(z) <= map.depth / 2;
+    const ok = (x: number, z: number) => inside(x, z) && isPassable(nav, x, z);
+    const exitOf = (side: 'ally' | 'enemy') => map.exits[side];
+    const fromExit = (side: 'ally' | 'enemy', x: number, z: number) => {
+        const e = exitOf(side);
+        return ok(e.x, e.z) && reachable(nav, 'yari', e.x, e.z, x, z);
+    };
+    for (const side of ['ally', 'enemy'] as const) {
+        const e = exitOf(side);
+        if (!ok(e.x, e.z)) out.push(`${side} の退き口が通れる所にない`);
+    }
     const ids = new Set<string>();
     for (const u of setup.units) {
         if (ids.has(u.id)) out.push(`部隊の id が重なっている：${u.id}`);
         ids.add(u.id);
         if (!(u.strength >= 1)) out.push(`${u.id} の兵が 1 未満`);
+        if (!(u.morale > 0 && u.morale <= 100)) out.push(`${u.id} の士気が正しくない`);
         if (u.arriveAt !== undefined && !(u.arriveAt > 0 && u.arriveAt < setup.timeLimitSec)) out.push(`${u.id} の着く時刻 ${u.arriveAt} が合戦の時間の外`);
+        if (!ok(u.x, u.z)) out.push(`${u.id} の置き場所 (${u.x},${u.z}) が通れる所にない`);
+        else if (!fromExit(u.side, u.x, u.z)) out.push(`${u.id} の置き場所 (${u.x},${u.z}) へ ${u.side} の退き口から道がない`);
+        if (u.aiTarget) {
+            if (!ok(u.aiTarget.x, u.aiTarget.z)) out.push(`${u.id} の敵の考えの地点が通れる所にない`);
+            else if (!fromExit(u.side, u.aiTarget.x, u.aiTarget.z)) out.push(`${u.id} の敵の考えの地点へ ${u.side} の退き口から道がない`);
+        }
+        if (u.ability !== undefined && !(u.ability in ABILITY_DATA)) out.push(`${u.id} の能力 ${u.ability} がない`);
+        if (u.ability !== undefined && !u.leaderId && !u.generalId) out.push(`${u.id} は率いる人物がいないのに能力を持つ`);
     }
     for (const side of ['ally', 'enemy'] as const) {
         const n = setup.units.filter((u) => u.side === side).length;
         if (n > RULES.maxUnitsPerSide[side]) out.push(`${side} の部隊が ${n}（上限 ${RULES.maxUnitsPerSide[side]}）`);
         if (!setup.units.some((u) => u.side === side && u.kind === 'honjin')) out.push(`${side} の本陣がない`);
     }
+    // 総大将：味方の最初の本陣が家康本陣（その前に別の本陣を置かない）
+    const firstHq = setup.units.find((u) => u.side === 'ally' && u.kind === 'honjin');
+    if (firstHq && firstHq.id !== IEYASU_UNIT_IDS.honjin) out.push(`味方の最初の本陣が家康本陣でない（${firstHq.id}）`);
+    // 時刻で現れる部隊と援軍の組
+    const groups = setup.reinforcements ?? [];
+    const gids = new Set<string>();
+    for (const g of groups) {
+        if (gids.has(g.id)) out.push(`援軍の組の id が重なっている：${g.id}`);
+        gids.add(g.id);
+        if (g.unitIds.length === 0) out.push(`援軍の組 ${g.id} に部隊がない`);
+        for (const id of g.unitIds) {
+            const u = setup.units.find((x) => x.id === id);
+            if (!u) out.push(`援軍の組 ${g.id} の部隊 ${id} がいない`);
+            else if (u.side !== g.side) out.push(`援軍の組 ${g.id} の部隊 ${id} の陣営が違う`);
+            else if (u.arriveAt === undefined) out.push(`援軍の組 ${g.id} の部隊 ${id} に着く時刻がない`);
+        }
+    }
+    for (const u of setup.units) {
+        if (u.side === 'enemy' && u.arriveAt !== undefined && !groups.some((g) => g.unitIds.includes(u.id))) out.push(`時刻で現れる敵 ${u.id} が援軍の組に入っていない（地図に出る所の名札が無い）`);
+    }
     const ally = (id: string) => setup.units.find((u) => u.id === id && u.side === 'ally');
     const enemy = (id: string) => setup.units.find((u) => u.id === id && u.side === 'enemy');
     const defs = [setup.objectives?.primary, ...(setup.objectives?.secondary ?? [])].filter((d): d is ObjectiveDef => !!d);
+    const zoneOk = (d: ObjectiveDef, z: Zone, what: string) => {
+        const c = zoneCenter(z);
+        if (!ok(c.x, c.z)) out.push(`目標 ${d.id} の${what}の中心が通れる所にない`);
+        else if (!fromExit('ally', c.x, c.z)) out.push(`目標 ${d.id} の${what}へ味方の退き口から道がない`);
+    };
     for (const d of defs) {
         if ((d.type === 'rescue_escort' || d.type === 'preserve_unit' || d.type === 'rescue') && !ally(d.unitId)) out.push(`目標 ${d.id} の部隊 ${d.unitId} が味方にいない`);
         if (d.type === 'break_unit' && !enemy(d.unitId)) out.push(`目標 ${d.id} の部隊 ${d.unitId} が敵にいない`);
         if (d.type === 'withdraw' || d.type === 'escape') {
-            for (const r of d.required ?? []) if (!ally(r)) out.push(`目標 ${d.id} の必ず離れる部隊 ${r} が味方にいない`);
+            for (const r of d.required ?? []) {
+                const u = ally(r);
+                if (!u) out.push(`目標 ${d.id} の必ず離れる部隊 ${r} が味方にいない`);
+                else if (u.kind === 'honjin') out.push(`目標 ${d.id} の必ず離れる部隊 ${r} が本陣（総大将は別に数える）`);
+            }
             const others = setup.units.filter((u) => u.side === 'ally' && u.kind !== 'honjin').length;
             if (d.count > others) out.push(`目標 ${d.id} の要る数 ${d.count} が、本陣のほかの味方の部隊 ${others} より多い`);
             if ((d.required ?? []).length > d.count) out.push(`目標 ${d.id} の必ず離れる部隊の数が count より多い`);
+            const exits = d.type === 'escape' ? d.exits : [d.exit];
+            const e = exitOf('ally');
+            if (!exits.some((z) => inZone(z, e.x, e.z))) out.push(`目標 ${d.id}：味方の退き口が出口の区域の中にない（撤退の命令で退いた部隊を数えられない）`);
+            exits.forEach((z, i) => zoneOk(d, z, `出口 ${i + 1}`));
         }
+        if (d.type === 'rescue_escort') {
+            zoneOk(d, d.meetZone, '合流区域');
+            zoneOk(d, d.safeZone, '安全区域');
+            const mc = zoneCenter(d.meetZone);
+            const sc = zoneCenter(d.safeZone);
+            if (inZone(d.meetZone, sc.x, sc.z) || inZone(d.safeZone, mc.x, mc.z)) out.push(`目標 ${d.id} の合流区域と安全区域が重なっている`);
+            if (!(d.minRatio > 0 && d.minRatio <= 1)) out.push(`目標 ${d.id} の minRatio は 0 より大きく 1 以下`);
+        }
+        if (d.type === 'defend_time' && d.zone) zoneOk(d, d.zone, '守る区域');
+        if (d.type === 'defend_zones') d.zones.forEach((z, i) => zoneOk(d, z, `守る区域 ${i + 1}`));
     }
     return out;
 }

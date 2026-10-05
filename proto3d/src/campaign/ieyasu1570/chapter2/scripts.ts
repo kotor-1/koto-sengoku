@@ -17,7 +17,7 @@ import { useAbility } from '../../../battle/abilities';
 import type { BattleResultKind, BattleSetup, Order } from '../../../battle/types';
 import type { Script } from '../../../battle/scripts';
 import type { IeyasuCharacterId, IeyasuCharacterStatus, PledgeResult, Policy, TokugawaUnitId, TrustId } from '../state';
-import type { Ch2BattleInput, Ch2Plan } from './battle';
+import { ch2PlanAvailability, type Ch2BattleInput, type Ch2Plan } from './battle';
 
 // ================================================================ 台本の道具
 
@@ -309,9 +309,14 @@ export function stepScript(steps: Ch2Step[], setup?: BattleSetup): Ch2Script {
             if (!issueOrder(s, id, n)) log.refused.push(`${label}:${id}`);
             return;
         }
-        // 戦えない部隊（崩れた・離脱した）への命令は、画面では押せない（名札が無い）ので出さない
+        // 戦えない部隊（崩れた・離脱した）への命令は、画面では押せない（名札が無い）ので出さない。
+        // 攻撃の相手が崩れた・見えていないときも、画面では押せないので出さない（見てから押すまでの遅れの間に崩れたとき）
         const u = unitById(s, id);
         if (!u || !isActive(u) || !u.arrived) return;
+        if (typeof cmd === 'object' && 'type' in cmd && cmd.type === 'attack') {
+            const t = unitById(s, cmd.targetId);
+            if (!t || !isActive(t) || (t.side === 'enemy' && !t.seenBy.ally)) return;
+        }
         log.cmds.push(s.t);
         if (cmd === 'ability') {
             if (!useAbility(s, id).ok) log.refused.push(`${label}:${id}`);
@@ -362,8 +367,17 @@ export function ch2WaitRecovery(troops: Record<TokugawaUnitId, number>, ishikawa
     return out;
 }
 
-/** 段階の第二章の合戦の入力（方針・判断ごと） */
-export function ch2TierInput(policy: Policy, plan: Ch2Plan, tier: Ch2Tier): Ch2BattleInput {
+/**
+ * 段階でその判断を選べるか。軍議（補充の前）の兵で選べて、出陣（補充の後）の兵でも選べること（キャンペーンの流れと同じ。
+ * 第一章で忠勝隊・弓隊がほぼ全滅した minimum は、軍議の時に守備隊を残すと本陣だけになるので判断 2 を選べない）
+ */
+export function ch2TierAvailable(policy: Policy, plan: Ch2Plan, tier: Ch2Tier): boolean {
+    const council = ch2TierInput(policy, plan, tier === 'weakwait' ? 'weak' : tier, { noRecovery: true });
+    return ch2PlanAvailability(plan, council.troops).available && ch2PlanAvailability(plan, ch2TierInput(policy, plan, tier).troops).available;
+}
+
+/** 段階の第二章の合戦の入力（方針・判断ごと）。opts.noRecovery：補充の前の兵（軍議の時） */
+export function ch2TierInput(policy: Policy, plan: Ch2Plan, tier: Ch2Tier, opts: { noRecovery?: boolean } = {}): Ch2BattleInput {
     const home = policy === 'home';
     const alive = { ieyasu: 'alive', tadakatsu: 'alive', nobunaga: 'alive', nagamasa: 'alive' } as Record<IeyasuCharacterId, IeyasuCharacterStatus>;
     // 第一章の信頼の動き（ieyasu1570/flow.ts の TRUST_DELTA）：はじめ oda 30・asai 10・家臣 40
@@ -386,7 +400,8 @@ export function ch2TierInput(policy: Policy, plan: Ch2Plan, tier: Ch2Tier): Ch2B
     };
     const base = (troops: Record<TokugawaUnitId, number>, result: BattleResultKind, pledge: PledgeResult, characters: Record<IeyasuCharacterId, IeyasuCharacterStatus>, waited: boolean): Ch2BattleInput => {
         const trust = trustOf(result, pledge);
-        return { policy, plan, troops: waited ? ch2WaitRecovery(troops, trust.ishikawa) : troops, characters, trust, ch1Result: result, ch1Pledge: pledge, waited };
+        const recover = waited && !opts.noRecovery;
+        return { policy, plan, troops: recover ? ch2WaitRecovery(troops, trust.ishikawa) : troops, characters, trust, ch1Result: result, ch1Pledge: pledge, waited: recover };
     };
     const reserveCh1 = (n: number) => (home ? n : CH1_START.reserve);
     switch (tier) {
@@ -428,10 +443,216 @@ export interface Ch2Tactic {
     steps: (j: Ch2Jitter) => Ch2Step[];
 }
 
+// ---------------------------------------------------------------- A：織田勢の撤収を支える（退却戦の地形）
+
+/** 退き口の中の押す点（南の端の輪の中） */
+const A_EXIT: [number, number] = [0, 205];
+const A_ALL = ['t_honjin', 't_tadakatsu', 't_yumi', 't_reserve', 'a_oda_rear', 'a_oda_baggage', 'a_oda_teppo'];
+/** 織田勢の 2 隊が切れ目まで来た（または、もう戦場にいない） */
+const odaAtCut: Ch2Cond = all(any(near('a_oda_rear', 0, 110, 35), out('a_oda_rear')), any(near('a_oda_baggage', 0, 110, 35), out('a_oda_baggage')));
+
+const TACTICS_A: Ch2Tactic[] = [
+    {
+        id: 'rear_hold',
+        label: '殿は丘で受け、織田勢と本陣を移動で先に退き口へ（撤退の号令は使わない）。弓は追っ手の騎馬を射る',
+        kind: 'plan',
+        plans: ['commit'],
+        steps: (j) => [
+            [0, 'a_oda_rear', tap(...A_EXIT)],
+            [0, 'a_oda_baggage', tap(...A_EXIT)],
+            [j.t(5), 't_honjin', tap(...A_EXIT)],
+            [w(seen('e_asakura_kiba'), j), 't_yumi', atk('e_asakura_kiba')],
+        ],
+    },
+    {
+        id: 'rear_ambush',
+        label: '殿は丘で受け、織田勢と本陣を先に。伏兵が見えたら守備隊・鉄砲で当たり、後備えは切れ目の東寄りを抜ける',
+        kind: 'plan',
+        plans: ['commit'],
+        steps: (j) => [
+            [0, 'a_oda_baggage', tap(...A_EXIT)],
+            [0, 'a_oda_rear', tap(20, 100)],
+            [j.t(5), 't_honjin', tap(...A_EXIT)],
+            [w(seen('e_asakura_kiba'), j), 't_yumi', atk('e_asakura_kiba')],
+            [w(seen('e_asakura_amb'), j), 't_reserve', atk('e_asakura_amb')],
+            [w(seen('e_asakura_amb'), j), 'a_oda_teppo', atk('e_asakura_amb')],
+            [w(near('a_oda_rear', 20, 100, 15), j), 'a_oda_rear', tap(...A_EXIT)],
+        ],
+    },
+    {
+        id: 'meet',
+        label: '忠勝隊が前へ出て、織田勢を追う騎馬を受ける。弓が射る。織田勢は移動で退き口へ、切れ目まで来たら本陣も退く',
+        kind: 'plan',
+        steps: (j) => [
+            [0, 'a_oda_rear', tap(...A_EXIT)],
+            [0, 'a_oda_baggage', tap(...A_EXIT)],
+            [0, 't_tadakatsu', tap(20, 20)],
+            [w(seen('e_asakura_kiba'), j), 't_yumi', atk('e_asakura_kiba')],
+            [w(odaAtCut, j), 't_honjin', tap(...A_EXIT)],
+        ],
+    },
+    { id: 'nothing', label: '何もしない（命令を出さない）', kind: 'naive', steps: () => [] },
+    { id: 'all_retreat', label: '開始直後に全軍撤退を号令する', kind: 'naive', steps: () => [[0.1, '', 'allRetreat']] },
+    { id: 'all_move', label: '開始直後に全部隊を同時に退き口へ（移動）', kind: 'naive', steps: () => A_ALL.map((id) => [0, id, tap(...A_EXIT)] as Ch2Step) },
+];
+
+// ---------------------------------------------------------------- B：孤立した浅井勢を救う（援軍救出の地形）
+
+const B_SAFE: [number, number] = [0, 175];
+/** 合流した（画面の知らせ「…と合流した。安全地点（輪）まで連れ帰る」） */
+const met: Ch2Cond = (s) => s.objectives?.primary?.metT != null;
+
+const TACTICS_B: Ch2Tactic[] = [
+    {
+        id: 'south',
+        label:
+            '南から急いで救う：忠勝隊と守備隊で東の原の鉄砲を挟んで崩し、道案内・弓と南の囲みへ一度に当たる。浅井勢も丘から背を突く。' +
+            '崩したら丘で合流し、浅井勢を東の原から下げる',
+        kind: 'plan',
+        plans: ['commit'],
+        steps: (j) => [
+            [0, 't_tadakatsu', tap(70, 20)],
+            [0, 't_reserve', tap(95, 25)],
+            [0, 'a_asai_guide', tap(25, 40)],
+            [0, 't_yumi', tap(55, 50)],
+            [w(near('t_tadakatsu', 70, 20, 15), j), 't_tadakatsu', atk('e_oda_teppo')],
+            [w(near('t_reserve', 95, 25, 15), j), 't_reserve', atk('e_oda_teppo')],
+            [w(any(gone('e_oda_teppo'), at(100)), j), 't_reserve', tap(55, -45)],
+            [w(any(gone('e_oda_teppo'), at(100)), j), 'a_asai_guide', tap(30, -45)],
+            [w(any(gone('e_oda_teppo'), at(100)), j), 't_tadakatsu', tap(80, -45)],
+            [w(any(gone('e_oda_teppo'), at(100)), j), 't_yumi', tap(50, -10)],
+            [w(all(near('t_tadakatsu', 80, -45, 20), near('t_reserve', 55, -45, 20)), j), 't_tadakatsu', atk('e_oda_ring_s')],
+            [w(all(near('t_tadakatsu', 80, -45, 25), near('t_reserve', 55, -45, 20)), j), 't_reserve', atk('e_oda_ring_s')],
+            [w(all(near('t_tadakatsu', 80, -45, 25), near('a_asai_guide', 30, -45, 20)), j), 'a_asai_guide', atk('e_oda_ring_s')],
+            [w(near('t_yumi', 50, -10, 20), j), 't_yumi', atk('e_oda_ring_s')],
+            [w(all(engaged('e_oda_ring_s'), gone('e_oda_attack')), j), 'a_asai', atk('e_oda_ring_s')],
+            [w(gone('e_oda_ring_s'), j), 'a_asai', tap(60, -125)],
+            [w(gone('e_oda_ring_s'), j), 't_reserve', tap(50, -110)],
+            [w(gone('e_oda_ring_s'), j), 't_tadakatsu', tap(85, -85)],
+            ...route('a_asai', [[40, 60], B_SAFE], met, j),
+            [w(met, j), 't_reserve', tap(30, -40)],
+            [w(any(near('a_asai', 40, 60, 40), at(400)), j), 't_tadakatsu', tap(70, 60)],
+            [w(any(near('a_asai', 40, 60, 40), at(400)), j), 't_reserve', tap(20, 80)],
+        ],
+    },
+    {
+        id: 'west',
+        label:
+            '西の筋から救う：弓で西の囲みを射て誘い出し、林の縁に伏せた忠勝隊・道案内（守備隊）と、丘から下りた浅井勢で挟む。' +
+            '崩したら丘の西で合流し、浅井勢を西の筋から下げる',
+        kind: 'plan',
+        steps: (j) => [
+            ...route('t_yumi', [[-55, 20], [-55, -45]], 0, j),
+            ...route('t_tadakatsu', [[-85, -15]], 0, j),
+            ...route('a_asai_guide', [[-85, 10]], 0, j),
+            ...route('t_reserve', [[-85, 35]], 0, j),
+            [j.t(5), 't_honjin', tap(-50, 50)],
+            [w(near('t_yumi', -55, -45, 15), j), 't_yumi', atk('e_oda_ring_w')],
+            [w(away('e_oda_ring_w', -35, -150, 30), j), 't_yumi', tap(-50, 40)],
+            [w(all(away('e_oda_ring_w', -35, -150, 30), gone('e_oda_attack')), j), 'a_asai', atk('e_oda_ring_w')],
+            [w(any(engaged('e_oda_ring_w'), close('e_oda_ring_w', 't_tadakatsu', 45)), j), 't_tadakatsu', atk('e_oda_ring_w')],
+            [w(any(engaged('e_oda_ring_w'), close('e_oda_ring_w', 'a_asai_guide', 45)), j), 'a_asai_guide', atk('e_oda_ring_w')],
+            [w(any(engaged('e_oda_ring_w'), close('e_oda_ring_w', 't_reserve', 45)), j), 't_reserve', atk('e_oda_ring_w')],
+            [w(gone('e_oda_ring_w'), j), 't_tadakatsu', tap(15, -150)],
+            [w(gone('e_oda_ring_w'), j), 'a_asai', tap(30, -150)],
+            [w(gone('e_oda_ring_w'), j), 'a_asai_guide', tap(-50, -60)],
+            [w(gone('e_oda_ring_w'), j), 't_reserve', tap(-50, -20)],
+            ...route('a_asai', [[-45, -100], [-55, 60], B_SAFE], met, j),
+            [w(near('a_asai', -45, -100, 30), j), 't_tadakatsu', tap(-40, -80)],
+            [w(near('a_asai', -55, 60, 30), j), 't_tadakatsu', tap(-50, 50)],
+        ],
+    },
+    { id: 'nothing', label: '何もしない（命令を出さない）', kind: 'naive', steps: () => [] },
+    { id: 'all_retreat', label: '開始直後に全軍撤退を号令する', kind: 'naive', steps: () => [[0.1, '', 'allRetreat']] },
+    { id: 'target_only', label: '救出の対象（浅井勢）だけを、開始直後に南の安全地点へ動かす', kind: 'naive', steps: () => [[0, 'a_asai', tap(...B_SAFE)]] },
+    {
+        id: 'rush',
+        label: '全部隊で丘へ一斉に向かい、あとは 30 秒ごとに見えている一番近い敵へ当て直すだけ（合流したら浅井勢を下げる）',
+        kind: 'naive',
+        steps: (j) => [
+            ...['t_honjin', 't_tadakatsu', 't_yumi', 't_reserve', 'a_asai_guide'].flatMap((id) => [
+                [0, id, tap(60, -150)] as Ch2Step,
+                ...[30, 60, 90, 120, 150, 180, 210, 240, 270, 300].map((t) => [j.t(t), id, 'nearest'] as Ch2Step),
+            ]),
+            [w(met, j), 'a_asai', tap(...B_SAFE)],
+        ],
+    },
+];
+
+// ---------------------------------------------------------------- C：領内の村を守る（村落の地形）
+
+const C_WAVES = ['e_ronin_w1_yari', 'e_ronin_w2_yari', 'e_ronin_w3_yari'];
+/** 波の槍が広場（家並みの南。屋敷の抜け道・西の通りから出た所）へ入って見えている */
+const inPlaza =
+    (id: string): Ch2Cond =>
+    (s) => {
+        const u = unitById(s, id);
+        return !!u && u.status === 'ready' && u.arrived && u.seenBy.ally && u.z > 18 && Math.abs(u.x) < 70;
+    };
+/**
+ * 広場で囲む：部隊を広場に置き（開始から 1.5 秒おきに 1 部隊ずつ）、波の槍が広場へ入ったら fighters で一度に当たる（弓も射る）。
+ * 崩したら持ち場へ戻る。通りの口・抜け道では 1 部隊ずつしか当たれないので、広場へ入れてから囲む
+ */
+function trapSteps(pos: Record<string, [number, number]>, fighters: string[], j: Ch2Jitter): Ch2Step[] {
+    const out: Ch2Step[] = Object.entries(pos).map(([id, p], i) => [i * 1.5, id, tap(...p)] as Ch2Step);
+    for (const wv of C_WAVES) {
+        for (const id of fighters) out.push([w(inPlaza(wv), j), id, atk(wv)]);
+        out.push([w(inPlaza(wv), j), 't_yumi', atk(wv)]);
+        for (const id of [...fighters, 't_yumi']) if (pos[id]) out.push([w(all(gone(wv), at(30)), j), id, tap(...pos[id]!)]);
+    }
+    return out;
+}
+const C_PLAZA: Record<string, [number, number]> = { t_tadakatsu: [0, 40], t_reserve: [-34, 38], t_yumi: [-20, 60], t_honjin: [5, 62], a_village: [30, 60] };
+
+const TACTICS_C: Ch2Tactic[] = [
+    {
+        id: 'trap',
+        label: '広場に集め、波の槍が広場へ入ったら忠勝隊・守備隊・村の衆で一度に囲む（弓も射る）。崩したら持ち場へ戻る',
+        kind: 'plan',
+        steps: (j) => trapSteps(C_PLAZA, ['t_tadakatsu', 't_reserve', 'a_village'], j),
+    },
+    {
+        id: 'trap_hq',
+        label: '広場で囲む。家康本陣も囲みに加わる（兵が少ないとき。本陣が崩れると負けなので危うい）',
+        kind: 'plan',
+        steps: (j) => trapSteps(C_PLAZA, ['t_tadakatsu', 't_reserve', 'a_village', 't_honjin'], j),
+    },
+    {
+        id: 'trap_store',
+        label: '守備隊を西の通りの家並みの間へ回して米蔵へ向かう騎馬を受け、広場は忠勝隊・本陣・村の衆で囲む',
+        kind: 'plan',
+        plans: ['commit'],
+        steps: (j) => [
+            ...trapSteps({ t_tadakatsu: [0, 40], t_yumi: [-20, 60], t_honjin: [5, 62], a_village: [30, 60] }, ['t_tadakatsu', 'a_village', 't_honjin'], j),
+            [j.t(20), 't_reserve', tap(-72, -5)],
+        ],
+    },
+    { id: 'nothing', label: '何もしない（命令を出さない）', kind: 'naive', steps: () => [] },
+    { id: 'all_retreat', label: '開始直後に全軍撤退を号令する', kind: 'naive', steps: () => [[0.1, '', 'allRetreat']] },
+    {
+        id: 'rush',
+        label: '全部隊が 10 秒ごとに、見えている一番近い敵へ当て直すだけ（持ち場を考えない）',
+        kind: 'naive',
+        steps: (j) =>
+            ['t_honjin', 't_tadakatsu', 't_yumi', 't_reserve', 'a_village'].flatMap((id) =>
+                Array.from({ length: 35 }, (_, i) => [j.t(10 + i * 10), id, 'nearest'] as Ch2Step),
+            ),
+    },
+];
+
+/**
+ * 方針ごとの作戦の台本（数字は docs/chapter2-battles.md・tests/proto3d-ieyasu-ch2-battle-*.test.ts）。
+ * 勝てる作戦（16 通りの過半）：
+ * - A 判断 1（殿を引き受ける）：rear_hold（全段階）・rear_ambush（全段階）。判断 2（退き口の手前を固める）：meet（全段階）
+ * - B 判断 1（南から急いで救う）：south・west（全段階）。判断 2（西の筋から救う）：west（全段階）
+ * - C 判断 1（全軍で村を守る）：trap（strong・typical・weak）・trap_hq（weakwait・minimum を含む全段階）・trap_store（strong・typical・weak）。
+ *   判断 2（守備隊は城に残す）：trap（strong・typical・weak）・trap_hq（weakwait を含む）
+ * 目標を考えない手（naive）は比べる相手。勝ち負けを合格の条件にしない（考えた作戦より明らかに良くならないことだけを確かめる）。
+ */
 export const CH2_TACTICS: Readonly<Record<Policy, readonly Ch2Tactic[]>> = {
-    oda: [],
-    asai: [],
-    home: [],
+    oda: TACTICS_A,
+    asai: TACTICS_B,
+    home: TACTICS_C,
 };
 
 /** 方針・判断で使える作戦 */

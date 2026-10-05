@@ -585,8 +585,17 @@ function primaryLabel(s: BattleState): string {
  * シナリオの言葉。架空の第一章は今までと同じ（REASON_TEXT・鷲尾勢・若殿）。
  * 歴史分岐（味方の本陣が徳川家）は「1570年の情勢を背景にした架空の局地戦」とし、家康は落ち延びる（討死ではない）。
  * 合戦場の演習（敵の本陣が架空の「敵勢」）は「ゲーム用の演習（架空の相手）」とし、史実の合戦のようには書かない。
+ * 物語の注記（BattleSetup.story。歴史分岐の第二章）がある合戦は、題の添え書き・札・結果の添え書きをその注記にする。
  */
 export function scenarioTexts(s: BattleState): ScenarioTexts {
+    const base = baseScenarioTexts(s);
+    // 物語の注記（歴史分岐の第二章の合戦だけ。BattleSetup.story を持たない合戦は今までの言葉のまま）
+    const st = s.setup.story;
+    if (!st) return base;
+    return { ...base, titleNote: st.titleNote, tag: st.tag ?? base.tag, notes: { ...base.notes, ...(st.notes ?? {}) } };
+}
+
+function baseScenarioTexts(s: BattleState): ScenarioTexts {
     const practice = hqOf(s, 'enemy')?.clan === 'rival';
     const historical = !practice && hqOf(s, 'ally')?.clan === 'tokugawa';
     if (practice) {
@@ -1118,9 +1127,14 @@ export function pledgeLineModel(s: BattleState): PledgeLineModel | null {
     return { targetId: p.targetId, title, status, tone };
 }
 
-/** 結果の画面の約束の欄（勝敗とは別）。架空の第一章は null。歴史分岐で引き受けていなければ「引き受けていない」 */
+/**
+ * 結果の画面の約束の欄（勝敗とは別）。架空の第一章は null。歴史分岐で引き受けていなければ「引き受けていない」
+ * （約束の無い章＝BattleSetup.story.noPledgeRow の合戦は null）
+ */
 export function pledgeResultModel(s: BattleState, o: BattleOutcome): { result: 'kept' | 'broken' | 'declined'; title: string; text: string } | null {
     if (!scenarioTexts(s).historical) return null;
+    // 戦前の約束の無い章（歴史分岐の第二章。BattleSetup.story.noPledgeRow）は、約束の欄を出さない
+    if (!o.pledge && s.setup.story?.noPledgeRow) return null;
     if (!o.pledge) {
         return { result: 'declined', title: '約束：引き受けていない', text: '出陣前の約束は引き受けなかった。約束違反ではない（信頼は変わらない）。' };
     }
