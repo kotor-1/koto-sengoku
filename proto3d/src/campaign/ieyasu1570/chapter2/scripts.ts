@@ -642,11 +642,12 @@ const TACTICS_C: Ch2Tactic[] = [
 
 /**
  * 方針ごとの作戦の台本（数字は docs/chapter2-battles.md・tests/proto3d-ieyasu-ch2-battle-*.test.ts）。
- * 勝てる作戦（16 通りの過半）：
- * - A 判断 1（殿を引き受ける）：rear_hold（全段階）・rear_ambush（全段階）。判断 2（退き口の手前を固める）：meet（全段階）
- * - B 判断 1（南から急いで救う）：south・west（全段階）。判断 2（西の筋から救う）：west（全段階）
- * - C 判断 1（全軍で村を守る）：trap（strong・typical・weak）・trap_hq（weakwait・minimum を含む全段階）・trap_store（strong・typical・weak）。
- *   判断 2（守備隊は城に残す）：trap（strong・typical・weak）・trap_hq（weakwait を含む）
+ * 勝てる作戦（16 通りの過半。段階は strong・typical・weak・weakwait・minimum。判断 2 は minimum では選べない）：
+ * - A 判断 1（殿を引き受ける）：rear_hold・rear_ambush（全段階 16/16）・meet（全段階。minimum は 9/16）。
+ *   判断 2（退き口の手前を固める）：meet（全段階 16/16）
+ * - B 判断 1（南から急いで救う）：south（13〜16/16）・west（15〜16/16）。判断 2（西の筋から救う）：west（全段階 16/16）
+ * - C 判断 1（全軍で村を守る）：trap（strong・typical・weak）・trap_hq（全段階。minimum 12/16）・trap_store（strong・typical・weak。米蔵を守る）。
+ *   判断 2（守備隊は城に残す）：trap（全段階。weakwait 13/16）・trap_hq（strong・typical・weakwait）
  * 目標を考えない手（naive）は比べる相手。勝ち負けを合格の条件にしない（考えた作戦より明らかに良くならないことだけを確かめる）。
  */
 export const CH2_TACTICS: Readonly<Record<Policy, readonly Ch2Tactic[]>> = {

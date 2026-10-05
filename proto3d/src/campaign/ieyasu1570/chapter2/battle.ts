@@ -186,6 +186,13 @@ function storyMap(policy: Policy): BattleMap {
 
 const FIRST_LINE = '第一章の直後の、分岐した世界での出来事（ゲーム用の創作）。特定の史実の合戦の再現ではない。戦場・兵数・配置は創作。';
 
+/** 秒を「1 分 50 秒」「20 秒」の形に */
+function fmtSec(sec: number): string {
+    const m = Math.floor(sec / 60);
+    const r = Math.round(sec % 60);
+    return m > 0 ? `${m} 分${r ? ` ${r} 秒` : ''}` : `${r} 秒`;
+}
+
 /** 敵の勢いの文 */
 function enemyMoodLine(r: BattleResultKind): string {
     return r === 'victory' ? '第一章で勝ったため、敵の勢いは鈍っている（敵の兵 ×0.85）。' : r === 'defeat' ? '第一章で敗れたため、敵は勢いづいている（敵の兵 ×1.1）。' : '第一章は決着がつかなかった（敵の兵はそのまま）。';
@@ -308,6 +315,11 @@ function setupA(input: Ch2BattleInput, sortie: TokugawaUnitId[], support: Ch2Sup
     const briefing = [
         FIRST_LINE + '地形は「退却戦」の演習の地形を使う。',
         '方針：織田との協力を続けた。織田勢が北の陣から兵を引く。徳川は撤収を支え、織田勢の後備え・小荷駄を南の退き口まで退かせる。追ってくるのは浅井・朝倉の勢（長政は出ない）。',
+        `追っ手：朝倉の騎馬が北から間を置かずに来る。${
+            input.waited
+                ? `${fmtSec(70 - CH2_RULES.waitDelaySec)}ほどで東の林から浅井の後詰めの騎馬が、45 秒ほどで切れ目の北の口の西の林から朝倉の伏兵の騎馬が出る`
+                : '45 秒ほどで切れ目の北の口の西の林から朝倉の伏兵の騎馬が、70 秒ほどで東の林から浅井の後詰めの騎馬が出る'
+        }（地図の「援軍の出る所」）。撤退の命令で退く隊は騎馬に追われる。`,
         input.plan === 'commit'
             ? '判断：殿を引き受けた。徳川は北の丘の前で殿を務め、織田勢は先に切れ目へ向かう。岡崎の守備隊も出ている。'
             : '判断：退き口の手前を固めた。徳川は切れ目の北の口を固め、織田勢は北の原から自分で退いてくる。岡崎の守備隊は城に残した。',
@@ -417,7 +429,7 @@ function setupB(input: Ch2BattleInput, sortie: TokugawaUnitId[], support: Ch2Sup
         `合流：${target.name}とほかの味方が、丘の上の合流の輪に一緒に 5 秒いると合流する。合流の前に安全地点へ入っても数えない（触れただけ・能力だけでは果たさない）。`,
         `勝利：合流した${target.name}が、崩れずに兵 ${Math.round(minRatio * 10)} 割以上で南の安全地点の輪に入る。`,
         `敗北：${target.name}が崩れる・撤退する・兵が ${Math.round(minRatio * 10)} 割を切る、または家康本陣が崩れる（家康は落ち延びる）。`,
-        `${Math.round((240 - (input.waited ? CH2_RULES.waitDelaySec : 0)) / 60 * 10) / 10} 分ほどで、北東から織田方の援軍が丘へ攻めかかる。`,
+        `${fmtSec(240 - (input.waited ? CH2_RULES.waitDelaySec : 0))}ほどで、北東から織田方の援軍が丘へ攻めかかる（地図の「援軍の出る所」）。`,
         `副目標：${secondary.map((d) => d.label).join('・')}。`,
         '追い討ち：撤退の命令で退く部隊は、近くの敵に追われる。本多忠勝隊の「退路の守護」の範囲で退けば、追っ手は忠勝隊に阻まれる。',
     ];
@@ -488,7 +500,7 @@ function setupC(input: Ch2BattleInput, sortie: TokugawaUnitId[], support: Ch2Sup
         `方針：自領の防衛を優先した。${ronin}領内の村へ押し入ろうとしている。織田・浅井のどちらとも戦わない。`,
         input.plan === 'commit' ? '判断：全軍で村を守る。岡崎の守備隊も出ている（城は空になる）。' : '判断：守備隊は城に残し、主力で村を守る。',
         ...adj,
-        '敵は北から 3 つの波で来る。槍は庄屋の屋敷前へ攻め進み、騎馬は横道の西の端の米蔵を荒らしに行く。家屋は通れず、矢も通さない。',
+        `敵は北から 3 つの波で来る（${[20, 110, 200].map((t) => (t - (input.waited ? CH2_RULES.waitDelaySec : 0) <= 1 ? 'すぐ' : fmtSec(t - (input.waited ? CH2_RULES.waitDelaySec : 0)))).join('・')}。地図の「援軍の出る所」）。槍は庄屋の屋敷前へ攻め進み、騎馬は横道の西の端の米蔵を荒らしに行く。家屋は通れず、矢も通さない。`,
         `勝利：庄屋の屋敷前（広場の真ん中の輪）を ${sec / 60} 分守る。敵だけが 15 秒続けて輪を占めると負け。`,
         '敗北：屋敷前を奪われる、または家康本陣が崩れる（家康は落ち延びる。一度の負けで家が滅ぶことはない）。',
         `副目標：${secondary.map((d) => d.label).join('・')}。`,
