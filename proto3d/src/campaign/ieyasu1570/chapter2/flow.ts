@@ -480,18 +480,33 @@ export function canSaveIeyasu2Manually(state: Ieyasu2State): boolean {
 
 /**
  * 確認用：第二章の合戦の設定から、指定した結果の BattleOutcome を作る（実際の合戦の計算の代わりにはならない）。
- * 勝利は「主目標を果たした」、敗北は「家康本陣が崩れた」、撤退は「撤退の命令」。主目標の行を入れ、副目標は secondary（省けば果たせなかった）。
+ * 勝利は「主目標を果たした」、敗北は「家康本陣が崩れた」（reason で「主目標を果たせなかった」objective_failed・
+ * 「諸隊が崩れた」ally_army_broken も選べる。どちらも家康本陣は無事。諸隊が崩れたときは本陣のほかの味方の部隊が敗走）、
+ * 撤退は「撤退の命令」。主目標の行を入れ、副目標は secondary（省けば果たせなかった）。
  */
 export function ieyasu2OutcomeFromSetup(
     setup: BattleSetup,
     result: BattleResultKind,
-    opts: { units?: Record<string, { end?: number; status?: UnitStatus }>; elapsedSec?: number; secondary?: boolean; abilitiesUsed?: Record<string, number> } = {},
+    opts: {
+        units?: Record<string, { end?: number; status?: UnitStatus }>;
+        elapsedSec?: number;
+        secondary?: boolean;
+        abilitiesUsed?: Record<string, number>;
+        /** 敗北の理由（省けば ally_hq_routed） */
+        reason?: Extract<BattleEndReason, 'ally_hq_routed' | 'objective_failed' | 'ally_army_broken'>;
+    } = {},
 ): BattleOutcome {
-    const reason: BattleEndReason = result === 'victory' ? 'objective_done' : result === 'defeat' ? 'ally_hq_routed' : 'ordered_retreat';
+    if (opts.reason && result !== 'defeat') throw new Error('終わった理由を選べるのは敗北だけです');
+    const reason: BattleEndReason = result === 'victory' ? 'objective_done' : result === 'defeat' ? (opts.reason ?? 'ally_hq_routed') : 'ordered_retreat';
+    let units = opts.units;
+    if (reason === 'ally_army_broken') {
+        units = { ...units };
+        for (const u of setup.units) if (u.side === 'ally' && u.kind !== 'honjin' && !units[u.id]) units[u.id] = { status: 'routed' };
+    }
     const base = ieyasuOutcomeFromSetup(setup, result, {
         reason,
         elapsedSec: opts.elapsedSec ?? 360,
-        ...(opts.units ? { units: opts.units } : {}),
+        ...(units ? { units } : {}),
         ...(opts.abilitiesUsed ? { abilitiesUsed: opts.abilitiesUsed } : {}),
     });
     const P = setup.objectives?.primary;

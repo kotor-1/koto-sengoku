@@ -100,7 +100,7 @@ export function ieyasu2ReasonLabel(policy: Policy, reason: BattleEndReason): str
         case 'objective_done':
             return '主目標を果たした';
         case 'objective_failed':
-            return '主目標を果たせなかった（家康は落ち延びた）';
+            return '主目標を果たせなかった';
         case 'enemy_hq_routed':
             return policy === 'oda' ? '浅井・朝倉の追撃の本隊が崩れた' : policy === 'asai' ? '織田方の本陣が崩れた' : '浪人衆の頭が崩れた';
         case 'enemy_army_broken':
@@ -294,7 +294,7 @@ export function ieyasu2Chapter1RecordView(s: Ieyasu2State): ScenarioEndingView {
         `第一章の結末「${IEYASU_ENDING_TITLES[c.ending]}」。この結果を引き継いで、第二章を始める。`,
         IEYASU2_NOTE,
     ];
-    return { id: `ch1_record_${c.policy}`, title: IEYASU2_RECORD_TITLE, body, record, footer: '方針・兵・信頼・人物・約束の結果は、第二章でも変わらずに残る（第一章の記録は書き換えない）。' };
+    return { id: `ch1_record_${c.policy}`, title: IEYASU2_RECORD_TITLE, body, record, footer: '方針・兵・信頼・人物・約束の結果は、第一章の記録としてそのまま残る（書き換えない）。第二章の兵・信頼・人物は第二章で動く（補充と合戦の結果で変わる）。' };
 }
 
 /** メニューの「状態」の第一章の行 */
@@ -377,7 +377,9 @@ function exploreScript(state: Ieyasu2State, id: Ieyasu2TalkId): ScenarioScript {
                     pl === 'kept'
                         ? T('先の戦では、守備隊を退かせる約束を果たしていただきました。あの者たちも、また働くと申しております。')
                         : pl === 'broken'
-                          ? T('先の戦で、守備隊を退かせきれなんだのは……拙者の頼みでもございました。こたびは、取り返しましょう。')
+                          ? ch1Unfought(c)
+                              ? T('先の戦では、守備隊は無事に退きましたが、敵と刃を交える前に兵を引きました。退路を守る約束を果たしたとは言えませぬ……拙者の頼みでもございました。こたびは、取り返しましょう。')
+                              : T('先の戦で、守備隊を退かせきれなんだのは……拙者の頼みでもございました。こたびは、取り返しましょう。')
                           : T('先の戦で拙者の頼みを引き受けられなかったのは、殿のお考え。責める者はおりませぬ。'),
                 );
             }
@@ -782,6 +784,43 @@ function secondaryText(rows: ObjectiveResult[]): string {
     return rows.length ? rows.map(objectiveText).join('・') : 'なし';
 }
 
+/** 敗北の分け方（合戦の終わった理由から）：本陣が崩れた（ally_hq_routed）／主目標を果たせなかった（objective_failed）／諸隊が崩れた（ally_army_broken） */
+type DefeatKind = 'hq' | 'objective' | 'army';
+function defeatKind(reason: BattleEndReason | undefined): DefeatKind {
+    return reason === 'objective_failed' ? 'objective' : reason === 'ally_army_broken' ? 'army' : 'hq';
+}
+/** 家康本陣が崩れたか（主目標の失敗と同時に崩れた場合の言い分け） */
+function hqBroken(o: { units: { id: string; status: string }[] }): boolean {
+    const u = o.units.find((x) => x.id === IEYASU_UNIT_IDS.honjin);
+    return !!u && (u.status === 'routed' || u.status === 'destroyed');
+}
+/** 主目標を果たせなかった理由（方針ごと。合戦の説明の「敗北」と同じ中身） */
+const OBJECTIVE_FAILED: Readonly<Record<Policy, string>> = {
+    oda: '織田勢の後備えか小荷駄が崩れたか、南の退き口でない所から退いた',
+    asai: '浅井勢が崩れたか、連れ帰る兵の数を保てなかった',
+    home: '庄屋の屋敷の前を奪われた',
+};
+
+/** 戦後の忠勝の最初の一言（敗北は終わった理由で分ける） */
+function afterResultLine(p: Policy, o: NonNullable<Ieyasu2State['battle']>): string {
+    if (o.result !== 'defeat') return AFTER_RESULT[p][o.result];
+    switch (defeatKind(o.reason)) {
+        case 'hq':
+            return AFTER_RESULT[p].defeat;
+        case 'army':
+            return '……諸隊が崩れ、戦える隊がなくなりました。されど殿はご無事。それが何よりです。';
+        case 'objective': {
+            const head =
+                p === 'oda'
+                    ? '……織田勢の撤収を支えきれませなんだ。後備えか小荷駄が崩れたか、南の退き口でない所から退いてしまいました。'
+                    : p === 'asai'
+                      ? '……浅井勢を連れ帰れませなんだ。浅井勢が崩れたか、連れ帰る兵の数を保てませなんだ。'
+                      : '……庄屋の屋敷の前を奪われました。村を守りきれませなんだ。';
+            return `${head}${hqBroken(o) ? '本陣も崩れましたが、殿はご無事。' : '殿の本陣は無事にございます。'}`;
+        }
+    }
+}
+
 const AFTER_RESULT: Readonly<Record<Policy, Readonly<Record<BattleResultKind, string>>>> = {
     oda: {
         victory: '織田勢の後備えと小荷駄は、南の退き口を抜けました。撤収は支えきれましたぞ。',
@@ -813,7 +852,7 @@ function aftermathScript(state: Ieyasu2State, id: Ieyasu2TalkId): ScenarioScript
             ];
             if (talked(state, 'tadakatsu')) return { id: 'ch2.aftermath.tadakatsu.again', talk: id, lines: [T('今日のことを、締めくくりましょうか。')], choices, defaultChoice: 1 };
             const c = state.chapter1;
-            const lines: ScenarioLine[] = [T(AFTER_RESULT[p][o.result])];
+            const lines: ScenarioLine[] = [T(afterResultLine(p, o))];
             lines.push(narrate(`（主目標：${objectiveText(r.primary)}。副目標：${secondaryText(r.secondary)}）`));
             // 第一章とのつながり
             const pl = c.pledge.result as PledgeResult;
@@ -847,7 +886,7 @@ function aftermathScript(state: Ieyasu2State, id: Ieyasu2TalkId): ScenarioScript
             return { id: `ch2.aftermath.ishikawa.${r.plan}`, talk: id, lines };
         }
         case 'envoy':
-            return aftermathEnvoy(state, o.result, r.plan);
+            return aftermathEnvoy(state, o.result, r.plan, defeatKind(o.reason));
         case 'notice': {
             const text: Record<BattleResultKind, string[]> = {
                 victory: [p === 'home' ? '一、領内の村を荒らす浪人の一団、退く。村の者は家へ戻るべし。' : '一、この度の戦、お味方の務めは果たされた。', '一、戦に出た者の家には、米を下される。'],
@@ -861,7 +900,7 @@ function aftermathScript(state: Ieyasu2State, id: Ieyasu2TalkId): ScenarioScript
     }
 }
 
-function aftermathEnvoy(state: Ieyasu2State, result: BattleResultKind, plan: Ch2Plan): ScenarioScript {
+function aftermathEnvoy(state: Ieyasu2State, result: BattleResultKind, plan: Ch2Plan, kind: DefeatKind): ScenarioScript {
     const p = state.policy;
     const lines: ScenarioLine[] = [];
     if (p === 'home') {
@@ -882,6 +921,10 @@ function aftermathEnvoy(state: Ieyasu2State, result: BattleResultKind, plan: Ch2
         );
     } else if (result === 'retreat') {
         lines.push(E(p, p === 'oda' ? '兵を退かれたか……。主には、ありのままを申し上げます。' : '……丘の者たちを、置いてゆかれたか。主には、ありのままを申し上げます。'));
+    } else if (kind === 'objective') {
+        lines.push(E(p, p === 'oda' ? '……織田勢の撤収は、支えきれなんだか。主には、ありのままを申し上げます。しばらくは、互いに立て直すほかありませぬ。' : '……丘の者たちを、連れ帰れなんだか。主には、ありのままを申し上げます。しばらくは、互いに立て直すほかありませぬ。'));
+    } else if (kind === 'army') {
+        lines.push(E(p, '徳川殿の諸隊も崩れたか。……こちらも苦しい。しばらくは、互いに立て直すほかありませぬ。'));
     } else {
         lines.push(E(p, '徳川殿も崩れたか。……こちらも苦しい。しばらくは、互いに立て直すほかありませぬ。'));
     }
@@ -908,6 +951,11 @@ export function ieyasu2PhaseIntro(state: Ieyasu2State): { title: string; text: s
                 retreat: { title: '城へ引いた夜', text: '兵をまとめて城へ戻った。皆の様子を見て、忠勝と話そう。' },
                 defeat: { title: '落ち延びた夜', text: '本陣は崩れたが、家康は城へ落ち延びた。皆の様子を見て、忠勝と話そう。' },
             };
+            if (r === 'defeat' && state.battle) {
+                const k = defeatKind(state.battle.reason);
+                if (k === 'army') t.defeat = { title: '落ち延びた夜', text: '諸隊が崩れ、家康は兵を引いて城へ戻った。皆の様子を見て、忠勝と話そう。' };
+                if (k === 'objective') t.defeat = { title: '務めを果たせなかった夜', text: `${OBJECTIVE_FAILED[p]}。兵を引いて城へ戻った。皆の様子を見て、忠勝と話そう。` };
+            }
             const prim = state.result?.primary;
             return prim ? { title: t[r].title, text: `${t[r].text}（主目標「${prim.label}」は${prim.achieved ? '果たした' : '果たせなかった'}）` } : t[r];
         }
@@ -960,13 +1008,49 @@ const ENDING_MAIN: Readonly<Record<Ieyasu2EndingId, readonly string[]>> = {
     ch2_home_defeat: ['本陣が崩れ、家康は城へ退いた。村は浪人衆に荒らされた。', '家康は生きている。城に籠もり、次の備えを急ぐ。一度の負けで徳川の家が終わるわけではない。'],
 };
 
+/** 敗北の区切りの最初の段落（本陣が崩れた以外。本陣が崩れた場合は ENDING_MAIN のまま） */
+const DEFEAT_ENDING_FIRST: Readonly<Record<Policy, Readonly<Record<Exclude<DefeatKind, 'hq'>, string>>>> = {
+    oda: {
+        objective: '織田勢の後備えか小荷駄が崩れたか、南の退き口でない所から退き、織田勢の撤収を支えきることはできなかった。家康は兵を引いた。',
+        army: '徳川の諸隊が崩れ、家康は兵を引いた。織田勢の撤収を支えきることはできなかった。',
+    },
+    asai: {
+        objective: '浅井勢が崩れたか、連れ帰る兵の数を保てず、浅井勢を救うことはできなかった。家康は兵を引いた。',
+        army: '徳川の諸隊が崩れ、家康は兵を引いた。浅井勢を救うことはできなかった。',
+    },
+    home: {
+        objective: '庄屋の屋敷の前を奪われ、家康は兵を引いて城へ退いた。村は浪人衆に荒らされた。',
+        army: '徳川の諸隊が崩れ、家康は城へ退いた。村は浪人衆に荒らされた。',
+    },
+};
+
 function endingBody(state: Ieyasu2State, id: Ieyasu2EndingId): string[] {
     const body = [...ENDING_MAIN[id]];
     const c = state.chapter1;
     const pl = c.pledge.result as PledgeResult;
+    // 敗北は終わった理由で最初の段落を分ける（本陣が崩れたとは限らない）
+    if (state.battle?.result === 'defeat') {
+        const k = defeatKind(state.battle.reason);
+        if (k !== 'hq') body[0] = DEFEAT_ENDING_FIRST[state.policy][k];
+    }
     // 第一章とのつながり（引き受けなかったのは約束違反として扱わない）
-    if (state.policy === 'home') body.push(c.battle.result === 'victory' ? '第一章で浪人衆を退けたことは、村の者の心に残り、この日の力になった。' : '第一章で退けられなかった浪人衆との因縁に、この日、一つの区切りがついた。');
-    else
+    if (state.policy === 'home') {
+        // 浪人衆との因縁：第一章で退けられなかったときは、第二章で退けたかどうかで分ける
+        const ronin =
+            c.battle.result === 'victory'
+                ? '第一章で浪人衆を退けたことは、村の者の心に残り、この日の力になった。'
+                : state.battle?.result === 'victory'
+                  ? '第一章で退けられなかった浪人衆との因縁に、この日、一つの区切りがついた。'
+                  : '第一章で退けられなかった浪人衆との因縁はまだ続く。';
+        // C の約束（忠勝の頼み：岡崎の守備隊の退路を守る）を破った場合は、第一章の文と合わせる
+        const pledgeLine =
+            pl === 'broken'
+                ? ch1Unfought(c)
+                    ? '第一章で、敵と刃を交える前に兵を引き、守備隊の退路を守る約束を果たせなかったことを、忠勝は忘れていない。'
+                    : '第一章で岡崎の守備隊の退路を守りきれなかったことを、忠勝は忘れていない。'
+                : '';
+        body.push(ronin + pledgeLine);
+    } else
         body.push(
             pl === 'kept'
                 ? `第一章で守った約束は、${TRUST_NAMES[ch2PartnerOf(state.policy)!]}の信頼として、この日も残っていた。`

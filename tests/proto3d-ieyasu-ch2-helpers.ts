@@ -50,7 +50,7 @@ export function toCh2Battle(s: Ieyasu2State, recovery: RecoveryChoice = 'none'):
 export function toCh2Aftermath(
     s: Ieyasu2State,
     result: BattleResultKind,
-    opts: { units?: Record<string, { end?: number; status?: UnitStatus }>; secondary?: boolean } = {},
+    opts: { units?: Record<string, { end?: number; status?: UnitStatus }>; secondary?: boolean; reason?: 'ally_hq_routed' | 'objective_failed' | 'ally_army_broken' } = {},
 ): Ieyasu2State {
     return applyIeyasu2Outcome(s, ieyasu2OutcomeFromSetup(ieyasu2BattleSetup(s), result, opts));
 }

@@ -118,7 +118,9 @@ describe('引き受けなかった約束と、破った約束を区別する', (
         expect(td.id).toBe('ch2.explore.tadakatsu.home.retreat.declined');
         expect(tb.id).toBe('ch2.explore.tadakatsu.home.retreat.broken');
         expect(td.lines.map((l) => l.text).join('')).toContain('責める者はおりませぬ');
-        expect(tb.lines.map((l) => l.text).join('')).toContain('退かせきれなんだ');
+        // この第一章の結末は、守備隊が崩れずに残ったまま約束を破った（斬り合う前に兵を引いた）形。第一章の忠勝の文に合わせ、
+        // 「退かせきれなんだ」ではなく、刃を交える前に兵を引いたことを言う（守備隊が崩れた場合は tests/proto3d-ieyasu-ch2-texts.test.ts）
+        expect(tb.lines.map((l) => l.text).join('')).toContain('刃を交える前');
     });
 });
 
