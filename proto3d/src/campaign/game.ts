@@ -93,7 +93,7 @@ export interface PromptInfo {
 }
 
 export interface ScriptOptions {
-    /** 'council' は軍議の画面（城の広間。探索の場面を暗くして見出しを出す） */
+    /** 'council' は軍議の画面（城内の軍議所。軍議所の陣幕を映し、見出しを出す） */
     mode: 'talk' | 'council';
     /** 遊んでいるシナリオの章の名前と札（軍議の見出しに出す。省けば画面の既定） */
     chapter?: string;

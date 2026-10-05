@@ -336,7 +336,7 @@ function councilScript(state: IeyasuState): ScenarioScript {
         return { id: 'council.again', talk: 'council', lines: [T('改めて、いずれの道を取られますか。')], choices: policyChoices(state), defaultChoice: 0 };
     }
     const lines: ScenarioLine[] = [
-        narrate('城の広間に、主だった者が集まった。酒井忠次・石川数正の顔も見える。（ここからの話し合いと選択は、ゲーム用の創作）'),
+        narrate('城内の陣幕の内に、主だった者が集まった。酒井忠次・石川数正の顔も見える。（ここからの話し合いと選択は、ゲーム用の創作）'),
         T('では、軍議を始めます。'),
         T('道は三つと存じます。'),
         T('一つ。織田との協力を続け、浅井・朝倉の勢と戦う。'),

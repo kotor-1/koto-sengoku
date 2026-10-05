@@ -617,7 +617,7 @@ function councilScript(state: Ieyasu2State): ScenarioScript {
         return { id: 'ch2.council.again', talk: 'council', lines: [T('改めて、いずれの手を取られますか。'), ...blocked], choices, defaultChoice: 0 };
     }
     const lines: ScenarioLine[] = [
-        narrate('城の広間に、主だった者が集まった。酒井忠次・石川数正の顔も見える。（ここからの話し合いと選択は、ゲーム用の創作）'),
+        narrate('城内の陣幕の内に、主だった者が集まった。酒井忠次・石川数正の顔も見える。（ここからの話し合いと選択は、ゲーム用の創作）'),
         T(`こたびの務めは「${CH2_MISSION_TITLES[p]}」。手は二つと存じます。`),
         ...COUNCIL_OPINIONS[p],
         ...thin,

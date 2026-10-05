@@ -539,7 +539,7 @@ export class DomView implements GameView, LayerHost {
             const layer = this.open('script', council ? 'council' : '');
             if (council) {
                 const head = el('div', 'g-council-head');
-                head.append(el('h2', undefined, '軍議'), el('p', undefined, `城の広間・${opts.label ?? PROVISIONAL_LABEL}`));
+                head.append(el('h2', undefined, '軍議'), el('p', undefined, `城内の軍議所・${opts.label ?? PROVISIONAL_LABEL}`));
                 layer.append(head);
             }
             // 軍議の「地図で見る」（情勢の画面を重ねて開く。会話は進まない・選ばない）。左上（選択肢・台詞・見出しと重ならない所）

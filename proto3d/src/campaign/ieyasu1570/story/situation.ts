@@ -41,6 +41,12 @@ type Opts = { from: 'explore' | 'council'; options?: { id: string; label: string
 const WHEN = '元亀元年（1570年）';
 const HOME = '徳川の城下（三河）';
 
+/** 今いる所（徳川の城下と今の段階）。段階の名前の「城下」は今いる所と重なるので省く（「徳川の城下（三河）・城下」にしない） */
+function whereOf(phaseLabel: string, extra = ''): string {
+    const ph = phaseLabel.replace(/・?城下$/, '');
+    return `${HOME}${ph ? `・${ph}` : ''}${extra}`;
+}
+
 /** 物見の記録の場所・線を地図に足す */
 function withScout(places: MapPlace[], routes: MapRoute[], s: IeyasuAnyState): { places: MapPlace[]; routes: MapRoute[] } {
     const es = scoutEntries(s);
@@ -149,7 +155,7 @@ function ch1View(s: IeyasuState, opts: Opts): SituationView {
     const view: SituationView = {
         title: '情勢（第一章）',
         when: WHEN,
-        where: `${HOME}・${IEYASU_PHASE_LABELS[s.phase]}`,
+        where: whereOf(IEYASU_PHASE_LABELS[s.phase]),
         allies,
         enemies,
         prev: null,
@@ -159,7 +165,7 @@ function ch1View(s: IeyasuState, opts: Opts): SituationView {
         scouted: scoutEntries(s),
         replays: ieyasuReplays(s),
     };
-    if (p) view.where = `${HOME}・${IEYASU_PHASE_LABELS[s.phase]}（方針：${POLICY_LABELS[p]}）`;
+    if (p) view.where = whereOf(IEYASU_PHASE_LABELS[s.phase], `（方針：${POLICY_LABELS[p]}）`);
     const hint = scoutHint(s);
     if (hint) view.scoutHint = hint;
     if (opts.from === 'council' && opts.options?.length) {
@@ -246,7 +252,7 @@ function ch2View(s: Ieyasu2State, opts: Opts): SituationView {
     const view: SituationView = {
         title: '情勢（第二章）',
         when: `${WHEN}・第一章の戦から数日後`,
-        where: `${HOME}・${IEYASU2_PHASE_LABELS[s.phase]}（任務：${CH2_MISSION_TITLES[p]}）`,
+        where: whereOf(IEYASU2_PHASE_LABELS[s.phase], `（任務：${CH2_MISSION_TITLES[p]}）`),
         allies,
         enemies,
         prev: `第一章：${ch1SummaryText(c)}`,

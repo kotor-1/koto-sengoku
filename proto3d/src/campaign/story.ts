@@ -233,7 +233,7 @@ function councilScript(state: CampaignState): Script {
         return { id: 'council.again', talk: 'council', lines: [G('改めて、いずれと組まれますか。')], choices: ALLIANCE_CHOICES, defaultChoice: 0 };
     }
     const lines: Line[] = [
-        narrate('城の広間に、主だった者が集まった。'),
+        narrate('城内の陣幕の内に、主だった者が集まった。'),
         G('では、軍議を始めます。'),
         G('鷲尾勢は千二百余り。北の丘の上に本陣を置き、その前に先手の槍と弓を並べております。'),
         G('こちらは若殿の本陣、わしの槍、新八の弓。合わせて千百五十。正面から丘を攻めれば、分が悪い。'),
