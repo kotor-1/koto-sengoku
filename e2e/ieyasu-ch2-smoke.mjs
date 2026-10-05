@@ -7,7 +7,10 @@
 //   - 合戦の待ち時間は、全軍撤退を命じた後に「指揮」（一時停止）にして window.__battle.fastForward で進める（早送り）。
 //   - 架空の章の結末は __game.setPhase('ending')（直接状態変更）で出して、ボタンが 1 つのままかを見る。
 //   D（PC 1280×720）：A 織田・勝利・約束を守った → Enter で「第二章へ進む」→ 結果確認 → 城下 → 軍議 → 補充 → 出陣 → 全軍撤退 → 戦後 → 読み込み直し → 区切り → タイトル。
-//   P（スマホ横 844×390・タッチ）：B 浅井・敗北・約束を破った・損害大 → タップで「第二章へ進む」→ 結果確認 → 城下 → 軍議（判断 2 は出ない）。
+//     主目標の条件（state.terms）が軍議で確定し、補充・戦後・読み込み直しで変わらないこと、選択肢の説明（確定する主目標・補充の代償）も見る。
+//   P（スマホ横 844×390・タッチ）：B 浅井・敗北・約束を破った・損害大 → タップで「第二章へ進む」→ 結果確認 → 城下 → 軍議（判断 2 は出ない）→
+//     補充「待つ」→ 城門 → 出陣（合戦の説明まで）→ 読み込み直し（出陣前の保存から支度へ）。兵が少ないときの条件（連れ帰る兵 3 割）が、
+//     待って兵が戻っても外れないこと（前の作り方では外れて 4 割になった組み合わせ）。
 //   F（PC）：架空の章の結末はボタン 1 つ（タイトルへ）。
 //
 // 使い方：自動再読み込みなしの開発サーバーを起動して
@@ -77,6 +80,8 @@ async function seed(page, name) {
   await reloadToTitle(page);
 }
 const ui = (page) => page.evaluate(() => window.__game.ui);
+/** 選択肢のボタンの文（名前・説明・まとめ） */
+const choiceText = (page, id) => page.evaluate((id) => document.querySelector(`.g-choice[data-id="${id}"]`)?.textContent ?? '', id);
 const st = (page) => page.evaluate(() => JSON.parse(JSON.stringify(window.__game.state)));
 const saved = (page, k = KEY) => page.evaluate((k) => JSON.parse(localStorage.getItem(k) || 'null'), k);
 const rawKeys = (page) => page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('koto-sengoku/')).sort());
@@ -191,6 +196,9 @@ if (ONLY.includes('D')) {
   await waitScreen(page, 'council');
   u = await readThrough(page, io.next);
   check('D 軍議：判断が 2 つ（殿を引き受ける／退き口の手前を固める）', JSON.stringify(u.choices ?? []) === '["plan_commit","plan_hold"]', JSON.stringify(u.choices));
+  const cc = await choiceText(page, 'plan_commit');
+  check('D 軍議の選択肢の説明に「この判断で確定する主目標」（後の補充では変わらない）', cc.includes('この判断で確定する主目標：家康本陣と織田勢の 2 隊') && cc.includes('決めた後の補充では変わらない'), cc.slice(0, 120));
+  check('D 軍議：主目標の条件は判断を決めた時に確定する、と述べる', u.seen.some((l) => l.includes('主目標の条件は、ここで判断を決めた時に')));
   await io.pick('plan_hold');
   u = await readThrough(page, io.next);
   await io.pick('reconsider');
@@ -198,17 +206,28 @@ if (ONLY.includes('D')) {
   await io.pick('plan_commit');
   u = await readThrough(page, io.next);
   check('D 判断を確かめる（考え直した後）', u.seenId === 'ch2.council.confirm.oda.commit', u.seenId);
+  check('D 確かめ：決めると主目標の条件が確定する', u.seen.some((l) => l.includes('決めると主目標の条件が確定する')), u.seen.slice(-2).join(' / ').slice(0, 120));
+  const pre = await st(page);
+  check('D 決める前（考え直した後も）は主目標の条件が無い', pre.terms === null && pre.plan === null);
   await io.pick('confirm_plan');
   await waitScreen(page, 'explore');
+  const sm = await st(page);
+  const termsD = JSON.stringify(sm.terms);
+  check('D 判断を決めた時に主目標の条件が確定（第一章の終わりの兵で数える・兵が少なくない）', sm.terms?.plan === 'commit' && sm.terms.policy === 'oda' && sm.terms.thin === false && sm.terms.basisTroops >= 650, termsD);
   u = await talk(page, io, 'gate');
   check('D 補充を答える前は城門で出陣できない', u.seenId === 'ch2.muster.gate.recovery_pending' && !u.choices?.length, u.seenId);
   await waitScreen(page, 'explore');
   u = await talk(page, io, 'ishikawa');
   check('D 石川数正：補充の 3 つ（＋少し考える）', ['recovery_wait', 'recovery_transfer', 'recovery_none', 'recovery_later'].every((c) => (u.choices ?? []).includes(c)), JSON.stringify(u.choices));
+  const cw = await choiceText(page, 'recovery_wait');
+  const ct = await choiceText(page, 'recovery_transfer');
+  const cn = await choiceText(page, 'recovery_none');
+  check('D 補充の選択肢（選ぶ前）：待つ代償（何が何秒に早まるか）と、主目標の条件は軍議で決めたまま変わらない', cw.includes('浅井の後詰めの騎馬が 1 分 10 秒ほど → 30 秒ほど') && [cw, ct, cn].every((t) => t.includes('主目標の条件は軍議で決めたまま変わらない')), cw.slice(0, 160));
   await io.pick('recovery_none');
   await waitScreen(page, 'explore');
+  check('D 補充の後も主目標の条件は同じ', JSON.stringify((await st(page)).terms) === termsD);
   u = await talk(page, io, 'gate');
-  check('D 城門：判断・補充・出る部隊・支援をまとめて見せ、出陣できる', u.seenId === 'ch2.muster.gate' && (u.choices ?? []).includes('depart') && u.seen.join(' ').includes('支援：織田の鉄砲隊'), u.seen.join(' / ').slice(0, 160));
+  check('D 城門：判断・補充・出る部隊・支援・確定した主目標をまとめて見せ、出陣できる', u.seenId === 'ch2.muster.gate' && (u.choices ?? []).includes('depart') && u.seen.join(' ').includes('支援：織田の鉄砲隊') && u.seen.join(' ').includes('主目標（軍議で確定）'), u.seen.join(' / ').slice(0, 160));
   await io.pick('depart');
   await page.waitForFunction(() => window.__game.screen === 'battle' && !!window.__battle?.state, null, POLL);
   const dep = await saved(page);
@@ -248,6 +267,7 @@ if (ONLY.includes('D')) {
   await waitScreen(page, 'explore');
   const s2 = await st(page);
   check('D 第二章の戦後から（二重に反映しない）', s2.chapter === 2 && s2.phase === 'aftermath' && s2.appliedBattleId === aft.appliedBattleId && JSON.stringify(s2.trust) === JSON.stringify(aft.trust));
+  check('D 戦後・読み込み直しの後も主目標の条件は同じ（保存にも残る）', JSON.stringify(s2.terms) === termsD && JSON.stringify(aft.terms) === termsD && aft.result?.thin === false, JSON.stringify(s2.terms));
   u = await talk(page, io, 'tadakatsu');
   check('D 戦後の忠勝：第二章を締めくくる', (u.choices ?? []).includes('end_chapter'), u.seenId);
   await io.pick('end_chapter');
@@ -273,7 +293,7 @@ if (ONLY.includes('P')) {
   const io = await phoneIO(ctx, page);
   await seed(page, 'asai_defeat_broken_heavy');
   const { record } = await enterCh2(page, io, 'P', 'tap');
-  check('P 結果確認：約束は「守れなかった」・負傷の影響・兵が少ないときの見込み', record.text.includes('守れなかった') && record.text.includes('浅井勢の後備え') && record.text.includes('改める見込み'));
+  check('P 結果確認：約束は「守れなかった」・負傷の影響・兵が少ないときは判断を決めた時に確定', record.text.includes('守れなかった') && record.text.includes('浅井勢の後備え') && record.text.includes('この判断に決めると') && record.text.includes('後の補充では変わらない'));
   let u = await talk(page, io, 'envoy');
   check('P 浅井家の使者（約束を破った＝冷たい・長政は負傷で後に残る）', u.seenId === 'ch2.explore.envoy.asai.broken' && u.seen.some((l) => l.includes('傷が癒えず')), u.seenId);
   u = await talk(page, io, 'tadakatsu');
@@ -286,13 +306,34 @@ if (ONLY.includes('P')) {
   u = await readThrough(page, io.next);
   await io.pick('confirm_plan');
   await waitScreen(page, 'explore');
+  const sm = await st(page);
+  const termsP = JSON.stringify(sm.terms);
+  check('P 判断を決めた時に、兵が少ないときの条件で確定（連れ帰る兵 3 割）', sm.terms?.thin === true && sm.terms.escortMinRatio === 0.3 && sm.terms.basisTroops < 650, termsP);
   u = await talk(page, io, 'ishikawa');
   check('P 石川数正：補充（待つ／回す／今の兵／少し考える）', ['recovery_wait', 'recovery_transfer', 'recovery_none', 'recovery_later'].every((c) => (u.choices ?? []).includes(c)), JSON.stringify(u.choices));
+  const cw = await choiceText(page, 'recovery_wait');
+  check('P 待つの説明（選ぶ前）：援軍が早く着く代償と、主目標（兵 3 割以上）は変わらない', cw.includes('織田方の援軍が 4 分ほど → 3 分 20 秒ほど') && cw.includes('主目標の条件は軍議で決めたまま変わらない') && cw.includes('兵 3 割以上'), cw.slice(0, 160));
   await shot(page, 'P-ch2-recovery');
   await io.pick('recovery_wait');
   await waitScreen(page, 'explore');
   const s = await st(page);
   check('P 待つ：兵が戻り、1 回だけ（記録が残る）', s.recovery?.choice === 'wait' && s.troops.tadakatsu > s.chapter1.troops.tadakatsu, JSON.stringify(s.troops));
+  // 出せる兵（判断 1：守備隊も出す。家康本陣は最低 50、ほかは兵 40 以上の部隊だけ。chapter2/battle.ts の ch2SortieTroops と同じ数え方）
+  const sortie = Math.max(50, s.troops.honjin) + ['tadakatsu', 'yumi', 'reserve'].reduce((n, k) => n + (s.troops[k] >= 40 ? s.troops[k] : 0), 0);
+  check('P 待って出せる兵が 650 を越えても、主目標の条件は同じ（兵が少ないときの 3 割のまま）', sortie >= 650 && JSON.stringify(s.terms) === termsP, `出せる兵 ${sortie}`);
+  u = await talk(page, io, 'gate');
+  check('P 城門：確定した主目標（兵 3 割以上）を見せる', u.seen.join(' ').includes('主目標（軍議で確定）') && u.seen.join(' ').includes('兵 3 割以上'), u.seen.join(' / ').slice(0, 160));
+  await io.pick('depart');
+  await page.waitForFunction(() => window.__game.screen === 'battle' && !!window.__battle?.state, null, POLL);
+  const bp = await page.evaluate(() => ({ minRatio: window.__battle.state.setup.objectives.primary.minRatio, label: window.__battle.state.setup.objectives.primary.label }));
+  check('P 合戦の主目標：連れ帰る兵 3 割以上（待った後の兵で求め直さない）', bp.minRatio === 0.3 && bp.label.includes('兵 3 割以上'), JSON.stringify(bp));
+  const dep = await saved(page);
+  check('P 出陣前の自動保存に確定した条件', JSON.stringify(dep?.terms) === termsP && dep?.point === 'departure');
+  await reloadToTitle(page);
+  await io.btn('continue:ieyasu1570');
+  await waitScreen(page, 'explore');
+  const s3 = await st(page);
+  check('P 読み込み直す（出陣前の保存から支度へ）：条件・兵・補充は同じ（二重に足さない）', s3.phase === 'muster' && JSON.stringify(s3.terms) === termsP && JSON.stringify(s3.troops) === JSON.stringify(s.troops) && s3.recovery?.choice === 'wait', JSON.stringify(s3.troops));
   await ctx.close();
 }
 
