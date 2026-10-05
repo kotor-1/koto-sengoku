@@ -27,7 +27,9 @@
 // 使い方：自動再読み込みなしの開発サーバーを自分用のポートで起動して
 //   (PORT=8097 setsid nohup npx vite --config proto3d/blender/tools/vite.nohmr.mjs > /tmp/vite-8097.log 2>&1 &)
 //   BASE=http://localhost:8097 node e2e/story-video.mjs [出力先（既定 e2e-out/story-video）]
-//   出力：<部>.webm・<部>-b<場面>-<種類>.png（場面の中ほどのコマ）・<部>-<印>.png・summary-<部>.json
+//   出力：<部>.webm・<部>-<台本>-b<場面>-<種類>.png（場面の中ほどのコマ）・<部>-<印>.png（印の 1 秒後など）・summary-<部>.json（まとめ）・
+//   log-<部>.json（ページの毎コマの記録・入力の時刻・画面の流しのコマの時刻）
+//   NG の行は「見つけたこと」（このコンテナの重い 3D のコマで起きるものを含む）。実機の滑らかさはここでは確かめられない
 import { spawn } from 'node:child_process';
 import { readFileSync, writeFileSync, statSync } from 'node:fs';
 import { launchBrowser, outDir } from './lib.mjs';
@@ -75,7 +77,8 @@ async function open({ reducedMotion = 'no-preference', main = null, viewport = V
   page.on('pageerror', (e) => onErr(e.message));
   page.on('console', (m) => { if (m.type() === 'error') onErr(m.text()); });
   await page.goto(BASE + '/?q=low');
-  await page.waitForFunction(() => window.__game?.ui?.kind === 'title', null, POLL);
+  // 人物の素材を読み終えてから読み込み直す（読み込みの途中で読み込み直すと、取りやめた読み込みの誤りが出るため）
+  await page.waitForFunction(() => window.__game?.ui?.kind === 'title' && window.__game.world.ready, null, POLL);
   // 見張りの保存（2D・架空・演習）を入れ、歴史分岐の保存は main（null なら消す）（直接状態変更）
   await page.evaluate(([s, k, k1, p, v]) => {
     localStorage.clear();
@@ -336,6 +339,8 @@ function analyze(rec, specs = {}) {
       return {
         beat: bb.beat, mode: bb.mode, ev: evs.join('+') || null, wall: +wall.toFixed(2), clock: +(tEnd - tStart).toFixed(2), ratio: wallLast > 0 ? +((tEnd - tStart) / wallLast).toFixed(3) : null,
         innerRatio: inner === null ? null : +inner.toFixed(3), headSkip, maxTick: +maxTick.toFixed(2), specDur,
+        // 場面に入ったコマから次のコマまで（3D の場面の最初の画が出るまでの目安。その間は前の画面か、描いていない暗い画面のまま）
+        firstGap: rr.length > 1 ? +((rr[1].w - rr[0].w) / 1000).toFixed(2) : +((wNext - wStart) / 1000).toFixed(2),
         lost: bb.mode === 'map' && specDur !== null ? +(specDur - wall).toFixed(2) : null,
         tStart, tEnd, rafRows: rr.length, rafPerSec: wall > 0 ? +(rr.length / wall).toFixed(1) : null, castFrames: framesIn(wStart, wNext),
         people: Math.max(...rr.map((r) => r.people)), figures: Math.max(...rr.map((r) => r.figures)), hidden: Math.max(...rr.map((r) => r.hidden)),
@@ -402,7 +407,7 @@ async function report(rec, video, runs) {
     note(`[${rec.tag}] 演出 ${run.id}：実時間 ${run.wall} 秒（一時停止 ${run.pausedWall} 秒）・時計の終わり ${run.clockEnd}／台本の長さ ${run.duration}・時計の比（一時停止を除く）${run.overallRatio === null ? '-' : (run.overallRatio * 100).toFixed(0) + '%'}・動画の ${run.vStart}〜${run.vEnd} 秒`);
     for (const b of run.beats) {
       note(`    場面 ${b.beat}（${b.mode}${b.ev ? ' ' + b.ev : ''}）：実時間 ${b.wall} 秒で時計 ${b.clock} 秒（${b.ratio === null ? '-' : (b.ratio * 100).toFixed(0) + '%'}・最初のコマを除くと ${b.innerRatio === null ? '-' : (b.innerRatio * 100).toFixed(0) + '%'}）・場面に入った時に場面の頭から ${b.headSkip ?? '-'} 秒進んでいた・1 コマの時計の最大の進み ${b.maxTick} 秒${b.lost !== null ? `・台本 ${b.specDur.toFixed(1)} 秒のうち画面に出なかった ${b.lost} 秒` : ''}・ページのコマ ${b.rafRows}（毎秒 ${b.rafPerSec}）・画面の流しのコマ ${b.castFrames}` +
-        (b.mode === 'stage' ? `・人 ${b.people}・兵 ${b.figures}・隠した相手 ${b.hidden}・カメラの位置と向き ${b.camPoses} 通り（1 コマの最大の動き ${b.camMaxStep} m・飛び ${b.camJumps}）・人の位置 ${b.peopleSets} 通り` : `・現れる途中の印 最大 ${b.appearingMax}`) +
+        (b.mode === 'stage' ? `・最初の画が出るまで約 ${b.firstGap} 秒・人 ${b.people}・兵 ${b.figures}・隠した相手 ${b.hidden}・カメラの位置と向き ${b.camPoses} 通り（1 コマの最大の動き ${b.camMaxStep} m・飛び ${b.camJumps}）・人の位置 ${b.peopleSets} 通り` : `・現れる途中の印 最大 ${b.appearingMax}`) +
         `・動画 ${b.vStart}〜${b.vEnd} 秒`);
       const mid = (b.vStart + b.vEnd) / 2;
       if (b.vEnd - b.vStart > 0.2) {
@@ -515,7 +520,10 @@ async function partIntro(tag = 'intro', reducedMotion = 'no-preference') {
   captionCheck(tag, runs);
   const run = runs.find((r) => r.id === spec.id);
   const stages = run.beats.filter((b) => b.mode === 'stage');
-  check(`[${tag}] 3D の場面（使者の到着）が描かれた：画面の流しのコマがある・使者 2 人・会話の相手の使者は隠す`, stages.length > 0 && stages.every((b) => b.castFrames > 0 && b.people >= 2 && b.hidden >= 2), J(stages.map((b) => ({ ev: b.ev, frames: b.castFrames, people: b.people, hidden: b.hidden }))));
+  if (reducedMotion === 'reduce') {
+    // 動きを減らすとき：使者は歩かず、着いた姿（会話の相手の人物そのもの）を城門の前の画で見せる（演出の人は出さない・相手は隠さない）
+    check(`[${tag}] 3D の場面（使者の到着・動きを減らす）が描かれた：画面の流しのコマがある・演出の人は出さず会話の相手の使者をそのまま見せる`, stages.length > 0 && stages.every((b) => b.castFrames > 0 && b.people === 0 && b.hidden === 0), J(stages.map((b) => ({ ev: b.ev, frames: b.castFrames, people: b.people, hidden: b.hidden }))));
+  } else check(`[${tag}] 3D の場面（使者の到着）が描かれた：画面の流しのコマがある・使者 2 人・会話の相手の使者は隠す`, stages.length > 0 && stages.every((b) => b.castFrames > 0 && b.people >= 2 && b.hidden >= 2), J(stages.map((b) => ({ ev: b.ev, frames: b.castFrames, people: b.people, hidden: b.hidden }))));
   check(`[${tag}] 時計は最後まで進んだ（台本の長さ ${spec.duration} 秒）`, Math.abs(run.clockEnd - spec.duration) < 0.05, `${run.clockEnd}`);
   if (reducedMotion === 'reduce') {
     check(`[${tag}] 動きを減らす：どのコマも reduced`, run.beats.every((b) => J(b.reduced) === '[true]'), J(run.beats.map((b) => b.reduced)));
