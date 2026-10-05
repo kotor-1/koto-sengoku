@@ -56,7 +56,8 @@ import {
 } from './state';
 import { IEYASU_PHASE_LABELS, POLICY_DONE_LABELS } from './story';
 import type { BattleOutcome, ObjectiveResult } from '../../battle/types';
-import { ch2TermsProblem, type Ch2Plan, type Ch2SupportId, type Ch2Terms } from './chapter2/battle';
+import { CH2_RULES, ch2TermsProblem, type Ch2Plan, type Ch2SupportId, type Ch2Terms } from './chapter2/battle';
+import { ch2RecoveryOptions } from './chapter2/rules';
 import { parseIeyasu2Outcome, parseObjectiveResultRow } from './chapter2/flow';
 import {
     IEYASU2_ENDING_IDS,
@@ -510,7 +511,8 @@ export function toIeyasu2SaveData(state: Ieyasu2State, point: SavePoint, now: Da
         point,
         playTimeSec: Math.floor(Math.max(0, Math.min(IEYASU_PLAY_TIME_MAX, c.playTimeSec))),
         phase: c.phase as SavedPhase,
-        chapter1: c.chapter1,
+        // 第一章の遊んだ時間も秒に切り捨てて書く（今の遊んだ時間と同じ丸め。端数のままだと読むときの検査に落ちる）
+        chapter1: { ...c.chapter1, playTimeSec: Math.floor(Math.max(0, Math.min(IEYASU_PLAY_TIME_MAX, c.chapter1.playTimeSec))) },
         policy: c.policy,
         trust: c.trust,
         troops: c.troops,
@@ -531,6 +533,8 @@ export function toIeyasu2SaveData(state: Ieyasu2State, point: SavePoint, now: Da
 const SAVE_POINTS_V4: readonly SavePoint[] = ['departure', 'aftermath', 'manual', 'ending', 'chapter'];
 const CH2_PLANS_ALL: readonly Ch2Plan[] = ['commit', 'hold'];
 const CH2_SUPPORT_IDS: readonly Ch2SupportId[] = ['oda_teppo', 'asai_guide', 'village'];
+/** 方針ごとに加わりうる支援（chapter2/battle.ts の ch2Support） */
+const CH2_POLICY_SUPPORT: Readonly<Record<Policy, Ch2SupportId>> = { oda: 'oda_teppo', asai: 'asai_guide', home: 'village' };
 
 function parseTroops(v: unknown): Record<TokugawaUnitId, number> | null {
     if (!isObject(v)) return null;
@@ -616,6 +620,8 @@ function parseTerms(v: unknown, policy: Policy, plan: Ch2Plan | null): Ch2Terms 
     const n = v.basisTroops;
     if (typeof n !== 'number' || !Number.isInteger(n) || n < 0 || n > IEYASU_TROOPS_MAX * TOKUGAWA_UNIT_IDS.length) return undefined;
     if (typeof v.thin !== 'boolean') return undefined;
+    // thin は基準の兵から決まる（ch2DecideTerms と同じ閉じた決まり。基準の兵そのものは求め直さない）
+    if (v.thin !== n < CH2_RULES.thinTroops) return undefined;
     if (v.escortMinRatio !== null && !isFiniteNumber(v.escortMinRatio)) return undefined;
     if (v.holdSec !== null && !isFiniteNumber(v.holdSec)) return undefined;
     const t: Ch2Terms = {
@@ -769,6 +775,26 @@ export function parseIeyasu2SaveData(json: string): Ieyasu2SaveData | null {
     if (result && (result.plan !== plan || result.recovery !== recovery?.choice || result.thin !== terms?.thin)) return null;
     if (inField ? battleId !== null || appliedBattleId !== null : battleId === null) return null;
     if (phase === 'battle' && appliedBattleId !== null) return null;
+    // 閉じた形の食い違い（求め直さない。保存の中の値どうしで確かめる）
+    // 補充：選んだ選択肢で作れる値（支度の兵・信頼は第一章の終わりのままなので、第一章の記録から作る）
+    if (recovery) {
+        const opt = ch2RecoveryOptions({ troops: chapter1.troops, trust: chapter1.trust })[recovery.choice];
+        if (!opt.available || TOKUGAWA_UNIT_IDS.some((k) => opt.delta[k] !== recovery.delta[k])) return null;
+    }
+    // 合戦の前：兵は第一章の兵＋補充、信頼・人物は第一章のまま（動くのは合戦の結果だけ）
+    if (beforeBattle) {
+        for (const k of TOKUGAWA_UNIT_IDS) {
+            if (troops[k] !== Math.max(0, Math.min(IEYASU_TROOPS_MAX, chapter1.troops[k] + (recovery?.delta[k] ?? 0)))) return null;
+        }
+        if (TRUST_IDS.some((k) => trust[k] !== chapter1.trust[k])) return null;
+        if (IEYASU_CHARACTER_IDS.some((c) => characters[c] !== chapter1.characters[c])) return null;
+    }
+    // 戦後の記録：支援は方針の支援だけ・判断 2 は守備隊を出さない・勝利 ⇔ 主目標を果たした
+    if (result && battle) {
+        if (result.support.some((x) => x !== CH2_POLICY_SUPPORT[policy])) return null;
+        if (result.plan === 'hold' && result.sortie.includes('reserve')) return null;
+        if (!result.primary || result.primary.achieved !== (battle.result === 'victory')) return null;
+    }
     if ((phase === 'aftermath' || phase === 'ending') && appliedBattleId !== battleId) return null;
     const data: Ieyasu2SaveData = {
         version: IEYASU2_SAVE_VERSION,
@@ -872,14 +898,56 @@ export class IeyasuCampaignStore implements ScenarioStore<IeyasuAnyState> {
         return this.storage !== null;
     }
 
+    /**
+     * 保存する（第一章の状態は版 3、第二章の状態は版 4）。
+     * - 書く文字列は、読み込みと同じ検査（第一章は版 3・第二章は版 4）で読めることを確かめてから書く。読めない物は書かずに失敗（verify）。
+     *   書いた後は読み戻して同じ文字列であることを確かめる（writeVerified）ので、読み戻した物も同じ検査で読める。
+     *   「保存しました」と出たのに、読み込むと壊れた保存になる、ということを起こさない。
+     * - 第二章の状態を書くとき、本来のキーにまだ読める第一章の保存（版 1〜3）があり、第一章の控えに同じ物が無ければ、
+     *   先に控えへ写して読み戻す（移るときの控えが書けずに「保存せずに第二章を始める」を選んだ場合など）。
+     *   控えへ写せなければ失敗として返し、本来のキーには触れない（第一章の保存は残る）。
+     */
     save(state: IeyasuAnyState, point: SavePoint, now: Date = new Date()): ScenarioSaveResult<IeyasuAnyState> {
-        if (!isChapter2(state)) return this.ch1.save(state, point, now);
+        if (!isChapter2(state)) {
+            if (this.storage) {
+                const d1 = toIeyasuSaveData(state, point, now);
+                if (d1 && !parseIeyasuSaveData(JSON.stringify(d1))) return fail2('verify');
+            }
+            return this.ch1.save(state, point, now);
+        }
         if (!this.storage) return fail2('unavailable');
         const data = toIeyasu2SaveData(state, point, now);
         if (!data) return fail2('not_now');
-        const w = writeVerified(this.storage, this.key, JSON.stringify(data));
+        const json = JSON.stringify(data);
+        if (!parseIeyasu2SaveData(json)) return fail2('verify');
+        const b = this.keepChapter1Backup();
+        if (b) return { ok: false, reason: b, message: `${CHAPTER1_BACKUP_FAILED}${saveFailureMessage(b)}` };
+        const w = writeVerified(this.storage, this.key, json);
         if (w) return fail2(w);
         return { ok: true, savedAt: data.savedAt, point, state: { ...cloneIeyasu2State(state), savedAt: data.savedAt } };
+    }
+
+    /**
+     * 本来のキーに読める第一章の保存（版 1〜3）があり、第一章の控えに同じ文字列が無ければ、控えへ写して読み戻す。
+     * 写す必要が無い・写せたら null、だめなら理由（本来のキーには触れない）。
+     */
+    private keepChapter1Backup(): SaveFailureReason | null {
+        const st = this.storage!;
+        let cur: string | null;
+        let bak: string | null;
+        try {
+            cur = st.getItem(this.key);
+        } catch {
+            return 'unavailable';
+        }
+        if (cur === null || !parseIeyasuSaveData(cur)) return null;
+        try {
+            bak = st.getItem(this.chapter1Key);
+        } catch {
+            return 'unavailable';
+        }
+        if (bak === cur) return null;
+        return writeVerified(st, this.chapter1Key, cur);
     }
 
     load(): ScenarioLoadResult<IeyasuAnyState> {
@@ -918,7 +986,11 @@ export class IeyasuCampaignStore implements ScenarioStore<IeyasuAnyState> {
         const d1 = toIeyasuSaveData(prev, 'ending', now);
         const d2 = toIeyasu2SaveData(next, 'chapter', now);
         if (!d1 || !d2) return fail2('not_now');
-        const w1 = writeVerified(this.storage, this.chapter1Key, JSON.stringify(d1));
+        const json1 = JSON.stringify(d1);
+        const json2 = JSON.stringify(d2);
+        // 書く前に、読み込みと同じ検査で読めることを確かめる（読めない物はどちらのキーにも書かない。書いた後は読み戻して同じ文字列か確かめる）
+        if (!parseIeyasuSaveData(json1) || !parseIeyasu2SaveData(json2)) return fail2('verify');
+        const w1 = writeVerified(this.storage, this.chapter1Key, json1);
         if (w1) return fail2(w1);
         let before: string | null;
         try {
@@ -926,7 +998,7 @@ export class IeyasuCampaignStore implements ScenarioStore<IeyasuAnyState> {
         } catch {
             return fail2('unavailable');
         }
-        const w2 = writeVerified(this.storage, this.key, JSON.stringify(d2));
+        const w2 = writeVerified(this.storage, this.key, json2);
         if (w2) {
             let restored = true;
             try {
@@ -958,6 +1030,9 @@ export class IeyasuCampaignStore implements ScenarioStore<IeyasuAnyState> {
         return { status: 'corrupt', message: IEYASU_CORRUPT_MESSAGE };
     }
 }
+
+/** 第二章の保存の前に、本来のキーの第一章の保存を控えへ写せなかったときの文（この後に理由の文が続く） */
+export const CHAPTER1_BACKUP_FAILED = '第一章の保存を控えへ写せなかったため、第二章を保存しませんでした（第一章の保存はそのまま残っています）。';
 
 function fail2(reason: SaveFailureReason): ScenarioSaveResult<IeyasuAnyState> {
     return { ok: false, reason, message: saveFailureMessage(reason) };

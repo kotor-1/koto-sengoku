@@ -64,11 +64,14 @@ const NEXT_PHASE = { explore: 'council', council: 'muster', muster: 'battle', ba
  * 第一章の結末の状態から、第二章のはじめの状態を作る（純粋。同じ入力なら同じ結果。何度呼んでも足し算を重ねない）。
  * phase が 'ending' で結末がある第一章の状態だけ（それ以外は FlowError）。
  * 兵・信頼・人物は第一章の終わりの値をそのまま写す（援兵はもう兵に入っている。足さない）。遊んだ時間も引き継ぐ。
+ * 遊んだ時間は秒に切り捨てて写す（探索の毎フレームで足す端数を、第一章の記録に残さない。保存は秒で書くので、
+ * 端数のままだと読むときの「第一章の遊んだ時間 ≤ 今の遊んだ時間」の検査に落ちる）。
  */
 export function startChapter2(ch1: IeyasuState): Ieyasu2State {
     if (isChapter2(ch1)) throw new FlowError('すでに第二章の状態です');
     if (ch1.phase !== 'ending' || !ch1.ending) throw new FlowError('第一章の結末に着いていないので、第二章へ進めません');
     if (!ch1.policy || !ch1.battle || !ch1.pledge || ch1.pledge.result === null || !ch1.support) throw new FlowError('第一章の結果がそろっていません');
+    const playTimeSec = Math.floor(Math.max(0, Math.min(IEYASU_PLAY_TIME_MAX, ch1.playTimeSec)));
     const chapter1 = cloneChapter1Record({
         policy: ch1.policy,
         battle: ch1.battle,
@@ -79,7 +82,7 @@ export function startChapter2(ch1: IeyasuState): Ieyasu2State {
         trust: ch1.trust,
         troops: ch1.troops,
         characters: ch1.characters,
-        playTimeSec: ch1.playTimeSec,
+        playTimeSec,
     });
     return {
         scenario: ch1.scenario,
@@ -101,7 +104,7 @@ export function startChapter2(ch1: IeyasuState): Ieyasu2State {
         result: null,
         ending: null,
         explore: null,
-        playTimeSec: ch1.playTimeSec,
+        playTimeSec,
         savedAt: null,
     };
 }

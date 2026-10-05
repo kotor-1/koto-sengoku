@@ -640,7 +640,11 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
             } else {
                 const c = await view.confirm({
                     title: '保存できませんでした',
-                    lines: ['第二章の始めを保存できませんでした。第一章の保存はそのまま残っています。', r.message],
+                    lines: [
+                        '第二章の始めを保存できませんでした。第一章の保存はそのまま残っています。',
+                        r.message,
+                        '保存せずに始めた場合も、第二章で保存するときは先に第一章の保存を控えへ写します。控えへ写せないあいだは第二章を保存せず、第一章の保存を上書きしません。',
+                    ],
                     buttons: [
                         { id: 'go', label: '保存せずに第二章を始める' },
                         { id: 'back', label: '結末の画面へ戻る' },

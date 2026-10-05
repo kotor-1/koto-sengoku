@@ -14,11 +14,13 @@ import {
     IEYASU2_SAVE_VERSION,
     IeyasuCampaignStore,
     IeyasuSaveStore,
+    CHAPTER1_BACKUP_FAILED,
     parseIeyasu2SaveData,
     parseIeyasuSaveData,
     toIeyasu2SaveData,
 } from '../proto3d/src/campaign/ieyasu1570/save';
 import {
+    addIeyasu2PlayTime,
     finishTalkIeyasu2,
     ieyasu2BattleSetup,
     ieyasu2OutcomeFromSetup,
@@ -35,6 +37,7 @@ import { MemoryStorage, snapshot, toAftermath } from './proto3d-campaign-helpers
 import { ch2From, loadCh1, toCh2Aftermath, toCh2Battle, toCh2Muster } from './proto3d-ieyasu-ch2-helpers';
 import { IEYASU_V3_FIXTURES } from './proto3d-ieyasu-save-v3-fixtures';
 import { ieyasuToAftermath } from './proto3d-ieyasu-helpers';
+import { addIeyasuPlayTime } from '../proto3d/src/campaign/ieyasu1570/flow';
 
 const now = new Date('2026-10-05T03:04:05Z');
 const LEGACY_2D = '{"2d":"keep"}';
@@ -71,7 +74,8 @@ describe('版 4 の行き来', () => {
         expect(raw.version).toBe(IEYASU2_SAVE_VERSION);
         expect(raw.version).toBe(4);
         expect(raw.chapter).toBe(2);
-        expect(storage.touched.filter((t) => t.key === IEYASU_SAVE_KEY).map((t) => t.op)).toEqual(['set', 'get']);
+        // 書く前に本来のキーを 1 回読む（第一章の保存が残っていれば先に控えへ写すため）→ 書く → 読み戻す
+        expect(storage.touched.filter((t) => t.key === IEYASU_SAVE_KEY).map((t) => t.op)).toEqual(['get', 'set', 'get']);
         const l = store.load();
         expect(l.status).toBe('ok');
         if (l.status !== 'ok') return;
@@ -287,6 +291,123 @@ describe('第一章から第二章へ移るときの保存（saveChapterStart）
     });
 });
 
+describe('遊んだ時間の端数・書く前の検査（書いたのに読めない保存を「保存しました」にしない）', () => {
+    const fixture = IEYASU_V3_FIXTURES.oda_victory_kept;
+    it('第一章の遊んだ時間に端数（探索の毎フレーム）：移るときの保存も、移った直後（1 秒未満）の手動保存も読める', () => {
+        const storage = new MemoryStorage();
+        storage.data.set(IEYASU_SAVE_KEY, fixture);
+        const store = new IeyasuCampaignStore(storage);
+        const prev = addIeyasuPlayTime(loadCh1(fixture), 0.5);
+        expect(prev.playTimeSec % 1).not.toBe(0);
+        const next = startChapter2(prev);
+        // 写すときに秒へ切り捨てる（第一章の記録も今の遊んだ時間も）
+        expect(next.chapter1.playTimeSec).toBe(Math.floor(prev.playTimeSec));
+        expect(next.playTimeSec).toBe(Math.floor(prev.playTimeSec));
+        const r = store.saveChapterStart(prev, next, now);
+        expect(r.ok).toBe(true);
+        const l = store.load();
+        expect(l.status).toBe('ok');
+        expect(l.status === 'ok' && isChapter2(l.state) && l.state.phase).toBe('explore');
+        // 移った直後（0.3 秒）の手動保存
+        const m = store.save(addIeyasu2PlayTime(next, 0.3), 'manual', now);
+        expect(m.ok).toBe(true);
+        const l2 = store.load();
+        expect(l2.status === 'ok' && isChapter2(l2.state)).toBe(true);
+    });
+    it('状態の第一章の遊んだ時間に端数が残っていても、書くときに切り捨てて読める形で書く', () => {
+        const storage = new MemoryStorage();
+        const s = ch2From('oda_victory_kept');
+        s.chapter1.playTimeSec = s.playTimeSec + 0.6;
+        const r = new IeyasuCampaignStore(storage).save(s, 'manual', now);
+        expect(r.ok).toBe(true);
+        const d = parseIeyasu2SaveData(storage.data.get(IEYASU_SAVE_KEY)!);
+        expect(d?.chapter1.playTimeSec).toBe(s.playTimeSec);
+    });
+    it('読み込みの検査に落ちる状態は書かずに失敗（verify）。本来のキー・控えは元のまま（移るときも同じ）', () => {
+        const storage = new MemoryStorage();
+        storage.data.set(IEYASU_SAVE_KEY, fixture);
+        storage.touched = [];
+        const store = new IeyasuCampaignStore(storage);
+        const s = ch2From('oda_victory_kept');
+        // 第一章の遊んだ時間が今より長い（読むと壊れた保存になる組）
+        s.chapter1.playTimeSec = s.playTimeSec + 10;
+        expect(store.save(s, 'manual', now)).toMatchObject({ ok: false, reason: 'verify' });
+        const prev = loadCh1(fixture);
+        expect(store.saveChapterStart(prev, s, now)).toMatchObject({ ok: false, reason: 'verify' });
+        expect(storage.touched.filter((t) => t.op !== 'get')).toEqual([]);
+        expect(storage.data.get(IEYASU_SAVE_KEY)).toBe(fixture);
+        expect(storage.data.has(IEYASU_CHAPTER1_KEY)).toBe(false);
+    });
+});
+
+describe('第二章の保存の前に、本来のキーの第一章の保存を控えへ写す（移るときの控えが書けなかった場合）', () => {
+    const fixture = IEYASU_V3_FIXTURES.oda_victory_kept;
+    class FullBackup extends MemoryStorage {
+        override setItem(k: string, v: string): void {
+            if (k === IEYASU_CHAPTER1_KEY) {
+                const e = new Error('full');
+                e.name = 'QuotaExceededError';
+                throw e;
+            }
+            super.setItem(k, v);
+        }
+    }
+    it('控えへ写せない（容量）：第二章の保存は失敗（理由つき）。本来のキーの版 3 は上書きしない', () => {
+        const storage = new FullBackup();
+        storage.data.set(IEYASU_SAVE_KEY, fixture);
+        const store = new IeyasuCampaignStore(storage);
+        const s = ch2From('oda_victory_kept');
+        const r = store.save(s, 'manual', now);
+        expect(r).toMatchObject({ ok: false, reason: 'quota' });
+        expect(!r.ok && r.message).toContain(CHAPTER1_BACKUP_FAILED);
+        // 出陣前・戦後の自動保存も同じ
+        const b = withIeyasu2BattleId(toCh2Battle(toCh2Muster(s)), 'ieyasu1570-q-1');
+        expect(store.save(b, 'departure', now)).toMatchObject({ ok: false, reason: 'quota' });
+        const a = applyIeyasu2OutcomeOnce(b, 'ieyasu1570-q-1', ieyasu2OutcomeFromSetup(ieyasu2BattleSetup(b), 'victory')).state;
+        expect(store.save(a, 'aftermath', now)).toMatchObject({ ok: false, reason: 'quota' });
+        expect(storage.data.get(IEYASU_SAVE_KEY)).toBe(fixture);
+        expect(storage.touched.filter((t) => t.op === 'set' && t.key === IEYASU_SAVE_KEY)).toEqual([]);
+        const l = store.load();
+        expect(l.status === 'ok' && !isChapter2(l.state) && l.state.phase).toBe('ending');
+    });
+    it('控えが無い：先に本来のキーの第一章の保存（同じ文字列）を控えへ写してから、第二章を書く', () => {
+        const storage = new MemoryStorage();
+        storage.data.set(IEYASU_SAVE_KEY, fixture);
+        storage.touched = [];
+        const r = new IeyasuCampaignStore(storage).save(ch2From('oda_victory_kept'), 'manual', now);
+        expect(r.ok).toBe(true);
+        expect(storage.data.get(IEYASU_CHAPTER1_KEY)).toBe(fixture);
+        expect(parseIeyasu2SaveData(storage.data.get(IEYASU_SAVE_KEY)!)?.point).toBe('manual');
+        const sets = storage.touched.filter((t) => t.op === 'set').map((t) => t.key);
+        expect(sets).toEqual([IEYASU_CHAPTER1_KEY, IEYASU_SAVE_KEY]);
+    });
+    it('控えに別の第一章の保存がある：本来のキーの物で控えを書き直してから第二章を書く', () => {
+        const storage = new MemoryStorage();
+        storage.data.set(IEYASU_SAVE_KEY, fixture);
+        storage.data.set(IEYASU_CHAPTER1_KEY, IEYASU_V3_FIXTURES.home_victory_kept);
+        const r = new IeyasuCampaignStore(storage).save(ch2From('oda_victory_kept'), 'manual', now);
+        expect(r.ok).toBe(true);
+        expect(storage.data.get(IEYASU_CHAPTER1_KEY)).toBe(fixture);
+    });
+    it('控えに同じ物がある・本来のキーが第二章・壊れた保存・空：控えには触れない', () => {
+        const s = ch2From('oda_victory_kept');
+        for (const [main, backup] of [
+            [fixture, fixture],
+            [JSON.stringify(toIeyasu2SaveData(s, 'manual', now)), null],
+            ['{"broken":true}', null],
+            [null, null],
+        ] as const) {
+            const storage = new MemoryStorage();
+            if (main !== null) storage.data.set(IEYASU_SAVE_KEY, main);
+            if (backup !== null) storage.data.set(IEYASU_CHAPTER1_KEY, backup);
+            storage.touched = [];
+            expect(new IeyasuCampaignStore(storage).save(s, 'manual', now).ok).toBe(true);
+            expect(storage.touched.filter((t) => t.op !== 'get' && t.key === IEYASU_CHAPTER1_KEY)).toEqual([]);
+            expect(storage.data.get(IEYASU_CHAPTER1_KEY) ?? null).toBe(backup);
+        }
+    });
+});
+
 describe('壊れた版 4 は読み込まない（データはそのまま残す）', () => {
     const aft = (() => {
         const b = withIeyasu2BattleId(toCh2Battle(toCh2Muster(ch2From('asai_defeat_broken_heavy')), 'wait'), 'ieyasu1570-y-1');
@@ -342,6 +463,63 @@ describe('壊れた版 4 は読み込まない（データはそのまま残す�
         expect(storage.touched.every((t) => t.op === 'get')).toBe(true);
         // 第一章の読み方でも読まない
         expect(parseIeyasuSaveData(text)).toBeNull();
+    });
+    it('記録・条件の閉じた形の検査（求め直さない）：食い違う組は読まない', () => {
+        const rd = (v: Record<string, any>) => parseIeyasu2SaveData(JSON.stringify(v));
+        const copy = (v: unknown) => JSON.parse(JSON.stringify(v)) as Record<string, any>;
+        // 戦後（A 判断 2・待った・勝利）と、支度（C 判断 1・待った）と、戦後（B・敗北）
+        const aHold = (() => {
+            const b = withIeyasu2BattleId(toCh2Battle(toCh2Muster(ch2From('oda_victory_kept'), 'hold'), 'wait'), 'ieyasu1570-v-1');
+            return applyIeyasu2OutcomeOnce(b, 'ieyasu1570-v-1', ieyasu2OutcomeFromSetup(ieyasu2BattleSetup(b), 'victory')).state;
+        })();
+        const goodA = copy(toIeyasu2SaveData(aHold, 'aftermath', now));
+        const muster = finishTalkIeyasu2(toCh2Muster(ch2From('home_defeat_broken_heavy')), 'ishikawa', 'recovery_wait');
+        const goodM = copy(toIeyasu2SaveData(muster, 'manual', now));
+        const bDef = (() => {
+            const b = withIeyasu2BattleId(toCh2Battle(toCh2Muster(ch2From('asai_victory_kept'))), 'ieyasu1570-v-2');
+            return applyIeyasu2OutcomeOnce(b, 'ieyasu1570-v-2', ieyasu2OutcomeFromSetup(ieyasu2BattleSetup(b), 'defeat')).state;
+        })();
+        const goodB = copy(toIeyasu2SaveData(bDef, 'aftermath', now));
+        for (const g of [goodA, goodM, goodB, good]) expect(rd(g)).not.toBeNull();
+        const cases: [string, Record<string, any>, (v: Record<string, any>) => void][] = [
+            // (1) terms：thin と basisTroops（basisTroops < thinTroops ⇔ thin）
+            ['条件の基準の兵が多いのに thin', good, (v) => (v.terms.basisTroops = 2000)],
+            ['条件の基準の兵が少ないのに thin でない（値も表のふだん）', goodA, (v) => (v.terms.basisTroops = 140)],
+            // (2)(3)(8) 合戦の前：兵＝第一章の兵＋補充・信頼と人物＝第一章
+            ['支度の兵が第一章の兵＋補充と違う', goodM, (v) => (v.troops.honjin += 1)],
+            ['支度の兵が第一章の兵と違う（補充を足していない）', goodM, (v) => (v.troops = { ...v.chapter1.troops })],
+            ['支度の信頼が第一章と違う', goodM, (v) => (v.trust.oda = v.chapter1.trust.oda + 5)],
+            ['支度の人物が第一章と違う（負傷していない人物が負傷）', goodM, (v) => (v.characters.nagamasa = 'wounded')],
+            // (4) 補充の delta：その選択肢で作れる値
+            ['待って戻る兵が第一章の損害を超える', goodA, (v) => (v.recovery.delta.honjin = 500)],
+            ['待って戻る兵が決まりの値と違う', goodM, (v) => {
+                v.recovery.delta.yumi += 1;
+                v.troops.yumi += 1;
+            }],
+            // (5) 戦後の記録の支援：方針の支援の id
+            ['A の記録の支援が村の衆', goodA, (v) => (v.result.support = ['village'])],
+            ['B の記録の支援が織田の鉄砲隊', goodB, (v) => (v.result.support = ['oda_teppo'])],
+            // (6) 判断 2 なら出陣に守備隊が無い
+            ['判断 2 なのに出陣に守備隊', goodA, (v) => {
+                v.result.sortie.push('reserve');
+                v.result.sortieTroops.reserve = 300;
+                v.result.lost.reserve = 0;
+            }],
+            // (7) 勝利 ⇔ 主目標を果たした
+            ['勝利なのに主目標を果たしていない', goodA, (v) => (v.result.primary.achieved = false)],
+            ['敗北なのに主目標を果たした', goodB, (v) => (v.result.primary.achieved = true)],
+            ['勝利なのに主目標の記録が無い', goodA, (v) => (v.result.primary = null)],
+        ];
+        for (const [name, base, patch] of cases) {
+            const v = copy(base);
+            patch(v);
+            expect(rd(v), name).toBeNull();
+            // 保存として読み込んでも corrupt（データはそのまま）
+            const storage = new MemoryStorage();
+            storage.data.set(IEYASU_SAVE_KEY, JSON.stringify(v));
+            expect(new IeyasuCampaignStore(storage).load().status, name).toBe('corrupt');
+            expect(storage.touched.every((t) => t.op === 'get'), name).toBe(true);
+        }
     });
     it('区切りの id が合戦の結果と食い違えば読まない', () => {
         const e = finishTalkIeyasu2(aft, 'tadakatsu', 'end_chapter');

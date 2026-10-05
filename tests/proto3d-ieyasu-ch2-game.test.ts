@@ -354,6 +354,49 @@ describe('第一章の結末の保存から、第二章の区切りまで（本�
         expect(h.s.chapter).toBe(2);
         expectOthers(storage, fictional);
     });
+
+    it('第一章をその場で遊び終えて（遊んだ時間に端数）第二章へ：始めの保存も、移った直後（1 秒未満）の手動保存も読み込み直せる', async () => {
+        const { storage } = seeded('oda_victory_kept_aftermath');
+        const h = new Harness(storage);
+        await h.continueIeyasu();
+        // 探索の毎フレームの遊んだ時間（端数）。talkTo も tick(1/30) を入れる
+        for (let i = 0; i < 7; i++) h.game.tick(1 / 30);
+        await h.talkTo('tadakatsu', 'end_chapter');
+        const e = await h.next('ending');
+        e.answer('next_chapter');
+        const r = await h.next('record');
+        expect(h.view.toasts[h.view.toasts.length - 1]?.text).toBe('保存しました：第二章の始め（自動保存）');
+        r.answer();
+        await flush();
+        expect(h.s.chapter).toBe(2);
+        // 本来のキーの版 4 は読める（第一章の遊んだ時間も切り捨てて書く）
+        const start = parseIeyasu2SaveData(storage.data.get(IEYASU_SAVE_KEY)!);
+        expect(start).not.toBeNull();
+        expect(Number.isInteger(start!.chapter1.playTimeSec)).toBe(true);
+        expect(start!.chapter1.playTimeSec).toBeLessThanOrEqual(start!.playTimeSec);
+        // 別のゲームでタイトルを開くと「つづきから」は第二章・城下
+        const h2 = new Harness(storage);
+        const info = await h2.continueIeyasu();
+        expect(info.scenarios[0]!.save?.summary).toMatch(/^第二章・城下・/);
+        expect(h2.s.chapter).toBe(2);
+        expect(h2.game.screen).toBe('explore');
+        expect(h2.view.hudInfo?.phase).toBe('第二章・城下');
+        // 移った直後（1 秒未満）の手動保存も読める
+        h.game.tick(0.3);
+        void h.game.openMenu();
+        const m = await h.next('menu');
+        m.answer('save');
+        const m2 = await h.next('menu');
+        expect(m2.info.message?.ok).toBe(true);
+        m2.answer('close');
+        await flush();
+        const manual = parseIeyasu2SaveData(storage.data.get(IEYASU_SAVE_KEY)!);
+        expect(manual?.point).toBe('manual');
+        const h3 = new Harness(storage);
+        const info3 = await h3.continueIeyasu();
+        expect(info3.scenarios[0]!.save?.summary).toMatch(/^第二章・城下・/);
+        expect(h3.s.chapter).toBe(2);
+    });
 });
 
 describe('結末の画面のボタン・連打・保存の失敗', () => {
@@ -423,6 +466,7 @@ describe('結末の画面のボタン・連打・保存の失敗', () => {
         let c = await h.next('confirm');
         expect(c.opts.title).toBe('保存できませんでした');
         expect(c.opts.lines[0]).toBe('第二章の始めを保存できませんでした。第一章の保存はそのまま残っています。');
+        expect(c.opts.lines[2]).toContain('先に第一章の保存を控えへ写します');
         expect(c.opts.buttons.map((b) => b.label)).toEqual(['保存せずに第二章を始める', '結末の画面へ戻る']);
         expect(c.opts.buttons[c.opts.defaultIndex ?? 0]!.id).toBe('back');
         c.answer('back');
@@ -444,6 +488,57 @@ describe('結末の画面のボタン・連打・保存の失敗', () => {
         expect(info.scenarios[0]!.save?.summary).toContain('章の結末');
         expect((await h2.next('ending')).view.id).toBe('defeat_mikawa');
     });
+
+    it('第一章の控えが書けない（容量）→ 保存せずに第二章を始める：その後の第二章の保存（手動・出陣前・戦後）は失敗を知らせ、第一章の保存を上書きしない', async () => {
+        class FullBackup extends MemoryStorage {
+            override setItem(k: string, v: string): void {
+                if (k === IEYASU_CHAPTER1_KEY) {
+                    const e = new Error('full');
+                    e.name = 'QuotaExceededError';
+                    throw e;
+                }
+                super.setItem(k, v);
+            }
+        }
+        const storage = new FullBackup();
+        storage.data.set(IEYASU_SAVE_KEY, IEYASU_V3_FIXTURES.oda_victory_kept);
+        const h = new Harness(storage);
+        await h.continueIeyasu();
+        const e = await h.next('ending');
+        e.answer('next_chapter');
+        const c = await h.next('confirm');
+        expect(c.opts.lines[2]).toContain('第一章の保存を上書きしません');
+        c.answer('go');
+        (await h.next('record')).answer();
+        await flush();
+        expect(h.s.chapter).toBe(2);
+        // 手動保存：失敗を知らせる
+        void h.game.openMenu();
+        const m = await h.next('menu');
+        m.answer('save');
+        const m2 = await h.next('menu');
+        expect(m2.info.message?.ok).toBe(false);
+        expect(m2.info.message?.text).toContain('第一章の保存を控えへ写せなかったため');
+        m2.answer('close');
+        await flush();
+        // 出陣前の自動保存：確かめる → 保存せずに出陣 → 戦後の自動保存も失敗（知らせる）
+        await councilAndMuster(h);
+        h.world.walkTo('gate');
+        h.game.tick(1 / 30);
+        const g = await h.next('script');
+        g.answer('depart');
+        const d = await h.next('confirm');
+        expect(d.opts.lines[0]).toContain('第一章の保存を控えへ写せなかったため');
+        d.answer('go');
+        await flush(120);
+        expect(h.s.phase).toBe('aftermath');
+        expect(h.view.toasts.some((t) => t.kind === 'error' && t.text.includes('第一章の保存を控えへ写せなかったため'))).toBe(true);
+        // 第一章の保存はそのまま（読み込み直すと第一章の結末から）
+        expect(storage.data.get(IEYASU_SAVE_KEY)).toBe(IEYASU_V3_FIXTURES.oda_victory_kept);
+        const h2 = new Harness(storage);
+        const info = await h2.continueIeyasu();
+        expect(info.scenarios[0]!.save?.summary).toContain('章の結末');
+    }, 60_000);
 
     it('移った後に読み込み直すと第二章の城下から（移る処理をもう一度通らない・結果確認は出さない）', async () => {
         const { storage } = seeded('home_defeat_broken_heavy');
