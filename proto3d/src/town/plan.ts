@@ -31,8 +31,12 @@ export interface Piece {
     open?: boolean;
 }
 
-/** 町のまとまり（描く側はまとまりごとに形をまとめる：見えないまとまりは描かない）。towertop は物見櫓の屋根（物見の眺めの間は描かない） */
-export type TownCluster = 'south' | 'guardpost' | 'council' | 'towertop';
+/**
+ * 町のまとまり（描く側はまとまりごとに形をまとめる：画面の外・塀の陰で見えないまとまりは描かない。town/view.ts の updateTownView）。
+ * south：木戸と東の柵・物見櫓・荷置き場、fence_w：木戸の西の長い柵、fence_e：町家の写しの東の柵、shop_e：町家の写しのまわり、
+ * guardpost：詰所、council：軍議所、towertop：物見櫓の屋根（物見の眺めの間は描かない）
+ */
+export type TownCluster = 'south' | 'fence_w' | 'fence_e' | 'shop_e' | 'guardpost' | 'council' | 'towertop';
 
 export interface TownProp {
     name: string;
@@ -398,9 +402,9 @@ function buildProps(): TownProp[] {
     const out: TownProp[] = [];
     // ---- 街道口：木戸と柵（木戸の東西。東は町家の写しの裏から歩ける範囲の東の端まで）
     out.push(kido(KIDO.z));
-    out.push(fence('fence_w', 'south', -22, KIDO.z, 0, 22 - KIDO.postX - 0.18));
+    out.push(fence('fence_w', 'fence_w', -22, KIDO.z, 0, 22 - KIDO.postX - 0.18));
     out.push(fence('fence_e1', 'south', KIDO.postX + 0.18, KIDO.z, 0, 4.3 - KIDO.postX - 0.18));
-    out.push(fence('fence_e2', 'south', 9.74, KIDO.z, 0, 20 - 9.74));
+    out.push(fence('fence_e2', 'fence_e', 9.74, KIDO.z, 0, 20 - 9.74));
     // ---- 物見櫓（街道口の西）
     out.push(...lookoutTower(TOWER.x, TOWER.z));
     // ---- 荷置き場（道の西、町家 B の南）：荷車・俵・籠
@@ -409,8 +413,8 @@ function buildProps(): TownProp[] {
     out.push(bales('bales_w2', 'south', -10.0, 11.4, Math.PI / 2, 2));
     out.push(baskets('baskets_w', 'south', [[-9.5, 12.7], [-10.15, 13.15], [-9.6, 13.5]]));
     // 町家の写しの店先（道の東、木戸の内側）
-    out.push(baskets('baskets_e', 'south', [[3.95, 12.95]]));
-    out.push(bales('bales_e', 'south', 10.6, 13.6, Math.PI / 2, 2));
+    out.push(baskets('baskets_e', 'shop_e', [[3.95, 12.95]]));
+    out.push(bales('bales_e', 'shop_e', 10.6, 13.6, Math.PI / 2, 2));
     // ---- 詰所（東の囲い）：小屋・槍立て・筵・床几・桶
     out.push(hut(HUT.x, HUT.z));
     out.push(spearRack(11.9, -10.72));

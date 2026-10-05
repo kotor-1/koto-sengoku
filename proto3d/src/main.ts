@@ -20,7 +20,7 @@ import { SKY, makeHills, makeSky } from './scenery';
 import { activeMode, setAppContext } from './app/modes';
 import { createPost, type Post } from './post';
 import { bootChapter, type ExploreHost } from './ui/boot';
-import { buildTown, type TownView } from './town/view';
+import { buildTown, updateTownView, type TownView } from './town/view';
 
 /**
  * カメラ：南の斜め上から北を見下ろす「正面寄りの見下ろし」（向きは固定。回転しない）。
@@ -683,6 +683,8 @@ function advance(dt: number, raw: number, ix: number, iy: number): void {
 
 /** 今のカメラで 1 コマ描く（画質「高」は仕上げを通す） */
 function renderNow(): void {
+    // 町に足した物：塀の陰で見えないまとまりは描かない（画面の外は three が描かない）
+    if (town) updateTownView(town, camera);
     if (post) post.render();
     else renderer.render(scene, camera);
 }
@@ -750,7 +752,6 @@ const exploreHost: ExploreHost = {
         // 確認用の手動の描画（?render=manual）では描かない（__p3.renderNow のときだけ描く決まりのまま）
         if (manualRender || activeMode()) return;
         placeCamera(1);
-        for (const f of frameHooks) f(0);
         renderNow();
     },
     setLookHandler(fn) {

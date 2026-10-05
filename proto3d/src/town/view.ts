@@ -78,17 +78,69 @@ function placedPiece(prop: TownProp, p: Piece, gy: number): THREE.BufferGeometry
 export interface TownView {
     /** 町に足した物の根（町家の写し・小物・のぼり） */
     root: THREE.Group;
+    /** まとまりごとの形（塀の陰で見えないまとまりを描かない：updateTownView） */
+    clusters: Map<TownCluster, THREE.Object3D[]>;
+    /** 影を落とす形と、その形と影の届く所を囲む球（画面に入らない形は影の描画を省く：updateTownView） */
+    casters: { meshes: THREE.Mesh[]; sphere: THREE.Sphere }[];
     /** 町家の写し（見下ろしのときに半透明にする対象） */
     copies: THREE.Object3D[];
+    /** 画質「低」（小物は影を落とさない。町家の写しは元と同じく落とす） */
+    lowShadows: boolean;
     /** 確かめ用：まとめた形の数と三角形の数 */
     stats: { meshes: number; triangles: number; copies: number };
 }
 
 /** 物見櫓の屋根と柱を描く／描かない（物見の眺めの間は目の前をふさがないように描かない） */
 export function setTowerTopVisible(scene: THREE.Object3D, visible: boolean): void {
+    towerTopHidden = !visible;
     scene.traverse((o) => {
         if (o.name.startsWith('town:towertop:')) o.visible = visible;
     });
+}
+let towerTopHidden = false;
+
+/**
+ * まとまりが今のカメラから見えうるか（塀の陰の大まかな決まり。画面の外は three が別に描かない）。
+ * - 軍議所（城内）：カメラが城内（塀の北）か、高い所（物見櫓の上）にあるときだけ。町から見ると土塀（高さ 3.7 m）の陰
+ * - 詰所（東の囲い）：カメラが囲いの中・町家 D より南・高い所にあるときだけ。通りからは東の土塀の陰
+ * - 南の物（木戸・櫓・荷置き場・柵）：カメラが城内の奥（塀より北）にいなければ
+ */
+export function clusterMayShow(c: TownCluster, cam: { x: number; y: number; z: number }): boolean {
+    const high = cam.y > 5;
+    switch (c) {
+        case 'council':
+            return cam.z < -11.3 || high;
+        case 'guardpost':
+            return cam.x > 7.0 || cam.z > 3.0 || high;
+        case 'towertop':
+            return !towerTopHidden;
+        default:
+            return cam.z > -12.7 || high;
+    }
+}
+
+/** 影の落ちる向き（地面の上。日は南南西の上：main.ts の SUN_OFFSET の反対） */
+const SHADOW_DIR = new THREE.Vector3(5, 0, -16).normalize();
+const frustum = new THREE.Frustum();
+const pv = new THREE.Matrix4();
+
+/**
+ * 毎フレーム、描く前：塀の陰で見えないまとまりを描かない。形も影も画面に入らない物は、影の描画も省く
+ * （影の範囲は主人公の前後に広いので、背中側の町家の写しの影も描いていた）。
+ */
+export function updateTownView(view: TownView, camera: THREE.Camera): void {
+    const p = camera.position;
+    for (const [c, list] of view.clusters) {
+        const v = clusterMayShow(c, p);
+        for (const o of list) if (o.visible !== v) o.visible = v;
+    }
+    camera.updateMatrixWorld();
+    pv.multiplyMatrices((camera as THREE.PerspectiveCamera).projectionMatrix, camera.matrixWorldInverse);
+    frustum.setFromProjectionMatrix(pv);
+    for (const c of view.casters) {
+        const cast = !view.lowShadows && frustum.intersectsSphere(c.sphere);
+        for (const m of c.meshes) if (m.castShadow !== cast) m.castShadow = cast;
+    }
 }
 
 /**
@@ -128,6 +180,12 @@ export function buildTown(models: ReadonlyMap<string, THREE.Object3D>, prepare: 
     }
     let triangles = 0;
     let meshes = 0;
+    const clusters = new Map<TownCluster, THREE.Object3D[]>();
+    const addTo = (c: TownCluster, o: THREE.Object3D) => {
+        const list = clusters.get(c) ?? [];
+        list.push(o);
+        clusters.set(c, list);
+    };
     for (const b of buckets.values()) {
         const g = mergeGeometries(b.geos);
         for (const x of b.geos) x.dispose();
@@ -140,6 +198,7 @@ export function buildTown(models: ReadonlyMap<string, THREE.Object3D>, prepare: 
         m.matrixAutoUpdate = false;
         m.updateMatrix();
         root.add(m);
+        addTo(b.cluster, m);
         meshes++;
         triangles += (g.index ? g.index.count : g.attributes.position.count) / 3;
     }
@@ -170,9 +229,28 @@ export function buildTown(models: ReadonlyMap<string, THREE.Object3D>, prepare: 
         g.position.set(bn.x, gy, bn.z);
         g.rotation.y = bn.rotY;
         root.add(g);
+        addTo(bn.cluster, g);
         meshes += 3;
         triangles += 12 + 2 + 12 + 24;
     }
     root.updateMatrixWorld(true);
-    return { root, copies, stats: { meshes, triangles: Math.round(triangles), copies: copies.length } };
+    // 影を落とす形ごとに、形と影の届く所を囲む球（影は日の反対へ、高さの 1.4 倍ほどまで伸びる）
+    const casters: TownView['casters'] = [];
+    const addCaster = (o: THREE.Object3D) => {
+        const meshes: THREE.Mesh[] = [];
+        o.traverse((x) => {
+            if ((x as THREE.Mesh).isMesh && (x as THREE.Mesh).castShadow) meshes.push(x as THREE.Mesh);
+        });
+        if (!meshes.length) return;
+        const box = new THREE.Box3().setFromObject(o);
+        const sphere = box.getBoundingSphere(new THREE.Sphere());
+        const reach = Math.max(1, box.max.y) * 1.4;
+        sphere.center.x += SHADOW_DIR.x * reach * 0.5;
+        sphere.center.z += SHADOW_DIR.z * reach * 0.5;
+        sphere.radius += reach * 0.5 + 1;
+        casters.push({ meshes, sphere });
+    };
+    for (const c of copies) addCaster(c);
+    for (const list of clusters.values()) for (const o of list) addCaster(o);
+    return { root, clusters, casters, copies, lowShadows: false, stats: { meshes, triangles: Math.round(triangles), copies: copies.length } };
 }

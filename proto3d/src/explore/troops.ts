@@ -119,6 +119,8 @@ export class TownTroops {
         this.head.count = n;
         this.spear.count = ns;
         for (const m of [this.body, this.head, this.spear]) {
+            // 0 人のときは描かない（描画の呼び出しを増やさない）
+            m.visible = m.count > 0;
             m.instanceMatrix.needsUpdate = true;
             if (m.instanceColor) m.instanceColor.needsUpdate = true;
         }
