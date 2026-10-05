@@ -45,6 +45,7 @@ import {
 import { ABILITY_DATA, abilityInfo } from './abilities';
 import { troopTier } from './troops';
 import { POLE_H, TroopLayer, type TroopStats } from './troopsView';
+import { CLAN_CHAR, CLAN_COLOR, makeBannerTexture } from '../shared/figures';
 
 /** 特殊能力の範囲の輪の色（敵方の能力は赤みの色） */
 const ABILITY_COLOR: Record<string, string> = {
@@ -78,14 +79,8 @@ const NIGHT_LIGHT = { hemi: 0.55, sun: 0.4, bg: '#26301f' };
 /** 約束の安全地点と対象の輪の色 */
 const PLEDGE_COLOR = '#5fe0c0';
 
-/** 家の色（旗・兵の鎧） */
-export const CLAN_COLOR: Record<ClanId, string> = {
-    kotosaka: '#2f55a8', washio: '#a8322a', tashiro: '#2f7d45', omori: '#c08d22',
-    tokugawa: '#2f55a8', oda: '#c9a227', asai: '#3b3f8f', asakura: '#7a3b8f', ronin: '#6b6259',
-    rival: '#8a3a2e',
-};
-/** 家の旗の字（仮） */
-export const CLAN_CHAR: Record<ClanId, string> = { kotosaka: '琴', washio: '鷲', tashiro: '田', omori: '森', tokugawa: '徳', oda: '織', asai: '浅', asakura: '朝', ronin: '浪', rival: '敵' };
+/** 家の色（旗・兵の鎧）・家の旗の字（町と共有するため shared/figures.ts へ移した。ここからも今までどおり読める） */
+export { CLAN_CHAR, CLAN_COLOR };
 /** 陣営の色（輪・名札）。同じ家が味方にも敵にもなるので、敵味方はこちらで見分ける */
 export const SIDE_COLOR: Record<Side, string> = { ally: '#8fdcff', enemy: '#ff5b4c' };
 
@@ -1777,74 +1772,6 @@ function makeRingGeometry(inner: number, outer: number, withTick: boolean): THRE
     g.dispose();
     tick.dispose();
     return out;
-}
-
-/** のぼりの画像：家の色の地に、白い丸の中の紋（簡単な図形）と家の字 */
-function makeBannerTexture(clan: ClanId): THREE.CanvasTexture {
-    const cv = document.createElement('canvas');
-    cv.width = 128;
-    cv.height = 300;
-    const g = cv.getContext('2d')!;
-    g.fillStyle = CLAN_COLOR[clan];
-    g.fillRect(0, 0, 128, 300);
-    // 上の帯（乳＝竿に通す輪のあたり）
-    g.fillStyle = 'rgba(0,0,0,0.25)';
-    g.fillRect(0, 0, 128, 14);
-    // 紋の丸
-    const cx = 64;
-    const cy = 78;
-    g.fillStyle = '#f4efe2';
-    g.beginPath();
-    g.arc(cx, cy, 46, 0, Math.PI * 2);
-    g.fill();
-    g.fillStyle = '#1b1712';
-    g.strokeStyle = '#1b1712';
-    g.lineWidth = 7;
-    if (clan === 'kotosaka') {
-        // 丸に一文字
-        g.beginPath();
-        g.arc(cx, cy, 33, 0, Math.PI * 2);
-        g.stroke();
-        g.fillRect(cx - 26, cy - 6, 52, 12);
-    } else if (clan === 'washio') {
-        // 三つ鱗
-        const tri = (x: number, y: number, s: number) => {
-            g.beginPath();
-            g.moveTo(x, y - s);
-            g.lineTo(x + s * 0.95, y + s * 0.65);
-            g.lineTo(x - s * 0.95, y + s * 0.65);
-            g.closePath();
-            g.fill();
-        };
-        tri(cx, cy - 15, 17);
-        tri(cx - 18, cy + 16, 17);
-        tri(cx + 18, cy + 16, 17);
-    } else if (clan === 'tashiro') {
-        // 菱
-        g.beginPath();
-        g.moveTo(cx, cy - 34);
-        g.lineTo(cx + 26, cy);
-        g.lineTo(cx, cy + 34);
-        g.lineTo(cx - 26, cy);
-        g.closePath();
-        g.fill();
-        g.fillStyle = '#f4efe2';
-        g.fillRect(cx - 26, cy - 3, 52, 6);
-    } else {
-        // 丸に三つ引
-        g.beginPath();
-        g.arc(cx, cy, 33, 0, Math.PI * 2);
-        g.stroke();
-        for (const dy of [-14, 0, 14]) g.fillRect(cx - 24, cy + dy - 4, 48, 8);
-    }
-    g.fillStyle = '#f4efe2';
-    g.font = 'bold 84px "Hiragino Mincho ProN", "Noto Serif CJK JP", "Noto Sans CJK JP", "Yu Mincho", serif';
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.fillText(CLAN_CHAR[clan], cx, 210);
-    const tex = new THREE.CanvasTexture(cv);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    return tex;
 }
 
 /** 斬り合いの印（交差した 2 本の刀と火花） */

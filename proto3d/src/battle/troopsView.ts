@@ -8,8 +8,8 @@
  * 合戦の状態（BattleState）は読むだけ。ここで数えた人数は表示だけのもので、計算には使わない。
  */
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { ClanId, UnitKind } from './types';
+import { POLE_H, makeTroopGeometries } from '../shared/figures';
 import { elevationAt, type BattleState } from './sim';
 import {
     lodCount,
@@ -33,8 +33,8 @@ import {
 
 /** 兵士の大きさ（1 m 単位の形を何倍で置くか。実寸より大きめにして、遠くからも隊列が読めるように） */
 export const TROOP_FIG = 1.45;
-/** 旗の高さ（m） */
-export const POLE_H = 10;
+/** 旗の高さ（m。形と一緒に shared/figures.ts へ移した） */
+export { POLE_H };
 
 /** view.ts が毎フレーム渡す、部隊の見た目の位置と様子（なめらかにしたもの） */
 export interface TroopUnitPose {
@@ -357,78 +357,4 @@ export class TroopLayer {
         for (const c of this.group.children) (c as THREE.InstancedMesh).dispose();
         this.group.clear();
     }
-}
-
-// ---------------------------------------------------------------- 形
-
-/** 部分の形に色を付けて置く（まとめる前の部品） */
-function part(g: THREE.BufferGeometry, color: string | number, x: number, y: number, z: number, rx = 0, rz = 0): THREE.BufferGeometry {
-    const geo = g;
-    geo.deleteAttribute('uv');
-    if (rx) geo.rotateX(rx);
-    if (rz) geo.rotateZ(rz);
-    geo.translate(x, y, z);
-    const c = typeof color === 'number' ? new THREE.Color(color, color, color) : new THREE.Color(color);
-    const n = geo.attributes.position.count;
-    const col = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) {
-        col[i * 3] = c.r;
-        col[i * 3 + 1] = c.g;
-        col[i * 3 + 2] = c.b;
-    }
-    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    return geo;
-}
-
-function merge(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
-    const g = mergeGeometries(parts.map((p) => (p.index ? p.toNonIndexed() : p)))!;
-    for (const p of parts) p.dispose();
-    return g;
-}
-
-/**
- * 兵士の形（前は -z。1 m 単位で作り、置くときに TROOP_FIG 倍にする）と旗の形。簡単な箱と円すいだけ（美術の作り込みはしない）。
- * - body：足・胴・袖・陣笠・背中の小旗（家の色に染める。明暗だけ頂点の色で付ける）
- * - spear：頭と槍（槍・本陣・騎馬）、bow：頭と弓と矢筒（弓）
- * - horse：馬（騎馬。乗り手は body を高くして置く）
- * - pole：旗竿（根元が原点）、top：本陣の旗の頭の玉、banner・big：のぼり（竿の横に張る。大きい方は本陣）
- */
-function makeTroopGeometries(): Record<'body' | 'spear' | 'bow' | 'horse' | 'pole' | 'top' | 'banner' | 'big', THREE.BufferGeometry> {
-    const body = merge([
-        part(new THREE.BoxGeometry(0.42, 0.8, 0.28), 0.42, 0, 0.4, 0),
-        part(new THREE.BoxGeometry(0.62, 0.72, 0.38), 1.0, 0, 1.16, 0),
-        part(new THREE.BoxGeometry(0.9, 0.16, 0.42), 0.78, 0, 1.46, 0),
-        part(new THREE.ConeGeometry(0.44, 0.24, 6), 0.9, 0, 1.94, 0),
-        part(new THREE.BoxGeometry(0.05, 0.62, 0.36), 1.15, 0, 2.02, 0.26),
-    ]);
-    // 頭は角の少ない球（数百人を描くので、1 人あたりの三角を少なく。体・槍で約 130）
-    const head = () => part(new THREE.SphereGeometry(0.19, 6, 4), '#d8b28a', 0, 1.72, 0);
-    const spear = merge([
-        head(),
-        part(new THREE.BoxGeometry(0.06, 4.4, 0.06), '#6e5436', 0.36, 2.0, -0.2, -0.22),
-        part(new THREE.ConeGeometry(0.1, 0.45, 4), '#e2e2e2', 0.36, 2.0 + 2.2 * Math.cos(0.22) + 0.2, -0.2 - 2.2 * Math.sin(0.22) - 0.05, -0.22),
-    ]);
-    const bow = merge([
-        head(),
-        part(new THREE.BoxGeometry(0.06, 1.9, 0.08), '#3a2a18', -0.4, 1.35, -0.1, 0, 0.12),
-        part(new THREE.BoxGeometry(0.16, 0.55, 0.16), '#5c3b22', 0.18, 1.3, 0.28, 0.3),
-    ]);
-    const horse = merge([
-        part(new THREE.BoxGeometry(0.56, 0.62, 1.8), '#6b4a2e', 0, 1.15, 0),
-        part(new THREE.BoxGeometry(0.3, 0.75, 0.36), '#5e3f26', 0, 1.62, -0.82, -0.55),
-        part(new THREE.BoxGeometry(0.26, 0.28, 0.62), '#5e3f26', 0, 1.98, -1.18),
-        part(new THREE.BoxGeometry(0.14, 0.86, 0.14), '#4a321e', -0.2, 0.43, -0.7),
-        part(new THREE.BoxGeometry(0.14, 0.86, 0.14), '#4a321e', 0.2, 0.43, -0.7),
-        part(new THREE.BoxGeometry(0.14, 0.86, 0.14), '#4a321e', -0.2, 0.43, 0.7),
-        part(new THREE.BoxGeometry(0.14, 0.86, 0.14), '#4a321e', 0.2, 0.43, 0.7),
-        part(new THREE.BoxGeometry(0.62, 0.1, 0.8), '#b8a27a', 0, 1.5, 0.05),
-    ]);
-    const pole = new THREE.CylinderGeometry(0.13, 0.16, POLE_H, 5);
-    pole.translate(0, POLE_H / 2, 0);
-    const banner = new THREE.PlaneGeometry(2.4, 5.6);
-    banner.translate(1.3, 0, 0);
-    const big = new THREE.PlaneGeometry(3.4, 7.2);
-    big.translate(1.8, 0, 0);
-    const top = new THREE.SphereGeometry(0.75, 10, 8);
-    return { body, spear, bow, horse, pole, top, banner, big };
 }
