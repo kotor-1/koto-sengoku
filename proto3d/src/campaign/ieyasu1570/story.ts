@@ -205,7 +205,7 @@ function exploreScript(state: IeyasuState, id: IeyasuTalkId): ScenarioScript {
                 { id: 'open_council', label: '軍議を開く', detail: '方針（織田・浅井・自領の防衛）を決める軍議へ進みます' },
                 { id: 'not_yet', label: 'もう少し話を聞いて回る' },
             ];
-            if (again) return { id: 'explore.tadakatsu.again', talk: id, lines: [T('皆、広間に控えております。軍議を開かれますか。')], choices, defaultChoice: 0 };
+            if (again) return { id: 'explore.tadakatsu.again', talk: id, lines: [T('皆、陣幕の内に控えております。軍議を開かれますか。')], choices, defaultChoice: 0 };
             const lines: ScenarioLine[] = [
                 narrate('元亀元年（1570年）。織田と浅井・朝倉が敵味方に分かれ、近江の情勢が張りつめている。（この章の会話と、この先の出来事はゲーム用の創作）'),
                 T('殿、お戻りなさいませ。'),

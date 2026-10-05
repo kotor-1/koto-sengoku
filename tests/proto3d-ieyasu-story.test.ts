@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BattleResultKind } from '../proto3d/src/battle/types';
 import { finishTalkIeyasu, newIeyasuGame, presentIeyasuTalks, talkIeyasu } from '../proto3d/src/campaign/ieyasu1570/flow';
+import { finishTalkIeyasu2, startChapter2, talkIeyasu2 } from '../proto3d/src/campaign/ieyasu1570/chapter2/flow';
 import { ieyasuCastFor, ieyasuScenario } from '../proto3d/src/campaign/ieyasu1570/scenario';
 import { POLICIES, PLEDGE_SPECS, type IeyasuState, type PledgeResult } from '../proto3d/src/campaign/ieyasu1570/state';
 import {
@@ -150,6 +151,22 @@ describe('どの状態でも台詞と結末が作れ、関係・損害・方針�
 describe('軍議での酒井忠次・石川数正（台詞は創作）', () => {
     const opened = () => finishTalkIeyasu(newIeyasuGame(), 'tadakatsu', 'open_council');
     const speakers = (sc: ReturnType<typeof talkIeyasu>) => sc.lines.map((l) => l.speaker);
+    it('軍議の場所の言い方は陣幕（軍議の始めの地の文・軍議の前に忠勝へもう一度話しかけたとき。第一章・第二章とも。「広間」と言わない）', () => {
+        const again1 = talkIeyasu(finishTalkIeyasu(newIeyasuGame(), 'tadakatsu', 'not_yet'), 'tadakatsu');
+        expect(again1.id).toBe('explore.tadakatsu.again');
+        const c2 = startChapter2(finishTalkIeyasu(ieyasuToAftermath('oda', 'victory', 'accept', { pledge: 'kept' }), 'tadakatsu', 'end_chapter'));
+        const again2 = talkIeyasu2(finishTalkIeyasu2(c2, 'tadakatsu', 'not_yet'), 'tadakatsu');
+        expect(again2.id).toBe('ch2.explore.tadakatsu.again');
+        for (const sc of [again1, again2]) {
+            expect(sc.lines.map((l) => l.text).join('')).toContain('陣幕の内に控えております');
+            expect(sc.choices?.map((c) => c.id)).toEqual(['open_council', 'not_yet']);
+        }
+        const council1 = talkIeyasu(opened(), 'council');
+        const council2 = talkIeyasu2(finishTalkIeyasu2(c2, 'tadakatsu', 'open_council'), 'council');
+        for (const sc of [again1, again2, council1, council2]) expect(sc.lines.map((l) => l.text).join(''), sc.id).not.toContain('広間');
+        expect(council1.lines[0]!.text).toContain('陣幕の内');
+        expect(council2.lines[0]!.text).toContain('陣幕の内');
+    });
     it('軍議の始めに二人が居て、一言ずつ述べる（選択肢の並び・id は今までどおり）', () => {
         const sc = talkIeyasu(opened(), 'council');
         expect(sc.id).toBe('council');

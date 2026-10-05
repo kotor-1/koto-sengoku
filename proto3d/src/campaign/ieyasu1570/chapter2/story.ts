@@ -379,7 +379,7 @@ function exploreScript(state: Ieyasu2State, id: Ieyasu2TalkId): ScenarioScript {
                 { id: 'open_council', label: '軍議を開く', detail: '今回の判断（2 つのうち 1 つ）を決める軍議へ進みます' },
                 { id: 'not_yet', label: 'もう少し話を聞いて回る' },
             ];
-            if (again) return { id: 'ch2.explore.tadakatsu.again', talk: id, lines: [T('皆、広間に控えております。軍議を開かれますか。')], choices, defaultChoice: 0 };
+            if (again) return { id: 'ch2.explore.tadakatsu.again', talk: id, lines: [T('皆、陣幕の内に控えております。軍議を開かれますか。')], choices, defaultChoice: 0 };
             const lines: ScenarioLine[] = [
                 narrate('第一章の戦から、数日がたった。（ここからは、第一章の直後の分岐した世界での出来事。会話と出来事はゲーム用の創作）'),
                 T('殿。'),
