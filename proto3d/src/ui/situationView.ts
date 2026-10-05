@@ -78,13 +78,16 @@ export function openSituation(host: LayerHost, v: SituationView, o: SituationOpe
                 tabBtns.push(b);
                 tabs.append(b);
             });
-            const note = el('p', 'g-sit-tabs-note', 'タブは地図で見るだけです。方針・判断は軍議の選択肢で決めます。');
-            left.append(tabs, optText, note);
         }
         cols.append(left);
 
-        // 右：短い説明
+        // 右：（軍議から開いたときは選択肢のタブを一番上に）短い説明
         const right = el('section', 'g-sit-right');
+        if (options.length > 0) {
+            const tabBox = el('div', 'g-sit-tabbox');
+            tabBox.append(el('h2', undefined, '軍議の選択肢を地図で見る'), tabs, optText, el('p', 'g-sit-tabs-note', 'タブは地図で見るだけです。方針・判断は軍議の選択肢で決めます。'));
+            right.append(tabBox);
+        }
         const dl = el('dl', 'g-status g-sit-facts');
         const row = (label: string, value: string, key: string) => {
             const dt = el('dt', undefined, label);

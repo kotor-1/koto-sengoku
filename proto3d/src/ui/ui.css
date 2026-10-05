@@ -646,7 +646,8 @@ body.g-cine .g-hud, body.g-cine .g-menu-btn, body.g-cine .g-sit-btn, body.g-cine
 .g-sit-map { padding: 4px; border-radius: 12px; background: #0f0c09; border: 1px solid var(--hairline); }
 .g-sit-map svg { width: 100%; height: auto; max-height: calc(100vh - 120px); }
 .g-sit-map-head { margin: 4px 8px 2px; font-size: 13px; color: var(--gold); letter-spacing: 0.06em; }
-.g-sit-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.g-sit-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.g-sit-tabbox h2 { margin-top: 0 !important; }
 .g-sit-tab {
     flex: 1 1 auto;
     min-height: 42px;
@@ -665,7 +666,9 @@ body.touch .g-sit-tab .n { display: none; }
 .g-sit-tabs-note { margin: 4px 2px 0; font-size: 12px; color: var(--ink-soft); }
 .g-sit-right { padding: 10px 14px; border-radius: 12px; background: rgba(20, 18, 15, 0.8); border: 1px solid var(--hairline); }
 .g-sit-facts { font-size: 14px; line-height: 1.55; margin-top: 0; }
-.g-sit-scout h2, .g-sit-replays h2 { margin: 12px 0 4px; font-size: 13px; letter-spacing: 0.18em; color: var(--ink-soft); font-weight: 400; }
+.g-sit-tabbox { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--hairline); }
+.g-sit-tabbox .g-sit-tabs { margin-top: 4px; }
+.g-sit-tabbox h2, .g-sit-scout h2, .g-sit-replays h2 { margin: 12px 0 4px; font-size: 13px; letter-spacing: 0.18em; color: var(--ink-soft); font-weight: 400; }
 .g-sit-scout ul { margin: 0; padding-left: 1.1em; font-size: 13px; line-height: 1.6; }
 .g-sit-scout li b { color: var(--gold); font-weight: 600; }
 .g-sit-scout .g-note { margin: 0; line-height: 1.5; }
@@ -677,7 +680,8 @@ body.touch .g-sit-tab .n { display: none; }
     .g-sit-head { margin-bottom: 4px; }
     .g-sit-head .kicker { font-size: 11px; }
     .g-sit-head h1 { font-size: 16px; }
-    .g-sit-map svg { max-height: calc(100vh - 70px); }
+    .g-sit-map svg { max-height: calc(100vh - 140px); }
+    .g-sit-map-head { margin: 2px 6px 0; font-size: 12px; }
     .g-sit-tab { min-height: 40px; font-size: 13px; padding: 5px 10px; }
     .g-sit-opt-text { font-size: 13px; }
     .g-sit-facts { font-size: 13px; line-height: 1.45; }
