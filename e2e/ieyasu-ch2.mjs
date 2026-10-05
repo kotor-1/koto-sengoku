@@ -936,7 +936,9 @@ async function chapter2(page, io, P, policy, ch1) {
   await sleep(1500);
   const sa = await st(page);
   const wa = await writes(page);
-  const want = await page.evaluate(async ([p, plan, r]) => (await import('/src/campaign/ieyasu1570/chapter2/rules.ts')).ch2TrustDelta(p, plan, r), [policy, c.plan, out.result]);
+  // 守備隊を出したかは、実際に出陣した部隊（戦後の記録の sortie）で決まる（4 つ目の引数。省くと判断 1 なら出たとみなす）
+  const reserveOut = (res?.sortie ?? []).includes('reserve');
+  const want = await page.evaluate(async ([p, plan, r, ro]) => (await import('/src/campaign/ieyasu1570/chapter2/rules.ts')).ch2TrustDelta(p, plan, r, ro), [policy, c.plan, out.result, reserveOut]);
   const trustOk = Object.keys(want).every((k) => sa.trust[k] === Math.max(-100, Math.min(100, trustBefore[k] + want[k])));
   check(`${P} 「続ける」の連打（${io.phone ? 'タップ' : 'クリック'} 6 回＋Enter 4 回）：戦後の反映は 1 回（信頼の動きは 1 回分・保存を書き直さない）`,
     sa.phase === 'aftermath' && sa.appliedBattleId === sa.battleId && trustOk && !wa[KEY], `信頼 ${J(trustBefore)} → ${J(sa.trust)}（動き ${J(want)}）・書き込み ${J(wa)}`);
