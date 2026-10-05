@@ -526,6 +526,7 @@ body.g-modal #npc-labels { display: none; }
     pointer-events: auto;
 }
 .g-sit-btn[hidden] { display: none; }
+.g-sit-btn.covered, body.g-council-open .g-hud { visibility: hidden; }
 .g-sit-btn kbd, .g-council-map kbd { margin-left: 6px; font-size: 11px; opacity: 0.7; }
 body.touch .g-sit-btn { top: calc(var(--safe-t) + 64px); padding: 11px 18px; }
 body.touch .g-sit-btn kbd, body.touch .g-council-map kbd { display: none; }

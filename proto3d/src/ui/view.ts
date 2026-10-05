@@ -237,6 +237,10 @@ export class DomView implements GameView, LayerHost {
         const cine = top?.kind === 'cine';
         for (const m of this.modals) m.layer.classList.toggle('g-under-cine', cine && m !== top);
         document.body.classList.toggle('g-cine', cine);
+        // 軍議の間は、下に透けて見える目的の札・情勢のボタンを隠す（軍議の「地図で見る」と重ねない）
+        document.body.classList.toggle('g-council-open', this.modals.some((m) => m.layer.classList.contains('council')));
+        // 何か開いている間は情勢のボタンを隠す（押せないので）
+        this.sitBtn.classList.toggle('covered', this.modals.length > 0);
     }
 
     private covered = false;
