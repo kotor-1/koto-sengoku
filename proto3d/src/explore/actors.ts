@@ -19,6 +19,7 @@ interface ActorPerson {
     body: PersonBody;
     bale: THREE.Mesh | null;
     label: HTMLElement | null;
+    showLabel: boolean;
 }
 
 export type ActorPersonState = StagePerson & { carrying?: boolean; work?: number };
@@ -59,7 +60,6 @@ export class ActorLayer {
             if (!want.has(k)) this.remove(k, a);
         }
         this.updateFrustum(camera);
-        const { w, h } = this.viewSize();
         let drawn = 0;
         for (const p of list) {
             let a = this.people.get(p.key);
@@ -89,17 +89,29 @@ export class ActorLayer {
                 }
             }
             if (a.bale) a.bale.visible = vis && !!p.carrying;
-            if (a.label) {
-                const show = vis && p.label;
-                if (show) {
-                    tmpV.set(p.x, gy + 2.05, p.z).project(camera);
-                    const on = tmpV.z > -1 && tmpV.z < 1 && Math.abs(tmpV.x) < 1.05 && Math.abs(tmpV.y) < 1.05;
-                    a.label.hidden = !on;
-                    if (on) a.label.style.transform = `translate(${((tmpV.x * 0.5 + 0.5) * w).toFixed(1)}px, ${((-tmpV.y * 0.5 + 0.5) * h).toFixed(1)}px) translate(-50%, -100%)`;
-                } else a.label.hidden = true;
-            }
+            a.showLabel = vis && p.label;
         }
         this.peopleDrawn = drawn;
+        this.placeLabels(camera);
+    }
+
+    /**
+     * 名札を頭の上へ（描く直前に呼ぶ：演出の時計は探索の描画と別の時に進むので、描いた画と名札がずれないように、描く前にもう一度置く）
+     */
+    placeLabels(camera: THREE.Camera): void {
+        const { w, h } = this.viewSize();
+        for (const a of this.people.values()) {
+            if (!a.label) continue;
+            if (!a.showLabel) {
+                a.label.hidden = true;
+                continue;
+            }
+            const r = a.body.root.position;
+            tmpV.set(r.x, r.y + 2.05, r.z).project(camera);
+            const on = tmpV.z > -1 && tmpV.z < 1 && Math.abs(tmpV.x) < 1.05 && Math.abs(tmpV.y) < 1.05;
+            a.label.hidden = !on;
+            if (on) a.label.style.transform = `translate(${((tmpV.x * 0.5 + 0.5) * w).toFixed(1)}px, ${((-tmpV.y * 0.5 + 0.5) * h).toFixed(1)}px) translate(-50%, -100%)`;
+        }
     }
 
     /** 兵・のぼり・担架を置き直す */
@@ -127,13 +139,19 @@ export class ActorLayer {
         const body = this.factory.make(p.look, { walk: true, idlePhase: (hashOf(p.key) % 1000) / 1000 });
         let bale: THREE.Mesh | null = null;
         if (p.carrying !== undefined) {
-            // 肩に担ぐ俵（右肩の上。人物の向きの前後に長い）
+            // 肩に担ぐ俵（右肩の骨に付ける：休みの形では骨は回っていないので、骨の中の向きは人物の向きと同じ。人物の前後に長い）
             bale = new THREE.Mesh(this.baleGeo, this.baleMat);
             bale.rotation.x = Math.PI / 2;
-            bale.position.set(-0.2, 1.62, 0.02);
             bale.castShadow = !this.low;
             bale.visible = false;
-            body.root.add(bale);
+            const shoulder = body.bones.get('RightShoulder');
+            if (shoulder) {
+                bale.position.set(-0.04, 0.2, 0.02);
+                shoulder.add(bale);
+            } else {
+                bale.position.set(-0.2, 1.62, 0.02);
+                body.root.add(bale);
+            }
         }
         let label: HTMLElement | null = null;
         if (this.labelsBox && p.name) {
@@ -145,7 +163,7 @@ export class ActorLayer {
             this.labelsBox.appendChild(label);
         }
         this.group.add(body.root);
-        const a: ActorPerson = { key: p.key, look: p.look, body, bale, label };
+        const a: ActorPerson = { key: p.key, look: p.look, body, bale, label, showLabel: false };
         this.people.set(p.key, a);
         return a;
     }

@@ -450,6 +450,8 @@ export class ExploreWorld implements GameWorld {
             v.label.classList.toggle('far', dist > 12);
         }
         if (this.ambient) this.updateAmbient(cam);
+        // 演出の人の名札：描く直前のカメラで置き直す（演出の時計は探索の描画と別の時に進む）
+        if (this.stageKey) this.stageActors.placeLabels(cam);
     }
 
     /** 町の人々を今の時計の形に置く（出来事が同じ所に同じ人々を出している間は、その種類を隠す） */
