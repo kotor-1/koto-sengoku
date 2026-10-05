@@ -65,15 +65,18 @@ export const MERCHANT_SPOTS: readonly [number, number, number][] = [
     [-3.6, 2.6, EAST],
     [3.75, 14.0, WEST],
 ];
-/** 門番の立つ所（城門の柱の手前の外側。3 人目からは門の内側） */
+/**
+ * 門番の立つ所（城門の内側、開いた扉と控柱の北。南（町）を向く）。兵の形は人物の素材より粗いので、開始の画面の正面（門の手前）には立てない。
+ * 出陣の隊列が門を通る間は脇へ退く（出来事の間は隠す）
+ */
 export const GUARD_SPOTS: readonly [number, number, number][] = [
-    [-2.85, -10.3, 0],
-    [2.85, -10.3, 0],
-    [-1.4, -14.2, 0],
-    [1.4, -14.2, 0],
+    [-1.25, -14.9, 0],
+    [1.25, -14.9, 0],
+    [-3.0, -14.0, 0],
+    [3.0, -14.0, 0],
 ];
 
-/** 出陣を待つ兵（城内、城門の北に 4 列。南（城門）を向く。旗持ちは前の列の西の端） */
+/** 出陣を待つ兵（城内、城門の北（門番の後ろ）に 4 列。南（城門）を向く。旗持ちは前の列の西の端） */
 export function preparingLayout(count: number, mark: string): { figures: StageFigure[]; banners: StageBanner[] } {
     const n = Math.max(0, Math.min(16, Math.floor(count)));
     const xs = [-1.8, -0.6, 0.6, 1.8];
@@ -81,7 +84,7 @@ export function preparingLayout(count: number, mark: string): { figures: StageFi
     const banners: StageBanner[] = [];
     for (let i = 0; i < n; i++) {
         const x = xs[i % 4]!;
-        const z = -15.2 - Math.floor(i / 4) * 1.25;
+        const z = -16.0 - Math.floor(i / 4) * 1.25;
         figures.push({ x, z, y: 0, heading: 0, pose: 'stand', phase: i * 0.31, lean: 0, mark, spear: i !== 0 });
         if (i === 0) banners.push({ x, z, y: 0.95, heading: 0, mark, tilt: 0, open: true });
     }

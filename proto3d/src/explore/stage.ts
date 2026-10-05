@@ -520,7 +520,7 @@ function columnDepart(count: number, mark: string, t: number, reduced: boolean):
     }
     const col = placeColumn(path, slots, head, mark, moving, 1, { open: true, tilt: 0 });
     const s = reduced ? lerpShot(DEPART_SHOT_0, DEPART_SHOT_1, 0.5) : lerpShot(DEPART_SHOT_0, DEPART_SHOT_1, ease((t - 0.5) / 9));
-    return { people: [], ...col, shot: s, hideCast: [], hideAmbient: ['preparing'] };
+    return { people: [], ...col, shot: s, hideCast: [], hideAmbient: ['preparing', 'guard'] };
 }
 
 /** 帰還の画：通りの西から南（木戸）を見て、入ってくる隊列を迎える */
