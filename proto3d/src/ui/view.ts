@@ -10,12 +10,19 @@
  * 会話・軍議の途中も、右上の「メニュー」（Esc／M）でメニューを開ける。メニューは会話の上に重なり、閉じれば同じ行・同じ選び方に戻る（会話は進まない）。
  */
 import './ui.css';
-import type { ConfirmOptions, EndingAction, EndingOptions, GameView, HudInfo, MenuAction, MenuInfo, PromptInfo, ScriptOptions, TitleAction, TitleInfo, TitleScenarioInfo } from '../campaign/game';
+import type { CinematicOptions, ConfirmOptions, EndingAction, EndingOptions, GameView, HudInfo, MenuAction, MenuInfo, PromptInfo, ScriptOptions, TitleAction, TitleInfo, TitleScenarioInfo } from '../campaign/game';
 import type { ScenarioEndingView, ScenarioScript } from '../campaign/scenario';
 import { CHAPTER_TITLE, PROVISIONAL_LABEL } from '../campaign/story';
+import type { CineMoment, CineSpec, SituationView } from '../story/types';
+import type { StoryPrefsStore } from '../story/prefs';
 import { PRACTICE_TITLE_TEXT, SCENARIO_TITLE_TEXT } from './scenarioTitles';
 import { el, nowMs, onPress } from './dom';
 import { ADVANCE_GUARD_MS, CHOICE_GUARD_MS, HeldKeys, InputGate } from './guard';
+import type { LayerHost, Modal, ModalKind, ModalProbe } from './modal';
+import { playCinematic } from './cinePlayer';
+import { openSituation } from './situationView';
+
+export type { ModalProbe } from './modal';
 
 /** ページの題（タブ）の頭。シナリオが決まったら章の名前と札を足す */
 export const PAGE_TITLE = '戦国探索記 3D';
@@ -25,25 +32,6 @@ function startedAt(e: Event): number {
     const now = nowMs();
     const t = e.timeStamp;
     return Number.isFinite(t) && t > 0 && t <= now + 1000 ? t : now;
-}
-
-type ModalKind = 'title' | 'script' | 'confirm' | 'menu' | 'ending' | 'record' | 'sheet';
-
-/** 確認用（開発ビルドの __game）：今の画面の中身と、押す操作 */
-export interface ModalProbe {
-    kind: ModalKind;
-    /** 会話：台詞の id（story.ts の Script.id）・今の行・全部の行・選択肢 */
-    id?: string;
-    line?: { name: string; text: string };
-    index?: number;
-    count?: number;
-    choices?: string[];
-    selected?: string | null;
-    /** 確認・メニュー・タイトル・結末：ボタンの id と文字 */
-    buttons?: { id: string; label: string; disabled: boolean }[];
-    text?: string;
-    /** 板（sheet）の名前（例：practice-list） */
-    sheet?: string;
 }
 
 /** 画面いっぱいの板（sheet）：中身は呼ぶ側が作り、ボタンの並びは見張り（ui/guard.ts）付きで置く */
@@ -59,30 +47,19 @@ export interface SheetOptions {
     cancelId?: string;
 }
 
-interface Modal {
-    kind: ModalKind;
-    layer: HTMLElement;
-    key(e: KeyboardEvent): void;
-    probe(): ModalProbe;
-    /** 確認用：進める（会話） */
-    advance?(): void;
-    /** 確認用：押す（選択肢・ボタンの id）。押せなければ false */
-    press(id: string): boolean;
-    /** 上に重なった画面が閉じて、また一番上に戻った（出たばかりと同じ見張りにする） */
-    reexpose?(): void;
-}
-
 const isGo = (e: KeyboardEvent) => e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space' || e.code === 'KeyE';
 const isUp = (e: KeyboardEvent) => e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'ArrowLeft' || e.code === 'KeyA';
 const isDown = (e: KeyboardEvent) => e.code === 'ArrowDown' || e.code === 'KeyS' || e.code === 'ArrowRight' || e.code === 'KeyD' || e.code === 'Tab';
 
-export class DomView implements GameView {
+export class DomView implements GameView, LayerHost {
     readonly root: HTMLElement;
     private readonly hudEl: HTMLElement;
     private readonly hudPhase: HTMLElement;
     private readonly hudChapter: HTMLElement;
     private readonly hudObj: HTMLElement;
     private readonly menuBtn: HTMLButtonElement;
+    /** 情勢のボタン（右上、メニューの下。J） */
+    private readonly sitBtn: HTMLButtonElement;
     private readonly talkBtn: HTMLButtonElement;
     private readonly talkVerb: HTMLElement;
     private readonly talkWho: HTMLElement;
@@ -90,7 +67,7 @@ export class DomView implements GameView {
     private readonly toastEl: HTMLElement;
     private readonly modals: Modal[] = [];
     /** 押さえているキー（出たばかりの選択肢を、出る前から押さえていたキーで決めないように） */
-    private readonly keys = new HeldKeys();
+    readonly keys = new HeldKeys();
     private introTimers: number[] = [];
     private toastTimer = 0;
     /** 「話す」ボタン・E／Enter／Space */
@@ -99,6 +76,12 @@ export class DomView implements GameView {
     onMenu: () => void = () => {};
     /** 探索の場面を覆う画面（会話以外：タイトル・軍議・確認・メニュー・結末）が開いた／閉じた。覆っている間は探索の描画を止めてよい */
     onCover: (covered: boolean) => void = () => {};
+    /** 情勢のボタン・J（探索中と軍議の上） */
+    onSituation: () => void = () => {};
+    /** 演出の「動きを減らす」の設定（boot がつなぐ。無ければ切り替えはこの再生の間だけ） */
+    prefs: StoryPrefsStore | null = null;
+    /** 確認用：再生中の演出（開発ビルドの __game.cine） */
+    private cineModal: Modal | null = null;
 
     constructor(app: HTMLElement) {
         this.root = el('div');
@@ -119,6 +102,15 @@ export class DomView implements GameView {
         onPress(this.menuBtn, () => {
             if (this.menuReachable()) this.onMenu();
         });
+        // 情勢（右上、メニューの下）：探索中だけ押せる（会話・メニューなどが開いている間は、その下に隠れる）
+        this.sitBtn = el('button', 'g-sit-btn');
+        this.sitBtn.type = 'button';
+        this.sitBtn.hidden = true;
+        this.sitBtn.append(document.createTextNode('情勢'), el('kbd', undefined, 'J'));
+        this.sitBtn.setAttribute('aria-label', '情勢（地図・協力と敵対・今回の目的。J）');
+        onPress(this.sitBtn, () => {
+            if (this.modals.length === 0 && !this.sitBtn.hidden) this.onSituation();
+        });
         // 話す（右下）
         this.talkBtn = el('button', 'g-talk');
         this.talkBtn.type = 'button';
@@ -135,7 +127,7 @@ export class DomView implements GameView {
         this.toastEl.hidden = true;
         // 知らせは読むだけ（pointer-events: none。下のスティック・見回し・ボタンへの押し始めを奪わない）
         this.toastEl.setAttribute('role', 'status');
-        this.root.append(this.hudEl, this.menuBtn, this.talkBtn, this.introEl, this.toastEl);
+        this.root.append(this.hudEl, this.menuBtn, this.sitBtn, this.talkBtn, this.introEl, this.toastEl);
         app.appendChild(this.root);
         window.addEventListener('keydown', this.onKey);
         window.addEventListener('keyup', (e) => this.keys.up(e.code));
@@ -160,6 +152,7 @@ export class DomView implements GameView {
         const show = !!info;
         this.hudEl.hidden = !show;
         this.menuBtn.hidden = !show;
+        this.sitBtn.hidden = !info?.situation;
         if (!info) return;
         // ページの題（タブ）も、遊んでいるシナリオの章の名前と札にする（歴史分岐を遊んでいる間に「仮シナリオ」と出さない）
         document.title = `${PAGE_TITLE} ${info.chapter}（${info.provisional}）`;
@@ -200,6 +193,23 @@ export class DomView implements GameView {
 
     // ---------------- 画面を覆うもの ----------------
 
+    // ---- 層を作る部品（ui/cinePlayer.ts・ui/situationView.ts）の口（LayerHost） ----
+    openLayer(kind: ModalKind, cls: string): HTMLElement {
+        return this.open(kind, cls);
+    }
+    pushModal(m: Modal): void {
+        this.push(m);
+    }
+    closeModal(m: Modal): void {
+        this.close(m);
+    }
+    refreshCover(): void {
+        this.updateCover();
+    }
+    buttonRowFor(...args: Parameters<DomView['buttonRow']>): ReturnType<DomView['buttonRow']> {
+        return this.buttonRow(...args);
+    }
+
     private open(kind: ModalKind, cls: string): HTMLElement {
         const layer = el('div', `g-layer ${cls}`.trim());
         layer.dataset.kind = kind;
@@ -216,6 +226,17 @@ export class DomView implements GameView {
         this.modals.push(m);
         this.updateCover();
         this.syncMenuBtn();
+        this.syncUnder();
+    }
+
+    /**
+     * 演出が一番上の間は、下の層（軍議など）を見えなくする（3D の場面で町を見せる）。HUD・メニュー・情勢のボタンも隠す（押せないので）。
+     */
+    private syncUnder(): void {
+        const top = this.modals[this.modals.length - 1];
+        const cine = top?.kind === 'cine';
+        for (const m of this.modals) m.layer.classList.toggle('g-under-cine', cine && m !== top);
+        document.body.classList.toggle('g-cine', cine);
     }
 
     private covered = false;
@@ -223,7 +244,9 @@ export class DomView implements GameView {
     private coverHeld = false;
     private loadingEl: HTMLElement | null = null;
     private updateCover(): void {
-        const c = this.coverHeld || this.modals.some((m) => m.kind !== 'script' || m.layer.classList.contains('council'));
+        // 一番上が演出なら、演出の場面で決める（地図の場面は覆う・3D の場面は覆わない。下の層は見えなくしてある）
+        const top = this.modals[this.modals.length - 1];
+        const c = this.coverHeld || (top?.kind === 'cine' ? !!top.covers?.() : this.modals.some((m) => (m.covers ? m.covers() : m.kind !== 'script' || m.layer.classList.contains('council'))));
         if (c === this.covered) return;
         this.covered = c;
         this.onCover(c);
@@ -256,6 +279,13 @@ export class DomView implements GameView {
         const wasTop = i >= 0 && i === this.modals.length - 1;
         if (i >= 0) this.modals.splice(i, 1);
         m.layer.remove();
+        // 後片付け（演出の時計・窓の見張り・3D の出来事）。後片付けの誤りで閉じるのを止めない
+        try {
+            m.dispose?.();
+        } catch (e) {
+            console.error(e);
+        }
+        this.syncUnder();
         this.updateCover();
         if (this.modals.length === 0) document.body.classList.remove('g-modal');
         if (!this.modals.some((x) => x.kind === 'title')) document.body.classList.remove('g-title');
@@ -275,6 +305,12 @@ export class DomView implements GameView {
             if (!e.repeat && this.menuReachable()) this.onMenu();
             return;
         }
+        // 軍議の途中の J：情勢（地図で見る）を重ねて開く（会話は進めない・選ばない）
+        if (top?.kind === 'script' && e.code === 'KeyJ' && top.layer.querySelector('.g-council-map')) {
+            e.preventDefault();
+            if (!e.repeat) this.onSituation();
+            return;
+        }
         if (top) {
             top.key(e);
             return;
@@ -288,6 +324,11 @@ export class DomView implements GameView {
         if ((e.code === 'Escape' || e.code === 'KeyM') && !this.menuBtn.hidden) {
             e.preventDefault();
             this.onMenu();
+            return;
+        }
+        if (e.code === 'KeyJ' && !this.sitBtn.hidden) {
+            e.preventDefault();
+            this.onSituation();
         }
     };
 
@@ -295,6 +336,10 @@ export class DomView implements GameView {
     probe(): ModalProbe | null {
         const top = this.modals[this.modals.length - 1];
         return top ? top.probe() : null;
+    }
+    /** 確認用：再生中の演出（無ければ null。上に別の画面が重なっていても演出の様子） */
+    cineProbe(): ModalProbe | null {
+        return this.cineModal ? this.cineModal.probe() : null;
     }
     /** 開いている画面をすべて閉じる（答えは返さない。待っている流れは捨てる） */
     abandon(): void {
@@ -493,6 +538,20 @@ export class DomView implements GameView {
                 head.append(el('h2', undefined, '軍議'), el('p', undefined, `城の広間・${opts.label ?? PROVISIONAL_LABEL}`));
                 layer.append(head);
             }
+            // 軍議の「地図で見る」（情勢の画面を重ねて開く。会話は進まない・選ばない）。左上（選択肢・台詞・見出しと重ならない所）
+            let mapGate: InputGate | null = null;
+            if (council && opts.situation) {
+                const mb = el('button', 'g-council-map');
+                mb.type = 'button';
+                mb.append(document.createTextNode('地図で見る'), el('kbd', undefined, 'J'));
+                mb.setAttribute('aria-label', '地図で見る（情勢。見るだけで、選択は決まらない。J）');
+                mapGate = new InputGate(this.keys, nowMs(), CHOICE_GUARD_MS);
+                const g = mapGate;
+                onPress(mb, (e) => {
+                    if (g.pointer(nowMs(), startedAt(e))) this.onSituation();
+                });
+                layer.append(mb);
+            }
             const box = el('div', 'g-dialog');
             const name = el('div', 'name');
             const text = el('div', 'text');
@@ -612,6 +671,7 @@ export class DomView implements GameView {
                 reexpose: () => {
                     lineGate.reset(nowMs(), CHOICE_GUARD_MS);
                     if (!choicesEl.hidden) choiceGate.reset(nowMs(), CHOICE_GUARD_MS);
+                    mapGate?.reset(nowMs(), CHOICE_GUARD_MS);
                 },
             };
             this.push(m);
@@ -746,6 +806,32 @@ export class DomView implements GameView {
      */
     record(v: ScenarioEndingView, opts?: EndingOptions): Promise<void> {
         return this.endingLike('record', v, `${opts?.chapter ?? CHAPTER_TITLE}　はじめに`, opts, [{ id: 'to_town', label: '城下へ' }]).then(() => undefined);
+    }
+
+    // ---------------- 演出・情勢 ----------------
+
+    /**
+     * 演出を再生する（ui/cinePlayer.ts）。「動きを減らす」を切り替えたら設定に書く（prefs があれば）。
+     * 終わり・スキップ・abandon では必ず opts.onStage(null, 0, …) で片付ける。
+     */
+    cinematic(spec: CineSpec, opts: CinematicOptions): Promise<'done' | 'skipped'> {
+        return playCinematic(this, spec, opts, {
+            onReducedChange: (on) => {
+                this.prefs?.setReduced(on);
+            },
+            onProbe: (m) => {
+                this.cineModal = m;
+            },
+        });
+    }
+
+    /**
+     * 情勢の画面（ui/situationView.ts）。opts.option を省いたときは、下の軍議でいま選ばれている選択肢のタブを選んでおく。
+     */
+    situation(v: SituationView, opts?: { option?: string }): Promise<{ replay?: CineMoment } | void> {
+        const council = [...this.modals].reverse().find((m) => m.kind === 'script' && m.layer.classList.contains('council'));
+        const option = opts?.option ?? council?.probe().selected ?? undefined;
+        return openSituation(this, v, { ...(option ? { option } : {}), from: council ? 'council' : 'explore' });
     }
 
     /** 結末の画面と結果確認の画面の共通の作り（ボタンは見張り付きの並び。上に重なった画面が閉じたら出たばかりと同じに見張る） */

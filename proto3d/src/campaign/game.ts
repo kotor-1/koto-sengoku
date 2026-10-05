@@ -83,6 +83,8 @@ export interface HudInfo {
     phase: string;
     objective: string;
     provisional: string;
+    /** 「情勢」のボタン（J）を出す（シナリオが情勢の画面を持つとき。省けば出さない） */
+    situation?: boolean;
 }
 export interface PromptInfo {
     id: string;
@@ -96,6 +98,8 @@ export interface ScriptOptions {
     /** 遊んでいるシナリオの章の名前と札（軍議の見出しに出す。省けば画面の既定） */
     chapter?: string;
     label?: string;
+    /** 軍議の「地図で見る」（情勢の画面。J）を出す（シナリオが情勢の画面を持つとき） */
+    situation?: boolean;
 }
 
 /** 結末の画面に添えるもの（どのシナリオの結末か） */
@@ -190,6 +194,8 @@ export interface GameDeps {
      * 章の状態・シナリオの保存には触れない。省けばタイトルに入口を出さない。
      */
     practice?: () => Promise<void>;
+    /** 演出の「動きを減らす」（利用者の設定か端末の prefers-reduced-motion。省けば減らさない） */
+    reducedMotion?: () => boolean;
 }
 
 export type GameScreen = 'boot' | 'title' | 'explore' | 'talk' | 'council' | 'menu' | 'battle' | 'ending' | 'record' | 'practice' | 'cinematic' | 'situation' | 'lookout';
@@ -221,6 +227,14 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
     private battleSeq = 0;
     /** 次の章へ移っている途中（連打で 2 回走らないように） */
     private advancing = false;
+    /** 情勢の画面を開いている（探索・軍議の上） */
+    private situationOpen = false;
+    /** 軍議で今出している選択肢（情勢の画面のタブ。軍議の外では null） */
+    private councilChoices: { id: string; label: string }[] | null = null;
+    /** 軍議所を背景に映している（タイトルへ戻るときに外す） */
+    private councilHall = false;
+    /** 確認用：再生した演出の台本の id（古い順。状態・保存には入らない） */
+    readonly cineLog: string[] = [];
     /** 並べるシナリオ（タイトルの順） */
     readonly scenarios: readonly AnyScenario[];
     /** 確認用：最後に起きた誤り */
@@ -294,6 +308,13 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         world.setControl(false);
         this.cast = [];
         world.setCast([]);
+        world.setAmbient?.(null);
+        if (this.councilHall) {
+            this.councilHall = false;
+            world.showCouncilHall?.(false);
+        }
+        this.councilChoices = null;
+        this.situationOpen = false;
         for (;;) {
             const loads = this.scenarios.map((sc) => ({ sc, loaded: sc.store.load() }));
             const entries: TitleScenarioInfo[] = loads.map(({ sc, loaded }) => ({
@@ -366,6 +387,8 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
                 view.toast(`${loaded.message}このまま遊べますが、保存はできません。`, 'error');
             }
             this.begin(sc.newGame(), sc.id);
+            // 第一章の導入（タイトルの「はじめから」の道だけ。つづきから・第二章への移行・確認用では流さない）
+            this.playIntro('ch1_intro');
             return;
         }
     }
@@ -407,9 +430,23 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         this._screen = 'explore';
         this.prompted = null;
         view.hud(this.hudInfo());
+        this.applyAmbient();
         const intro = this.sc.phaseIntro(s);
         view.intro(intro.title, intro.text);
         world.setControl(!this.busy);
+    }
+
+    /** 町の人々（見た目だけ。状態を読むだけ） */
+    private applyAmbient(): void {
+        const w = this.deps.world;
+        if (!w.setAmbient) return;
+        try {
+            w.setAmbient(this.sc.ambient?.(this.st) ?? null);
+        } catch (e) {
+            // 町の人々を出せなくても遊びは続ける
+            this.lastError = errorText(e);
+            console.error(e);
+        }
     }
 
     /** 今の状態の章の名前（シナリオが状態ごとの名前を持てばそれ、無ければ chapterTitle） */
@@ -421,13 +458,14 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
     private hudInfo(): HudInfo {
         const s = this.st;
         const sc = this.sc;
-        return { chapter: this.chapterTitle(), phase: sc.phaseLabel(s.phase, s), objective: sc.objective(s), provisional: sc.label };
+        return { chapter: this.chapterTitle(), phase: sc.phaseLabel(s.phase, s), objective: sc.objective(s), provisional: sc.label, ...(this.canSituation() ? { situation: true } : {}) };
     }
 
     private refreshField(): void {
         this.cast = this.sc.cast(this.st);
         this.deps.world.setCast(this.cast);
         this.deps.view.hud(this.hudInfo());
+        this.applyAmbient();
     }
 
     // ---------------- 毎フレーム ----------------
@@ -464,7 +502,14 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
     async interact(id?: string): Promise<void> {
         if (this.busy || this._screen !== 'explore' || !this.run) return;
         const target = id ?? this.prompted?.id;
-        if (!target || !this.sc.canTalk(this.st, target)) return;
+        if (!target) return;
+        // 物見櫓（kind 'lookout'）：会話ではなく物見へ
+        const member = this.cast.find((c) => c.id === target);
+        if (member && isLookout(member)) {
+            await this.runLookout(member.id);
+            return;
+        }
+        if (!this.sc.canTalk(this.st, target)) return;
         const after = { ending: false };
         await this.exclusive(async () => {
             this._screen = 'talk';
@@ -493,17 +538,31 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
 
     /** 軍議：方針を選び、確かめて決める（考え直すと選び直し）。決めたら出陣の支度（muster）へ */
     private async runCouncil(): Promise<void> {
-        const { view } = this.deps;
+        const { view, world } = this.deps;
         this._screen = 'council';
         this.setPrompt(null);
         view.hud(this.hudInfo());
         const intro = this.sc.phaseIntro(this.st);
         view.intro(intro.title, intro.text);
-        while (this.st.phase === 'council') {
-            const script = this.sc.talk(this.st, 'council');
-            const choice = await view.script(script, { mode: 'council', chapter: this.chapterTitle(), label: this.sc.label });
-            if (!choice) throw new Error('軍議で選択肢が選ばれませんでした');
-            this.st = this.sc.finishTalk(this.st, 'council', choice);
+        // 軍議所を背景に映す（終われば戻す）
+        if (world.showCouncilHall) {
+            this.councilHall = true;
+            world.showCouncilHall(true);
+        }
+        try {
+            while (this.st.phase === 'council') {
+                const script = this.sc.talk(this.st, 'council');
+                this.councilChoices = (script.choices ?? []).map((c) => ({ id: c.id, label: c.label }));
+                const choice = await view.script(script, { mode: 'council', chapter: this.chapterTitle(), label: this.sc.label, ...(this.canSituation() ? { situation: true } : {}) });
+                if (!choice) throw new Error('軍議で選択肢が選ばれませんでした');
+                this.st = this.sc.finishTalk(this.st, 'council', choice);
+            }
+        } finally {
+            this.councilChoices = null;
+            if (this.councilHall) {
+                this.councilHall = false;
+                world.showCouncilHall?.(false);
+            }
         }
         // 軍議の後は、そのままの位置で支度の段階へ
         this.enterField('keep');
@@ -544,6 +603,9 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
             }
         }
         this.st = next;
+        // 出陣の演出（出陣前の保存の後、合戦の前。状態は読むだけ）
+        const cine = this.cineSpec('departure');
+        if (cine) await this.playCinematic(cine);
         await this.runBattle();
     }
 
@@ -606,7 +668,14 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         }
         // 合戦の画面が勝ち負けの知らせ（onDecided）を送らなかったときも、ここで 1 回だけ反映する（済んでいれば何もしない）
         const note = record(outcome);
+        // 帰還の演出（結果の反映・戦後の保存の後、戦後の城下の前。状態は読むだけ：反映・保存はしない）。戦後の町で流す
+        const cine = this.cineSpec('return');
+        if (cine) {
+            this.stageField(null);
+            await this.playCinematic(cine);
+        }
         this.enterField(null);
+        // 戦後の保存の知らせ（失敗の知らせを含む）は演出の後に出す
         view.toast(note.ok ? `保存しました：${SAVE_POINT_LABELS.aftermath}` : note.text, note.ok ? 'ok' : 'error');
     }
 
@@ -688,6 +757,12 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
             }
             this.run = { scenario: sc, state: next };
             this.playAcc = 0;
+            // 第二章への移行の演出（保存の後、結果確認の画面の前）。次の章の町を整えてから流す
+            const cine = this.cineSpec('ch2_intro');
+            if (cine) {
+                this.stageField(next.explore);
+                await this.playCinematic(cine);
+            }
             const rec = sc.chapterStartView?.(next) ?? null;
             if (rec && view.record) {
                 this._screen = 'record';
@@ -819,6 +894,174 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         return add > 0 ? this.sc.addPlayTime(s, add) : s;
     }
 
+    // ---------------- 演出・情勢・物見 ----------------
+
+    /** 動きを減らすか（演出・物見の眺め） */
+    private reduced(): boolean {
+        try {
+            return !!this.deps.reducedMotion?.();
+        } catch {
+            return false;
+        }
+    }
+
+    /** 情勢の画面を出せるか（シナリオと画面の両方に口がある） */
+    private canSituation(): boolean {
+        return !!(this.run?.scenario.situation && this.deps.view.situation);
+    }
+
+    /**
+     * 演出の台本（シナリオと画面の両方に口があり、台本があるときだけ。無ければ null で、待たずに飛ばす）。
+     * 台本を作れなくても遊びは止めない（演出を飛ばす）。
+     */
+    private cineSpec(moment: CineMoment, opts?: { replay?: boolean }): CineSpec | null {
+        const sc = this.run?.scenario;
+        if (!sc?.cinematic || !this.deps.view.cinematic) return null;
+        try {
+            return sc.cinematic(this.st, moment, opts) ?? null;
+        } catch (e) {
+            this.lastError = errorText(e);
+            console.error(e);
+            return null;
+        }
+    }
+
+    /** 演出の前に、今の状態の町を整える（人物・主人公の位置・町の人々。案内は出さない） */
+    private stageField(pose: ExplorePose | null): void {
+        const { world } = this.deps;
+        this.cast = this.sc.cast(this.st);
+        world.setCast(this.cast);
+        world.setHeroPose(safePose(pose, this.cast, world.walls()));
+        this.applyAmbient();
+    }
+
+    /**
+     * 演出を再生する（状態は読むだけ。保存しない・反映しない）。探索の操作は止めたまま（呼ぶ側が exclusive の中か、操作の無い画面）。
+     * 終われば 3D の出来事を片付け、主人公の位置・向き・カメラを始める前に戻し、城門の輪の判定を今の位置で付け直す。
+     */
+    private async playCinematic(spec: CineSpec): Promise<void> {
+        const { view, world } = this.deps;
+        if (!view.cinematic) return;
+        const epoch = this.epoch;
+        const before = world.heroPose();
+        const back = this._screen;
+        this._screen = 'cinematic';
+        this.setPrompt(null);
+        world.setControl(false);
+        this.cineLog.push(spec.id);
+        try {
+            await view.cinematic(spec, { reduced: this.reduced(), onStage: (ev, t, r) => world.stage?.(ev, t, r) });
+        } catch (e) {
+            // 再生できなくても進める（同じ情報は情勢の画面で見られる）
+            this.lastError = errorText(e);
+            console.error(e);
+        } finally {
+            if (epoch === this.epoch) {
+                world.stage?.(null, 0, this.reduced());
+                world.setHeroPose(before);
+                const p = world.heroPose();
+                this.inGate = inGateZone(this.cast, p.x, p.z);
+                if (this._screen === 'cinematic') this._screen = back;
+            }
+        }
+    }
+
+    /** 章の導入（城下に入った後、exclusive の中で）。流し終えたら段階の案内をもう一度出す */
+    private playIntro(moment: CineMoment): void {
+        const spec = this.cineSpec(moment);
+        if (!spec) return;
+        void this.exclusive(async () => {
+            await this.playCinematic(spec);
+            if (this._screen !== 'explore') return;
+            const intro = this.sc.phaseIntro(this.st);
+            this.deps.view.intro(intro.title, intro.text);
+        });
+    }
+
+    /**
+     * 情勢の画面（HUD の「情勢」・J、軍議の「地図で見る」・J）。状態は読むだけ（見直しも保存しない・決めない）。
+     * 探索中は openMenu と同じ守り（exclusive）。軍議の途中は、軍議の会話を下に残して重ねる（閉じれば同じ行・同じ選び方）。
+     */
+    async openSituation(): Promise<void> {
+        if (!this.run || this.menuOpen || this.situationOpen || !this.canSituation()) return;
+        if (this._screen === 'council') {
+            const back = this._screen;
+            this._screen = 'situation';
+            try {
+                await this.situationLoop('council');
+            } finally {
+                if (this._screen === 'situation') this._screen = back;
+            }
+            return;
+        }
+        if (this.busy || this._screen !== 'explore') return;
+        await this.exclusive(async () => {
+            this._screen = 'situation';
+            try {
+                await this.situationLoop('explore');
+            } finally {
+                if (this._screen === 'situation') this._screen = 'explore';
+            }
+        });
+    }
+
+    private async situationLoop(from: 'explore' | 'council'): Promise<void> {
+        const { view, world } = this.deps;
+        const sc = this.sc;
+        if (!sc.situation || !view.situation) return;
+        this.situationOpen = true;
+        try {
+            for (;;) {
+                const options = from === 'council' && this.councilChoices && this.councilChoices.length > 0 ? this.councilChoices : undefined;
+                const v = sc.situation(this.st, { from, ...(options ? { options } : {}) });
+                if (!v) return;
+                const r = await view.situation(v);
+                if (!r || !r.replay) return;
+                // 見直し：状態は変えない・保存しない。終われば情勢の画面へ戻る
+                const spec = this.cineSpec(r.replay, { replay: true });
+                if (spec) {
+                    await this.playCinematic(spec);
+                    this._screen = 'situation';
+                    if (from === 'council' && this.councilHall) world.showCouncilHall?.(true);
+                }
+            }
+        } finally {
+            this.situationOpen = false;
+        }
+    }
+
+    /**
+     * 物見（物見櫓の相手を「物見」で押した）。scenario.scoutPoints の地点で眺め、調べた印を記録する（状態を替えるだけ。保存はしない：次の保存の区切りで入る）。
+     * やめた（印が無い）ときは何も変えない。
+     */
+    private async runLookout(id: string): Promise<void> {
+        const sc = this.sc;
+        const { world, view } = this.deps;
+        if (!sc.scoutPoints || !sc.scout || !world.startLookout) return;
+        const points = sc.scoutPoints(this.st);
+        const point = points.find((p) => p.id === id) ?? points[0];
+        if (!point) return;
+        await this.exclusive(async () => {
+            this._screen = 'lookout';
+            let marks: string[] = [];
+            try {
+                marks = await world.startLookout!(point, this.reduced());
+            } finally {
+                // 眺めが失敗しても探索へ戻す（操作は exclusive の終わりで戻る）
+                this._screen = 'explore';
+            }
+            if (marks.length > 0 && this.run) {
+                const before = JSON.stringify(this.st);
+                const next = sc.scout!(this.st, point.id, marks);
+                const changed = JSON.stringify(next) !== before;
+                this.st = next;
+                view.toast(changed ? '物見の記録を情勢の地図に書いた（情勢：J）' : '物見の記録は情勢の地図に書いてある（情勢：J）', 'ok');
+            }
+            this._screen = 'explore';
+            this.refreshField();
+        });
+    }
+
     // ---------------- 共通 ----------------
 
     /** 一度に 1 つの画面の流れだけ（会話中にメニューを開かない等）。探索の操作は止め、終わったら戻す */
@@ -847,6 +1090,11 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
 }
 
 // ================= 表示用の文 =================
+
+/** 物見櫓の相手か（CastKind に 'lookout' が足される前後どちらでも型が通るように文字列で比べる） */
+function isLookout(c: CastMember<string>): boolean {
+    return (c.kind as string) === 'lookout';
+}
 
 function errorText(e: unknown): string {
     return e instanceof Error ? e.message : String(e);

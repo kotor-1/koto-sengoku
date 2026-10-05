@@ -8,7 +8,7 @@
  * 読み込めなかったとき（通信の失敗など）は、章の進行（game.ts）が「もう一度／タイトルへ」を出す。仮の結果の選択は無い。
  */
 import { activeModeName, exitMode, getBattleRunner } from '../app/modes';
-import { ChapterGame, devStateFor, type BattleRunnerLike } from '../campaign/game';
+import { ChapterGame, devStateFor, type BattleRunnerLike, type GameWorld } from '../campaign/game';
 import { getBrowserStorage } from '../campaign/save';
 import { createScenarios } from '../campaign/scenarios';
 import { devIeyasuState } from '../campaign/ieyasu1570/flow';
@@ -19,6 +19,9 @@ import type { BattleResultKind } from '../battle/types';
 import { ExploreWorld, type ExploreHost } from '../explore/world';
 import { DomView } from './view';
 import type { PracticeMode, PracticeRecordStore } from '../campaign/practice';
+import { StoryPrefsStore, deviceReducedMotion } from '../story/prefs';
+import { sampleCineSpec, sampleSituation } from '../story/sample';
+import type { CineMoment } from '../story/types';
 
 export type { ExploreHost };
 
@@ -46,6 +49,9 @@ export function bootChapter(host: ExploreHost): ChapterGame<any> {
     // タイトルに並べるシナリオ（歴史分岐「元亀元年・家康」と架空の第一章「国境の砦」）。保存のキーはシナリオごとに別
     const storage = getBrowserStorage();
     const { scenarios, fictionalStore: store } = createScenarios(storage);
+    // 演出の「動きを減らす」：'koto-sengoku/3d-prefs' に、利用者が切り替えたときだけ書く（無ければ端末の設定）
+    const prefs = new StoryPrefsStore(storage, deviceReducedMotion);
+    view.prefs = prefs;
     // 合戦場の演習（タイトルの入口）：画面の塊は選んだときに読み込む。記録は 'koto-sengoku/3d-fields' だけに書く
     let practice: { mode: PracticeMode; store: PracticeRecordStore } | null = null;
     const runPractice = async (): Promise<void> => {
@@ -82,9 +88,10 @@ export function bootChapter(host: ExploreHost): ChapterGame<any> {
         }
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const game = new ChapterGame<any>({ view, world, store, scenarios, battleRunner: loadBattleRunner, practice: runPractice });
+    const game = new ChapterGame<any>({ view, world, store, scenarios, battleRunner: loadBattleRunner, practice: runPractice, reducedMotion: () => prefs.reduced });
     view.onTalk = () => void game.interact();
     view.onMenu = () => void game.openMenu();
+    view.onSituation = () => void game.openSituation();
     // タイトル・軍議・メニュー・結末などが探索を覆っている間は、探索の描画を止める（見えない所の描画で電池と処理を使わない）
     view.onCover = (covered) => host.setRenderPaused(covered);
     host.onFrame((dt) => {
@@ -177,6 +184,45 @@ export function bootChapter(host: ExploreHost): ChapterGame<any> {
                 },
                 openMenu() {
                     void game.openMenu();
+                },
+                /** 再生中の演出（{ kind:'cine', id, beat, count, t, paused, caption, buttons, state, info, mode, reduced }。無ければ null） */
+                get cine() {
+                    return view.cineProbe();
+                },
+                /** 再生した演出の台本の id（古い順。この遊びの間だけ。保存には入らない） */
+                get cineLog() {
+                    return [...game.cineLog];
+                },
+                /** 情勢の画面を開く（探索中・軍議の途中。HUD の「情勢」・J と同じ守り） */
+                situation() {
+                    void game.openSituation();
+                    return true;
+                },
+                /** 物見の記録（状態の scout。無ければ null）・地点 */
+                get scout() {
+                    const s = game.state as { scout?: unknown } | null;
+                    return s?.scout ?? null;
+                },
+                /** 町の人々（今の状態からシナリオが決める物。見た目だけ） */
+                get ambient() {
+                    const sc = game.scenarios.find((x) => x.id === game.scenarioId);
+                    return sc?.ambient && game.state ? sc.ambient(game.state) : null;
+                },
+                /** 動きを減らす設定（今の値） */
+                get reducedMotion() {
+                    return prefs.reduced;
+                },
+                /**
+                 * 確認用：仮の台本（story/sample.ts）を再生する（物語の中身と切り離して再生器を確かめる。状態には触れない）。
+                 * 返りは終わり方の Promise（'done'／'skipped'）。3D の場面は world.stage へ渡す
+                 */
+                sampleCine(moment: CineMoment = 'ch1_intro') {
+                    const gw: GameWorld = world;
+                    return view.cinematic(sampleCineSpec(moment), { reduced: prefs.reduced, onStage: (ev, t, r) => gw.stage?.(ev, t, r) });
+                },
+                /** 確認用：仮の情勢を開く（withOptions で軍議のタブつき）。返りは閉じ方の Promise */
+                sampleSituation(withOptions = false) {
+                    return view.situation(sampleSituation(withOptions));
                 },
                 loadBattleRunner,
             },
