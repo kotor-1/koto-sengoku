@@ -104,6 +104,8 @@ export interface EndingOptions {
     scenario: ScenarioId;
     /** 「次の章へ進む」のボタン（歴史分岐の第一章の結末だけ。省けばボタンは「タイトルへ」だけ） */
     next?: { label: string; sub?: string };
+    /** 結末の画面の見出しの言葉（章の名前の後ろ。省けば「結末」。歴史分岐の第二章は「区切り」） */
+    heading?: string;
 }
 /** 結末の画面で押したボタン（'title'＝タイトルへ・'next_chapter'＝次の章へ進む） */
 export type EndingAction = 'title' | 'next_chapter';
@@ -610,7 +612,8 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
             const sc = this.sc;
             const st = this.st;
             const next = sc.nextChapter?.(st) ?? null;
-            const act = await view.ending(sc.endingView(st), { chapter: this.chapterTitle(), label: sc.label, scenario: sc.id, ...(next ? { next } : {}) });
+            const heading = sc.endingHeadingOf?.(st) ?? null;
+            const act = await view.ending(sc.endingView(st), { chapter: this.chapterTitle(), label: sc.label, scenario: sc.id, ...(next ? { next } : {}), ...(heading ? { heading } : {}) });
             if (act === 'next_chapter' && next && sc.startNextChapter) {
                 if ((await this.goNextChapter()) === 'back') continue;
                 return;

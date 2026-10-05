@@ -155,6 +155,8 @@ async function enterCh2(page, io, prefix, how) {
   const e = await ui(page);
   const sel = await page.evaluate(() => document.querySelector('.g-layer[data-kind="ending"] .g-btn.sel')?.dataset.id ?? null);
   check(`${prefix} 第一章の結末の画面は残り、下に「第二章へ進む」（既定）と「タイトルへ」`, JSON.stringify(e.buttons.map((b) => b.id)) === '["next_chapter","title"]' && sel === 'next_chapter' && e.text.includes('第二章へ進む') && e.text.includes('史実と創作'), JSON.stringify({ ids: e.buttons.map((b) => b.id), sel }));
+  const k1 = await page.evaluate(() => document.querySelector('.g-layer[data-kind="ending"] .kicker')?.textContent ?? '');
+  check(`${prefix} 第一章の結末の見出しは今までどおり「…　結末」`, k1.endsWith('　結末') && !k1.includes('第二章'), k1);
   await shot(page, `${prefix}-ch1-ending`);
   if (how === 'enter') {
     await sleep(500);
@@ -276,6 +278,8 @@ if (ONLY.includes('D')) {
   const e2 = await ui(page);
   check('D 第二章の区切り：ボタンは「タイトルへ」だけ・記録と史実と創作', JSON.stringify(e2.buttons.map((b) => b.id)) === '["title"]' && ['第二章', '判断', '補充', '主目標', '信頼の変化', '史実と創作', '特定の史実の合戦の再現ではない'].every((w) => e2.text.includes(w)), e2.text.slice(0, 100));
   check('D 区切りの文に史実の合戦の名前・逸話を書かない', !/姉川|金ヶ崎|小谷|単騎|無傷/.test(e2.text));
+  const k2 = await page.evaluate(() => document.querySelector('.g-layer[data-kind="ending"] .kicker')?.textContent ?? '');
+  check('D 第二章の区切りの見出しは「…第二章　区切り」（「結末」と書かない）', k2.endsWith('第二章　区切り') && !k2.includes('結末'), k2);
   await shot(page, 'D-ch2-ending');
   await io.btn('title');
   await waitTitle(page);
@@ -344,6 +348,8 @@ if (ONLY.includes('F')) {
   await waitUi(page, 'ending');
   const e = await ui(page);
   check('F 架空の章の結末はボタン 1 つ（タイトルへ）（直接状態変更で結末を出した）', JSON.stringify(e.buttons.map((b) => b.id)) === '["title"]' && !e.text.includes('第二章へ進む'));
+  const kf = await page.evaluate(() => document.querySelector('.g-layer[data-kind="ending"] .kicker')?.textContent ?? '');
+  check('F 架空の章の結末の見出しは今までどおり「…　結末」', kf.endsWith('　結末'), kf);
   await sleep(500);
   await page.keyboard.press('Enter');
   await waitTitle(page);

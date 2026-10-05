@@ -37,7 +37,7 @@ import {
 } from './chapter2/flow';
 import { ieyasu2CastFor, ieyasu2StatusLines } from './chapter2/scenario';
 import { isChapter2, type IeyasuAnyState } from './chapter2/state';
-import { IEYASU2_CHAPTER_TITLE, IEYASU2_PHASE_LABELS, ieyasu2Chapter1RecordView, ieyasu2EndingView, ieyasu2Objective, ieyasu2PhaseIntro } from './chapter2/story';
+import { IEYASU2_CHAPTER_TITLE, IEYASU2_ENDING_HEADING, IEYASU2_PHASE_LABELS, ieyasu2Chapter1RecordView, ieyasu2EndingView, ieyasu2Objective, ieyasu2PhaseIntro } from './chapter2/story';
 import {
     IEYASU_CHAPTER_TITLE,
     IEYASU_CHARACTER_NAMES,
@@ -212,6 +212,8 @@ export function ieyasuScenario(storage: StorageLike | null, store: IeyasuCampaig
         statusLines: (s, extra) => (two(s) ? ieyasu2StatusLines(s, extra) : ieyasuStatusLines(s, extra)),
         endingView: (s) => (two(s) ? ieyasu2EndingView(s) : ieyasuEndingView(s)),
         chapterTitleOf: (s) => (two(s) ? IEYASU2_CHAPTER_TITLE : IEYASU_CHAPTER_TITLE),
+        // 第二章の終わりは「区切り」（第一章の結末と見分ける。保存の説明の「区切りの保存」と同じ言葉）。第一章は今までどおり「結末」
+        endingHeadingOf: (s) => (two(s) ? IEYASU2_ENDING_HEADING : '結末'),
         nextChapter: (s) => (!two(s) && s.phase === 'ending' && s.ending !== null ? { label: '第二章へ進む', sub: '第一章の結果（方針・兵・信頼・約束）を引き継いで続きを遊ぶ' } : null),
         startNextChapter: (s) => {
             if (two(s)) throw new Error('第二章の先は、まだありません');

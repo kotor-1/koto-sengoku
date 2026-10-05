@@ -202,6 +202,8 @@ async function enterChapter2(h: Harness, policy: Policy) {
     const e = await h.next('ending');
     expect(e.opts?.next?.label).toBe('第二章へ進む');
     expect(e.opts?.scenario).toBe('ieyasu1570');
+    // 第一章の結末の見出しは今までどおり「結末」
+    expect(e.opts?.heading ?? '結末').toBe('結末');
     expect(e.view.footer).toContain('完');
     e.answer('next_chapter');
     const r = await h.next('record');
@@ -326,6 +328,8 @@ describe('第一章の結末の保存から、第二章の区切りまで（本�
             expect(e.view.id).toBe(`ch2_${policy}_${s.battle!.result}`);
             expect(e.opts?.next).toBeUndefined();
             expect(e.opts?.chapter).toBe(IEYASU2_CHAPTER_TITLE);
+            // 第二章の終わりの見出しは「…第二章　区切り」（「結末」と書かない）
+            expect(e.opts?.heading).toBe('区切り');
             e.answer();
             await flush();
             expect(h2.game.screen).toBe('title');
@@ -406,6 +410,8 @@ describe('結末の画面のボタン・連打・保存の失敗', () => {
         const e = await h.next('ending');
         expect(e.opts?.next).toBeUndefined();
         expect(e.opts?.scenario).toBe('fictional');
+        // 架空の章の見出しは今までどおり（言葉を渡さない＝「結末」）
+        expect(e.opts?.heading).toBeUndefined();
         e.answer();
         await flush();
         expect(h.game.screen).toBe('title');

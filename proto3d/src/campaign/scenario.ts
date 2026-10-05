@@ -143,6 +143,8 @@ export interface Scenario<S extends ScenarioStateCore = ScenarioStateCore> {
     // ---- 章をつなぐ口（省ける。架空の章は実装しない） ----
     /** 状態ごとの章の名前（省けば chapterTitle） */
     chapterTitleOf?(s: S): string;
+    /** 結末の画面の見出しの言葉（章の名前の後ろ。省けば「結末」） */
+    endingHeadingOf?(s: S): string;
     /** 結末の画面に出す「次の章へ」のボタン（無ければ null） */
     nextChapter?(s: S): { label: string; sub?: string } | null;
     /** 次の章のはじめの状態を作る（純粋。同じ入力なら同じ結果） */

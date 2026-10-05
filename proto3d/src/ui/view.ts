@@ -738,7 +738,7 @@ export class DomView implements GameView {
         const items: { id: EndingAction; label: string; sub?: string }[] = opts?.next
             ? [{ id: 'next_chapter', label: opts.next.label, ...(opts.next.sub ? { sub: opts.next.sub } : {}) }, { id: 'title', label: 'タイトルへ' }]
             : [{ id: 'title', label: 'タイトルへ' }];
-        return this.endingLike('ending', v, `${opts?.chapter ?? CHAPTER_TITLE}　結末`, opts, items) as Promise<EndingAction>;
+        return this.endingLike('ending', v, `${opts?.chapter ?? CHAPTER_TITLE}　${opts?.heading ?? '結末'}`, opts, items) as Promise<EndingAction>;
     }
 
     /**
