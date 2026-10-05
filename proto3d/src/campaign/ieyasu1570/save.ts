@@ -808,7 +808,9 @@ export function describeIeyasu2Save(d: Ieyasu2SaveData): string {
     const at = new Date(d.savedAt);
     const p2 = (n: number) => String(n).padStart(2, '0');
     const when = `${at.getFullYear()}/${p2(at.getMonth() + 1)}/${p2(at.getDate())} ${p2(at.getHours())}:${p2(at.getMinutes())}`;
-    return [IEYASU2_PHASE_LABELS[d.phase], POLICY_DONE_LABELS[d.policy], SAVE_POINT_LABELS[d.point], when, `遊んだ時間 ${Math.floor(d.playTimeSec / 60)} 分`].join('・');
+    // 区切りの時点は「章の結末」と書かない（第一章の結末の保存と見分けられるように）
+    const point = d.point === 'ending' ? '区切りの保存' : SAVE_POINT_LABELS[d.point];
+    return [IEYASU2_PHASE_LABELS[d.phase], POLICY_DONE_LABELS[d.policy], point, when, `遊んだ時間 ${Math.floor(d.playTimeSec / 60)} 分`].join('・');
 }
 
 /** 演習の記録のキー（ここでは決して触れない。名前だけ。演習の保存の仕組み campaign/practice.ts を読み込まないように、文字で持つ） */

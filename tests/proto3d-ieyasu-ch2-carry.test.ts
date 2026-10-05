@@ -11,7 +11,7 @@ import { CH2_RULES, CH2_UNIT, ch2BattleSetup } from '../proto3d/src/campaign/iey
 import { devIeyasuCh1Ending, ieyasu2BattleInput, startChapter2, talkIeyasu2 } from '../proto3d/src/campaign/ieyasu1570/chapter2/flow';
 import type { Ieyasu2State } from '../proto3d/src/campaign/ieyasu1570/chapter2/state';
 import { ieyasu2Chapter1RecordView } from '../proto3d/src/campaign/ieyasu1570/chapter2/story';
-import { POLICIES, TOKUGAWA_UNIT_IDS, type PledgeResult, type Policy } from '../proto3d/src/campaign/ieyasu1570/state';
+import { POLICIES, TOKUGAWA_UNIT_IDS, type PledgeResult } from '../proto3d/src/campaign/ieyasu1570/state';
 import { ch2From, toCh2Muster } from './proto3d-ieyasu-ch2-helpers';
 
 const RESULTS: BattleResultKind[] = ['victory', 'retreat', 'defeat'];
