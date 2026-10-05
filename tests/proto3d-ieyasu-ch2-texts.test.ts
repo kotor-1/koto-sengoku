@@ -13,6 +13,8 @@ import {
     applyIeyasu2Outcome,
     devIeyasuCh1Ending,
     finishTalkIeyasu2,
+    CH2_TRUST_DELTA,
+    ieyasu2BattleInfo,
     ieyasu2BattleSetup,
     ieyasu2OutcomeFromSetup,
     startChapter2,
@@ -21,6 +23,7 @@ import {
 import type { Ieyasu2State } from '../proto3d/src/campaign/ieyasu1570/chapter2/state';
 import { ieyasu2Chapter1RecordView, ieyasu2EndingView, ieyasu2PhaseIntro } from '../proto3d/src/campaign/ieyasu1570/chapter2/story';
 import type { Policy } from '../proto3d/src/campaign/ieyasu1570/state';
+import { CH2_RULES } from '../proto3d/src/campaign/ieyasu1570/chapter2/battle';
 import { ch2From, toCh2Battle, toCh2Muster } from './proto3d-ieyasu-ch2-helpers';
 
 const FROM: Record<Policy, 'oda_victory_kept' | 'asai_victory_kept' | 'home_victory_kept'> = { oda: 'oda_victory_kept', asai: 'asai_victory_kept', home: 'home_victory_kept' };
@@ -148,5 +151,86 @@ describe('第一章の結果確認の下の文', () => {
         expect(f).toContain('第一章の記録として');
         expect(f).toContain('第二章で動く');
         expect(f).not.toContain('第二章でも変わらずに残る');
+    });
+});
+
+describe('C：守備隊を出したかは、実際に出陣した部隊で決める（第一章の損害で守備隊が 40 未満）', () => {
+    // 実物の保存：兵が 本陣 140・忠勝隊 25・弓隊 20・守備隊 30。判断 2 は選べず、判断 1 だけ
+    const s0 = () => ch2From('home_defeat_broken_heavy');
+    const after = (rec: 'none' | 'wait') => {
+        const b = toCh2Battle(toCh2Muster(s0(), 'commit'), rec);
+        return applyIeyasu2Outcome(b, ieyasu2OutcomeFromSetup(ieyasu2BattleSetup(b), 'victory'));
+    };
+    it('前提：判断 1 しか選べず、補充しなければ出るのは家康本陣だけ。待てば守備隊も出る', () => {
+        const m = toCh2Muster(s0(), 'commit');
+        expect(s0().chapter1.troops.reserve).toBeLessThan(CH2_RULES.minUnitTroops);
+        expect(ieyasu2BattleInfo(finishTalkIeyasu2(m, 'ishikawa', 'recovery_none')).sortie).toEqual(['honjin']);
+        expect(ieyasu2BattleInfo(finishTalkIeyasu2(m, 'ishikawa', 'recovery_wait')).sortie).toContain('reserve');
+    });
+    it('軍議：判断 1 の説明は「守備隊も出す（城が空く）」と言い切らず、補充しないと本陣だけで出ると書く。判断 2 が選べない理由にも', () => {
+        const c = finishTalkIeyasu2(s0(), 'tadakatsu', 'open_council');
+        const sc = talkIeyasu2(c, 'council');
+        const commit = sc.choices!.find((x) => x.id === 'plan_commit')!;
+        expect(commit.detail).not.toContain('岡崎の守備隊も出す（城が空く');
+        expect(commit.detail).toContain('補充しないと');
+        expect(commit.detail).toContain('家康本陣だけ');
+        expect(commit.summary).not.toContain('守備隊も出す');
+        const all = sc.lines.map((l) => l.text).join('\n');
+        expect(all).toMatch(/取れませぬ。.*補充しないと.*家康本陣だけ/s);
+        // 確かめの画面：城は空く、と言い切らない
+        const conf = talkIeyasu2(finishTalkIeyasu2(c, 'council', 'plan_commit'), 'council').lines.map((l) => l.text).join('\n');
+        expect(conf).not.toContain('城は空になります');
+    });
+    it('支度：補充の「今の兵で出る」の説明に、出るのは家康本陣だけと書く', () => {
+        const m = toCh2Muster(s0(), 'commit');
+        const none = talkIeyasu2(m, 'ishikawa').choices!.find((x) => x.id === 'recovery_none')!;
+        expect(none.detail).toContain('家康本陣だけ');
+    });
+    it('補充しない：合戦の説明は「守備隊も出ている」と言わない。戦後の石川の信頼は動かず、石川・区切りの本文も城を空けたと言わない', () => {
+        const b = toCh2Battle(toCh2Muster(s0(), 'commit'), 'none');
+        const brief = ieyasu2BattleSetup(b).briefing.join('\n');
+        expect(brief).not.toContain('岡崎の守備隊も出ている');
+        expect(brief).toContain('守備隊は兵が少なく');
+        const a = after('none');
+        expect(a.result!.sortie).toEqual(['honjin']);
+        expect(a.result!.trustDelta.ishikawa).toBe(0);
+        expect(a.trust.ishikawa).toBe(a.chapter1.trust.ishikawa);
+        expect(talkIeyasu2(a, 'ishikawa').lines.map((l) => l.text).join('\n')).not.toContain('守備隊まで出して');
+        const body = ieyasu2EndingView(finishTalkIeyasu2(a, 'tadakatsu', 'end_chapter')).body.join('\n');
+        expect(body).not.toContain('城を空けて出た');
+    });
+    it('待って守備隊も出た：今までどおり −5 で、城を空けたと言う', () => {
+        const b = toCh2Battle(toCh2Muster(s0(), 'commit'), 'wait');
+        expect(ieyasu2BattleSetup(b).briefing.join('\n')).toContain('岡崎の守備隊も出ている');
+        const a = after('wait');
+        expect(a.result!.sortie).toContain('reserve');
+        expect(a.result!.trustDelta.ishikawa).toBe(CH2_TRUST_DELTA.ishikawaCommit);
+        expect(talkIeyasu2(a, 'ishikawa').lines.map((l) => l.text).join('\n')).toContain('守備隊まで出して');
+        expect(ieyasu2EndingView(finishTalkIeyasu2(a, 'tadakatsu', 'end_chapter')).body.join('\n')).toContain('城を空けて出た');
+    });
+});
+
+describe('C：守る時間の後に来る波は「守る時間のうちには来ない」。待つと第三波が守る時間の中に入る', () => {
+    // 守る時間が 3 分（兵が少ないとき）の組
+    const thin = () => toCh2Muster(ch2From('home_defeat_broken_heavy'), 'commit');
+    it('前提：守る時間は 3 分', () => {
+        expect(thin().terms!.holdSec).toBe(180);
+    });
+    it('待たない：説明は第三波（3 分 20 秒）を「守る時間のうちには来ない」と書く', () => {
+        const brief = ieyasu2BattleSetup(toCh2Battle(thin(), 'none')).briefing.join('\n');
+        expect(brief).toContain('守る時間のうちには来ない');
+        expect(brief).toMatch(/3 分 20 秒.*守る時間のうちには来ない/);
+    });
+    it('待つの代償の説明：第三波が守る時間の中に入る（新しく加わる）とはっきり書く', () => {
+        const wait = talkIeyasu2(thin(), 'ishikawa').choices!.find((x) => x.id === 'recovery_wait')!;
+        expect(wait.detail).toMatch(/第三波.*守る時間（3 分）の中に入る/);
+        // 待ったときの説明では、第三波（2 分 40 秒）は守る時間の中なので「来ない」と書かない
+        const brief = ieyasu2BattleSetup(toCh2Battle(thin(), 'wait')).briefing.join('\n');
+        expect(brief).not.toContain('守る時間のうちには来ない');
+    });
+    it('守る時間が 6 分（ふだん）なら、どの波も守る時間のうちに来る（「来ない」と書かない）', () => {
+        const m = toCh2Muster(ch2From('home_victory_kept'), 'hold');
+        expect(m.terms!.holdSec).toBe(360);
+        expect(ieyasu2BattleSetup(toCh2Battle(m, 'none')).briefing.join('\n')).not.toContain('守る時間のうちには来ない');
     });
 });

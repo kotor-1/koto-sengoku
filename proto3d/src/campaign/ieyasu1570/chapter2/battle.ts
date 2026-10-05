@@ -32,7 +32,7 @@ import type { IeyasuCharacterId, IeyasuCharacterStatus, PledgeResult, Policy, To
 
 /**
  * 軍議の判断（設計 §6）。
- * - commit：判断 1（A 殿を引き受ける／B 南から急いで救う／C 全軍で村を守る）。岡崎の守備隊も出す。
+ * - commit：判断 1（A 殿を引き受ける／B 南から急いで救う／C 全軍で村を守る）。岡崎の守備隊も出す（兵が CH2_RULES.minUnitTroops 未満なら出ない）。
  * - hold：判断 2（A 退き口の手前を固める／B 西の筋から救う／C 守備隊は城に残す）。岡崎の守備隊は城に残す。
  */
 export type Ch2Plan = 'commit' | 'hold';
@@ -172,7 +172,14 @@ export function ch2SortieTroops(plan: Ch2Plan, troops: Record<TokugawaUnitId, nu
 export function ch2PlanAvailability(plan: Ch2Plan, troops: Record<TokugawaUnitId, number>): { available: boolean; reason: string | null } {
     if (plan === 'commit') return { available: true, reason: null };
     const n = ch2SortieUnits('hold', troops).length;
-    if (n < CH2_RULES.holdMinUnits) return { available: false, reason: '第一章の損害で、守備隊を城に残すと出せる部隊が足りない（本陣だけになる）' };
+    if (n < CH2_RULES.holdMinUnits) {
+        // 判断 1 でも部隊が増えないとき（守備隊も兵が少ない）は、そう書く（補充で兵を戻せば出られる）
+        const commitOnlyHq = ch2SortieUnits('commit', troops).length < CH2_RULES.holdMinUnits;
+        return {
+            available: false,
+            reason: `第一章の損害で、守備隊を城に残すと出せる部隊が足りない（本陣だけになる）${commitOnlyHq ? '。判断 1 でも、補充しないと出るのは家康本陣だけ（守備隊も兵が少なく出られない）' : ''}`,
+        };
+    }
     return { available: true, reason: null };
 }
 
@@ -250,6 +257,12 @@ function storyMap(policy: Policy): BattleMap {
 }
 
 const FIRST_LINE = '第一章の直後の、分岐した世界での出来事（ゲーム用の創作）。特定の史実の合戦の再現ではない。戦場・兵数・配置は創作。';
+
+/** 判断 1 の説明の、岡崎の守備隊の行（実際に出陣する部隊で決める。兵が少なく出ないときは、城は空かない） */
+function reserveLine(sortie: readonly TokugawaUnitId[]): string {
+    if (sortie.includes('reserve')) return '岡崎の守備隊も出ている（城は空になる）。';
+    return `岡崎の守備隊は兵が少なく（${CH2_RULES.minUnitTroops} 未満）出ていない（城は空かない）。${sortie.length === 1 ? '出たのは家康本陣だけ。' : ''}`;
+}
 
 /** 秒を「1 分 50 秒」「20 秒」の形に */
 function fmtSec(sec: number): string {
@@ -386,7 +399,7 @@ function setupA(input: Ch2BattleInput, sortie: TokugawaUnitId[], support: Ch2Sup
                 : '45 秒ほどで切れ目の北の口の西の林から朝倉の伏兵の騎馬が、70 秒ほどで東の林から浅井の後詰めの騎馬が出る'
         }（地図の「援軍の出る所」）。撤退の命令で退く隊は騎馬に追われる。`,
         input.plan === 'commit'
-            ? '判断：殿を引き受けた。徳川は北の丘の前で殿を務め、織田勢は先に切れ目へ向かう。岡崎の守備隊も出ている。'
+            ? `判断：殿を引き受けた。徳川は北の丘の前で殿を務め、織田勢は先に切れ目へ向かう。${reserveLine(sortie)}`
             : '判断：退き口の手前を固めた。徳川は切れ目の北の口を固め、織田勢は北の原から自分で退いてくる。岡崎の守備隊は城に残した。',
         ...adj,
         '勝利：家康本陣と、織田勢の後備え・小荷駄が、南の退き口の輪から離脱する（輪に入った部隊は戦場を離れる。撤退の命令でも移動でもよい）。家康本陣が退き口から離れても負けではない（合戦は続く）。',
@@ -488,7 +501,7 @@ function setupB(input: Ch2BattleInput, sortie: TokugawaUnitId[], support: Ch2Sup
         `方針：浅井との協力を選んだ（史実から分かれた道）。北東の丘で${target.name}が織田方に囲まれて孤立している。合流し、南の安全地点まで連れ帰る。信長本人・織田の武将は出ない。`,
         input.characters.nagamasa === 'alive' ? '浅井長政隊は味方として指揮でき、「盟友への援護」も使える。' : '長政は第一章の手傷が癒えず、後方に残った。丘にいるのは浅井勢の後備え（武将なし）。',
         input.plan === 'commit'
-            ? '判断：南から急いで救う。南の陣から丘へ向かう。岡崎の守備隊も出ている。'
+            ? `判断：南から急いで救う。南の陣から丘へ向かう。${reserveLine(sortie)}`
             : '判断：西の筋から救う。西の林の縁の筋（小丘の近く）から始める。丘の西の囲みは、矢を浴び続けると射手へ打って出る（誘い出せる）。岡崎の守備隊は城に残した。',
         ...adj,
         `合流：${target.name}とほかの味方が、丘の上の合流の輪に一緒に 5 秒いると合流する。合流の前に安全地点へ入っても数えない（触れただけ・能力だけでは果たさない）。`,
@@ -514,6 +527,8 @@ const C_POS: Record<TokugawaUnitId | 'village', Pos> = {
     reserve: { x: -72, z: 135, facing: N },
     village: { x: 72, z: 135, facing: N },
 };
+/** C の波の着く時刻（待たないとき。待てば CH2_RULES.waitDelaySec 早い） */
+const C_WAVE_SEC = [20, 110, 200] as const;
 function enemiesC(input: Ch2BattleInput, f: number): UnitDef[] {
     const delay = input.waited ? CH2_RULES.waitDelaySec : 0;
     const at = (t: number) => Math.max(1, t - delay);
@@ -536,12 +551,12 @@ function enemiesC(input: Ch2BattleInput, f: number): UnitDef[] {
     const store = { x: -135, z: -23, r: 12 };
     return [
         e('e_ronin_hq', 'honjin', '浪人衆の頭', 300, 0, -180, undefined, null),
-        e('e_ronin_w1_yari', 'yari', '浪人衆の槍（一）', 300, 0, -195, at(20), key),
-        e('e_ronin_w1_yumi', 'yumi', '浪人衆の弓（一）', 120, 0, -195, at(20), lane),
-        e('e_ronin_w2_yari', 'yari', '浪人衆の槍（二）', 260, -72, -195, at(110), key),
-        e('e_ronin_w2_kiba', 'kiba', '浪人衆の騎馬', 180, -72, -195, at(110), store),
-        e('e_ronin_w3_yari', 'yari', '浪人衆の槍（三）', 280, 72, -195, at(200), key),
-        e('e_ronin_w3_yumi', 'yumi', '浪人衆の弓（二）', 120, 72, -195, at(200), lane),
+        e('e_ronin_w1_yari', 'yari', '浪人衆の槍（一）', 300, 0, -195, at(C_WAVE_SEC[0]), key),
+        e('e_ronin_w1_yumi', 'yumi', '浪人衆の弓（一）', 120, 0, -195, at(C_WAVE_SEC[0]), lane),
+        e('e_ronin_w2_yari', 'yari', '浪人衆の槍（二）', 260, -72, -195, at(C_WAVE_SEC[1]), key),
+        e('e_ronin_w2_kiba', 'kiba', '浪人衆の騎馬', 180, -72, -195, at(C_WAVE_SEC[1]), store),
+        e('e_ronin_w3_yari', 'yari', '浪人衆の槍（三）', 280, 72, -195, at(C_WAVE_SEC[2]), key),
+        e('e_ronin_w3_yumi', 'yumi', '浪人衆の弓（二）', 120, 72, -195, at(C_WAVE_SEC[2]), lane),
     ];
 }
 
@@ -560,9 +575,14 @@ function setupC(input: Ch2BattleInput, sortie: TokugawaUnitId[], support: Ch2Sup
     const briefing = [
         FIRST_LINE + '地形は「村落」の演習の地形を使う。',
         `方針：自領の防衛を優先した。${ronin}領内の村へ押し入ろうとしている。織田・浅井のどちらとも戦わない。`,
-        input.plan === 'commit' ? '判断：全軍で村を守る。岡崎の守備隊も出ている（城は空になる）。' : '判断：守備隊は城に残し、主力で村を守る。',
+        input.plan === 'commit' ? `判断：全軍で村を守る。${reserveLine(sortie)}` : '判断：守備隊は城に残し、主力で村を守る。',
         ...adj,
-        `敵は北から 3 つの波で来る（${[20, 110, 200].map((t) => (t - (input.waited ? CH2_RULES.waitDelaySec : 0) <= 1 ? 'すぐ' : fmtSec(t - (input.waited ? CH2_RULES.waitDelaySec : 0)))).join('・')}。地図の「援軍の出る所」）。槍は庄屋の屋敷前へ攻め進み、騎馬は横道の西の端の米蔵を荒らしに行く。家屋は通れず、矢も通さない。`,
+        // 波の時刻。守る時間より後に着く波は、守り切れば合戦が終わるので「守る時間のうちには来ない」
+        `敵は北から 3 つの波で来る（${C_WAVE_SEC.map((t0) => {
+            const t = Math.max(1, t0 - (input.waited ? CH2_RULES.waitDelaySec : 0));
+            const when = t <= 1 ? 'すぐ' : fmtSec(t);
+            return t >= sec ? `${when}。守る時間のうちには来ない` : when;
+        }).join('・')}。地図の「援軍の出る所」）。槍は庄屋の屋敷前へ攻め進み、騎馬は横道の西の端の米蔵を荒らしに行く。家屋は通れず、矢も通さない。`,
         `勝利：庄屋の屋敷前（広場の真ん中の輪）を ${sec / 60} 分守る。敵だけが 15 秒続けて輪を占めると負け。`,
         '敗北：屋敷前を奪われる、または家康本陣が崩れる（家康は落ち延びる。一度の負けで家が滅ぶことはない）。',
         `副目標：${secondary.map((d) => d.label).join('・')}。`,

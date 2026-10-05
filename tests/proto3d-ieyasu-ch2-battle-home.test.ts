@@ -84,6 +84,23 @@ describe('C：目標を考えない手は、考えた作戦より明らかに良
     }
 });
 
+describe('C：minimum で補充しない（守備隊が 40 未満で出ず、家康本陣だけで出る。記録だけ・勝敗は強制しない）', () => {
+    // 軍議の時の兵（第一章の終わり）のまま出る：本陣 100・忠勝隊 10・弓隊 10・守備隊 10 → 出るのは家康本陣だけ
+    const input = () => ch2TierInput(P, 'commit', 'minimum', { noRecovery: true });
+    it('出陣は家康本陣だけ・守る時間は 3 分', () => {
+        const info = ch2BattleSetup(input());
+        expect(info.sortie).toEqual(['honjin']);
+        expect(info.setup.objectives!.primary).toMatchObject({ type: 'defend_time', sec: 180 });
+    });
+    for (const id of ['trap', 'trap_hq', 'trap_store', 'nothing', 'all_retreat', 'rush']) {
+        it(`minimum・補充なし：${id}（数える）`, () => {
+            const s = summarize(sixteenCh2(P, 'commit', 'minimum', id, (i) => Object.assign(i, input()), 'norecovery'));
+            log(`C commit minimum 補充なし ${id}: ${fmt(s)}`);
+            expect(s.wins).toBeGreaterThanOrEqual(0);
+        }, 60_000);
+    }
+});
+
 describe('C：第一章の結果が効く（支援・補充）', () => {
     it('支援：村の衆（第一章の勝ち）がいると、いないとき（状態を直接変える：設定から村の衆を除く）と結果が違う', () => {
         for (const plan of ['commit', 'hold'] as Ch2Plan[]) {

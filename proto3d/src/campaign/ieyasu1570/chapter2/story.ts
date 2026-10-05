@@ -35,7 +35,7 @@ import {
     ieyasuReasonLabel,
     supportSourceName,
 } from '../story';
-import { CH2_RULES, CH2_TERMS_TABLE, ch2BattleSetup, ch2DecideTerms, ch2PartnerNames, ch2PlanAvailability, ch2ThinLine, type Ch2BattleInfo, type Ch2Plan, type Ch2SupportId } from './battle';
+import { CH2_RULES, CH2_TERMS_TABLE, ch2BattleSetup, ch2DecideTerms, ch2PartnerNames, ch2PlanAvailability, ch2SortieUnits, ch2ThinLine, type Ch2BattleInfo, type Ch2Plan, type Ch2SupportId } from './battle';
 import { CH2_RECOVERY, availableCh2Plans, ch2Losses, ch2PartnerOf, ch2RecoveryOptions, ch2TrustDelta, ieyasu2BattleInfo, ieyasu2BattleInput, type RecoveryOption } from './rules';
 import { ieyasu2TalkFlag, type Chapter1Record, type Ieyasu2EndingId, type Ieyasu2Result, type Ieyasu2State, type Ieyasu2TalkId, type RecoveryChoice } from './state';
 
@@ -75,6 +75,12 @@ const PLAN_POS: Readonly<Record<Policy, Readonly<Record<Ch2Plan, string>>>> = {
 };
 export const RECOVERY_LABELS: Readonly<Record<RecoveryChoice, string>> = { wait: '負傷兵の戻りを待つ', transfer: '守備隊から兵を回す', none: '今の兵で出る' };
 export const CH2_SUPPORT_NAMES: Readonly<Record<Ch2SupportId, string>> = { oda_teppo: '織田の鉄砲隊', asai_guide: '浅井の道案内', village: '村の衆' };
+
+/** 始めの陣の説明（C の判断 1 で守備隊が兵が少なく出ないときは、守備隊を並べると言わない） */
+function planPos(p: Policy, plan: Ch2Plan, sortie: readonly TokugawaUnitId[]): string {
+    if (p === 'home' && plan === 'commit' && !sortie.includes('reserve')) return '村の南に陣を敷く（岡崎の守備隊は兵が少なく出られない）';
+    return PLAN_POS[p][plan];
+}
 
 const generalName = (id: GeneralId) => generalById(id)!.name;
 
@@ -537,16 +543,20 @@ export function planChoice(state: Ieyasu2State, plan: Ch2Plan): ScenarioChoice {
     const trustText = partner
         ? `${TRUST_NAMES[partner]}：勝利 ${signed(dv[partner])}・撤退 ${signed(dr[partner])}・敗北 ${signed(dd[partner])}`
         : '織田家・浅井家：動かない（両家の部隊は出ない）';
+    // 守備隊を出すかは、実際に出陣する部隊で決める（判断 1 でも、兵が少なければ出ない。補充で戻れば出る）
+    const reserveOut = info.sortie.includes('reserve');
     const cost =
-        plan === 'commit'
-            ? `岡崎の守備隊も出す（城が空く。戦後、${TRUST_NAMES.ishikawa}の信頼 ${signed(dv.ishikawa)}）`
-            : '岡崎の守備隊は城に残る（出る兵が少ない）';
+        plan !== 'commit'
+            ? '岡崎の守備隊は城に残る（出る兵が少ない）'
+            : reserveOut
+              ? `岡崎の守備隊も出す（城が空く。戦後、${TRUST_NAMES.ishikawa}の信頼 ${signed(dv.ishikawa)}）`
+              : `岡崎の守備隊は兵が少なく（${state.troops.reserve}。${CH2_RULES.minUnitTroops} 未満）、このままでは出られない（補充しないと、出るのは${info.sortie.length === 1 ? '家康本陣だけ' : '守備隊を除く部隊'}。補充で ${CH2_RULES.minUnitTroops} 以上に戻れば守備隊も出て城が空き、戦後、${TRUST_NAMES.ishikawa}の信頼 ${signed(dv.ishikawa)}。出なければ城は空かず、信頼も動かない）`;
     const thinLine = ch2ThinLine(info.terms);
     return {
         id: plan === 'commit' ? 'plan_commit' : 'plan_hold',
         label: CH2_PLAN_LABELS[p][plan],
-        detail: `出る部隊：${units}（合わせて ${total}）。味方：${partners.length ? partners.join('・') : 'なし'}。始めの陣：${PLAN_POS[p][plan]}。この判断で確定する主目標：${prim}（決めた後の補充では変わらない）。戦後の信頼：${trustText}。代償：${cost}。${thinLine ?? ''}`,
-        summary: `出る兵 ${total}・${plan === 'commit' ? '守備隊も出す' : '守備隊は城に残す'}`,
+        detail: `出る部隊：${units}（合わせて ${total}）。味方：${partners.length ? partners.join('・') : 'なし'}。始めの陣：${planPos(p, plan, info.sortie)}。この判断で確定する主目標：${prim}（決めた後の補充では変わらない）。戦後の信頼：${trustText}。代償：${cost}。${thinLine ?? ''}`,
+        summary: `出る兵 ${total}・${plan === 'commit' ? (reserveOut ? '守備隊も出す' : '守備隊は兵が少なく出られない') : '守備隊は城に残す'}`,
     };
 }
 
@@ -554,12 +564,18 @@ function councilScript(state: Ieyasu2State): ScenarioScript {
     const p = state.policy;
     const pend = state.pendingPlan;
     if (pend) {
+        const sortie = ieyasu2BattleInfo(state, pend).sortie;
+        // 判断 1 でも守備隊が兵が少なく出ないときは、石川の「城が空く」の言葉を言い換える
+        const confirm =
+            pend === 'commit' && !sortie.includes('reserve')
+                ? CONFIRM_LINES[p][pend].map((l) => (l.speaker === 'ishikawa' ? IK('守備隊は兵が足りず、このままでは出せませぬ。補わねば城に残り、城は空きませぬ。') : l))
+                : CONFIRM_LINES[p][pend];
         return {
             id: `ch2.council.confirm.${p}.${pend}`,
             talk: 'council',
             lines: [
-                T(`${CH2_PLAN_LABELS[p][pend]}。${PLAN_POS[p][pend]}。`),
-                ...CONFIRM_LINES[p][pend],
+                T(`${CH2_PLAN_LABELS[p][pend]}。${planPos(p, pend, sortie)}。`),
+                ...confirm,
                 narrate(`（決めると主目標の条件が確定する：${termsText(ieyasu2BattleInfo(state, pend))}。この後の補充・保存では変わらない）`),
                 T('この手で、よろしいか。'),
             ],
@@ -622,11 +638,19 @@ function waitCostText(state: Ieyasu2State): string {
     const b = ch2BattleSetup({ ...input, waited: true }).setup;
     const at = (setup: typeof a, ids: string[]) => Math.min(...ids.map((id) => setup.units.find((u) => u.id === id)?.arriveAt ?? Infinity));
     const when = (sec: number) => (sec <= 1 ? 'すぐ' : `${fmtSec(sec)}ほど`);
+    // C：守る時間（確定した条件）より後に着いていた波が、待つと守る時間の中に入る（新しく加わる）ことをはっきり書く
+    const hold = input.policy === 'home' ? (input.terms?.holdSec ?? null) : null;
     const parts: string[] = [];
     for (const g of a.reinforcements ?? []) {
         const t0 = at(a, g.unitIds);
         const t1 = at(b, g.unitIds);
-        if (t0 !== t1 && Number.isFinite(t0) && Number.isFinite(t1)) parts.push(`${REINF_LABELS[g.id] ?? '敵'}が ${when(t0)} → ${when(t1)}`);
+        if (t0 === t1 || !Number.isFinite(t0) || !Number.isFinite(t1)) continue;
+        let line = `${REINF_LABELS[g.id] ?? '敵'}が ${when(t0)} → ${when(t1)}`;
+        if (hold !== null && t0 >= hold && t1 < hold) {
+            const add = b.units.filter((u) => g.unitIds.includes(u.id)).map((u) => `${u.name} ${u.strength}`).join('＋');
+            line += `。守る時間（${fmtSec(hold)}）の中に入る（待たなければ守る時間のうちには来ない。待つと ${add} が新しく加わる）`;
+        }
+        parts.push(line);
     }
     return parts.join('・');
 }
@@ -659,8 +683,13 @@ function recoveryChoice(state: Ieyasu2State, o: RecoveryOption): ScenarioChoice 
                 detail: `回す兵：${deltaText(o.delta)}（最大 ${R.transferMax}。守備隊は ${R.reserveFloor} より減らさない。合計は変わらない）。代償：岡崎の守備隊の兵が減る（第二章の後も減ったまま）。${keep}。`,
                 summary: `守備隊から ${-o.delta.reserve} を回す`,
             };
-        case 'none':
-            return { id: 'recovery_none', label: RECOVERY_LABELS.none, detail: `兵は変えない。代償なし。${keep}。`, summary: '兵はそのまま' };
+        case 'none': {
+            // 今の兵で出たときに出る部隊（兵が少ない部隊は出ない）。家康本陣だけになるときはそう書く
+            const sortie = state.plan ? ch2SortieUnits(state.plan, state.troops) : [];
+            const only = sortie.length === 1 ? `このままでは、出るのは家康本陣だけ（ほかの部隊は兵が ${CH2_RULES.minUnitTroops} 未満で出られない）。` : '';
+            const noReserve = !only && state.plan === 'commit' && !sortie.includes('reserve') ? `岡崎の守備隊は兵が ${CH2_RULES.minUnitTroops} 未満で出られない（城は空かない）。` : '';
+            return { id: 'recovery_none', label: RECOVERY_LABELS.none, detail: `兵は変えない。代償なし。${only}${noReserve}${keep}。`, summary: '兵はそのまま' };
+        }
     }
 }
 
@@ -738,7 +767,11 @@ function musterScript(state: Ieyasu2State, id: Ieyasu2TalkId): ScenarioScript {
                     hold: [T('西の筋から参ります。西の囲みに矢を浴びせれば、打って出てまいりましょう。'), T('囲みが崩れたら丘へ上がって浅井勢と合流し、南へ連れ帰ります。')],
                 },
                 home: {
-                    commit: [T('屋敷の前を、守備隊も並べて厚く守りましょう。浪人の騎馬は米蔵を狙ってくるはず。')],
+                    commit: [
+                        ieyasu2BattleInfo(state).sortie.includes('reserve')
+                            ? T('屋敷の前を、守備隊も並べて厚く守りましょう。浪人の騎馬は米蔵を狙ってくるはず。')
+                            : T('守備隊は兵が足りず、このままでは出られませぬ。出る者で屋敷の前を守りましょう。浪人の騎馬は米蔵を狙ってくるはず。'),
+                    ],
                     hold: [T('守備隊は城に残し、主力で屋敷の前を守ります。浪人の騎馬は米蔵を狙ってくるはず。')],
                 },
             };
@@ -758,7 +791,7 @@ function musterScript(state: Ieyasu2State, id: Ieyasu2TalkId): ScenarioScript {
                 talk: id,
                 lines: [
                     notice('一、この度の陣触れにつき、足軽は城門前に集まるべし。'),
-                    notice(plan === 'commit' ? '一、守備の者も出陣す。留守の町の火の始末を怠るな。' : '一、守備の者は城に残る。町の者は騒がぬこと。'),
+                    notice(plan === 'commit' && ieyasu2BattleInfo(state).sortie.includes('reserve') ? '一、守備の者も出陣す。留守の町の火の始末を怠るな。' : '一、守備の者は城に残る。町の者は騒がぬこと。'),
                 ],
             };
         default:
@@ -882,7 +915,8 @@ function aftermathScript(state: Ieyasu2State, id: Ieyasu2TalkId): ScenarioScript
                 narrate(`（失った兵：${lost}${lost ? `（${TOKUGAWA_UNIT_IDS.filter((k) => r.lost[k]).map((k) => `${TOKUGAWA_UNIT_NAMES[k]} ${r.lost[k]}`).join('・')}）` : ''}。今の兵：${troopsNow(state.troops)}）`),
             ];
             if (r.recovery === 'transfer') lines.push(IK('守備隊から回したぶん、城の守りは薄いままにございます。'));
-            if (r.plan === 'commit') lines.push(IK('守備隊まで出して城を空けたこと、二度は続けとうございませぬ。'));
+            // 守備隊を出したかは、実際に出陣した部隊で決める（判断 1 でも、兵が少なく出なかったときは言わない）
+            if (r.sortie.includes('reserve')) lines.push(IK('守備隊まで出して城を空けたこと、二度は続けとうございませぬ。'));
             return { id: `ch2.aftermath.ishikawa.${r.plan}`, talk: id, lines };
         }
         case 'envoy':
@@ -1061,7 +1095,7 @@ function endingBody(state: Ieyasu2State, id: Ieyasu2EndingId): string[] {
     const tail: string[] = [];
     if (state.characters.tadakatsu === 'wounded') tail.push('忠勝の傷が癒えるまで、しばらくかかりそうだ。');
     if (state.result?.recovery === 'transfer') tail.push('岡崎の守備隊は兵を回したぶん、薄いままだ。');
-    if (state.result?.plan === 'commit') tail.push('城を空けて出たことを、石川数正は案じている。');
+    if (state.result?.sortie.includes('reserve')) tail.push('城を空けて出たことを、石川数正は案じている。');
     if (tail.length) body.push(tail.join(''));
     return body.slice(0, 4);
 }

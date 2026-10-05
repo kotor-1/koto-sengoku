@@ -33,7 +33,8 @@ export const CH2_RECOVERY = {
  * - partner：相手の家（A 織田・B 浅井）。勝利は判断ごと（判断 1 commit／判断 2 hold）、撤退 0、敗北 −5。C は両家とも動かない。
  * - tadakatsu：本多忠勝。勝利 +5。
  * - sakai：酒井忠次。勝利 +5・敗北 −5。
- * - ishikawaCommit：石川数正。判断 1（守備隊を出した＝城を空けた）で −5（勝敗によらない）。
+ * - ishikawaCommit：石川数正。岡崎の守備隊が実際に出陣した（城を空けた）とき −5（勝敗によらない）。判断 1 でも、守備隊の兵が
+ *   CH2_RULES.minUnitTroops 未満で出なかったときは動かない（守備隊を出したかは、出陣した部隊で決める）。
  */
 export const CH2_TRUST_DELTA = {
     partner: { victory: { commit: 15, hold: 10 }, retreat: 0, defeat: -5 },
@@ -47,8 +48,11 @@ export function ch2PartnerOf(policy: Policy): Extract<TrustId, 'oda' | 'asai'> |
     return policy === 'oda' ? 'oda' : policy === 'asai' ? 'asai' : null;
 }
 
-/** 方針 × 判断 × 結果ごとの信頼の動き（戦後に足す値。軍議・結末の説明にも使う） */
-export function ch2TrustDelta(policy: Policy, plan: Ch2Plan, result: BattleResultKind): Record<TrustId, number> {
+/**
+ * 方針 × 判断 × 結果ごとの信頼の動き（戦後に足す値。軍議・結末の説明にも使う）。
+ * reserveOut：岡崎の守備隊が実際に出陣したか（合戦の設定・戦後の記録の sortie に守備隊が入るか）。省けば判断 1 なら出たとみなす（説明用）。
+ */
+export function ch2TrustDelta(policy: Policy, plan: Ch2Plan, result: BattleResultKind, reserveOut: boolean = plan === 'commit'): Record<TrustId, number> {
     const d = Object.fromEntries(TRUST_IDS.map((k) => [k, 0])) as Record<TrustId, number>;
     const partner = ch2PartnerOf(policy);
     if (partner) {
@@ -57,7 +61,7 @@ export function ch2TrustDelta(policy: Policy, plan: Ch2Plan, result: BattleResul
     }
     d.tadakatsu = CH2_TRUST_DELTA.tadakatsu[result];
     d.sakai = CH2_TRUST_DELTA.sakai[result];
-    if (plan === 'commit') d.ishikawa = CH2_TRUST_DELTA.ishikawaCommit;
+    if (reserveOut) d.ishikawa = CH2_TRUST_DELTA.ishikawaCommit;
     return d;
 }
 

@@ -332,7 +332,8 @@ export function applyIeyasu2Outcome(state: Ieyasu2State, outcome: BattleOutcome)
     if (s.policy === 'asai' && ng && ng.side === 'ally' && ng.leaderId === 'nagamasa' && brokenStatus(ng.status)) s.characters.nagamasa = 'wounded';
 
     // 信頼
-    const delta = ch2TrustDelta(s.policy, plan, o.result);
+    // 石川の信頼：岡崎の守備隊が実際に出陣したときだけ動く（判断 1 でも、兵が少なく出なかったときは動かない）
+    const delta = ch2TrustDelta(s.policy, plan, o.result, info.sortie.includes('reserve'));
     for (const k of TRUST_IDS) s.trust[k] = clampTrust(s.trust[k] + delta[k]);
     const trustDelta = Object.fromEntries(TRUST_IDS.map((k) => [k, s.trust[k] - state.trust[k]])) as Record<TrustId, number>;
 
