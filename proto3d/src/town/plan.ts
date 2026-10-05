@@ -10,7 +10,7 @@
  */
 import machiyaD from '../../blender/machiya/machiya_d.meta.json';
 import type { Box, Rect } from '../layout';
-import { COUNCIL_HALL, GUARDPOST, HIGHWAY_MOUTH, LOOKOUT } from './spots';
+import { COUNCIL_HALL, HIGHWAY_MOUTH } from './spots';
 
 /** 材質（描く側が 1 つずつ作る。同じ材質はまとめて 1 回で描く） */
 export type TownMat = 'wood' | 'plank' | 'straw' | 'mat' | 'basket' | 'cloth' | 'metal' | 'paper' | 'roof' | 'dark';
@@ -460,6 +460,3 @@ export function townBlockers(): Box[] {
 
 /** 物見の眺めの目の位置（櫓の上）。カメラはここから見回す */
 export const LOOKOUT_EYE = { x: TOWER.x, y: TOWER.eyeY, z: TOWER.z } as const;
-
-// 目印の位置（spots.ts）と配置の数字が食い違わないように（物見の相手は梯子の北、詰所は筵のそば）
-export const SPOT_CHECK = { lookout: LOOKOUT, guardpost: GUARDPOST } as const;

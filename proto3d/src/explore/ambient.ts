@@ -144,6 +144,15 @@ export function ambientPlan(spec: AmbientSpec | null): AmbientPlan {
     return { walkers, figures: figures.slice(0, AMBIENT_FIGURES_MAX), banners };
 }
 
+/** 端で向き直る時間（秒） */
+const TURN_SEC = 0.6;
+/** 向き a から b へ、k（0〜1）だけ回す（近い回り。なめらかに） */
+function turnTo(a: number, b: number, k: number): number {
+    const x = Math.max(0, Math.min(1, k));
+    const d = Math.atan2(Math.sin(b - a), Math.cos(b - a));
+    return a + d * x * x * (3 - 2 * x);
+}
+
 /** 行き来する人の、時刻 time（探索の時計の秒）の姿（純粋） */
 export function walkerAt(w: AmbientWalker, time: number): StagePerson & { carrying: boolean; work: number } {
     if (w.speed <= 0 || w.path.length < 2) {
@@ -162,9 +171,12 @@ export function walkerAt(w: AmbientWalker, time: number): StagePerson & { carryi
     let heading: number;
     let carrying: boolean;
     let walked: number;
+    const out0 = alongPath(w.path, 0).heading;
+    const in1 = alongPath(w.path, L).heading;
     if (u < w.pause) {
         s = 0;
-        heading = w.faceStart;
+        // 着いた向きから端の向きへ、出る前に道の向きへ（ゆっくり向き直る）
+        heading = turnTo(turnTo(out0 + Math.PI, w.faceStart, u / TURN_SEC), out0, (u - (w.pause - TURN_SEC)) / TURN_SEC);
         carrying = w.carry && u > w.pause * 0.5;
         walked = 0;
     } else if (u < w.pause + leg) {
@@ -175,7 +187,8 @@ export function walkerAt(w: AmbientWalker, time: number): StagePerson & { carryi
         walked = s;
     } else if (u < 2 * w.pause + leg) {
         s = L;
-        heading = w.faceEnd;
+        const k = u - w.pause - leg;
+        heading = turnTo(turnTo(in1, w.faceEnd, k / TURN_SEC), in1 + Math.PI, (k - (w.pause - TURN_SEC)) / TURN_SEC);
         carrying = w.carry && u < w.pause * 1.5 + leg;
         walked = L;
     } else {
