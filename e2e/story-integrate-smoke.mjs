@@ -20,7 +20,9 @@
 //        合戦（全軍撤退）→ 帰還の演出（Esc でスキップ）→ 戦後 → 情勢から演出を見直す
 //   ch2  第一章の結末の保存 2 つ（勝ち・約束を守った／敗北・約束を破った・損害大）から「第二章へ進む」→ 移行の演出 → 結果確認 → 城下。
 //        勝ちの保存は移行の演出を触らずに最後まで（通常速度）、損害大の保存は一時停止 →「次の場面」で送る →「スキップ」。
-//        演出の 3D の出来事と町の人々が第一章の結果で違うこと・兵は保存のまま
+//        演出の 3D の出来事と町の人々が第一章の結果で違うこと・兵は保存のまま。
+//        勝ちの保存では続けて、タッチのスティックで物見櫓へ歩いて物見（指でなぞる・タップ）→ 忠勝へ歩いて軍議（判断の「物見：」・地図で見る・タブ）
+//        → 軍議から開いた情勢で移行の演出を見直す（スキップ）→ 軍議へ戻る
 // 使い方：自動再読み込みなしの開発サーバーを自分用のポートで起動して
 //   (PORT=5391 setsid nohup npx vite --config proto3d/blender/tools/vite.nohmr.mjs > /tmp/vite-5391.log 2>&1 &)
 //   BASE=http://localhost:5391 node e2e/story-integrate-smoke.mjs [出力先]
@@ -209,14 +211,31 @@ const planPath = (page, tx, tz) => page.evaluate(async ([tx, tz]) => {
   }
   return out;
 }, [tx, tz]);
-/** 道を探して本物のキーで歩く。stop(s) が真になったらそこで止める */
-async function walkTo(page, tx, tz, near = 0.6, stop = () => false) {
+/** タッチのスティック（画面の左下を指で押さえて動かす。CDP のタッチ）で (tx, tz) へ向かって歩く（e2e/ieyasu-ch2.mjs と同じ） */
+async function walkTouch(page, cdp, tx, tz, done, maxSteps = 500) {
+  const O = [150, 280];
+  const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y]) => ({ x, y, id: 1 })) });
+  await touch('touchStart', [O]);
+  let s;
+  for (let i = 0; i < maxSteps; i++) {
+    s = await pose(page);
+    if (done(s)) break;
+    const { ix, iy } = toScreen(s, tx, tz);
+    await touch('touchMove', [[O[0] + ix * 60, O[1] + iy * 60]]);
+    await sleep(80);
+  }
+  await touch('touchEnd', []);
+  return s;
+}
+/** 道を探して本物の入力（キー。cdp を渡せばタッチのスティック）で歩く。stop(s) が真になったらそこで止める */
+async function walkTo(page, tx, tz, near = 0.6, stop = () => false, cdp = null) {
   const path = await planPath(page, tx, tz);
   if (!path) throw new Error(`(${tx}, ${tz}) への道が無い`);
   let s = await pose(page);
   for (const [x, z] of path) {
     const last = x === path[path.length - 1][0] && z === path[path.length - 1][1];
-    s = await walkKeys(page, x, z, (q) => stop(q) || Math.hypot(q.x - x, q.z - z) < (last ? near : 0.45));
+    const done = (q) => stop(q) || Math.hypot(q.x - x, q.z - z) < (last ? near : 0.45);
+    s = cdp ? await walkTouch(page, cdp, x, z, done) : await walkKeys(page, x, z, done);
     if (stop(s)) break;
   }
   return s;
@@ -546,8 +565,114 @@ async function ch1() {
   await ctx.close();
 }
 
+/**
+ * 第二章の城下（スマホ横・タッチ）：スティックで物見櫓へ歩いて物見（見回しの面を指でなぞる・「調べる」「終える」をタップ）→
+ * 忠勝へ歩いて軍議（判断の選択肢の「物見：」・「地図で見る」・タブ・決めない）→ 軍議から情勢を開き、第二章への移行を見直す（スキップ）→ 軍議所へ戻る。
+ */
+async function ch2Extra(page, ctx, name) {
+  const cdp = await ctx.newCDPSession(page);
+  const tapAt = async (x, y) => {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 2 }] });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await sleep(220);
+  };
+  const tapSel = async (sel) => { await sleep(450); await page.locator(sel).first().tap(); await sleep(200); };
+  const readTap = async () => {
+    let id = null;
+    for (let i = 0; i < 120; i++) {
+      const u = await ui(page);
+      if (u?.kind === 'script') id = u.id;
+      if (!u || u.kind !== 'script' || u.choices?.length) return { ...(u ?? {}), seenId: id };
+      await tapAt(120, 150);
+    }
+    return { ...(await ui(page)), seenId: id };
+  };
+  const s0 = await st(page);
+  // 物見櫓へ（タッチのスティック）
+  const lk = (await page.evaluate(() => window.__game.cast)).find((m) => m.id === 'lookout');
+  const w0 = Date.now();
+  await walkTo(page, lk.x, lk.z - 0.6, 0.5, (q) => q.prompt === 'lookout', cdp);
+  await page.waitForFunction(() => window.__game.prompt === 'lookout', null, { timeout: 60000, polling: 100 });
+  await sleep(800);
+  check(`[${name}] 第二章：タッチのスティックで物見櫓の下へ歩いた（${((Date.now() - w0) / 1000).toFixed(0)} 秒）`, true);
+  await tapSel('.g-talk');
+  await page.waitForFunction(() => window.__game.world.lookoutProbe()?.active && window.__game.screen === 'lookout', null, POLL);
+  await sleep(1700);
+  let pr = await page.evaluate(() => window.__game.world.lookoutProbe());
+  const m = pr.marks[0];
+  // 見回しの面を指でなぞる（1px 0.0055 rad。物見の見回しはタッチでも同じ倍率）
+  const dx = Math.round(m.diff / 0.0055);
+  const steps = Math.max(4, Math.ceil(Math.abs(dx) / 30));
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 420, y: 200, id: 3 }] });
+  for (let i = 1; i <= steps; i++) {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 420 + (dx * i) / steps, y: 200, id: 3 }] });
+    await sleep(30);
+  }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await sleep(300);
+  pr = await page.evaluate(() => window.__game.world.lookoutProbe());
+  if (pr.can !== m.id) {
+    // なぞりの量が合わなければ、差の分だけもう一度なぞる
+    const cur = pr.marks.find((x) => x.id === m.id);
+    const dx2 = Math.round(cur.diff / 0.0055);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 420, y: 200, id: 3 }] });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 420 + dx2 / 2, y: 200, id: 3 }] });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 420 + dx2, y: 200, id: 3 }] });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await sleep(300);
+    pr = await page.evaluate(() => window.__game.world.lookoutProbe());
+  }
+  check(`[${name}] 第二章の物見：見回しの面を指でなぞって印「${m.label}」へ向く（「調べる」が押せる）`, pr.can === m.id, J({ can: pr.can, diff: pr.marks.find((x) => x.id === m.id)?.diff }));
+  await tapSel('.g-lookout-btn[data-id="examine"]');
+  await tapSel('.g-lookout-btn[data-id="done"]');
+  await page.waitForFunction(() => !window.__game.world.lookoutProbe() && window.__game.screen === 'explore', null, POLL);
+  const s1 = await st(page);
+  const strip = (x) => { const c = { ...x }; delete c.scout; delete c.playTimeSec; delete c.savedAt; return c; };
+  check(`[${name}] 第二章の物見：「調べる」「終える」をタップ → 記録が状態に入る（兵・段階・判断は同じ）`, J(s1.scout) === J([m.id]) && J(strip(s1)) === J(strip(s0)), J(s1.scout));
+  // 忠勝へ（タッチのスティック）→ 軍議
+  const c = (await page.evaluate(() => window.__game.cast)).find((x) => x.id === 'tadakatsu');
+  await walkTo(page, c.x, c.z + 2.4, 0.5, (q) => q.prompt === 'tadakatsu', cdp);
+  await walkTouch(page, cdp, c.x, c.z, (q) => q.prompt === 'tadakatsu', 200);
+  await tapSel('.g-talk');
+  await waitUi(page, 'script');
+  let u = await readTap();
+  check(`[${name}] 第二章：忠勝へ歩いて話す（タップ）→ 軍議を開く`, (u.choices ?? []).includes('open_council'), u.seenId);
+  await tapSel('.g-choice[data-id="open_council"]');
+  await waitScreen(page, 'council');
+  u = await readTap();
+  const plans = (u.choices ?? []).filter((x) => x.startsWith('plan_'));
+  const texts = await page.evaluate((ids) => ids.map((id) => document.querySelector(`.g-choice[data-id="${id}"]`)?.textContent ?? ''), plans);
+  check(`[${name}] 第二章の軍議：判断の選択肢の説明に「物見：…」の行（記録があるとき）`, plans.length >= 1 && texts.some((t) => t.includes('物見：')), texts.map((t) => (t.match(/物見：[^。]*。/) ?? ['-'])[0]).join(' / '));
+  const hall0 = await page.evaluate(() => window.__game.world.cameraShot);
+  await tapSel('.g-council-map');
+  await waitUi(page, 'situation');
+  let sv = await ui(page);
+  const other = sv.options.find((o) => o !== sv.option);
+  const hl0 = sv.highlight;
+  await tapSel(`.g-sit-tab[data-option="${other}"]`);
+  sv = await ui(page);
+  const s2 = await st(page);
+  check(`[${name}] 第二章：「地図で見る」→ タブで強調が変わるだけ（判断・条件は決まらない）`, sv.option === other && J(sv.highlight) !== J(hl0) && s2.plan === null && s2.terms === null, J({ options: sv.options, option: sv.option }));
+  // 軍議から開いた情勢で、第二章への移行を見直す（スキップ）→ 情勢 → 閉じる → 軍議（軍議所を映したまま）
+  const reps = await page.evaluate(() => [...document.querySelectorAll('.g-layer[data-kind="situation"] .g-btn[data-id^="replay:"]')].map((b) => b.dataset.id));
+  if (reps.includes('replay:ch2_intro')) {
+    await countWrites(page);
+    await tapSel('.g-btn[data-id="replay:ch2_intro"]');
+    await waitUi(page, 'cine');
+    await sleep(600);
+    await tapSel('.g-layer[data-kind="cine"] .g-cine-btn[data-id="skip"]');
+    await waitUi(page, 'situation');
+    await tapSel('.g-layer[data-kind="situation"] .g-btn[data-id="close"]');
+    await waitUi(page, 'script');
+    const hall1 = await page.evaluate(() => window.__game.world.cameraShot);
+    const s3 = await st(page);
+    check(`[${name}] 第二章：軍議から開いた情勢で移行の演出を見直す（タップでスキップ）→ 軍議へ戻る（軍議所を映したまま・同じ選択肢・状態と保存は同じ）`,
+      (await screen(page)) === 'council' && J(hall1) === J(hall0) && !!hall1 && J((await ui(page)).choices) === J(u.choices) && J(norm(s3)) === J(norm(s2)) && Object.keys(await writes(page)).length === 0, J({ reps, hall1 }));
+  } else check(`[${name}] 第二章：情勢に第二章への移行の見直しがある`, false, J(reps));
+}
+
 // ================================================================ ch2：第一章の結末の保存から第二章へ（スマホ横・タッチ）
-async function ch2One(name, watch) {
+async function ch2One(name, watch, extra = false) {
   const src = fixture(name);
   const f = JSON.parse(src);
   const { ctx, page } = await open({ viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true }, src);
@@ -628,12 +753,13 @@ async function ch2One(name, watch) {
   const castIds = await page.evaluate(() => window.__game.cast.map((c) => c.id));
   check(`[${name}] 第二章の城下にも物見櫓の相手（任意の物見）`, castIds.includes('lookout'), castIds.join(','));
   await shot(page, `ch2-${name}-town`);
+  if (extra) await ch2Extra(page, ctx, name);
   await ctx.close();
   return { events, infos: [...infos], ambient: amb.spec, figures: amb.figures, walkers: amb.walkers.map((w) => w.role) };
 }
 async function ch2() {
   console.log('=== ch2（スマホ横 844×390・タッチ。描画の省略）：第一章の結末の保存 2 つ（直接状態変更）から第二章へ。移行の演出と町の人々が結果で違う');
-  const win = await ch2One('oda_victory_kept', true);
+  const win = await ch2One('oda_victory_kept', true, true);
   const heavy = await ch2One('oda_defeat_broken_heavy', false);
   const g = (a, k) => a.ambient?.groups?.find((x) => x.kind === k) ?? null;
   const ev = (a, id) => a.events.find((e) => e.id === id) ?? null;
