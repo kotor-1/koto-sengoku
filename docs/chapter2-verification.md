@@ -269,3 +269,5 @@
 | `e2e/fields-prod.mjs` | 〜11:0x | 111 OK・NG 0（20 戦場） | 本番・本物の入力 |
 
 第一章の開始から第二章の区切りまでの 3 方針の通し（chain:oda・chain:asai・chain:home 各 41 OK）・compare 9・idem 16・regress 4 は、上の節のとおり f2c45e5／7995a6d で流した（ゲームのコードは deb7b2d と同じ。その後の差は e2e と文書だけ）。
+
+公開：確認用 URL（https://claude.ai/artifact/VeuwbhdPeu1oVmXh3TAFJC）を **Version 18（版 ID 1791197911-6fde）** に更新した（2026-10-05）。deb7b2d の本番ビルドのうち、変わった `index.html` と `assets/` の 5 本だけを送り、前の版の JS・CSS の 5 本を外した（模型・style.css・battle.css・favicon・three は Version 17 と同じ）。公開先から読み戻した 8 本の中身は手元のビルドと一致した。前の版（Version 17）は公開先の版の履歴から戻せる。保存（端末の localStorage）は公開で消えない。旧版（Version 17）で第二章の保存（版 4）を開くと「形式が違うため読み込めません（データはそのまま残しています）」になり消されない。第一章の保存（版 3）と第一章の控え（`koto-sengoku/3d-ieyasu1570/chapter1`）は旧版でも読める。
