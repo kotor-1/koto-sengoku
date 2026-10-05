@@ -296,8 +296,10 @@ function arrivals(who: { key: string; look: string; name: string }[], t: number,
         const pathB: Pt[] = [startB, [dest[0], dest[1] + 1.6], dest];
         const LB = pathLength(pathB);
         if (reduced) {
-            // 動かさない：城門の前の画に、着いた姿で現れる（同じ人が会話の相手にいれば、その人物のまま）
-            if (!castId) people.push({ key: w.key, look: w.look, name: w.name, x: dest[0], z: dest[1], heading, walked: 0, moving: 0, label: true });
+            // 動かさない：城門の前の画に、着いた姿で現れる。名札を出すため、同じ人の会話の相手の人物は隠して演出の人に替える
+            //（演出の間は会話の相手の名札を出さないので、そのままでは誰が誰か分からない）
+            people.push({ key: w.key, look: w.look, name: w.name, x: dest[0], z: dest[1], heading, walked: 0, moving: 0, label: true });
+            if (castId) hideCast.push(castId);
             return;
         }
         if (t < ARRIVAL_CUT) {
@@ -350,7 +352,8 @@ const WOUNDED_SHOT_1 = shot(9.9, 2.3, 0.9, 13.2, 0.5, -3.9);
 function woundedRest(count: number, t: number, reduced: boolean): StageFrame {
     const figures = woundedLayout(count);
     const s = reduced ? WOUNDED_SHOT_0 : lerpShot(WOUNDED_SHOT_0, WOUNDED_SHOT_1, ease(t / 12));
-    return { people: [], figures, banners: [], litters: [], shot: s, hideCast: [], hideAmbient: ['wounded'] };
+    // 町の援兵も隠す（援兵が着く場面は、この後。着く前から詰所の横に立っていると順番が食い違う）
+    return { people: [], figures, banners: [], litters: [], shot: s, hideCast: [], hideAmbient: ['wounded', 'reinforcement'] };
 }
 
 // ---------------- 隊列（出陣・帰還・援兵）

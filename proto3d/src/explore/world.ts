@@ -223,7 +223,8 @@ export class ExploreWorld implements GameWorld {
         // 物見の途中には出来事は来ない（来たら物見を終わらせる）
         this.lookout?.cancel();
         const key = JSON.stringify(ev);
-        if (key !== this.stageKey) {
+        const fresh = key !== this.stageKey;
+        if (fresh) {
             if (this.stageKey) this.stageActors.clear();
             this.stageKey = key;
             if (!this.stageBefore) this.stageBefore = { pose: this.heroPose(), orbit: { ...this.host.orbit } };
@@ -237,6 +238,8 @@ export class ExploreWorld implements GameWorld {
         const cam = this.host.camera;
         this.stageActors.setPeople(f.people, t, cam);
         this.stageActors.setFigures(f.figures, f.banners, f.litters, t, cam);
+        // 出来事の最初の画はすぐ描く（地図の覆いが外れた所に、前の画や暗い画面を出さない。初めて描く重さは演出の時計に数えない）
+        if (fresh) this.host.renderOnce();
     }
 
     private endStage(): void {

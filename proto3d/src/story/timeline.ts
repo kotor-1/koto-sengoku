@@ -184,11 +184,16 @@ export class CineClock {
     get beatIndex(): number {
         return beatIndexAt(this.beats, this.t);
     }
-    /** 実時間で dtSec 秒進める（止まっている・終わっていれば進めない。1 コマの上限 FRAME_CAP_SEC） */
+    /**
+     * 実時間で dtSec 秒進める（止まっている・終わっていれば進めない。1 コマの上限 FRAME_CAP_SEC）。
+     * 場面の境目をまたぐコマは次の場面の頭で止める（遅いコマの時間を次の場面へ持ち越さない：場面の頭と、その字幕を飛ばさない）。
+     */
     tick(dtSec: number): void {
         if (this.paused || this.ended) return;
         if (!Number.isFinite(dtSec) || dtSec <= 0) return;
-        this.seek(this.t + Math.min(dtSec, FRAME_CAP_SEC));
+        const to = this.t + Math.min(dtSec, FRAME_CAP_SEC);
+        const nb = this.beats[this.beatIndex + 1];
+        this.seek(nb && to > nb.start ? nb.start : to);
     }
     setPaused(on: boolean): void {
         this.paused = on;

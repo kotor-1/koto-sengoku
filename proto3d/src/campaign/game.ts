@@ -584,7 +584,6 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         const r = sc.store.save(next, 'departure');
         if (r.ok) {
             next = r.state;
-            view.toast(`保存しました：${SAVE_POINT_LABELS.departure}`, 'ok');
         } else {
             const c = await view.confirm({
                 title: '保存できませんでした',
@@ -603,9 +602,10 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
             }
         }
         this.st = next;
-        // 出陣の演出（出陣前の保存の後、合戦の前。状態は読むだけ）
+        // 出陣の演出（出陣前の保存の後、合戦の前。状態は読むだけ）。保存の知らせは演出の後に出す（帰還と同じ。隊列の画に重ねない）
         const cine = this.cineSpec('departure');
         if (cine) await this.playCinematic(cine);
+        if (r.ok) view.toast(`保存しました：${SAVE_POINT_LABELS.departure}`, 'ok');
         await this.runBattle();
     }
 

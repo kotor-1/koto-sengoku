@@ -143,6 +143,21 @@ describe('出来事の中身（人数・負傷・旗・行き先）', () => {
         expect(Math.hypot(before.x - 2.0, before.z + 7.1)).toBeLessThan(0.4);
     });
 
+    it('動きを減らすとき：使者は着いた姿で名札つきで現れ、同じ見た目の人物はその間だけ隠す（誰が誰か分かる）', () => {
+        const ev = EVENTS[0]!;
+        for (const t of [0, 3, 40]) {
+            const f = stageFrame(ev, t, true, CAST_EXPLORE);
+            expect(f.people.map((p) => p.look).sort()).toEqual(['omori_envoy', 'tashiro_envoy']);
+            for (const p of f.people) {
+                expect(p.label).toBe(true);
+                expect(p.moving).toBe(0);
+            }
+            expect(f.hideCast.sort()).toEqual(['asai_envoy', 'oda_envoy']);
+            const oda = f.people.find((p) => p.look === 'tashiro_envoy')!;
+            expect(Math.hypot(oda.x - 2.0, oda.z + 7.1)).toBeLessThan(0.4);
+        }
+    });
+
     it('同じ見た目の人物がいない使者は、人物と重ならない空いた所へ行き、場面の終わりまで残る', () => {
         const f = stageFrame(EVENTS[0]!, 30, false, CAST_MUSTER);
         const oda = f.people.find((p) => p.look === 'tashiro_envoy')!;
@@ -157,6 +172,8 @@ describe('出来事の中身（人数・負傷・旗・行き先）', () => {
             expect(f.figures.length).toBe(Math.min(12, n));
             expect(f.figures.filter((x) => x.pose === 'lie').length).toBe(Math.min(6, n));
             expect(f.hideAmbient).toContain('wounded');
+            // 援兵が着く場面はこの後なので、町の援兵もまだ見せない
+            expect(f.hideAmbient).toContain('reinforcement');
         }
     });
 

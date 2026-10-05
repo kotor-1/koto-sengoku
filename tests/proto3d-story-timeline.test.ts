@@ -114,6 +114,25 @@ describe('時計：実時間・一時停止・次／前の場面・スキップ�
         c.tick(Number.NaN);
         expect(c.t).toBeCloseTo(1.5, 9);
     });
+    it('場面の境目をまたぐコマは次の場面の頭で止まる（遅い 3D のコマの時間を次の場面へ持ち越さない）', () => {
+        const c = new CineClock(spec);
+        c.seek(9.6);
+        c.tick(0.9);
+        expect(c.t).toBe(10);
+        expect(c.beatIndex).toBe(1);
+        // 頭からは、また実時間で進む
+        c.tick(0.25);
+        expect(c.t).toBeCloseTo(10.25, 9);
+        // 1 コマで場面を 2 つ飛び越さない
+        const d = new CineClock(spec);
+        d.seek(25.5);
+        d.tick(1);
+        expect(d.t).toBe(26);
+        // 最後の場面からは終わりへ（境目が無い）
+        d.seek(31.5);
+        d.tick(1);
+        expect(d.ended).toBe(true);
+    });
     it('一時停止の間は進まない。再開すれば続きから', () => {
         const c = new CineClock(spec);
         c.tick(0.9);
@@ -168,7 +187,9 @@ describe('時計：実時間・一時停止・次／前の場面・スキップ�
         paused.setPaused(true);
         paused.tick(5);
         paused.setPaused(false);
+        // 1 秒のコマ 12 回：境目（10 秒）をまたぐコマは 10 秒で止まるので、0.5 秒足りない分をもう 1 コマ
         for (let i = 0; i < 12; i++) paused.tick(1);
+        paused.tick(0.5);
         const jumped = new CineClock(spec);
         jumped.skip();
         jumped.seek(12.5);

@@ -1,7 +1,8 @@
 /**
  * 演出の再生器（層の種類 'cine'）。設計：docs/story-rpg-design.md §1・§3。中身の形は story/timeline.ts の純粋な関数で決める。
  *
- * - 時計は実時間（requestAnimationFrame の時刻の差。1 コマの上限 1 秒）。ページが隠れる・窓が外れる・pagehide で自動の一時停止。
+ * - 時計は実時間（requestAnimationFrame の時刻の差。1 コマの上限 1 秒。場面の境目をまたぐコマは次の場面の頭で止め、場面の切り替え
+ *   （地図を作る・3D の最初の画を描く）にかかった時間は数えない）。ページが隠れる・窓が外れる・pagehide で自動の一時停止。
  * - 地図の場面は不透明な層（探索の描画を止める）。3D の場面は字幕と操作だけの透明な層で、毎フレーム onStage(出来事, 場面の始めからの秒, 減らすか)。
  * - 終わり・スキップ・abandon（dispose）では必ず onStage(null, 0, …) を 1 回呼んで片付ける。
  * - ボタン：一時停止／再開・前の場面・次の場面・スキップ・動きを減らす。キー：Space／K 一時停止、←→ 場面、Esc スキップ。
@@ -14,7 +15,7 @@ import { CineClock, type CineFrame } from '../story/timeline';
 import { el, nowMs, onPress } from './dom';
 import { CHOICE_GUARD_MS, InputGate } from './guard';
 import { createMap, type MapDom } from './mapDom';
-import { startedAt, type LayerHost, type Modal } from './modal';
+import { dropLayer, startedAt, type LayerHost, type Modal } from './modal';
 
 type CineButton = 'pause' | 'prev' | 'next' | 'skip' | 'reduce';
 
@@ -27,7 +28,7 @@ export interface CinePlayerHooks {
 
 /** 演出を再生する（終わり 'done'・スキップ 'skipped'。abandon で閉じたときは答えを返さない） */
 export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOptions, hooks: CinePlayerHooks = {}): Promise<'done' | 'skipped'> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
         const clock = new CineClock(spec);
         let reduced = !!opts.reduced;
         const layer = host.openLayer('cine', 'g-cine');
@@ -211,7 +212,18 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
             const now = Number.isFinite(ts) ? ts : nowMs();
             if (last >= 0) clock.tick((now - last) / 1000);
             last = now;
-            render();
+            const beatBefore = beatShown;
+            try {
+                render();
+            } catch (e) {
+                // 場面を組み立てられない（地図の組み立てが投げた）：止まったままにせず、演出を終える（同じ情報は情勢の画面で見られる）
+                console.error(e);
+                clock.skip();
+                finish('skipped');
+                return;
+            }
+            // 場面の切り替え（地図を作る・3D の最初の画を描く）にかかった時間は、時計に数えない（次の場面の頭を飛ばさない）
+            if (beatShown !== beatBefore) last = nowMs();
             if (clock.ended) {
                 finish('done');
                 return;
@@ -226,9 +238,6 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
         };
         const onBlur = () => setPaused(true, true);
         const onHide = () => setPaused(true, true);
-        document.addEventListener('visibilitychange', onVis);
-        window.addEventListener('blur', onBlur);
-        window.addEventListener('pagehide', onHide);
 
         const finish = (result: 'done' | 'skipped') => {
             if (done) return;
@@ -289,7 +298,20 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
                 hooks.onProbe?.(null);
             },
         };
-        render();
+        try {
+            render();
+        } catch (e) {
+            // 最初の場面を組み立てられない：開いた層・置いた出来事を残さない（画面をふさいだままにしない）。呼ぶ側は演出なしで進める
+            done = true;
+            document.body.classList.remove('g-cine-stage');
+            safeStage(null, 0);
+            dropLayer(host, 'cine', layer);
+            reject(e);
+            return;
+        }
+        document.addEventListener('visibilitychange', onVis);
+        window.addEventListener('blur', onBlur);
+        window.addEventListener('pagehide', onHide);
         host.pushModal(m);
         hooks.onProbe?.(m);
         if (clock.ended) {

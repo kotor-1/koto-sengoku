@@ -75,3 +75,11 @@ export function startedAt(e: Event, now: number): number {
     const t = e.timeStamp;
     return Number.isFinite(t) && t > 0 && t <= now + 1000 ? t : now;
 }
+
+/**
+ * 組み立ての途中で失敗した層を片付ける（まだ積んでいない層。地図の組み立てが投げたときなど）。
+ * 層を外し、覆い・body の印を今の層から決め直す（画面をふさいだまま残さない）。
+ */
+export function dropLayer(host: LayerHost, kind: ModalKind, layer: HTMLElement): void {
+    host.closeModal({ kind, layer, key: () => {}, probe: () => ({ kind }), press: () => false });
+}

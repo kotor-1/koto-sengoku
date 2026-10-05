@@ -623,10 +623,12 @@ body.g-cine .g-hud, body.g-cine .g-menu-btn, body.g-cine .g-sit-btn, body.g-cine
     .g-cine-btn { padding: 4px 8px; font-size: 13px; }
 }
 @media (max-height: 430px) {
-    .g-cine-top { padding-top: calc(var(--safe-t) + 5px); padding-bottom: 4px; gap: 8px; }
-    .g-cine-heading { font-size: 15px; letter-spacing: 0.04em; }
+    /* 見出しは字幕と同じ 16px。見出しと操作が 1 行に収まらないときは、操作を次の行へ回す（見出しを途中で折り返さない） */
+    .g-cine-top { padding-top: calc(var(--safe-t) + 5px); padding-bottom: 4px; gap: 4px 8px; flex-wrap: wrap; }
+    .g-cine-head { flex: 1 1 auto; }
+    .g-cine-heading { font-size: 16px; letter-spacing: 0.02em; }
     .g-cine-title { display: none; }
-    .g-cine-ctrl { gap: 4px; }
+    .g-cine-ctrl { gap: 4px; margin-left: auto; }
     .g-cine-btn { min-height: 38px; padding: 4px 8px; font-size: 13px; letter-spacing: 0; }
     .g-cine-map { padding-top: 2px; padding-bottom: 2px; }
     .g-cine-bar { margin-bottom: 5px; }

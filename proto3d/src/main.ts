@@ -604,6 +604,8 @@ function placeCamera(k: number, dt = 0): void {
         sun.target.position.copy(sunCenter);
         return;
     }
+    // 斜め見下ろし（?view=top）：演出・物見の差し替え（主人公を描かない画）の後も、主人公を描き直す
+    if (heroView) heroView.root.visible = true;
     const want = new THREE.Vector3(hero.x, CAMERA.distance < 12 ? 0.95 : 1.0, hero.z);
     camTarget.lerp(want, k);
     const h = Math.cos(CAMERA.pitch) * CAMERA.distance;
