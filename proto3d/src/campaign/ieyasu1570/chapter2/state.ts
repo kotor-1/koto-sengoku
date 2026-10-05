@@ -24,7 +24,7 @@ import {
     type TokugawaUnitId,
     type TrustId,
 } from '../state';
-import type { Ch2Plan, Ch2SupportId } from './battle';
+import type { Ch2Plan, Ch2SupportId, Ch2Terms } from './battle';
 
 /** 第一章の状態か第二章の状態か（歴史分岐のシナリオの状態はどちらか） */
 export type IeyasuAnyState = IeyasuState | Ieyasu2State;
@@ -123,7 +123,7 @@ export interface Ieyasu2Result {
     lost: Partial<Record<TokugawaUnitId, number>>;
     /** 加わった支援 */
     support: Ch2SupportId[];
-    /** 兵が少ないときの調整をした */
+    /** 兵が少ないときの調整をした（軍議で決めた任務の条件 terms.thin） */
     thin: boolean;
     /** 主目標（記録が無ければ null） */
     primary: ObjectiveResult | null;
@@ -150,6 +150,11 @@ export interface Ieyasu2State {
     plan: Ch2Plan | null;
     /** 軍議で選んで、まだ決めていない判断（保存しない） */
     pendingPlan: Ch2Plan | null;
+    /**
+     * 確定した任務の条件（軍議で判断を決めた時に、第一章の終わりの兵 chapter1.troops を基準に 1 回だけ求める。決めるまで null）。
+     * 兵が少ないときの調整・主目標の値・始めの陣。補充・保存・読み込み直し・出陣・戦後では求め直さない。
+     */
+    terms: Ch2Terms | null;
     /** 補充の判断（支度で答えるまで null） */
     recovery: RecoveryState | null;
     battle: BattleOutcome | null;
@@ -226,6 +231,7 @@ export function cloneIeyasu2State(s: Ieyasu2State): Ieyasu2State {
         talked: { ...s.talked },
         plan: s.plan,
         pendingPlan: s.pendingPlan,
+        terms: s.terms ? { ...s.terms } : null,
         recovery: s.recovery ? { choice: s.recovery.choice, delta: { ...s.recovery.delta } } : null,
         battle: s.battle ? cloneIeyasu2Outcome(s.battle) : null,
         battleId: s.battleId,

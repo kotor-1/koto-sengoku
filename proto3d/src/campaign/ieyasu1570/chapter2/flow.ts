@@ -6,7 +6,9 @@
  * - 第一章の結末の状態から、第二章のはじめの状態を作る（startChapter2。純粋。同じ入力なら同じ結果。足し算を重ねない）。
  * - 段階は explore → council → muster → battle → aftermath → ending の一方向にだけ進む。それ以外は FlowError。
  *   どの関数も受け取った状態を書き換えず、新しい状態を返す。
- * - 軍議で今回の判断（判断 1・判断 2）を選び、確かめて決める。支度で石川数正と補充を決める（1 回だけ。答えるまで出陣できない）。
+ * - 軍議で今回の判断（判断 1・判断 2）を選び、確かめて決める。決めた時に、第一章の終わりの兵を基準に任務の条件（terms：兵が少ないときの
+ *   調整・主目標の値・始めの陣）を確定する（以後は求め直さない。判断を変えられるのは決める前の「考え直す」だけ）。
+ *   支度で石川数正と補充を決める（1 回だけ。答えるまで出陣できない。補充で兵が戻っても任務の条件は変わらない）。
  * - 合戦の設定は chapter2/battle.ts の ch2BattleSetup（合戦の担当の物。ここは呼ぶだけ）。支援は設定を作るたびに状態から求める（兵に足さない）。
  * - 合戦の結果は合戦の id（battleId）ごとに 1 回だけ反映する（applyIeyasu2OutcomeOnce）。
  * - どの方針 × 勝敗でも、戦後と第二章の区切り（9 つ）へ着く。家康は死なない。一度の局地戦で家が滅ぶことはない。
@@ -27,7 +29,7 @@ import {
     newIeyasuGame,
 } from '../flow';
 import { IEYASU_TROOPS_MAX, PLEDGE_SPECS, TOKUGAWA_UNIT_IDS, TRUST_IDS, clampTrust, parseIeyasuOutcome, type IeyasuState, type PledgeResult, type Policy, type TokugawaUnitId, type TrustId } from '../state';
-import { CH2_UNIT, ch2PlanAvailability, type Ch2Plan } from './battle';
+import { CH2_UNIT, ch2DecideTerms, ch2PlanAvailability, type Ch2Plan } from './battle';
 import { availableCh2Plans, ch2RecoveryOptions, ch2TrustDelta, ieyasu2BattleInfo } from './rules';
 import {
     IEYASU2_TALK_SLOTS,
@@ -91,6 +93,7 @@ export function startChapter2(ch1: IeyasuState): Ieyasu2State {
         talked: {},
         plan: null,
         pendingPlan: null,
+        terms: null,
         recovery: null,
         battle: null,
         battleId: null,
@@ -109,18 +112,18 @@ function advanceTo(state: Ieyasu2State, to: Ieyasu2State['phase']): Ieyasu2State
     s.phase = to;
     switch (to) {
         case 'muster':
-            if (!s.plan) throw new FlowError('判断が決まっていません');
+            if (!s.plan || !s.terms) throw new FlowError('判断が決まっていません');
             if (s.battle) throw new FlowError('合戦の結果がすでにあります');
             s.pendingPlan = null;
             break;
         case 'battle':
-            if (!s.plan) throw new FlowError('判断が決まっていません');
+            if (!s.plan || !s.terms) throw new FlowError('判断が決まっていません');
             if (!s.recovery) throw new FlowError('補充の判断をしていません');
             if (s.battle) throw new FlowError('合戦の結果がすでにあります');
             break;
         case 'aftermath':
         case 'ending':
-            if (!s.plan || !s.recovery || !s.battle || !s.result) throw new FlowError('合戦の結果がありません');
+            if (!s.plan || !s.terms || !s.recovery || !s.battle || !s.result) throw new FlowError('合戦の結果がありません');
             break;
         default:
             break;
@@ -224,8 +227,10 @@ export function chooseIeyasu2(state: Ieyasu2State, choiceId: Ieyasu2ChoiceId): I
             return s;
         }
         case 'confirm_plan': {
+            // 判断を決めた時に、第一章の終わりの兵を基準に任務の条件を確定する（この後の補充・保存・読み込み直しでは求め直さない）
             const s = cloneIeyasu2State(state);
             s.plan = s.pendingPlan;
+            s.terms = ch2DecideTerms(s.policy, s.plan!, s.chapter1.troops);
             return advanceTo(s, 'muster');
         }
         case 'reconsider': {
@@ -340,7 +345,7 @@ export function applyIeyasu2Outcome(state: Ieyasu2State, outcome: BattleOutcome)
         sortieTroops,
         lost,
         support: [...info.support],
-        thin: info.thin,
+        thin: info.terms.thin,
         primary,
         secondary,
         withdrawal: o.withdrawal ?? null,

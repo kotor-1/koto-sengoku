@@ -56,7 +56,7 @@ import {
 } from './state';
 import { IEYASU_PHASE_LABELS, POLICY_DONE_LABELS } from './story';
 import type { BattleOutcome, ObjectiveResult } from '../../battle/types';
-import type { Ch2Plan, Ch2SupportId } from './chapter2/battle';
+import { ch2TermsProblem, type Ch2Plan, type Ch2SupportId, type Ch2Terms } from './chapter2/battle';
 import { parseIeyasu2Outcome, parseObjectiveResultRow } from './chapter2/flow';
 import {
     IEYASU2_ENDING_IDS,
@@ -445,6 +445,7 @@ function fail(reason: SaveFailureReason): ScenarioSaveResult<IeyasuState> {
  * 第二章の保存（docs/chapter2-design.md §4）。キーは第一章と同じ 'koto-sengoku/3d-ieyasu1570'。
  * - 第一章の状態は今までどおり版 3 で書く（同じ文字列。旧版 Version 17 でも読める）。第二章の状態だけ版 4（chapter: 2）。
  * - 版 4 の検査は版 3 と同じ厳しさ（形・範囲・段階との食い違い・第一章の記録 chapter1 の中身）。食い違えば壊れた保存として扱い、消さない。
+ * - 確定した任務の条件（terms）は軍議で判断を決めた時の物をそのまま書き、読む（読み込みで求め直さない）。判断を決めた後は必ずあり、決める前は null。
  * - 第一章から第二章へ移るときは saveChapterStart：第一章の結末を控えのキー 'koto-sengoku/3d-ieyasu1570/chapter1' へ版 3 で書いて確かめてから、
  *   本来のキーへ第二章のはじめを版 4・時点 'chapter' で書いて確かめる。だめなら本来のキーを元の中身へ戻す（第一章の保存は消えない）。
  * - 読み込んだだけでは書き換えない。2D・架空の章・演習のキーには触れない。
@@ -468,6 +469,8 @@ export interface Ieyasu2SaveData {
     characters: Record<IeyasuCharacterId, IeyasuCharacterStatus>;
     talked: Partial<Record<Ieyasu2TalkFlag, boolean>>;
     plan: Ch2Plan | null;
+    /** 確定した任務の条件（判断を決めた後は必ずある。決める前は null） */
+    terms: Ch2Terms | null;
     recovery: RecoveryState | null;
     battle: BattleOutcome | null;
     battleId: string | null;
@@ -514,6 +517,7 @@ export function toIeyasu2SaveData(state: Ieyasu2State, point: SavePoint, now: Da
         characters: c.characters,
         talked,
         plan: c.plan,
+        terms: c.terms,
         recovery: c.recovery,
         battle: c.battle,
         battleId: inField ? null : c.battleId,
@@ -599,6 +603,30 @@ function parseRecovery(v: unknown): RecoveryState | null | undefined {
     if (choice === 'wait' && TOKUGAWA_UNIT_IDS.some((k) => delta[k] < 0)) return undefined;
     if (choice === 'transfer' && (delta.reserve > 0 || (['honjin', 'tadakatsu', 'yumi'] as const).some((k) => delta[k] < 0) || total !== 0)) return undefined;
     return { choice, delta };
+}
+
+/**
+ * 確定した任務の条件を検査して写す（判断があるときは必ずある・無いときは null）。方針・判断と合い、値は決まりの表のどちらかで thin と合うこと。
+ * 読み込みで求め直さない（第一章の終わりの兵から計算し直した値と比べもしない。決めた時の物をそのまま使う）。
+ */
+function parseTerms(v: unknown, policy: Policy, plan: Ch2Plan | null): Ch2Terms | null | undefined {
+    if (v === null) return plan === null ? null : undefined;
+    if (plan === null || !isObject(v)) return undefined;
+    if (!POLICIES.includes(v.policy as Policy) || !CH2_PLANS_ALL.includes(v.plan as Ch2Plan)) return undefined;
+    const n = v.basisTroops;
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 0 || n > IEYASU_TROOPS_MAX * TOKUGAWA_UNIT_IDS.length) return undefined;
+    if (typeof v.thin !== 'boolean') return undefined;
+    if (v.escortMinRatio !== null && !isFiniteNumber(v.escortMinRatio)) return undefined;
+    if (v.holdSec !== null && !isFiniteNumber(v.holdSec)) return undefined;
+    const t: Ch2Terms = {
+        policy: v.policy as Policy,
+        plan: v.plan as Ch2Plan,
+        basisTroops: n,
+        thin: v.thin,
+        escortMinRatio: v.escortMinRatio as number | null,
+        holdSec: v.holdSec as number | null,
+    };
+    return ch2TermsProblem(t, policy, plan) ? undefined : t;
 }
 
 function parseUnitNumbers(v: unknown, allowed: readonly TokugawaUnitId[]): Partial<Record<TokugawaUnitId, number>> | null {
@@ -705,6 +733,8 @@ export function parseIeyasu2SaveData(json: string): Ieyasu2SaveData | null {
     }
     if (v.plan !== null && !CH2_PLANS_ALL.includes(v.plan as Ch2Plan)) return null;
     const plan = v.plan as Ch2Plan | null;
+    const terms = parseTerms(v.terms, policy, plan);
+    if (terms === undefined) return null;
     const recovery = parseRecovery(v.recovery);
     if (recovery === undefined) return null;
     let battle: BattleOutcome | null = null;
@@ -736,7 +766,7 @@ export function parseIeyasu2SaveData(json: string): Ieyasu2SaveData | null {
     if (beforeBattle ? battle !== null || result !== null : battle === null || result === null || recovery === null) return null;
     if (phase === 'ending' ? ending === null : ending !== null) return null;
     if (ending && battle && ending !== `ch2_${policy}_${battle.result}`) return null;
-    if (result && (result.plan !== plan || result.recovery !== recovery?.choice)) return null;
+    if (result && (result.plan !== plan || result.recovery !== recovery?.choice || result.thin !== terms?.thin)) return null;
     if (inField ? battleId !== null || appliedBattleId !== null : battleId === null) return null;
     if (phase === 'battle' && appliedBattleId !== null) return null;
     if ((phase === 'aftermath' || phase === 'ending') && appliedBattleId !== battleId) return null;
@@ -755,6 +785,7 @@ export function parseIeyasu2SaveData(json: string): Ieyasu2SaveData | null {
         characters,
         talked,
         plan,
+        terms,
         recovery,
         battle,
         battleId,
@@ -780,6 +811,7 @@ function state2Of(d: Ieyasu2SaveData): Ieyasu2State {
         talked: d.talked,
         plan: d.plan,
         pendingPlan: null,
+        terms: d.terms,
         recovery: d.recovery,
         battle: d.battle,
         battleId: d.battleId,

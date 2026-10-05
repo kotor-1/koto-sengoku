@@ -7,7 +7,7 @@
 import type { BattleResultKind } from '../../../battle/types';
 import { FlowError } from '../../flow';
 import { INITIAL_TOKUGAWA_TROOPS, TOKUGAWA_UNIT_IDS, TRUST_IDS, type PledgeResult, type Policy, type TokugawaUnitId, type TrustId } from '../state';
-import { ch2BattleSetup, ch2PlanAvailability, type Ch2BattleInfo, type Ch2BattleInput, type Ch2Plan } from './battle';
+import { ch2BattleSetup, ch2DecideTerms, ch2PlanAvailability, type Ch2BattleInfo, type Ch2BattleInput, type Ch2Plan } from './battle';
 import type { Ieyasu2State, RecoveryChoice } from './state';
 
 // ================= 決まり（ゲーム用の数値。1 か所） =================
@@ -121,9 +121,14 @@ export function availableCh2Plans(state: Pick<Ieyasu2State, 'troops'>): Ch2Plan[
     return (['commit', 'hold'] as const).filter((p) => ch2PlanAvailability(p, state.troops).available);
 }
 
-/** 合戦の設定に渡す入力（今の状態から毎回同じに作る。plan を渡せば、その判断での見込み） */
+/**
+ * 合戦の設定に渡す入力（今の状態から毎回同じに作る。plan を渡せば、その判断での設定）。
+ * 任務の条件：決めた判断なら状態の確定した条件（state.terms）をそのまま渡す（今の兵から求め直さない）。
+ * まだ決めていない判断（軍議の選択肢の説明）は、第一章の終わりの兵（chapter1.troops）を基準に ch2DecideTerms で求める（決めた時と同じ値）。
+ */
 export function ieyasu2BattleInput(state: Ieyasu2State, plan: Ch2Plan | null = state.plan): Ch2BattleInput {
     if (!plan) throw new FlowError('判断が決まっていません');
+    const terms = state.terms && state.plan === plan ? { ...state.terms } : ch2DecideTerms(state.policy, plan, state.chapter1.troops);
     return {
         policy: state.policy,
         plan,
@@ -133,10 +138,11 @@ export function ieyasu2BattleInput(state: Ieyasu2State, plan: Ch2Plan | null = s
         ch1Result: state.chapter1.battle.result,
         ch1Pledge: state.chapter1.pledge.result as PledgeResult,
         waited: state.recovery?.choice === 'wait',
+        terms,
     };
 }
 
-/** 合戦の設定と、出る部隊・支援・調整（どの段階でも、判断があれば見込みを作れる） */
+/** 合戦の設定と、出る部隊・支援・調整・任務の条件（どの段階でも、判断があれば作れる） */
 export function ieyasu2BattleInfo(state: Ieyasu2State, plan: Ch2Plan | null = state.plan): Ch2BattleInfo {
     return ch2BattleSetup(ieyasu2BattleInput(state, plan));
 }

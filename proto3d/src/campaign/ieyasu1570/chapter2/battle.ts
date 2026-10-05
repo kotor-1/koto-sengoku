@@ -8,6 +8,8 @@
  * - 方針ごとの任務：A 織田 → 退却戦の地形で織田勢の撤収を支える／B 浅井 → 援軍救出の地形で孤立した浅井勢を救う／
  *   C 自領 → 村落の地形で領内の村を守る。
  * - 入力（Ch2BattleInput）は値だけ。同じ入力なら同じ設定（合戦の設定を作るたびに状態から求める。支援は兵に足さない）。
+ * - 主目標の値（B の連れ帰る兵の割合・C の守る時間）と始めの陣は、軍議で判断を決めた時に第一章の終わりの兵で 1 回だけ求めた
+ *   「確定した任務の条件」（Ch2Terms・ch2DecideTerms）から作る。補充で兵が戻っても求め直さない。
  * - 徳川の部隊の id は第一章と同じ（t_honjin・t_tadakatsu・t_yumi・t_reserve）。合戦の結果を部隊ごとの兵へ戻すのに使う。
  *
  * 数値（兵・士気・閾値・敵の勢い）は CH2_RULES と各任務の表の 1 か所。釣り合いの確かめ（tests/proto3d-ieyasu-ch2-battle.test.ts）で直す。
@@ -49,6 +51,31 @@ export interface Ch2BattleInput {
     ch1Pledge: PledgeResult;
     /** 補充で「負傷兵の戻りを待つ」を選んだ（敵の後詰め・次の波が CH2_RULES.waitDelaySec 早く着く） */
     waited: boolean;
+    /**
+     * 確定した任務の条件（軍議で判断を決めた時に、第一章の終わりの兵で求めた物。Ieyasu2State.terms）。
+     * 渡せば、今の兵（補充の後）から求め直さない。省けば、troops を第一章の終わりの兵とみなして ch2DecideTerms で求める
+     * （軍議の選択肢の説明・確かめの台本など、補充の前の兵の入力のため）。
+     */
+    terms?: Ch2Terms;
+}
+
+/**
+ * 確定した任務の条件（設計 §5.3・§6）。軍議で判断を決めた時に、第一章の終わりの兵を基準に 1 回だけ求めて状態に残す（ch2DecideTerms）。
+ * その後の補充・保存・読み込み直し・出陣・戦後では求め直さない。判断を変えられるのは、軍議で決める前（「考え直す」）だけ。
+ * 始めの陣も thin で選ぶ（A は兵が少ないとき家康本陣を切れ目寄りから始める）。
+ */
+export interface Ch2Terms {
+    /** 求めたときの方針・判断（状態の方針・判断と同じ） */
+    policy: Policy;
+    plan: Ch2Plan;
+    /** 基準の兵：第一章の終わりの兵で数えた、この判断で出陣する徳川の兵の合計（本陣は最低の兵で数える） */
+    basisTroops: number;
+    /** 兵が少ないときの調整をする（basisTroops が CH2_RULES.thinTroops 未満） */
+    thin: boolean;
+    /** B：連れ帰る兵の条件（割合）。A・C は null */
+    escortMinRatio: number | null;
+    /** C：庄屋の屋敷前を守る秒数。A・B は null */
+    holdSec: number | null;
 }
 
 /** 加わる支援の部隊 */
@@ -56,11 +83,13 @@ export type Ch2SupportId = 'oda_teppo' | 'asai_guide' | 'village';
 
 export interface Ch2BattleInfo {
     setup: BattleSetup;
+    /** 使った任務の条件（渡された確定の条件。渡されなければ求めた物） */
+    terms: Ch2Terms;
     /** 出陣する徳川の部隊 */
     sortie: TokugawaUnitId[];
     /** 加わる支援の部隊 */
     support: Ch2SupportId[];
-    /** 兵が少ないときの調整をした */
+    /** 兵が少ないときの調整をした（terms.thin と同じ） */
     thin: boolean;
     /** 説明に出した調整の文（兵が少ない・待った・敵の勢い・冷えた関係・負傷） */
     adjustments: string[];
@@ -94,6 +123,12 @@ export const CH2_RULES = {
     tadakatsuTrust: { hi: 60, lo: 30, delta: 5 },
     /** 負傷：家康 → 本陣の士気 −5、忠勝 → 忠勝隊の士気 −10 */
     woundedMorale: { ieyasu: 5, tadakatsu: 10 },
+} as const;
+
+/** 主目標の値（ふだん／兵が少ないとき）：B の連れ帰る兵の条件（割合）・C の庄屋の屋敷前を守る秒数（村の者が南へ逃げ終わるまで） */
+export const CH2_TERMS_TABLE = {
+    escortMinRatio: { normal: 0.4, thin: 0.3 },
+    holdSec: { normal: 360, thin: 180 },
 } as const;
 
 /** 地図の名前（地形は演習の戦場のまま。名前だけ物語の内容にする） */
@@ -139,6 +174,36 @@ export function ch2PlanAvailability(plan: Ch2Plan, troops: Record<TokugawaUnitId
     const n = ch2SortieUnits('hold', troops).length;
     if (n < CH2_RULES.holdMinUnits) return { available: false, reason: '第一章の損害で、守備隊を城に残すと出せる部隊が足りない（本陣だけになる）' };
     return { available: true, reason: null };
+}
+
+/**
+ * 任務の条件を求める（軍議で判断を決めた時に 1 回だけ。basis は第一章の終わりの兵＝補充の前）。
+ * 兵が少ない（この判断で出陣する徳川の兵が CH2_RULES.thinTroops 未満）なら、主目標の値と始めの陣を改める。
+ * 補充で兵が戻っても、決めた条件は求め直さない（状態の terms を使う）。
+ */
+export function ch2DecideTerms(policy: Policy, plan: Ch2Plan, basis: Record<TokugawaUnitId, number>): Ch2Terms {
+    const basisTroops = ch2SortieTroops(plan, basis);
+    const thin = basisTroops < CH2_RULES.thinTroops;
+    const T = CH2_TERMS_TABLE;
+    const key = thin ? 'thin' : 'normal';
+    return {
+        policy,
+        plan,
+        basisTroops,
+        thin,
+        escortMinRatio: policy === 'asai' ? T.escortMinRatio[key] : null,
+        holdSec: policy === 'home' ? T.holdSec[key] : null,
+    };
+}
+
+/** 任務の条件の形が方針・判断と合っているか（保存の検査・合戦の設定で使う。値は CH2_TERMS_TABLE のどちらかで、thin と合う） */
+export function ch2TermsProblem(t: Ch2Terms, policy: Policy, plan: Ch2Plan): string | null {
+    if (t.policy !== policy || t.plan !== plan) return `任務の条件の方針・判断（${t.policy}・${t.plan}）が、今の方針・判断（${policy}・${plan}）と違う`;
+    const key = t.thin ? 'thin' : 'normal';
+    const T = CH2_TERMS_TABLE;
+    if (policy === 'asai' ? t.escortMinRatio !== T.escortMinRatio[key] : t.escortMinRatio !== null) return '任務の条件の連れ帰る兵の割合が正しくない';
+    if (policy === 'home' ? t.holdSec !== T.holdSec[key] : t.holdSec !== null) return '任務の条件の守る時間が正しくない';
+    return null;
 }
 
 /** 加わる支援の部隊（状態から毎回求める。兵には足さない） */
@@ -298,8 +363,8 @@ function enemiesA(input: Ch2BattleInput, f: number): UnitDef[] {
     ];
 }
 
-function setupA(input: Ch2BattleInput, sortie: TokugawaUnitId[], support: Ch2SupportId[], thin: boolean, f: number, adj: string[]): BattleSetup {
-    const pos = A_POS[input.plan].find((p) => p.thin === thin)!.at;
+function setupA(input: Ch2BattleInput, sortie: TokugawaUnitId[], support: Ch2SupportId[], terms: Ch2Terms, f: number, adj: string[]): BattleSetup {
+    const pos = A_POS[input.plan].find((p) => p.thin === terms.thin)!.at;
     const units: UnitDef[] = [...sortie.map((k) => tokugawaUnit(k, input, pos[k])), ...odaUnits(input, (k) => pos[k], support), ...enemiesA(input, f)];
     const primary: ObjectiveDef = {
         id: 'ch2_oda_withdraw',
@@ -398,11 +463,11 @@ function enemiesB(input: Ch2BattleInput, f: number): UnitDef[] {
     ];
 }
 
-function setupB(input: Ch2BattleInput, sortie: TokugawaUnitId[], support: Ch2SupportId[], thin: boolean, f: number, adj: string[]): BattleSetup {
+function setupB(input: Ch2BattleInput, sortie: TokugawaUnitId[], support: Ch2SupportId[], terms: Ch2Terms, f: number, adj: string[]): BattleSetup {
     const pos = B_POS[input.plan];
     const asai = asaiUnits(input, support, input.plan);
     const target = asai[0]!;
-    const minRatio = thin ? 0.3 : 0.4;
+    const minRatio = terms.escortMinRatio ?? CH2_TERMS_TABLE.escortMinRatio.normal;
     const units: UnitDef[] = [...sortie.map((k) => tokugawaUnit(k, input, pos[k])), ...asai, ...enemiesB(input, f)];
     const primary: ObjectiveDef = {
         id: 'ch2_asai_escort',
@@ -449,9 +514,6 @@ const C_POS: Record<TokugawaUnitId | 'village', Pos> = {
     reserve: { x: -72, z: 135, facing: N },
     village: { x: 72, z: 135, facing: N },
 };
-/** 兵が少ないときに守る時間（秒。村の者が南へ逃げ終わるまで） */
-const CH2_C_THIN_SEC = 180;
-
 function enemiesC(input: Ch2BattleInput, f: number): UnitDef[] {
     const delay = input.waited ? CH2_RULES.waitDelaySec : 0;
     const at = (t: number) => Math.max(1, t - delay);
@@ -483,12 +545,12 @@ function enemiesC(input: Ch2BattleInput, f: number): UnitDef[] {
     ];
 }
 
-function setupC(input: Ch2BattleInput, sortie: TokugawaUnitId[], support: Ch2SupportId[], thin: boolean, f: number, adj: string[]): BattleSetup {
+function setupC(input: Ch2BattleInput, sortie: TokugawaUnitId[], support: Ch2SupportId[], terms: Ch2Terms, f: number, adj: string[]): BattleSetup {
     const pos = C_POS;
     const units: UnitDef[] = [...sortie.map((k) => tokugawaUnit(k, input, pos[k]))];
     if (support.includes('village')) units.push({ id: CH2_UNIT.village, side: 'ally', clan: 'tokugawa', kind: 'yari', name: '村の衆', strength: 150, morale: 70, ...pos.village });
     units.push(...enemiesC(input, f));
-    const sec = thin ? CH2_C_THIN_SEC : 360;
+    const sec = terms.holdSec ?? CH2_TERMS_TABLE.holdSec.normal;
     const primary: ObjectiveDef = { id: 'ch2_home_hold', type: 'defend_time', label: `庄屋の屋敷前を ${sec / 60} 分守る`, sec, zone: C_KEY, loseSec: 15 };
     const secondary: ObjectiveDef[] = [
         { id: 'ch2_home_store', type: 'defend_zones', label: '米蔵を荒らさせない', sec, zones: [C_STORE], minHeld: 1, loseSec: 15, names: ['米蔵の前'] },
@@ -561,19 +623,24 @@ function finishSetup(
     return setup;
 }
 
+/** 兵が少ないときの調整の文（軍議で決めた条件。説明・軍議・結果確認に出す。頭は「第一章の損害で兵が少ないため」） */
+export function ch2ThinLine(terms: Ch2Terms): string | null {
+    if (!terms.thin) return null;
+    const T = CH2_TERMS_TABLE;
+    const basis = `軍議の時に出せる兵 ${terms.basisTroops}`;
+    return terms.policy === 'oda'
+        ? `第一章の損害で兵が少ないため（${basis}）、家康本陣を切れ目寄り（南）から始める（主目標は同じ）。`
+        : terms.policy === 'asai'
+          ? `第一章の損害で兵が少ないため（${basis}）、連れ帰る兵の条件を ${Math.round(T.escortMinRatio.thin * 10)} 割以上に改めた（ふだんは ${Math.round(T.escortMinRatio.normal * 10)} 割）。`
+          : `第一章の損害で兵が少ないため（${basis}）、村の者を南へ逃がすあいだ（${T.holdSec.thin / 60} 分）だけ屋敷前を守ることに改めた（ふだんは ${T.holdSec.normal / 60} 分）。`;
+}
+
 /** 調整の文（説明・軍議・結果確認に出す） */
-function adjustmentLines(input: Ch2BattleInput, thin: boolean, support: Ch2SupportId[]): string[] {
+function adjustmentLines(input: Ch2BattleInput, terms: Ch2Terms, support: Ch2SupportId[]): string[] {
     const out: string[] = [enemyMoodLine(input.ch1Result)];
     if (input.waited) out.push(`補充で負傷兵の戻りを待ったため、敵の後詰め・次の波が ${CH2_RULES.waitDelaySec} 秒早く着く。`);
-    if (thin) {
-        out.push(
-            input.policy === 'oda'
-                ? '第一章の損害で兵が少ないため、家康本陣を切れ目寄り（南）から始める（主目標は同じ）。'
-                : input.policy === 'asai'
-                  ? '第一章の損害で兵が少ないため、連れ帰る兵の条件を 3 割以上に改めた。'
-                  : `第一章の損害で兵が少ないため、村の者を南へ逃がすあいだ（${CH2_C_THIN_SEC / 60} 分）だけ屋敷前を守ることに改めた（ふだんは 6 分）。`,
-        );
-    }
+    const thinLine = ch2ThinLine(terms);
+    if (thinLine) out.push(thinLine);
     if (support.includes('oda_teppo')) out.push('支援：織田の信頼が厚く、織田の鉄砲隊（弓の扱い）が残って加わる（指揮できる）。');
     if (support.includes('asai_guide')) out.push('支援：浅井の信頼が厚く、浅井の道案内の一隊が加わる（指揮できる）。');
     if (support.includes('village')) out.push('支援：第一章で国境の浪人を退けたことを恩に感じ、村の衆が自ら加わる（指揮できる。兵は少ない）。');
@@ -585,21 +652,24 @@ function adjustmentLines(input: Ch2BattleInput, thin: boolean, support: Ch2Suppo
 }
 
 /**
- * 第二章の合戦の設定（方針・判断・今の兵・人物・信頼・第一章の結果・補充で待ったか から毎回同じに作る）。
- * 判断が選べない（ch2PlanAvailability）ときは投げる。
+ * 第二章の合戦の設定（方針・判断・今の兵・人物・信頼・第一章の結果・補充で待ったか・確定した任務の条件 から毎回同じに作る）。
+ * 出陣する部隊と兵は今の兵（補充の後）から、主目標の値と始めの陣は確定した任務の条件（input.terms）から作る（今の兵から求め直さない）。
+ * 判断が選べない（ch2PlanAvailability）・条件が方針や判断と合わないときは投げる。
  */
 export function ch2BattleSetup(input: Ch2BattleInput): Ch2BattleInfo {
     const av = ch2PlanAvailability(input.plan, input.troops);
     if (!av.available) throw new Error(`この判断は選べません：${av.reason}`);
+    const terms = input.terms ?? ch2DecideTerms(input.policy, input.plan, input.troops);
+    const bad = ch2TermsProblem(terms, input.policy, input.plan);
+    if (bad) throw new Error(bad);
     const sortie = ch2SortieUnits(input.plan, input.troops);
     const support = ch2Support(input);
-    const thin = ch2SortieTroops(input.plan, input.troops) < CH2_RULES.thinTroops;
     const f = CH2_RULES.enemyFactor[input.ch1Result];
-    const adj = adjustmentLines(input, thin, support);
-    const setup = input.policy === 'oda' ? setupA(input, sortie, support, thin, f, adj) : input.policy === 'asai' ? setupB(input, sortie, support, thin, f, adj) : setupC(input, sortie, support, thin, f, adj);
+    const adj = adjustmentLines(input, terms, support);
+    const setup = input.policy === 'oda' ? setupA(input, sortie, support, terms, f, adj) : input.policy === 'asai' ? setupB(input, sortie, support, terms, f, adj) : setupC(input, sortie, support, terms, f, adj);
     const tokugawaIds = new Set<string>(Object.values(IEYASU_UNIT_IDS));
     const partnerUnitIds = setup.units.filter((u) => u.side === 'ally' && !tokugawaIds.has(u.id)).map((u) => u.id);
-    return { setup, sortie, support, thin, adjustments: adj, enemyFactor: f, partnerUnitIds };
+    return { setup, terms: { ...terms }, sortie, support, thin: terms.thin, adjustments: adj, enemyFactor: f, partnerUnitIds };
 }
 
 /**
