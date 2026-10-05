@@ -26,6 +26,7 @@ import { useAbility } from '../proto3d/src/battle/abilities';
 import { inZone } from '../proto3d/src/battle/fieldRules';
 import { buildBattleSetup, getField, presetUnits, validateField } from '../proto3d/src/battle/fields';
 import type { BattleOutcome, Order } from '../proto3d/src/battle/types';
+import { logRecord } from './proto3d-record-log';
 
 const VL = getField('valley')!;
 
@@ -374,10 +375,11 @@ describe('谷間のデータ', () => {
     });
 });
 
-// 合格条件は「正面なら負ける」ではなく、同じ台本・同じ数字での比べ（地形に合った作戦・準備した正面攻撃と比べて、主目標に届かない・
-// 損害が大きい・16 通りの勝ちが少ない・崩せる敵が少ない）。無計画な攻撃の勝敗は「記録」として残す（台本と数字は前のまま。変わったら
-// 理由と前後の数字を書いて直す）。前にここにあった「谷の口で攻め手を討ってから谷底を押し上がる」は、準備した正面攻撃（PREPARED）として下へ移した
-describe('谷間：無計画な攻撃・地形に合わない作戦と、地形に合った作戦の比べ（早送り）', () => {
+// 作戦の比べ。合格条件は「正面なら負ける」ではなく、同じ台本・同じ数字での比べ（地形に合った作戦・準備した正面攻撃と比べて、損害が大きい・
+// 16 通りの勝ちが少ない・崩せる敵が少ない）。正面突破・無計画な攻撃の勝敗・主目標・時間は「記録」（合格条件にしない。docs/chapter2-request.md【1】。
+// 前はここで負け・勝てない・主目標 ✗・勝ち 0 を expect していた。台本と比べの数字は前のまま）。目標を無視した手順の失敗（何もしない）は、
+// 主目標の判定の確かめとして残す。前にここにあった「谷の口で攻め手を討ってから谷底を押し上がる」は、準備した正面攻撃（PREPARED）として下へ移した
+describe('谷間：作戦の比べ（無計画な攻撃・地形に合わない作戦と、地形に合った作戦。早送り）', () => {
     it('何もしない → 地形に合った作戦（勝ち）と違い、主目標に届かない（記録：抜けられず日没。谷の口へ来た攻め手は、待っている忠勝隊が迎える）', () => {
         const r = run([]);
         expect(run(FIT).o.objectives!.primary!.achieved).toBe(true);
@@ -389,34 +391,26 @@ describe('谷間：無計画な攻撃・地形に合わない作戦と、地形�
 
     it('正面突破：六隊で谷底を出口へ押し上がる（無計画）→ 地形に合った作戦より損害が大きく、主目標に届かず、準備した正面攻撃より崩せる敵が少ない（記録：両側から射られ、狭い口で止められ、谷を下ってくる攻め手とぶつかって負ける。作った時 179 秒・損害 52.3％）。家康本陣も一緒でも負け', () => {
         const r = run(PUSH);
-        // 確かめた時：179.2 秒に負け・損害 52.3％・崩した敵 0 ／ 高所を先に取る 勝ち・16.3％ ／ 準備した正面攻撃 477.6 秒に負け・崩した敵 4
+        // 記録（2026-10-05・782fefe）：179.2 秒に負け（主目標を果たせない）・損害 52.3％・崩した敵 0 ／ 高所を先に取る 勝ち・16.3％ ／ 準備した正面攻撃 477.6 秒に負け・崩した敵 4 ／
+        // 家康本陣も一緒 185.9 秒に負け・60.6％
         expect(r.loss).toBeGreaterThan(run(FIT).loss + 0.25);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
         expect(broken(r)).toBeLessThan(broken(run(PREPARED)));
-        // 記録
-        expect(r.o.result).toBe('defeat');
-        expect(r.loss).toBeGreaterThan(0.4);
         const all = run([...PUSH, [0, 'a_ieyasu', tap(0, -195)]]);
-        expect(all.o.objectives!.primary!.achieved).toBe(false);
-        // 記録（確かめた時：185.9 秒に負け・損害 60.6％）
-        expect(all.o.result).toBe('defeat');
+        logRecord('谷間・正面突破', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved });
+        logRecord('谷間・正面突破（崩した敵）', { 正面突破: broken(r), 準備した正面攻撃: broken(run(PREPARED)) });
+        logRecord('谷間・正面突破・家康本陣も', { 結果: all.o.result, 理由: all.o.reason, 秒: all.o.elapsedSec, 損害: all.loss, 主目標: all.o.objectives!.primary!.achieved });
     }, 60_000);
 
     it('全部隊で塞ぎへ当たり、30 秒ごとに近い敵へ当て直す（無計画）→ 地形に合った作戦より損害が大きく、主目標に届かない。能力も使う（先駆け・号令・両翼・後詰めの差配で忠勝隊を急がせる）→ 同じ（記録：負ける。作った時 214 秒・損害 51.1％ と 45.8％）', () => {
         const again = [30, 60, 90, 120, 150, 180, 210, 240, 270, 300].flatMap((t) => MELEE.map((id) => [t, id, 'nearest'] as Step));
         const r = run([...MELEE.map((id) => [0, id, atk('e_block')] as Step), [0, 'a_yumi', atk('e_block')], ...again]);
         expect(r.loss).toBeGreaterThan(run(FIT).loss + 0.25);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
-        // 記録
-        expect(r.o.result).not.toBe('victory');
-        expect(r.loss).toBeGreaterThan(0.4);
         const ab = run([...PUSH, [5, 'a_ishikawa', { abilityOn: 'a_tadakatsu' }], [25, 'a_sakakibara', 'ability'], [60, 'a_ieyasu', 'ability'], [100, 'a_sakai', 'ability']]);
         expect(ab.refused).toEqual([]);
         expect(ab.loss).toBeGreaterThan(run(FIT).loss + 0.25);
-        expect(ab.o.objectives!.primary!.achieved).toBe(false);
-        // 記録
-        expect(ab.o.result).not.toBe('victory');
-        expect(ab.loss).toBeGreaterThan(0.4);
+        // 記録（2026-10-05・782fefe）：当て直し 214.0 秒に負け・51.1％ ／ 能力も 150.7 秒に負け・45.8％（どちらも主目標 ✗）
+        logRecord('谷間・全部隊で塞ぎへ・当て直し', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved });
+        logRecord('谷間・正面突破で能力も使う', { 結果: ab.o.result, 理由: ab.o.reason, 秒: ab.o.elapsedSec, 損害: ab.loss, 主目標: ab.o.objectives!.primary!.achieved });
     }, 60_000);
 
     // 確かめた時（乱数の種 7）：16 通りで 2 勝（勝っても 178・192 秒・損害 35〜40％）、ほかは負けか日没（損害 46〜61％）
@@ -427,11 +421,8 @@ describe('谷間：無計画な攻撃・地形に合わない作戦と、地形�
         // 確かめた時：早すぎる 2 勝 ／ 攻め手を討ってから（CENTER）16 勝・24.6％
         expect(r.loss).toBeGreaterThan(run(CENTER).loss + 0.15);
         expect(w + 10).toBeLessThanOrEqual(jitterOnce(CENTER).wins);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
-        // 記録
-        expect(r.o.result).toBe('defeat');
-        expect(r.loss).toBeGreaterThan(0.4);
-        expect(w).toBeLessThanOrEqual(3);
+        // 記録（2026-10-05・782fefe）：287.2 秒に負け（主目標を果たせない）・損害 47.7％・主目標 ✗・16 通りで 2 勝
+        logRecord('谷間・攻め手より先に駆け抜ける', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved, '16 通りの勝ち': w });
     }, 90_000);
 });
 
@@ -517,8 +508,8 @@ describe('谷間：地形に合った作戦（早送り）', () => {
         expect(jitterOnce(FIT).wins).toBeGreaterThanOrEqual(14);
         expect(jitterOnce(CENTER).wins).toBeGreaterThanOrEqual(14);
         expect(jitterOnce(FIT).wins).toBeGreaterThan(jitterOnce(PUSH).wins + 10);
-        // 記録：正面突破はずらしても勝たない
-        expect(jitterOnce(PUSH).wins).toBe(0);
+        // 記録：正面突破の勝ち（2026-10-05・782fefe は 0 勝。前はここで 0 を expect していた。合格条件にしない）
+        logRecord('谷間・16 通り', { 高所を先に: jitterOnce(FIT).wins, 中央を抜ける: jitterOnce(CENTER).wins, 正面突破: jitterOnce(PUSH).wins });
     }, 60_000);
 
     it('敵を谷へ誘い込む：谷の口で待つ代わりに、忠勝隊が谷底へ出て攻め手を迎える → 両側の高地から射られて忠勝隊が崩れ、家康本陣も崩れて負ける（作った時 忠勝隊が 179.5 秒に崩れ、267 秒に負け）', () => {
@@ -529,7 +520,8 @@ describe('谷間：地形に合った作戦（早送り）', () => {
         });
         expect(r.refused).toEqual([]);
         expect(tadaBroke).toBeGreaterThan(0);
-        expect(r.o.result).toBe('defeat');
+        // 記録（2026-10-05・782fefe）：267 秒に負け（家康本陣の敗走）・忠勝隊は 179.5 秒に崩れる・16 通りで 5 勝。前はここで負けを expect していた（この台本が必ず負けるは合格条件にしない。docs/chapter2-request.md【1】）
+        logRecord('谷間・谷底で迎える', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 忠勝隊が崩れた: tadaBroke, '16 通りの勝ち': jitterWins(MEET).wins });
         // 谷の口で待つ作戦では、忠勝隊は最後まで崩れない（上の確かめ）。16 通りでも谷底で迎えると勝ちは半分以下（作った時 5 勝）
         expect(jitterWins(MEET).wins).toBeLessThanOrEqual(8);
     }, 60_000);
@@ -665,28 +657,29 @@ describe('谷間：武将の能力の価値が地形で変わる（早送り）'
     // 酒井の両翼の采配（25 秒・半径 100 m の味方が 2 つ以上の向きから挟むと包囲：側背の当たり ×1.8・その敵の損害 ×1.3・士気の低下 ×2）
     // 谷底：中央を抜ける作戦で、谷底へ誘い出した塞ぎに三隊が両側から当たり、酒井隊が斬り合い始めたら使う（使わない台本と比べる）
     // 狭い口：忠勝隊・酒井隊・榊原隊が初めから狭い口の塞ぎへ当たり、60 秒（三隊とも口に着いた後）に使う（使わない台本と比べる）
-    it('酒井の両翼の采配：谷底へ誘い出した塞ぎを両側から挟んで使うと包囲になり、塞ぎが早く崩れる。狭い口の中の塞ぎに使っても、1 部隊しか当たれず包囲にならない', () => {
-        // from 秒から 25 秒のあいだに塞ぎが失った兵（from を省けば酒井隊が能力を使った時から）・包囲されていた秒数・塞ぎが崩れた時刻
-        const probe = (steps: Step[], from?: number) => {
-            let enc = 0;
-            let broke = -1;
-            let usedAt = -1;
-            let at0 = -1;
-            let at25 = -1;
-            const r = play(steps, (s) => {
-                if (s.encircled.includes('e_block')) enc += RULES.tick;
-                const b = block(s);
-                if (broke < 0 && b.status !== 'ready') broke = s.t;
-                if (usedAt < 0 && s.abilityList.some((x) => x.unitId === 'a_sakai' && x.usedAt !== null)) usedAt = s.t;
-                const w = from ?? usedAt;
-                if (w >= 0 && at0 < 0 && s.t >= w - 1e-9) at0 = b.strength;
-                if (w >= 0 && at25 < 0 && s.t >= w + 25 - 1e-9) at25 = b.strength;
-            });
-            return { r, enc, broke, usedAt, lost25: at0 >= 0 && at25 >= 0 ? at0 - at25 : -1 };
-        };
+    // from 秒から 25 秒のあいだに塞ぎが失った兵（from を省けば酒井隊が能力を使った時から）・包囲されていた秒数・塞ぎが崩れた時刻
+    const sakaiProbe = (steps: Step[], from?: number) => {
+        let enc = 0;
+        let broke = -1;
+        let usedAt = -1;
+        let at0 = -1;
+        let at25 = -1;
+        const r = play(steps, (s) => {
+            if (s.encircled.includes('e_block')) enc += RULES.tick;
+            const b = block(s);
+            if (broke < 0 && b.status !== 'ready') broke = s.t;
+            if (usedAt < 0 && s.abilityList.some((x) => x.unitId === 'a_sakai' && x.usedAt !== null)) usedAt = s.t;
+            const w = from ?? usedAt;
+            if (w >= 0 && at0 < 0 && s.t >= w - 1e-9) at0 = b.strength;
+            if (w >= 0 && at25 < 0 && s.t >= w + 25 - 1e-9) at25 = b.strength;
+        });
+        return { r, enc, broke, usedAt, lost25: at0 >= 0 && at25 >= 0 ? at0 - at25 : -1 };
+    };
+
+    it('酒井の両翼の采配：谷底へ誘い出した塞ぎを両側から挟んで使うと包囲になり、塞ぎが早く崩れる', () => {
         const noSakai = (steps: Step[]) => steps.filter(([, id, c]) => !(id === 'a_sakai' && typeof c === 'object' && 'when' in c && c.then === 'ability'));
-        const openUse = probe(CENTER);
-        const openNo = probe(noSakai(CENTER), openUse.usedAt);
+        const openUse = sakaiProbe(CENTER);
+        const openNo = sakaiProbe(noSakai(CENTER), openUse.usedAt);
         expect(openUse.r.refused).toEqual([]);
         expect(openUse.usedAt).toBeGreaterThan(0);
         expect(openNo.usedAt).toBe(-1);
@@ -696,22 +689,25 @@ describe('谷間：武将の能力の価値が地形で変わる（早送り）'
         expect(openUse.broke - openUse.usedAt).toBeLessThan(5);
         expect(openNo.broke - openUse.usedAt).toBeGreaterThan(8);
         expect(openUse.r.o.result).toBe('victory');
+    }, 60_000);
+
+    // 前は上の it の中で確かめていた（狭い口に当たったときの勝敗・塞ぎの崩れの記録と分けた。docs/chapter2-request.md【1】）
+    it('酒井の両翼の采配：狭い口の中の塞ぎに使っても、1 部隊しか当たれず包囲にならない（包囲 0 秒）。塞ぎが失う兵も変わらない（記録：塞ぎは崩れない）', () => {
         const NECK: Step[] = [
             [0, 'a_tadakatsu', atk('e_block')],
             [0, 'a_sakai', atk('e_block')],
             [0, 'a_sakakibara', atk('e_block')],
         ];
-        const neckUse = probe([...NECK, [60, 'a_sakai', 'ability']]);
-        const neckNo = probe(NECK, 60);
+        const neckUse = sakaiProbe([...NECK, [60, 'a_sakai', 'ability']]);
+        const neckNo = sakaiProbe(NECK, 60);
         expect(neckUse.r.refused).toEqual([]);
         // 狭い口（作った時）：60 秒に使っても包囲 0 秒。25 秒で塞ぎが失う兵は使っても使わなくても 38.5 で、塞ぎは崩れず勝てない
         expect(neckUse.usedAt).toBeGreaterThan(0);
         expect(neckUse.enc).toBe(0);
         expect(neckNo.enc).toBe(0);
         expect(Math.abs(neckUse.lost25 - neckNo.lost25)).toBeLessThan(1);
-        expect(neckUse.broke).toBe(-1);
-        expect(neckNo.broke).toBe(-1);
-        expect(neckUse.r.o.result).not.toBe('victory');
+        // 記録（2026-10-05・782fefe）：日没・塞ぎは崩れない（使わなくても崩れない）
+        logRecord('谷間・狭い口＋酒井の采配', { 結果: neckUse.r.o.result, 理由: neckUse.r.o.reason, 塞ぎが崩れた: neckUse.broke, 使わない時の塞ぎ: neckNo.broke });
         // 同じ能力で、塞ぎが崩れるまで：谷底は使えば 5 秒かからない。狭い口では使っても何も変わらない
     }, 60_000);
 });

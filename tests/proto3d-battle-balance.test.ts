@@ -1,9 +1,10 @@
 /**
  * 合戦の釣り合い（国境の原・協力陣営ごとの標準の布陣 demoSetup）。
  * 利用者の采配の台本（proto3d/src/battle/scripts.ts）で最後まで進め、次を確かめる：
- * - 何もしない（全部隊待機）では勝てない。
- * - 全軍で正面から丘を押すと負ける（勝てても大きな損害）。
- * - 別働隊・予備隊・側面を使う采配なら勝てる（損害も正面押しより少ない）。反応が数秒遅れても勝てる。
+ * - 何もしない（全部隊待機）では勝てない（目標を無視した手順の失敗）。
+ * - 別働隊・予備隊・側面を使う采配なら勝てる。反応が数秒遅れても勝てる。
+ * - 作戦の比べ：正面から丘を押す台本（本陣も・本陣以外）より、考えた采配の結果が下回らず、損害が少ない（本陣以外で押し続けたときと比べる）。
+ *   正面の台本の勝敗・損害・時間は記録（合格条件にしない。docs/chapter2-request.md【1】「この台本が必ず負ける」を必須の合格条件にしない）。
  * - 全軍撤退は「撤退」、時間切れは「撤退（日没）」、味方本陣の敗走は「敗北」（本陣は敗走で、全滅ではない）。
  * - 同じ采配なら同じ結果。
  */
@@ -13,6 +14,7 @@ import { BORDER_FIELD, BORDER_FIELD_TIME_LIMIT, TASHIRO_ARRIVE_SEC, demoSetup, d
 import { inTerrain } from '../proto3d/src/battle/sim';
 import type { BattleOutcome } from '../proto3d/src/battle/types';
 import { frontalNoHqScript, frontalScript, holdScript, hqAloneScript, lureScript, planScript, retreatAt, type Script } from '../proto3d/src/battle/scripts';
+import { logRecord, outcomeRank } from './proto3d-record-log';
 
 const ALLIANCES: Alliance[] = ['tashiro', 'omori', 'alone'];
 
@@ -105,17 +107,6 @@ describe('家臣の助言どおりの采配（独力）', () => {
             expect(s.events.some((e) => (e.kind === 'flank' || e.kind === 'rear') && e.unitId?.startsWith('a_'))).toBe(true);
         }
     });
-
-    it('同じ 2 部隊でも、丘の上の先手へ正面から重ねて当てると勝てない', () => {
-        const both: Script = (s) => {
-            for (const id of ['a_genzo', 'a_reserve']) {
-                const u = s.units.find((x) => x.id === id)!;
-                if (u.order.type !== 'attack' && u.status === 'ready') issueOrder(s, id, { type: 'attack', targetId: 'e_sente' });
-            }
-        };
-        const { r } = play('alone', both);
-        expect(r.result).not.toBe('victory');
-    });
 });
 
 describe.each(ALLIANCES)('合戦の釣り合い（%s）', (alliance) => {
@@ -124,25 +115,11 @@ describe.each(ALLIANCES)('合戦の釣り合い（%s）', (alliance) => {
         expect(r.result).not.toBe('victory');
     });
 
-    it('全軍（本陣も）で正面から丘を押すと負ける（勝てても大きな損害）', () => {
-        const { r } = play(alliance, frontalScript);
-        expect(r.result !== 'victory' || allyLoss(r) >= 0.45).toBe(true);
-        expect(r.result).toBe('defeat');
-    });
-
-    it('本陣以外で正面から丘を押しても負ける', () => {
-        const { r } = play(alliance, frontalNoHqScript);
-        expect(r.result).toBe('defeat');
-        expect(allyLoss(r)).toBeGreaterThan(0.3);
-    });
-
-    it('別働隊・予備隊・側面を使う采配なら勝てる（正面押しより損害が少ない）', () => {
+    it('別働隊・予備隊・側面を使う采配なら勝てる', () => {
         const { r, s } = play(alliance, planScript(alliance));
         expect(r.result).toBe('victory');
         expect(allyLoss(r)).toBeLessThan(0.4);
-        // 損害は、本陣を残して正面から押し続けたとき（最後まで斬り合う）より少ない。
-        // 本陣ごと突っ込む正面押しは、本陣が早く崩れて合戦が早く終わるため損害の比べ物にならない（そちらは「敗北」であることを別に確かめる）
-        expect(allyLoss(r)).toBeLessThan(allyLoss(play(alliance, frontalNoHqScript).r));
+        // 正面から押す台本との損害の比べは、下の「作戦の比べ」に置く
         // 側面・背後を突いた知らせが出ている
         expect(s.events.some((e) => (e.kind === 'flank' || e.kind === 'rear') && s.units.find((u) => u.id === e.unitId)?.side === 'ally')).toBe(true);
         expect(r.elapsedSec).toBeLessThan(BORDER_FIELD_TIME_LIMIT);
@@ -181,6 +158,51 @@ describe.each(ALLIANCES)('合戦の釣り合い（%s）', (alliance) => {
         const b = play(alliance, planScript(alliance));
         expect(b.r).toEqual(a.r);
         expect(b.s.events).toEqual(a.s.events);
+    });
+});
+
+// 作戦の比べ（記録と相対の比べ）。正面から押す台本の勝敗・損害・時間は記録で、合格条件にしない（docs/chapter2-request.md【1】）。
+// 合格条件は、考えた采配の結果が正面の台本の結果を下回らないこと（勝ち ＞ 撤退 ＞ 負け）と、損害の比べ（同じ数字・同じ向きのまま）。
+// 記録（2026-10-05・782fefe の早送り。前はここで正面の台本の「負け」を expect していた）：
+//   陣営      全軍（本陣も）で正面                 本陣以外で正面                       考えた采配
+//   田代      負け（軍の崩壊）145.2 秒・損害 55.9％   負け（軍の崩壊）118.1 秒・48.4％       勝ち 146.8 秒・31.2％
+//   大森      負け（本陣の敗走）75.7 秒・28.6％       負け（軍の崩壊）125.0 秒・50.6％       勝ち 246.6 秒・35.7％
+//   独力      負け（本陣の敗走）131.9 秒・53.0％      負け（軍の崩壊）171.5 秒・49.2％       勝ち 240.2 秒・33.3％
+//   独力で同じ 2 部隊を丘の上の先手へ正面から重ねる：撤退（日没）480 秒・34.6％ ／ 誘い出して挟む：勝ち 197.9 秒・31.4％
+// 本陣ごと突っ込む正面押しは、本陣が早く崩れて合戦が早く終わるため、損害の比べ物にならない（大森では 28.6％で考えた采配より少ない）。
+// 損害は、本陣を残して正面から押し続けたとき（最後まで斬り合う）と比べる。
+describe.each(ALLIANCES)('作戦の比べ（%s）：正面から押す台本と考えた采配（正面の勝敗は記録）', (alliance) => {
+    it('全軍（本陣も）で正面から丘を押す台本より、考えた采配の結果が下回らない', () => {
+        const front = play(alliance, frontalScript).r;
+        const plan = play(alliance, planScript(alliance)).r;
+        logRecord(`国境の原（${alliance}）・全軍で正面`, { 結果: front.result, 理由: front.reason, 秒: front.elapsedSec, 損害: allyLoss(front) });
+        expect(outcomeRank(plan.result)).toBeGreaterThanOrEqual(outcomeRank(front.result));
+    });
+
+    it('本陣以外で正面から丘を押し続ける台本より、考えた采配の結果が下回らず、損害が少ない', () => {
+        const noHq = play(alliance, frontalNoHqScript).r;
+        const plan = play(alliance, planScript(alliance)).r;
+        logRecord(`国境の原（${alliance}）・本陣以外で正面`, { 結果: noHq.result, 理由: noHq.reason, 秒: noHq.elapsedSec, 損害: allyLoss(noHq) });
+        logRecord(`国境の原（${alliance}）・考えた采配`, { 結果: plan.result, 理由: plan.reason, 秒: plan.elapsedSec, 損害: allyLoss(plan) });
+        expect(outcomeRank(plan.result)).toBeGreaterThanOrEqual(outcomeRank(noHq.result));
+        expect(allyLoss(plan)).toBeLessThan(allyLoss(noHq));
+    });
+});
+
+describe('作戦の比べ（独力）：家臣の助言どおりの采配と、同じ 2 部隊で正面から重ねる台本', () => {
+    it('丘の上の先手へ正面から重ねて当てるより、弓で誘い出して両の横から挟む方が、結果が下回らず損害が少ない（正面の勝敗は記録）', () => {
+        const both: Script = (s) => {
+            for (const id of ['a_genzo', 'a_reserve']) {
+                const u = s.units.find((x) => x.id === id)!;
+                if (u.order.type !== 'attack' && u.status === 'ready') issueOrder(s, id, { type: 'attack', targetId: 'e_sente' });
+            }
+        };
+        const front = play('alone', both).r;
+        const lure = play('alone', lureScript()).r;
+        logRecord('国境の原（独力）・2 部隊で正面から重ねる', { 結果: front.result, 理由: front.reason, 秒: front.elapsedSec, 損害: allyLoss(front) });
+        logRecord('国境の原（独力）・誘い出して挟む', { 結果: lure.result, 理由: lure.reason, 秒: lure.elapsedSec, 損害: allyLoss(lure) });
+        expect(outcomeRank(lure.result)).toBeGreaterThanOrEqual(outcomeRank(front.result));
+        expect(allyLoss(lure)).toBeLessThan(allyLoss(front));
     });
 });
 

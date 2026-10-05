@@ -13,9 +13,16 @@
  * - B（早送り）：同じ台本を 1 秒ごとにだけ見て issueOrder・useAbility で直接出す（人が 1 秒ごとに見て押すのに近い。A との差は見る間隔だけ）。
  * - C（本物の入力・待ちは早送り）：タイトル →「合戦場の演習」→ 一覧 → 説明 →「出陣」→「指揮」で止め、1 秒ごとに状態を読んで（読むだけ）
  *   台本の条件を見て、画面の操作で命令を出し、早送りで 1 秒進める。B との差は画面の操作の差だけ。
- *   - 地面の行き先（tap）：札で部隊を選ぶ → 地図の地面をそのまま押す（移動先指定を使わない、いちばん普通の押し方）。
- *     押した結果がテストの意図（tapOrder：押す点の 20 m 以内に見えている敵がいればその敵への攻撃、ほかは移動）と違えば、ずれとして記録し、
- *     人が直すのと同じ操作で直す（移動なら「移動」で移動先指定にして押し直す・攻撃なら敵の体を押す）。
+ *   - 地面の行き先（tap）。意図はテストの tapOrder（押す点の 20 m 以内に見えている敵がいればその敵への攻撃、ほかは移動）で決める。
+ *     - 移動が目的：札で部隊を選ぶ →「移動」（移動先指定。もう指定中なら押さない：押すたびに切り替わる）→ 指定になったことを確かめて地面を押す。
+ *       指定の間は名札の印が当たりにならず能力を使わない・味方の体の上も選び直さずに移動（control.ts の labelTapCandidates・resolveTap）。
+ *       押した後、命令が意図どおり（移動・行き先が許容 4 m（通れない所は 25 m）の内）・選んだ部隊が同じ・指定が終わった（pending 'none'）ことを
+ *       確かめ、外れたら NG（黙って押し直さない）。移動先指定で押した後の地図の押しは 0.65 秒以上あける（MOVE_ECHO_SEC 0.6 秒の素早い 2 回目にしない）。
+ *       （Version 17 までは移動先指定を使わずに地面をそのまま押していた。城攻め前面 FRONT の 0 秒の石川隊の地面 (15,105) の押しが忠勝隊の
+ *       点滅する名札の印に当たり、退路の守護が意図せず使われた。docs/chapter2-request.md【1】の判断で直した）
+ *     - 攻撃が目的：札で選ぶ → 地面をそのまま押し、意図と違えば（画面の地面の押しは移動になる）ずれとして記録し、敵の体を押し直す。
+ *   - 地図を押す命令（地面・攻撃・能力）はどれも、押す前後で能力の使用（全部の usedAt）・ほかの味方の命令・命令の書き留めを比べる：
+ *     能力の命令ならその部隊の usedAt だけ、ほかの命令ならどれも変わっていないこと、命令した部隊のほかへの書き込みが無いこと（外れたら NG）。
  *   - 攻撃：札で選ぶ → 敵の体を押す（ずれたら「攻撃」→ 敵の体の近くを押し直す）。
  *   - 能力：名札の印を押す（印が無ければ札で選んで「能力」）。対象の要る能力は、続けて対象の体を押す。
  *   - 防衛・待機・撤退：札で選んで命令のボタン。
@@ -47,7 +54,21 @@
  *   城攻め前面 拠点を先に BASTION           288.7 秒・26.2％・門 160.1 秒      293.1 秒・26.7％・門 161.8 秒   B と同じ・段 2／2          損害✓ 拠点✓ 騎馬✓      7
  *   - FRONT の C は D（C で入った命令の入れ直し）と同じで、E（押した点の端数だけ替える）とは違う：違いは入った命令。0 秒の石川隊への地面の押し
  *     （行き先 (15,105) の近くに忠勝隊が立っている）がずれて移動先指定で押し直し、14 回目の命令（忠勝隊の門の前の持ち場への移動）が B より 2 秒遅れた
- *     （163 → 165 秒）。2 秒の遅れがどこから来たかは突き止めていない（未解決の記録）。どちらも勝ち・主目標 ✓。
+ *     （163 → 165 秒）。どちらも勝ち・主目標 ✓。→ 後の調べで、この地面の押しが忠勝隊の点滅する名札の印に当たり、退路の守護（忠勝隊は動けない）が
+ *     意図せず使われていたと分かった（命令の書き留めの a_tadakatsu → hold）。下の【判断待ち事項の対応の後】で直した。
+ *   【判断待ち事項の対応の後（移動が目的の地面の押しは移動先指定・押す前後の確かめ）。25e0afd の開発サーバー・PC 1280×720・2026-10-05。
+ *    RUNS=desktop:siege_front:FRONT。すべて ok】
+ *   城攻め前面 準備した正面攻撃 FRONT（MAIN） 301.0 秒・22.5％・門 190.7 秒      303.7 秒・22.5％・門 192.5 秒   B と同じ・段 2／2          損害✓ 拠点✗ 騎馬✗      7
+ *   - 命令 32 回すべてそのまま（ずれ 0・断られた 0）。B と C の命令の並びはすべて同じ。使った能力は台本の 208 秒の石川隊だけ（意図しない能力 0・
+ *     ほかの部隊への書き込み 0）。能力を使わない C は B と同じになった（前の C 312.0 秒・21.5％・門 193.9 秒との差は、意図しない守護と押し直しの命令）。
+ *   【同じ直しの後の作戦の通し（回帰）。c58796c の開発サーバー・2026-10-05 04:04〜05:20 UTC・既定の 11 通り。72 項目すべて ok】
+ *   8e249a2 の確認の回（2026-10-04）と比べて、C の結果が変わったのは城攻め前面 FRONT だけ（上のとおり B と同じになった）。ほかの 10 通りは A・B・C・D・E とも同じ数字：
+ *   湿地 WEST 336.7 秒・10.5％、村落 POST 420 秒・18.9％（C≠B は押した点の端数・E＝C）、寺社周辺 COMBO 236.1 秒・16.6％（PC・スマホ相当）、
+ *   城下町外縁 WATCH 384.6 秒・20.5％、湿地 PREP 282.8 秒・20.7％、村落 FRONTAL 420 秒・46％、寺社周辺 FRONT 348.9 秒・22％、
+ *   城下町外縁 FRONTAL 418.9 秒・38.7％（C≠B は押した点の端数・E＝C）、城攻め前面 BASTION 293.1 秒・26.7％・門 161.8 秒。どれも勝ち・主目標 ✓・D＝C。
+ *   ずれ（直した押し）は移動が目的のものが 0 になり（前は 15：行き先の味方・自分の上を押して選び直し・選択を外す。城攻め前面 FRONT の守護の 1 を含む）、
+ *   攻撃が目的の 6（湿地 WEST 152 秒の 4 隊・寺社周辺 FRONT 202・222 秒。地面の押しは移動になるので敵の体を押し直す）だけが残る。
+ *   どの作戦も、意図しない能力の使用 0・命令した部隊のほかへの書き込み 0（前は城攻め前面 FRONT の 0 秒の a_tadakatsu → hold の 1 つ）。
  * - A と B の違いは「見てから押す」条件を見る間隔（0.1 秒と 1 秒）だけ。押すのが最大 0.9 秒遅れ、寺社周辺の FRONT で +32.8 秒・COMBO で +11.3 秒。
  * - C と B は 11 通りのうち 9 通りで同じ。違った寺社周辺 FRONT・城下町外縁 FRONTAL は、D が C と同じで、E（B の移動の行き先だけを C で押した点に
  *   替える）も C と同じだった：違いは押した点の端数（地図の押しから地面の点を出す計算の丸め。最大 1.3e-12 m）だけで、ずれて直す前の命令や
@@ -194,9 +215,20 @@ async function bpress(p, sel, wait = 150) {
     else await p.page.click(sel);
     await p.page.waitForTimeout(wait);
 }
+/**
+ * 移動先指定の素早い 2 回（proto3d/src/battle/control.ts の MOVE_ECHO_SEC＝0.6 秒・実時間）：移動先指定で行き先を押して移動の命令を出した後、
+ * この間の次の地図の押しは（同じ部隊を選んだままなら）攻撃・選び直し・能力にならず、移動か何もしないになる。台本には同じ部隊の移動の後に
+ * 同じ瞬間の攻撃・能力があるので、移動先指定で押した後の地図の押しは 0.65 秒以上あける（人が続けて押す間と同じ程度）
+ */
+const MOVE_ECHO_GAP_MS = 650;
 async function pointAt(p, x, y, wait = 300) {
+    if (p.moveTapAt) {
+        const d = Date.now() - p.moveTapAt;
+        if (d < MOVE_ECHO_GAP_MS) await p.page.waitForTimeout(MOVE_ECHO_GAP_MS - d);
+    }
     if (p.phone) await p.page.touchscreen.tap(x, y);
     else await p.page.mouse.click(x, y);
+    p.lastTapAt = Date.now();
     await p.page.waitForTimeout(wait);
 }
 const waitSheet = (page, name) => page.waitForFunction((n) => window.__practice?.ui?.kind === 'sheet' && window.__practice.ui.sheet === n, name, POLL);
@@ -509,7 +541,45 @@ async function moveMode(p) {
 }
 const ordStr = (o) => (!o ? '?' : o.type === 'attack' ? `攻撃 ${o.targetId}` : o.type === 'move' ? `移動 (${r1(o.x)},${r1(o.z)})` : o.type);
 
-/** 地面の行き先（または移動）：普通に地面を押し、意図と違えば直す */
+/** 押す前の控え（読むだけ）：能力の使用（全部の能力の usedAt）と、命令する部隊のほかの味方の命令 */
+const cmdSnap = (page, id) =>
+    page.evaluate((id) => {
+        const s = window.__battle.state;
+        return {
+            used: Object.fromEntries(Object.entries(s.abilities).map(([k, r]) => [k, r.usedAt])),
+            others: Object.fromEntries(s.units.filter((u) => u.side === 'ally' && u.id !== id).map((u) => [u.id, JSON.stringify(u.order)])),
+        };
+    }, id);
+/**
+ * 押した後の確かめ（読むだけ）。外れた点の一覧を返す（空なら漏れなし）：
+ * - 能力の使用：能力の命令（abilityOf）ではその部隊の usedAt だけが変わった。ほかの命令では、どの能力の usedAt も変わっていない
+ *   （地面の点が点滅する名札の印に当たって能力が使われる、を見つける。Version 17 の確認で、城攻め前面 FRONT 0 秒・援軍救出 TOUCH 124 秒に
+ *   忠勝の退路の守護が意図せず使われた）
+ * - ほかの味方の命令が変わっていない（押す前の控えと比べる）
+ * - 命令の書き留め（hook）に、この操作（n 番目）の間の、命令した部隊のほかへの書き込みが無い
+ */
+async function leaksAfter(page, id, n, before, abilityOf = null) {
+    const after = await cmdSnap(page, id);
+    const bad = [];
+    const usedDiff = Object.keys(after.used).filter((k) => after.used[k] !== before.used[k]);
+    const wantUsed = abilityOf ? [abilityOf] : [];
+    if (usedDiff.join() !== wantUsed.join()) bad.push(`能力の使用が変わった（${usedDiff.join(',') || 'なし'}${abilityOf ? `。意図は ${abilityOf} だけ` : '。意図はなし'}）`);
+    const othersDiff = Object.keys(before.others).filter((k) => after.others[k] !== before.others[k]);
+    if (othersDiff.length) bad.push(`ほかの部隊の命令が変わった（${othersDiff.map((k) => `${k} → ${after.others[k]}`).join('・')}）`);
+    const writes = await page.evaluate(([n, id]) => (window.__g3p.log ?? []).filter((e) => e.cmd === n && !e.ab && e.id !== id).map((e) => `${e.id} → ${e.o.type}`), [n, id]);
+    if (writes.length) bad.push(`命令の書き留めに、ほかの部隊への書き込み（${writes.join('・')}）`);
+    return bad;
+}
+
+/**
+ * 地面の行き先（または移動）。
+ * - 移動が目的（tapOrder の意図が移動）：札で選ぶ →「移動」（移動先指定。もう指定中なら押さない：押すたびに切り替わる）→ 指定になったことを確かめて
+ *   地面を押す。指定の間は名札の印が当たりにならず能力を使わない・味方の体の上も選び直さずに移動（control.ts の labelTapCandidates・resolveTap）。
+ *   押した後、命令が意図どおり（移動・行き先が許容の内）・選んだ部隊が同じ・指定が終わった（pending 'none'）を確かめる。外れたら NG（押し直さない）。
+ * - 攻撃が目的（押す点の 20 m 以内に見えている敵がいる）：地面をそのまま押し、意図と違えば（画面の地面の押しは移動になる）、人が直すのと同じ操作で
+ *   敵の体を押し直す（ずれとして記録）。
+ * どちらも、能力の使用・ほかの部隊の命令が変わっていないことを exec の後で確かめる（leaksAfter）。
+ */
 async function execTap(p, id, a, rec) {
     const { page } = p;
     const want = a.intent;
@@ -517,29 +587,38 @@ async function execTap(p, id, a, rec) {
     const matches = (o) => (want.type === 'attack' ? o?.type === 'attack' && o.targetId === want.targetId : o?.type === 'move' && Math.hypot(o.x - a.x, o.z - a.z) <= tol);
     const sel = await selectUnit(p, id);
     if (!sel) return { ok: false, why: '選べない' };
+    if (want.type === 'move') {
+        const pend0 = (await ui(page)).pending;
+        if (pend0 !== 'move') await moveMode(p);
+        const pend1 = (await ui(page)).pending;
+        if (pend1 !== 'move') return { ok: false, why: `「移動」で移動先指定にならない（${pend0} → ${pend1}）` };
+        await tapGround(p, a.x, a.z);
+        p.moveTapAt = p.lastTapAt;
+        const o = await orderOf(page, id);
+        const u1 = await ui(page);
+        rec.natural = `${ordStr(o)}${u1.selectedId !== id ? `・選択 ${u1.selectedId}` : ''}`;
+        const bad = [];
+        if (!matches(o)) bad.push(`命令が意図と違う（${ordStr(o)}）`);
+        if (u1.selectedId !== id) bad.push(`選んだ部隊が変わった（${u1.selectedId}）`);
+        if (u1.pending !== 'none') bad.push(`移動先指定が終わらない（${u1.pending}）`);
+        return bad.length ? { ok: false, why: bad.join('・'), how: '「移動」→ 地面', got: ordStr(o) } : { ok: true, how: '「移動」→ 地面' };
+    }
     await tapGround(p, a.x, a.z);
     let o = await orderOf(page, id);
-    let selNow = (await ui(page)).selectedId;
+    const selNow = (await ui(page)).selectedId;
     rec.natural = `${ordStr(o)}${selNow !== id ? `・選択 ${selNow}` : ''}`;
     if (matches(o) && selNow === id) return { ok: true, how: '地面' };
     rec.diverged = true;
     await selectUnit(p, id);
-    if (want.type === 'attack') {
-        await clickUnit(p, want.targetId, p.D);
-        o = await orderOf(page, id);
-        if (!matches(o)) {
-            await selectUnit(p, id);
-            await bpress(p, '.b-cmd:has-text("攻撃")', 150);
-            await clickUnit(p, want.targetId, p.D, 0, 8);
-            o = await orderOf(page, id);
-        }
-        return { ok: matches(o), how: '地面→敵の体', got: ordStr(o) };
-    }
-    await moveMode(p);
-    await tapGround(p, a.x, a.z);
+    await clickUnit(p, want.targetId, p.D);
     o = await orderOf(page, id);
-    selNow = (await ui(page)).selectedId;
-    return { ok: matches(o) && selNow === id, how: '地面→移動先指定', got: ordStr(o) };
+    if (!matches(o)) {
+        await selectUnit(p, id);
+        await bpress(p, '.b-cmd:has-text("攻撃")', 150);
+        await clickUnit(p, want.targetId, p.D, 0, 8);
+        o = await orderOf(page, id);
+    }
+    return { ok: matches(o), how: '地面→敵の体', got: ordStr(o) };
 }
 async function execAttack(p, id, target) {
     const { page } = p;
@@ -615,6 +694,8 @@ async function exec(p, d, n) {
         window.__g3p.hook();
         window.__g3p.setOn(i);
     }, idx);
+    // 押す前の控え（地図を押す命令：地面・攻撃・能力。押した後に leaksAfter で比べる）
+    const before = a.kind === 'tap' || a.kind === 'attack' || a.kind === 'ability' || a.kind === 'abilityOn' ? await cmdSnap(p.page, id) : null;
     let r;
     if (a.kind === 'tap') {
         rec.want = ordStr(a.intent);
@@ -629,6 +710,11 @@ async function exec(p, d, n) {
     } else {
         rec.want = a.kind;
         r = await execButton(p, id, a.kind);
+    }
+    if (before && !(r.refused && !r.how)) {
+        // 能力の命令では、使えたときだけその部隊の usedAt が変わってよい（使えなければ、どれも変わらない）
+        const bad = await leaksAfter(p.page, id, idx, before, (a.kind === 'ability' || a.kind === 'abilityOn') && r.ok ? id : null);
+        if (bad.length) r = { ...r, ok: false, refused: false, leak: bad, why: [r.why, ...bad].filter(Boolean).join('・') };
     }
     await p.page.evaluate(() => window.__g3p.setOn(null));
     Object.assign(rec, r);

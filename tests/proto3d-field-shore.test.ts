@@ -56,6 +56,7 @@ import { buildBattleSetup, getField, validateField } from '../proto3d/src/battle
 import { endRuleBriefingLine, objectiveProgress } from '../proto3d/src/battle/objectives';
 import type { BattleOutcome, Order } from '../proto3d/src/battle/types';
 import { atk, nearestEnemy, tapOrder } from './proto3d-group3-helpers';
+import { logRecord } from './proto3d-record-log';
 
 const SF = getField('shore')!;
 /** 二つの要所・湖の岸（この x より東は湖） */
@@ -510,9 +511,10 @@ describe('湖・河岸の作戦（早送り）', () => {
         const front = sixteen(FRONTAL);
         const raw = sixteen(UNPLANNED);
         const rash = sixteen(RASH);
-        // 準備した正面攻撃 15／16 勝（作った時）。無計画 0／16（平均 164 秒）、無計画に打って出る 0／16（平均 223 秒）
-        expect(wins(raw)).toBe(0);
-        expect(wins(rash)).toBe(0);
+        // 準備した正面攻撃 15／16 勝（作った時）。無計画・無計画に打って出るの勝ちは記録（2026-10-05・782fefe：無計画 0／16・平均 164.2 秒、無計画に打って出る 0／16・平均 223.1 秒）。
+        // 前はここで無計画の勝ち 0 を expect していた（この台本が必ず負けるは合格条件にしない。docs/chapter2-request.md【1】）
+        logRecord('湖河岸・16 通り', { 準備した正面攻撃: wins(front), 無計画: wins(raw), 無計画に打って出る: wins(rash), 無計画の平均秒: mean(raw, (r) => r.t), 打って出るの平均秒: mean(rash, (r) => r.t) });
+        expect(wins(front)).toBeGreaterThan(wins(raw) + 10);
         expect(wins(front)).toBeGreaterThan(wins(rash) + 10);
         expect(mean(front, (r) => r.t)).toBeGreaterThan(mean(rash, (r) => r.t) + 150);
         expect(mean(front, (r) => r.t)).toBeGreaterThan(mean(raw, (r) => r.t) + 150);
@@ -524,7 +526,11 @@ describe('湖・河岸の作戦（早送り）', () => {
         expect(mean(front, (r) => r.loss)).toBeLessThan(mean(rash, (r) => r.loss));
         // どちらも岸の弓は崩す（打って出た先で）が、無計画に打って出ると、内陸の騎馬に後ろの狭まりを取られる
         expect(front.filter((r) => broke(r, 'e_shore_yumi')).length).toBe(16);
-        expect(rash.every((r) => r.o.reason === 'objective_failed' && (r.s.objectives!.primary!.zoneLost[0] || r.s.objectives!.primary!.zoneLost[1]))).toBe(true);
+        // 目標の判定：無計画に打って出た通りが主目標を果たせずに終わるのは、狭まりを取られたとき（取られずに目標の失敗にはならない）。
+        // 何通りがそうなるかは記録（2026-10-05・782fefe：16 通りとも狭まりを取られて負け。前はここで 16 通りとも、を expect していた）
+        const rashFailed = rash.filter((r) => r.o.reason === 'objective_failed');
+        for (const r of rashFailed) expect(r.s.objectives!.primary!.zoneLost[0] || r.s.objectives!.primary!.zoneLost[1]).toBe(true);
+        logRecord('湖河岸・無計画に打って出る', { 狭まりを取られて負け: rashFailed.length, 通り: rash.length });
     }, 300_000);
 
     it('記録：何もしないと 167 秒に岸の狭まりを失って負ける（始めは忠勝隊が狭まりの中にいるので、最初の命令を出す間はある）', () => {
@@ -544,6 +550,9 @@ describe('湖・河岸の作戦（早送り）', () => {
         expect(mean(r, (x) => x.left.a_tadakatsu!)).toBeLessThan(mean(k, (x) => x.left.a_tadakatsu!) - 100);
     }, 300_000);
 
+    // 地形の確かめなので合格条件のまま残す（docs/chapter2-request.md【1】の判断：地形の効果は必須）。TAKADAI_FWD は TAKADAI と同じ命令で、
+    // 忠勝隊の持ち場だけを小高い所の上から北 (120,-70) へ出したもの。同じ台本の中で持ち場だけを替えた比べで、北へ出た隊が狭まりを失うことが、
+    // 小高い所（高所の有利）と狭い正面の価値そのもの（正面突破・無計画の台本の勝敗の固定ではない）
     it('岸の狭まりの小高い所と狭い正面（地形の価値）：忠勝隊 1 隊で受けられるのは小高い所の上。北へ出ると 16 通りとも狭まりを失う', () => {
         expect(wins(sixteen(TAKADAI))).toBeGreaterThanOrEqual(15);
         const fwd = sixteen(TAKADAI_FWD);

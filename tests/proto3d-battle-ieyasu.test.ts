@@ -1,7 +1,9 @@
 /**
  * 歴史分岐「元亀元年・家康」の合戦（maps.ts の ieyasu1570Setup・scripts.ts の ieyasu 台本）。
  * - 方針ごとの布陣（味方・敵の構成、能力を持つ部隊、約束の対象、説明文）。
- * - 釣り合い：何もしないと勝てない／正面から押すだけでは負ける／考えた采配なら勝てる。
+ * - 釣り合い：何もしないと勝てない（目標を無視した手順の失敗）／考えた采配なら勝てる。
+ * - 作戦の比べ：正面から押す台本（本陣も・本陣以外・号令を 1 回足す）より、考えた采配の結果が下回らず、損害が少ない（本陣以外で押し続けたときと比べる）。
+ *   正面の台本の勝敗・損害・時間は記録（合格条件にしない。docs/chapter2-request.md【1】「この台本が必ず負ける」を必須の合格条件にしない）。
  * - 約束：勝って守る・勝って破る・退いて守る。引き受けなければ約束の記録はない。
  * - 敵方の長政（A）は敵の考えが能力を使い、プレイヤーは操作できない。
  * 台本で最後まで一気に進める（早送り）。状態の直接変更はしない。
@@ -22,6 +24,7 @@ import {
 import { abilityInfo, useAbility } from '../proto3d/src/battle/abilities';
 import { ieyasuFrontalScript, ieyasuPlanScript, ieyasuRetreatScript, type Script } from '../proto3d/src/battle/scripts';
 import type { BattleOutcome } from '../proto3d/src/battle/types';
+import { logRecord, outcomeRank } from './proto3d-record-log';
 
 const POLICIES: IeyasuPolicy[] = ['oda', 'asai', 'home'];
 const troops = () => ({ ...IEYASU_INITIAL_TROOPS });
@@ -165,18 +168,11 @@ describe.each(POLICIES)('合戦の釣り合い（方針 %s）', (policy) => {
         expect(r.pledge).toEqual({ targetId: IEYASU_PLEDGE_TARGET[policy], result: 'broken' });
     });
 
-    it('全軍（本陣も）で正面から押すと負ける。本陣以外で押しても負ける', () => {
-        expect(play(policy, ieyasuFrontalScript(policy, true)).r.result).toBe('defeat');
-        const noHq = play(policy, ieyasuFrontalScript(policy, false)).r;
-        expect(noHq.result).toBe('defeat');
-        expect(allyLoss(noHq)).toBeGreaterThan(0.3);
-    });
-
     it('考えた采配（対象を味方の陣へ下げる・能力を使う・誘い出して横から当たる）なら勝ち、約束も守れる', () => {
         const { r, s } = play(policy, ieyasuPlanScript(policy, 'keep'));
         expect(r.result).toBe('victory');
         expect(r.pledge).toEqual({ targetId: IEYASU_PLEDGE_TARGET[policy], result: 'kept' });
-        expect(allyLoss(r)).toBeLessThan(allyLoss(play(policy, ieyasuFrontalScript(policy, false)).r));
+        // 正面から押す台本との損害の比べは、下の「作戦の比べ」に置く
         expect(Object.keys(r.abilitiesUsed ?? {})).toContain('t_honjin');
         const tgt = r.units.find((u) => u.id === IEYASU_PLEDGE_TARGET[policy])!;
         expect(['ready', 'withdrawn']).toContain(tgt.status);
@@ -235,20 +231,6 @@ describe.each(POLICIES)('合戦の釣り合い（方針 %s）', (policy) => {
         expect(['routed', 'destroyed']).toContain(r.units.find((u) => u.id === IEYASU_PLEDGE_TARGET[policy])!.status);
     });
 
-    it('（プレイテストの指摘）全軍で正面から押して号令を 1 回使うだけでは、いつ使っても勝てない', () => {
-        const at = (t0: number | 'hq'): Script => {
-            const f = ieyasuFrontalScript(policy, true);
-            let done = false;
-            return (x) => {
-                f(x);
-                if (done) return;
-                const hq = unitById(x, 't_honjin')!;
-                if (t0 === 'hq' ? !!hq.engagedWith : x.t >= t0) done = useAbility(x, 't_honjin').ok;
-            };
-        };
-        for (const t0 of ['hq', 0, 20, 40, 60, 80] as const) expect(play(policy, at(t0)).r.result, `号令 ${t0}`).toBe('defeat');
-    });
-
     it('約束を引き受けなければ、同じ采配でも約束の記録はない（約束違反と同じにしない）', () => {
         const { r } = play(policy, ieyasuPlanScript(policy, 'keep'), false);
         expect(r.result).toBe('victory');
@@ -260,6 +242,55 @@ describe.each(POLICIES)('合戦の釣り合い（方針 %s）', (policy) => {
         const b = play(policy, ieyasuPlanScript(policy, 'keep'));
         expect(b.r).toEqual(a.r);
         expect(b.s.events).toEqual(a.s.events);
+    });
+});
+
+// 作戦の比べ（記録と相対の比べ）。正面から押す台本の勝敗・損害・時間は記録で、合格条件にしない（docs/chapter2-request.md【1】）。
+// 合格条件は、考えた采配の結果が正面の台本の結果を下回らないこと（勝ち ＞ 撤退 ＞ 負け）と、本陣以外で押し続けたときとの損害の比べ（同じ向きのまま）。
+// 本陣ごと突っ込む正面押しは、本陣が早く崩れて合戦が早く終わるため、損害の比べ物にならない（A・B では考えた采配より損害が少ない）。
+// 記録（2026-10-05・782fefe の早送り。約束は引き受けた。前はここで正面の台本の「負け」を expect していた）：
+//   方針     全軍（本陣も）で正面                本陣以外で正面                      考えた采配（約束を守る）
+//   A 織田   負け（本陣の敗走）81.4 秒・損害 28.9％  負け（軍の崩壊）112.7 秒・47.7％      勝ち 241.6 秒・35.2％
+//   B 浅井   負け（本陣の敗走）73.8 秒・30.2％      負け（軍の崩壊）113.4 秒・46.2％      勝ち 157.4 秒・19.3％
+//   C 自領   負け（本陣の敗走）70.6 秒・20.4％      負け（軍の崩壊）128.7 秒・56.7％      勝ち 233.8 秒・19.7％
+//   全軍で正面＋号令 1 回（本陣が斬り合ったとき／0・20・40・60・80 秒）：どれも負け（本陣の敗走）。
+//     A 103.7・103.5・102.9・88.7・93.4・93.5 秒（損害 39.5・36.9・37.5・36.3・34.9・34.9％）
+//     B 100.2・91.9・95.9・83.4・102.3・73.8 秒（50.3・39.2・43.9・40.8・52.4・30.2％。80 秒は号令の前に本陣が崩れる）
+//     C 82.4・85.1・79.6・84.7・82.6・70.6 秒（31.1・27.8・25.9・31.1・31.1・20.4％。80 秒は号令の前に本陣が崩れる）
+describe.each(POLICIES)('作戦の比べ（方針 %s）：正面から押す台本と考えた采配（正面の勝敗は記録）', (policy) => {
+    it('全軍（本陣も）で正面から押す台本より、考えた采配の結果が下回らない', () => {
+        const front = play(policy, ieyasuFrontalScript(policy, true)).r;
+        const plan = play(policy, ieyasuPlanScript(policy, 'keep')).r;
+        logRecord(`家康（${policy}）・全軍で正面`, { 結果: front.result, 理由: front.reason, 秒: front.elapsedSec, 損害: allyLoss(front) });
+        expect(outcomeRank(plan.result)).toBeGreaterThanOrEqual(outcomeRank(front.result));
+    });
+
+    it('本陣以外で正面から押し続ける台本より、考えた采配の結果が下回らず、損害が少ない', () => {
+        const noHq = play(policy, ieyasuFrontalScript(policy, false)).r;
+        const plan = play(policy, ieyasuPlanScript(policy, 'keep')).r;
+        logRecord(`家康（${policy}）・本陣以外で正面`, { 結果: noHq.result, 理由: noHq.reason, 秒: noHq.elapsedSec, 損害: allyLoss(noHq) });
+        logRecord(`家康（${policy}）・考えた采配`, { 結果: plan.result, 理由: plan.reason, 秒: plan.elapsedSec, 損害: allyLoss(plan) });
+        expect(outcomeRank(plan.result)).toBeGreaterThanOrEqual(outcomeRank(noHq.result));
+        expect(allyLoss(plan)).toBeLessThan(allyLoss(noHq));
+    });
+
+    it('（プレイテストの指摘）全軍で正面から押して号令を 1 回使う台本（いつ使っても）より、考えた采配の結果が下回らない', () => {
+        const at = (t0: number | 'hq'): Script => {
+            const f = ieyasuFrontalScript(policy, true);
+            let done = false;
+            return (x) => {
+                f(x);
+                if (done) return;
+                const hq = unitById(x, 't_honjin')!;
+                if (t0 === 'hq' ? !!hq.engagedWith : x.t >= t0) done = useAbility(x, 't_honjin').ok;
+            };
+        };
+        const plan = play(policy, ieyasuPlanScript(policy, 'keep')).r;
+        for (const t0 of ['hq', 0, 20, 40, 60, 80] as const) {
+            const r = play(policy, at(t0)).r;
+            logRecord(`家康（${policy}）・全軍で正面＋号令 ${t0}`, { 結果: r.result, 理由: r.reason, 秒: r.elapsedSec, 損害: allyLoss(r), 号令: 't_honjin' in (r.abilitiesUsed ?? {}) });
+            expect(outcomeRank(plan.result), `号令 ${t0}`).toBeGreaterThanOrEqual(outcomeRank(r.result));
+        }
     });
 });
 

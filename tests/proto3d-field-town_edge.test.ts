@@ -72,6 +72,7 @@ import { buildBattleSetup, getField, validateField } from '../proto3d/src/battle
 import type { BattleOutcome, Order } from '../proto3d/src/battle/types';
 import { atk, nearestEnemy, tapOrder } from './proto3d-group3-helpers';
 import { unplanned } from './proto3d-fields-group3-plans';
+import { logRecord } from './proto3d-record-log';
 
 const TF = getField('town_edge')!;
 
@@ -567,11 +568,14 @@ describe('城下町外縁の作戦（早送り）', () => {
 
     it('記録：大通りに集中すると、西の脇道・東の門口から 3 部隊抜けて負ける（損害は小さい）。待つだけでも同じ。無計画は野へ散って負ける', () => {
         const main = once(MAIN);
-        expect(main.o.objectives!.primary!.achieved).toBe(false);
-        expect(main.entered.length).toBe(3);
+        // 目標の判定：抜けた部隊が上限（2）を超えたら主目標を果たせない。大通りに集中したとき抜けるのは西の脇道・東の門口の部隊（地形の道）
+        if (main.entered.length > 2) expect(main.o.objectives!.primary!.achieved).toBe(false);
         expect(main.entered.every((id) => id.startsWith('e_w_') || id.startsWith('e_e_'))).toBe(true);
-        expect(main.loss).toBeLessThan(0.1);
-        expect(wins(sixteen(MAIN))).toBe(0);
+        // 比べ：町の北の口で受けて回す作戦（MOUTH）より 16 通りの勝ちがずっと少ない。勝敗・抜けた数・損害は記録（2026-10-05・782fefe：
+        // 負け・主目標 ✗・3 部隊抜ける・損害 2.4％・16 通りで 0 勝（町の北の口 16 勝・辻で挟む 11 勝）。前はここで主目標 ✗・3 部隊抜ける・
+        // 損害 1 割未満・16 通り 0 勝を expect していた。この台本が必ず負けるは合格条件にしない。docs/chapter2-request.md【1】）
+        logRecord('城下町外縁・大通りに集中', { 結果: main.o.result, 主目標: main.o.objectives!.primary!.achieved, 抜けた: main.entered.length, 損害: main.loss, '16 通りの勝ち': wins(sixteen(MAIN)), 町の北の口: wins(sixteen(MOUTH)), 辻で挟む: wins(sixteen(WATCH)) });
+        expect(wins(sixteen(MAIN)) + 10).toBeLessThanOrEqual(wins(sixteen(MOUTH)));
         const hold = once(HOLD);
         expect(hold.o.objectives!.primary!.achieved).toBe(false);
         expect(hold.entered.length).toBe(3);

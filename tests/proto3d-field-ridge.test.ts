@@ -20,6 +20,7 @@ import { useAbility } from '../proto3d/src/battle/abilities';
 import { inZone } from '../proto3d/src/battle/fieldRules';
 import { buildBattleSetup, getField, presetUnits, validateField } from '../proto3d/src/battle/fields';
 import type { BattleOutcome, Order } from '../proto3d/src/battle/types';
+import { logRecord } from './proto3d-record-log';
 
 const RG = getField('ridge')!;
 
@@ -297,9 +298,11 @@ describe('尾根のデータ', () => {
     });
 });
 
-// 合格条件は「正面なら負ける」ではなく、同じ台本・同じ数字での比べ（地形に合った作戦・準備した正面攻撃と比べて、主目標に届かない・
-// 損害が大きい・16 通りの勝ちが少ない）。無計画な攻撃の勝敗は「記録」として残す（台本と数字は前のまま。変わったら理由と前後の数字を書いて直す）
-describe('尾根：無計画な攻撃・地形に合わない作戦と、地形に合った作戦の比べ（早送り）', () => {
+// 作戦の比べ。合格条件は「正面なら負ける」ではなく、同じ台本・同じ数字での比べ（地形に合った作戦・準備した正面攻撃と比べて、損害が大きい・
+// 16 通りの勝ちが少ない）。正面突破・無計画な攻撃の勝敗・主目標・時間は「記録」（合格条件にしない。docs/chapter2-request.md【1】。前はここで
+// 負け・勝てない・主目標 ✗・勝ち 0 を expect していた。台本と比べの数字は前のまま）。目標を無視した手順の失敗（何もしない）は、主目標の判定の
+// 確かめとして残す
+describe('尾根：作戦の比べ（無計画な攻撃・地形に合わない作戦と、地形に合った作戦。早送り）', () => {
     it('何もしない → 地形に合った作戦（勝ち）と違い、主目標に届かない（記録：頂を取れず日没）', () => {
         const r = run([]);
         expect(run(FIT).o.objectives!.primary!.achieved).toBe(true);
@@ -311,58 +314,43 @@ describe('尾根：無計画な攻撃・地形に合わない作戦と、地形�
 
     it('正面突破：五隊で頂へ（無計画。弓は頂の弓を射る）→ 地形に合った作戦より損害が大きく、主目標に届かない（記録：急坂の上の口で一隊ずつ迎えられ、日没。作った時 43.8％。五隊とも敗走）', () => {
         const r = run(PUSH);
-        // 確かめた時：日没・損害 43.8％ ／ 地形に合った作戦 364.1 秒に勝ち・20.0％
+        // 記録（2026-10-05・782fefe）：日没（540 秒・撤退）・損害 43.8％・主目標 ✗・槍騎馬の五隊とも敗走 ／ 地形に合った作戦 364.1 秒に勝ち・20.0％
+        logRecord('尾根・正面突破', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved });
+        logRecord('尾根・正面突破の槍騎馬', Object.fromEntries(MELEE.map((id) => [id, r.o.units.find((u) => u.id === id)!.status])));
         expect(r.loss).toBeGreaterThan(run(FIT).loss + 0.15);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
-        // 記録
-        expect(r.o.result).not.toBe('victory');
-        expect(r.loss).toBeGreaterThan(0.4);
-        for (const id of MELEE) expect(r.o.units.find((u) => u.id === id)!.status).not.toBe('ready');
     });
 
     it('五隊だけで頂へ（無計画。弓は動かさない）→ 地形に合った作戦より損害が大きく、主目標に届かない。60 秒ごとに頂へ押し直しても同じ（記録：頂の守り・弓を崩せず日没。作った時 損害 46.9％、頂の弓は無傷）', () => {
         const r = run(MELEE.map((id) => [0, id, SUMMIT] as Step));
         expect(r.loss).toBeGreaterThan(run(FIT).loss + 0.15);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
-        // 記録
-        expect(r.o.result).not.toBe('victory');
-        expect(r.loss).toBeGreaterThan(0.4);
-        expect(r.left.e_yumi).toBe(300);
         const re = [60, 120, 180, 240, 300].flatMap((t) => MELEE.map((id) => [t, id, SUMMIT] as Step));
         const r2 = run([...MELEE.map((id) => [0, id, SUMMIT] as Step), ...re]);
         expect(r2.loss).toBeGreaterThan(run(FIT).loss + 0.15);
-        expect(r2.o.objectives!.primary!.achieved).toBe(false);
-        // 記録
-        expect(r2.o.result).not.toBe('victory');
-        expect(r2.loss).toBeGreaterThan(0.4);
+        // 記録（2026-10-05・782fefe）：日没（540 秒）・損害 46.9％・主目標 ✗（頂の弓の兵 300 のまま＝無傷）／
+        // 押し直し 日没・46.9％・主目標 ✗
+        logRecord('尾根・五隊だけで頂へ', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved });
+        logRecord('尾根・五隊だけで頂へ（頂の弓の兵）', { e_yumi: r.left.e_yumi });
+        logRecord('尾根・五隊だけで頂へ・押し直し', { 結果: r2.o.result, 理由: r2.o.reason, 秒: r2.o.elapsedSec, 損害: r2.loss, 主目標: r2.o.objectives!.primary!.achieved });
     }, 60_000);
 
     it('弓も一緒に全部隊で頂の守り（西）へ（無計画）→ 弓で崩してから入れ替えて登る準備した正面攻撃より損害が大きく、主目標に届かない。30 秒ごとに近い敵へ当て直しても同じ（記録：負ける。作った時 414 秒・損害 67％）', () => {
         const all: Step[] = [...MELEE, 'a_yumi'].map((id) => [0, id, atk('e_summit_w')] as Step);
         const r = run(all);
-        // 確かめた時：414.1 秒に負け・損害 66.6％ ／ 準備した正面攻撃 389.8 秒に勝ち・29.4％
         expect(r.loss).toBeGreaterThan(run(PREPARED).loss + 0.2);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
-        // 記録
-        expect(r.o.result).toBe('defeat');
         const again = [30, 60, 90, 120, 150, 180, 210, 240, 270, 300].flatMap((t) => MELEE.map((id) => [t, id, 'nearest'] as Step));
         const r2 = run([...PUSH, ...again]);
-        // 確かめた時：日没・損害 43.8％
         expect(r2.loss).toBeGreaterThan(run(PREPARED).loss + 0.1);
-        expect(r2.o.objectives!.primary!.achieved).toBe(false);
-        // 記録
-        expect(r2.o.result).not.toBe('victory');
-        expect(r2.loss).toBeGreaterThan(0.4);
+        // 記録（2026-10-05・782fefe）：414.1 秒に負け（軍の崩壊）・損害 66.6％・主目標 ✗ ／ 当て直し 日没・43.8％・主目標 ✗ ／ 準備した正面攻撃 389.8 秒に勝ち・29.4％
+        logRecord('尾根・弓も一緒に頂の守りへ', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved });
+        logRecord('尾根・正面突破・当て直し', { 結果: r2.o.result, 理由: r2.o.reason, 秒: r2.o.elapsedSec, 損害: r2.loss, 主目標: r2.o.objectives!.primary!.achieved });
     }, 60_000);
 
     it('正面突破で能力も使う（榊原の先駆け・酒井の両翼・家康の号令。弓で崩さず五隊同時）→ 準備した正面攻撃より損害が大きく、主目標に届かない（記録：日没。作った時 損害 41.7％）', () => {
         const r = run([...PUSH, [25, 'a_sakakibara', 'ability'], [60, 'a_ieyasu', 'ability'], [100, 'a_sakai', 'ability']]);
         expect(r.refused).toEqual([]);
         expect(r.loss).toBeGreaterThan(run(PREPARED).loss + 0.1);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
-        // 記録
-        expect(r.o.result).not.toBe('victory');
-        expect(r.loss).toBeGreaterThan(0.4);
+        // 記録（2026-10-05・782fefe）：日没（540 秒）・損害 41.7％・主目標 ✗
+        logRecord('尾根・正面突破で能力も使う', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved });
     });
 
     it('正面突破で頂の守り・弓を崩した後に、残る隊（弓・家康本陣も）を頂へ送る（無計画）→ 準備した正面攻撃・地形に合った作戦より 16 通りの勝ちが少ない（記録：16 通りで 0 勝。作った時 250 秒に送ると家康本陣が崩れて負け）', () => {
@@ -373,9 +361,9 @@ describe('尾根：無計画な攻撃・地形に合わない作戦と、地形�
         // 確かめた時：無計画 0 勝 ／ 準備した正面攻撃 13 勝 ／ 地形に合った作戦 16 勝
         expect(w + 10).toBeLessThanOrEqual(jitterOnce(PREPARED).wins);
         expect(w + 10).toBeLessThanOrEqual(jitterOnce(FIT).wins);
-        // 記録（確かめた時：388.1 秒に家康本陣が崩れて負け・損害 57.1％）
-        expect(r.o.result).not.toBe('victory');
-        expect(w).toBe(0);
+        // 記録（2026-10-05・782fefe）：388.1 秒に家康本陣が崩れて負け・損害 57.1％・16 通りで 0 勝
+        logRecord('尾根・崩した後に残る隊も頂へ', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved });
+        logRecord('尾根・崩した後に残る隊も頂へ（16 通り）', { 勝ち: w, 準備した正面攻撃: jitterOnce(PREPARED).wins, 地形に合った作戦: jitterOnce(FIT).wins });
     }, 90_000);
 });
 
@@ -398,8 +386,7 @@ describe('尾根：地形に合った作戦（早送り）', () => {
         expect(r.loss).toBeLessThan(0.25);
         expect(crestContact).toBe(true);
         expect(tadaFromBelow).toBe(true);
-        // 正面突破（損害 4 割超・負けか日没）と比べて、損害は半分ほど
-        expect(r.loss).toBeLessThan(play(PUSH).loss - 0.15);
+        // 正面突破との損害の比べは「作戦の比べ」に置く（同じ比べ：正面突破の損害 ＞ この作戦の損害 ＋ 15％）
     });
 
     // 確かめた時（乱数の種 7）：西から横 16 勝（損害 25％以内 15・東の肩 0・損害の平均 19.6％）、
@@ -408,8 +395,8 @@ describe('尾根：地形に合った作戦（早送り）', () => {
     it('命令の時刻を ±15 秒ずらした 16 通り：西から横は 14 通り以上で勝ち、正面突破（五隊で頂へ）より勝ちが多い（確かめた時 16 勝・0 勝）', () => {
         expect(jitterOnce(FIT).wins).toBeGreaterThanOrEqual(14);
         expect(jitterOnce(FIT).wins).toBeGreaterThan(jitterOnce(PUSH).wins + 10);
-        // 記録：正面突破はずらしても勝たない
-        expect(jitterOnce(PUSH).wins).toBe(0);
+        // 記録：正面突破の勝ち（2026-10-05・782fefe は 0 勝。前はここで 0 を expect していた。合格条件にしない）
+        logRecord('尾根・正面突破の 16 通り', { 勝ち: jitterOnce(PUSH).wins, 西から横: jitterOnce(FIT).wins });
     }, 60_000);
 });
 
@@ -472,29 +459,33 @@ describe('尾根：武将の能力の価値が地形で変わる（早送り）'
     // 酒井の両翼の采配（25 秒・半径 100 m の味方が 2 つ以上の向きから挟むと包囲：側背の当たり ×1.8・その敵の損害 ×1.3・士気の低下 ×2）
     // 尾根の上：西から横の作戦で、酒井隊が尾根の上の西から、忠勝隊が急坂から、同じ頂の守り（西）へ当たる。酒井隊が当たった頃（172 秒）に使う
     // 急坂だけ：酒井隊・石川隊・忠勝隊が急坂を登って頂の守り（西）へ当たる。酒井隊が当たった頃（100 秒）に使う
-    it('酒井の両翼の采配：尾根の上と急坂から挟むと包囲になり、頂の守りが早く崩れる。急坂だけから当たると狭い正面で挟めず、包囲にならず守りも崩れない', () => {
+    it('酒井の両翼の采配：尾根の上と急坂から挟むと包囲になり、頂の守りが早く崩れる', () => {
         const crestNo = guardProbe(FIT);
         const crestUse = guardProbe([...FIT, [172, 'a_sakai', 'ability']]);
-        const FRONT: Step[] = ['a_sakai', 'a_ishikawa', 'a_tadakatsu'].map((id) => [0, id, atk('e_summit_w')] as Step);
-        const frontNo = guardProbe(FRONT);
-        const frontUse = guardProbe([...FRONT, [100, 'a_sakai', 'ability']]);
-        for (const p of [crestUse, frontUse]) expect(p.r.refused).toEqual([]);
+        expect(crestUse.r.refused).toEqual([]);
         // 尾根の上（作った時）：酒井隊が 174〜175 秒に当たり、使わない時は 16.4 秒後、使うと 1.3 秒後に崩れる（先に急坂から当たっていた
         // 忠勝隊と酒井隊で挟み、包囲 2.0 秒）
         expect(crestNo.enc).toBe(0);
         expect(crestUse.enc).toBeGreaterThan(1);
         expect(crestUse.broke - crestUse.contact).toBeLessThan(crestNo.broke - crestNo.contact - 8);
         expect(crestUse.r.o.result).toBe('victory');
-        // 急坂だけ（作った時）：酒井隊が 103〜105 秒に当たっても、包囲は 0 秒。守りは最後まで崩れず、日没（損害 34％）
+    }, 60_000);
+
+    // 前は上の it の中で確かめていた（急坂だけで当たったときの勝敗・守りの崩れの記録と分けた。docs/chapter2-request.md【1】）
+    it('酒井の両翼の采配：急坂だけから当たると狭い正面で挟めず、采配を使っても包囲にならない（包囲 0 秒）。最後の兵の残りもほとんど変わらない（記録：守りは崩れない）', () => {
+        const FRONT: Step[] = ['a_sakai', 'a_ishikawa', 'a_tadakatsu'].map((id) => [0, id, atk('e_summit_w')] as Step);
+        const frontNo = guardProbe(FRONT);
+        const frontUse = guardProbe([...FRONT, [100, 'a_sakai', 'ability']]);
+        expect(frontUse.r.refused).toEqual([]);
+        // 急坂だけ（作った時）：酒井隊が 103〜105 秒に当たっても、包囲は 0 秒
         expect(frontUse.contact).toBeGreaterThan(0);
         expect(frontUse.contact).toBeLessThan(130);
         expect(frontUse.enc).toBe(0);
-        expect(frontUse.broke).toBe(-1);
-        expect(frontNo.broke).toBe(-1);
-        expect(frontUse.r.o.result).not.toBe('victory');
         // 急坂だけでは、使っても最後の兵の残りはほとんど同じ（作った時 酒井隊 138 → 139・頂の守り（西）242 → 243）
         expect(Math.abs(frontUse.r.left.a_sakai! - frontNo.r.left.a_sakai!)).toBeLessThan(10);
         expect(Math.abs(frontUse.r.left.e_summit_w! - frontNo.r.left.e_summit_w!)).toBeLessThan(10);
+        // 記録（2026-10-05・782fefe）：日没・損害 34.4％・守りは崩れない（使わなくても日没・崩れない）
+        logRecord('尾根・急坂だけ＋酒井の采配', { 結果: frontUse.r.o.result, 理由: frontUse.r.o.reason, 損害: frontUse.r.loss, 守りが崩れた: frontUse.broke, 使わない時の守り: frontNo.broke, 使わない時の結果: frontNo.r.o.result });
     }, 60_000);
 
     // 西から横の台本の後の当て直し（250 秒）は、使わない時の守りの崩れる早さに合わせている。使うと守りが早く崩れ、ずらさない台本では

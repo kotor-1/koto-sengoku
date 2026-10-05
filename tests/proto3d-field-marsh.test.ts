@@ -56,6 +56,7 @@ import { ABILITY_DATA, useAbility } from '../proto3d/src/battle/abilities';
 import { arrowDealMulIn, inZone, noChargeIn } from '../proto3d/src/battle/fieldRules';
 import { buildBattleSetup, getField, presetUnits, validateField } from '../proto3d/src/battle/fields';
 import type { BattleOutcome, Order } from '../proto3d/src/battle/types';
+import { logRecord } from './proto3d-record-log';
 
 const MS = getField('marsh')!;
 
@@ -533,16 +534,15 @@ describe('湿地：無計画な攻撃と準備した攻撃の比べ（早送り�
 
     it('一番近い敵へ当て直すだけ → 準備した土手道・足場伝いと違い主目標に届かず、損害も大きい（記録：325 秒に負け・損害 37.1％・戦える隊 3 → 動きの直しの後 日没・48.7％・3 → 泥へ押し出さない直しの後 223 秒に負け・37.7％・3 → 味方同士の詰まりの直しの後 日没・45.4％・4）', () => {
         const r = play(NEAREST(J0));
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
         expect(r.loss).toBeGreaterThan(run1(PREP).loss + 0.1);
         expect(r.loss).toBeGreaterThan(run1(WEST).loss + 0.2);
         expect(standing(r)).toBeLessThan(standing(run1(PREP)));
         // 記録（動きの直しの前は 325 秒に負け（objective_failed）。直しの後は、4 隊目が出口へ届かないまま日没。
         // 止まっている味方どうしの押し離しで島・土手道から泥へ押し出さない直し（sim.ts separate）の後は、223.2 秒に戦える隊が 3 つになって負け
         // （objective_failed。損害 48.7 → 37.7％）。第4群の味方同士の詰まりの決まり（allyBlockSec 2 秒）の後は、また日没（撤退・損害 45.4％・戦える 4）。
-        // どれも主目標に届かない記録で、合格条件は上の比べ）
-        expect(r.o.result).toBe('retreat');
-        expect(r.o.reason).toBe('nightfall');
+        // どれも主目標に届かない記録で、合格条件は上の比べ。前はここで主目標 ✗・日没を expect していた（この台本が必ず負けるは合格条件にしない。
+        // docs/chapter2-request.md【1】。2026-10-05・782fefe：日没（600 秒・撤退）・損害 45.4％・主目標 ✗・戦える 4）
+        logRecord('湿地・当て直すだけ', { 結果: r.o.result, 理由: r.o.reason, 秒: r.t, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved, 戦える: standing(r) });
     }, 60_000);
 
     it('待つだけ → 主目標に届かず日没（記録：損害 0）', () => {

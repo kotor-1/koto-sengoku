@@ -53,6 +53,7 @@ import { buildBattleSetup, getField, validateField } from '../proto3d/src/battle
 import type { BattleOutcome, Order } from '../proto3d/src/battle/types';
 import { arrived, nearestEnemy, tapOrder } from './proto3d-group3-helpers';
 import { unplanned } from './proto3d-fields-group3-plans';
+import { logRecord } from './proto3d-record-log';
 
 const VF = getField('village')!;
 /** 庄屋の屋敷前（守る地点）・米蔵の前 */
@@ -359,9 +360,11 @@ describe('村落の作戦（早送り）', () => {
     it('準備した正面攻撃と無計画な攻撃の比べ：準備した方は主目標に届き、長く戦い、最後まで戦える部隊が多く、敵を多く削る（無計画の結果は記録）', () => {
         const front = sixteen(FRONTAL);
         const raw = sixteen(UNPLANNED);
-        // 準備した正面攻撃は 16 通りで 16 勝（作った時）。無計画は 0 勝（記録：平均 172 秒に負け）
+        // 準備した正面攻撃は 16 通りで 16 勝（作った時）。無計画の勝ちは記録（2026-10-05・782fefe：0／16・平均 155.4 秒に負け。前はここで 0 を expect していた。
+        // この台本が必ず負けるは合格条件にしない。docs/chapter2-request.md【1】）。合格条件は準備した方との比べ
+        logRecord('村落・16 通り', { 準備した正面攻撃: wins(front), 無計画: wins(raw), 無計画の平均秒: mean(raw, (r) => r.t) });
         expect(wins(front)).toBeGreaterThanOrEqual(14);
-        expect(wins(raw)).toBe(0);
+        expect(wins(front)).toBeGreaterThan(wins(raw) + 10);
         expect(mean(front, (r) => r.t)).toBeGreaterThan(mean(raw, (r) => r.t) + 150);
         // 最後まで戦える部隊（平均）：準備 4.7 ／無計画 0.3。敵の攻め手の損害（平均）：準備 45.6％ ／無計画 12.0％
         expect(mean(front, standing)).toBeGreaterThan(mean(raw, standing) + 3);
@@ -383,8 +386,10 @@ describe('村落の作戦（早送り）', () => {
 
     it('記録：通りごとに 1 部隊ずつ分ける（薄い）と、2 部隊の波を 1 部隊で受ける所が崩れて負ける。待つだけでは第一波に屋敷前を奪われる', () => {
         const split = sixteen(SPLIT);
-        expect(wins(split)).toBe(0);
-        // 分けても損害は広場を固めるより大きい
+        // 勝ち数は記録（2026-10-05・782fefe：16 通りで 0 勝（西の辻に二隊は 16 勝）。前はここで 0 を expect していた。この台本が必ず負けるは合格条件にしない。
+        // docs/chapter2-request.md【1】）。比べ：西の辻に二隊（POST）より勝ちが少なく、分けても損害は広場を固めるより大きい
+        logRecord('村落・通りごとに 1 部隊ずつ分ける（16 通り）', { 勝ち: wins(split), 西の辻に二隊: wins(sixteen(POST)) });
+        expect(wins(split) + 10).toBeLessThanOrEqual(wins(sixteen(POST)));
         expect(mean(split, (r) => r.loss)).toBeGreaterThan(mean(sixteen(PLAZA), (r) => r.loss));
         const hold = once(HOLD);
         expect(hold.o.objectives!.primary!.achieved).toBe(false);

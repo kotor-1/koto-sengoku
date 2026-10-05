@@ -14,6 +14,7 @@ import { useAbility } from '../proto3d/src/battle/abilities';
 import { inZone } from '../proto3d/src/battle/fieldRules';
 import { buildBattleSetup, getField, presetUnits, validateField } from '../proto3d/src/battle/fields';
 import type { BattleOutcome, Order } from '../proto3d/src/battle/types';
+import { logRecord, outcomeRank } from './proto3d-record-log';
 
 const FOREST = getField('forest')!;
 
@@ -184,9 +185,18 @@ describe('森林のデータ', () => {
     });
 });
 
-// 合格条件は「正面なら負ける」ではなく、同じ台本・同じ数字での比べ（地形に合った作戦・準備した正面攻撃と比べて、主目標に届かない・
-// 損害が大きい・崩せる敵が少ない）。無計画な攻撃の勝敗は「記録」として残す（台本と数字は前のまま。変わったら理由と前後の数字を書いて直す）
-describe('森林：無計画な攻撃・地形に合わない作戦と、地形に合った作戦の比べ（早送り）', () => {
+describe('森林：林の奇襲（地形の効果。早送り）', () => {
+    // 前は下の「全部隊で本陣へ攻めかかる」の比べの it の中で確かめていた（勝敗の記録と分けた。docs/chapter2-request.md【1】）
+    it('全部隊で中央の道を攻め上る台本で、道の両脇の林の伏兵が、林から不意を突く（奇襲の知らせ）', () => {
+        const r = run(ALL_HQ);
+        expect(r.events.some((e) => e.kind === 'ambush' && e.unitId?.startsWith('e_ambush'))).toBe(true);
+    }, 60_000);
+});
+
+// 作戦の比べ。合格条件は、地形に合った作戦・準備した正面攻撃と比べた損害・16 通りの勝ち・副目標などの比べ。無計画な攻撃・地形に合わない作戦の
+// 勝敗・主目標・時間は「記録」（合格条件にしない。docs/chapter2-request.md【1】。前はここで負け・勝てない・主目標 ✗ を expect していた。
+// 台本と比べの数字は前のまま）。目標を無視した手順の失敗（何もしない）は、主目標の判定の確かめとして残す
+describe('森林：作戦の比べ（無計画な攻撃・地形に合わない作戦と、地形に合った作戦。早送り）', () => {
     it('何もしない → 地形に合った作戦（主目標・副目標とも達成）と違い、どちらも果たせない（記録：物見隊が追っ手に崩され、本陣へも届かずに日没）', () => {
         const r = run([]);
         expect(run(FIT).o.objectives!.primary!.achieved).toBe(true);
@@ -201,25 +211,19 @@ describe('森林：無計画な攻撃・地形に合わない作戦と、地形�
 
     it('全部隊で敵勢の本陣へ攻めかかる（無計画に中央の道を攻め上る）→ 地形に合った作戦より損害が大きく、主目標に届かず、準備した正面攻撃より崩せる敵が少ない（記録：道の両脇の伏兵に横を突かれ、弓に射られて負ける）', () => {
         const r = run(ALL_HQ);
-        // 確かめた時：無計画 166.8 秒に負け・損害 38.6％・崩した敵 2 隊 ／ 地形に合った作戦 勝ち・14.9％ ／ 準備した正面攻撃 日没・52.7％・崩した敵 5 隊
+        // 記録（2026-10-05・782fefe）：166.8 秒に負け（軍の崩壊）・損害 38.6％・主目標 ✗・崩した敵 2 隊・敵本陣は無傷（350）／ 地形に合った作戦 勝ち・14.9％ ／ 準備した正面攻撃 日没・52.7％・崩した敵 5 隊
         expect(r.loss).toBeGreaterThan(run(FIT).loss + 0.1);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
         expect(broken(r)).toBeLessThan(broken(run(PREPARED)));
-        // 記録
-        expect(r.o.result).toBe('defeat');
-        expect(r.loss).toBeGreaterThan(0.3);
-        expect(r.left.e_hq).toBe(350);
-        // 伏兵が林から不意を突いた
-        expect(r.events.some((e) => e.kind === 'ambush' && e.unitId?.startsWith('e_ambush'))).toBe(true);
+        logRecord('森林・全部隊で本陣へ', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved });
+        logRecord('森林・全部隊で本陣へ（崩した敵・敵本陣の兵）', { 崩した敵: broken(r), e_hq: r.left.e_hq });
+        // 伏兵が林から不意を突く（林の奇襲）は、上の「林の奇襲」の it で確かめる
     }, 60_000);
 
     it('全部隊で中央の道の中ほどへ出てから本陣へ（無計画）→ 地形に合った作戦より損害が大きく、主目標に届かない（記録：負ける）', () => {
         const r = run([...LOST_WOODS, ...FIGHTERS.map((id) => [0, id, mv(0, -60)] as Step), ...FIGHTERS.map((id) => [90, id, atk('e_hq')] as Step)]);
-        // 確かめた時：166.8 秒に負け・損害 36.0％
+        // 記録（2026-10-05・782fefe）：166.8 秒に負け（軍の崩壊）・損害 36.0％・主目標 ✗
         expect(r.loss).toBeGreaterThan(run(FIT).loss + 0.1);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
-        // 記録
-        expect(r.o.result).toBe('defeat');
+        logRecord('森林・道の中ほどから本陣へ', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved });
     });
 
     it('道の先手へ四隊・弓へ騎馬で当たり、30 秒ごとに崩れた相手から近い敵へ当て直す（無計画）→ 地形に合った作戦より損害が大きく、主目標に届かない（記録：負ける）', () => {
@@ -233,12 +237,9 @@ describe('森林：無計画な攻撃・地形に合わない作戦と、地形�
             [0, 'a_sakakibara', atk('e_yumi_l')],
             ...again,
         ]);
-        // 確かめた時：370.2 秒に負け・損害 40.1％
+        // 記録（2026-10-05・782fefe）：370.2 秒に負け（軍の崩壊）・損害 40.1％・主目標 ✗
         expect(r.loss).toBeGreaterThan(run(FIT).loss + 0.1);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
-        // 記録
-        expect(r.o.result).toBe('defeat');
-        expect(r.loss).toBeGreaterThan(0.35);
+        logRecord('森林・道の先手へ・当て直し', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved });
     });
 
     it('同じ三隊で回るが、林道（見通される）を通る → 林の中を通る同じ三隊より損害が大きく、主目標に届かない（記録：不意を突けず日没）', () => {
@@ -252,12 +253,9 @@ describe('森林：無計画な攻撃・地形に合わない作戦と、地形�
             [50, 'a_tadakatsu', mv(-125, -60)],
             ...STRIKE_HQ,
         ]);
-        // 確かめた時：日没・損害 47.4％（林の中を通ると 268.8 秒に勝ち・14.9％）
+        // 記録（2026-10-05・782fefe）：日没（480 秒・撤退）・損害 47.4％・主目標 ✗（林の中を通ると 268.8 秒に勝ち・14.9％）
         expect(r.loss).toBeGreaterThan(run(FIT).loss + 0.2);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
-        // 記録
-        expect(r.o.result).not.toBe('victory');
-        expect(r.loss).toBeGreaterThan(0.4);
+        logRecord('森林・林道を通る', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved });
     });
 
     it('同じ三隊で回るが、中央の道のすぐ脇の林を通る → 道から離れた林を通る同じ三隊より損害が大きく、主目標に届かない（記録：西の伏兵に見つかって組み合い、日没）', () => {
@@ -271,21 +269,20 @@ describe('森林：無計画な攻撃・地形に合わない作戦と、地形�
             [50, 'a_tadakatsu', mv(-40, -100)],
             ...STRIKE_HQ,
         ]);
-        // 確かめた時：日没・損害 41.3％
+        // 記録（2026-10-05・782fefe）：日没（480 秒）・損害 41.3％・主目標 ✗
         expect(r.loss).toBeGreaterThan(run(FIT).loss + 0.2);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
-        // 記録
-        expect(r.o.result).not.toBe('victory');
+        // 道のすぐ脇の林では、西の伏兵に見つかって組み合う（林の見通しの決まり）
         expect(r.events.some((e) => e.kind === 'engage' && e.text.includes('伏兵（西）'))).toBe(true);
+        logRecord('森林・道のすぐ脇の林を通る', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved });
     });
 
     it('西の林を一隊（忠勝隊）だけで抜けて本陣へ → 三隊で抜ける作戦と違い、主目標に届かず、忠勝隊を失う（記録：守りの騎馬は崩せても本陣は崩せず日没）', () => {
         const r = run([...LOST_WOODS, [0, 'a_tadakatsu', mv(-100, 55)], [50, 'a_tadakatsu', mv(-100, -100)], [200, 'a_tadakatsu', atk('e_hq')]]);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
         expect(r.left.a_tadakatsu).toBeLessThan(run(FIT).left.a_tadakatsu! - 100);
-        // 記録
-        expect(r.o.result).not.toBe('victory');
-        expect(r.left.a_tadakatsu).toBeLessThan(100);
+        expect(outcomeRank(run(FIT).o.result)).toBeGreaterThanOrEqual(outcomeRank(r.o.result));
+        // 記録（2026-10-05・782fefe）：日没（480 秒）・損害 20.5％・主目標 ✗・忠勝隊は全滅（兵 0）
+        logRecord('森林・一隊だけで抜ける', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved });
+        logRecord('森林・一隊だけで抜ける（忠勝隊の兵）', { a_tadakatsu: r.left.a_tadakatsu });
     });
 });
 
@@ -372,14 +369,12 @@ describe('森林：準備した正面攻撃（早送り）', () => {
         const r = run(PREPARED);
         expect(r.refused).toEqual(['200:a_tadakatsu']);
         expect(Object.keys(r.o.abilitiesUsed ?? {}).sort()).toEqual(['a_ieyasu', 'a_sakai']);
-        // 記録
-        expect(r.o.result).toBe('retreat');
-        expect(r.o.reason).toBe('nightfall');
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
+        // 記録（2026-10-05・782fefe）：日没（480 秒・撤退）・損害 52.7％・主目標 ✗・崩した敵 5 隊・敵本陣は残る。前はここで日没・主目標 ✗・敵本陣が残るを expect していた
+        // （「準備した正面攻撃は勝てない」は合格条件にしない。docs/chapter2-request.md【1】・fields-group3-design §1）
+        logRecord('森林・準備した正面攻撃', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved });
+        logRecord('森林・準備した正面攻撃（崩した敵・敵本陣）', { 崩した敵: broken(r), e_hq: statusOf(r, 'e_hq') });
         expect(rescued(r)).toBe(true);
-        expect(broken(r)).toBe(5);
         for (const id of ['e_sente', 'e_ambush_w', 'e_ambush_e']) expect(statusOf(r, id)).not.toBe('ready');
-        expect(statusOf(r, 'e_hq')).toBe('ready');
     });
 
     it('16 通りで、無計画な攻め上り（全部隊で本陣へ）より負けが少なく、勝ちが多く、崩せる敵が多い。損害の割合はかえって大きい（記録：準備 2 勝・負け 3・平均 53.7％ ／ 無計画 0 勝・負け 16・38.6％ ／ 地形に合った作戦 16 勝）', () => {

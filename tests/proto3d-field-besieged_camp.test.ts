@@ -45,6 +45,7 @@ import { findPath } from '../proto3d/src/battle/pathfind';
 import { buildBattleSetup, getField, presetUnits, validateField } from '../proto3d/src/battle/fields';
 import { endRuleItems, objectiveProgress } from '../proto3d/src/battle/objectives';
 import type { BattleOutcome, Order } from '../proto3d/src/battle/types';
+import { logRecord } from './proto3d-record-log';
 
 const BC = getField('besieged_camp')!;
 
@@ -617,8 +618,9 @@ describe('包囲された陣：無計画な攻撃・総大将を先に出す（�
 
     it('一番近い敵へ当て直すだけ → 主目標に届かず、損害が大きい（記録：日没・損害 52.8％・4／7）。待つだけ → 日没（撤退）・損害 0', () => {
         const r = run1(NEAREST);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
-        expect(r.o.reason).toBe('nightfall');
+        // 当て直すだけの勝敗・主目標は記録（2026-10-05・782fefe：日没（撤退）・損害 52.8％・主目標 ✗。前はここで主目標 ✗・日没を expect していた。この台本が必ず負けるは
+        // 合格条件にしない。docs/chapter2-request.md【1】）。比べ：南の口を準備して破る作戦より損害が 2 割以上大きい
+        logRecord('包囲された陣・当て直すだけ', { 結果: r.o.result, 理由: r.o.reason, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved });
         expect(r.loss).toBeGreaterThan(run1(SOUTH).loss + 0.2);
         const h = play([]);
         expect([h.o.result, h.o.reason]).toEqual(['retreat', 'nightfall']);

@@ -25,6 +25,7 @@ import { ABILITY_DATA, useAbility } from '../proto3d/src/battle/abilities';
 import { inZone } from '../proto3d/src/battle/fieldRules';
 import { buildBattleSetup, getField, presetUnits, validateField } from '../proto3d/src/battle/fields';
 import type { BattleOutcome, Order } from '../proto3d/src/battle/types';
+import { logRecord } from './proto3d-record-log';
 
 const PD = getField('paddy')!;
 
@@ -273,10 +274,26 @@ describe('水田のデータ', () => {
     });
 });
 
-// 合格条件は「正面なら負ける」ではなく、同じ台本・同じ数字での比べ（地形に合った作戦・準備した正面攻撃と比べて、主目標に届かない・
-// 損害が大きい・16 通りの勝ちが少ない・崩れる部隊が多い）。無計画な攻撃の勝敗は「記録」として残す（台本と数字は前のまま。変わったら
-// 理由と前後の数字を書いて直す）
-describe('水田：無計画な攻撃・地形に合わない作戦と、地形に合った作戦の比べ（早送り）', () => {
+describe('水田：狭い正面（地形の効果。早送り）', () => {
+    // 前は下の「正面突破」の比べの it の中で確かめていた（勝敗の記録と分けた。docs/chapter2-request.md【1】）
+    it('街道だけで押す台本（四隊で交わりへ）で、狭い正面の区域の中から交わりの備えと斬り合う味方は、いつも 1 部隊まで。命令はどれも受けられる', () => {
+        let maxInZone = 0;
+        const rule = PD.specialRules![0]!;
+        if (rule.type !== 'narrow_frontage') throw new Error('narrow_frontage のはず');
+        const r = play(PUSH, (s) => {
+            const n = s.units.filter((u) => u.side === 'ally' && u.engagedWith === 'e_block' && inZone(rule.zone, u.x, u.z)).length;
+            maxInZone = Math.max(maxInZone, n);
+        });
+        expect(r.refused).toEqual([]);
+        expect(maxInZone).toBe(1);
+    });
+});
+
+// 作戦の比べ。合格条件は「正面なら負ける」ではなく、同じ台本・同じ数字での比べ（地形に合った作戦・準備した正面攻撃と比べて、損害が大きい・
+// 16 通りの勝ちが少ない・崩れる部隊が多い）。正面突破・無計画な攻撃の勝敗・主目標・時間は「記録」（合格条件にしない。docs/chapter2-request.md【1】。
+// 前はここで負け・主目標 ✗・備えが残る・勝ち 0 を expect していた）。目標を無視した手順の失敗（何もしない・荷駄隊をすぐ退かせる）は、
+// 主目標の判定の確かめとして残す
+describe('水田：作戦の比べ（無計画な攻撃・地形に合わない作戦と、地形に合った作戦。早送り）', () => {
     it('何もしない → 地形に合った作戦（荷駄隊を救う）と違い、主目標に届かない（記録：追っ手（140 秒）に荷駄隊が追いつかれて負ける。作った時 153 秒）', () => {
         const r = run([]);
         expect(run(FIT).o.objectives!.primary!.achieved).toBe(true);
@@ -297,51 +314,36 @@ describe('水田：無計画な攻撃・地形に合わない作戦と、地形�
         expect(r.t).toBeLessThan(80);
     });
 
-    it('正面突破（街道だけで押す。無計画）：四隊で交わりへ → 地形に合った作戦・準備した正面攻撃より損害が大きく、主目標に届かず、四隊とも崩れる（記録：狭い正面で 1 部隊ずつしか当たれず、備えは残る。荷駄隊は追いつかれて負ける。作った時 158.7 秒・損害 43.1％）', () => {
-        let maxInZone = 0;
-        const rule = PD.specialRules![0]!;
-        if (rule.type !== 'narrow_frontage') throw new Error('narrow_frontage のはず');
-        const r = play(PUSH, (s) => {
-            // 狭い正面の区域の中から備えと斬り合っている味方は、いつも 1 部隊まで
-            const n = s.units.filter((u) => u.side === 'ally' && u.engagedWith === 'e_block' && inZone(rule.zone, u.x, u.z)).length;
-            maxInZone = Math.max(maxInZone, n);
-        });
-        // 確かめた時：158.6 秒に負け・損害 42.9％・残った槍騎馬 0 ／ 準備した正面攻撃 153.7 秒に負け・31.4％・3 ／ 地形に合った作戦 勝ち・10.4％
+    it('正面突破（街道だけで押す。無計画）：四隊で交わりへ → 地形に合った作戦・準備した正面攻撃より損害が大きく、崩れずに残る槍・騎馬が少ない（記録：狭い正面で 1 部隊ずつしか当たれず、備えは残る。荷駄隊は追いつかれて負ける）', () => {
+        const r = run(PUSH);
+        // 記録（2026-10-05・782fefe）：負け（主目標を果たせない）158.6 秒・損害 42.9％・備えは残る・槍騎馬 4 隊とも崩れる ／
+        // 準備した正面攻撃 負け 153.7 秒・31.4％・3 隊が残る ／ 地形に合った作戦 勝ち 179.5 秒・10.4％
+        logRecord('水田・正面突破', { 結果: r.o.result, 理由: r.o.reason, 秒: r.t, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved, 備え: statusOf(r, 'e_block'), 残る槍騎馬: standing(r) });
+        logRecord('水田・準備した正面攻撃', { 結果: run(PREPARED).o.result, 秒: run(PREPARED).t, 損害: run(PREPARED).loss, 残る槍騎馬: standing(run(PREPARED)) });
+        logRecord('水田・地形に合った作戦', { 結果: run(FIT).o.result, 秒: run(FIT).t, 損害: run(FIT).loss });
         expect(r.loss).toBeGreaterThan(run(FIT).loss + 0.25);
         expect(r.loss).toBeGreaterThan(run(PREPARED).loss + 0.08);
         expect(standing(r)).toBeLessThan(standing(run(PREPARED)));
-        expect(r.refused).toEqual([]);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
-        expect(maxInZone).toBe(1);
-        // 記録
-        expect(r.o.result).toBe('defeat');
-        expect(r.loss).toBeGreaterThan(0.4);
-        expect(statusOf(r, 'e_block')).toBe('ready');
-        for (const id of MELEE) expect(statusOf(r, id)).not.toBe('ready');
     });
 
-    it('街道だけで押して、能力も使う（榊原の先駆け・酒井の両翼・忠勝の守護・家康の号令）／弓・家康本陣も交わりへ／30 秒ごとに近い敵へ当て直す（無計画）→ どれも準備した正面攻撃・地形に合った作戦より損害が大きく、主目標に届かない（記録：負ける・損害 4 割超）', () => {
+    it('街道だけで押して、能力も使う（榊原の先駆け・酒井の両翼・忠勝の守護・家康の号令）／弓・家康本陣も交わりへ／30 秒ごとに近い敵へ当て直す（無計画）→ どれも準備した正面攻撃・地形に合った作戦より損害が大きい（記録：どれも負け・主目標 ✗）', () => {
         const ab = run([...PUSH, [25, 'a_sakakibara', 'ability'], [40, 'a_sakai', 'ability'], [30, 'a_tadakatsu', 'ability'], [60, 'a_ieyasu', 'ability']]);
         expect(ab.refused).toEqual([]);
         const all = run([...MELEE.map((id) => [0, id, JUNCTION] as Step), [0, 'a_yumi', atk('e_block')], [0, 'a_ieyasu', tap(0, 90)], [110, 'a_konida', RETREAT]]);
         const again = run([...PUSH, ...[30, 60, 90, 120, 150].flatMap((t) => MELEE.map((id) => [t, id, 'nearest'] as Step))]);
-        // 確かめた時：能力 52.4％・本陣も 52.1％・当て直し 42.9％ ／ 準備した正面攻撃 31.4％
-        for (const r of [ab, all, again]) {
+        // 記録（2026-10-05・782fefe）：能力 負け 171.1 秒・52.4％ ／ 本陣も 負け 171.9 秒・52.1％ ／ 当て直し 負け 158.6 秒・42.9％
+        // （どれも主目標 ✗・備えは残る）／ 準備した正面攻撃 31.4％
+        for (const [name, r] of [['能力も使う', ab], ['弓・家康本陣も', all], ['当て直す', again]] as const) {
+            logRecord(`水田・街道だけで押す（${name}）`, { 結果: r.o.result, 理由: r.o.reason, 秒: r.t, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved, 備え: statusOf(r, 'e_block') });
             expect(r.loss).toBeGreaterThan(run(PREPARED).loss + 0.08);
             expect(r.loss).toBeGreaterThan(run(FIT).loss + 0.25);
-            expect(r.o.objectives!.primary!.achieved).toBe(false);
-            // 記録
-            expect(r.o.result).toBe('defeat');
-            expect(r.loss).toBeGreaterThan(0.4);
-            expect(statusOf(r, 'e_block')).toBe('ready');
         }
     });
 
-    it('街道だけで押す（無計画）：命令の時刻を ±15 秒ずらした 16 通りで、地形に合った作戦より勝ちがずっと少ない（記録：1 度も勝たない）', () => {
+    it('街道だけで押す（無計画）：命令の時刻を ±15 秒ずらした 16 通りで、地形に合った作戦より勝ちがずっと少ない（記録：16 通りで 0 勝。地形に合った作戦は 16 勝）', () => {
         const w = jitterWins(PUSH).wins;
+        logRecord('水田・正面突破の 16 通り', { 勝ち: w, 地形に合った作戦の勝ち: winsOf(jitterOnce(FIT)) });
         expect(w + 12).toBeLessThanOrEqual(winsOf(jitterOnce(FIT)));
-        // 記録
-        expect(w).toBe(0);
     }, 60_000);
 });
 
@@ -373,8 +375,7 @@ describe('水田：地形に合った作戦（早送り）', () => {
         expect(sakaiWest).toBe(true);
         expect(sakaEast).toBe(true);
         expect(tadaFront).toBe(true);
-        // 正面突破（損害 4 割超・負け）と比べて、損害は 4 分の 1 ほど
-        expect(r.loss).toBeLessThan(play(PUSH).loss - 0.25);
+        // 正面突破との損害の比べは「作戦の比べ」に置く（同じ比べ：正面突破の損害 ＞ この作戦の損害 ＋ 25％）
     });
 
     // 確かめた時（乱数の種 7）：16 勝（損害の平均 13.0％・2 割以内 16）。正面突破は 0 勝（損害の平均 42.9％）
@@ -500,12 +501,10 @@ describe('水田：武将の能力の価値が地形で変わる（早送り）'
     // 酒井の両翼の采配（25 秒・半径 100 m の味方が 2 つ以上の向きから挟むと包囲：側背の当たり ×1.8・その敵の損害 ×1.3・士気の低下 ×2）
     // 正面と横：地形に合った作戦で、酒井隊が中の畦道の西から当たった頃（85 秒）に使う（忠勝隊が街道から正面、榊原隊が東から横）
     // 街道だけ：正面突破で、酒井隊が街道の列にいる 40 秒に使う
-    it('酒井の両翼の采配：街道（正面）と畦道（横）から挟むと包囲になり、備えが早く崩れる。街道だけで押すと 1 部隊ずつしか当たれず、包囲にならない', () => {
+    it('酒井の両翼の采配：街道（正面）と畦道（横）から挟むと包囲になり、備えが早く崩れる', () => {
         const fitNo = blockProbe(FIT);
         const fitUse = blockProbe([...FIT, [85, 'a_sakai', 'ability']]);
-        const pushNo = blockProbe(PUSH);
-        const pushUse = blockProbe([...PUSH, [40, 'a_sakai', 'ability']]);
-        for (const p of [fitUse, pushUse]) expect(p.r.refused).toEqual([]);
+        expect(fitUse.r.refused).toEqual([]);
         // 正面と横（作った時）：包囲 2.3 秒、備えが崩れたのは 92.0 → 87.3 秒。酒井隊の兵の残りは 231 → 258
         expect(fitNo.enc).toBe(0);
         expect(fitUse.enc).toBeGreaterThan(1);
@@ -513,12 +512,17 @@ describe('水田：武将の能力の価値が地形で変わる（早送り）'
         expect(fitUse.broke).toBeLessThan(fitNo.broke - 3);
         expect(fitUse.r.left.a_sakai!).toBeGreaterThan(fitNo.r.left.a_sakai! + 15);
         expect(fitUse.r.o.result).toBe('victory');
-        // 街道だけ（作った時）：包囲 0 秒、備えは崩れず負ける（損害 42.9％）
+    });
+
+    // 前は上の it の中で確かめていた（街道だけで押したときの勝敗の記録と分けた。docs/chapter2-request.md【1】）
+    it('酒井の両翼の采配：街道だけで押すと 1 部隊ずつしか当たれず、采配を使っても包囲にならない（包囲 0 秒）。損害もほとんど変わらない（記録：備えは崩れない）', () => {
+        const pushNo = blockProbe(PUSH);
+        const pushUse = blockProbe([...PUSH, [40, 'a_sakai', 'ability']]);
+        expect(pushUse.r.refused).toEqual([]);
         expect(pushUse.enc).toBe(0);
-        expect(pushUse.broke).toBe(-1);
-        expect(pushNo.broke).toBe(-1);
-        expect(pushUse.r.o.result).toBe('defeat');
         expect(Math.abs(pushUse.r.loss - pushNo.r.loss)).toBeLessThan(0.02);
+        // 記録（2026-10-05・782fefe）：158.5 秒に負け・損害 42.7％・備えは崩れない（使わないと 42.9％・崩れない）
+        logRecord('水田・街道だけ＋酒井の采配', { 結果: pushUse.r.o.result, 秒: pushUse.r.t, 損害: pushUse.r.loss, 備えが崩れた: pushUse.broke, 使わない時の備え: pushNo.broke, 使わない時の損害: pushNo.r.loss });
     });
 });
 

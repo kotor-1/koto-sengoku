@@ -37,6 +37,7 @@ import { ABILITY_DATA, useAbility } from '../proto3d/src/battle/abilities';
 import { inZone } from '../proto3d/src/battle/fieldRules';
 import { buildBattleSetup, getField, presetUnits, validateField } from '../proto3d/src/battle/fields';
 import type { BattleOutcome, Order, UnitDef } from '../proto3d/src/battle/types';
+import { logRecord } from './proto3d-record-log';
 
 const MB = getField('multi_bridge')!;
 const N = 0;
@@ -214,10 +215,12 @@ describe('複数橋のデータ', () => {
     });
 });
 
-// 合格条件は「正面なら負ける」ではなく、同じ台本・同じ数字での比べ（地形に合った作戦・準備した正面攻撃と比べて、主目標に届かない・
-// 守れる橋が少ない・16 通りの勝ちが少ない）。無計画な攻撃の勝敗は「記録」として残す（台本と数字は前のまま。変わったら理由と前後の数字を書いて直す）。
+// 作戦の比べ。合格条件は「正面なら負ける」ではなく、同じ台本・同じ数字での比べ（地形に合った作戦・準備した正面攻撃と比べて、
+// 守れる橋が少ない・16 通りの勝ちが少ない・早く終わる）。正面突破・無計画・地形に合わない配置の勝敗・主目標・時間は「記録」（合格条件にしない。
+// docs/chapter2-request.md【1】。前はここで負け・主目標 ✗・勝ち 0 を expect していた。台本と比べの数字は前のまま）。
+// 目標を無視した手順の失敗（何もしない）は、主目標の判定の確かめとして残す。
 // しのぐ戦場なので、負けた作戦は早く終わり、損害の割合は勝った作戦と同じくらいになる（損害では比べない）
-describe('複数橋：無計画な攻撃・地形に合わない作戦と、地形に合った作戦の比べ（早送り）', () => {
+describe('複数橋：作戦の比べ（無計画な攻撃・地形に合わない作戦と、地形に合った作戦。早送り）', () => {
     it('何もしない（3 本の橋に 1 隊ずつ均等に置いたまま）→ 地形に合った作戦（3 本とも守る）と違い、主目標に届かず、橋も 1 本も残らない（記録：東の口が主力に押し切られ、本陣が崩れて負ける）', () => {
         const r = once([]);
         expect(once(FIT).o.objectives!.primary!.achieved).toBe(true);
@@ -238,22 +241,17 @@ describe('複数橋：無計画な攻撃・地形に合わない作戦と、地�
             [20, 'a_yumi', mv(150, 70)],
         ]);
         expect(r.refused).toEqual([]);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
         expect(r.bridges.length).toBeLessThan(once(FIT).bridges.length);
-        // 記録（確かめた時：243.1 秒に負け）
-        expect(r.o.result).toBe('defeat');
-        expect(r.bridges).toEqual([]);
+        // 記録（2026-10-05・782fefe）：243.1 秒に負け（本陣の敗走）・損害 35.6％・主目標 ✗・守った橋なし
+        logRecord('複数橋・均等に増やす', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved, 守った橋: r.bridges });
     });
 
     it('全部隊で東の口へ寄せる（中・西を空ける）→ 東へ 2 隊と弓だけ寄せる地形に合った作戦と違い、主目標に届かない（記録：狭い口に入り切らず、口の外で主力に囲まれて崩れ、軍が崩壊して負ける）', () => {
         const r = once([...['a_tadakatsu', 'a_sakai', 'a_ishikawa', 'a_kiba'].map((id, i) => [20, id, mv(130 + i * 5, 45 + i * 5)] as Step), [20, 'a_yumi', mv(120, 62)]]);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
         expect(r.o.elapsedSec).toBeLessThan(once(FIT).o.elapsedSec);
-        // 記録（確かめた時：146.8 秒に負け）
-        expect(r.o.result).toBe('defeat');
-        expect(r.o.reason).toBe('ally_army_broken');
-        expect(r.o.elapsedSec).toBeLessThan(160);
-        expect(r.bridges).toEqual([]);
+        expect(r.bridges.length).toBeLessThan(once(FIT).bridges.length);
+        // 記録（2026-10-05・782fefe）：146.8 秒に負け（軍の崩壊）・損害 33.4％・主目標 ✗・守った橋なし
+        logRecord('複数橋・全部隊で東の口へ', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved, 守った橋: r.bridges });
     });
 
     it('正面突破（全部隊で中の橋を渡って敵本陣へ攻めかかる。無計画）→ 地形に合った作戦・準備した正面攻撃より 16 通りの勝ちが少なく、主目標に届かない（記録：本陣が空き、渡った隊も橋の向こうで崩れて負ける。16 通りすべて負け）', () => {
@@ -264,11 +262,9 @@ describe('複数橋：無計画な攻撃・地形に合わない作戦と、地�
         expect(wins(rs) + 12).toBeLessThanOrEqual(wins(jitteredOnce(FIT)));
         expect(wins(rs) + 10).toBeLessThanOrEqual(wins(jitteredOnce(PREPARED)));
         expect(r.refused).toEqual([]);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
-        // 記録（確かめた時：169.5 秒に負け）
-        expect(r.o.result).toBe('defeat');
-        expect(r.o.elapsedSec).toBeLessThan(200);
-        expect(wins(rs)).toBe(0);
+        // 記録（2026-10-05・782fefe）：169.5 秒に負け（本陣の敗走）・損害 38.4％・主目標 ✗・16 通りで 0 勝
+        logRecord('複数橋・正面突破（中の橋を渡る）', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved, 守った橋: r.bridges });
+        logRecord('複数橋・正面突破（中の橋を渡る）の 16 通り', { 勝ち: wins(rs), 地形に合った作戦: wins(jitteredOnce(FIT)), 準備した正面攻撃: wins(jitteredOnce(PREPARED)) });
     }, 90_000);
 
     // 確かめた時：15 秒に全部隊で主力（一）へ当たると 130.5 秒に軍が崩壊（16 通りでは 3 勝 13 敗。主力が東の口で崩れる並びの時だけ勝つ）
@@ -280,9 +276,9 @@ describe('複数橋：無計画な攻撃・地形に合わない作戦と、地�
         expect(wins(rush) + 8).toBeLessThanOrEqual(wins(prep));
         expect(rush.filter((x) => x.bridges.length >= 2).length + 8).toBeLessThanOrEqual(prep.filter((x) => x.bridges.length >= 2).length);
         expect(r.refused).toEqual([]);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
-        // 記録
-        expect(r.o.result).toBe('defeat');
+        // 記録（2026-10-05・782fefe）：130.5 秒に負け（軍の崩壊）・損害 35.3％・主目標 ✗・16 通りで 3 勝（2 本以上を守る 1 通り）
+        logRecord('複数橋・正面突破（15 秒に主力へ）', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved, 守った橋: r.bridges });
+        logRecord('複数橋・正面突破（15 秒に主力へ）の 16 通り', { 勝ち: wins(rush), '2 本以上': rush.filter((x) => x.bridges.length >= 2).length, 準備した正面攻撃: wins(prep) });
     }, 90_000);
 
     it('早く本陣の周りへ固める（20 秒に全部隊を本陣の前へ下げる）→ 地形に合った作戦と違い、主目標に届かず、橋も残らない（記録：3 本とも渡られ、本陣の前で挟まれて負ける）', () => {
@@ -294,10 +290,9 @@ describe('複数橋：無計画な攻撃・地形に合わない作戦と、地�
             [20, 'a_kiba', mv(-50, 125)],
             [20, 'a_yumi', mv(0, 155)],
         ]);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
-        // 記録（確かめた時：194.4 秒に負け）
-        expect(r.o.result).toBe('defeat');
-        expect(r.bridges).toEqual([]);
+        expect(r.bridges.length).toBeLessThan(once(FIT).bridges.length);
+        // 記録（2026-10-05・782fefe）：194.4 秒に負け（本陣の敗走）・損害 34.0％・主目標 ✗・守った橋なし。前はここで負け・主目標 ✗ を expect していた（この台本が必ず負けるは合格条件にしない）
+        logRecord('複数橋・本陣の周りへ固める', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved, 守った橋: r.bridges });
     });
 
     // 確かめた時：最初の命令を 100 秒まで待つと、勝つが東の口を失い（忠勝隊も敗走）、損害 51％（FIT は 38％）。80 秒なら損害 40％で東の口を失う

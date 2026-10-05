@@ -12,6 +12,7 @@ import { createBattle, isActive, issueOrder, runToEnd, type BattleState } from '
 import { useAbility } from '../proto3d/src/battle/abilities';
 import { buildBattleSetup, getField, presetUnits, validateField } from '../proto3d/src/battle/fields';
 import type { BattleOutcome, Order } from '../proto3d/src/battle/types';
+import { logRecord } from './proto3d-record-log';
 
 const RF = getField('river_ford')!;
 
@@ -192,9 +193,10 @@ describe('河川・浅瀬のデータ', () => {
     });
 });
 
-// 合格条件は「正面なら負ける」ではなく、同じ台本・同じ数字での比べ（地形に合った作戦・準備した正面攻撃と比べて、主目標に届かない・
-// 損害が大きい・副目標を落とす）。無計画な攻撃の勝敗は「記録」として残す（台本と数字は前のまま。変わったら理由と前後の数字を書いて直す）
-describe('河川・浅瀬：無計画な攻撃・地形に合わない作戦と、地形に合った作戦の比べ（早送り）', () => {
+// 作戦の比べ。合格条件は、地形に合った作戦・準備した正面攻撃と比べた損害・副目標。無計画な攻撃・地形に合わない作戦の勝敗・主目標・時間は
+// 「記録」（合格条件にしない。docs/chapter2-request.md【1】。前はここで負け・勝てない・主目標 ✗ を expect していた。台本と比べの数字は前のまま）。
+// 目標を無視した手順の失敗（何もしない）は、主目標の判定の確かめとして残す
+describe('河川・浅瀬：作戦の比べ（無計画な攻撃・地形に合わない作戦と、地形に合った作戦。早送り）', () => {
     it('何もしない → 地形に合った作戦（勝ち）と違い、主目標に届かない（記録：日没。待機の弓は近い先手を射て、敵の弓に射負けて崩れる）', () => {
         const r = run([]);
         expect(run(FIT_CENTER).o.objectives!.primary!.achieved).toBe(true);
@@ -208,61 +210,48 @@ describe('河川・浅瀬：無計画な攻撃・地形に合わない作戦と�
 
     it('全部隊で向こう岸の地点へ真っすぐ向かう（無計画）→ 地形に合った作戦・準備した正面攻撃より損害が大きく、主目標に届かず、副目標も落とす（記録：浅瀬で矢と先手に崩されて負ける）', () => {
         const r = run(FIGHTERS.map((id) => [0, id, HILL] as Step));
-        // 確かめた時：111.7 秒に負け・損害 41.8％ ／ 準備した正面攻撃 勝ち・23.8％ ／ 中央の作戦 勝ち・20.1％
+        // 記録（2026-10-05・782fefe）：111.7 秒に負け（軍の崩壊）・損害 41.8％・主目標 ✗ ／ 準備した正面攻撃 勝ち・23.8％ ／ 中央の作戦 勝ち・20.1％
         for (const better of [run(FIT_CENTER), run(PREPARED)]) {
             expect(r.loss).toBeGreaterThan(better.loss + 0.1);
             expect(better.o.objectives!.primary!.achieved).toBe(true);
             expect(secondaryOf(better)).toBe(true);
         }
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
         expect(secondaryOf(r)).toBe(false);
-        // 記録
-        expect(r.o.result).toBe('defeat');
-        expect(r.o.elapsedSec).toBeLessThan(200);
+        logRecord('河川・浅瀬・全部隊で向こう岸へ', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved });
     });
 
-    // 期待を 4624b79（狭い所の動きの直し）で「損害 5 割を超える」から「4 割を超える」へ緩めた。直しの前は損害 55％、今は 45％（日没・負けのまま）
+    // 損害の絶対の下限（4624b79 の狭い所の動きの直しで「5 割を超える」から「4 割を超える」へ緩めた。直しの前は損害 55％、後は 45％）は、
+    // 判断待ち事項の対応で記録にした（合格条件は準備した正面攻撃との比べ：損害が 1 割以上大きい・副目標を落とす）
     it('全部隊で先手へ攻めかかる（無計画）→ 同じ先手へ弓で崩してから当たる準備した正面攻撃より損害が大きく、主目標に届かない（記録：先手は崩れても丘まで届かず日没）', () => {
         const r = run(ALL_SENTE);
-        // 確かめた時：日没・損害 45.2％ ／ 準備した正面攻撃 313.8 秒に勝ち・23.8％
+        // 記録（2026-10-05・782fefe）：日没（480 秒・撤退）・損害 45.2％・主目標 ✗ ／ 準備した正面攻撃 313.8 秒に勝ち・23.8％
         expect(r.loss).toBeGreaterThan(run(PREPARED).loss + 0.1);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
         expect(secondaryOf(r)).toBe(false);
-        // 記録
-        expect(r.o.result).not.toBe('victory');
-        expect(r.loss).toBeGreaterThan(0.4);
+        logRecord('河川・浅瀬・全部隊で先手へ', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved });
     });
 
     it('全部隊で先手へ攻めかかり、30 秒ごとに近い敵へ当て直す（無計画）→ 準備した正面攻撃・地形に合った作戦より損害が大きく、主目標に届かない', () => {
         const again = [30, 60, 90, 120, 150, 180, 210, 240, 270, 300].flatMap((t) => FIGHTERS.map((id) => [t, id, 'nearest'] as Step));
         const r = run([...ALL_SENTE, ...again]);
-        // 確かめた時：341.4 秒に負け・損害 58.2％
+        // 記録（2026-10-05・782fefe）：341.4 秒に負け（軍の崩壊）・損害 58.2％・主目標 ✗
         expect(r.loss).toBeGreaterThan(run(PREPARED).loss + 0.1);
         expect(r.loss).toBeGreaterThan(run(FIT_CENTER).loss + 0.1);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
-        // 記録
-        expect(r.o.result).not.toBe('victory');
-        expect(r.loss).toBeGreaterThan(0.45);
+        logRecord('河川・浅瀬・全部隊で先手へ・当て直し', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved });
     });
 
     it('中央の作戦と同じ手順だが、弓に敵の弓を狙わせない（待機のまま）→ 弓を使う同じ手順より損害が大きく、主目標に届かない（記録：渡る隊が矢を浴びて崩れ、日没）', () => {
         const r = run(FIT_CENTER.filter(([, id]) => id !== 'a_yumi'));
-        // 確かめた時：日没・損害 49.0％（弓を使う同じ手順は 20.1％で勝ち）
+        // 記録（2026-10-05・782fefe）：日没（480 秒）・損害 49.0％・主目標 ✗（弓を使う同じ手順は 20.1％で勝ち）
         expect(r.loss).toBeGreaterThan(run(FIT_CENTER).loss + 0.1);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
-        // 記録
-        expect(r.o.result).not.toBe('victory');
-        expect(r.loss).toBeGreaterThan(0.45);
+        logRecord('河川・浅瀬・弓に敵の弓を狙わせない', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved });
     });
 
     it('中央の作戦を、敵の弓が崩れる前（2 分早く）に渡る → 弓が崩れてから渡る同じ手順・準備した正面攻撃（110 秒に渡る）と違い、主目標に届かず、損害が大きい（記録：負け）', () => {
         const early = FIT_CENTER.filter(([t, id]) => !(id === 'a_tadakatsu' && t === 120)).map(([t, id, o]) => [Math.max(0, t - 120), id, o] as Step);
         const r = run(early);
-        // 確かめた時：183.2 秒に負け・損害 45.5％
+        // 記録（2026-10-05・782fefe）：183.2 秒に負け（軍の崩壊）・損害 45.5％・主目標 ✗
         for (const better of [run(FIT_CENTER), run(PREPARED)]) expect(r.loss).toBeGreaterThan(better.loss + 0.1);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
-        // 記録
-        expect(r.o.result).toBe('defeat');
+        logRecord('河川・浅瀬・敵の弓が崩れる前に渡る', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved });
     });
 });
 
@@ -362,9 +351,10 @@ describe('河川・浅瀬：準備した正面攻撃（早送り）', () => {
     it('16 通りで、全部隊での先手への攻めかかり（無計画）より勝ちが多く、損害が小さい。地形に合った中央の作戦よりは少し不安定で損害が多い（記録：準備 15 勝・平均 28.1％ ／ 無計画 0 勝・45.2％ ／ 中央の作戦 16 勝・21.9％）', () => {
         const prep = variants16(PREPARED);
         const center = variants16(FIT_CENTER);
-        // 無計画な攻撃は 0 秒の命令だけなのでずらしても同じ（1 通りの結果が 16 通りの結果）
+        // 無計画な攻撃は 0 秒の命令だけなのでずらしても同じ（1 通りの結果が 16 通りの結果）。その勝敗は記録（前はここで「勝たない」を
+        // expect していた。docs/chapter2-request.md【1】）。損害の比べは下の行
         const reckless = run(ALL_SENTE);
-        expect(reckless.o.result).not.toBe('victory');
+        logRecord('河川・浅瀬・16 通り', { 準備した正面攻撃: wins(prep), 無計画の結果: reckless.o.result, 中央の作戦: wins(center) });
         expect(wins(prep)).toBeGreaterThanOrEqual(13);
         expect(meanLoss(prep) + 0.1).toBeLessThan(reckless.loss);
         // 騎馬への備え（忠勝隊）を置く中央の作戦の方が、損害が少ない

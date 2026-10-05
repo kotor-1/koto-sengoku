@@ -12,6 +12,7 @@ import { createBattle, isActive, issueOrder, runToEnd, type BattleState } from '
 import { useAbility } from '../proto3d/src/battle/abilities';
 import { buildBattleSetup, getField, presetUnits, validateField } from '../proto3d/src/battle/fields';
 import type { BattleOutcome, Order } from '../proto3d/src/battle/types';
+import { logRecord, outcomeRank } from './proto3d-record-log';
 
 const PLAINS = getField('plains')!;
 
@@ -174,9 +175,10 @@ describe('大平原のデータ', () => {
     });
 });
 
-// 合格条件は「正面なら負ける」ではなく、同じ台本・同じ数字での比べ（地形に合った作戦・準備した正面攻撃と比べて、主目標に届かない・
-// 損害が大きい・副目標を落とす）。無計画な攻撃の勝敗は「記録」として残す（台本と数字は前のまま。変わったら理由と前後の数字を書いて直す）
-describe('大平原：無計画な攻撃・地形に合わない作戦と、地形に合った作戦の比べ（早送り）', () => {
+// 作戦の比べ。合格条件は、地形に合った作戦・準備した正面攻撃と比べた損害・副目標・勝敗の順（勝ち ＞ 撤退 ＞ 負け）。無計画な攻撃・
+// 地形に合わない作戦の勝敗・主目標・時間は「記録」（合格条件にしない。docs/chapter2-request.md【1】。前はここで負け・勝てない・主目標 ✗ を
+// expect していた。台本と比べの数字は前のまま）。目標を無視した手順の失敗（何もしない）は、主目標の判定の確かめとして残す
+describe('大平原：作戦の比べ（無計画な攻撃・地形に合わない作戦と、地形に合った作戦。早送り）', () => {
     it('何もしない → 地形に合った作戦（勝ち）と違い、主目標に届かない（記録：右翼が林から出た騎馬に横を突かれ、やがて本陣が崩れて負ける）', () => {
         const r = run([]);
         expect(run(FIT).o.objectives!.primary!.achieved).toBe(true);
@@ -192,10 +194,10 @@ describe('大平原：無計画な攻撃・地形に合わない作戦と、地�
             expect(better.o.objectives!.primary!.achieved).toBe(true);
             expect(secondaryOf(better)).toBe(true);
         }
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
         expect(secondaryOf(r)).toBe(false);
-        // 記録（確かめた時：106.9 秒に負け・損害 38.1％。早く崩れるので損害の割合は勝った作戦より小さい。損害では比べない）
-        expect(r.o.result).toBe('defeat');
+        for (const better of [run(FIT), run(PREPARED)]) expect(outcomeRank(better.o.result)).toBeGreaterThanOrEqual(outcomeRank(r.o.result));
+        // 記録（2026-10-05・782fefe）：106.9 秒に負け（軍の崩壊）・損害 38.1％・主目標 ✗。早く崩れるので損害の割合は勝った作戦より小さい。損害では比べない
+        logRecord('大平原・全部隊で先手へ', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved });
     });
 
     it('横一列で正面の敵へそれぞれ攻めかかる（無計画）→ 同じ相手へ準備して当たる攻撃・地形に合った作戦より損害が大きく、主目標に届かず、予備隊も崩れる（記録：負け）', () => {
@@ -203,58 +205,53 @@ describe('大平原：無計画な攻撃・地形に合わない作戦と、地�
         // 確かめた時：横一列 160.2 秒に負け・損害 55.9％ ／ 準備した正面攻撃 勝ち・45.1％ ／ 地形に合った作戦 勝ち・46.6％
         expect(r.loss).toBeGreaterThan(run(PREPARED).loss + 0.05);
         expect(r.loss).toBeGreaterThan(run(FIT).loss + 0.05);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
         expect(secondaryOf(r)).toBe(false);
-        // 記録
-        expect(r.o.result).toBe('defeat');
-        expect(r.loss).toBeGreaterThan(0.45);
+        // 記録（2026-10-05・782fefe）：160.2 秒に負け（軍の崩壊）・損害 55.9％・主目標 ✗ ／ 準備した正面攻撃 勝ち・45.1％ ／ 地形に合った作戦 勝ち・46.6％
+        logRecord('大平原・横一列', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved });
     });
 
     it('正面へ攻めかかり、30 秒ごとに崩れた相手から近い敵へ当て直す（無計画）→ 準備した正面攻撃・地形に合った作戦より損害が大きく、主目標に届かない（記録：負けるか、勝っても損害が大きい）', () => {
         const again = [30, 60, 90, 120, 150, 180, 210, 240].flatMap((t) => FIGHTERS.map((id) => [t, id, 'nearest'] as Step));
         const r = run([...LINE, ...again]);
-        // 確かめた時：162.0 秒に負け・損害 53.3％
         expect(r.loss).toBeGreaterThan(run(PREPARED).loss + 0.05);
         expect(r.loss).toBeGreaterThan(run(FIT).loss + 0.05);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
-        // 記録
-        expect(r.o.result !== 'victory' || r.loss >= 0.45).toBe(true);
-        expect(r.loss).toBeGreaterThan(0.45);
+        // 記録（2026-10-05・782fefe）：162.0 秒に負け（本陣の敗走）・損害 53.3％・主目標 ✗
+        logRecord('大平原・横一列・当て直し', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved });
     });
 
     it('持ち場で待ち構えた後、騎馬で回らずに全部隊で本陣へ押す → 地形に合った作戦より損害が大きく、主目標に届かない（記録：途中の後詰め・騎馬・弓に崩されて負ける）', () => {
         const r = run([[0, 'a_yumi', atk('e_sente')], ...FIGHTERS.filter((id) => id !== 'a_yumi').map((id) => [100, id, atk('e_hq')] as Step)]);
-        // 確かめた時：152.2 秒に負け・損害 54.0％
         expect(r.loss).toBeGreaterThan(run(FIT).loss + 0.05);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
-        // 記録
-        expect(r.o.result).toBe('defeat');
+        // 記録（2026-10-05・782fefe）：152.2 秒に負け（軍の崩壊）・損害 54.0％・主目標 ✗
+        logRecord('大平原・全部隊で本陣へ押す', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved });
     });
 
     it('騎馬を回すが、予備隊を使わない（林から出た騎馬を放っておく）→ 地形に合った作戦と違い、主目標に届かない（記録：負ける）', () => {
         const r = run(FIT.filter(([, id]) => id !== 'a_ishikawa'));
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
-        // 記録（確かめた時：171.9 秒に負け・損害 49.6％）
-        expect(r.o.result).toBe('defeat');
+        // 予備隊（石川隊）は使っていない（兵がそのまま）
         expect(r.left.a_ishikawa).toBe(350);
+        expect(outcomeRank(run(FIT).o.result)).toBeGreaterThanOrEqual(outcomeRank(r.o.result));
+        // 記録（2026-10-05・782fefe）：171.9 秒に負け（本陣の敗走）・損害 49.6％・主目標 ✗
+        logRecord('大平原・予備隊を使わない', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved });
     });
 
     it('騎馬を使わない（待ち構え・予備隊・本陣への押しだけ）→ 地形に合った作戦より損害が大きく、主目標に届かない（記録：左右の備えを崩しきれず日没）', () => {
         const r = run(FIT.filter(([, id]) => id !== 'a_kiba'));
-        // 確かめた時：日没・損害 53.4％
         expect(r.loss).toBeGreaterThan(run(FIT).loss + 0.05);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
-        // 記録
-        expect(r.o.result).not.toBe('victory');
+        // 記録（2026-10-05・782fefe）：日没（480 秒・撤退）・損害 53.4％・主目標 ✗
+        logRecord('大平原・騎馬を使わない', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved });
     });
 
     it('騎馬を始めから左備へ真っすぐ当てる → 地形に合った作戦（左備と組み合ってから回り込む）・準備した正面攻撃（組み合ってから 60 秒に当てる）と違い、主目標に届かない（記録：騎馬が崩れて負ける）', () => {
         const r = run([[0, 'a_kiba', atk('e_left')], ...FIT.filter(([t, id]) => id !== 'a_kiba' || t >= 120)]);
-        for (const better of [run(FIT), run(PREPARED)]) expect(better.o.objectives!.primary!.achieved).toBe(true);
-        expect(r.o.objectives!.primary!.achieved).toBe(false);
-        // 記録（確かめた時：195.1 秒に負け。騎馬は組み合う前の槍と正面からぶつかって崩れる）
-        expect(r.o.result).not.toBe('victory');
+        for (const better of [run(FIT), run(PREPARED)]) {
+            expect(better.o.objectives!.primary!.achieved).toBe(true);
+            expect(outcomeRank(better.o.result)).toBeGreaterThanOrEqual(outcomeRank(r.o.result));
+        }
+        // 騎馬は組み合う前の槍と正面からぶつかって崩れる（兵種の相性）
         expect(r.o.units.find((u) => u.id === 'a_kiba')!.status).toBe('routed');
+        // 記録（2026-10-05・782fefe）：195.1 秒に負け（軍の崩壊）・損害 44.7％・主目標 ✗
+        logRecord('大平原・騎馬を始めから左備へ', { 結果: r.o.result, 理由: r.o.reason, 秒: r.o.elapsedSec, 損害: r.loss, 主目標: r.o.objectives!.primary!.achieved });
     });
 });
 
@@ -327,8 +324,9 @@ describe('大平原：準備した正面攻撃（早送り）', () => {
     it('同じ相手への無計画な攻めかかり（横一列）より、16 通りの勝ちが多く、損害が小さい。地形に合った作戦（回り込み）と同じくらい勝てる（記録：準備 15 勝・横一列 0 勝・地形に合った作戦 15 勝）', () => {
         const prep = wins16(PREPARED);
         const line = run(LINE);
-        // 横一列は 0 秒の命令だけなのでずらしても同じ（1 通りの結果が 16 通りの結果）
-        expect(line.o.result).not.toBe('victory');
+        // 横一列は 0 秒の命令だけなのでずらしても同じ（1 通りの結果が 16 通りの結果）。横一列の勝敗は記録（前はここで「勝たない」を
+        // expect していた。docs/chapter2-request.md【1】）。損害の比べは下の行
+        logRecord('大平原・16 通り', { 準備した正面攻撃: prep, 横一列の結果: line.o.result, 地形に合った作戦: wins16(FIT) });
         expect(prep).toBeGreaterThanOrEqual(13);
         expect(run(PREPARED).loss + 0.05).toBeLessThan(line.loss);
         // 地形に合った作戦（騎馬で西の外を回る）と比べても大きくは劣らない（大平原は回り込みが要る地形ではなく、予備・弓・能力の使い方が決め手）
