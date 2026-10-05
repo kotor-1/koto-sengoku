@@ -137,6 +137,15 @@ describe('時刻で現れる敵の組（援軍の出る所の名札・着いた�
         expect(a).toContain('援軍の出る所（開始 0:30）');
         expect(a).toContain('援軍の出る所（開始 0:45）');
     });
+    it('合戦の前の説明に、時刻で現れる敵の時刻が出る（待てば 40 秒早い）', () => {
+        const line = (p: Policy, tier: 'typical' | 'weakwait', re: RegExp) => setupOf(p, 'commit', tier).briefing.find((l) => re.test(l)) ?? '';
+        expect(line('oda', 'typical', /^追っ手/)).toContain('45 秒ほどで切れ目の北の口の西の林から朝倉の伏兵の騎馬が、70 秒ほどで東の林から浅井の後詰めの騎馬が出る');
+        expect(line('oda', 'weakwait', /^追っ手/)).toContain('30 秒ほどで東の林から浅井の後詰めの騎馬が、45 秒ほどで');
+        expect(line('asai', 'typical', /援軍が丘へ/)).toContain('4 分ほどで');
+        expect(line('asai', 'weakwait', /援軍が丘へ/)).toContain('3 分 20 秒ほどで');
+        expect(line('home', 'typical', /3 つの波/)).toContain('（20 秒・1 分 50 秒・3 分 20 秒。');
+        expect(line('home', 'weakwait', /3 つの波/)).toContain('（すぐ・1 分 10 秒・2 分 40 秒。');
+    });
     it('着いた時に「敵の援軍（…）が現れた」と知らせる（早送り：命令を出さずに時間だけ進める）', () => {
         const s = createBattle(setupOf('home', 'hold', 'typical'));
         advance(s, 21);
