@@ -14,6 +14,7 @@ import type { BattleOutcome, BattleSetup } from '../battle/types';
 import type { CastMember } from '../explore/cast';
 import type { SaveFailureReason, SavePoint } from './save';
 import type { CampaignPhase, ExplorePose } from './state';
+import type { AmbientSpec, CineMoment, CineSpec, ScoutPoint, SituationView } from '../story/types';
 
 /** シナリオの id（保存・タイトルの選択に使う） */
 export type ScenarioId = 'fictional' | 'ieyasu1570';
@@ -151,6 +152,24 @@ export interface Scenario<S extends ScenarioStateCore = ScenarioStateCore> {
     startNextChapter?(s: S): S;
     /** 次の章へ移った直後に 1 回出す、前の章の結果確認の画面の中身（無ければ null） */
     chapterStartView?(s: S): ScenarioEndingView | null;
+
+    // ---- 物語の見せ方の口（省ける。架空の章は実装しない。設計：docs/story-rpg-design.md §6。型：story/types.ts） ----
+    /**
+     * 演出の台本（第一章の導入・第二章への移行・出陣・帰還）。状態を読むだけ（純粋。状態を変えない）。
+     * その時に流す物が無ければ null。replay は情勢の画面の「演出を見直す」から（中身は同じでよい）。
+     */
+    cinematic?(s: S, moment: CineMoment, opts?: { replay?: boolean }): CineSpec | null;
+    /**
+     * 情勢の画面の中身（状態を読むだけ）。from は開いた所。軍議から開いたときは、いま出ている選択肢（id と文字）を options に渡す
+     * （SituationView.options に、その選択肢ごとの強調と説明を入れる。決めない）。出せなければ null。
+     */
+    situation?(s: S, opts: { from: 'explore' | 'council'; options?: { id: string; label: string }[] }): SituationView | null;
+    /** 町の人々（見た目だけ。保存の兵とは別）。無ければ null */
+    ambient?(s: S): AmbientSpec | null;
+    /** 物見の地点（今の段階で物見ができる所。できなければ空） */
+    scoutPoints?(s: S): ScoutPoint[];
+    /** 物見で調べた印を記録した状態（純粋。同じ記録をもう一度入れても増えない。兵・信頼・目標は変えない） */
+    scout?(s: S, pointId: string, marks: string[]): S;
 }
 
 /** どのシナリオでも入る箱（ChapterGame が複数のシナリオを並べるとき） */

@@ -22,6 +22,7 @@ import { CampaignSaveStore, SAVE_POINT_LABELS, saveFailureMessage, type SavePoin
 import { formatSavedTime, type AnyScenario, type ScenarioEndingView, type ScenarioId, type ScenarioScript, type ScenarioStateCore, type StatusLine } from './scenario';
 import type { Alliance, CampaignState, ChoiceId, ExplorePose } from './state';
 import type { Rect } from '../layout';
+import type { AmbientSpec, CineMoment, CineSpec, ScoutPoint, SituationView, StageEvent } from '../story/types';
 
 export { statusLines } from './fictional';
 export type { StatusLine } from './scenario';
@@ -127,6 +128,25 @@ export interface GameView {
     toast(text: string, kind: 'ok' | 'error' | 'info'): void;
     /** 開いている画面（会話・確認など）を、答えを返さずにすべて閉じる（会話の途中にメニューから「タイトルへ」を選んだとき） */
     abandon(): void;
+    /**
+     * 演出を再生する（省ける。偽の画面には無い：無ければ ChapterGame は待たずに飛ばす）。設計：docs/story-rpg-design.md §3。
+     * 3D の場面の間は毎フレーム opts.onStage(出来事, 場面の始めからの秒, 動きを減らすか) を呼び、終わり・スキップ・タイトルへ戻る（abandon）では
+     * 必ず onStage(null, 0, …) を 1 回呼んで片付ける。返りは最後まで見た 'done'・スキップした 'skipped'（状態には使わない）。
+     */
+    cinematic?(spec: CineSpec, opts: CinematicOptions): Promise<'done' | 'skipped'>;
+    /**
+     * 情勢の画面（省ける）。閉じれば void。「演出を見直す」を押せば { replay }（ChapterGame が再生して、また開く）。
+     * opts.option：軍議から開いたとき、いま選ばれている選択肢の id（そのタブを選んでおく。返りに選択肢の id は返さない）。
+     */
+    situation?(view: SituationView, opts?: { option?: string }): Promise<{ replay?: CineMoment } | void>;
+}
+
+/** 演出の再生に添えるもの */
+export interface CinematicOptions {
+    /** 3D の場面の出来事を置く（null で片付ける）。t は場面の始めからの秒 */
+    onStage(ev: StageEvent | null, t: number, reduced: boolean): void;
+    /** 動きを減らす（利用者の設定か端末の prefers-reduced-motion。再生中に切り替えられる） */
+    reduced: boolean;
 }
 
 /** 探索の場面（explore/world.ts） */
@@ -140,6 +160,15 @@ export interface GameWorld {
     faceTalk?(id: string): void;
     /** 主人公が歩けない所（壁・家。人物の当たり判定は含めない） */
     walls(): Rect[];
+    // ---- 物語の見せ方の口（省ける。explore/world.ts が実装する。偽の場面には無い） ----
+    /** 演出の 3D の出来事を時刻 t（場面の始めからの秒）の形に置く。null で片付けて、主人公・カメラを始める前に戻す */
+    stage?(ev: StageEvent | null, t: number, reduced: boolean): void;
+    /** 町の人々（見た目だけ。null で消す） */
+    setAmbient?(spec: AmbientSpec | null): void;
+    /** 物見の眺め（物見櫓の上から見回して調べる）。返りは調べた印の id（やめれば []）。終わればカメラと位置を戻す */
+    startLookout?(point: ScoutPoint, reduced: boolean): Promise<string[]>;
+    /** 軍議所を背景に映す（on）／戻す（off） */
+    showCouncilHall?(on: boolean): void;
 }
 
 /** 合戦を 1 回（hooks.onDecided：勝ち負けが決まった時＝結果の画面の前に呼ぶ。ここで結果を反映して保存する） */
@@ -163,7 +192,7 @@ export interface GameDeps {
     practice?: () => Promise<void>;
 }
 
-export type GameScreen = 'boot' | 'title' | 'explore' | 'talk' | 'council' | 'menu' | 'battle' | 'ending' | 'record' | 'practice';
+export type GameScreen = 'boot' | 'title' | 'explore' | 'talk' | 'council' | 'menu' | 'battle' | 'ending' | 'record' | 'practice' | 'cinematic' | 'situation' | 'lookout';
 
 // ================= 本体 =================
 
