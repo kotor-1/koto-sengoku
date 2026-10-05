@@ -26,7 +26,7 @@ import { ch2From, toCh2Battle, toCh2Muster } from './proto3d-ieyasu-ch2-helpers'
 const FROM: Record<Policy, 'oda_victory_kept' | 'asai_victory_kept' | 'home_victory_kept'> = { oda: 'oda_victory_kept', asai: 'asai_victory_kept', home: 'home_victory_kept' };
 
 /** 偽の結果で敗北（終わった理由を指定） */
-function defeatBy(policy: Policy, reason: BattleEndReason): Ieyasu2State {
+function defeatBy(policy: Policy, reason: Extract<BattleEndReason, 'ally_hq_routed' | 'objective_failed' | 'ally_army_broken'>): Ieyasu2State {
     const b = toCh2Battle(toCh2Muster(ch2From(FROM[policy])));
     const o = ieyasu2OutcomeFromSetup(ieyasu2BattleSetup(b), 'defeat', { reason });
     return applyIeyasu2Outcome(b, o);
