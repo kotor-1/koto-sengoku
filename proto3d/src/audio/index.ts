@@ -69,11 +69,13 @@ export class AudioSystem {
         this.engine.onReady(() => this.ensureAmbienceTimer());
     }
 
-    /** 利用者の操作の中で呼ぶ（何度でもよい） */
-    unlock(): boolean {
-        const was = this.engine.state;
+    /**
+     * 利用者の操作の中で呼ぶ（何度でもよい）。activation：端末が「操作」と数える入力（タップを離した・クリック・キー）の中か
+     * （タッチの押し始めは数えない端末がある。その中では読み上げの下ごしらえをしない）
+     */
+    unlock(activation = true): boolean {
         const ok = this.engine.unlock();
-        if (was === 'locked' && this.engine.ctx) this.voice.prime();
+        if (activation && this.engine.ctx && !this.voice.primed) this.voice.prime();
         this.apply('unlock');
         return ok;
     }
@@ -259,9 +261,11 @@ export function uninstallAudio(): void {
  */
 export function unlockOnGesture(sys: AudioSystem, target: Pick<Window, 'addEventListener' | 'removeEventListener'> = window): void {
     const types = ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'] as const;
-    const fn = () => {
-        sys.unlock();
-        if (sys.engine.state === 'running' || sys.engine.state === 'unavailable') for (const t of types) target.removeEventListener(t, fn, true);
+    const fn = (e: Event) => {
+        sys.unlock(!(e.type === 'pointerdown' && (e as PointerEvent).pointerType !== 'mouse'));
+        // 外すのは、音が始まり、読み上げの下ごしらえも済んだ（読み上げの無い端末は要らない）後
+        const started = sys.engine.state === 'running' || sys.engine.state === 'unavailable';
+        if (started && (sys.voice.primed || sys.voiceStatus === 'unsupported')) for (const t of types) target.removeEventListener(t, fn, true);
     };
     for (const t of types) target.addEventListener(t, fn, true);
 }

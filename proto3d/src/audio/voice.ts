@@ -62,6 +62,8 @@ export class VoicePlayer {
     private voice: VoiceLike | null = null;
     private _status: VoiceStatus = 'unknown';
     private guard: unknown = null;
+    /** 最初の読み上げの下ごしらえ（prime）を済ませた */
+    primed = false;
     /** 今読んでいる台詞の id（終われば null） */
     speakingId: string | null = null;
     /** 確かめ用：読んだ台詞（新しい順に 30 件まで）と、止めた回数 */
@@ -206,6 +208,7 @@ export class VoicePlayer {
     prime(): void {
         const synth = this.opts.synth;
         if (!synth) return;
+        this.primed = true;
         try {
             const u = this.opts.makeUtterance('');
             u.volume = 0;

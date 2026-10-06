@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { AudioEngine, DUCK_LEVEL } from '../proto3d/src/audio/engine';
-import { AudioSystem, type VoiceTable } from '../proto3d/src/audio/index';
+import { AudioSystem, unlockOnGesture, type VoiceTable } from '../proto3d/src/audio/index';
 import { FADE_OUT, HANDOFF, LOOKAHEAD, MusicPlayer, TICK_MS, loopBars, loopPosition, type RenderedSong, type SongRenderer } from '../proto3d/src/audio/music';
 import { AUDIO_KEY, AudioSettingsStore, DEFAULT_AUDIO, loadAudioSettings } from '../proto3d/src/audio/settings';
 import { FootstepTracker, Sfx, VoiceLimiter } from '../proto3d/src/audio/sfx';
@@ -118,6 +118,24 @@ describe('有効にする・失敗しても進む', () => {
         expect(sys.engine.state).toBe('running');
         // 有効になったら、決めてあった曲が始まる
         expect(sys.music.current).toBe('town');
+    });
+    it('最初の操作で有効にする：タッチの押し始めでは読み上げの下ごしらえをせず、離した時にする。有効になったら見張りを外す', async () => {
+        const { sys, synth } = makeSystem();
+        const ls = new Map<string, (e: Event) => void>();
+        const target = {
+            addEventListener: (t: string, fn: (e: Event) => void) => void ls.set(t, fn),
+            removeEventListener: (t: string) => void ls.delete(t),
+        } as unknown as Pick<Window, 'addEventListener' | 'removeEventListener'>;
+        unlockOnGesture(sys, target);
+        expect([...ls.keys()].sort()).toEqual(['click', 'keydown', 'pointerdown', 'pointerup', 'touchend']);
+        ls.get('pointerdown')!({ type: 'pointerdown', pointerType: 'touch' } as unknown as Event);
+        expect(sys.engine.ctx).not.toBeNull();
+        expect(synth!.queue.length + synth!.cancels).toBe(0);
+        expect(sys.voice.primed).toBe(false);
+        await settle();
+        ls.get('pointerup')!({ type: 'pointerup', pointerType: 'touch' } as unknown as Event);
+        expect(sys.voice.primed).toBe(true);
+        expect(ls.size).toBe(0);
     });
     it('Web Audio が使えない端末：投げず、すべての口が何もしないで返る', () => {
         const { sys, run } = makeSystem({ noContext: true });
