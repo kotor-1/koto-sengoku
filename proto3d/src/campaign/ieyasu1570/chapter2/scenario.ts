@@ -8,7 +8,6 @@
 import { GATE_REACH, SPOTS, TALK_REACH, headingToward, type CastMember, type Spot } from '../../../explore/cast';
 import { START, type Rect } from '../../../layout';
 import { formatSavedTime, type StatusLine } from '../../scenario';
-import type { CharacterId } from '../../state';
 import { presentIeyasu2Talks } from './flow';
 import type { Ieyasu2State, Ieyasu2TalkId } from './state';
 import { ieyasu2StatusRows, ieyasu2TalkName } from './story';
@@ -24,7 +23,7 @@ const rectAround = (x: number, z: number, hx: number, hz = hx): Rect => ({ x0: x
  * A 織田家の使者・B 浅井家の使者は第一章と同じ武家の使者の見た目、C 村の使いは町の人の見た目＝VILLAGER_LOOK）。
  * 城下の配役と演出の使いの到着（story/cinematics.ts）が同じ物を使う。
  */
-export function ieyasu2LookOf(state: Ieyasu2State, id: 'tadakatsu' | 'ishikawa' | 'envoy'): CharacterId {
+export function ieyasu2LookOf(state: Ieyasu2State, id: 'tadakatsu' | 'ishikawa' | 'envoy'): string {
     if (id === 'tadakatsu') return IEYASU_LOOKS.tadakatsu;
     if (id === 'ishikawa') return 'genzo';
     return state.policy === 'asai' ? IEYASU_LOOKS.asai_envoy : state.policy === 'oda' ? IEYASU_LOOKS.oda_envoy : VILLAGER_LOOK;
