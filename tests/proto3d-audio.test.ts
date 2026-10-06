@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { AudioEngine, DUCK_LEVEL } from '../proto3d/src/audio/engine';
 import { AudioSystem, type VoiceTable } from '../proto3d/src/audio/index';
-import { FADE_OUT, LOOKAHEAD, MusicPlayer, TICK_MS } from '../proto3d/src/audio/music';
+import { FADE_OUT, HANDOFF, LOOKAHEAD, MusicPlayer, TICK_MS, loopBars, loopPosition, type RenderedSong, type SongRenderer } from '../proto3d/src/audio/music';
 import { AUDIO_KEY, AudioSettingsStore, DEFAULT_AUDIO, loadAudioSettings } from '../proto3d/src/audio/settings';
 import { FootstepTracker, Sfx, VoiceLimiter } from '../proto3d/src/audio/sfx';
 import { BEATS_PER_BAR, SONGS, barAt, barEvents, parseMelody, type SongId } from '../proto3d/src/audio/songs';
@@ -260,14 +260,14 @@ describe('声（端末の読み上げ）：読み・止め方', () => {
 
 // ================================================================ 曲
 
-function musicOnly() {
+function musicOnly(renderer: SongRenderer | null = null) {
     const { ctx, create } = fakeContext();
     const page = new FakePage();
     const engine = new AudioEngine({ settings: new AudioSettingsStore(null), createContext: create, page });
     const timers = new FakeTimers();
     const played: { t: number; inst: string; song: SongId | null }[] = [];
     let tag: SongId | null = null;
-    const music = new MusicPlayer(engine, timers, (_c, _o, t, e) => played.push({ t, inst: e.inst, song: tag }));
+    const music = new MusicPlayer(engine, timers, (_c, _o, t, e) => played.push({ t, inst: e.inst, song: tag }), renderer);
     engine.unlock();
     const run = (sec: number, stepMs = TICK_MS) => {
         for (let t = 0; t < sec * 1000 - 1e-6; t += stepMs) {
@@ -354,6 +354,105 @@ describe('BGM：曲の切り替え・先読み・時計', () => {
         m.run(0.5);
         const now = m.ctx.currentTime;
         expect(m.played.slice(n).every((p) => p.t >= now - 0.6)).toBe(true);
+    });
+});
+
+describe('BGM：描いた輪（音の処理の側で鳴らす。描画が止まっても途切れない）', () => {
+    /** 偽の描き手：呼ばれた曲を記録し、resolve を手で呼ぶ */
+    function fakeRenderer() {
+        const calls: string[] = [];
+        const waits = new Map<string, (r: RenderedSong) => void>();
+        const make = (id: SongId): RenderedSong => {
+            const { intro, loop } = loopBars(id);
+            const sec = (60 / SONGS[id].bpm) * BEATS_PER_BAR;
+            return { buffer: { duration: (intro + loop) * sec + 3.5 } as AudioBuffer, loopStart: intro * sec, loopEnd: (intro + loop) * sec };
+        };
+        const r: SongRenderer = (id) => {
+            calls.push(id);
+            return new Promise((res) => waits.set(id, () => res(make(id))));
+        };
+        return { r, calls, finish: (id: SongId) => waits.get(id)?.(make(id)) };
+    }
+    const sources = (ctx: FakeAudioContext) => ctx.starts.filter((s) => s.kind === 'buffer').map((s) => s.node as unknown as { startedAt: number; offset: number; stoppedAt: number | null; loop: boolean; loopStart: number; loopEnd: number });
+
+    it('有効になったら、今の曲から 3 曲を 1 曲ずつ描く。描き終わった曲は、予約せずに輪で鳴らす', async () => {
+        const f = fakeRenderer();
+        const m = musicOnly(f.r);
+        m.music.play('battle');
+        await settle();
+        expect(f.calls).toContain('battle');
+        expect(m.music.mode).toBe('live');
+        f.finish('battle');
+        await settle();
+        await settle();
+        expect(m.music.mode).toBe('loop');
+        // 1 曲ずつ（描き終わってから次）
+        expect(f.calls.length).toBeLessThanOrEqual(2);
+        f.finish('town');
+        for (let i = 0; i < 6; i++) await settle();
+        f.finish('crisis');
+        for (let i = 0; i < 6; i++) await settle();
+        expect(m.music.ready.sort()).toEqual(['battle', 'crisis', 'town']);
+        // 町の曲へ：予約の音は作らず、輪の頭から
+        const n = m.played.length;
+        m.music.play('town');
+        m.run(5);
+        expect(m.music.mode).toBe('loop');
+        expect(m.played.length).toBe(n);
+        const src = sources(m.ctx)[sources(m.ctx).length - 1]!;
+        expect(src.loop).toBe(true);
+        expect(src.offset).toBe(0);
+        // 輪は曲の 1 周（合戦は頭の段の後から繰り返す）
+        const b = loopBars('battle');
+        expect(b.intro).toBe(2);
+        const battleSrc = sources(m.ctx)[0]!;
+        expect(battleSrc.loopStart).toBeCloseTo(2 * (60 / SONGS.battle.bpm) * 4);
+        // 前の曲（合戦）の輪はフェードの終わりで止める
+        expect(battleSrc.stoppedAt).not.toBeNull();
+        m.run(FADE_OUT + 0.3);
+        expect(m.music.audible).toEqual(['town']);
+    });
+    it('描き終わるまでは予約で鳴らし、描き終わったら同じ位置から輪へ受け渡す（受け渡しの後は予約しない）', async () => {
+        const f = fakeRenderer();
+        const m = musicOnly(f.r);
+        await settle();
+        m.music.play('crisis');
+        m.run(7.3);
+        expect(m.music.mode).toBe('live');
+        expect(m.played.length).toBeGreaterThan(0);
+        f.finish('crisis');
+        await settle();
+        await settle();
+        expect(m.music.mode).toBe('loop');
+        const src = sources(m.ctx)[sources(m.ctx).length - 1]!;
+        // 曲の頭（始めた 0.05 秒後）からの位置
+        expect(src.offset).toBeCloseTo(src.startedAt - 0.05, 3);
+        // 受け渡しの後は新しく予約しない。先に予約してあった音（先読みの分）は、予約の出口の音量を HANDOFF 秒で 0 にして消す
+        const n = m.played.length;
+        m.run(6);
+        expect(m.played.length).toBe(n);
+        const faded = m.ctx.nodes.some((nd) => {
+            const g = (nd as unknown as { gain?: { calls: { m: string; v: number; t: number }[] } }).gain;
+            return !!g?.calls.some((c) => c.m === 'lin' && c.v === 0 && Math.abs(c.t - (src.startedAt + HANDOFF)) < 1e-6);
+        });
+        expect(faded).toBe(true);
+    });
+    it('描けない端末では予約のまま続ける', async () => {
+        const m = musicOnly(() => Promise.reject(new Error('描けない')));
+        await settle();
+        m.music.play('town');
+        await settle();
+        await settle();
+        m.run(3);
+        expect(m.music.mode).toBe('live');
+        expect(m.played.length).toBeGreaterThan(10);
+    });
+    it('輪の位置：頭の段の後は loopStart〜loopEnd を繰り返す', () => {
+        const r = { loopStart: 3, loopEnd: 13 };
+        expect(loopPosition(r, 0)).toBe(0);
+        expect(loopPosition(r, 12.5)).toBe(12.5);
+        expect(loopPosition(r, 13)).toBe(3);
+        expect(loopPosition(r, 27.5)).toBeCloseTo(7.5);
     });
 });
 

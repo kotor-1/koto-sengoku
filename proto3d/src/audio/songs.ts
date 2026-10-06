@@ -50,8 +50,8 @@ export interface Song {
     /** 段の順（最初の繰り返しで流す）。loopFrom から後を繰り返す */
     order: string[];
     loopFrom: number;
-    /** 旋律の音の高さのずらし（音階の番号。0 なら root の高さ） */
-    leadOffset?: number;
+    /** 曲全体の音量（3 曲の大きさをそろえる。オフラインで描いた音の RMS で合わせた値） */
+    gain: number;
 }
 
 const rep = <T,>(n: number, v: T): T[] => Array.from({ length: n }, () => v);
@@ -62,6 +62,7 @@ const TOWN: Song = {
     id: 'town',
     title: '城下の昼',
     bpm: 88,
+    gain: 1.35,
     scale: [0, 2, 5, 7, 9],
     root: 62, // D4
     order: ['A', 'B', 'C', 'A2'],
@@ -88,8 +89,8 @@ const TOWN: Song = {
             lead: 'koto',
             melody: '0:0.5 2:0.5 3:0.5 5:0.5 4:1 3:1 | 2:1 3:0.5 2:0.5 1:2b | 0:0.5 1:0.5 2:0.5 3:0.5 5:1 4:1 | 3:1 2:1 0:2',
             harmony: [0, 1, 0, 0],
-            koto: { kind: 'dyad', beats: [0, 2], vel: 0.22 },
-            drums: { kane: rep(4, '....x.......x...') },
+            koto: { kind: 'dyad', beats: [0, 2], vel: 0.42 },
+            drums: { shime: rep(4, 'x.......x.......'), kane: rep(4, '....x.......x...') },
         },
         A2: {
             name: 'A′',
@@ -108,6 +109,7 @@ const CRISIS: Song = {
     id: 'crisis',
     title: '急報',
     bpm: 66,
+    gain: 0.8,
     scale: [0, 1, 5, 7, 8],
     root: 52, // E3
     order: ['A', 'B', 'A2'],
@@ -149,6 +151,7 @@ const BATTLE: Song = {
     id: 'battle',
     title: '合戦',
     bpm: 136,
+    gain: 0.75,
     scale: [0, 3, 5, 7, 10],
     root: 50, // D3
     order: ['I', 'A', 'B', 'C'],
@@ -272,7 +275,7 @@ export function barEvents(song: Song, index: number): NoteEvent[] {
         if (n.degree !== null && lead) {
             const w = wobble(index, k);
             if (lead === 'koto') {
-                out.push({ beat, inst: 'koto', midi: degreeToMidi(song, n.degree + 5), dur: n.beats * (60 / song.bpm), vel: 0.5 + w * 0.12, ...(n.bend ? { bend: 1 } : {}), pan: 0.15 });
+                out.push({ beat, inst: 'koto', midi: degreeToMidi(song, n.degree + 5), dur: n.beats * (60 / song.bpm), vel: 0.95 + w * 0.1, ...(n.bend ? { bend: 1 } : {}), pan: 0.15 });
             } else {
                 const d = degreeToMidi(song, n.degree);
                 out.push({ beat, inst: lead, midi: d, dur: n.beats * (60 / song.bpm) * 0.96, vel: (lead === 'fue' ? 0.22 : 0.3) + w * 0.05, ...(n.bend ? { bend: 1 } : {}), pan: -0.1 });

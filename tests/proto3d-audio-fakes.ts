@@ -59,8 +59,10 @@ export class FakeNode {
 class FakeSource extends FakeNode {
     startedAt: number | null = null;
     stoppedAt: number | null = null;
-    start(t = 0) {
+    offset = 0;
+    start(t = 0, offset = 0) {
         this.startedAt = t;
+        this.offset = offset;
         this.ctx.starts.push({ kind: this.kind, t, node: this });
     }
     stop(t = 0) {

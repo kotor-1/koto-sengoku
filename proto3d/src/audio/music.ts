@@ -1,20 +1,24 @@
 /**
- * BGM の再生：楽譜（songs.ts）を AudioContext の時計で先読みして予約する。
+ * BGM の再生。2 つのやり方を持つ：
  *
- * - 時計：setTimeout（50 ms ごと）で起き、AudioContext の currentTime から LOOKAHEAD 秒先までの音を予約する（requestAnimationFrame は使わない）。
- *   描画のコマが遅くても、曲の速さは変わらない。
- * - 止まった後（アプリの切り替えで AudioContext を止めた・タイマーが遅れた）に、過ぎた音をまとめて鳴らさない：
- *   予約しそびれた音は捨て、次の小節の頭から続ける。
+ * 1. 描いた輪（既定）：楽譜（songs.ts）を、ゲームと同じ楽器のコードで OfflineAudioContext に 1 周分描き（音の処理の側で描くので、
+ *    描画の重さに関わらない）、AudioBufferSourceNode の繰り返し（loopStart〜loopEnd）で鳴らす。鳴らす時計は音の処理の側だけなので、
+ *    描画のコマが遅い・止まる（読み込み・合戦の画面の組み立て）間も途切れない。曲ごとに 1 回だけ描く（有効になった後、要る曲から順に）。
+ *    輪の終わりで鳴り残る音（箏の余韻など）は、輪の頭に重ねて継ぎ目を消す。
+ * 2. 先読みの予約（描き終わるまでと、OfflineAudioContext の無い端末）：setTimeout（50 ms ごと）で起き、AudioContext の currentTime から
+ *    LOOKAHEAD 秒先までの音を予約する（requestAnimationFrame は使わない）。描き終わったら、同じ曲の同じ位置から描いた輪へ短く受け渡す。
+ *
+ * - 時計は AudioContext の時刻（描画のコマに比例しない）。止まった後（アプリの切り替え・タイマーの遅れ）に、過ぎた音をまとめて鳴らさない。
  * - 曲の切り替え：前の曲を短くフェードアウトして止め、新しい曲を少し後からフェードインする（同じ曲なら何もしない）。
  *   切り替え後に鳴り続けるのは 1 曲だけ（フェードの間の重なりは FADE_OUT 秒まで）。
  * - 声の間の BGM の下げ（ダッキング）は engine.ts の duck（BGM のバスの後ろ）。
  */
 import type { AudioEngine } from './engine';
 import { flute, hyoshigi, horagai, kane, koto, taiko } from './instruments';
-import { SONGS, barEvents, barSeconds, type NoteEvent, type SongId } from './songs';
+import { SONGS, barAt, barEvents, barSeconds, type NoteEvent, type SongId } from './songs';
 
 /**
- * 先読みの長さ（秒）。描画が重い端末（1 コマに 1 秒以上かかる検証のコンテナなど）でタイマーが遅れても、音が途切れないよう長めにとる。
+ * 先読みの長さ（秒。描き終わるまでの予約）。描画が重い端末でタイマーが遅れても、音が途切れないよう長めにとる。
  * 先に予約した音は曲ごとの音量（フェード）・ダッキング・ミュート・一時停止（AudioContext の停止）にそのまま従うので、長くても困らない。
  */
 export const LOOKAHEAD = 2.0;
@@ -23,6 +27,12 @@ export const FADE_IN = 0.6;
 export const FADE_OUT = 0.8;
 /** 切り替えの時、新しい曲を始めるまでの間（秒） */
 export const SWITCH_GAP = 0.35;
+/** 予約から描いた輪へ受け渡すときの重ね（秒） */
+export const HANDOFF = 0.3;
+/** 描く輪の標本化の速さ（Hz。単音で約 4 MB／分） */
+export const RENDER_RATE = 24000;
+/** 輪の終わりの後に描く長さ（鳴り残る音。輪の頭に重ねる） */
+const TAIL = 3.5;
 
 export interface TimerLike {
     set(fn: () => void, ms: number): unknown;
@@ -33,14 +43,31 @@ export const browserTimer: TimerLike = {
     clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
 };
 
+/** 描いた 1 曲（輪の始めと終わりは秒） */
+export interface RenderedSong {
+    buffer: AudioBuffer;
+    loopStart: number;
+    loopEnd: number;
+}
+export type SongRenderer = (id: SongId) => Promise<RenderedSong>;
+
 /** 1 回の再生（曲の切り替えごとに作る） */
 interface Playing {
     id: SongId;
+    /** 曲の音量（フェード）。live・buf はこの前 */
     gain: GainNode;
+    /** 予約の音の出口（描いた輪へ受け渡すと消す） */
+    live: GainNode;
+    /** 曲の頭（小節 0）の時刻 */
+    origin: number;
     /** 次に読む小節の番号と、その頭の時刻 */
     bar: number;
     nextBar: number;
     pending: { t: number; e: NoteEvent }[];
+    /** 描いた輪で鳴らしている（予約はしない） */
+    src: AudioBufferSourceNode | null;
+    /** この時刻より後の予約の音は鳴らさない（描いた輪へ受け渡した） */
+    liveUntil: number;
     /** フェードアウトの終わり（これを過ぎたら外す）。鳴らしている間は Infinity */
     endAt: number;
 }
@@ -77,22 +104,75 @@ export const playNote: NotePlayer = (ctx, out, t, e) => {
     }
 };
 
+/** 曲の頭の段（繰り返さない段）と、繰り返す段の小節の数 */
+export function loopBars(id: SongId): { intro: number; loop: number } {
+    const song = SONGS[id];
+    const lens = song.order.map((n) => song.sections[n]!.harmony.length);
+    const intro = lens.slice(0, song.loopFrom).reduce((a, b) => a + b, 0);
+    const loop = lens.slice(song.loopFrom).reduce((a, b) => a + b, 0);
+    return { intro, loop };
+}
+
+/** 曲の頭から x 秒の所が、描いた輪のどこか（頭の段の後は繰り返す） */
+export function loopPosition(r: { loopStart: number; loopEnd: number }, x: number): number {
+    if (x < r.loopEnd) return Math.max(0, x);
+    const len = r.loopEnd - r.loopStart;
+    return r.loopStart + ((x - r.loopStart) % len);
+}
+
+/** OfflineAudioContext で 1 曲を描く（ブラウザ。無ければ null） */
+export function offlineRenderer(): SongRenderer | null {
+    const C = (globalThis as { OfflineAudioContext?: typeof OfflineAudioContext }).OfflineAudioContext;
+    if (!C) return null;
+    return async (id) => {
+        const song = SONGS[id];
+        const sec = barSeconds(song);
+        const spb = 60 / song.bpm;
+        const { intro, loop } = loopBars(id);
+        const loopStart = intro * sec;
+        const loopEnd = (intro + loop) * sec;
+        const sr = RENDER_RATE;
+        const len = Math.ceil((loopEnd + TAIL) * sr);
+        const oc = new C({ numberOfChannels: 1, length: len, sampleRate: sr });
+        const bus = oc.createGain();
+        bus.connect(oc.destination);
+        for (let i = 0; i < intro + loop; i++) {
+            const t0 = i * sec;
+            for (const e of barEvents(song, i)) playNote(oc, bus, t0 + e.beat * spb, e);
+        }
+        const buffer = await oc.startRendering();
+        // 輪の終わりで鳴り残る音を、輪の頭に重ねる（継ぎ目で余韻が切れない）
+        const d = buffer.getChannelData(0);
+        const s0 = Math.round(loopStart * sr);
+        const s1 = Math.round(loopEnd * sr);
+        for (let j = 0; s1 + j < d.length && s0 + j < s1; j++) d[s0 + j] = d[s0 + j]! + d[s1 + j]!;
+        return { buffer, loopStart, loopEnd };
+    };
+}
+
 export class MusicPlayer {
     private playing: Playing | null = null;
     private readonly fading: Playing[] = [];
     /** 鳴らしたい曲（有効になる前・止めている間も覚える） */
     private want: SongId | null = null;
     private timer: unknown = null;
-    /** 確かめ用：予約した音の数・捨てた（遅れた）音の数・曲を始めた回数 */
-    readonly stats = { scheduled: 0, dropped: 0, starts: 0, switches: 0, maxGapMs: 0 };
+    private readonly rendered = new Map<SongId, RenderedSong>();
+    private readonly rendering = new Map<SongId, Promise<RenderedSong | null>>();
+    private renderFailed = false;
+    /** 確かめ用：予約した音の数・捨てた（遅れた）音の数・曲を始めた回数・描いた輪で鳴らし始めた回数・タイマーの最大の間 */
+    readonly stats = { scheduled: 0, dropped: 0, starts: 0, switches: 0, loops: 0, rendered: 0, renderMs: 0, maxGapMs: 0 };
     private lastTick = -1;
 
     constructor(
         private readonly engine: AudioEngine,
         private readonly timers: TimerLike = browserTimer,
         private readonly note: NotePlayer = playNote,
+        private readonly renderer: SongRenderer | null = null,
     ) {
-        engine.onReady(() => this.sync());
+        engine.onReady(() => {
+            this.sync();
+            this.prefetch();
+        });
         engine.onPause((paused) => {
             if (!paused) this.realign();
         });
@@ -106,9 +186,17 @@ export class MusicPlayer {
     get current(): SongId | null {
         return this.playing?.id ?? null;
     }
+    /** 今鳴らしている曲のやり方（'loop' 描いた輪・'live' 予約。無ければ null） */
+    get mode(): 'loop' | 'live' | null {
+        return this.playing ? (this.playing.src ? 'loop' : 'live') : null;
+    }
     /** 今音を出している曲の数（フェードアウト中を含む） */
     get audible(): SongId[] {
         return [...(this.playing ? [this.playing.id] : []), ...this.fading.map((f) => f.id)];
+    }
+    /** 描き終わった曲 */
+    get ready(): SongId[] {
+        return [...this.rendered.keys()];
     }
 
     /** 曲を替える（同じ曲なら何もしない。null で止める） */
@@ -116,6 +204,42 @@ export class MusicPlayer {
         if (id === this.want && (id === null || this.playing?.id === id || !this.engine.live)) return;
         this.want = id;
         this.sync();
+        if (id) this.requestRender(id);
+    }
+
+    /** 3 曲を描いておく（今の曲から。1 曲ずつ） */
+    private prefetch(): void {
+        const order: SongId[] = [...new Set<SongId>([...(this.want ? [this.want] : []), 'town', 'crisis', 'battle'])];
+        let p: Promise<unknown> = Promise.resolve();
+        for (const id of order) p = p.then(() => this.requestRender(id));
+    }
+
+    private requestRender(id: SongId): Promise<RenderedSong | null> {
+        const have = this.rendered.get(id);
+        if (have) return Promise.resolve(have);
+        const r = this.renderer;
+        if (!r || this.renderFailed || !this.engine.ctx) return Promise.resolve(null);
+        let p = this.rendering.get(id);
+        if (!p) {
+            const t0 = Date.now();
+            p = r(id)
+                .then((song) => {
+                    this.rendered.set(id, song);
+                    this.stats.rendered++;
+                    this.stats.renderMs += Date.now() - t0;
+                    this.handoff();
+                    return song;
+                })
+                .catch((e: unknown) => {
+                    // 描けない端末：予約のやり方で続ける
+                    console.warn('BGM を描けませんでした（予約で鳴らします）', e);
+                    this.renderFailed = true;
+                    return null;
+                })
+                .finally(() => this.rendering.delete(id));
+            this.rendering.set(id, p);
+        }
+        return p;
     }
 
     /** 鳴らしたい曲に合わせる（有効になった時にも呼ぶ） */
@@ -134,16 +258,51 @@ export class MusicPlayer {
         }
         if (this.want) {
             const gain = ctx.createGain();
+            const live = ctx.createGain();
+            live.connect(gain);
             const start = now + (this.fading.length ? SWITCH_GAP : 0.05);
             gain.gain.setValueAtTime(0, now);
             gain.gain.setValueAtTime(0, start);
-            gain.gain.linearRampToValueAtTime(1, start + FADE_IN);
+            gain.gain.linearRampToValueAtTime(SONGS[this.want].gain, start + FADE_IN);
             gain.connect(this.engine.bgm);
-            this.playing = { id: this.want, gain, bar: 0, nextBar: start, pending: [], endAt: Infinity };
+            this.playing = { id: this.want, gain, live, origin: start, bar: 0, nextBar: start, pending: [], src: null, liveUntil: Infinity, endAt: Infinity };
             this.stats.starts++;
+            const r = this.rendered.get(this.want);
+            if (r) this.startLoop(this.playing, r, start, 0);
         }
         this.ensureTimer();
         this.tick();
+    }
+
+    /** 描いた輪で鳴らし始める（at の時刻に、曲の頭から x 秒の所から） */
+    private startLoop(p: Playing, r: RenderedSong, at: number, x: number): void {
+        const ctx = this.engine.ctx!;
+        const src = ctx.createBufferSource();
+        src.buffer = r.buffer;
+        src.loop = true;
+        src.loopStart = r.loopStart;
+        src.loopEnd = r.loopEnd;
+        src.connect(p.gain);
+        src.start(at, loopPosition(r, x));
+        p.src = src;
+        p.liveUntil = at;
+        p.pending = p.pending.filter((n) => n.t < at);
+        this.stats.loops++;
+    }
+
+    /** 予約で鳴らしている曲が描き終わった：同じ位置から描いた輪へ受け渡す（予約の音は短く消す） */
+    private handoff(): void {
+        const p = this.playing;
+        const ctx = this.engine.ctx;
+        if (!p || p.src || !ctx) return;
+        const r = this.rendered.get(p.id);
+        if (!r) return;
+        const at = Math.max(ctx.currentTime + 0.12, p.origin);
+        // 受け渡しの前に鳴らし始めた予約の音は、余韻だけ短く消す（描いた輪にも同じ余韻が入っている）
+        const g = p.live.gain;
+        g.setValueAtTime(1, at);
+        g.linearRampToValueAtTime(0, at + HANDOFF);
+        this.startLoop(p, r, at, at - p.origin);
     }
 
     private fadeOut(p: Playing, now: number): void {
@@ -152,6 +311,11 @@ export class MusicPlayer {
         g.setValueAtTime(g.value, now);
         g.linearRampToValueAtTime(0, now + FADE_OUT);
         p.endAt = now + FADE_OUT + 0.05;
+        try {
+            p.src?.stop(p.endAt);
+        } catch {
+            // 止め済み
+        }
         // まだ予約していない音は捨てる（フェードの後に鳴らさない）
         p.pending = p.pending.filter((x) => x.t < p.endAt);
         this.fading.push(p);
@@ -187,7 +351,7 @@ export class MusicPlayer {
         }
     }
 
-    /** 先読みして予約する（タイマーから。テストでは直接呼ぶ） */
+    /** 先読みして予約する（タイマーから。テストでは直接呼ぶ）。描いた輪で鳴らしている曲は何もしない */
     tick(): void {
         const ctx = this.engine.ctx;
         if (!ctx || !this.engine.live) return;
@@ -210,8 +374,8 @@ export class MusicPlayer {
         for (const p of [this.playing, ...this.fading]) {
             if (!p) continue;
             // タイマーが大きく遅れた（裏に回った等）：過ぎた音をまとめて鳴らさない
-            if (p.nextBar < now - 0.25) this.realign();
-            if (p === this.playing) {
+            if (!p.src && p.nextBar < now - 0.25) this.realign();
+            if (p === this.playing && !p.src) {
                 const song = SONGS[p.id];
                 const sec = barSeconds(song);
                 const spb = 60 / song.bpm;
@@ -224,12 +388,12 @@ export class MusicPlayer {
             }
             while (p.pending.length && p.pending[0]!.t <= horizon) {
                 const x = p.pending.shift()!;
-                if (x.t < now - 0.03 || x.t >= p.endAt) {
+                if (x.t < now - 0.03 || x.t >= p.endAt || x.t >= p.liveUntil) {
                     this.stats.dropped++;
                     continue;
                 }
                 try {
-                    this.note(ctx, p.gain, x.t, x.e);
+                    this.note(ctx, p.live, x.t, x.e);
                     this.stats.scheduled++;
                 } catch (e) {
                     // 1 つの音を作れなくても曲は続ける
@@ -237,6 +401,17 @@ export class MusicPlayer {
                 }
             }
         }
+    }
+
+    /** 今の曲の段の名前（確かめ用。曲の頭からの時刻で決める） */
+    section(): string | null {
+        const p = this.playing;
+        const ctx = this.engine.ctx;
+        if (!p || !ctx) return null;
+        const song = SONGS[p.id];
+        const x = ctx.currentTime - p.origin;
+        if (x < 0) return null;
+        return barAt(song, Math.floor(x / barSeconds(song))).section.name;
     }
 
     /** すべて止める（後片付け） */

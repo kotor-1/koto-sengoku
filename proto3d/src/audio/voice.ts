@@ -117,6 +117,13 @@ export class VoicePlayer {
         this._status = 'ready';
     }
 
+    /** 今読めるか（日本語の声がある・ミュートでない・有効にした後・アプリを切り替えていない） */
+    canSay(): boolean {
+        const s = this.engine.settings;
+        if (this._status !== 'ready') this.pickVoice();
+        return !!this.opts.synth && this._status === 'ready' && !s.muted && s.voice > 0 && !this.engine.held && this.engine.state !== 'locked' && this.engine.state !== 'unavailable';
+    }
+
     /**
      * 台詞を読む（前の声は止める）。読めない（日本語の声が無い・ミュート・有効にする前・アプリを切り替えている）ときは何もしない。
      * 返りは読み始めたか。
@@ -125,8 +132,7 @@ export class VoicePlayer {
         this.stop();
         const synth = this.opts.synth;
         const s = this.engine.settings;
-        if (this._status !== 'ready') this.pickVoice();
-        if (!synth || this._status !== 'ready' || s.muted || s.voice <= 0 || this.engine.held || this.engine.state === 'locked' || this.engine.state === 'unavailable') {
+        if (!synth || !this.canSay()) {
             this.stats.refused++;
             return false;
         }

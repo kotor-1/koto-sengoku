@@ -10,7 +10,7 @@
  */
 import { AudioEngine, browserPage, type PageLike } from './engine';
 import { cineMusic, creakDelay, sceneFor, type CineBeatInfo, type ScreenInput } from './director';
-import { MusicPlayer, browserTimer, type TimerLike } from './music';
+import { MusicPlayer, browserTimer, offlineRenderer, playNote, type SongRenderer, type TimerLike } from './music';
 import { AudioSettingsStore } from './settings';
 import { FootstepTracker, Sfx } from './sfx';
 import type { SongId } from './songs';
@@ -32,6 +32,8 @@ export interface AudioSystemOptions {
     page?: PageLike | null;
     speech?: { synth: SpeechLike | null; makeUtterance: (text: string) => UtteranceLike };
     timers?: TimerLike;
+    /** BGM を描く（省けば OfflineAudioContext。null で描かずに予約だけ） */
+    renderer?: SongRenderer | null;
 }
 
 /** 合戦の音に要る形（battle/sim.ts の BattleState の使う所だけ） */
@@ -60,7 +62,7 @@ export class AudioSystem {
         this.timers = opts.timers ?? browserTimer;
         this.settings = new AudioSettingsStore(opts.storage);
         this.engine = new AudioEngine({ settings: this.settings, ...(opts.createContext ? { createContext: opts.createContext } : {}), page: opts.page === undefined ? browserPage() : opts.page });
-        this.music = new MusicPlayer(this.engine, this.timers);
+        this.music = new MusicPlayer(this.engine, this.timers, playNote, opts.renderer === undefined ? offlineRenderer() : opts.renderer);
         this.sfx = new Sfx(this.engine);
         const sp = opts.speech ?? browserSpeech();
         this.voice = new VoicePlayer(this.engine, { synth: sp.synth, makeUtterance: sp.makeUtterance, timers: this.timers });
@@ -150,10 +152,17 @@ export class AudioSystem {
         if (v) this.voice.say(v);
         else this.voice.stop();
     }
-    /** 表の id の台詞を読む（合戦の掛け声）。返りは読んだ台詞（字幕に出す。読めなければ null） */
-    sayId(id: string): VoiceLineLike | null {
+    /**
+     * 表の id の台詞を読む（合戦の掛け声）。読めるときは、読む前に before（字幕を出す）を呼ぶ。返りは読んだ台詞（読めなければ null）
+     */
+    sayId(id: string, before?: (v: VoiceLineLike) => void): VoiceLineLike | null {
         const v = this.voices.byId(id);
-        if (!v) return null;
+        if (!v || !this.voice.canSay()) return null;
+        try {
+            before?.(v);
+        } catch (e) {
+            console.error(e);
+        }
         return this.voice.say(v) ? v : null;
     }
     stopVoice(): void {
@@ -212,7 +221,7 @@ export class AudioSystem {
             held: this.engine.held,
             ducked: this.engine.isDucked,
             settings: this.settings.get(),
-            music: { wanted: this.music.wanted, current: this.music.current, audible: this.music.audible, ...this.music.stats },
+            music: { wanted: this.music.wanted, current: this.music.current, mode: this.music.mode, section: this.music.section(), ready: this.music.ready, audible: this.music.audible, ...this.music.stats },
             voice: { status: this.voice.status, speaking: this.voice.speakingId, ...this.voice.stats, log: this.voice.log.slice(0, 10) },
             sfx: { ...this.sfx.stats, meleeActive: this.sfx.melee.active(this.engine.now()), meleeRefused: this.sfx.melee.refused, cueRefused: this.sfx.cues.refused },
             screen: this.screen.screen,

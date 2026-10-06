@@ -260,8 +260,8 @@ class BattleRun implements Mode {
 
     /** 掛け声（声の台詞の表の id）：声を出せたら、同じ文を字幕に出す（音が無い・日本語の声が無い端末では何もしない） */
     private shout(id: string): void {
-        const v = audio()?.sayId(id);
-        if (v) this.ui.voiceCaption(audio()?.speakerName(v.speaker) ?? '', v.text);
+        const a = audio();
+        a?.sayId(id, (v) => this.ui.voiceCaption(a.speakerName(v.speaker), v.text));
     }
 
     // ---------------------------------------------------------------- 毎フレーム
