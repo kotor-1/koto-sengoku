@@ -32,6 +32,11 @@ export interface StageFigure {
     mark: string;
     /** 槍を持つか */
     spear: boolean;
+    /**
+     * 槍を後ろへ担ぐ角度（ラジアン。無ければ 0＝立てて持つ）。木戸（横木の下 2.98 m）をくぐる前に槍を寝かせ、くぐった後も担いだまま
+     * 歩く（立てた槍の先は 3.75 m で、横木・屋根に刺さって見え、木戸の外から見ると横木から吊られて見えた）
+     */
+    spearTilt?: number;
 }
 
 /** のぼり（旗竿と布）。根元の位置と向き・傾き */
@@ -159,6 +164,7 @@ function offsetAlong(path: readonly Pt[], s: number, side: number, extend = fals
 }
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+const round3 = (v: number) => Math.round(v * 1000) / 1000;
 /** なめらかな 0→1（両端で速さ 0） */
 export const ease = (v: number) => {
     const x = clamp01(v);
@@ -169,6 +175,44 @@ function lerpShot(a: StageShot, b: StageShot, k: number): StageShot {
     return { px: lerp(a.px, b.px, k), py: lerp(a.py, b.py, k), pz: lerp(a.pz, b.pz, k), tx: lerp(a.tx, b.tx, k), ty: lerp(a.ty, b.ty, k), tz: lerp(a.tz, b.tz, k) };
 }
 const shot = (px: number, py: number, pz: number, tx: number, ty: number, tz: number): StageShot => ({ px, py, pz, tx, ty, tz });
+
+// ---------------- 槍・のぼりの先（explore/troops.ts の形と同じ寸法。木戸の横木との重なりの確かめに使う）
+
+/** 町の兵の大きさ（explore/troops.ts の TOWN_FIG と同じ） */
+const FIG = 0.82;
+/** 槍を担ぐときの回しの中心（手。形の 1 m 単位・前が −z）と、そこから槍の先までの長さ・立てた槍の前への傾き */
+export const SPEAR_HAND = { x: 0.36, y: 1.3, z: -0.04 } as const;
+const SPEAR_REACH = 3.34;
+const SPEAR_LEAN = 0.21;
+/** 木戸をくぐるときに槍を担ぐ角度・のぼりを倒す角度（先が 2.7 m ほど：横木の下 2.98 m より下） */
+export const GATE_SPEAR_TILT = 1.15;
+export const GATE_BANNER_TILT = 0.95;
+/** のぼりの竿の長さと、根元（手）から下へ出る分（explore/troops.ts と同じ） */
+export const BANNER_POLE = 3.6;
+const BANNER_BELOW = 0.6;
+
+/** 兵の槍の先の位置（地面の起伏は含めない）。heading は 0 = +z を向く */
+export function spearTip(f: Pick<StageFigure, 'x' | 'z' | 'y' | 'heading' | 'spearTilt'>): { x: number; y: number; z: number } {
+    // 形の中（前が −z）で：手から先へ、前へ SPEAR_LEAN、担ぐと後ろへ spearTilt
+    const a = SPEAR_LEAN - (f.spearTilt ?? 0);
+    const fwd = SPEAR_HAND.z * -1 + SPEAR_REACH * Math.sin(a); // 前（−z）へ出る量
+    const up = SPEAR_HAND.y + SPEAR_REACH * Math.cos(a);
+    // 形の前（−z）は、置くと向き heading の方（(sin h, cos h)）。横（形の +x）は向きの右
+    const side = SPEAR_HAND.x;
+    return {
+        x: f.x + (Math.sin(f.heading) * fwd - Math.cos(f.heading) * side) * FIG,
+        y: f.y + up * FIG,
+        z: f.z + (Math.cos(f.heading) * fwd + Math.sin(f.heading) * side) * FIG,
+    };
+}
+
+/** のぼりの竿の先の位置（地面の起伏は含めない）。後ろ（進む向きの反対）へ tilt だけ傾く */
+export function bannerTop(b: Pick<StageBanner, 'x' | 'z' | 'y' | 'heading' | 'tilt'>): { x: number; y: number; z: number } {
+    const L = BANNER_POLE - BANNER_BELOW;
+    const bx = b.x - Math.cos(b.heading) * 0.3;
+    const bz = b.z + Math.sin(b.heading) * 0.3;
+    return { x: bx - Math.sin(b.heading) * Math.sin(b.tilt) * L, y: b.y + Math.cos(b.tilt) * L, z: bz - Math.cos(b.heading) * Math.sin(b.tilt) * L };
+}
 
 /** 1 歩の周期で進む距離（m。人物の歩きの動き 0.84 秒 × 1.4 m/秒） */
 export const STRIDE = 1.18;
@@ -244,7 +288,7 @@ export function stageFrame(ev: StageEvent, t: number, reduced: boolean, cast: re
         case 'reinforcement_arrive':
             return reinforcement(ev.count, ev.mark || DEFAULT_MARK, tt, reduced);
         case 'column_depart':
-            return columnDepart(ev.count, ev.mark || DEFAULT_MARK, tt, reduced);
+            return columnDepart(ev.count, ev.mark || DEFAULT_MARK, tt, reduced, cast);
         case 'column_return':
             return columnReturn(ev.count, ev.wounded, ev.mark || DEFAULT_MARK, ev.victory, tt, reduced);
     }
@@ -284,8 +328,9 @@ function arrivals(who: { key: string; look: string; name: string }[], t: number,
             heading = Math.PI;
         }
         used.push(dest);
-        // 前の画：木戸の外から通りへ（2 人目は少し後ろ・道の反対側）
-        const lane = i % 2 === 0 ? 1.0 : -0.5;
+        // 前の画：木戸の外から通りへ（2 人目は少し後ろ・道の反対側）。2 人の横の間は 2.5 m（木戸の柱は ±2.9 m）：
+        // 街道口の画で頭の上の名札が横に並んで重ならない（重なりそうなときは名札の側でも上下にずらす：actors.ts）
+        const lane = i % 2 === 0 ? 1.4 : -1.1;
         const back = i * 1.3;
         const pathA: Pt[] = [
             [lane, 19.6 + back],
@@ -450,14 +495,19 @@ export function columnSlots(count: number, wounded: number, abreast: number): Co
     return out;
 }
 
-/** 隊列を道すじの上に置く（頭の距離 head。stopAt：止まって並ぶ所（頭の距離の上限）） */
-function placeColumn(path: readonly Pt[], slots: ColumnSlot[], head: number, mark: string, moving: number, speedScale: number, banner: { open: boolean; tilt: number } | null): Pick<StageFrame, 'figures' | 'banners' | 'litters'> {
+/**
+ * 隊列を道すじの上に置く（頭の距離 head）。
+ * gateZ：北へ木戸をくぐる道（援兵・帰還）のとき、木戸の z。木戸の 2.6 m 手前から 1 m 手前までに槍を後ろへ担ぎ・のぼりを倒し、
+ * くぐった後もそのまま（先が横木の下 2.98 m より下。木戸の外の目の高さのカメラからは、先は横木の下に収まって見える）。
+ */
+function placeColumn(path: readonly Pt[], slots: ColumnSlot[], head: number, mark: string, moving: number, speedScale: number, banner: { open: boolean; tilt: number } | null, gateZ: number | null = null): Pick<StageFrame, 'figures' | 'banners' | 'litters'> {
     const figures: StageFigure[] = [];
     const banners: StageBanner[] = [];
     const litters: StageLitter[] = [];
     for (const s of slots) {
         const d = head - s.back;
         const p = offsetAlong(path, d, s.side, true);
+        const low = gateZ === null ? 0 : ease((gateZ + 2.6 - p.z) / 1.6);
         const walking = moving > 0.05;
         const phase = Math.max(0, d) / STRIDE / speedScale;
         if (s.role === 'carried') {
@@ -466,14 +516,21 @@ function placeColumn(path: readonly Pt[], slots: ColumnSlot[], head: number, mar
             continue;
         }
         const pose: FigurePose = !walking ? 'stand' : s.role === 'wounded' ? 'limp' : 'walk';
-        figures.push({ x: p.x, z: p.z, y: 0, heading: p.heading, pose, phase, lean: s.lean, mark, spear: s.role === 'soldier' || s.role === 'helper' });
-        if (s.role === 'banner' && banner) banners.push({ x: p.x, z: p.z, y: 0.95, heading: p.heading, mark, tilt: banner.tilt, open: banner.open });
+        const spear = s.role === 'soldier' || s.role === 'helper';
+        figures.push({ x: p.x, z: p.z, y: 0, heading: p.heading, pose, phase, lean: s.lean, mark, spear, ...(spear && low > 0 ? { spearTilt: round3(GATE_SPEAR_TILT * low) } : {}) });
+        if (s.role === 'banner' && banner) banners.push({ x: p.x, z: p.z, y: 0.95, heading: p.heading, mark, tilt: Math.max(banner.tilt, round3(GATE_BANNER_TILT * low)), open: banner.open });
     }
     return { figures, banners, litters };
 }
 
-const REINF_SHOT_0 = shot(-2.6, 2.3, 7.4, 0.4, 1.8, 16.8);
-const REINF_SHOT_1 = shot(-2.6, 2.3, 7.4, 0.7, 1.5, 13.2);
+/**
+ * 木戸をくぐる兵の画（援兵・帰還）：木戸の外の街道（隊の後ろ・目の高さ 2.4 m）から北の木戸と町を見て、木戸をくぐる背中を追う。
+ * 前は木戸の内から外を見る画で、遠くの兵の槍・のぼりの先（3.75〜3.95 m）が木戸の横木・屋根（2.98〜3.9 m）の後ろに隠れ、
+ * 兵が横木から吊られて見えた。今は、兵は木戸の手前（カメラの側）では槍を立てて手前に描かれ、くぐる前に槍を担ぎ・のぼりを倒す
+ * （placeColumn の gateZ）ので、くぐった後の先は横木の下に収まる（tests/proto3d-town-stage.test.ts）。
+ */
+const REINF_SHOT_0 = shot(2.4, 2.4, 28.5, -0.2, 1.4, 16.0);
+const REINF_SHOT_1 = shot(2.4, 2.4, 28.0, 0.6, 1.3, 12.5);
 const REINF_SPEED = 1.5;
 
 function reinforcement(count: number, mark: string, t: number, reduced: boolean): StageFrame {
@@ -485,62 +542,70 @@ function reinforcement(count: number, mark: string, t: number, reduced: boolean)
     let head: number;
     let moving = 1;
     if (reduced) {
-        // 動かさない：木戸の内側に並んで立つ
-        head = pathLength([path[0]!, path[1]!]) + 3.2;
+        // 動かさない：木戸の外（街道）に、町の方を向いて並んで立つ（横木より手前）
+        head = pathLength([path[0]!, [0, KIDO.z + 2.2]]);
         moving = 0;
     } else {
         const w = walkProgress(t, 0.2, REINF_SPEED, L - start);
         head = start + w.s;
         moving = w.moving;
     }
-    const col = placeColumn(path, slots, head, mark, moving, 1, { open: true, tilt: 0 });
-    const s = reduced ? REINF_SHOT_1 : lerpShot(REINF_SHOT_0, REINF_SHOT_1, ease(t / 7));
+    const col = placeColumn(path, slots, head, mark, moving, 1, { open: true, tilt: 0 }, KIDO.z);
+    const s = reduced ? REINF_SHOT_0 : lerpShot(REINF_SHOT_0, REINF_SHOT_1, ease(t / 7));
     return { people: [], ...col, shot: s, hideCast: [], hideAmbient: ['reinforcement', 'porter', 'merchant'] };
 }
 
-/** 出陣の画：通りの東（開始の位置の東）から城門を見て、出てくる隊列の頭を追う */
-const DEPART_SHOT_0 = shot(3.4, 2.4, 0.6, -0.2, 2.0, -12.0);
-const DEPART_SHOT_1 = shot(3.4, 2.4, 0.6, 0.0, 1.5, -3.0);
-const DEPART_SPEED = 1.5;
+/**
+ * 出陣の画：通りの東の端（高札の南・塀ぎわ）の高い所から北西を見下ろし、城門をくぐって通り（町）へ出て来る隊列を斜め横から追う。
+ * 隊列が画面の右上（城門）から左下（通り）へ動くので、毎秒 1 コマに満たない画でも出て行くのが分かり、兵は進む向き（南）を向いて歩く。
+ * 手前に立つ会話の相手（人物）・城門の輪・通りの人々は、隊列をふさがないよう場面の間だけ隠す。
+ */
+const DEPART_SHOT_0 = shot(6.0, 4.2, -1.0, -0.4, 0.6, -11.0);
+const DEPART_SHOT_1 = shot(6.0, 4.2, -1.4, -0.8, 0.5, -4.5);
+const DEPART_SPEED = 1.6;
 /** 隊列が整って歩き出すまで（秒） */
-export const DEPART_FORM_SEC = 0.8;
+export const DEPART_FORM_SEC = 0.5;
 
-function columnDepart(count: number, mark: string, t: number, reduced: boolean): StageFrame {
+function columnDepart(count: number, mark: string, t: number, reduced: boolean, cast: readonly StageCastInfo[]): StageFrame {
     const n = Math.max(0, Math.min(24, Math.floor(count)));
     const slots = columnSlots(n, 0, n > 12 ? 3 : 2);
     const path = ROAD_OUT;
-    // 頭の距離：始めは城門のすぐ北（城内で整っている）
-    const s0 = pathLength([path[0]!, [0, -14.6]]);
+    // 頭の距離：始めは城門のすぐ北（城内で整っている）。歩き出せばすぐに城門をくぐる
+    const s0 = pathLength([path[0]!, [0, -12.4]]);
     let head = s0;
     let moving = 0;
     if (reduced) {
-        // 動かさない：城門を出た所（通りの北）に並んで立つ
-        head = pathLength([path[0]!, [0, -6.5]]);
+        // 動かさない：城門を出た所（通り）に並んで立つ
+        head = pathLength([path[0]!, [0, -3.6]]);
     } else {
         const w = walkProgress(t, DEPART_FORM_SEC, DEPART_SPEED, 60);
         head = s0 + w.s;
         moving = w.moving;
     }
     const col = placeColumn(path, slots, head, mark, moving, 1, { open: true, tilt: 0 });
-    const s = reduced ? lerpShot(DEPART_SHOT_0, DEPART_SHOT_1, 0.5) : lerpShot(DEPART_SHOT_0, DEPART_SHOT_1, ease((t - 0.5) / 9));
-    return { people: [], ...col, shot: s, hideCast: [], hideAmbient: ['preparing', 'guard'] };
+    const s = reduced ? lerpShot(DEPART_SHOT_0, DEPART_SHOT_1, 0.6) : lerpShot(DEPART_SHOT_0, DEPART_SHOT_1, ease((t - 0.4) / 6.5));
+    const hideCast = cast.filter((c) => c.kind === 'person' || c.kind === 'gate').map((c) => c.id);
+    return { people: [], ...col, shot: s, hideCast, hideAmbient: ['preparing', 'guard', 'porter', 'merchant'] };
 }
 
-/** 帰還の画：通りの西から南（木戸）を見て、入ってくる隊列を迎える */
-const RETURN_SHOT_0 = shot(-2.8, 2.4, 8.0, 0.4, 1.8, 18.5);
-const RETURN_SHOT_1 = shot(-2.8, 2.4, 8.0, 0.3, 1.5, 13.0);
+/**
+ * 帰還の画：援兵と同じく、木戸の外の街道（隊列の後ろの東・目の高さ 2.6 m）から北の木戸と町を見て、木戸をくぐって町へ帰る隊列の背中を追う。
+ * 最後の列の負傷兵・担架が手前に来る。
+ */
+const RETURN_SHOT_0 = shot(3.6, 2.6, 37.5, -0.6, 1.3, 17.5);
+const RETURN_SHOT_1 = shot(3.6, 2.6, 37.0, -0.2, 1.2, 14.0);
 const RETURN_SPEED = 1.2;
 
 function columnReturn(count: number, wounded: number, mark: string, victory: boolean, t: number, reduced: boolean): StageFrame {
     const n = Math.max(0, Math.min(24, Math.floor(count)));
     const slots = columnSlots(n, wounded, n > 12 ? 3 : 2);
     const path = ROAD_IN;
-    const s0 = pathLength([path[0]!, [0, KIDO.z + 4.6]]);
+    const s0 = pathLength([path[0]!, [0, KIDO.z + 3.0]]);
     let head = s0;
     let moving = 1;
     if (reduced) {
-        // 動かさない：木戸をくぐった所に止まって並ぶ
-        head = pathLength([path[0]!, [0, KIDO.z - 4.5]]);
+        // 動かさない：木戸の手前（街道）に、町の方を向いて止まって並ぶ（横木より手前）
+        head = pathLength([path[0]!, [0, KIDO.z + 1.6]]);
         moving = 0;
     } else {
         const w = walkProgress(t, 0.2, RETURN_SPEED, 60);
@@ -548,8 +613,8 @@ function columnReturn(count: number, wounded: number, mark: string, victory: boo
         moving = w.moving;
     }
     // 勝てば旗を掲げる（真っすぐ・広げる）。勝てなければ旗を巻いて傾けて運ぶ
-    const col = placeColumn(path, slots, head, mark, moving, RETURN_SPEED / DEPART_SPEED, victory ? { open: true, tilt: 0 } : { open: false, tilt: 0.55 });
-    const s = reduced ? lerpShot(RETURN_SHOT_0, RETURN_SHOT_1, 0.6) : lerpShot(RETURN_SHOT_0, RETURN_SHOT_1, ease(t / 9));
+    const col = placeColumn(path, slots, head, mark, moving, RETURN_SPEED / DEPART_SPEED, victory ? { open: true, tilt: 0 } : { open: false, tilt: 0.55 }, KIDO.z);
+    const s = reduced ? RETURN_SHOT_0 : lerpShot(RETURN_SHOT_0, RETURN_SHOT_1, ease(t / 9));
     return { people: [], ...col, shot: s, hideCast: [], hideAmbient: ['porter', 'merchant'] };
 }
 

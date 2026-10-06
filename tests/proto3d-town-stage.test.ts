@@ -7,7 +7,9 @@
  */
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { ARRIVAL_CUT, columnSlots, shotsOver, stageFrame, type StageCastInfo } from '../proto3d/src/explore/stage';
+import { ARRIVAL_CUT, bannerTop, columnSlots, shotsOver, spearTip, stageFrame, type StageCastInfo } from '../proto3d/src/explore/stage';
+import { stackLabels } from '../proto3d/src/explore/actors';
+import { KIDO } from '../proto3d/src/town/plan';
 import { blockersForTest } from '../proto3d/src/game/follow';
 import { createHero } from '../proto3d/src/game/motion';
 import { START, cameraBlockers, colliders, type Rect } from '../proto3d/src/layout';
@@ -188,7 +190,12 @@ describe('出来事の中身（人数・負傷・旗・行き先）', () => {
                 if (ev.count - ev.wounded > 0) {
                     expect(b, JSON.stringify(ev)).toBeTruthy();
                     expect(b!.open).toBe(ev.victory);
-                    expect(b!.tilt === 0).toBe(ev.victory);
+                    // 掲げる（真っすぐ）・巻いて傾けるは、木戸の手前（街道。始め）で見る。木戸をくぐる前後は、勝っても横木（2.98 m）の下を
+                    // くぐるために竿を倒す（stage.ts の GATE_BANNER_TILT）。負けの傾きはそれより小さくならない
+                    const b0 = stageFrame(ev, 0, false).banners[0]!;
+                    expect(b0.tilt === 0, JSON.stringify(ev)).toBe(ev.victory);
+                    expect(b0.open).toBe(ev.victory);
+                    if (!ev.victory) expect(b!.tilt).toBeGreaterThanOrEqual(0.55);
                 }
             } else {
                 expect(f.banners.length).toBe(1);
@@ -214,6 +221,87 @@ describe('出来事の中身（人数・負傷・旗・行き先）', () => {
         expect(Math.min(...r0.figures.map((x) => x.z))).toBeGreaterThan(16.4);
         const r1 = stageFrame(EVENTS[7]!, 8, false);
         expect(Math.min(...r1.figures.map((x) => x.z))).toBeLessThan(16.4);
+    });
+});
+
+describe('公開前の点検の直し（名札・吊られて見える構図・出陣の隊列）', () => {
+    it('使者 2 人は街道口の画で横に 2 m 以上離れて歩く（頭の上の名札が横に並んで重ならない）', () => {
+        for (let t = 0; t < ARRIVAL_CUT; t += 0.25) {
+            const [a, b] = stageFrame(EVENTS[0]!, t, false, CAST_EXPLORE).people;
+            expect(Math.abs(a!.x - b!.x), `t=${t}`).toBeGreaterThanOrEqual(2);
+        }
+    });
+
+    it('名札が重なるときは、近い人の名札をそのままにし、遠い人の名札を上へずらす（重ならなければ動かさない）', () => {
+        // 近い順。1 つ目と 2 つ目は横に重なる・3 つ目は離れている
+        const y = stackLabels([
+            { x: 400, y: 180, w: 96, h: 22 },
+            { x: 450, y: 182, w: 96, h: 22 },
+            { x: 700, y: 180, w: 96, h: 22 },
+        ]);
+        expect(y[0]).toBe(180);
+        expect(y[1]).toBeLessThanOrEqual(180 - 22 - 3);
+        expect(y[2]).toBe(180);
+        // 3 枚が同じ所：順に積む
+        const z = stackLabels([0, 1, 2].map(() => ({ x: 300, y: 200, w: 90, h: 20 })));
+        expect(z[1]).toBeLessThanOrEqual(z[0]! - 20);
+        expect(z[2]).toBeLessThanOrEqual(z[1]! - 20);
+    });
+
+    it('援兵・帰還：カメラは木戸の外の目の高さ。槍・のぼりの先が木戸の横木・屋根に刺さらず、その後ろに隠れて「横木から吊られた」ように見えない', () => {
+        // 木戸の上の横木と板屋根（town/plan.ts の kido：高さ 2.98〜3.9 m・幅は柱の外まで）。槍・のぼりの先は stage.ts の spearTip・bannerTop
+        //（explore/troops.ts の形と同じ寸法。立てた槍の先は 3.75 m・のぼりは 3.95 m。木戸をくぐる前に担ぐ・倒す）
+        const beam = { z: KIDO.z, y0: 2.95, y1: 3.9, xh: KIDO.postX + 0.75 };
+        const evs: StageEvent[] = [EVENTS[4]!, { id: 'reinforcement_arrive', count: 2, mark: '徳', name: '守備隊' }, EVENTS[7]!, EVENTS[8]!, EVENTS[9]!];
+        let beyond = 0;
+        for (const ev of evs) {
+            for (const reduced of [false, true]) {
+                for (let t = 0; t <= 14; t += 0.25) {
+                    const f = stageFrame(ev, t, reduced);
+                    const c = f.shot;
+                    const at = `${ev.id}${reduced ? '（減らす）' : ''} t=${t}`;
+                    expect(c.pz, at).toBeGreaterThan(KIDO.z + 4);
+                    expect(c.py, at).toBeLessThan(beam.y0 - 0.3);
+                    const tips = [...f.figures.filter((g) => g.spear).map((g) => spearTip(g)), ...f.banners.map((b) => bannerTop(b))];
+                    for (const p of tips) {
+                        // 木戸の真下（横木・屋根の厚みの中）では、先が横木より下（刺さらない）
+                        if (Math.abs(p.z - beam.z) < 0.8 && Math.abs(p.x) < beam.xh) expect(p.y, `${at}：(${p.x.toFixed(2)}, ${p.z.toFixed(2)}) の先が横木に刺さる`).toBeLessThan(beam.y0);
+                        // 先が木戸より奥（カメラと反対の側）：カメラから先への線が、横木・屋根の後ろを通らない
+                        if ((c.pz - beam.z) * (p.z - beam.z) >= 0) continue;
+                        beyond++;
+                        const k = (beam.z - c.pz) / (p.z - c.pz);
+                        const y = c.py + (p.y - c.py) * k;
+                        const x = c.px + (p.x - c.px) * k;
+                        const hidden = Math.abs(x) < beam.xh && y > beam.y0 && y < beam.y1;
+                        expect(hidden, `${at}：(${p.x.toFixed(2)}, ${p.z.toFixed(2)}) の先が横木の後ろ（${y.toFixed(2)} m）`).toBe(false);
+                    }
+                }
+            }
+        }
+        // 木戸をくぐった後の兵も確かめている
+        expect(beyond).toBeGreaterThan(100);
+        // 木戸の手前（街道）では槍を立てている
+        expect(stageFrame(EVENTS[7]!, 0, false).figures.filter((g) => g.spear).every((g) => !g.spearTilt)).toBe(true);
+    });
+
+    it('出陣：隊列は城門のすぐ内で整い、歩き出すと城門をくぐって通りへ出る（進む向き＝南を向く）。手前の人物・城門の輪は場面の間だけ隠す', () => {
+        const ev = EVENTS[5]!;
+        const f0 = stageFrame(ev, 0, false, CAST_MUSTER);
+        expect(Math.max(...f0.figures.map((x) => x.z))).toBeGreaterThan(-13);
+        expect(f0.hideCast.sort()).toEqual(['asai_envoy', 'gate', 'tadakatsu']);
+        // 6 秒（台本の長さ）で頭は城門（z −12）から 6 m 以上南へ。このコンテナのように時計が 5 秒しか進まなくても城門の外
+        expect(Math.max(...stageFrame(ev, 6, false, CAST_MUSTER).figures.map((x) => x.z))).toBeGreaterThan(-6);
+        expect(Math.max(...stageFrame(ev, 3, false, CAST_MUSTER).figures.map((x) => x.z))).toBeGreaterThan(-11);
+        for (const t of [1.5, 3, 5]) {
+            for (const g of stageFrame(ev, t, false, CAST_MUSTER).figures) {
+                expect(g.pose).toBe('walk');
+                expect(Math.abs(g.heading), `t=${t}`).toBeLessThan(0.05);
+            }
+        }
+        // 動きを減らす：城門の外（通り）に並んで立つ
+        const r = stageFrame(ev, 0, true, CAST_MUSTER);
+        expect(Math.max(...r.figures.map((x) => x.z))).toBeGreaterThan(-4);
+        for (const g of r.figures) expect(g.pose).toBe('stand');
     });
 });
 

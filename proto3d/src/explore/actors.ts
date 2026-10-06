@@ -53,8 +53,12 @@ export class ActorLayer {
         this.group.add(this.troops.group);
     }
 
-    /** 人を置き直す（いない人は消し、新しい人は作る）。time は待機の動きの時刻 */
-    setPeople(list: readonly ActorPersonState[], time: number, camera: THREE.Camera): void {
+    /**
+     * 人を置き直す（いない人は消し、新しい人は作る）。time は待機の動きの時刻。
+     * placeLabels を false にすると名札は動かさない（演出の時計は探索の描画の後に進むので、ここで名札を動かすと、
+     * 描いた画（前の形）より名札が先へ進んで見える。名札は描く直前の placeLabels で置く：explore/world.ts の frame）。
+     */
+    setPeople(list: readonly ActorPersonState[], time: number, camera: THREE.Camera, placeLabels = true): void {
         const want = new Set(list.map((p) => p.key));
         for (const [k, a] of this.people) {
             if (!want.has(k)) this.remove(k, a);
@@ -92,14 +96,16 @@ export class ActorLayer {
             a.showLabel = vis && p.label;
         }
         this.peopleDrawn = drawn;
-        this.placeLabels(camera);
+        if (placeLabels) this.placeLabels(camera);
     }
 
     /**
-     * 名札を頭の上へ（描く直前に呼ぶ：演出の時計は探索の描画と別の時に進むので、描いた画と名札がずれないように、描く前にもう一度置く）
+     * 名札を頭の上へ（描く直前に呼ぶ：演出の時計は探索の描画と別の時に進むので、描いた画と名札がずれないように、描く前にもう一度置く）。
+     * 名札どうしが重なるときは、カメラに近い人の名札をそのままにし、遠い人の名札を上へずらす（互い違い。2 人の使者が並んで来る画）。
      */
     placeLabels(camera: THREE.Camera): void {
         const { w, h } = this.viewSize();
+        const shown: { el: HTMLElement; x: number; y: number; depth: number }[] = [];
         for (const a of this.people.values()) {
             if (!a.label) continue;
             if (!a.showLabel) {
@@ -110,8 +116,13 @@ export class ActorLayer {
             tmpV.set(r.x, r.y + 2.05, r.z).project(camera);
             const on = tmpV.z > -1 && tmpV.z < 1 && Math.abs(tmpV.x) < 1.05 && Math.abs(tmpV.y) < 1.05;
             a.label.hidden = !on;
-            if (on) a.label.style.transform = `translate(${((tmpV.x * 0.5 + 0.5) * w).toFixed(1)}px, ${((-tmpV.y * 0.5 + 0.5) * h).toFixed(1)}px) translate(-50%, -100%)`;
+            if (on) shown.push({ el: a.label, x: (tmpV.x * 0.5 + 0.5) * w, y: (-tmpV.y * 0.5 + 0.5) * h, depth: tmpV.z });
         }
+        shown.sort((p, q) => p.depth - q.depth);
+        const placed = stackLabels(shown.map((s) => ({ x: s.x, y: s.y, w: labelWidth(s.el), h: labelHeight(s.el) })));
+        shown.forEach((s, i) => {
+            s.el.style.transform = `translate(${s.x.toFixed(1)}px, ${placed[i]!.toFixed(1)}px) translate(-50%, -100%)`;
+        });
     }
 
     /** 兵・のぼり・担架を置き直す */
@@ -180,4 +191,34 @@ export class ActorLayer {
         this.pv.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
         this.frustum.setFromProjectionMatrix(this.pv);
     }
+}
+
+/** 名札の幅（描かれていれば実際の幅。無ければ字数からの見積もり：12px の字・字の間・左右の余白） */
+function labelWidth(el: HTMLElement): number {
+    const w = el.offsetWidth;
+    return typeof w === 'number' && w > 0 ? w : [...(el.textContent ?? '')].length * 12.8 + 20;
+}
+function labelHeight(el: HTMLElement): number {
+    const v = el.offsetHeight;
+    return typeof v === 'number' && v > 0 ? v : 22;
+}
+
+/**
+ * 名札の下の端の y を決める（並びは近い順。前の札と重なる札は、重なった札の上へ 3px あけて上げる。純粋）。
+ * 札の箱は x の真ん中・下の端 y・幅 w・高さ h。返りは札ごとの下の端の y。
+ */
+export function stackLabels(list: readonly { x: number; y: number; w: number; h: number }[]): number[] {
+    const boxes: { x0: number; x1: number; y0: number; y1: number }[] = [];
+    return list.map((l) => {
+        let y = l.y;
+        for (let guard = 0; guard < list.length + 1; guard++) {
+            const x0 = l.x - l.w / 2;
+            const x1 = l.x + l.w / 2;
+            const hit = boxes.find((b) => x0 < b.x1 && x1 > b.x0 && y - l.h < b.y1 && y > b.y0);
+            if (!hit) break;
+            y = hit.y0 - 3;
+        }
+        boxes.push({ x0: l.x - l.w / 2, x1: l.x + l.w / 2, y0: y - l.h, y1: y });
+        return y;
+    });
 }

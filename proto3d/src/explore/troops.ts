@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { CLAN_COLOR, clanOfMark, makeMarkBannerTexture, makeTroopGeometries, merge, part } from '../shared/figures';
 import { groundY } from '../layout';
-import type { StageBanner, StageFigure, StageLitter } from './stage';
+import { SPEAR_HAND, type StageBanner, type StageFigure, type StageLitter } from './stage';
 
 /** 町の兵の大きさ（1 m 単位の形を何倍で置くか。合戦は 1.45） */
 export const TOWN_FIG = 0.82;
@@ -17,6 +17,7 @@ const POLE = 3.6;
 const FAR = 46;
 
 const mk = new THREE.Matrix4();
+const mspear = new THREE.Matrix4();
 const mq = new THREE.Quaternion();
 const mtmp = new THREE.Matrix4();
 const euler = new THREE.Euler();
@@ -110,7 +111,12 @@ export class TownTroops {
             this.body.setColorAt(n, tint);
             this.head.setColorAt(n, color.setRGB(1, 1, 1));
             if (f.spear && ns < this.cap) {
-                this.spear.setMatrixAt(ns, mk);
+                // 担いだ槍（木戸をくぐる）：手を中心に後ろへ回す（形の中で。stage.ts の spearTip と同じ寸法）
+                if (f.spearTilt) {
+                    mspear.copy(mk).multiply(mtmp.makeTranslation(SPEAR_HAND.x, SPEAR_HAND.y, SPEAR_HAND.z));
+                    mspear.multiply(mtmp.makeRotationX(f.spearTilt)).multiply(mtmp.makeTranslation(-SPEAR_HAND.x, -SPEAR_HAND.y, -SPEAR_HAND.z));
+                    this.spear.setMatrixAt(ns, mspear);
+                } else this.spear.setMatrixAt(ns, mk);
                 ns++;
             }
             n++;

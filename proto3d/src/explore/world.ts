@@ -236,10 +236,16 @@ export class ExploreWorld implements GameWorld {
         this.stageShot = { ...f.shot, hideHero: true };
         this.applyShot();
         const cam = this.host.camera;
-        this.stageActors.setPeople(f.people, t, cam);
+        // 名札はここでは動かさない：演出の時計（ここ）は探索の描画の後に進むので、ここで動かすと、まだ前の形の画の上で名札だけが
+        // 先へ進んで見える（毎秒 1 コマほどの画では人 1〜2 m 分ずれた）。名札は描く直前（frame）に、描く人の位置とカメラで置く
+        this.stageActors.setPeople(f.people, t, cam, false);
         this.stageActors.setFigures(f.figures, f.banners, f.litters, t, cam);
-        // 出来事の最初の画はすぐ描く（地図の覆いが外れた所に、前の画や暗い画面を出さない。初めて描く重さは演出の時計に数えない）
-        if (fresh) this.host.renderOnce();
+        // 出来事の最初の画はすぐ描く（地図の覆いが外れた所に、前の画や暗い画面を出さない。初めて描く重さは演出の時計に数えない）。
+        // 名札も、その描いた画に合わせて置く
+        if (fresh) {
+            this.host.renderOnce();
+            this.stageActors.placeLabels(cam);
+        }
     }
 
     private endStage(): void {
