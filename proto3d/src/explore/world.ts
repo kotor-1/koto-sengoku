@@ -605,8 +605,8 @@ export class ExploreWorld implements GameWorld {
     }
 
     /** 確認用：置いている人物（id・姿勢・場所） */
-    probe(): { id: string; pose: string; x: number; z: number; model: boolean }[] {
-        return [...this.views.values()].map((v) => ({ id: v.member.id, pose: v.member.pose, x: v.member.x, z: v.member.z, model: !!v.mixer }));
+    probe(): { id: string; pose: string; x: number; z: number; heading: number; model: boolean }[] {
+        return [...this.views.values()].map((v) => ({ id: v.member.id, pose: v.member.pose, x: v.member.x, z: v.member.z, heading: v.member.heading, model: !!v.mixer }));
     }
 
     /** 確認用：演出の出来事（今の時刻・人・兵・隠している人物・カメラ） */

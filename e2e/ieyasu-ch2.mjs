@@ -198,8 +198,10 @@ async function readThrough(page, press) {
 }
 async function walkNear(page, how, c, id) {
   const walk = (x, z, done) => (how.cdp ? walkTouch(page, how.cdp, x, z, done) : walkKeys(page, x, z, done));
-  const wx = c.x;
-  const wz = c.z + 2.4;
+  // 西（通り）を向いて立つ相手（石川・浅井の使者の所）は西から近づく。南には詰所の前の休み場（負傷兵がいれば当たり判定）がある（Version 21）
+  const west = typeof c.heading === 'number' && Math.abs(Math.atan2(Math.sin(c.heading + Math.PI / 2), Math.cos(c.heading + Math.PI / 2))) < 0.3;
+  const wx = west ? c.x - 2.4 : c.x;
+  const wz = west ? c.z : c.z + 2.4;
   await walk(wx, wz, (q) => q.prompt === id || Math.hypot(q.x - wx, q.z - wz) < 0.5);
   await walk(c.x, c.z, (q) => q.prompt === id);
   const p = await pose(page);

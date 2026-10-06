@@ -153,7 +153,7 @@ const planPath = (page, tx, tz) => page.evaluate(async ([tx, tz]) => {
   const L = await import('/src/layout.ts');
   const M = await import('/src/game/motion.ts');
   const C = await import('/src/explore/cast.ts');
-  const rects = [...L.colliders(), ...C.castColliders(window.__game.world.cast ?? [])];
+  const rects = [...L.colliders(), ...C.castColliders(window.__game.world.cast ?? []), ...(window.__game.world.ambientRects ?? [])];
   const R = M.HERO_RADIUS + 0.12;
   const free = (x, z) => rects.every((q) => Math.hypot(x - Math.max(q.x0, Math.min(q.x1, x)), z - Math.max(q.z0, Math.min(q.z1, z))) >= R) && x > L.BOUNDS.x0 + 0.4 && x < L.BOUNDS.x1 - 0.4 && z > L.BOUNDS.z0 + 0.4 && z < L.BOUNDS.z1 - 0.4;
   const step = 0.25;
@@ -262,7 +262,9 @@ const pick = async (page, id) => { await sleep(450); await page.locator(`.g-choi
 async function talkTo(page, id) {
   const c = (await page.evaluate(() => window.__game.cast)).find((m) => m.id === id);
   if (!c) throw new Error(`${id} が居ない`);
-  await walkTo(page, c.x, c.z + 2.4, 0.5, (q) => q.prompt === id);
+  // 西（通り）を向いて立つ相手は西から近づく（南には詰所の前の休み場がある。Version 21）
+  const west = typeof c.heading === 'number' && Math.abs(Math.atan2(Math.sin(c.heading + Math.PI / 2), Math.cos(c.heading + Math.PI / 2))) < 0.3;
+  await walkTo(page, west ? c.x - 2.4 : c.x, west ? c.z : c.z + 2.4, 0.5, (q) => q.prompt === id);
   await walkKeys(page, c.x, c.z, (q) => q.prompt === id, 200);
   if ((await pose(page)).prompt !== id) throw new Error(`${id} の「話す」が出ない`);
   await sleep(300);

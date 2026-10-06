@@ -107,7 +107,7 @@ const planPath = (page, tx, tz) => page.evaluate(async ([tx, tz]) => {
   const L = await import('/src/layout.ts');
   const M = await import('/src/game/motion.ts');
   const C = await import('/src/explore/cast.ts');
-  const rects = [...L.colliders(), ...C.castColliders(window.__game.world.cast ?? [])];
+  const rects = [...L.colliders(), ...C.castColliders(window.__game.world.cast ?? []), ...(window.__game.world.ambientRects ?? [])];
   const R = M.HERO_RADIUS + 0.12;
   const free = (x, z) => rects.every((q) => Math.hypot(x - Math.max(q.x0, Math.min(q.x1, x)), z - Math.max(q.z0, Math.min(q.z1, z))) >= R) && x > L.BOUNDS.x0 + 0.4 && x < L.BOUNDS.x1 - 0.4 && z > L.BOUNDS.z0 + 0.4 && z < L.BOUNDS.z1 - 0.4;
   const step = 0.25;
