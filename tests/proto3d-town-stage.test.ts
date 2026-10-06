@@ -590,6 +590,46 @@ describe('探索の場面の口：stage(null) で片付けて戻る', () => {
         expect(poses).toEqual([before]);
     });
 
+    it('町の人々の休み場の負傷兵・援兵がいるときだけ、その並びの当たり判定を人物・高札の分と合わせて歩きの判定に足す', async () => {
+        const g = globalThis as Record<string, unknown>;
+        g.document ??= { createElement: (t: string) => fakeElement(t), body: fakeElement('body') };
+        g.window ??= { addEventListener: () => undefined, removeEventListener: () => undefined };
+        const { ExploreWorld } = await import('../proto3d/src/explore/world');
+        let extra: Rect[] = [];
+        const host = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(48, 2, 0.1, 2000),
+            overlay: fakeElement() as unknown as HTMLElement,
+            hero: createHero(0, 0, 0),
+            low: true,
+            load: () => Promise.reject(new Error('素材なし（テスト）')),
+            prepare: () => undefined,
+            setHeroPose: () => undefined,
+            setControl: () => undefined,
+            setRenderPaused: () => undefined,
+            setExtraColliders: (r: Rect[]) => void (extra = r),
+            onFrame: () => undefined,
+            viewSize: () => ({ w: 800, h: 400 }),
+            orbit: { yaw: 0, pitch: 0, dist: 2 },
+            setCameraShot: () => undefined,
+            renderOnce: () => undefined,
+            setLookHandler: () => undefined,
+        };
+        const world = new ExploreWorld(host as never);
+        await world.preload();
+        world.setCast([{ id: 'notice', kind: 'notice', x: 5.5, z: -8.3, heading: -Math.PI / 2, pose: 'stand', label: '高札', verb: '読む', reach: 2, key: false, solid: { x0: 5.3, x1: 5.7, z0: -9.1, z1: -7.5 } }]);
+        expect(extra.length).toBe(1);
+        world.setAmbient({ groups: [{ kind: 'porter', count: 2, place: 'street' }] });
+        expect(extra.length).toBe(1);
+        world.setAmbient({ groups: [{ kind: 'wounded', count: 4, place: 'guardpost' }, { kind: 'reinforcement', count: 3, mark: '織', place: 'guardpost' }] });
+        expect(extra.length).toBe(3);
+        // 人物を置き直しても、町の人々の分は残る
+        world.setCast([]);
+        expect(extra.length).toBe(2);
+        world.setAmbient(null);
+        expect(extra).toEqual([]);
+    });
+
     it('出来事の最初の画：探索の描画を止めている間（演出の層が字幕を先に見せている間）は描かず、止めるのをやめた後の次の stage で 1 回描く', async () => {
         const g = globalThis as Record<string, unknown>;
         g.document ??= { createElement: (t: string) => fakeElement(t), body: fakeElement('body') };

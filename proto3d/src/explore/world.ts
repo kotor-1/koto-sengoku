@@ -17,7 +17,7 @@ import { colliders, groundY, type Rect } from '../layout';
 import type { AmbientSpec, ScoutPoint, StageEvent } from '../story/types';
 import { HeldKeys } from '../ui/guard';
 import { ActorLayer, stackLabels } from './actors';
-import { AMBIENT_FIGURES_MAX, ambientPlan, walkerAt, type AmbientPlan } from './ambient';
+import { AMBIENT_FIGURES_MAX, ambientColliders, ambientPlan, walkerAt, type AmbientPlan } from './ambient';
 import { castColliders, headingToward, type CastMember } from './cast';
 import { LookoutSession, type LookoutProbe } from './lookout';
 import { PersonFactory, hashOf } from './people';
@@ -124,6 +124,7 @@ export class ExploreWorld implements GameWorld {
     private ambient: AmbientSpec | null = null;
     private plan: AmbientPlan = ambientPlan(null);
     private ambientTime = 0;
+    private ambientRects: Rect[] = [];
     // ---- カメラの差し替え（強い順：出来事・物見・軍議所）
     private stageShot: CameraShot | null = null;
     private lookoutShot: CameraShot | null = null;
@@ -330,6 +331,9 @@ export class ExploreWorld implements GameWorld {
         if (JSON.stringify(spec) === JSON.stringify(this.ambient)) return;
         this.ambient = spec;
         this.plan = ambientPlan(spec);
+        // 休み場の負傷兵・援兵の並び（いるときだけ）を歩きの当たり判定に足す（人物・高札の分と合わせて渡す）
+        this.ambientRects = ambientColliders(this.plan);
+        this.applyColliders();
         if (!spec) this.ambientActors.clear();
         else this.updateAmbient(this.host.camera);
     }
@@ -403,12 +407,17 @@ export class ExploreWorld implements GameWorld {
         }
         this.views.clear();
         this.cast = [];
-        this.host.setExtraColliders([]);
+        this.applyColliders();
+    }
+
+    /** 歩きの当たり判定に足す物：置いている人物・高札と、町の人々の兵の並び（休み場の負傷兵・援兵） */
+    private applyColliders(): void {
+        this.host.setExtraColliders([...castColliders(this.cast), ...this.ambientRects]);
     }
 
     private build(cast: CastMember<string>[]): void {
         this.cast = cast.slice();
-        this.host.setExtraColliders(castColliders(cast));
+        this.applyColliders();
         for (const m of cast) {
             let v: NpcView | null = null;
             if (m.kind === 'person') v = this.makePerson(m);
@@ -523,11 +532,13 @@ export class ExploreWorld implements GameWorld {
         }
         // 名札が重なるときは、近い人の名札をそのままにし、遠い人の名札を上へずらす（演出の人の名札と同じ。城門の前の家臣と使者が並ぶ画）
         shown.sort((a, b) => a.depth - b.depth);
-        const ys = stackLabels(shown.map((s) => ({ x: s.x, y: s.y, w: labelBox(s.v.label).w, h: labelBox(s.v.label).h })));
+        // 大きさは文と字の大きさ（far）が変わったときだけ測る（毎フレーム測ると、名札ごとに配置の計算をやり直させる）。書くのは測った後
+        const boxes = shown.map((s) => labelBox(s.v.label));
+        const ys = stackLabels(shown.map((s, i) => ({ x: s.x, y: s.y, w: boxes[i]!.w, h: boxes[i]!.h })));
         const keyAt = new Map<NpcView, { x: number; y: number }>();
         shown.forEach((s, i) => {
             s.v.label.style.transform = `translate(${s.x.toFixed(1)}px, ${ys[i]!.toFixed(1)}px) translate(-50%, -100%)`;
-            keyAt.set(s.v, { x: s.x, y: ys[i]! - labelBox(s.v.label).h });
+            keyAt.set(s.v, { x: s.x, y: ys[i]! - boxes[i]!.h });
         });
         this.updateGuide(cam, w, vh, keyAt);
         if (this.ambient) this.updateAmbient(cam);
@@ -645,11 +656,21 @@ export class ExploreWorld implements GameWorld {
     }
 }
 
-/** 名札の大きさ（描かれていれば実際の大きさ。無ければ字数からの見積もり） */
+/** 測った名札の大きさ（文と far の組ごと。変わったときだけ測り直す） */
+const labelSizes = new WeakMap<HTMLElement, { key: string; w: number; h: number }>();
+/** 名札の大きさ（描かれていれば実際の大きさを測って覚える。測れなければ字数からの見積もり：覚えずに次に測る） */
 function labelBox(el: HTMLElement): { w: number; h: number } {
+    const key = `${el.textContent ?? ''}|${el.classList?.contains('far') ? 1 : 0}`;
+    const known = labelSizes.get(el);
+    if (known && known.key === key) return known;
     const w = el.offsetWidth;
     const h = el.offsetHeight;
-    return { w: typeof w === 'number' && w > 0 ? w : [...(el.textContent ?? '')].length * 12.8 + 20, h: typeof h === 'number' && h > 0 ? h : 22 };
+    if (typeof w === 'number' && w > 0 && typeof h === 'number' && h > 0) {
+        const m = { key, w, h };
+        labelSizes.set(el, m);
+        return m;
+    }
+    return { w: [...(el.textContent ?? '')].length * 12.8 + 20, h: 22 };
 }
 
 const qx = (a: number) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), a);

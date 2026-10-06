@@ -9,6 +9,7 @@
  *   道の真ん中（x −1.5〜2.5、z −12〜3）・人物へ南から近づく道すじ・城門への道すじには入らない（tests/proto3d-town.test.ts）。
  * - 動きは探索の時計（time 秒）で決める（演出ではない。同じ time なら同じ形）。
  */
+import type { Rect } from '../layout';
 import type { AmbientGroup, AmbientSpec } from '../story/types';
 import { alongPath, pathLength, woundedLayout, type Pt, type StageBanner, type StageFigure, type StagePerson } from './stage';
 
@@ -207,4 +208,27 @@ export function walkerAt(w: AmbientWalker, time: number): StagePerson & { carryi
     }
     const p = alongPath(w.path, s);
     return { key: w.key, look: w.look, name: '', x: p.x, z: p.z, heading, walked, moving, label: false, carrying, work: 0 };
+}
+
+/**
+ * 町の人々の兵の並びの当たり判定（歩きの判定に足す。explore/world.ts）：通りから歩いて入れる所に並ぶ兵だけ。いなければ足さない。
+ * - 筵に横になる負傷兵：並びを囲む四角（筵の大きさ 0.95 × 1.95 の分）。土塀ぎわに座る負傷兵：並びを囲む四角。
+ * - 援兵：並びを囲む四角。
+ * - 囲いの床几に座る負傷兵は床几の当たり判定があるので足さない。門番・支度の兵は城門の内（前のまま）。
+ * 人を囲む四角だけで、カメラ除けには足さない（低い・細い）。入口から人物への道すじ・町の人の道を塞がない（tests/proto3d-town.test.ts）。
+ */
+export function ambientColliders(plan: AmbientPlan): Rect[] {
+    const box = (fs: readonly { x: number; z: number }[], hx: number, hz: number): Rect[] =>
+        fs.length === 0
+            ? []
+            : [
+                  {
+                      x0: Math.min(...fs.map((f) => f.x)) - hx,
+                      x1: Math.max(...fs.map((f) => f.x)) + hx,
+                      z0: Math.min(...fs.map((f) => f.z)) - hz,
+                      z1: Math.max(...fs.map((f) => f.z)) + hz,
+                  },
+              ];
+    const of = (kind: AmbientGroup['kind'], pose?: string) => plan.figures.filter((f) => f.kind === kind && (!pose || f.pose === pose));
+    return [...box(of('wounded', 'lie'), 0.5, 1.0), ...box(of('wounded', 'sitGround'), 0.35, 0.35), ...box(of('reinforcement'), 0.4, 0.4)];
 }

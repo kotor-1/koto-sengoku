@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { SPOTS } from '../proto3d/src/explore/cast';
-import { AMBIENT_PEOPLE_MAX, GUARD_SPOTS, MERCHANT_SPOTS, PORTER_PATHS, REINFORCEMENT_AT, ambientPlan, preparingLayout, walkerAt } from '../proto3d/src/explore/ambient';
+import { AMBIENT_PEOPLE_MAX, GUARD_SPOTS, ambientColliders, MERCHANT_SPOTS, PORTER_PATHS, REINFORCEMENT_AT, ambientPlan, preparingLayout, walkerAt } from '../proto3d/src/explore/ambient';
 import { LOOKOUT_TOLERANCE, examinable, headingVector, lookoutShot, nearestMark, startHeading, wrapAngle } from '../proto3d/src/explore/lookout';
 import { FOLLOW, blockersForTest, createOrbit, placeFollow } from '../proto3d/src/game/follow';
 import { HERO_RADIUS, isFree } from '../proto3d/src/game/motion';
@@ -339,6 +339,57 @@ describe('町の人々の置き方', () => {
                 }
             }
         }
+    }, 60_000);
+});
+
+describe('休み場の負傷兵・援兵の当たり判定（並びがあるときだけ。Version 21）', () => {
+    const spec = (wounded: number, reinforcement: number): AmbientSpec => ({
+        groups: [
+            { kind: 'porter', count: 2, place: 'street' },
+            { kind: 'merchant', count: 2, place: 'street' },
+            { kind: 'guard', count: 2, place: 'gate' },
+            ...(wounded ? [{ kind: 'wounded' as const, count: wounded, place: 'guardpost' as const }] : []),
+            ...(reinforcement ? [{ kind: 'reinforcement' as const, count: reinforcement, mark: '織', place: 'guardpost' as const }] : []),
+        ],
+    });
+    const insideAny = (rs: Rect[], x: number, z: number) => rs.some((r) => inside(r, x, z));
+
+    it('負傷兵・援兵が 0 なら足さない。いれば並びを囲む四角（筵に横になる・土塀ぎわに座る・援兵）。囲いの床几の負傷兵には足さない', () => {
+        expect(ambientColliders(ambientPlan(spec(0, 0)))).toEqual([]);
+        expect(ambientColliders(ambientPlan(null))).toEqual([]);
+        expect(ambientColliders(ambientPlan(spec(3, 0))).length).toBe(1);
+        expect(ambientColliders(ambientPlan(spec(8, 0))).length).toBe(2);
+        expect(ambientColliders(ambientPlan(spec(0, 2))).length).toBe(1);
+        const plan = ambientPlan(spec(12, 6));
+        const rs = ambientColliders(plan);
+        expect(rs.length).toBe(3);
+        // 筵・土塀ぎわの負傷兵と援兵は、どれも四角の中（主人公はすり抜けない）
+        for (const f of plan.figures.filter((x) => (x.kind === 'wounded' && x.pose !== 'sit') || x.kind === 'reinforcement')) expect(insideAny(rs, f.x, f.z), `${f.kind} (${f.x}, ${f.z})`).toBe(true);
+        // 囲いの床几の負傷兵は床几の当たり判定がある（ここでは足さない）
+        for (const f of plan.figures.filter((x) => x.kind === 'wounded' && x.pose === 'sit')) expect(insideAny(rs, f.x, f.z)).toBe(false);
+    });
+
+    it('足した四角は、入口からの道すじ・真っすぐ北の道・人物の置き場所・町の人の道・道の真ん中を塞がない。詰所・軍議所へも歩いて行ける', () => {
+        for (const [w, r] of [[1, 1], [6, 3], [9, 6], [12, 6]] as const) {
+            const rs = ambientColliders(ambientPlan(spec(w, r)));
+            const all = [...ALL, ...rs];
+            for (const route of ENTRY_ROUTES) for (let i = 1; i < route.length; i++) expect(segFree(route[i - 1]!, route[i]!, all), `負傷兵 ${w}・援兵 ${r}：道すじ ${JSON.stringify(route)}`).toBe(true);
+            expect(segFree([ENTRY_POSE.x, ENTRY_POSE.z], [ENTRY_POSE.x, -5.2], all)).toBe(true);
+            for (const q of rs) {
+                expect(overlaps(q, LANE), JSON.stringify(q)).toBe(false);
+                for (const [x, z] of SPOT_LIST) expect(inside({ x0: q.x0 - 0.3, x1: q.x1 + 0.3, z0: q.z0 - 0.3, z1: q.z1 + 0.3 }, x, z), `置き場所 (${x}, ${z})`).toBe(false);
+            }
+            const plan = ambientPlan(spec(w, r));
+            for (const wk of plan.walkers) for (let t = 0; t < 60; t += 0.5) {
+                const p = walkerAt(wk, t);
+                expect(insideAny(rs.map((q) => ({ x0: q.x0 - 0.3, x1: q.x1 + 0.3, z0: q.z0 - 0.3, z1: q.z1 + 0.3 })), p.x, p.z), `${wk.key} t=${t}`).toBe(false);
+            }
+        }
+        const canReach = reachable([...ALL, ...ambientColliders(ambientPlan(spec(12, 6)))], ENTRY_POSE);
+        expect(canReach(GUARDPOST.x, GUARDPOST.z)).toBe(true);
+        expect(canReach(9.2, COUNCIL_HALL.z + 0.3)).toBe(true);
+        expect(reachNear(canReach, SPOTS.explore.shinpachi![0], SPOTS.explore.shinpachi![1], 1.9)).toBe(true);
+        expect(reachNear(canReach, SPOTS.explore.notice![0], SPOTS.explore.notice![1], 1.9)).toBe(true);
     }, 60_000);
 });
 
