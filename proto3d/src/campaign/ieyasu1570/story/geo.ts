@@ -82,6 +82,8 @@ type Pt = { x: number; y: number };
 export const PROSPECT_VIA: Readonly<Record<string, readonly Pt[]>> = {
     'asai.asai': [{ x: 50, y: 50 }],
     'asai.oda': [{ x: 78, y: 16 }],
+    // C の見込み（城下→国境 敵対）：今の関係の線 rel.border と同じ筋（城下の名前・添え書き「三河」の東を回る）
+    'home.border': [{ x: 100, y: 42 }, { x: 100, y: 66 }],
 };
 
 /**
@@ -90,6 +92,15 @@ export const PROSPECT_VIA: Readonly<Record<string, readonly Pt[]>> = {
  */
 export const ROUTE_VIA: Readonly<Record<string, readonly Pt[]>> = {
     'envoy.oda': [{ x: 80, y: 16 }],
+    // 城下の名前（「◎徳川の城下」と添え書き「三河」）は印の下に出る。城下から南へ出る線がその上を通らないように回す（点検の指摘：
+    // 負け側の地図で、国境への赤い線が「三河」の字の上を通っていた）。
+    // 織田との協力：北から横に入る（織田家の名前は印の下に出るので、右下から入ると名前の端を通る）
+    'rel.oda': [{ x: 80, y: 8 }],
+    // C の関係（城下→国境 敵対）：城下の名前の東（右の端）を回って南の国境へ
+    'rel.border': [{ x: 100, y: 42 }, { x: 100, y: 66 }],
+    // 第一章の出陣と帰還：城下の名前の西を通って国境の原へ
+    'march.field1': [{ x: 72, y: 42 }],
+    'return.field1': [{ x: 72, y: 42 }],
     // B の危機：織田方は北から回って丘へ（織田家の名前の上を通らない）
     'threat.asai': [{ x: 45, y: 12 }],
     // A・B の出陣と帰還：任務の場所の真上から（場所の名前・物見の場所の名前・脅かす向きの矢じりに掛からない）
