@@ -177,6 +177,8 @@ export interface GameWorld {
     startLookout?(point: ScoutPoint, reduced: boolean): Promise<string[]>;
     /** 軍議所を背景に映す（on）／戻す（off） */
     showCouncilHall?(on: boolean): void;
+    /** 今の町を 1 コマ描き直す（演出の後：最後の 3D の画の上に、案内や HUD が出ないように） */
+    redraw?(): void;
 }
 
 /** 合戦を 1 回（hooks.onDecided：勝ち負けが決まった時＝結果の画面の前に呼ぶ。ここで結果を反映して保存する） */
@@ -977,6 +979,8 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
             if (epoch === this.epoch) {
                 world.stage?.(null, 0, this.reduced());
                 world.setHeroPose(before);
+                // 最後の場面が 3D のとき、次のコマまで最後の 3D の画が残り、その上に案内や HUD が出る。すぐ町を描き直す
+                world.redraw?.();
                 const p = world.heroPose();
                 this.inGate = inGateZone(this.cast, p.x, p.z);
                 if (this._screen === 'cinematic') this._screen = back;

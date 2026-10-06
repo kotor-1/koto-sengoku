@@ -330,6 +330,11 @@ export class ExploreWorld implements GameWorld {
         });
     }
 
+    /** 今の町を 1 コマ描き直す（演出の後。覆われていても描く：次の画面の下が最後の 3D の画のままにならないように） */
+    redraw(): void {
+        this.host.renderOnce();
+    }
+
     /** 軍議所を映す（on）／戻す（off）。軍議の画面が重なると描画が止まるので、映したら 1 コマ描いておく */
     showCouncilHall(on: boolean): void {
         this.councilShot = on ? COUNCIL_SHOT : null;
