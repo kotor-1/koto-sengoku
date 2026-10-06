@@ -98,11 +98,26 @@ export class FakeAudioContext {
     suspends = 0;
     readonly destination = new FakeNode(this, 'destination');
     private listeners: (() => void)[] = [];
+    /** false なら resume() は始まらずに待つ（start() で始める。重い処理の間に始まりの知らせが来ない時のまね） */
+    autoResume = true;
+    private waiting: (() => void)[] = [];
     resume() {
         this.resumes++;
+        if (!this.autoResume) return new Promise<void>((r) => this.waiting.push(r));
         this.state = 'running';
         for (const l of this.listeners) l();
         return Promise.resolve();
+    }
+    /** 待たせていた resume() を始める */
+    start() {
+        this.state = 'running';
+        for (const l of this.listeners) l();
+        for (const r of this.waiting.splice(0)) r();
+    }
+    /** 端末が止めた（iOS の interrupted のまね） */
+    interrupt() {
+        this.state = 'suspended';
+        for (const l of this.listeners) l();
     }
     suspend() {
         this.suspends++;

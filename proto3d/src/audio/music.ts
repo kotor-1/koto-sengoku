@@ -22,6 +22,13 @@ import { SONGS, barAt, barEvents, barSeconds, type NoteEvent, type SongId } from
  * 先に予約した音は曲ごとの音量（フェード）・ダッキング・ミュート・一時停止（AudioContext の停止）にそのまま従うので、長くても困らない。
  */
 export const LOOKAHEAD = 2.0;
+/**
+ * 曲の最初の予約の先読み（秒）。曲を始めた直後は、重い処理（冒頭の最初の 3D の画の組み立て・合戦の画面の組み立て）で
+ * 主のスレッドが止まりやすいので、最初の 1 回だけ長く予約しておく。
+ */
+export const FIRST_LOOKAHEAD = 7.0;
+/** 最初の予約の後、BGM を描き始めるまでの間（ミリ秒。描く準備は主のスレッドで音のつながりを作るので、最初の音の後へ遅らせる） */
+export const RENDER_DELAY_MS = 1500;
 export const TICK_MS = 50;
 export const FADE_IN = 0.6;
 export const FADE_OUT = 0.8;
@@ -70,6 +77,8 @@ interface Playing {
     liveUntil: number;
     /** フェードアウトの終わり（これを過ぎたら外す）。鳴らしている間は Infinity */
     endAt: number;
+    /** まだ 1 度も予約していない（最初の予約は FIRST_LOOKAHEAD まで） */
+    fresh: boolean;
 }
 
 export type NotePlayer = (ctx: BaseAudioContext, out: AudioNode, t: number, e: NoteEvent) => void;
@@ -160,7 +169,7 @@ export class MusicPlayer {
     private readonly rendering = new Map<SongId, Promise<RenderedSong | null>>();
     private renderFailed = false;
     /** 確かめ用：予約した音の数・捨てた（遅れた）音の数・曲を始めた回数・描いた輪で鳴らし始めた回数・タイマーの最大の間 */
-    readonly stats = { scheduled: 0, dropped: 0, starts: 0, switches: 0, loops: 0, rendered: 0, renderMs: 0, maxGapMs: 0 };
+    readonly stats = { scheduled: 0, dropped: 0, starts: 0, switches: 0, loops: 0, rendered: 0, renderMs: 0, maxGapMs: 0, firstNoteCtx: -1 };
     private lastTick = -1;
 
     constructor(
@@ -169,10 +178,7 @@ export class MusicPlayer {
         private readonly note: NotePlayer = playNote,
         private readonly renderer: SongRenderer | null = null,
     ) {
-        engine.onReady(() => {
-            this.sync();
-            this.prefetch();
-        });
+        engine.onReady(() => this.sync());
         engine.onPause((paused) => {
             if (!paused) this.realign();
         });
@@ -201,10 +207,22 @@ export class MusicPlayer {
 
     /** 曲を替える（同じ曲なら何もしない。null で止める） */
     play(id: SongId | null): void {
-        if (id === this.want && (id === null || this.playing?.id === id || !this.engine.live)) return;
+        if (id === this.want && (id === null || this.playing?.id === id || !this.engine.canSchedule)) return;
         this.want = id;
         this.sync();
-        if (id) this.requestRender(id);
+        if (id && this.renderOpen) this.requestRender(id);
+    }
+
+    /** 描き始めてよいか（最初の予約の RENDER_DELAY_MS 後から） */
+    private renderOpen = false;
+    private renderTimer: unknown = null;
+    /** 最初の予約の後に、描くのを始める（3 曲を 1 曲ずつ） */
+    private openRenderLater(): void {
+        if (this.renderOpen || this.renderTimer !== null || !this.renderer) return;
+        this.renderTimer = this.timers.set(() => {
+            this.renderOpen = true;
+            this.prefetch();
+        }, RENDER_DELAY_MS);
     }
 
     /** 3 曲を描いておく（今の曲から。1 曲ずつ） */
@@ -265,7 +283,7 @@ export class MusicPlayer {
             gain.gain.setValueAtTime(0, start);
             gain.gain.linearRampToValueAtTime(SONGS[this.want].gain, start + FADE_IN);
             gain.connect(this.engine.bgm);
-            this.playing = { id: this.want, gain, live, origin: start, bar: 0, nextBar: start, pending: [], src: null, liveUntil: Infinity, endAt: Infinity };
+            this.playing = { id: this.want, gain, live, origin: start, bar: 0, nextBar: start, pending: [], src: null, liveUntil: Infinity, endAt: Infinity, fresh: true };
             this.stats.starts++;
             const r = this.rendered.get(this.want);
             if (r) this.startLoop(this.playing, r, start, 0);
@@ -354,9 +372,10 @@ export class MusicPlayer {
     /** 先読みして予約する（タイマーから。テストでは直接呼ぶ）。描いた輪で鳴らしている曲は何もしない */
     tick(): void {
         const ctx = this.engine.ctx;
-        if (!ctx || !this.engine.live) return;
+        if (!ctx || !this.engine.canSchedule) return;
         const now = ctx.currentTime;
         const horizon = now + LOOKAHEAD;
+        let scheduled = false;
         if (this.lastTick >= 0) this.stats.maxGapMs = Math.max(this.stats.maxGapMs, Math.round((now - this.lastTick) * 1000));
         this.lastTick = now;
         // フェードアウトの終わった曲を外す
@@ -375,18 +394,21 @@ export class MusicPlayer {
             if (!p) continue;
             // タイマーが大きく遅れた（裏に回った等）：過ぎた音をまとめて鳴らさない
             if (!p.src && p.nextBar < now - 0.25) this.realign();
+            // 曲の最初の予約は長く先読みする（直後の重い処理の間も鳴るように）
+            const h = p.fresh ? now + FIRST_LOOKAHEAD : horizon;
+            p.fresh = false;
             if (p === this.playing && !p.src) {
                 const song = SONGS[p.id];
                 const sec = barSeconds(song);
                 const spb = 60 / song.bpm;
-                while (p.nextBar <= horizon) {
+                while (p.nextBar <= h) {
                     for (const e of barEvents(song, p.bar)) p.pending.push({ t: p.nextBar + e.beat * spb, e });
                     p.bar++;
                     p.nextBar += sec;
                 }
                 p.pending.sort((a, b) => a.t - b.t);
             }
-            while (p.pending.length && p.pending[0]!.t <= horizon) {
+            while (p.pending.length && p.pending[0]!.t <= h) {
                 const x = p.pending.shift()!;
                 if (x.t < now - 0.03 || x.t >= p.endAt || x.t >= p.liveUntil) {
                     this.stats.dropped++;
@@ -395,12 +417,15 @@ export class MusicPlayer {
                 try {
                     this.note(ctx, p.live, x.t, x.e);
                     this.stats.scheduled++;
+                    if (this.stats.firstNoteCtx < 0) this.stats.firstNoteCtx = x.t;
+                    scheduled = true;
                 } catch (e) {
                     // 1 つの音を作れなくても曲は続ける
                     console.error(e);
                 }
             }
         }
+        if (scheduled || this.playing?.src) this.openRenderLater();
     }
 
     /** 今の曲の段の名前（確かめ用。曲の頭からの時刻で決める） */

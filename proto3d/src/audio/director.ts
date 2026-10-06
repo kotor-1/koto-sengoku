@@ -1,7 +1,7 @@
 /**
  * どの画面で、どの曲・環境音にするか（純粋。three も DOM も Web Audio も使わない）。
  *
- * - 城下（探索・会話・物見・戦後・結末）：城下町の曲。風と、荷の作業の音（荷置き場の近く）。
+ * - 城下（探索・会話・物見・戦後・結末）：城下町の曲（前の合戦で勝てなかった後の結末・結果確認・第二章の冒頭の町の場面は急報の曲）。風と、荷の作業の音（荷置き場の近く）。
  * - 危機／軍議：軍議の画面・章の冒頭の急報（使者・使い・家臣の報告の場面）・情勢の図解。
  * - 合戦：合戦の画面（読み込みの待ちを含む）・出陣の演出（隊列が出る）。
  * - 帰還の演出：勝てば城下の曲、ほかは危機の曲（負けて戻る町を明るい曲で迎えない）。
@@ -30,14 +30,17 @@ export interface CineBeatInfo {
     victory?: boolean;
 }
 
-/** 演出の場面の曲 */
-export function cineMusic(b: CineBeatInfo): SceneChoice {
+/**
+ * 演出の場面の曲。defeat：前の合戦で勝てなかった（第二章の冒頭の町の様子・負傷兵・援兵を、明るい城下の曲で迎えない。
+ * 負けて帰る演出と同じに急報の曲）
+ */
+export function cineMusic(b: CineBeatInfo, defeat = false): SceneChoice {
     if (b.kind === 'stage') {
         switch (b.event) {
             case 'town_life':
             case 'wounded_rest':
             case 'reinforcement_arrive':
-                return { music: 'town', wind: 0.3, town: true };
+                return { music: defeat ? 'crisis' : 'town', wind: 0.3, town: true };
             case 'envoys_arrive':
             case 'messenger_arrive':
             case 'retainer_report':
@@ -83,12 +86,14 @@ export interface ScreenInput {
     battle: boolean;
     /** 演出の今の場面（演出の外は null） */
     cine: CineBeatInfo | null;
+    /** 前の合戦で勝てなかった（結果確認・結末・第二章の冒頭の町の場面の曲を急報にする） */
+    defeat?: boolean;
 }
 
 /** 画面から曲と環境音を決める */
 export function sceneFor(i: ScreenInput): SceneChoice {
     if (i.battle) return { music: 'battle', wind: 0.18, town: false };
-    if (i.cine) return cineMusic(i.cine);
+    if (i.cine) return cineMusic(i.cine, !!i.defeat);
     switch (i.screen) {
         case 'boot':
         case 'title':
@@ -104,7 +109,8 @@ export function sceneFor(i: ScreenInput): SceneChoice {
             return { music: 'battle', wind: 0.18, town: false };
         case 'ending':
         case 'record':
-            return { music: 'town', wind: 0.15, town: false };
+            // 勝てなかった後の結末・結果確認は、明るい城下の曲にしない
+            return { music: i.defeat ? 'crisis' : 'town', wind: 0.15, town: false };
         default:
             // menu・situation・cinematic（場面の間）など：前のまま
             return { music: 'keep', wind: -1, town: false };

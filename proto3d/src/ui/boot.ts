@@ -43,6 +43,16 @@ async function loadBattleRunner(): Promise<BattleRunnerLike | null> {
     };
 }
 
+/**
+ * 前の合戦で勝てなかったか（音の曲を決めるだけ。状態は読むだけ）：今の章の合戦の結果があればそれ、
+ * 第二章の合戦の前なら第一章の記録（chapter1.battle）の結果。結果が無ければ false
+ */
+function lostLastBattle(s: unknown): boolean {
+    const st = s as { battle?: { result?: string } | null; chapter1?: { battle?: { result?: string } } } | null;
+    const r = st?.battle?.result ?? st?.chapter1?.battle?.result;
+    return !!r && r !== 'victory';
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function bootChapter(host: ExploreHost): ChapterGame<any> {
     document.body.classList.add('g-on');
@@ -115,7 +125,7 @@ export function bootChapter(host: ExploreHost): ChapterGame<any> {
     if (sound) {
         unlockOnGesture(sound);
         // 画面から曲を決める（章の進行の画面・合戦の画面）。描画のコマではなく時計で見る（覆っている間も曲は替わる）
-        const watch = () => sound.setScreen(game.screen, activeModeName() === 'battle');
+        const watch = () => sound.setScreen(game.screen, activeModeName() === 'battle', lostLastBattle(game.state));
         onModeChange(watch);
         window.setInterval(watch, 200);
         watch();

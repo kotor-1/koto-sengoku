@@ -93,7 +93,7 @@ export class Sfx {
     }
 
     private get out(): AudioNode | null {
-        return this.engine.live ? this.engine.sfx : null;
+        return this.engine.canSchedule ? this.engine.sfx : null;
     }
 
     // ---------------- 足音

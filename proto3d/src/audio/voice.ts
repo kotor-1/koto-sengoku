@@ -123,7 +123,9 @@ export class VoicePlayer {
     canSay(): boolean {
         const s = this.engine.settings;
         if (this._status !== 'ready') this.pickVoice();
-        return !!this.opts.synth && this._status === 'ready' && !s.muted && s.voice > 0 && !this.engine.held && this.engine.state !== 'locked' && this.engine.state !== 'unavailable';
+        // Web Audio が使えない端末でも、読み上げがあれば読む（声は AudioContext を通らない。操作の中の下ごしらえ（prime）の後）
+        const started = this.engine.state === 'unavailable' ? this.primed : this.engine.state !== 'locked';
+        return !!this.opts.synth && this._status === 'ready' && !s.muted && s.voice > 0 && !this.engine.held && started;
     }
 
     /**

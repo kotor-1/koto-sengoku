@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { AudioEngine, DUCK_LEVEL } from '../proto3d/src/audio/engine';
 import { AudioSystem, unlockOnGesture, type VoiceTable } from '../proto3d/src/audio/index';
-import { FADE_OUT, HANDOFF, LOOKAHEAD, MusicPlayer, TICK_MS, loopBars, loopPosition, type RenderedSong, type SongRenderer } from '../proto3d/src/audio/music';
+import { FADE_OUT, FIRST_LOOKAHEAD, HANDOFF, LOOKAHEAD, MusicPlayer, RENDER_DELAY_MS, TICK_MS, loopBars, loopPosition, type RenderedSong, type SongRenderer } from '../proto3d/src/audio/music';
 import { AUDIO_KEY, AudioSettingsStore, DEFAULT_AUDIO, loadAudioSettings } from '../proto3d/src/audio/settings';
 import { FootstepTracker, Sfx, VoiceLimiter } from '../proto3d/src/audio/sfx';
 import { BEATS_PER_BAR, SONGS, barAt, barEvents, parseMelody, type SongId } from '../proto3d/src/audio/songs';
@@ -135,7 +135,129 @@ describe('有効にする・失敗しても進む', () => {
         await settle();
         ls.get('pointerup')!({ type: 'pointerup', pointerType: 'touch' } as unknown as Event);
         expect(sys.voice.primed).toBe(true);
-        expect(ls.size).toBe(0);
+        // 見張りは残す（軽い）。始まっていれば何もしない
+        expect(ls.size).toBe(5);
+        expect(sys.needsGesture).toBe(false);
+    });
+    it('戻った後に端末が止めたまま（resume を断った・interrupted）なら、次の操作の中で始め直す。アプリの切り替えで止めている間はしない', async () => {
+        const { sys, ctx, page } = makeSystem();
+        const ls = new Map<string, (e: Event) => void>();
+        const target = {
+            addEventListener: (t: string, fn: (e: Event) => void) => void ls.set(t, fn),
+            removeEventListener: (t: string) => void ls.delete(t),
+        } as unknown as Pick<Window, 'addEventListener' | 'removeEventListener'>;
+        unlockOnGesture(sys, target);
+        ls.get('click')!({ type: 'click' } as Event);
+        await settle();
+        expect(sys.engine.state).toBe('running');
+        const n = ctx.resumes;
+        ls.get('click')!({ type: 'click' } as Event);
+        expect(ctx.resumes).toBe(n);
+        // 隠れている間は、操作が来ても始めない
+        page.hide();
+        ctx.autoResume = false;
+        ls.get('keydown')!({ type: 'keydown' } as Event);
+        expect(sys.engine.state).toBe('paused');
+        // 戻った（ジェスチャーの外の resume は始まらない）→ 止めたまま
+        page.show();
+        await settle();
+        expect(sys.engine.state).toBe('locked');
+        expect(sys.needsGesture).toBe(true);
+        ctx.autoResume = true;
+        const m = ctx.resumes;
+        ls.get('pointerup')!({ type: 'pointerup', pointerType: 'touch' } as unknown as Event);
+        await settle();
+        expect(ctx.resumes).toBe(m + 1);
+        expect(sys.engine.state).toBe('running');
+        // iOS の interrupted のまね：端末が止めた → 次の操作で始め直す
+        ctx.interrupt();
+        expect(sys.engine.state).toBe('locked');
+        ls.get('click')!({ type: 'click' } as Event);
+        await settle();
+        expect(sys.engine.state).toBe('running');
+    });
+    it('「はじめから」の操作の中で始めた直後（始まりの知らせの前）から最初の音を予約する。最初の予約は長め、描くのは最初の予約の後', async () => {
+        const f: string[] = [];
+        const { ctx, create } = fakeContext();
+        ctx.autoResume = false;
+        const timers = new FakeTimers();
+        const sys = new AudioSystem({
+            storage: null,
+            voices: TABLE,
+            createContext: create,
+            page: null,
+            speech: { synth: new FakeSynth(), makeUtterance: (t) => new FakeUtterance(t) },
+            timers,
+            renderer: (id) => {
+                f.push(id);
+                return new Promise(() => {});
+            },
+        });
+        sys.unlock();
+        sys.cineBeat({ moment: 'ch1_open', kind: 'stage', event: 'town_life' });
+        expect(sys.engine.state).toBe('locked');
+        expect(sys.engine.canSchedule).toBe(true);
+        expect(sys.music.current).toBe('town');
+        const starts = ctx.starts;
+        // 始まりの前（時刻 0 のまま）に、FIRST_LOOKAHEAD 秒先までの音を予約した
+        const last = Math.max(...starts.map((x) => x.t));
+        expect(sys.music.stats.scheduled).toBeGreaterThan(20);
+        expect(last).toBeGreaterThan(FIRST_LOOKAHEAD - 1.5);
+        // 描くのは最初の予約の RENDER_DELAY_MS 後から（それまで主のスレッドで音のつながりを作らない）
+        expect(f).toEqual([]);
+        timers.run(RENDER_DELAY_MS - 10);
+        expect(f).toEqual([]);
+        timers.run(20);
+        await settle();
+        expect(f[0]).toBe('town');
+        // 始まった後は、ふつうに続ける
+        ctx.start();
+        await settle();
+        expect(sys.engine.state).toBe('running');
+    });
+    it('音の口の中の誤りで、呼ぶ側を止めない（演出の字幕・場面・会話の行・合戦・足音）', () => {
+        const bad: VoiceTable = {
+            byId: () => {
+                throw new Error('表が壊れた');
+            },
+            find: () => {
+                throw new Error('表が壊れた');
+            },
+        };
+        const { ctx, create } = fakeContext();
+        const sys = new AudioSystem({ storage: null, voices: bad, createContext: create, page: null, speech: { synth: new FakeSynth(), makeUtterance: (t) => new FakeUtterance(t) }, timers: new FakeTimers(), renderer: null });
+        sys.unlock();
+        void ctx;
+        expect(() => {
+            sys.caption({ speaker: '忠勝', text: 'x', voice: 'y' });
+            sys.line('hero', '家康', 'x');
+            expect(sys.sayId('depart.hero')).toBeNull();
+            sys.battleFrame(0.1, null as unknown as { units: [] }, 1, true);
+            sys.step(NaN, 1, false);
+            sys.cineBeat({ moment: 'ch1_open', kind: 'stage', event: 'town_life' });
+            sys.cineEnd();
+        }).not.toThrow();
+    });
+    it('Web Audio が無い端末でも、読み上げがあれば操作の後に声を出す（下ごしらえは 1 回だけ）', () => {
+        const synth = new FakeSynth();
+        const sys = new AudioSystem({
+            storage: null,
+            voices: TABLE,
+            createContext: () => {
+                throw new Error('Web Audio が無い');
+            },
+            page: null,
+            speech: { synth, makeUtterance: (t) => new FakeUtterance(t) },
+            timers: new FakeTimers(),
+            renderer: null,
+        });
+        expect(sys.sayId('depart.hero')).toBeNull();
+        sys.unlock();
+        expect(sys.engine.state).toBe('unavailable');
+        expect(sys.voice.primed).toBe(true);
+        expect(sys.needsGesture).toBe(false);
+        expect(sys.sayId('depart.hero')?.id).toBe('depart.hero');
+        expect(synth.spoken.map((u) => u.text)).toEqual([READINGS['depart.hero']!.reading]);
     });
     it('Web Audio が使えない端末：投げず、すべての口が何もしないで返る', () => {
         const { sys, run } = makeSystem({ noContext: true });
@@ -398,11 +520,14 @@ describe('BGM：描いた輪（音の処理の側で鳴らす。描画が止ま�
         const m = musicOnly(f.r);
         m.music.play('battle');
         await settle();
+        // 描くのは最初の予約の後（RENDER_DELAY_MS）から
+        expect(f.calls).toEqual([]);
+        m.run(RENDER_DELAY_MS / 1000 + 0.1);
+        await settle();
         expect(f.calls).toContain('battle');
         expect(m.music.mode).toBe('live');
         f.finish('battle');
-        await settle();
-        await settle();
+        for (let i = 0; i < 6; i++) await settle();
         expect(m.music.mode).toBe('loop');
         // 1 曲ずつ（描き終わってから次）
         expect(f.calls.length).toBeLessThanOrEqual(2);
@@ -436,6 +561,7 @@ describe('BGM：描いた輪（音の処理の側で鳴らす。描画が止ま�
         await settle();
         m.music.play('crisis');
         m.run(7.3);
+        await settle();
         expect(m.music.mode).toBe('live');
         expect(m.played.length).toBeGreaterThan(0);
         f.finish('crisis');
@@ -553,6 +679,28 @@ describe('画面と曲（director）', () => {
         expect(sys.music.wanted).toBe('crisis');
         expect(cineMusic({ moment: 'ch1_intro', kind: 'map' }).music).toBe('crisis');
         expect(sceneFor({ screen: 'practice', battle: false, cine: null }).music).toBeNull();
+    });
+    it('前の合戦で勝てなかった後の結果確認・結末・第二章の冒頭の町の場面は、明るい城下の曲にしない', async () => {
+        const { sys } = makeSystem();
+        sys.unlock();
+        await settle();
+        sys.setScreen('record', false, true);
+        expect(sys.music.wanted).toBe('crisis');
+        sys.setScreen('record', false, false);
+        expect(sys.music.wanted).toBe('town');
+        sys.setScreen('cinematic', false, true);
+        sys.cineBeat({ moment: 'ch2_open', kind: 'stage', event: 'wounded_rest' });
+        expect(sys.music.wanted).toBe('crisis');
+        sys.cineBeat({ moment: 'ch2_open', kind: 'stage', event: 'town_life' });
+        expect(sys.music.wanted).toBe('crisis');
+        sys.cineEnd();
+        sys.setScreen('ending', false, true);
+        expect(sys.music.wanted).toBe('crisis');
+        // 探索は勝ち負けにかかわらず城下（依頼：城下＝探索）
+        sys.setScreen('explore', false, true);
+        expect(sys.music.wanted).toBe('town');
+        expect(cineMusic({ moment: 'ch2_open', kind: 'stage', event: 'wounded_rest' }).music).toBe('town');
+        expect(cineMusic({ moment: 'ch2_open', kind: 'stage', event: 'wounded_rest' }, true).music).toBe('crisis');
     });
 });
 

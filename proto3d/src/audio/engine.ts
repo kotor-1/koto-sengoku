@@ -84,6 +84,15 @@ export class AudioEngine {
     get live(): boolean {
         return this._state === 'running' && !!this.ctx;
     }
+    /** 利用者の操作の中で resume() を呼び、まだ始まりの知らせ（Promise）が来ていない */
+    private starting = false;
+    /**
+     * 音を予約してよいか：始まっている、または操作の中で始めている途中（止めていない）。
+     * 始めている途中に予約した音は、始まった時刻から鳴る（「はじめから」の直後の重い処理の間も、最初の音を待たせない）
+     */
+    get canSchedule(): boolean {
+        return !!this.ctx && this._state !== 'unavailable' && !this.held && (this.live || this.starting);
+    }
     /** 今の時刻（秒。AudioContext の時計） */
     now(): number {
         return this.ctx?.currentTime ?? 0;
@@ -103,11 +112,13 @@ export class AudioEngine {
             if (!this.ctx) this.build();
             const ctx = this.ctx!;
             if (!this.held && ctx.state !== 'running') {
+                this.starting = true;
                 const p = ctx.resume();
                 // 始まったら知らせる（resume は非同期。始まる前に予約した音は、始まった時刻から鳴る）
                 void Promise.resolve(p)
                     .then(() => this.refreshState())
                     .catch((e: unknown) => {
+                        this.starting = false;
                         this.lastError = e instanceof Error ? e.message : String(e);
                     });
             }
@@ -168,7 +179,8 @@ export class AudioEngine {
     private refreshState(): void {
         if (this._state === 'unavailable' || !this.ctx) return;
         const was = this._state;
-        this._state = this.ctx.state === 'running' && !this.held ? 'running' : this.held ? 'paused' : this.ctx.state === 'running' ? 'running' : 'locked';
+        this._state = this.held ? 'paused' : this.ctx.state === 'running' ? 'running' : 'locked';
+        if (this.ctx.state === 'running') this.starting = false;
         if (this._state === 'running' && was !== 'running') {
             for (const l of this.readyListeners) safe(l);
         }

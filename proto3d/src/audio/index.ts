@@ -74,10 +74,20 @@ export class AudioSystem {
      * （タッチの押し始めは数えない端末がある。その中では読み上げの下ごしらえをしない）
      */
     unlock(activation = true): boolean {
-        const ok = this.engine.unlock();
-        if (activation && this.engine.ctx && !this.voice.primed) this.voice.prime();
-        this.apply('unlock');
-        return ok;
+        return guard(() => {
+            const ok = this.engine.unlock();
+            // 読み上げの下ごしらえは Web Audio が無い端末でもする（声は AudioContext を通らない）
+            if (activation && !this.voice.primed) this.voice.prime();
+            this.apply('unlock');
+            return ok;
+        }, false);
+    }
+
+    /** 操作の中で有効にし直す要るか（始まっていない・中断されたまま。アプリの切り替えで止めている間は要らない） */
+    get needsGesture(): boolean {
+        const st = this.engine.state;
+        if (st === 'unavailable') return !this.voice.primed && this.voiceStatus !== 'unsupported';
+        return (st !== 'running' && !this.engine.held) || (!this.voice.primed && this.voiceStatus !== 'unsupported');
     }
 
     get voiceStatus(): VoiceStatus {
@@ -87,37 +97,44 @@ export class AudioSystem {
     // ---------------- 画面と曲
 
     /** 章の進行の画面・合戦の画面（boot の見張りから） */
-    setScreen(screen: string, battle: boolean): void {
-        if (this.screen.screen === screen && this.screen.battle === battle) return;
-        // 別の画面へ移った：古い声を止める（会話・演出の中の移り変わりは、それぞれの口で止める）
-        if (battle !== this.screen.battle) this.voice.stop();
-        this.screen = { screen, battle, cine: this.cine };
-        this.apply(`screen:${screen}${battle ? '+battle' : ''}`);
+    /** defeat：前の合戦で勝てなかった（結果確認・結末・第二章の冒頭の町を明るい曲で迎えない） */
+    setScreen(screen: string, battle: boolean, defeat = false): void {
+        guard(() => {
+            if (this.screen.screen === screen && this.screen.battle === battle && !!this.screen.defeat === defeat) return;
+            // 別の画面へ移った：古い声を止める（会話・演出の中の移り変わりは、それぞれの口で止める）
+            if (battle !== this.screen.battle) this.voice.stop();
+            this.screen = { screen, battle, cine: this.cine, defeat };
+            this.apply(`screen:${screen}${battle ? '+battle' : ''}${defeat ? '+defeat' : ''}`);
+        }, undefined);
     }
 
     /** 演出の場面が替わった（null で演出の外） */
     cineBeat(b: CineBeatInfo | null): void {
-        const prev = this.cine;
-        this.cine = b;
-        this.screen = { ...this.screen, cine: b };
-        if (b && b.kind === 'stage' && (prev?.event !== b.event || prev?.kind !== 'stage')) {
-            const d = creakDelay(b.event);
-            if (d !== null) this.sfx.creak(d);
-        }
-        this.apply(b ? `cine:${b.moment}:${b.kind}${b.event ? `:${b.event}` : ''}` : 'cine:end');
+        guard(() => {
+            const prev = this.cine;
+            this.cine = b;
+            this.screen = { ...this.screen, cine: b };
+            if (b && b.kind === 'stage' && (prev?.event !== b.event || prev?.kind !== 'stage')) {
+                const d = creakDelay(b.event);
+                if (d !== null) this.sfx.creak(d);
+            }
+            this.apply(b ? `cine:${b.moment}:${b.kind}${b.event ? `:${b.event}` : ''}` : 'cine:end');
+        }, undefined);
     }
     /** 演出を閉じた（終わり・スキップ・タイトルへ）：声を止め、演出の曲の決めを外す */
     cineEnd(): void {
-        this.voice.stop();
+        guard(() => this.voice.stop(), undefined);
         this.cineBeat(null);
     }
     /** 演出の一時停止（自動の一時停止も）：声を止める（再開しても読み直さない） */
     cinePaused(on: boolean): void {
-        if (on) this.voice.stop();
+        guard(() => {
+            if (on) this.voice.stop();
+        }, undefined);
     }
 
     private apply(why: string): void {
-        const c = this.screen.cine ? cineMusic(this.screen.cine) : sceneFor(this.screen);
+        const c = this.screen.cine ? cineMusic(this.screen.cine, !!this.screen.defeat) : sceneFor(this.screen);
         if (c.music !== 'keep' && c.music !== this.music.wanted) {
             this.sceneLog.unshift({ at: this.engine.now(), music: c.music, why });
             if (this.sceneLog.length > 40) this.sceneLog.pop();
@@ -144,76 +161,96 @@ export class AudioSystem {
 
     /** 演出の字幕が替わった（null で字幕なし）。声の id があれば読む（前の声は止める） */
     caption(c: { speaker?: string; text: string; voice?: string } | null): void {
-        const line = c?.voice ? this.voices.byId(c.voice) : c?.speaker ? this.voices.find(c.speaker, c.text) : undefined;
-        if (line && line.text === c!.text) this.voice.say(line);
-        else this.voice.stop();
+        guard(() => {
+            const line = c?.voice ? this.voices.byId(c.voice) : c?.speaker ? this.voices.find(c.speaker, c.text) : undefined;
+            if (line && line.text === c!.text) this.voice.say(line);
+            else this.voice.stop();
+        }, undefined);
     }
     /** 会話の行が出た（表にある文なら読む。無ければ前の声を止める） */
     line(speaker: string, name: string, text: string): void {
-        const v = this.voices.find(speaker, text) ?? (name ? this.voices.find(name, text) : undefined);
-        if (v) this.voice.say(v);
-        else this.voice.stop();
+        guard(() => {
+            const v = this.voices.find(speaker, text) ?? (name ? this.voices.find(name, text) : undefined);
+            if (v) this.voice.say(v);
+            else this.voice.stop();
+        }, undefined);
     }
     /**
      * 表の id の台詞を読む（合戦の掛け声）。読めるときは、読む前に before（字幕を出す）を呼ぶ。返りは読んだ台詞（読めなければ null）
      */
     sayId(id: string, before?: (v: VoiceLineLike) => void): VoiceLineLike | null {
-        const v = this.voices.byId(id);
-        if (!v || !this.voice.canSay()) return null;
-        try {
-            before?.(v);
-        } catch (e) {
-            console.error(e);
-        }
-        return this.voice.say(v) ? v : null;
+        return guard(() => {
+            const v = this.voices.byId(id);
+            if (!v || !this.voice.canSay()) return null;
+            try {
+                before?.(v);
+            } catch (e) {
+                console.error(e);
+            }
+            return this.voice.say(v) ? v : null;
+        }, null);
     }
     stopVoice(): void {
-        this.voice.stop();
+        guard(() => {
+            this.voice.stop();
+        }, undefined);
     }
     speakerName(speaker: string): string {
-        return this.voices.nameOf?.(speaker) ?? '';
+        return guard(() => {
+            return this.voices.nameOf?.(speaker) ?? '';
+        }, '');
     }
 
     // ---------------- 足音・聞く位置
 
     /** 探索の毎フレーム（main.ts）：歩き・走りの位相から足音 */
     step(strideTotal: number, speed: number, run: boolean): void {
-        const k = this.feet.update(strideTotal, speed, run);
-        if (k) this.sfx.step(k);
+        guard(() => {
+            const k = this.feet.update(strideTotal, speed, run);
+            if (k) this.sfx.step(k);
+        }, undefined);
     }
     listener(x: number, z: number): void {
-        this.sfx.setListener(x, z);
+        guard(() => {
+            this.sfx.setListener(x, z);
+        }, undefined);
     }
 
     // ---------------- 合戦
 
     battleFrame(dt: number, s: BattleLike, speed: number, running: boolean): void {
-        let engaged = 0;
-        let shooting = 0;
-        for (const u of s.units) {
-            if (u.status !== 'ready' || u.present === false) continue;
-            if (u.engagedWith) engaged++;
-            else if (u.shootingAt) shooting++;
-        }
-        this.sfx.battleTick(dt, engaged, shooting, speed, running);
+        guard(() => {
+            let engaged = 0;
+            let shooting = 0;
+            for (const u of s.units) {
+                if (u.status !== 'ready' || u.present === false) continue;
+                if (u.engagedWith) engaged++;
+                else if (u.shootingAt) shooting++;
+            }
+            this.sfx.battleTick(dt, engaged, shooting, speed, running);
+        }, undefined);
     }
     battleEvent(kind: string, speed: number): void {
-        switch (kind) {
-            case 'engage':
-            case 'flank':
-            case 'rear':
-            case 'charge':
-            case 'ambush':
-                this.sfx.battleCue('engage', speed);
-                break;
-            case 'rout':
-            case 'destroyed':
-                this.sfx.battleCue('rout', speed);
-                break;
-        }
+        guard(() => {
+            switch (kind) {
+                case 'engage':
+                case 'flank':
+                case 'rear':
+                case 'charge':
+                case 'ambush':
+                    this.sfx.battleCue('engage', speed);
+                    break;
+                case 'rout':
+                case 'destroyed':
+                    this.sfx.battleCue('rout', speed);
+                    break;
+            }
+        }, undefined);
     }
     battleCue(kind: 'start' | 'ability' | 'end', speed = 1): void {
-        this.sfx.battleCue(kind, speed);
+        guard(() => {
+            this.sfx.battleCue(kind, speed);
+        }, undefined);
     }
 
     /** 確かめ用の様子 */
@@ -231,6 +268,16 @@ export class AudioSystem {
             cine: this.cine,
             scenes: this.sceneLog.slice(0, 12),
         };
+    }
+}
+
+/** 音の口の中の誤りで、呼ぶ側（演出の再生・会話・合戦・探索の毎フレーム）を止めない */
+function guard<T>(fn: () => T, fallback: T): T {
+    try {
+        return fn();
+    } catch (e) {
+        console.error(e);
+        return fallback;
     }
 }
 
@@ -256,16 +303,16 @@ export function uninstallAudio(): void {
 }
 
 /**
- * 最初の利用者の操作（タップ・クリック・キー）で音を有効にする見張りを付ける（有効になったら外す）。
- * タッチの押し始め（pointerdown）は端末が「操作」と数えないことがあるので、離した時（pointerup・touchend・click）とキーで呼ぶ。
+ * 利用者の操作（タップ・クリック・キー）で音を有効にする見張りを付ける。外さずに残す（軽い）：
+ * 有効になった後も、AudioContext が始まっていない・中断されたまま（アプリから戻った後の resume() を端末が断った・iOS の interrupted）で、
+ * アプリの切り替えで止めてもいない間だけ、操作の中で有効にし直す。始まっていれば何もしない。
+ * タッチの押し始め（pointerdown）は端末が「操作」と数えないことがあるので、読み上げの下ごしらえは離した時（pointerup・touchend・click）とキーでする。
  */
 export function unlockOnGesture(sys: AudioSystem, target: Pick<Window, 'addEventListener' | 'removeEventListener'> = window): void {
     const types = ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'] as const;
     const fn = (e: Event) => {
+        if (!sys.needsGesture) return;
         sys.unlock(!(e.type === 'pointerdown' && (e as PointerEvent).pointerType !== 'mouse'));
-        // 外すのは、音が始まり、読み上げの下ごしらえも済んだ（読み上げの無い端末は要らない）後
-        const started = sys.engine.state === 'running' || sys.engine.state === 'unavailable';
-        if (started && (sys.voice.primed || sys.voiceStatus === 'unsupported')) for (const t of types) target.removeEventListener(t, fn, true);
     };
     for (const t of types) target.addEventListener(t, fn, true);
 }
