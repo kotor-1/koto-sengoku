@@ -154,7 +154,7 @@ function ch1View(s: IeyasuState, opts: Opts): SituationView {
     let objective: string;
     if (!p) {
         crisis = '近江で、織田と浅井・朝倉が敵味方に分かれた。両家から、同じ日に使者が来ている。国境では浪人の一団が村を荒らしている。';
-        objective = s.phase === 'council' ? '軍議で方針を選ぶ（選ぶまで何も決まらない）。' : '本多忠勝と話し、軍議で方針を選ぶ（織田・浅井・自領の防衛）。';
+        objective = s.phase === 'council' ? '軍議で方針を選ぶ（選ぶまで何も決まらない）。' : '城門の前の本多忠勝と話し、軍議で方針を選ぶ（織田・浅井・自領の防衛）。';
     } else if (s.phase === 'aftermath' || s.phase === 'ending') {
         const o = s.battle!;
         crisis = `国境の原の戦い：${IEYASU_RESULT_LABELS[o.result]}（${ieyasuReasonLabel(p, o.reason)}）。約束：${pledgeRecordText(s)}。`;
