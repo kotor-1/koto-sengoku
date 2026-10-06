@@ -4,7 +4,8 @@
  *
  * - 荷を運ぶ人（porter）・店の人（merchant）：人物の素材の写し（合わせて 4 人まで）。荷運びは荷置き場と店先を行き来する。
  * - 門番（guard）・出陣を待つ兵（preparing）・負傷兵（wounded）・援兵（reinforcement）：合戦の兵の形（軽い）。旗は spec の mark。
- * - 置き場所は種類ごとに決まった所（B の決まりと同じ：guardpost は詰所、castle は城内、gate は城門、street は通り）。
+ * - 置き場所は種類ごとに決まった所（B の決まりと同じ：guardpost は詰所（負傷兵は詰所の前の休み場、援兵はその北の空き地。どちらも通りから見える）、
+ *   castle は城内、gate は城門、street は通り）。
  *   道の真ん中（x −1.5〜2.5、z −12〜3）・人物へ南から近づく道すじ・城門への道すじには入らない（tests/proto3d-town.test.ts）。
  * - 動きは探索の時計（time 秒）で決める（演出ではない。同じ time なら同じ形）。
  */
@@ -91,14 +92,19 @@ export function preparingLayout(count: number, mark: string): { figures: StageFi
     return { figures, banners };
 }
 
-/** 援兵（詰所の東、2 列で西を向く。旗持ちは前の列の北の端） */
+/**
+ * 援兵：通りの東の空き地（詰所の前の休み場の北、高札の南。東の土塀の手前）に 2 列で西（通り）を向いて並ぶ。旗持ちは前の列（通りの側）の南の端。
+ * 前は東の囲いの中（土塀の向こう）で、通りから見えなかった（Version 21 で、町の入口から歩いて見える所へ）。
+ */
+export const REINFORCEMENT_AT = { x: 4.55, z: -4.7, dx: 1.15, dz: -1.1 } as const;
 export function reinforcementLayout(count: number, mark: string): { figures: StageFigure[]; banners: StageBanner[] } {
-    const n = Math.max(0, Math.min(9, Math.floor(count)));
+    const n = Math.max(0, Math.min(6, Math.floor(count)));
     const figures: StageFigure[] = [];
     const banners: StageBanner[] = [];
+    const R = REINFORCEMENT_AT;
     for (let i = 0; i < n; i++) {
-        const x = 15.4 + Math.floor(i / 3) * 1.15;
-        const z = -3.7 + (i % 3) * 1.1;
+        const x = R.x + Math.floor(i / 3) * R.dx;
+        const z = R.z + (i % 3) * R.dz;
         figures.push({ x, z, y: 0, heading: WEST, pose: 'stand', phase: i * 0.29, lean: 0, mark, spear: i !== 0 });
         if (i === 0) banners.push({ x, z, y: 0.95, heading: WEST, mark, tilt: 0, open: true });
     }

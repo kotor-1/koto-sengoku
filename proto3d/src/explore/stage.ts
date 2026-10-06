@@ -7,10 +7,13 @@
  * - カメラは決めた位置と見る点を、ゆっくり（なめらかに）動かす。カメラ除けの箱には入らない（tests/proto3d-town-stage.test.ts）。
  *   場面の途中で 1 回だけ「切り替え」（カット）を入れる出来事がある（使者：街道口の画 → 城門の前の画）。切り替えは動きではなく画の替わり。
  * - reduced（動きを減らす）：カメラは動かさず（決めた位置の静止した画）、人と兵は歩かずにその画の位置に現れる（t によらない）。
- * - 主人公は出来事の間は描かない（動かさない）。会話の相手の人物と出来事の人が同じ人なら、着くまでその人物を隠し、着いたら人物に替わる。
+ * - 主人公は出来事の間は描かない（動かさない）。ただし冒頭の出来事（town_life の hero・envoys_arrive の showHero・retainer_report）は、
+ *   主人公を町の入口（town/spots.ts の ENTRY_POSE）に立たせて見せる（StageFrame.hero。向きも t の関数。片付けで始める前の位置・向きへ戻す）。
+ * - 会話の相手の人物と出来事の人が同じ人なら、着くまでその人物を隠し、着いたら人物に替わる。
  */
 import type { AmbientGroup, StageEvent } from '../story/types';
-import { GUARD_STOOLS, KIDO, MATS, HUT } from '../town/plan';
+import { GROUND_SITS, GUARD_STOOLS, KIDO, MATS } from '../town/plan';
+import { ENTRY_POSE } from '../town/spots';
 
 // ================================================================ 形
 
@@ -75,6 +78,17 @@ export interface StagePerson {
     moving: number;
     /** 名札を出すか（画の中にいる間） */
     label: boolean;
+    /** 肩に荷（俵）を担ぐか（町の人。省けば荷を持たない） */
+    carrying?: boolean;
+    /** 店先の作業（お辞儀。0〜1。町の人） */
+    work?: number;
+}
+
+/** 出来事の間の主人公（立たせる位置と向き。無ければ主人公を描かない） */
+export interface StageHero {
+    x: number;
+    z: number;
+    heading: number;
 }
 
 /** カメラ（位置と見る点） */
@@ -97,6 +111,8 @@ export interface StageFrame {
     hideCast: string[];
     /** 隠す町の人々（出来事が同じ所に同じ人々を出す） */
     hideAmbient: AmbientGroup['kind'][];
+    /** 主人公を見せる（町の入口に立たせる）。null なら描かない */
+    hero: StageHero | null;
 }
 
 /** 置いている会話の相手（見た目の鍵と場所。使者の行き先を決める） */
@@ -175,6 +191,10 @@ function lerpShot(a: StageShot, b: StageShot, k: number): StageShot {
     return { px: lerp(a.px, b.px, k), py: lerp(a.py, b.py, k), pz: lerp(a.pz, b.pz, k), tx: lerp(a.tx, b.tx, k), ty: lerp(a.ty, b.ty, k), tz: lerp(a.tz, b.tz, k) };
 }
 const shot = (px: number, py: number, pz: number, tx: number, ty: number, tz: number): StageShot => ({ px, py, pz, tx, ty, tz });
+/** 向き a から b へ k（0〜1）だけ回す（近い回り） */
+const lerpAngle = (a: number, b: number, k: number) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * k;
+/** 向きを丸める（JSON にしても同じ値。t の純粋な関数の確かめ） */
+const roundH = (h: number) => Math.round(h * 1e6) / 1e6;
 
 // ---------------- 槍・のぼりの先（explore/troops.ts の形と同じ寸法。木戸の横木との重なりの確かめに使う）
 
@@ -246,14 +266,14 @@ const ROAD_IN: readonly Pt[] = [
 ];
 /** 城内（城門の北）から木戸の南の街道まで（出陣） */
 const ROAD_OUT: readonly Pt[] = [...ROAD_IN].reverse();
-/** 木戸から詰所へ（道を北へ、町家の写しとの間の路地を東へ、囲いを北へ） */
+/** 木戸から援兵の並ぶ所へ（通りを北へ、詰所の前の休み場の北の空き地（ambient.ts の REINFORCEMENT_AT）へ東へ寄る） */
 const TO_GUARDPOST: readonly Pt[] = [
     [0, 34],
     [0, KIDO.z],
-    [0.2, 11.85],
-    [10.6, 11.85],
-    [12.2, 4.2],
-    [14.6, -1.2],
+    [0.3, 4.0],
+    [1.2, -3.2],
+    [3.0, -4.7],
+    [4.55, -4.7],
 ];
 
 /** 使者の行き先の候補（会話の相手に同じ見た目の人がいないとき。人物の置き場所と重ならない所を選ぶ） */
@@ -280,13 +300,14 @@ export function stageFrame(ev: StageEvent, t: number, reduced: boolean, cast: re
                 tt,
                 reduced,
                 cast,
+                !!ev.showHero,
             );
         case 'messenger_arrive':
-            return arrivals([{ key: 'messenger', look: ev.look, name: ev.name }], tt, reduced, cast);
-        // 冒頭の町の様子・家臣の報告（docs/v20-feedback-request.md）：仮の形（町の担当が作る）。今は負傷兵 0 の詰所の画を使う
+            return arrivals([{ key: 'messenger', look: ev.look, name: ev.name }], tt, reduced, cast, false);
         case 'town_life':
+            return townLife(ev.hero, tt, reduced);
         case 'retainer_report':
-            return woundedRest(0, tt, reduced);
+            return retainerReport(ev.look, ev.name, ev.castId, tt, reduced);
         case 'wounded_rest':
             return woundedRest(ev.count, tt, reduced);
         case 'reinforcement_arrive':
@@ -312,7 +333,18 @@ const ARRIVAL_SHOT_A1 = shot(-2.4, 2.2, 6.0, 0.9, 1.6, 12.2);
 const ARRIVAL_SHOT_B0 = shot(-3.2, 2.3, 0.6, 2.2, 1.5, -4.4);
 const ARRIVAL_SHOT_B1 = shot(-3.1, 2.3, 0.4, 2.6, 1.5, -4.9);
 
-function arrivals(who: { key: string; look: string; name: string }[], t: number, reduced: boolean, cast: readonly StageCastInfo[]): StageFrame {
+/**
+ * 冒頭（showHero）：主人公は町の入口（ENTRY_POSE）に北を向いて立つ。前の画は主人公の北（通り）から南の木戸を見る：主人公を正面に、
+ * 使者が木戸から入って主人公の脇を通る（2 人の道は主人公の東 1.7 m・3.8 m。名札は横に 2.1 m 離れる）。主人公は先の使者を目で追う。
+ * 後の画は前と同じ（城門の前の置き場所）。動きを減らすときは、主人公の背中越しに通りの先（城門の前に着いた使者）を見る静止の画。
+ */
+const HERO_ARRIVAL_SHOT_A0 = shot(-2.1, 2.0, 8.4, 0.2, 1.5, 17.0);
+const HERO_ARRIVAL_SHOT_A1 = shot(-1.9, 2.0, 8.7, 0.3, 1.45, 16.4);
+const HERO_ARRIVAL_SHOT_R = shot(0.2, 2.3, 15.6, 0.6, 1.3, -5.0);
+/** 主人公を見せるときの使者の道（主人公の東 1.7 m・3.8 m を北へ。西は木戸の柱が近い） */
+const HERO_LANES = [ENTRY_POSE.x + 1.7, ENTRY_POSE.x + 3.8] as const;
+
+function arrivals(who: { key: string; look: string; name: string }[], t: number, reduced: boolean, cast: readonly StageCastInfo[], showHero: boolean): StageFrame {
     const used: Pt[] = [];
     const people: StagePerson[] = [];
     const hideCast: string[] = [];
@@ -333,12 +365,13 @@ function arrivals(who: { key: string; look: string; name: string }[], t: number,
         }
         used.push(dest);
         // 前の画：木戸の外から通りへ（2 人目は少し後ろ・道の反対側）。2 人の横の間は 2.5 m（木戸の柱は ±2.9 m）：
-        // 街道口の画で頭の上の名札が横に並んで重ならない（重なりそうなときは名札の側でも上下にずらす：actors.ts）
-        const lane = i % 2 === 0 ? 1.4 : -1.1;
+        // 街道口の画で頭の上の名札が横に並んで重ならない（重なりそうなときは名札の側でも上下にずらす：actors.ts）。
+        // 主人公を見せるときは、主人公（x −0.2）の両脇を通る道（横の間 3.2 m）
+        const lane = showHero ? HERO_LANES[i % 2]! : i % 2 === 0 ? 1.4 : -1.1;
         const back = i * 1.3;
         const pathA: Pt[] = [
             [lane, 19.6 + back],
-            [lane + 0.2, 6.0 + back],
+            [lane + (showHero ? 0 : 0.2), 6.0 + back],
         ];
         // 後の画：通りの北（開始の位置の東）から行き先へ。南から近づく（置き場所の 1.6 m 南を経る）
         const startB: Pt = [1.7 + (i % 2) * 1.1, -1.0 + (i % 2) * 1.0];
@@ -367,15 +400,110 @@ function arrivals(who: { key: string; look: string; name: string }[], t: number,
         if (castId) hideCast.push(castId);
     });
     let s: StageShot;
-    if (reduced) s = ARRIVAL_SHOT_B0;
-    else if (t < ARRIVAL_CUT) s = lerpShot(ARRIVAL_SHOT_A0, ARRIVAL_SHOT_A1, ease(t / ARRIVAL_CUT));
+    if (reduced) s = showHero ? HERO_ARRIVAL_SHOT_R : ARRIVAL_SHOT_B0;
+    else if (t < ARRIVAL_CUT) s = showHero ? lerpShot(HERO_ARRIVAL_SHOT_A0, HERO_ARRIVAL_SHOT_A1, ease(t / ARRIVAL_CUT)) : lerpShot(ARRIVAL_SHOT_A0, ARRIVAL_SHOT_A1, ease(t / ARRIVAL_CUT));
     else s = lerpShot(ARRIVAL_SHOT_B0, ARRIVAL_SHOT_B1, ease((t - ARRIVAL_CUT) / 8));
-    return { people, figures: [], banners: [], litters: [], shot: s, hideCast, hideAmbient: ['porter', 'merchant'] };
+    let hero: StageHero | null = null;
+    if (showHero) {
+        // 主人公：初めは北（城門）を向き、0.4 秒から 1.8 秒かけて先の使者の方へ向き直り、通り過ぎるのを目で追う（使者の道は主人公の脇 1.6 m なので向きは飛ばない）。
+        // 後の画（城門の前）には映らないが、向きは使者の行った北のまま
+        let h: number = ENTRY_POSE.heading;
+        const lead = people[0];
+        if (!reduced && lead && t < ARRIVAL_CUT) h = lerpAngle(ENTRY_POSE.heading, Math.atan2(lead.x - ENTRY_POSE.x, lead.z - ENTRY_POSE.z), ease((t - 0.4) / 1.8));
+        hero = { x: ENTRY_POSE.x, z: ENTRY_POSE.z, heading: roundH(h) };
+    }
+    return { people, figures: [], banners: [], litters: [], shot: s, hideCast, hideAmbient: ['porter', 'merchant'], hero };
+}
+
+// ---------------- 町の様子（章の冒頭の最初の画）
+
+/**
+ * 木戸の内（主人公の右うしろ・目より少し高い所）から、北の城門へ向かう通りを見る（ゆっくり前へ寄る）。
+ * 画の中：主人公の背中（左の手前）・荷置き場から店先へ俵を運ぶ人（左）・町家 D の店先へ運ぶ人（右）・店先でお辞儀する店の人・
+ * 詰所の前の休み場（右の奥。負傷兵がいれば筵の上）・遠くの城門（門番）。町の人々の荷運び・店の人は隠し、この出来事が同じ人々を
+ * 決まった道に出す（どの時刻に始めても同じ画）。
+ */
+export const TOWN_LIFE_SHOT_0 = shot(0.6, 2.4, 16.0, -1.0, 1.3, 2.0);
+export const TOWN_LIFE_SHOT_1 = shot(0.4, 2.5, 15.2, -0.8, 1.45, 0.0);
+/** カメラが寄り終わるまで（秒） */
+const TOWN_LIFE_SEC = 10;
+/** 町の様子の人：荷置き場 → 町家 B の店先（荷を担ぐ）・町家の写しの前 → 町家 D の店先（荷を担ぐ）・店先の店の人 */
+const LIFE_PORTER_W: readonly Pt[] = [
+    [-8.0, 8.85],
+    [-4.9, 8.75],
+    [-3.1, 7.6],
+    [-3.1, 6.6],
+];
+const LIFE_PORTER_E: readonly Pt[] = [
+    [3.2, 12.0],
+    [3.2, 7.2],
+    [3.45, 6.7],
+];
+const LIFE_MERCHANT = { x: -3.6, z: 2.6, heading: Math.PI / 2 } as const;
+
+function townLife(withHero: boolean, t: number, reduced: boolean): StageFrame {
+    const people: StagePerson[] = [];
+    const walker = (key: string, look: string, path: readonly Pt[], delay: number, v: number) => {
+        const L = pathLength(path);
+        const w = reduced ? { s: L, moving: 0 } : walkProgress(t, delay, v, L);
+        const p = alongPath(path, w.s);
+        people.push({ key, look, name: '', x: p.x, z: p.z, heading: p.heading, walked: w.s, moving: w.moving, label: false, carrying: true, work: 0 });
+    };
+    walker('life_porter_w', 'townsman_a', LIFE_PORTER_W, 0.3, 1.1);
+    walker('life_porter_e', 'townsman_b', LIFE_PORTER_E, 1.0, 1.1);
+    // 店の人：店先でゆっくりお辞儀（減らすときは止める）
+    const work = reduced ? 0.5 : round3(0.5 + 0.5 * Math.sin(t * 0.9));
+    people.push({ key: 'life_merchant', look: 'merchant_a', name: '', x: LIFE_MERCHANT.x, z: LIFE_MERCHANT.z, heading: LIFE_MERCHANT.heading, walked: 0, moving: 0, label: false, carrying: false, work });
+    const s = reduced ? TOWN_LIFE_SHOT_0 : lerpShot(TOWN_LIFE_SHOT_0, TOWN_LIFE_SHOT_1, ease(t / TOWN_LIFE_SEC));
+    const hero = withHero ? { x: ENTRY_POSE.x, z: ENTRY_POSE.z, heading: ENTRY_POSE.heading } : null;
+    return { people, figures: [], banners: [], litters: [], shot: s, hideCast: [], hideAmbient: ['porter', 'merchant'], hero };
+}
+
+// ---------------- 家臣の報告（主人公と家臣の短いやり取り）
+
+/** 家臣が止まる所（主人公の 1.5 m 北の少し東）と、歩き出す所（通りの北。城門の方から来る） */
+export const RETAINER_STOP: Pt = [ENTRY_POSE.x + 0.4, ENTRY_POSE.z - 1.5];
+const RETAINER_FROM: Pt = [ENTRY_POSE.x + 0.75, ENTRY_POSE.z - 6.0];
+const RETAINER_SPEED = 1.6;
+/** 画の切り替え（秒）：前は主人公の右肩越しに北（来る家臣と城門）を見る、後は東から二人を横に見る */
+export const RETAINER_CUT = 3.2;
+const RETAINER_SHOT_A0 = shot(ENTRY_POSE.x + 0.75, 1.85, ENTRY_POSE.z + 2.0, ENTRY_POSE.x + 0.4, 1.45, ENTRY_POSE.z - 6.0);
+const RETAINER_SHOT_A1 = shot(ENTRY_POSE.x + 0.7, 1.85, ENTRY_POSE.z + 1.75, ENTRY_POSE.x + 0.4, 1.45, ENTRY_POSE.z - 6.0);
+const RETAINER_SHOT_B0 = shot(ENTRY_POSE.x + 2.8, 1.6, ENTRY_POSE.z - 0.55, ENTRY_POSE.x + 0.1, 1.45, ENTRY_POSE.z - 0.75);
+const RETAINER_SHOT_B1 = shot(ENTRY_POSE.x + 2.55, 1.6, ENTRY_POSE.z - 0.75, ENTRY_POSE.x + 0.1, 1.45, ENTRY_POSE.z - 0.8);
+
+function retainerReport(look: string, name: string, castId: string, t: number, reduced: boolean): StageFrame {
+    const path: Pt[] = [RETAINER_FROM, RETAINER_STOP];
+    const L = pathLength(path);
+    const w = reduced ? { s: L, moving: 0 } : walkProgress(t, 0.2, RETAINER_SPEED, L);
+    const p = alongPath(path, w.s);
+    const arrived = w.s >= L - 1e-6;
+    // 着いたら主人公の方を向く（0.6 秒で向き直る）。歩く間は進む向き
+    const face = Math.atan2(ENTRY_POSE.x - RETAINER_STOP[0], ENTRY_POSE.z - RETAINER_STOP[1]);
+    const tArrive = reduced ? 0 : arrivalTime(0.2, RETAINER_SPEED, L);
+    const heading = arrived ? lerpAngle(p.heading, face, reduced ? 1 : ease((t - tArrive) / 0.6)) : p.heading;
+    const people: StagePerson[] = [{ key: 'retainer', look, name, x: p.x, z: p.z, heading: roundH(heading), walked: w.s, moving: w.moving, label: true }];
+    // 主人公：北を向いて待ち、近づく家臣の方へ少し向き直る（家臣の道は主人公の北東なので向きは飛ばない）
+    const toward = Math.atan2(p.x - ENTRY_POSE.x, p.z - ENTRY_POSE.z);
+    const heroHeading = reduced ? toward : lerpAngle(ENTRY_POSE.heading, toward, ease((t - 0.6) / 1.4));
+    let s: StageShot;
+    if (reduced) s = RETAINER_SHOT_B0;
+    else if (t < RETAINER_CUT) s = lerpShot(RETAINER_SHOT_A0, RETAINER_SHOT_A1, ease(t / RETAINER_CUT));
+    else s = lerpShot(RETAINER_SHOT_B0, RETAINER_SHOT_B1, ease((t - RETAINER_CUT) / 6));
+    // 家臣の置き場所の人物は、場面の間だけ隠す（背景の城門の前に同じ人が二人いないように）。終われば元の置き場所の人物に替わる。
+    // 町家 D の店先へ荷を運ぶ人は、横の画のカメラのすぐ前を通るので隠す
+    return { people, figures: [], banners: [], litters: [], shot: s, hideCast: castId ? [castId] : [], hideAmbient: ['porter'], hero: { x: ENTRY_POSE.x, z: ENTRY_POSE.z, heading: roundH(heroHeading) } };
+}
+
+/** 歩き終わる時刻（walkProgress の逆。遅れ delay・速さ v・長さ L） */
+function arrivalTime(delay: number, v: number, L: number): number {
+    const acc = 0.5;
+    return delay + (L <= (v * acc) / 2 ? Math.sqrt((2 * acc * L) / v) : L / v + acc / 2);
 }
 
 // ---------------- 詰所の負傷兵
 
-/** 負傷兵の置き方（筵に横になる・床几に座る・小屋の南に座る）。町の人々（ambient）と同じ並び */
+/** 負傷兵の置き方（通りから見える詰所の前の休み場：筵に横になる 6 人・土塀ぎわに座る 3 人。その先は詰所の囲いの床几）。町の人々（ambient）と同じ並び */
 export function woundedLayout(count: number): StageFigure[] {
     const out: StageFigure[] = [];
     const n = Math.max(0, Math.min(12, Math.floor(count)));
@@ -384,25 +512,26 @@ export function woundedLayout(count: number): StageFigure[] {
             const [x, z] = MATS[i]!;
             // 筵の上に仰向け（頭は向きの反対＝北）。少しずつ向きを変える
             out.push({ x, z: z + 0.1, y: 0.04, heading: ((i * 7) % 5 - 2) * 0.04, pose: 'lie', phase: i * 0.37, lean: 0, mark: DEFAULT_MARK, spear: false });
-        } else if (i < MATS.length + GUARD_STOOLS.length) {
-            const [x, z, h] = GUARD_STOOLS[i - MATS.length]!;
-            out.push({ x, z, y: 0, heading: h, pose: 'sit', phase: i * 0.37, lean: 0.05, mark: DEFAULT_MARK, spear: false });
+        } else if (i < MATS.length + GROUND_SITS.length) {
+            const [x, z, h] = GROUND_SITS[i - MATS.length]!;
+            out.push({ x, z, y: 0, heading: h, pose: 'sitGround', phase: i * 0.37, lean: 0, mark: DEFAULT_MARK, spear: false });
         } else {
-            const k = i - MATS.length - GUARD_STOOLS.length;
-            out.push({ x: HUT.x - 0.7 + k * 0.85, z: HUT.z + 2.55, y: 0, heading: 0, pose: 'sitGround', phase: i * 0.37, lean: 0, mark: DEFAULT_MARK, spear: false });
+            const [x, z, h] = GUARD_STOOLS[i - MATS.length - GROUND_SITS.length]!;
+            out.push({ x, z, y: 0, heading: h, pose: 'sit', phase: i * 0.37, lean: 0.05, mark: DEFAULT_MARK, spear: false });
         }
     }
     return out;
 }
 
-const WOUNDED_SHOT_0 = shot(9.4, 2.4, 1.6, 13.0, 0.5, -3.6);
-const WOUNDED_SHOT_1 = shot(9.9, 2.3, 0.9, 13.2, 0.5, -3.9);
+/** 通り（町家 D の前の北）から、南東の休み場（筵・床几・土塀ぎわ）を見る（ゆっくり寄る） */
+const WOUNDED_SHOT_0 = shot(0.1, 2.3, 7.0, 4.4, 0.5, 2.0);
+const WOUNDED_SHOT_1 = shot(0.4, 2.25, 6.4, 4.6, 0.5, 1.6);
 
 function woundedRest(count: number, t: number, reduced: boolean): StageFrame {
     const figures = woundedLayout(count);
     const s = reduced ? WOUNDED_SHOT_0 : lerpShot(WOUNDED_SHOT_0, WOUNDED_SHOT_1, ease(t / 12));
     // 町の援兵も隠す（援兵が着く場面は、この後。着く前から詰所の横に立っていると順番が食い違う）
-    return { people: [], figures, banners: [], litters: [], shot: s, hideCast: [], hideAmbient: ['wounded', 'reinforcement'] };
+    return { people: [], figures, banners: [], litters: [], shot: s, hideCast: [], hideAmbient: ['wounded', 'reinforcement'], hero: null };
 }
 
 // ---------------- 隊列（出陣・帰還・援兵）
@@ -556,7 +685,7 @@ function reinforcement(count: number, mark: string, t: number, reduced: boolean)
     }
     const col = placeColumn(path, slots, head, mark, moving, 1, { open: true, tilt: 0 }, KIDO.z);
     const s = reduced ? REINF_SHOT_0 : lerpShot(REINF_SHOT_0, REINF_SHOT_1, ease(t / 7));
-    return { people: [], ...col, shot: s, hideCast: [], hideAmbient: ['reinforcement', 'porter', 'merchant'] };
+    return { people: [], ...col, shot: s, hideCast: [], hideAmbient: ['reinforcement', 'porter', 'merchant'], hero: null };
 }
 
 /**
@@ -589,7 +718,7 @@ function columnDepart(count: number, mark: string, t: number, reduced: boolean, 
     const col = placeColumn(path, slots, head, mark, moving, 1, { open: true, tilt: 0 });
     const s = reduced ? lerpShot(DEPART_SHOT_0, DEPART_SHOT_1, 0.6) : lerpShot(DEPART_SHOT_0, DEPART_SHOT_1, ease((t - 0.4) / 6.5));
     const hideCast = cast.filter((c) => c.kind === 'person' || c.kind === 'gate').map((c) => c.id);
-    return { people: [], ...col, shot: s, hideCast, hideAmbient: ['preparing', 'guard', 'porter', 'merchant'] };
+    return { people: [], ...col, shot: s, hideCast, hideAmbient: ['preparing', 'guard', 'porter', 'merchant'], hero: null };
 }
 
 /**
@@ -619,7 +748,7 @@ function columnReturn(count: number, wounded: number, mark: string, victory: boo
     // 勝てば旗を掲げる（真っすぐ・広げる）。勝てなければ旗を巻いて傾けて運ぶ
     const col = placeColumn(path, slots, head, mark, moving, RETURN_SPEED / DEPART_SPEED, victory ? { open: true, tilt: 0 } : { open: false, tilt: 0.55 }, KIDO.z);
     const s = reduced ? RETURN_SHOT_0 : lerpShot(RETURN_SHOT_0, RETURN_SHOT_1, ease(t / 9));
-    return { people: [], ...col, shot: s, hideCast: [], hideAmbient: ['porter', 'merchant'] };
+    return { people: [], ...col, shot: s, hideCast: [], hideAmbient: ['porter', 'merchant'], hero: null };
 }
 
 /** 確かめ用：出来事の id ごとの、カメラが通る所を t の列で返す（カメラ除けの確かめ・ゆっくりの確かめ） */

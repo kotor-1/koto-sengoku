@@ -60,3 +60,35 @@ body.g-lookout #look-zone { display: block !important; left: 0 !important; point
 /* ---- 演出の 3D の場面の人の名札（会話の相手の名札とは別。演出の 3D の場面の間だけ） ---- */
 #stage-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 4; display: none; }
 body.g-cine-stage #stage-labels { display: block; }
+
+/* ---- 案内の印（目前の目的の相手。explore/world.ts の updateGuide）：画面の中なら名札の上の小さな ▼、外なら画面の端に向きと名前 ---- */
+.npc-guide {
+    position: absolute;
+    left: 0;
+    top: 0;
+    pointer-events: none;
+    color: var(--gold, #e0c78f);
+    font-size: 13px;
+    line-height: 1;
+    white-space: nowrap;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+    will-change: transform;
+}
+.npc-guide[hidden] { display: none !important; }
+.npc-guide.over .npc-guide-name { display: none; }
+.npc-guide-arrow { display: inline-block; animation: npc-guide-bob 1.6s ease-in-out infinite; }
+.npc-guide.edge {
+    padding: 4px 9px;
+    border-radius: 10px;
+    background: rgba(20, 18, 15, 0.55);
+    border: 1px solid rgba(200, 168, 106, 0.55);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+}
+.npc-guide.edge .npc-guide-arrow { animation-name: npc-guide-nudge; }
+.npc-guide.edge.left .npc-guide-arrow { margin-right: 5px; }
+.npc-guide.edge.right { display: flex; flex-direction: row-reverse; }
+.npc-guide.edge.right .npc-guide-arrow { margin-left: 5px; }
+@keyframes npc-guide-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes npc-guide-nudge { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) { .npc-guide-arrow { animation: none; } }

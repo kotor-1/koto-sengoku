@@ -16,12 +16,12 @@ import type { HeroState } from '../game/motion';
 import { colliders, groundY, type Rect } from '../layout';
 import type { AmbientSpec, ScoutPoint, StageEvent } from '../story/types';
 import { HeldKeys } from '../ui/guard';
-import { ActorLayer } from './actors';
+import { ActorLayer, stackLabels } from './actors';
 import { AMBIENT_FIGURES_MAX, ambientPlan, walkerAt, type AmbientPlan } from './ambient';
 import { castColliders, headingToward, type CastMember } from './cast';
 import { LookoutSession, type LookoutProbe } from './lookout';
 import { PersonFactory, hashOf } from './people';
-import { stageFrame, type StageCastInfo, type StageShot } from './stage';
+import { stageFrame, type StageCastInfo, type StageHero, type StageShot } from './stage';
 import { setTowerTopVisible } from '../town/view';
 import './town.css';
 
@@ -75,6 +75,19 @@ interface NpcView {
     labelY: number;
 }
 
+/**
+ * 名札を出す距離（m）：目前の目的の相手（key）は遠くからでも（町の入口から城門の前まで約 20 m）、ほかの相手は近くだけ
+ *（町の入口から北を見ると、城門の前の人物・高札の名札が一列に重なって読めなかった。Version 21）
+ */
+export const LABEL_FAR = { key: 40, other: 16 } as const;
+
+/** 案内の印（目前の目的の相手）：画面の中なら名札の上の小さな ▼、画面の外・後ろなら画面の端に向きと名前。近づいて話せる所では出さない */
+export interface GuideProbe {
+    mode: 'over' | 'edge' | null;
+    id: string | null;
+    side: 'left' | 'right' | null;
+}
+
 /** 軍議所を映すカメラ（陣幕の西の外、幕の上から床几と机を見下ろす） */
 export const COUNCIL_SHOT: CameraShot = { px: 7.3, py: 3.7, pz: -22.3, tx: 13.4, ty: 0.5, tz: -22.9, hideHero: false };
 
@@ -117,6 +130,11 @@ export class ExploreWorld implements GameWorld {
     private councilShot: CameraShot | null = null;
     private appliedShot: CameraShot | null = null;
     private lookout: LookoutSession | null = null;
+    // ---- 案内の印（目前の目的の相手）
+    private readonly guide: HTMLElement;
+    private readonly guideArrow: HTMLElement;
+    private readonly guideName: HTMLElement;
+    private guideState: GuideProbe = { mode: null, id: null, side: null };
 
     constructor(private readonly host: ExploreHost) {
         this.group.name = 'chapter-cast';
@@ -124,6 +142,16 @@ export class ExploreWorld implements GameWorld {
         this.labels = document.createElement('div');
         this.labels.id = 'npc-labels';
         host.overlay.appendChild(this.labels);
+        // 案内の印は名札の入れ物に入れる（会話・演出・メニュー・物見・合戦の間は名札と一緒に隠れる：ui.css・town.css）
+        this.guide = document.createElement('div');
+        this.guide.className = 'npc-guide';
+        this.guide.hidden = true;
+        this.guideArrow = document.createElement('span');
+        this.guideArrow.className = 'npc-guide-arrow';
+        this.guideName = document.createElement('span');
+        this.guideName.className = 'npc-guide-name';
+        this.guide.append(this.guideArrow, this.guideName);
+        this.labels.appendChild(this.guide);
         // 演出の人の名札（演出の 3D の場面の間だけ見える：body.g-cine-stage）
         this.stageLabels = document.createElement('div');
         this.stageLabels.id = 'stage-labels';
@@ -237,7 +265,8 @@ export class ExploreWorld implements GameWorld {
         const f = stageFrame(ev, t, reduced, this.castInfo());
         this.setHiddenCast(f.hideCast);
         this.hiddenAmbient = new Set(f.hideAmbient);
-        this.stageShot = { ...f.shot, hideHero: true };
+        this.stageShot = { ...f.shot, hideHero: !f.hero };
+        if (f.hero) this.placeStageHero(f.hero);
         this.applyShot();
         const cam = this.host.camera;
         // 名札はここでは動かさない：演出の時計（ここ）は探索の描画の後に進むので、ここで動かすと、まだ前の形の画の上で名札だけが
@@ -261,6 +290,20 @@ export class ExploreWorld implements GameWorld {
             this.host.renderOnce();
             this.stageActors.placeLabels(cam);
         }
+    }
+
+    /**
+     * 冒頭の出来事で主人公を立たせる（位置・向きだけ。見回しのカメラ（orbit）は触らない。始める前の位置・向きは stageBefore にあり、片付けで戻す）。
+     * 歩きの速さは 0（操作は止めてあるので、その場で待機の動き）
+     */
+    private placeStageHero(p: StageHero): void {
+        const h = this.host.hero;
+        h.x = p.x;
+        h.z = p.z;
+        h.heading = p.heading;
+        h.dirX = Math.sin(p.heading);
+        h.dirZ = Math.cos(p.heading);
+        h.speed = 0;
     }
 
     private endStage(): void {
@@ -437,6 +480,7 @@ export class ExploreWorld implements GameWorld {
         cam.updateMatrixWorld();
         this.pv.multiplyMatrices((cam as THREE.PerspectiveCamera).projectionMatrix, cam.matrixWorldInverse);
         this.frustum.setFromProjectionMatrix(this.pv);
+        const shown: { v: NpcView; x: number; y: number; depth: number }[] = [];
         for (const v of this.views.values()) {
             const m = v.member;
             const hidden = this.hiddenCast.has(m.id);
@@ -468,20 +512,75 @@ export class ExploreWorld implements GameWorld {
             // 名前の札：頭の上。遠い・画面の外・カメラの後ろでは出さない
             tmp.set(m.x, groundY(m.x, m.z) + v.labelY, m.z).project(cam);
             const dist = Math.hypot(m.x - h.x, m.z - h.z);
-            const show = !hidden && tmp.z > -1 && tmp.z < 1 && Math.abs(tmp.x) < 1.1 && Math.abs(tmp.y) < 1.1 && dist < 26;
+            const show = !hidden && tmp.z > -1 && tmp.z < 1 && Math.abs(tmp.x) < 1.1 && Math.abs(tmp.y) < 1.1 && dist < (m.key ? LABEL_FAR.key : LABEL_FAR.other);
             if (!show) {
                 if (!v.label.hidden) v.label.hidden = true;
                 continue;
             }
             v.label.hidden = false;
-            const sx = (tmp.x * 0.5 + 0.5) * w;
-            const sy = (-tmp.y * 0.5 + 0.5) * vh;
-            v.label.style.transform = `translate(${sx.toFixed(1)}px, ${sy.toFixed(1)}px) translate(-50%, -100%)`;
+            shown.push({ v, x: (tmp.x * 0.5 + 0.5) * w, y: (-tmp.y * 0.5 + 0.5) * vh, depth: tmp.z });
             v.label.classList.toggle('far', dist > 12);
         }
+        // 名札が重なるときは、近い人の名札をそのままにし、遠い人の名札を上へずらす（演出の人の名札と同じ。城門の前の家臣と使者が並ぶ画）
+        shown.sort((a, b) => a.depth - b.depth);
+        const ys = stackLabels(shown.map((s) => ({ x: s.x, y: s.y, w: labelBox(s.v.label).w, h: labelBox(s.v.label).h })));
+        const keyAt = new Map<NpcView, { x: number; y: number }>();
+        shown.forEach((s, i) => {
+            s.v.label.style.transform = `translate(${s.x.toFixed(1)}px, ${ys[i]!.toFixed(1)}px) translate(-50%, -100%)`;
+            keyAt.set(s.v, { x: s.x, y: ys[i]! - labelBox(s.v.label).h });
+        });
+        this.updateGuide(cam, w, vh, keyAt);
         if (this.ambient) this.updateAmbient(cam);
         // 演出の人の名札：描く直前のカメラで置き直す（演出の時計は探索の描画と別の時に進む）
         if (this.stageKey) this.stageActors.placeLabels(cam);
+    }
+
+    /**
+     * 案内の印（目前の目的の相手＝key の相手）。演出の出来事・物見の間は出さない（会話・メニューなどの間は名札の入れ物ごと隠れる）。
+     * 話せる所（届く範囲の少し外）まで来たら消す（「話す」のボタンが出る）。画面の中なら名札の上に小さな ▼、外なら画面の端に向きと名前。
+     */
+    private updateGuide(cam: THREE.Camera, w: number, vh: number, labelTops: ReadonlyMap<NpcView, { x: number; y: number }>): void {
+        const off = (): void => {
+            if (!this.guide.hidden) this.guide.hidden = true;
+            this.guideState = { mode: null, id: null, side: null };
+        };
+        if (this.stageKey || this.lookout?.active) return off();
+        let v: NpcView | null = null;
+        for (const x of this.views.values()) if (x.member.key && !this.hiddenCast.has(x.member.id)) v = x;
+        if (!v) return off();
+        const m = v.member;
+        const hero = this.host.hero;
+        if (Math.hypot(m.x - hero.x, m.z - hero.z) <= m.reach + 0.4) return off();
+        const gy = groundY(m.x, m.z) + v.labelY;
+        tmp.set(m.x, gy, m.z).project(cam);
+        const onScreen = tmp.z > -1 && tmp.z < 1 && Math.abs(tmp.x) < 0.92 && Math.abs(tmp.y) < 0.9;
+        this.guide.hidden = false;
+        if (this.guideName.textContent !== m.label) this.guideName.textContent = m.label;
+        if (onScreen) {
+            // 名札（頭の上）のさらに上（名札を出していなければ頭の上）
+            const top = labelTops.get(v);
+            const sx = top ? top.x : (tmp.x * 0.5 + 0.5) * w;
+            const sy = (top ? top.y : (-tmp.y * 0.5 + 0.5) * vh) - 3;
+            this.guide.className = 'npc-guide over';
+            if (this.guideArrow.textContent !== '▼') this.guideArrow.textContent = '▼';
+            this.guide.style.transform = `translate(${sx.toFixed(1)}px, ${sy.toFixed(1)}px) translate(-50%, -100%)`;
+            this.guideState = { mode: 'over', id: m.id, side: null };
+            return;
+        }
+        // 画面の外・後ろ：カメラから見て左右どちらか（カメラの中の座標の x）
+        tmp.set(m.x, gy, m.z).applyMatrix4(cam.matrixWorldInverse);
+        const right = tmp.x >= 0;
+        this.guide.className = `npc-guide edge ${right ? 'right' : 'left'}`;
+        const arrow = right ? '▶' : '◀';
+        if (this.guideArrow.textContent !== arrow) this.guideArrow.textContent = arrow;
+        const sy = vh * 0.46;
+        this.guide.style.transform = right ? `translate(${(w - 10).toFixed(1)}px, ${sy.toFixed(1)}px) translate(-100%, -50%)` : `translate(10px, ${sy.toFixed(1)}px) translate(0, -50%)`;
+        this.guideState = { mode: 'edge', id: m.id, side: right ? 'right' : 'left' };
+    }
+
+    /** 確認用：案内の印（出ているか・誰へ・画面の端なら左右） */
+    guideProbe(): GuideProbe {
+        return { ...this.guideState, mode: this.guide.hidden ? null : this.guideState.mode };
     }
 
     /** 町の人々を今の時計の形に置く（出来事が同じ所に同じ人々を出している間は、その種類を隠す） */
@@ -544,6 +643,13 @@ export class ExploreWorld implements GameWorld {
     get cameraShot(): CameraShot | null {
         return this.appliedShot;
     }
+}
+
+/** 名札の大きさ（描かれていれば実際の大きさ。無ければ字数からの見積もり） */
+function labelBox(el: HTMLElement): { w: number; h: number } {
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    return { w: typeof w === 'number' && w > 0 ? w : [...(el.textContent ?? '')].length * 12.8 + 20, h: typeof h === 'number' && h > 0 ? h : 22 };
 }
 
 const qx = (a: number) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), a);

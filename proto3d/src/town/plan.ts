@@ -34,9 +34,10 @@ export interface Piece {
 /**
  * 町のまとまり（描く側はまとまりごとに形をまとめる：画面の外・塀の陰で見えないまとまりは描かない。town/view.ts の updateTownView）。
  * south：木戸と東の柵・物見櫓・荷置き場、fence_w：木戸の西の長い柵、fence_e：町家の写しの東の柵、shop_e：町家の写しのまわり、
- * guardpost：詰所、council：軍議所、towertop：物見櫓の屋根（物見の眺めの間は描かない）
+ * guardpost：詰所（東の囲いの小屋・桶）、rest：詰所の前の休み場（通りの東、土塀の手前。筵・床几・槍立て）、council：軍議所、
+ * towertop：物見櫓の屋根（物見の眺めの間は描かない）
  */
-export type TownCluster = 'south' | 'fence_w' | 'fence_e' | 'shop_e' | 'guardpost' | 'council' | 'towertop';
+export type TownCluster = 'south' | 'fence_w' | 'fence_e' | 'shop_e' | 'guardpost' | 'rest' | 'council' | 'towertop';
 
 export interface TownProp {
     name: string;
@@ -297,8 +298,8 @@ function hut(x: number, z: number): TownProp {
     return { name: 'guard_hut', cluster: 'guardpost', x, z, rotY: 0, pieces, colliders: [r], blockers: [boxOf(r, 0, 2.4), boxOf(rectOf(-W / 2 - 0.4, W / 2 + 0.4, -D / 2 - 0.35, D / 2 + 0.35), 2.25, 3.0)] };
 }
 
-/** 槍立て（2 本の柱と 2 本の横木に、槍を立てかける）。小物の +x が並び */
-function spearRack(x: number, z: number): TownProp {
+/** 槍立て（2 本の柱と 2 本の横木に、槍を立てかける）。小物の +x が並び、槍の先は小物の −z へ傾く */
+function spearRack(cluster: TownCluster, x: number, z: number, rotY: number): TownProp {
     const pieces: Piece[] = [];
     for (const s of [-1, 1]) pieces.push(B('wood', 0.1, 1.7, 0.1, s * 1.1, 0.85, 0));
     pieces.push(B('wood', 2.4, 0.08, 0.08, 0, 1.55, 0));
@@ -309,13 +310,13 @@ function spearRack(x: number, z: number): TownProp {
         pieces.push({ shape: 'cone', mat: 'metal', size: [0.045, 0.26, 4], pos: [sx, 3.42, -0.05], rot: [-0.1, 0, 0] });
     }
     const r = rectOf(-1.25, 1.25, -0.25, 0.32);
-    return { name: 'spear_rack', cluster: 'guardpost', x, z, rotY: 0, pieces, colliders: [r], blockers: [boxOf(r, 0, 1.7)] };
+    return { name: 'spear_rack', cluster, x, z, rotY, pieces, colliders: [r], blockers: [boxOf(r, 0, 1.7)] };
 }
 
 /** 筵（負傷兵の休む敷物。平らなので当たり判定は無し） */
-function mats(pts: readonly [number, number][]): TownProp {
+function mats(cluster: TownCluster, pts: readonly [number, number][]): TownProp {
     const pieces: Piece[] = pts.map(([x, z]) => B('mat', 0.95, 0.03, 1.95, x, 0.016, z));
-    return { name: 'mats', cluster: 'guardpost', x: 0, z: 0, rotY: 0, pieces, colliders: [], blockers: [] };
+    return { name: 'mats', cluster, x: 0, z: 0, rotY: 0, pieces, colliders: [], blockers: [] };
 }
 
 /** 桶 */
@@ -380,15 +381,31 @@ export const TOWER = { x: -6.9, z: 14.9, floorY: 6.0, half: 1.2, ladder: { footO
 export const TENT = { w: 6.0, d: 5.4, gate: 1.8 } as const;
 /** 詰所の小屋の真ん中 */
 export const HUT = { x: 16.6, z: -8.9 } as const;
-/** 筵（負傷兵が横になる所）。2 列 × 3 枚 */
+/**
+ * 詰所の前の休み場（Version 21）：通りの東、東の土塀と町家 D の北の端の間（詰所の囲いへの戸の前）。x 3.0〜6.9、z −1.0〜3.0。
+ * 前は筵・槍立てを東の囲いの中（土塀の向こう）に置いていて、通りを歩いても見えなかった（docs/story-rpg-town.md §11）。
+ * 町の入口から城門へ通りを北へ歩くと、右の前に見える。
+ */
+export const REST = { x0: 3.0, x1: 6.9, z0: -1.0, z1: 3.0 } as const;
+/** 筵（負傷兵が横になる所）。休み場に 3 列 × 2 枚（長い辺は南北）。通りに近い列から */
 export const MATS: readonly [number, number][] = [
-    [11.0, -4.6], [12.2, -4.6], [13.4, -4.6],
-    [11.0, -1.9], [12.2, -1.9], [13.4, -1.9],
+    [3.55, 2.0], [3.55, 0.0],
+    [4.65, 2.0], [4.65, 0.0],
+    [5.75, 2.0], [5.75, 0.0],
 ];
-/** 詰所の床几（座った負傷兵・休む兵）。[x, z, 向き] */
+/** 地べたに座る負傷兵（筵の 6 人の後）：休み場の北、土塀ぎわに南北に。西（通り）を向く。[x, z, 向き] */
+export const GROUND_SITS: readonly [number, number, number][] = [
+    [6.62, -0.8, -Math.PI / 2], [6.62, -1.6, -Math.PI / 2], [6.62, -2.4, -Math.PI / 2],
+];
+/**
+ * 詰所の床几（座った負傷兵。筵・土塀ぎわの後の 3 人）：東の囲いの中（小屋の西）。[x, z, 向き]。
+ * 通りの側には置かない（合戦の兵の形は人物の素材より粗く、歩く道のすぐ脇の床几では大きく粗く見えた）
+ */
 export const GUARD_STOOLS: readonly [number, number, number][] = [
     [12.4, -6.5, 0], [13.3, -6.6, 0], [14.2, -6.5, 0],
 ];
+/** 休み場の槍立て（土塀ぎわ。並びは南北、槍の先は土塀（東）へ傾く） */
+export const REST_RACK = { x: 6.62, z: 1.0, rotY: -Math.PI / 2 } as const;
 
 /** 町家の写し：町家 D を道の東の南へ（z = 11.85 の面で鏡に写す。元の D との間に東へ抜ける路地を残す：詰所へ南東から入る） */
 export const MACHIYA_COPIES: readonly MachiyaCopy[] = [{ source: 'machiya_d', mirrorZ: 11.85 }];
@@ -415,12 +432,12 @@ function buildProps(): TownProp[] {
     // 町家の写しの店先（道の東、木戸の内側）
     out.push(baskets('baskets_e', 'shop_e', [[3.95, 12.95]]));
     out.push(bales('bales_e', 'shop_e', 10.6, 13.6, Math.PI / 2, 2));
-    // ---- 詰所（東の囲い）：小屋・槍立て・筵・床几・桶
+    // ---- 詰所（東の囲い）：小屋・床几・桶。筵・槍立ては通りから見える休み場（詰所の前）へ（Version 21）
     out.push(hut(HUT.x, HUT.z));
-    out.push(spearRack(11.9, -10.72));
-    out.push(mats(MATS));
-    out.push(stools('guard_stools', 'guardpost', GUARD_STOOLS));
     out.push(tub('guard_tub', 'guardpost', 15.1, -6.1));
+    out.push(spearRack('rest', REST_RACK.x, REST_RACK.z, REST_RACK.rotY));
+    out.push(mats('rest', MATS));
+    out.push(stools('guard_stools', 'guardpost', GUARD_STOOLS));
     // ---- 軍議所（城内の東）：陣幕・机・床几
     out.push(...councilTent(COUNCIL_HALL.x, COUNCIL_HALL.z + 0.3));
     return out;

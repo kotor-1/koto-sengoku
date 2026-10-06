@@ -7,7 +7,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { ARRIVAL_CUT, bannerTop, columnSlots, shotsOver, spearTip, stageFrame, type StageCastInfo } from '../proto3d/src/explore/stage';
+import { ARRIVAL_CUT, RETAINER_CUT, RETAINER_STOP, bannerTop, columnSlots, shotsOver, spearTip, stageFrame, type StageCastInfo } from '../proto3d/src/explore/stage';
+import { ENTRY_POSE, GUARD_REST } from '../proto3d/src/town/spots';
 import { stackLabels } from '../proto3d/src/explore/actors';
 import { KIDO } from '../proto3d/src/town/plan';
 import { blockersForTest } from '../proto3d/src/game/follow';
@@ -42,7 +43,17 @@ const EVENTS: StageEvent[] = [
     { id: 'column_return', count: 24, wounded: 4, mark: '徳', victory: true },
     { id: 'column_return', count: 9, wounded: 6, mark: '徳', victory: false },
     { id: 'column_return', count: 1, wounded: 1, mark: '徳', victory: false },
+    // 冒頭（Version 21）：町の様子・使者の到着（主人公を見せる）・家臣の報告
+    { id: 'town_life', hero: true },
+    { id: 'town_life', hero: false },
+    { id: 'envoys_arrive', envoys: [{ look: 'tashiro_envoy', name: '織田家の使者' }, { look: 'omori_envoy', name: '浅井家の使者' }], showHero: true },
+    { id: 'retainer_report', look: 'genzo', name: '本多忠勝', castId: 'tadakatsu' },
 ];
+/** 冒頭の出来事（EVENTS の中の位置） */
+const LIFE = EVENTS[10]!;
+const LIFE_NO_HERO = EVENTS[11]!;
+const ENVOYS_HERO = EVENTS[12]!;
+const RETAINER = EVENTS[13]!;
 const TS = [0, 0.3, 1, 2.5, 4, ARRIVAL_CUT - 0.01, ARRIVAL_CUT + 0.01, 6, 8, 10, 13, 20, 40];
 
 describe('演出の 3D の出来事：時刻 t の純粋な関数', () => {
@@ -97,7 +108,9 @@ describe('演出の 3D の出来事：時刻 t の純粋な関数', () => {
             for (let i = 1; i < list.length; i++) {
                 const a = list[i - 1]!;
                 const b = list[i]!;
-                const cut = (ev.id === 'envoys_arrive' || ev.id === 'messenger_arrive') && a.t < ARRIVAL_CUT && b.t >= ARRIVAL_CUT;
+                const cut =
+                    ((ev.id === 'envoys_arrive' || ev.id === 'messenger_arrive') && a.t < ARRIVAL_CUT && b.t >= ARRIVAL_CUT) ||
+                    (ev.id === 'retainer_report' && a.t < RETAINER_CUT && b.t >= RETAINER_CUT);
                 if (cut) continue;
                 maxAng = Math.max(maxAng, (dir(a.shot).angleTo(dir(b.shot)) * 180) / Math.PI / step);
                 maxMove = Math.max(maxMove, Math.hypot(b.shot.px - a.shot.px, b.shot.py - a.shot.py, b.shot.pz - a.shot.pz) / step);
@@ -221,6 +234,108 @@ describe('出来事の中身（人数・負傷・旗・行き先）', () => {
         expect(Math.min(...r0.figures.map((x) => x.z))).toBeGreaterThan(16.4);
         const r1 = stageFrame(EVENTS[7]!, 8, false);
         expect(Math.min(...r1.figures.map((x) => x.z))).toBeLessThan(16.4);
+    });
+});
+
+describe('冒頭の出来事（Version 21：町の様子 → 急報 → 主人公と家臣の短いやり取り）', () => {
+    const dirOf = (sh: { px: number; pz: number; tx: number; tz: number }) => Math.atan2(sh.tx - sh.px, sh.tz - sh.pz);
+    /** 地面の点がカメラの画の横 ±38° に入るか */
+    const inView = (sh: { px: number; pz: number; tx: number; tz: number }, x: number, z: number) => {
+        const d = Math.atan2(x - sh.px, z - sh.pz) - dirOf(sh);
+        return Math.abs(Math.atan2(Math.sin(d), Math.cos(d))) < (38 * Math.PI) / 180;
+    };
+
+    it('町の様子：主人公（hero）は町の入口に北を向いて立ち、画に映る。荷運び 2 人（荷を担ぐ）・店の人が働き、詰所の前の休み場と遠くの城門が画の中', () => {
+        for (const t of [0, 2, 5, 9, 15]) {
+            const f = stageFrame(LIFE, t, false);
+            expect(f.hero).toEqual({ x: ENTRY_POSE.x, z: ENTRY_POSE.z, heading: ENTRY_POSE.heading });
+            expect(f.people.length).toBe(3);
+            expect(f.people.filter((p) => p.carrying).length).toBe(2);
+            for (const p of f.people) expect(p.label).toBe(false);
+            expect(f.hideAmbient.sort()).toEqual(['merchant', 'porter']);
+            expect(f.hideCast).toEqual([]);
+            expect(inView(f.shot, ENTRY_POSE.x, ENTRY_POSE.z), `t=${t} 主人公`).toBe(true);
+            expect(inView(f.shot, GUARD_REST.x, GUARD_REST.z), `t=${t} 休み場`).toBe(true);
+            expect(inView(f.shot, 0, -12), `t=${t} 城門`).toBe(true);
+            // 木戸の内側（街道の外ではない）・目より少し高い所
+            expect(f.shot.pz).toBeLessThan(16.4);
+            expect(f.shot.py).toBeGreaterThan(2);
+        }
+        // 荷運びは歩く（始めと 4 秒後で場所が違う）。動きを減らすと歩かない
+        expect(stageFrame(LIFE, 4, false).people[0]).not.toEqual(stageFrame(LIFE, 0, false).people[0]);
+        expect(stageFrame(LIFE, 0, true).people).toEqual(stageFrame(LIFE, 7, true).people);
+        // hero: false なら主人公は描かない
+        expect(stageFrame(LIFE_NO_HERO, 3, false).hero).toBe(null);
+    });
+
+    it('使者の到着（showHero）：主人公は町の入口に立ち、使者 2 人は木戸から入って主人公の脇（1.4 m より離れて）を通る。主人公は先の使者を目で追う（向きは飛ばない）', () => {
+        let prev: number | null = null;
+        for (let t = 0; t < ARRIVAL_CUT; t += 0.05) {
+            const f = stageFrame(ENVOYS_HERO, t, false, CAST_EXPLORE);
+            expect(f.hero!.x).toBe(ENTRY_POSE.x);
+            expect(f.hero!.z).toBe(ENTRY_POSE.z);
+            expect(f.shot).toBeTruthy();
+            for (const p of f.people) expect(Math.hypot(p.x - ENTRY_POSE.x, p.z - ENTRY_POSE.z), `t=${t.toFixed(2)}`).toBeGreaterThan(1.4);
+            const [a, b] = f.people;
+            expect(Math.abs(a!.x - b!.x)).toBeGreaterThanOrEqual(2);
+            // 前の画（主人公の北から木戸を見る）に主人公が映る
+            expect(inView(f.shot, ENTRY_POSE.x, ENTRY_POSE.z)).toBe(true);
+            if (prev !== null) {
+                const d = Math.atan2(Math.sin(f.hero!.heading - prev), Math.cos(f.hero!.heading - prev));
+                expect(Math.abs(d), `t=${t.toFixed(2)} の主人公の向きの変わり`).toBeLessThan(0.15);
+            }
+            prev = f.hero!.heading;
+        }
+        // 始めは北（城門）を向き、使者が近づくと南（木戸）の方へ向き直る
+        expect(stageFrame(ENVOYS_HERO, 0, false, CAST_EXPLORE).hero!.heading).toBeCloseTo(Math.PI, 6);
+        expect(Math.abs(Math.atan2(Math.sin(stageFrame(ENVOYS_HERO, 2.2, false, CAST_EXPLORE).hero!.heading), Math.cos(stageFrame(ENVOYS_HERO, 2.2, false, CAST_EXPLORE).hero!.heading)))).toBeLessThan(Math.PI / 2);
+        // 後の画（城門の前）は前と同じ。使者は人物の所に着いて替わる
+        expect(stageFrame(ENVOYS_HERO, 40, false, CAST_EXPLORE).people).toEqual([]);
+        // 動きを減らす：主人公の背中越しに、城門の前に着いた使者（名札つき）を見る静止の画
+        const r = stageFrame(ENVOYS_HERO, 0, true, CAST_EXPLORE);
+        expect(r.hero).toBeTruthy();
+        expect(inView(r.shot, ENTRY_POSE.x, ENTRY_POSE.z)).toBe(true);
+        for (const p of r.people) expect(inView(r.shot, p.x, p.z)).toBe(true);
+        // showHero を省けば前どおり（主人公は描かない）
+        expect(stageFrame(EVENTS[0]!, 2, false, CAST_EXPLORE).hero).toBe(null);
+    });
+
+    it('家臣の報告：家臣は城門の方（北）から歩いて来て主人公の前で止まり、主人公の方を向く。家臣の置き場所の人物は場面の間だけ隠す。二人の画（肩越し → 横）', () => {
+        const f0 = stageFrame(RETAINER, 0, false, CAST_EXPLORE);
+        expect(f0.people.length).toBe(1);
+        expect(f0.people[0]!.look).toBe('genzo');
+        expect(f0.people[0]!.label).toBe(true);
+        expect(f0.people[0]!.z).toBeLessThan(ENTRY_POSE.z - 4);
+        expect(f0.hideCast).toEqual(['tadakatsu']);
+        expect(f0.hero).toEqual({ x: ENTRY_POSE.x, z: ENTRY_POSE.z, heading: expect.any(Number) });
+        // 3 秒ほどで着いて止まり、主人公の方を向く
+        const f = stageFrame(RETAINER, 4.5, false, CAST_EXPLORE);
+        const p = f.people[0]!;
+        expect(Math.hypot(p.x - RETAINER_STOP[0], p.z - RETAINER_STOP[1])).toBeLessThan(1e-6);
+        expect(p.moving).toBe(0);
+        const face = Math.atan2(ENTRY_POSE.x - p.x, ENTRY_POSE.z - p.z);
+        expect(Math.abs(Math.atan2(Math.sin(p.heading - face), Math.cos(p.heading - face)))).toBeLessThan(0.05);
+        // 主人公は家臣の方を向く（北寄りのまま）
+        expect(Math.abs(Math.atan2(Math.sin(f.hero!.heading - Math.PI), Math.cos(f.hero!.heading - Math.PI)))).toBeLessThan(0.5);
+        // 二人とも画の中（前の画も後の画も）
+        for (const t of [0.5, 2, RETAINER_CUT + 0.1, 6, 12]) {
+            const g = stageFrame(RETAINER, t, false, CAST_EXPLORE);
+            expect(inView(g.shot, ENTRY_POSE.x, ENTRY_POSE.z), `t=${t} 主人公`).toBe(true);
+            expect(inView(g.shot, g.people[0]!.x, g.people[0]!.z), `t=${t} 家臣`).toBe(true);
+        }
+        // 動きを減らす：家臣は止まった所に、主人公の方を向いて現れる
+        const r = stageFrame(RETAINER, 0, true, CAST_EXPLORE);
+        expect(Math.hypot(r.people[0]!.x - RETAINER_STOP[0], r.people[0]!.z - RETAINER_STOP[1])).toBeLessThan(1e-6);
+        expect(r.people[0]!.moving).toBe(0);
+    });
+
+    it('負傷兵の画（第二章への移行）は、通りから詰所の前の休み場を見る（筵の負傷兵が画の中）', () => {
+        for (const reduced of [false, true]) {
+            const f = stageFrame({ id: 'wounded_rest', count: 12 }, 3, reduced);
+            const lying = f.figures.filter((x) => x.pose === 'lie');
+            expect(lying.length).toBe(6);
+            for (const x of lying) expect(inView(f.shot, x.x, x.z)).toBe(true);
+        }
     });
 });
 
@@ -423,6 +538,56 @@ describe('探索の場面の口：stage(null) で片付けて戻る', () => {
         expect(poses.length).toBe(1);
         // 主人公は動かしていない（START とは別の位置のまま）
         expect(hero.x).not.toBe(START.x);
+    });
+
+    it('冒頭の出来事（主人公を見せる）：主人公を町の入口に立たせ、主人公を描くカメラにする。見回し（orbit）は触らない。stage(null) で始める前の位置・向き・見回しへ戻す', async () => {
+        const g = globalThis as Record<string, unknown>;
+        g.document ??= { createElement: (t: string) => fakeElement(t), body: fakeElement('body') };
+        g.window ??= { addEventListener: () => undefined, removeEventListener: () => undefined };
+        const { ExploreWorld } = await import('../proto3d/src/explore/world');
+        const hero = createHero(3.3, 1.2, 2.1);
+        const orbit = { yaw: 1.1, pitch: 0.2, dist: 2.1 };
+        const shots: { hideHero?: boolean }[] = [];
+        const poses: unknown[] = [];
+        const host = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(48, 2, 0.1, 2000),
+            overlay: fakeElement() as unknown as HTMLElement,
+            hero,
+            low: true,
+            load: () => Promise.reject(new Error('素材なし（テスト）')),
+            prepare: () => undefined,
+            setHeroPose: (p: { x: number; z: number; heading: number }) => {
+                poses.push(p);
+                Object.assign(hero, p);
+                orbit.yaw = p.heading - Math.PI;
+            },
+            setControl: () => undefined,
+            setRenderPaused: () => undefined,
+            setExtraColliders: () => undefined,
+            onFrame: () => undefined,
+            viewSize: () => ({ w: 800, h: 400 }),
+            orbit,
+            setCameraShot: (s: { hideHero?: boolean } | null) => void shots.push(s as never),
+            renderOnce: () => undefined,
+            setLookHandler: () => undefined,
+        };
+        const world = new ExploreWorld(host as never);
+        await world.preload();
+        const before = { x: hero.x, z: hero.z, heading: hero.heading };
+        world.stage(LIFE, 1, false);
+        expect(shots[shots.length - 1]!.hideHero).toBe(false);
+        expect([hero.x, hero.z, hero.heading]).toEqual([ENTRY_POSE.x, ENTRY_POSE.z, ENTRY_POSE.heading]);
+        expect(orbit).toEqual({ yaw: 1.1, pitch: 0.2, dist: 2.1 });
+        world.stage(RETAINER, 3, false);
+        expect(shots[shots.length - 1]!.hideHero).toBe(false);
+        expect(world.stageProbe().people).toBe(1);
+        world.stage(EVENTS[0]!, 1, false);
+        expect(shots[shots.length - 1]!.hideHero).toBe(true);
+        world.stage(null, 0, false);
+        expect({ x: hero.x, z: hero.z, heading: hero.heading }).toEqual(before);
+        expect(orbit).toEqual({ yaw: 1.1, pitch: 0.2, dist: 2.1 });
+        expect(poses).toEqual([before]);
     });
 
     it('出来事の最初の画：探索の描画を止めている間（演出の層が字幕を先に見せている間）は描かず、止めるのをやめた後の次の stage で 1 回描く', async () => {

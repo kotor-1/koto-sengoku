@@ -760,6 +760,11 @@ const exploreHost: ExploreHost = {
     renderOnce() {
         // 確認用の手動の描画（?render=manual）では描かない（__p3.renderNow のときだけ描く決まりのまま）
         if (manualRender || activeMode()) return;
+        // 主人公の見た目を今の位置・向きへ（冒頭の出来事で主人公を町の入口に立たせた直後の最初の画。ふだんは毎フレームの advance で合わせる）
+        if (heroView) {
+            heroView.root.position.set(hero.x, groundY(hero.x, hero.z), hero.z);
+            heroView.root.rotation.y = hero.heading;
+        }
         placeCamera(1);
         renderNow();
     },
