@@ -243,6 +243,14 @@ export class ExploreWorld implements GameWorld {
         // 出来事の最初の画はすぐ描く（地図の覆いが外れた所に、前の画や暗い画面を出さない。初めて描く重さは演出の時計に数えない）。
         // 名札も、その描いた画に合わせて置く
         if (fresh) {
+            // 最初の画は frame（毎フレームの隠す・町の人々の置き直し）を通らずに描くので、隠す人物・町の人々をここで当ててから描く
+            //（当てないと、最初の 1 コマだけ、隠すはずの人物（出陣の手前の会話の相手など）・支度の兵が映った）
+            for (const v of this.views.values()) {
+                if (!this.hiddenCast.has(v.member.id)) continue;
+                v.root.visible = false;
+                v.label.hidden = true;
+            }
+            if (this.ambient) this.updateAmbient(cam);
             this.host.renderOnce();
             this.stageActors.placeLabels(cam);
         }

@@ -589,11 +589,11 @@ function columnDepart(count: number, mark: string, t: number, reduced: boolean, 
 }
 
 /**
- * 帰還の画：援兵と同じく、木戸の外の街道（隊列の後ろの東・目の高さ 2.6 m）から北の木戸と町を見て、木戸をくぐって町へ帰る隊列の背中を追う。
+ * 帰還の画：援兵と同じく、木戸の外の街道（隊列の後ろの東・目の高さ 2.5 m）から北の木戸と町を見て、木戸をくぐって町へ帰る隊列の背中を追う。
  * 最後の列の負傷兵・担架が手前に来る。
  */
-const RETURN_SHOT_0 = shot(3.6, 2.6, 37.5, -0.6, 1.3, 17.5);
-const RETURN_SHOT_1 = shot(3.6, 2.6, 37.0, -0.2, 1.2, 14.0);
+const RETURN_SHOT_0 = shot(4.0, 2.5, 36.0, -0.8, 1.3, 17.5);
+const RETURN_SHOT_1 = shot(4.0, 2.5, 35.5, -0.3, 1.2, 14.0);
 const RETURN_SPEED = 1.2;
 
 function columnReturn(count: number, wounded: number, mark: string, victory: boolean, t: number, reduced: boolean): StageFrame {

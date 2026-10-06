@@ -21,8 +21,11 @@ export type CastKind = 'person' | 'notice' | 'gate' | 'lookout';
 export interface CastMember<Id extends string = TalkId> {
     id: Id;
     kind: CastKind;
-    /** 見た目の元（人物のとき。explore/world.ts が色を変える） */
-    look?: CharacterId;
+    /**
+     * 見た目の鍵（人物のとき。explore/people.ts の LOOKS の鍵。人物の id と同じ鍵が多いが、町の人 townsman_a など人物でない見た目も使える。
+     * explore/world.ts・people.ts が、この文字列で色を引く）
+     */
+    look?: string;
     x: number;
     z: number;
     /** 向き（ラジアン。motion.ts と同じ：0 = +z（南）、π = 北） */
