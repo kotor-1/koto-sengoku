@@ -51,6 +51,8 @@ async function open(opts = {}) {
   page.setDefaultTimeout(300000);
   const onErr = (text) => {
     if (reloading && /Couldn't load texture blob:/.test(text)) return;
+    // 読み込み直しで、前のページの人物の素材の読み込み（fetch）が途中で切られた（重いときは読み込み直しの時にまだ読んでいる）。前のページの事なので数えない
+    if (reloading && /人物の素材を読み込めませんでした[\s\S]*Failed to fetch/.test(text)) return;
     errors.push(text);
     console.log(`   ！ページの誤り [${secs()}] ${text.slice(0, 200)}`);
   };
