@@ -194,3 +194,8 @@ on：陣幕の西の外の高い所から、幕の上越しに床几と机を見
   新しい町の入口 (−1.4, 13.2) から北 476 回・1,518,261。歩く間（描画あり）は 334〜478 回・1,108,421〜1,520,723。休み場の物を「rest」のまとまりに分けた分の 1 回（同じ材質を 2 つのまとまりに分けた）のほかは増えていない
   （新しい形・素材は無い）。
 - 実機の速さ・見え方は未確認。
+- 開発サーバーの e2e（入口から歩く道に変わった後。描画の省略のものは `?render=manual`）：ieyasu-chapter OK 75・NG 0、ieyasu-routes OK 141・NG 0、ieyasu-ch2 OK 150・NG 0、
+  ieyasu-ch2-smoke OK・NG 0（1 回目は読み込み直しで切られた人物の素材の fetch を誤りと数えて NG 1。読み込み直しの間だけ数えないように直した）、story-integrate-smoke OK 62・NG 0、
+  chapter1-routes OK 96・NG 0、chapter1-input OK 28・NG 0、town-smoke（walk・lookout・council・intro3d・depart3d・replay3d・entry/ch1）OK 42・NG 1
+  （entry/ch1 の始めの案内の印の確かめが、描画ありの最初のコマより先に読んだ。1 コマ待つように直し、第二章の 2 つでは OK）・entry/ch2kept・ch2heavy OK 10・NG 0。
+  本番ビルドの e2e（ieyasu-prod・ieyasu-ch2-prod・story-prod・chapter1-prod）は見回しの向きを測るように直したが、ここでは流していない。
