@@ -26,6 +26,7 @@
  * - 結果を出し、「続ける」で後片付け（形・材質・画像・DOM・listener）をして探索へ戻り（exitMode）、結果を返す。
  */
 import { appContext, enterMode, exitMode, registerBattleRunner, type AppContext, type Mode } from '../app/modes';
+import { audio } from '../audio';
 import { loadModel } from '../app/models';
 import type { BattleOutcome, BattleRunHooks, BattleSetup, Order } from './types';
 import { canCommand, createBattle, elevationAt, isActive, issueOrder, meleeUnreachable, orderAllRetreat, stepBattle, unitById, waitReason, type BattleEvent, type BattleState } from './sim';
@@ -253,6 +254,14 @@ class BattleRun implements Mode {
         this.paused = false;
         this.ui.closeModal();
         this.ui.toast('合戦が始まった。部隊を選んで命令を出す（指揮で一時停止）', 'info');
+        // 音：始まりの法螺と太鼓
+        audio()?.battleCue('start');
+    }
+
+    /** 掛け声（声の台詞の表の id）：声を出せたら、同じ文を字幕に出す（音が無い・日本語の声が無い端末では何もしない） */
+    private shout(id: string): void {
+        const v = audio()?.sayId(id);
+        if (v) this.ui.voiceCaption(audio()?.speakerName(v.speaker) ?? '', v.text);
     }
 
     // ---------------------------------------------------------------- 毎フレーム
@@ -285,9 +294,12 @@ class BattleRun implements Mode {
             } else events = stepBattle(this.s, sim);
             this.onEvents(events);
         }
+        // 音：斬り合い・射撃をしている部隊の数から刃・矢の音（発音数と 1 秒あたりの数を制限。倍速では間引く。止めている間は鳴らさない）
+        audio()?.battleFrame(dt, this.s, this.speed, this.started && !this.paused && !this.s.result);
         if (this.s.result && this.endAt < 0) {
             this.endAt = this.realT;
             this.pending = 'none';
+            audio()?.battleCue('end');
             // 勝ち負けが決まった：すぐに章の進行へ知らせる（結果の反映と戦後の自動保存。結果の画面を出す前）
             this.decide();
         }
@@ -325,6 +337,8 @@ class BattleRun implements Mode {
     private onEvents(events: BattleEvent[]): void {
         this.seenEvents = this.s.events.length;
         for (const e of events) {
+            // 音：ぶつかり・敗走の太鼓（見えていない敵の出来事は鳴らさない）
+            if (!e.unseen) audio()?.battleEvent(e.kind, this.speed);
             const tone = eventTone(this.s, e);
             if (tone) this.ui.toast(e.text, tone, e.unitId);
             // 味方の能力の効果が切れた：上の真ん中に短く（「〇〇の効果が切れた」）
@@ -514,6 +528,9 @@ class BattleRun implements Mode {
             this.ui.flash(`${user.name}：「${name}」${tgt ? `— ${tgt}${how}` : ''}${this.paused ? '（再開すると時間が進む）' : ''}`, 2400);
             const note = abilityNoticeModel(this.s, user.id);
             if (note) this.ui.abilityNotice('use', `${note.general}${note.title}`, `対象：${note.target}`);
+            // 音：能力の発動の太鼓と、武将の掛け声（味方の武将だけ）
+            audio()?.battleCue('ability', this.speed);
+            if (user.side === 'ally' && pm) this.shout(`battle.ability.${pm.info.id}`);
             // 使った知らせ（sim が記録した ability の出来事）をすぐ出す（止めている間も）
             this.onEvents(this.s.events.slice(this.seenEvents));
             return true;
@@ -560,6 +577,7 @@ class BattleRun implements Mode {
         if (yes && orderAllRetreat(this.s)) {
             this.pending = 'none';
             this.paused = false;
+            this.shout('battle.retreat');
         } else this.paused = was;
     }
 

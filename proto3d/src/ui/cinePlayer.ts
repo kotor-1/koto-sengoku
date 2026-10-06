@@ -20,6 +20,7 @@ import { el, nowMs, onPress } from './dom';
 import { CHOICE_GUARD_MS, InputGate } from './guard';
 import { createMap, type MapDom } from './mapDom';
 import { dropLayer, startedAt, type LayerHost, type Modal } from './modal';
+import { audio } from '../audio';
 
 type CineButton = 'pause' | 'prev' | 'next' | 'skip' | 'reduce';
 
@@ -115,6 +116,8 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
         const setPaused = (on: boolean, auto = false) => {
             if (done || clock.ended) return;
             clock.setPaused(on);
+            // 声：止めたら今の声を止める（再開しても読み直さない。たまった声を鳴らさない）
+            audio()?.cinePaused(on);
             autoPaused = on && auto;
             hint.hidden = !autoPaused;
             hint.textContent = autoPaused ? '画面を離れたので一時停止しました。「再開」で続きから。' : '';
@@ -163,12 +166,18 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
                 who.hidden = !f.caption?.speaker;
                 txt.textContent = f.caption?.text ?? '';
                 cap.classList.toggle('empty', !f.caption);
+                // 声：字幕が替わったら前の声を止め、表の台詞なら読む（字幕と同じ言葉。止めている間は読まない）
+                if (!clock.paused) audio()?.caption(f.caption ?? null);
+                else audio()?.stopVoice();
             }
             // 場面が変わった：地図を作り直す・覆いを切り替える
             if (f.beatIndex !== beatShown) {
                 beatShown = f.beatIndex;
                 holdTick = true;
                 layer.dataset.beat = String(f.beatIndex);
+                // 音：場面ごとの曲（町の様子・急報・出陣・帰還）と、木戸を通る出来事のきしみ
+                const ev = f.beat.kind === 'stage' ? f.beat.event : null;
+                audio()?.cineBeat({ moment: spec.moment, kind: f.beat.kind, ...(ev ? { event: ev.id } : {}), ...(ev?.id === 'column_return' ? { victory: ev.victory } : {}) });
                 // 3D の場面の mode（data-mode・確かめの probe の mode）は、3D の出来事を始めた時に 'stage' にする（beginStage）。
                 // mode が 'stage' なら、もう出来事が置かれている（world の stageProbe が出来事を返す）
                 mode = f.beat.kind;
@@ -350,6 +359,8 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
                 window.removeEventListener('blur', onBlur);
                 window.removeEventListener('pagehide', onHide);
                 document.body.classList.remove('g-cine-stage');
+                // 声を止め、演出の曲の決めを外す（後の曲は画面で決まる）
+                audio()?.cineEnd();
                 // 終わり・スキップ・タイトルへ戻る（abandon）：必ず片付ける
                 stageActive = false;
                 safeStage(null, 0);
@@ -363,6 +374,7 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
             done = true;
             document.body.classList.remove('g-cine-stage');
             safeStage(null, 0);
+            audio()?.cineEnd();
             dropLayer(host, 'cine', layer);
             reject(e);
             return;

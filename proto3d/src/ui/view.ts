@@ -21,6 +21,8 @@ import { ADVANCE_GUARD_MS, CHOICE_GUARD_MS, HeldKeys, InputGate } from './guard'
 import type { LayerHost, Modal, ModalKind, ModalProbe } from './modal';
 import { playCinematic } from './cinePlayer';
 import { openSituation } from './situationView';
+import { soundPanel } from './soundPanel';
+import { audio } from '../audio';
 
 export type { ModalProbe } from './modal';
 
@@ -626,6 +628,8 @@ export class DomView implements GameView, LayerHost {
                 const atEnd = i === lines.length - 1;
                 more.hidden = atEnd && choices.length > 0;
                 if (atEnd && choices.length > 0 && choicesEl.hidden) showChoices();
+                // 声：表にある短い台詞だけ読む（前の行の声は止める。docs/audio.md）
+                audio()?.line(line.speaker, line.name, line.text);
             };
             const advance = () => {
                 if (done) return;
@@ -684,6 +688,8 @@ export class DomView implements GameView, LayerHost {
                     if (!choicesEl.hidden) choiceGate.reset(nowMs(), CHOICE_GUARD_MS);
                     mapGate?.reset(nowMs(), CHOICE_GUARD_MS);
                 },
+                // 会話を閉じた（選んだ・終わった・タイトルへ）：声を止める
+                dispose: () => audio()?.stopVoice(),
             };
             this.push(m);
             render();
@@ -733,6 +739,9 @@ export class DomView implements GameView, LayerHost {
             if (info.saveNote) panel.append(el('p', 'g-note', info.saveNote));
             const btns = el('div', 'btns');
             panel.append(btns);
+            // 音の設定（ミュートと 3 つの音量。ボタンの下に小さく。docs/audio.md）
+            const sound = soundPanel();
+            if (sound) panel.append(sound);
             layer.append(panel);
             const items = [
                 { id: 'save', label: '保存する', disabled: !info.canSave },

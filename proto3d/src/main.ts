@@ -21,6 +21,7 @@ import { activeMode, setAppContext } from './app/modes';
 import { createPost, type Post } from './post';
 import { bootChapter, type ExploreHost } from './ui/boot';
 import { buildTown, updateTownView, type TownView } from './town/view';
+import { audio } from './audio';
 
 /**
  * カメラ：南の斜め上から北を見下ろす「正面寄りの見下ろし」（向きは固定。回転しない）。
@@ -667,7 +668,11 @@ function advance(dt: number, raw: number, ix: number, iy: number): void {
     v.run.setEffectiveWeight(walkBlend * runBlend);
     v.idle.setEffectiveWeight(1 - walkBlend);
     v.mixer.update(dt);
+    // 足音：歩き・走りの位相（stride）の半周ごとに 1 歩。止まっている間は鳴らさない（audio/sfx.ts の FootstepTracker）
+    audio()?.step(strideTotal, hero.speed, runBlend > 0.5);
     placeCamera(1 - Math.exp(-6 * dt), dt);
+    // 環境音を聞く位置（荷の作業の音の近さ）：カメラの位置
+    audio()?.listener(camera.position.x, camera.position.z);
     fadeOccluders(dt);
     for (const f of frameHooks) f(dt);
     if (!manualRender) renderNow();

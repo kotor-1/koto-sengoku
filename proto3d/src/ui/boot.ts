@@ -7,7 +7,9 @@
  * 読み込むと battle/entry.ts が app/modes.ts の registerBattleRunner で自分を登録する。
  * 読み込めなかったとき（通信の失敗など）は、章の進行（game.ts）が「もう一度／タイトルへ」を出す。仮の結果の選択は無い。
  */
-import { activeModeName, exitMode, getBattleRunner } from '../app/modes';
+import { activeModeName, exitMode, getBattleRunner, onModeChange } from '../app/modes';
+import { installAudio, unlockOnGesture } from '../audio';
+import { VOICE_LINES, VOICE_SPEAKER_NAMES, findVoiceLine } from '../campaign/ieyasu1570/story/voiceLines';
 import { ChapterGame, devStateFor, type BattleRunnerLike, type GameWorld } from '../campaign/game';
 import { getBrowserStorage } from '../campaign/save';
 import { createScenarios } from '../campaign/scenarios';
@@ -52,6 +54,16 @@ export function bootChapter(host: ExploreHost): ChapterGame<any> {
     // 演出の「動きを減らす」：'koto-sengoku/3d-prefs' に、利用者が切り替えたときだけ書く（無ければ端末の設定）
     const prefs = new StoryPrefsStore(storage, deviceReducedMotion);
     view.prefs = prefs;
+    // 音（BGM・環境音・効果音・声）：設定は 'koto-sengoku/3d-audio'（変えたときだけ書く）。最初の利用者の操作で有効にする。
+    // 作れなくても・有効にできなくても、進行は止めない（docs/audio.md）
+    const sound = installAudio({
+        storage,
+        voices: {
+            byId: (id) => VOICE_LINES.find((v) => v.id === id),
+            find: (speaker, text) => findVoiceLine(speaker, text),
+            nameOf: (speaker) => (VOICE_SPEAKER_NAMES as Record<string, string>)[speaker] ?? '',
+        },
+    });
     // 合戦場の演習（タイトルの入口）：画面の塊は選んだときに読み込む。記録は 'koto-sengoku/3d-fields' だけに書く
     let practice: { mode: PracticeMode; store: PracticeRecordStore } | null = null;
     const runPractice = async (): Promise<void> => {
@@ -100,6 +112,15 @@ export function bootChapter(host: ExploreHost): ChapterGame<any> {
     });
     void world.preload();
     void game.start();
+    if (sound) {
+        unlockOnGesture(sound);
+        // 画面から曲を決める（章の進行の画面・合戦の画面）。描画のコマではなく時計で見る（覆っている間も曲は替わる）
+        const watch = () => sound.setScreen(game.screen, activeModeName() === 'battle');
+        onModeChange(watch);
+        window.setInterval(watch, 200);
+        watch();
+        if (import.meta.env.DEV) void import('../audio/dev').then((m) => m.exposeAudioDev(sound));
+    }
 
     if (import.meta.env.DEV) {
         // 開発時のみ：自動確認から章の状態を読み、操作を進められるようにする（本番の画面には出さない）

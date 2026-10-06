@@ -193,6 +193,9 @@ export class BattleUi {
     /** 発動の知らせ（能力名・武将・対象）と、効果が切れた知らせ */
     private readonly abNote: HTMLDivElement;
     private abNoteTimer = 0;
+    /** 掛け声の字幕（声の台詞と同じ文。docs/audio.md） */
+    private readonly voiceCap: HTMLDivElement;
+    private voiceCapTimer = 0;
     private readonly objHead: HTMLButtonElement;
     private readonly objTime: HTMLElement;
     private readonly objArmy: Record<Side, HTMLElement>;
@@ -335,7 +338,11 @@ export class BattleUi {
         this.abNote = el('div', 'b-abnote');
         this.abNote.hidden = true;
         this.abNote.setAttribute('aria-live', 'polite');
-        mid.append(this.pausePill, this.abNote, this.toasts);
+        // 掛け声の字幕（声を出したときだけ。押しても何も起きない）
+        this.voiceCap = el('div', 'b-voicecap');
+        this.voiceCap.hidden = true;
+        this.voiceCap.setAttribute('aria-live', 'polite');
+        mid.append(this.pausePill, this.abNote, this.voiceCap, this.toasts);
 
         // ---- 右上：一時停止・速さ・全軍撤退 ----
         const ctrl = el('div', 'b-ctrl');
@@ -1089,6 +1096,24 @@ export class BattleUi {
         }, ms);
         this.abNoteTimer = id1;
         this.timers.add(id1);
+    }
+
+    /** 掛け声の字幕（話し手と、声の台詞と同じ文）。ms だけ出して消える */
+    voiceCaption(name: string, text: string, ms = 2600): void {
+        const e = this.voiceCap;
+        e.replaceChildren(el('b', undefined, name), el('span', undefined, `「${text}」`));
+        e.hidden = false;
+        if (this.voiceCapTimer) {
+            window.clearTimeout(this.voiceCapTimer);
+            this.timers.delete(this.voiceCapTimer);
+        }
+        const id = window.setTimeout(() => {
+            e.hidden = true;
+            this.timers.delete(id);
+            if (this.voiceCapTimer === id) this.voiceCapTimer = 0;
+        }, ms);
+        this.voiceCapTimer = id;
+        this.timers.add(id);
     }
 
     /** 名札に目標の印を添える（例：救出・守る・崩す。空なら外す）。CSS が data-mark を前に出す */
