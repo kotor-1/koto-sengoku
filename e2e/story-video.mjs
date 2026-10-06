@@ -601,7 +601,8 @@ async function partIntro(tag = 'intro', reducedMotion = 'no-preference') {
     // （点検の指摘：会話の相手のままでは演出の間に名札が出ず、誰が誰か分からなかった）。人が歩かないことは下の「動きを減らす」の確かめで見る
     check(`[${tag}] 使者の到着（動きを減らす）：使者 2 人が着いた所に名札つきで現れ、会話の相手の使者はその間だけ隠す`, env.length === 1 && env.every((b) => b.people >= 2 && b.hidden >= 2), J(env.map((b) => ({ ev: b.ev, frames: b.castFrames, people: b.people, hidden: b.hidden }))));
   } else check(`[${tag}] 使者の到着：使者 2 人・会話の相手の使者は隠す`, env.length === 1 && env.every((b) => b.people >= 2 && b.hidden >= 2), J(env.map((b) => ({ ev: b.ev, frames: b.castFrames, people: b.people, hidden: b.hidden }))));
-  check(`[${tag}] 時計は最後まで進んだ（台本の長さ ${spec.duration} 秒）`, Math.abs(run.clockEnd - spec.duration) < 0.05, `${run.clockEnd}`);
+  // 最後の場面が 3D のとき（章の冒頭）は、時計が長さに着いたコマで層を閉じるので、記録の最後の t は長さの 1 コマ前（1 コマの上限 1 秒）
+  check(`[${tag}] 時計は最後まで進んだ（台本の長さ ${spec.duration} 秒）`, run.clockEnd <= spec.duration + 1e-6 && run.clockEnd >= spec.duration - (run.beats.at(-1).mode === 'stage' ? 1.0 : 0.05) - 1e-6, `${run.clockEnd}`);
   const seq = specCapsCheck(tag, run, spec);
   listCaps(tag, seq);
   // 第 2 回の直し（S）：最初の字幕で自分が徳川家康だと分かる（城・町の名前は出さない。見出しの「徳川の城下（三河）」と同じ所）・A の言い方
@@ -664,7 +665,8 @@ async function ch2One(name) {
   mapRatioIfAny(tag, runs);
   captionCheck(tag, runs);
   const run = runs.find((r) => r.id === spec.id);
-  check(`[${tag}] 時計は最後まで進んだ（台本の長さ ${spec.duration} 秒）`, Math.abs(run.clockEnd - spec.duration) < 0.05, `${run.clockEnd}`);
+  // 最後の場面が 3D のとき（章の冒頭）は、時計が長さに着いたコマで層を閉じるので、記録の最後の t は長さの 1 コマ前（1 コマの上限 1 秒）
+  check(`[${tag}] 時計は最後まで進んだ（台本の長さ ${spec.duration} 秒）`, run.clockEnd <= spec.duration + 1e-6 && run.clockEnd >= spec.duration - (run.beats.at(-1).mode === 'stage' ? 1.0 : 0.05) - 1e-6, `${run.clockEnd}`);
   const stages = run.beats.filter((b) => b.mode === 'stage');
   check(`[${tag}] 3D の場面が描かれた（どの場面にも画面の流しのコマがある）`, stages.length > 0 && stages.every((b) => b.castFrames > 0), J(stages.map((b) => ({ ev: b.ev, frames: b.castFrames, people: b.people, figures: b.figures }))));
   const seq = specCapsCheck(tag, run, spec);
