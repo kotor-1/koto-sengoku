@@ -169,7 +169,7 @@
 - **変えないもの**：回復量・代償・主目標・合戦の計算は変わらない（単体テスト）。
 - **記録の中身**：4 つの戦場の地形のデータと 1 つずつ照らして、合っていた（第 1 回の点検）。
 
-## 6. 最終の回帰（固定 9869339）
+## 6. 最終の回帰（固定 9869339。2 時間の上限を超えないよう 3 回に分けて流した）
 
 ### 型と単体テスト
 
@@ -188,11 +188,24 @@
 | `ieyasu-ch2` | ALL OK |
 | `ieyasu-ch2-smoke` | ALL OK |
 | `ieyasu-chapter` | ALL OK |
-| B_RESULTS | |
+| `ieyasu-routes` | ALL OK |
+| `chapter1-routes` | すべて OK |
+| `chapter1-input` | ALL OK |
+| `chapter1-idempotent` | ALL OK |
+| `fields-practice`（演習 20 戦場・古い保存） | ok 586 |
 
 ### 本番ビルド
 
-C_RESULTS
+- 9869339 の本番ビルド：61,013,085 バイト（上限 64MB）。
+- 下の e2e は、どれも CSP の下で流し、CSP の違反・ページの誤りは 0。
+
+| e2e | 結果 |
+|---|---|
+| `story-prod`（**本物の入力**だけ。導入をスキップせず最後まで → J の情勢 → 軍議 → 物見 → 出陣の演出 → 合戦（全軍撤退）→ 帰還の演出） | OK 26 |
+| `ieyasu-ch2-prod` | OK 29 |
+| `ieyasu-prod` | OK 34 |
+| `chapter1-prod` | OK 21 |
+| `fields-prod` | OK 111 |
 
 ### 流していない既存の e2e
 
@@ -200,7 +213,11 @@ C_RESULTS
 
 ## 7. 公開
 
-PUBLISH
+- 公開先：https://claude.ai/artifact/VeuwbhdPeu1oVmXh3TAFJC
+- **Version 19**（版 ID 1791275538-d5c7）＝コミット 9869339 の本番ビルド。
+- 公開したもの：ページ（index.html）と、変わった 6 つ（assets の JS 5 つ・CSS 1 つ）だけ。前の版の assets 6 つは外した。素材（models）・style.css・battle.css・favicon は Version 18 と同じ中身で、sha256 が一致したので置き直していない。
+- 公開先から読み戻して、6 つと素材の見本の sha256 が手元と一致した。ファイルは 132 個。ページが新しい assets を読むことも確かめた。
+- 戻し先：Version 18（版 ID 1791197911-6fde）＝コミット deb7b2d。公開先の版の履歴から戻せる。
 
 ## 8. 未確認・残り
 
