@@ -208,7 +208,7 @@ function exploreScript(state: IeyasuState, id: IeyasuTalkId): ScenarioScript {
             if (again) return { id: 'explore.tadakatsu.again', talk: id, lines: [T('皆、陣幕の内に控えております。軍議を開かれますか。')], choices, defaultChoice: 0 };
             const lines: ScenarioLine[] = [
                 narrate('元亀元年（1570年）。織田と浅井・朝倉が敵味方に分かれ、近江の情勢が張りつめている。（この章の会話と、この先の出来事はゲーム用の創作）'),
-                T('殿、お戻りなさいませ。'),
+                T('殿、お待ちしておりました。'),
                 T('織田家から使者が参っております。浅井家からも、別の使者が。'),
                 H('両家から、同じ日にか。'),
                 T('はい。どちらも殿のお考えを聞きたいと申しております。'),
@@ -609,7 +609,7 @@ function aftermathEnvoy(state: IeyasuState, o: BattleOutcome, p: Policy, id: 'od
 export function ieyasuPhaseIntro(state: IeyasuState): { title: string; text: string } {
     switch (state.phase) {
         case 'explore':
-            return { title: '元亀元年・家康', text: '織田と浅井の両家から使者が来ている。本多忠勝と話そう。（1570年の情勢を背景にした歴史分岐シナリオ。会話と分岐後は創作）' };
+            return { title: '元亀元年・家康', text: '織田と浅井の両家から使者が来ている。城門の前の本多忠勝と話し、軍議を開こう。（1570年の情勢を背景にした歴史分岐シナリオ。会話と分岐後は創作）' };
         case 'council':
             return { title: '軍議', text: '方針を決める。' };
         case 'muster': {
@@ -638,7 +638,7 @@ export function ieyasuPhaseIntro(state: IeyasuState): { title: string; text: str
 export function ieyasuObjective(state: IeyasuState): string {
     switch (state.phase) {
         case 'explore':
-            return '本多忠勝と話す（両家の使者の話も聞ける）';
+            return '城門の前の本多忠勝と話し、軍議を開く（両家の使者の話も聞ける）';
         case 'council':
             return '方針を選ぶ';
         case 'muster':

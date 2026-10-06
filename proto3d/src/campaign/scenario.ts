@@ -131,6 +131,11 @@ export interface Scenario<S extends ScenarioStateCore = ScenarioStateCore> {
     /** 合戦の結果を、その合戦の id に対して 1 回だけ反映する（済んでいれば applied: false で状態はそのまま） */
     applyOutcomeOnce(s: S, battleId: string, o: BattleOutcome): { state: S; applied: boolean };
     setExplorePose(s: S, pose: ExplorePose | null): S;
+    /**
+     * 保存に探索の位置が無いとき（はじめから・章の始め・戦後に城下へ入るとき）に操作を始める位置（省ける。省くか null なら今までの開始の位置）。
+     * 状態を読むだけ（位置を状態や保存に書かない：位置の無い保存の文字列は変わらない）。手動の保存に位置があれば、その位置が先。
+     */
+    startPose?(s: S): ExplorePose | null;
     addPlayTime(s: S, sec: number): S;
     canSaveManually(s: S): boolean;
 

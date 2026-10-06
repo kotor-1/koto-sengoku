@@ -1,6 +1,11 @@
 /**
- * 歴史分岐「元亀元年・家康」の演出の台本（第一章の導入・第二章への移行・出陣・帰還）。状態から作る純粋な関数（状態を読むだけ）。
+ * 歴史分岐「元亀元年・家康」の演出の台本（章の冒頭・情勢の図解・出陣・帰還）。状態から作る純粋な関数（状態を読むだけ）。
  * 設計：docs/story-rpg-design.md §2。型：story/types.ts（CineSpec）。再生は ui の共通の再生器（story/timeline.ts）、3D の出来事は町の側。
+ *
+ * - 章の冒頭（ch1_open・ch2_open）：3D の場面だけ。町の様子（第二章は負傷兵・援兵）→ 急報（使者・使い）→ 主人公と家臣の短いやり取り → 操作。
+ *   章の始めに自動で流す（docs/v20-feedback-request.md【1】：冒頭から図解にしない。ロード完了から操作まで 15〜20 秒の目安）。
+ * - 情勢の図解（ch1_intro・ch2_intro）：地図の台本。自動では流さない。情勢の画面・軍議の「詳しく見る」から任意で見る（見ることを進行の条件にしない）。
+ * - 声を付ける字幕の文は voiceLines.ts の表から取り、字幕に voice（id）を付ける。
  *
  * ＊＊ 1570年の情勢を背景にした歴史分岐シナリオ。演出の言葉は既存の分岐の文を短くした物（新しい出来事・地名・日付・逸話は足さない） ＊＊
  *
@@ -24,9 +29,10 @@ import { ieyasu2LookOf } from '../chapter2/scenario';
 import { IEYASU_LOOKS } from '../looks';
 import { IEYASU_PLEDGE_MIN_RATIO } from '../../../battle/maps';
 import { PLEDGE_SPECS, type PledgeResult, type PledgeState, type Policy } from '../state';
-import { IEYASU_RESULT_LABELS, supportSourceName } from '../story';
+import { IEYASU_RESULT_LABELS, IEYASU_TALK_NAMES, supportSourceName } from '../story';
 import { VISUAL_MAX, allyLosses, ch1GateTroops, ch2BattleTroops, ch2Sortie, heavyLoss, outcomeTroops, visualCount, type AllyLosses } from './counts';
 import { CH2_SITE } from './geo';
+import { voiceCap } from './voiceLines';
 import {
     ch2SitePlace,
     conflictRoutes,
@@ -56,6 +62,8 @@ type InfoKey = keyof CineSpec['info'];
 interface CapPlan {
     speaker?: string;
     text: string;
+    /** 声の台詞の id（voiceLines.ts。voiceCap で文と話し手といっしょに入れる） */
+    voice?: string;
     info?: InfoKey[];
     show?: string[];
     focus?: string[];
@@ -136,7 +144,7 @@ function build(id: string, moment: CineMoment, title: string, plans: BeatPlan[])
         for (const { c, local, d } of caps) {
             const start = r1(t + local);
             const end = r1(t + local + d);
-            captions.push({ start, end, ...(c.speaker ? { speaker: c.speaker } : {}), text: c.text });
+            captions.push({ start, end, ...(c.speaker ? { speaker: c.speaker } : {}), text: c.text, ...(c.voice ? { voice: c.voice } : {}) });
             for (const k of c.info ?? []) if (info[k] === undefined || info[k]! > start) info[k] = start;
             if (c.focus) highlights.push({ at: r1(local), ids: [...c.focus] });
         }
@@ -209,14 +217,106 @@ function relationLine(policy: Policy): string {
     return policy === 'oda' ? '織田と協力し、浅井・朝倉とは敵味方のまま。' : policy === 'asai' ? '浅井と組み、織田とは手を切った（分かれた道）。' : '両家とは戦わず、国を守る道を選んだ。';
 }
 
-// ================================================================ 第一章の導入
+// ================================================================ 章の冒頭（3D の場面だけ。自動で流す）
 
 const CH1_HEADING = '元亀元年（1570年）・徳川の城下（三河）';
+
+/** 家臣（本多忠勝）が主人公のもとへ来る場面（castId は城下で軍議を開く相手の id：両章とも 'tadakatsu'） */
+function retainerEvent(): StageEvent {
+    return { id: 'retainer_report', look: IEYASU_LOOKS.tadakatsu, name: IEYASU_TALK_NAMES.tadakatsu, castId: 'tadakatsu' };
+}
+
+/**
+ * 第一章の冒頭（docs/v20-feedback-request.md【1】）：町の様子（時代と主人公の字幕）→ 急報（使者 2 人が木戸から入る）
+ * → 主人公と家臣の短いやり取り（目前の目的：城門の前の本多忠勝と話し、軍議を開く）→ 操作。地図の場面は無い。
+ * 使者の言葉は今の台本（情勢の図解・会話）と同じ文。字幕は 6 つで、長さは 17.4 秒（CINE_LENGTH_RANGE の 12〜18 秒）。
+ */
+function ch1Open(): CineSpec {
+    return build('ch1_open', 'ch1_open', CH1_HEADING, [
+        {
+            kind: 'stage',
+            event: { id: 'town_life', hero: true },
+            // 自分が徳川家康だと分かるように（城・町の名前は出さない）
+            caps: [{ text: '元亀元年（1570年）。三河、徳川家康の城下。', info: ['when', 'where'] }],
+        },
+        {
+            kind: 'stage',
+            event: {
+                id: 'envoys_arrive',
+                envoys: [
+                    { look: IEYASU_LOOKS.oda_envoy, name: '織田家の使者' },
+                    { look: IEYASU_LOOKS.asai_envoy, name: '浅井家の使者' },
+                ],
+                showHero: true,
+            },
+            caps: [{ text: '織田と浅井から、同じ日に使者が来た。', info: ['crisis'] }, voiceCap('ch1.oda_envoy.ask'), voiceCap('ch1.asai_envoy.ask')],
+        },
+        {
+            kind: 'stage',
+            event: retainerEvent(),
+            caps: [{ ...voiceCap('ch1.tadakatsu.council'), info: ['decide'] }, voiceCap('ch1.hero.gather')],
+        },
+    ]);
+}
+
+/** 援兵の場面（第一章で約束を守り、兵が実際に戻ったときだけ。0 なら null）。冒頭と情勢の図解で同じ */
+function reinforcementBeat(s: Ieyasu2State): BeatPlan | null {
+    const c = s.chapter1;
+    const sup = c.support;
+    if ((c.pledge.result as PledgeResult) !== 'kept' || !sup.reinforcement || !sup.from || !(sup.recovered > 0)) return null;
+    // 援兵は第一章の戦後に受け取り済みで、今の兵に入っている（記録の「第一章で受け取り済み・今の兵に含む。第二章では足さない」と同じ時点）。
+    // 3D の場面（援兵が木戸を入る）はそのままに、字幕は「先の戦の後に着き、すでに隊に加わった」と言う
+    const text =
+        sup.from === 'tadakatsu'
+            ? `守備隊の者たち ${sup.recovered} は、先の戦の後に隊に加わった。`
+            : `${supportSourceName(sup.from)}の援兵 ${sup.recovered} は、先の戦の後に着き、隊に加わった。`;
+    return {
+        kind: 'stage',
+        event: { id: 'reinforcement_arrive', count: visualCount(sup.recovered, VISUAL_MAX.reinforcement), mark: HOUSE_MARK[sup.from], name: supportSourceName(sup.from) },
+        min: 4.5,
+        caps: [{ text }],
+    };
+}
+
+/**
+ * 第二章の冒頭：前章の結果に合った町の場面（負傷兵。失った兵が無ければ町の様子）→（約束を守り援兵が戻ったときだけ）援兵
+ * → 使い（約束の結果で言葉を変える。今回の危機）→ 家臣の一言（軍議を開く）→ 操作。地図の場面は無い。
+ * 前章の結果は短い字幕で言う（勝ちを前提にしない：ch1ResultLine）。C の約束（忠勝の頼み）は使いが言わないので字幕で言う。
+ * A は撤収のわけ（docs/ch2a-reason.md）を 1 行、B は囲まれた隊（長政が負傷なら浅井勢の後備え）を 1 行で言う。
+ */
+function ch2Open(s: Ieyasu2State): CineSpec {
+    const c = s.chapter1;
+    const p = s.policy;
+    const r = c.battle.result;
+    const pl = c.pledge.result as PledgeResult;
+    const wounded = visualCount(outcomeTroops(c.battle).lost, VISUAL_MAX.wounded);
+    const head: CapPlan[] = [
+        { text: '第一章の戦から数日。徳川の城下（三河）。', info: ['when', 'where'] },
+        { text: ch1ResultLine(p, c.battle), info: ['prev'] },
+    ];
+    if (p === 'home') head.push({ text: ch1PledgeLine(c), info: ['prev'] });
+    const plans: BeatPlan[] = [{ kind: 'stage', event: wounded > 0 ? { id: 'wounded_rest', count: wounded } : { id: 'town_life', hero: true }, caps: head }];
+    const rb = reinforcementBeat(s);
+    if (rb) plans.push(rb);
+    const m = messengerLines(s);
+    const caps: CapPlan[] = [m.first, { ...m.mission, info: ['crisis'] }];
+    // A：撤収のわけ（第一章の勝敗によらず同じ文）。B：丘の上で囲まれた隊
+    if (p === 'oda') caps.push({ text: CH2A_REASON, info: ['ally'] });
+    else if (p === 'asai') caps.push({ text: crisisLines(s).crisis });
+    plans.push({ kind: 'stage', event: { id: 'messenger_arrive', look: ieyasu2LookOf(s, 'envoy'), name: m.speaker }, caps });
+    plans.push({ kind: 'stage', event: retainerEvent(), caps: [{ ...voiceCap('ch2.tadakatsu.council'), info: ['decide'] }] });
+    return build(`ch2_open.${POLICY_TAG[p]}.${r}.${pl}`, 'ch2_open', `第二章　${CH2_MISSION_TITLES[p]}`, plans);
+}
+
+/** 第二章 A の撤収のわけの 1 行（docs/ch2a-reason.md。冒頭と情勢の図解で同じ文） */
+const CH2A_REASON = '近江の浅井・朝倉が健在のため、織田の本隊は陣を引く。';
+
+// ================================================================ 情勢の図解（地図の台本。自動では流さない）
 
 function ch1Intro(): CineSpec {
     const places = [homePlace(), ...partyPlaces(null), field1Place(null)];
     const base = scene(places, [...relationRoutes(null), ...conflictRoutes(), ...envoyRoutes()], { heading: CH1_HEADING });
-    return build('ch1_intro', 'ch1_intro', '第一章の始め（元亀元年）', [
+    return build('ch1_intro', 'ch1_intro', '情勢の図解（第一章の始め）', [
         {
             kind: 'map',
             scene: base,
@@ -273,30 +373,24 @@ function ch1Intro(): CineSpec {
 
 // ================================================================ 第二章への移行
 
-/** 第二章の使いの言葉（約束の結果で言い方を変える。破った・引き受けなかったときは感謝しない） */
-function messengerLines(s: Ieyasu2State): { speaker: string; first: string; mission: string } {
+/**
+ * 第二章の使いの言葉（約束の結果で言い方を変える。破った・引き受けなかったときは感謝しない）。
+ * 文は声の台詞の表（voiceLines.ts）から取る（字幕と声を同じ文にする）。冒頭（ch2_open）と情勢の図解（ch2_intro）で同じ言葉。
+ */
+function messengerLines(s: Ieyasu2State): { speaker: string; first: CapPlan; mission: CapPlan } {
     const c = s.chapter1;
     const pl = c.pledge.result as PledgeResult;
     if (s.policy === 'home') {
         return {
             speaker: '村の使い',
-            first: c.battle.result === 'victory' ? '先には浪人どもを追い払っていただきました。' : '浪人どもが、また村へ来ると噂しております。',
-            mission: '村の者だけでは守れませぬ。どうかお助けを。',
+            first: voiceCap(c.battle.result === 'victory' ? 'ch2.village.first.victory' : 'ch2.village.first.other'),
+            mission: voiceCap('ch2.village.mission'),
         };
     }
-    if (s.policy === 'oda') {
-        return {
-            speaker: '織田家の使者',
-            first: pl === 'kept' ? '先の戦では、援軍の退路を守っていただいた。' : pl === 'broken' ? '約束の退路は守られなんだ。されど手が足りぬ。' : '頼みを断られたのは、徳川殿のお考え。',
-            // 退くのは近江にいた織田の本隊（第一章の織田援軍ではない）。支えるのは、その後備え（と小荷駄）の撤収
-            mission: '主の本隊が近江の陣を引く。撤収をお支えくだされ。',
-        };
-    }
-    return {
-        speaker: '浅井家の使者',
-        first: pl === 'kept' ? '先の戦では、主の隊の退き口を守っていただいた。' : pl === 'broken' ? '約束の退き口は守られなんだ。されど頼れるのは徳川殿だけ。' : '先の頼みのことは、それはそれと主も申しております。',
-        mission: '丘の上の者たちを、どうか救っていただきたい。',
-    };
+    // A の使命：退くのは近江にいた織田の本隊（第一章の織田援軍ではない）。支えるのは、その後備え（と小荷駄）の撤収
+    const who = s.policy === 'oda' ? 'oda_envoy' : 'asai_envoy';
+    const key = pl === 'kept' ? 'kept' : pl === 'broken' ? 'broken' : 'declined';
+    return { speaker: s.policy === 'oda' ? '織田家の使者' : '浅井家の使者', first: voiceCap(`ch2.${who}.first.${key}`), mission: voiceCap(`ch2.${who}.mission`) };
 }
 
 /** 第二章の危機と目的の 2 文（主目標の基本の説明。物見をしなくても分かる）。情勢の画面でも使う */
@@ -357,31 +451,15 @@ function ch2Intro(s: Ieyasu2State): CineSpec {
     };
     const at = plans.length;
     // 3D：援兵（第一章で約束を守り、兵が実際に戻ったときだけ。0 なら出さない）
-    const sup = c.support;
-    if (pl === 'kept' && sup.reinforcement && sup.from && sup.recovered > 0) {
-        // 援兵は第一章の戦後に受け取り済みで、今の兵に入っている（記録の「第一章で受け取り済み・今の兵に含む。第二章では足さない」と同じ時点）。
-        // 3D の場面（援兵が木戸を入る）はそのままに、字幕は「先の戦の後に着き、すでに隊に加わった」と言う
-        const text =
-            sup.from === 'tadakatsu'
-                ? `守備隊の者たち ${sup.recovered} は、先の戦の後に隊に加わった。`
-                : `${supportSourceName(sup.from)}の援兵 ${sup.recovered} は、先の戦の後に着き、隊に加わった。`;
-        plans.push({
-            kind: 'stage',
-            event: { id: 'reinforcement_arrive', count: visualCount(sup.recovered, VISUAL_MAX.reinforcement), mark: HOUSE_MARK[sup.from], name: supportSourceName(sup.from) },
-            min: 4.5,
-            caps: [{ text }],
-        });
-    }
+    const rb = reinforcementBeat(s);
+    if (rb) plans.push(rb);
     // 3D：使い（第二章の使者・村の使い）。言葉は約束の結果で変える
     const m = messengerLines(s);
     plans.push({
         kind: 'stage',
         event: { id: 'messenger_arrive', look: ieyasu2LookOf(s, 'envoy'), name: m.speaker },
         min: 6,
-        caps: [
-            { speaker: m.speaker, text: m.first },
-            { speaker: m.speaker, text: m.mission, info: ['crisis'] },
-        ],
+        caps: [m.first, { ...m.mission, info: ['crisis'] }],
     });
     // 地図：今回の危機の場所と脅かす向き・目的
     const cl = crisisLines(s);
@@ -396,7 +474,7 @@ function ch2Intro(s: Ieyasu2State): CineSpec {
             min: 6,
             caps: [
                 {
-                    text: '近江の浅井・朝倉が健在のため、織田の本隊は陣を引く。',
+                    text: CH2A_REASON,
                     info: ['ally'],
                     show: [...rel, 'oda_camp', 'withdraw.oda_main'],
                     focus: ['asai', 'asakura', 'oda_camp', 'withdraw.oda_main'],
@@ -419,7 +497,7 @@ function ch2Intro(s: Ieyasu2State): CineSpec {
     // 地図：判断（軍議で 2 つの手から 1 つ・出陣の前に補充を決める。量・代償はここで変えない）。長さに収まる言い方を decideCaps で選ぶ
     const decide = (compact: boolean): BeatPlan => ({ kind: 'map', scene: base, min: 6, caps: decideCaps(s, site, compact) });
     const key = `ch2_intro.${POLICY_TAG[p]}.${r}.${pl}`;
-    const title = `第二章への移り（${CH2_MISSION_TITLES[p]}）`;
+    const title = `情勢の図解（第二章：${CH2_MISSION_TITLES[p]}）`;
     const variant = (short: boolean, compact: boolean) => {
         const b = woundBeat(short);
         const ps = [...plans, decide(compact)];
@@ -482,7 +560,7 @@ function departure(s: IeyasuAnyState): CineSpec | null {
         if (!so) return null;
         const p = s.policy;
         const site = CH2_SITE[p];
-        const caps: CapPlan[] = [{ text: so.units.includes('reserve') ? '守備隊も出陣し、城は空になる。' : '城門から、徳川の兵が出陣する。' }];
+        const caps: CapPlan[] = [voiceCap('depart.hero'), { text: so.units.includes('reserve') ? '守備隊も出陣し、城は空になる。' : '城門から、徳川の兵が出陣する。' }];
         const sup = so.support;
         if (sup.length) caps.push({ text: `${sup.map((x) => CH2_SUPPORT_NAMES[x]).join('・')}は、戦場で加わる。` });
         else if (!so.units.includes('reserve') && s.plan === 'hold') caps.push({ text: '岡崎の守備隊は、城に残る。' });
@@ -510,7 +588,7 @@ function departure(s: IeyasuAnyState): CineSpec | null {
     const second = p === 'oda' ? '織田援軍は、先に戦場の右前へ出ている。' : p === 'asai' ? '浅井長政隊は、先に戦場の左前へ出ている。' : '岡崎の守備隊は、国境の砦で囲まれかけている。';
     const sc = scene([homePlace(), field1Place(null)], [marchRoute('field1')], { heading: '出陣：徳川の城下 → 国境の原' });
     return build(`departure.ch1.${POLICY_TAG[p]}`, 'departure', '出陣（国境の原へ）', [
-        { kind: 'stage', event: { id: 'column_depart', count: visualCount(troops, VISUAL_MAX.column), mark: '徳' }, min: 6, caps: [{ text: '城門から、徳川の兵が出陣する。' }, { text: second }] },
+        { kind: 'stage', event: { id: 'column_depart', count: visualCount(troops, VISUAL_MAX.column), mark: '徳' }, min: 6, caps: [voiceCap('depart.hero'), { text: '城門から、徳川の兵が出陣する。' }, { text: second }] },
         { kind: 'map', scene: sc, min: 3.5, caps: [{ text: '行き先：国境の原（架空の局地戦）。', info: ['where'], show: ['march.field1'], focus: ['march.field1', 'field1'] }] },
     ]);
 }
@@ -621,12 +699,16 @@ function woundedOf(t: { lost: number; left: number }): number {
 
 /**
  * 演出の台本（状態を読むだけ。同じ状態なら同じ台本）。その時に流す物が無ければ null。
- * - ch1_intro：いつでも作れる（第一章の始めの情勢。第二章からの見直しでも同じ）。
- * - ch2_intro：第二章の状態だけ。
+ * - ch1_open・ch1_intro：いつでも作れる（第一章の冒頭・第一章の始めの情勢の図解。第二章からの見直しでも同じ）。
+ * - ch2_open・ch2_intro：第二章の状態だけ。
  * - departure：出陣の後（出陣中・戦後・結末）。帰還：戦後・結末（直前の合戦）。
  */
 export function ieyasuCinematic(s: IeyasuAnyState, moment: CineMoment): CineSpec | null {
     switch (moment) {
+        case 'ch1_open':
+            return ch1Open();
+        case 'ch2_open':
+            return isChapter2(s) ? ch2Open(s) : null;
         case 'ch1_intro':
             return ch1Intro();
         case 'ch2_intro':
@@ -638,15 +720,32 @@ export function ieyasuCinematic(s: IeyasuAnyState, moment: CineMoment): CineSpec
     }
 }
 
-/** 見直せる演出（情勢の画面の「演出を見直す」）：今の章の導入と、今の段階で意味のある出陣・帰還（戦後なら直前の合戦の出陣・帰還） */
-export function ieyasuReplays(s: IeyasuAnyState): { moment: CineMoment; title: string }[] {
-    const out: { moment: CineMoment; title: string }[] = [];
+/** 見直しの一覧に出す名前（冒頭は場面、図解は地図の台本） */
+const REPLAY_TITLES: Readonly<Partial<Record<CineMoment, string>>> = {
+    ch1_open: '第一章の冒頭（城下）',
+    ch2_open: '第二章の冒頭（城下）',
+    ch1_intro: '情勢の図解（第一章の始め）',
+    ch2_intro: '情勢の図解（第二章の始め）',
+};
+
+/**
+ * 見直せる演出（情勢の画面の「見直す」。軍議の「詳しく見る」からも同じ画面）：今の章の情勢の図解と冒頭（第二章は第一章の図解も）、
+ * 今の段階で意味のある出陣・帰還（戦後なら直前の合戦の出陣・帰還）。図解は kind 'diagram'（自動では流さない。任意で見る）。
+ */
+export function ieyasuReplays(s: IeyasuAnyState): { moment: CineMoment; title: string; kind: 'scene' | 'diagram' }[] {
+    const out: { moment: CineMoment; title: string; kind: 'scene' | 'diagram' }[] = [];
     const add = (m: CineMoment) => {
         const spec = ieyasuCinematic(s, m);
-        if (spec) out.push({ moment: m, title: spec.title });
+        if (spec) out.push({ moment: m, title: REPLAY_TITLES[m] ?? spec.title, kind: m === 'ch1_intro' || m === 'ch2_intro' ? 'diagram' : 'scene' });
     };
-    if (isChapter2(s)) add('ch2_intro');
-    add('ch1_intro');
+    if (isChapter2(s)) {
+        add('ch2_intro');
+        add('ch2_open');
+        add('ch1_intro');
+    } else {
+        add('ch1_intro');
+        add('ch1_open');
+    }
     if (s.phase === 'aftermath' || s.phase === 'ending') {
         add('departure');
         add('return');

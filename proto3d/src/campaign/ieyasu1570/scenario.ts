@@ -60,6 +60,8 @@ import {
     supportRecordText,
 } from './story';
 import type { StorageLike } from '../save';
+import type { ExplorePose } from '../state';
+import { ENTRY_POSE } from '../../town/spots';
 import { ieyasuAmbient } from './story/ambient';
 import { ieyasuCinematic } from './story/cinematics';
 import { lookoutCast } from './story/lookout';
@@ -156,6 +158,15 @@ export function ieyasuCastFor(state: IeyasuState): CastMember<IeyasuTalkId | 'lo
     return out;
 }
 
+/**
+ * 保存に位置が無いときに操作を始める位置（両章の探索の始め＝章の冒頭の後）：町の入口（town/spots.ts の ENTRY_POSE。値は町の側が決める）。
+ * 入口から北の城門の前の忠勝（軍議）へ、町の通りを歩いて向かう。支度（軍議の後は今の位置のまま）・戦後（帰還の後）は今までの開始の位置。
+ * 状態には書かない（位置の無い保存の文字列は変わらない）。
+ */
+export function ieyasuStartPose(s: IeyasuAnyState): ExplorePose | null {
+    return s.phase === 'explore' ? { x: ENTRY_POSE.x, z: ENTRY_POSE.z, heading: ENTRY_POSE.heading } : null;
+}
+
 // ================= メニューの「状態」 =================
 
 export function ieyasuStatusLines(s: IeyasuState, extraPlaySec = 0): StatusLine[] {
@@ -210,6 +221,7 @@ export function ieyasuScenario(storage: StorageLike | null, store: IeyasuCampaig
         battleSetup: (s) => (two(s) ? ieyasu2BattleSetup(s) : ieyasuBattleSetup(s)),
         applyOutcomeOnce: (s, id, o) => (two(s) ? applyIeyasu2OutcomeOnce(s, id, o) : applyIeyasuOutcomeOnce(s, id, o)),
         setExplorePose: (s, pose) => (two(s) ? setIeyasu2ExplorePose(s, pose) : setIeyasuExplorePose(s, pose)),
+        startPose: (s) => ieyasuStartPose(s),
         addPlayTime: (s, sec) => (two(s) ? addIeyasu2PlayTime(s, sec) : addIeyasuPlayTime(s, sec)),
         canSaveManually: (s) => (two(s) ? canSaveIeyasu2Manually(s) : canSaveIeyasuManually(s)),
         phaseLabel: (p, s) => (s && two(s) ? IEYASU2_PHASE_LABELS[p] : IEYASU_PHASE_LABELS[p]),

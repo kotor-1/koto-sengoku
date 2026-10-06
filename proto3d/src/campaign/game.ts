@@ -98,7 +98,7 @@ export interface ScriptOptions {
     /** 遊んでいるシナリオの章の名前と札（軍議の見出しに出す。省けば画面の既定） */
     chapter?: string;
     label?: string;
-    /** 軍議の「地図で見る」（情勢の画面。J）を出す（シナリオが情勢の画面を持つとき） */
+    /** 軍議の「詳しく見る」（情勢の画面。J）を出す（シナリオが情勢の画面を持つとき） */
     situation?: boolean;
 }
 
@@ -393,8 +393,9 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
                 view.toast(`${loaded.message}このまま遊べますが、保存はできません。`, 'error');
             }
             this.begin(sc.newGame(), sc.id);
-            // 第一章の導入（タイトルの「はじめから」の道だけ。つづきから・第二章への移行・確認用では流さない）
-            this.playIntro('ch1_intro');
+            // 第一章の冒頭（3D の場面だけ。タイトルの「はじめから」の道だけ。つづきから・第二章への移行・確認用では流さない）。
+            // 情勢の図解（ch1_intro）は自動では流さない（情勢の画面・軍議の「詳しく見る」から任意で見る）
+            this.playIntro('ch1_open');
             return;
         }
     }
@@ -429,7 +430,7 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         const { view, world } = this.deps;
         this.cast = this.sc.cast(s);
         world.setCast(this.cast);
-        if (pose !== 'keep') world.setHeroPose(safePose(pose, this.cast, world.walls()));
+        if (pose !== 'keep') world.setHeroPose(safePose(pose ?? this.startPose(), this.cast, world.walls()));
         const p = world.heroPose();
         // 読み込んだ位置が城門の場所の中なら、出て入り直すまでは確認を出さない
         this.inGate = inGateZone(this.cast, p.x, p.z);
@@ -777,17 +778,16 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
             }
             this.run = { scenario: sc, state: next };
             this.playAcc = 0;
-            // 第二章への移行の演出（保存の後、結果確認の画面の前）。次の章の町を整えてから流す
-            const cine = this.cineSpec('ch2_intro');
-            if (cine) {
-                this.stageField(next.explore);
-                await this.playCinematic(cine);
-            }
+            // 保存の後：前の章の結果確認の画面 → 第二章の冒頭（3D の場面だけ：負傷兵・援兵・使い・家臣の一言）→ 操作。
+            // 冒頭は次の章の町を整えてから流し、終われば家臣の一言からそのまま操作へ。情勢の図解（ch2_intro）は自動では流さない
+            const cine = this.cineSpec('ch2_open');
+            if (cine) this.stageField(next.explore);
             const rec = sc.chapterStartView?.(next) ?? null;
             if (rec && view.record) {
                 this._screen = 'record';
                 await view.record(rec, { chapter: this.chapterTitle(), label: sc.label, scenario: sc.id });
             }
+            if (cine) await this.playCinematic(cine);
             this.begin(next, sc.id);
             return 'started';
         } finally {
@@ -946,12 +946,23 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         }
     }
 
+    /** 保存に位置が無いときに操作を始める位置（シナリオの口。無ければ null で今までの開始の位置）。状態には書かない */
+    private startPose(): ExplorePose | null {
+        try {
+            return this.run?.scenario.startPose?.(this.st) ?? null;
+        } catch (e) {
+            this.lastError = errorText(e);
+            console.error(e);
+            return null;
+        }
+    }
+
     /** 演出の前に、今の状態の町を整える（人物・主人公の位置・町の人々。案内は出さない） */
     private stageField(pose: ExplorePose | null): void {
         const { world } = this.deps;
         this.cast = this.sc.cast(this.st);
         world.setCast(this.cast);
-        world.setHeroPose(safePose(pose, this.cast, world.walls()));
+        world.setHeroPose(safePose(pose ?? this.startPose(), this.cast, world.walls()));
         this.applyAmbient();
     }
 
@@ -1001,7 +1012,7 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
     }
 
     /**
-     * 情勢の画面（HUD の「情勢」・J、軍議の「地図で見る」・J）。状態は読むだけ（見直しも保存しない・決めない）。
+     * 情勢の画面（HUD の「情勢」・J、軍議の「詳しく見る」・J）。状態は読むだけ（見直しも保存しない・決めない）。
      * 探索中は openMenu と同じ守り（exclusive）。軍議の途中は、軍議の会話を下に残して重ねる（閉じれば同じ行・同じ選び方）。
      */
     async openSituation(): Promise<void> {

@@ -28,9 +28,29 @@ export function sampleScene(): MapScene {
     };
 }
 
-/** 確かめ用の台本（地図の場面 2 つ・3D の場面 1 つ・地図の場面 1 つ。長さ 32 秒） */
+/** 確かめ用の台本（図解：地図の場面 2 つ・3D の場面 2 つ。長さ 32 秒。冒頭は 3D の場面だけ 14 秒。出陣・帰還は 10 秒） */
 export function sampleCineSpec(moment: CineSpec['moment'] = 'ch1_intro'): CineSpec {
     const scene = sampleScene();
+    if (moment === 'ch1_open' || moment === 'ch2_open') {
+        // 章の冒頭の形（3D の場面だけ：町の様子 → 使者 → 家臣のやり取り。長さ 14 秒）
+        return {
+            id: `sample.${moment}`,
+            moment,
+            title: '確かめ用の冒頭',
+            duration: 14,
+            beats: [
+                { kind: 'stage', start: 0, end: 4, event: { id: 'town_life', hero: true } },
+                { kind: 'stage', start: 4, end: 9, event: { id: 'envoys_arrive', envoys: [{ look: 'oda_envoy', name: '東の使者' }], showHero: true } },
+                { kind: 'stage', start: 9, end: 14, event: { id: 'retainer_report', look: 'genzo', name: '家臣', castId: 'tadakatsu' } },
+            ],
+            captions: [
+                { start: 0, end: 4, text: '確かめ用：いつ・どこ・主人公の字幕。' },
+                { start: 4, end: 9, speaker: '使者', text: '確かめ用：使者が町へ入る場面です。' },
+                { start: 9, end: 14, speaker: '家臣', text: '確かめ用：門の前でお待ちします。' },
+            ],
+            info: { when: 0, where: 0, crisis: 4 },
+        };
+    }
     const short = moment === 'departure' || moment === 'return';
     if (short) {
         return {

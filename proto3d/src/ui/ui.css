@@ -540,7 +540,7 @@ body.g-modal #npc-labels { display: none; }
 .g-sit-btn kbd, .g-council-map kbd { margin-left: 6px; font-size: 11px; opacity: 0.7; }
 body.touch .g-sit-btn { top: calc(var(--safe-t) + 64px); padding: 11px 18px; }
 body.touch .g-sit-btn kbd, body.touch .g-council-map kbd { display: none; }
-/* 軍議の「地図で見る」（左上。選択肢・台詞・見出しと重ならない所） */
+/* 軍議の「詳しく見る」（左上。選択肢・台詞・見出しと重ならない所） */
 .g-council-map {
     position: absolute;
     top: calc(var(--safe-t) + 12px);

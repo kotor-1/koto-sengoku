@@ -226,6 +226,21 @@ export class CineClock {
 
 // ---------------------------------------------------------------- 台本の点検（物語の側のテストで使える）
 
+/**
+ * 台本の長さの目安（秒。moment ごと）。
+ * - 章の冒頭（ch1_open・ch2_open）：ロード完了から操作の開始まで 15〜20 秒の目安（docs/v20-feedback-request.md【1】）に収める。
+ *   第二章は前章の結果・約束・援兵・使いの言葉が入るので長めまで許す。
+ * - 情勢の図解（ch1_intro・ch2_intro）：30〜45 秒（任意で見る物）。出陣・帰還：8〜15 秒。
+ */
+export const CINE_LENGTH_RANGE: Readonly<Record<CineSpec['moment'], readonly [number, number]>> = {
+    ch1_open: [12, 18],
+    ch2_open: [12, 24],
+    ch1_intro: [30, 45],
+    ch2_intro: [30, 45],
+    departure: [8, 15],
+    return: [8, 15],
+};
+
 /** 字幕 1 つに要る時間（秒）：文字数 ÷ CAPTION_CHARS_PER_SEC と CAPTION_MIN_SEC の大きい方 */
 export function captionNeedSec(c: CineCaption): number {
     return Math.max(CAPTION_MIN_SEC, [...c.text].length / CAPTION_CHARS_PER_SEC);
@@ -233,13 +248,12 @@ export function captionNeedSec(c: CineCaption): number {
 
 /**
  * 台本の決まりを点検する（問題の文の並び。空なら良い）：長さ・場面の並びと隙間・字幕の時間と長さ・情報の札の時刻。
- * 長さの目安（章の導入 30〜45 秒・出陣と帰還 8〜15 秒）は moment で見る。
+ * 長さの目安は moment で見る（CINE_LENGTH_RANGE）：章の冒頭（3D の場面だけ）第一章 12〜18 秒・第二章 12〜24 秒、情勢の図解 30〜45 秒、出陣と帰還 8〜15 秒。
  */
 export function specProblems(spec: CineSpec): string[] {
     const out: string[] = [];
     if (!(spec.duration > 0)) out.push('長さが 0 以下');
-    const range: Record<CineSpec['moment'], [number, number]> = { ch1_intro: [30, 45], ch2_intro: [30, 45], departure: [8, 15], return: [8, 15] };
-    const [lo, hi] = range[spec.moment];
+    const [lo, hi] = CINE_LENGTH_RANGE[spec.moment];
     if (spec.duration < lo - 1e-9 || spec.duration > hi + 1e-9) out.push(`長さ ${spec.duration} 秒が目安（${lo}〜${hi} 秒）の外`);
     const beats = orderedBeats(spec);
     if (beats.length === 0) out.push('場面が無い');

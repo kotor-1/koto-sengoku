@@ -987,7 +987,7 @@ export function ieyasu2PhaseIntro(state: Ieyasu2State): { title: string; text: s
     const p = state.policy;
     switch (state.phase) {
         case 'explore':
-            return { title: '第二章　分かれ道の後', text: `第一章の戦の後。${INTRO_LINE[p]}本多忠勝と話そう。（第一章の直後の、分岐した世界での出来事。創作）` };
+            return { title: '第二章　分かれ道の後', text: `第一章の戦の後。${INTRO_LINE[p]}城門の前の本多忠勝と話し、軍議を開こう。（第一章の直後の、分岐した世界での出来事。創作）` };
         case 'council':
             return { title: '軍議', text: '今回の判断を決める。' };
         case 'muster':
@@ -1017,7 +1017,7 @@ export function ieyasu2PhaseIntro(state: Ieyasu2State): { title: string; text: s
 export function ieyasu2Objective(state: Ieyasu2State): string {
     switch (state.phase) {
         case 'explore':
-            return `本多忠勝と話す（${generalName('ishikawa')}・${ieyasu2TalkName(state.policy, 'envoy')}の話も聞ける）`;
+            return `城門の前の本多忠勝と話し、軍議を開く（${generalName('ishikawa')}・${ieyasu2TalkName(state.policy, 'envoy')}の話も聞ける）`;
         case 'council':
             return '今回の判断を選ぶ';
         case 'muster':

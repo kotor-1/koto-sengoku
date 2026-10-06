@@ -55,8 +55,14 @@ export interface MapScene {
 
 // ================================================================ 演出
 
-/** 演出の時（どこで流すか） */
-export type CineMoment = 'ch1_intro' | 'ch2_intro' | 'departure' | 'return';
+/**
+ * 演出の時（どこで流すか）。
+ * - ch1_open・ch2_open：章の冒頭（3D の場面だけ。町の様子 → 急報・使い → 主人公と家臣のやり取り → 操作。自動で流す）。
+ * - ch1_intro・ch2_intro：情勢の図解（地図の台本。自動では流さない。情勢の画面・軍議の「詳しく見る」から任意で見る）。
+ * - departure・return：出陣・帰還。
+ * docs/v20-feedback-request.md【1】。
+ */
+export type CineMoment = 'ch1_open' | 'ch2_open' | 'ch1_intro' | 'ch2_intro' | 'departure' | 'return';
 
 /** 字幕 1 行 */
 export interface CineCaption {
@@ -66,6 +72,8 @@ export interface CineCaption {
     /** 話し手の名前（地の文は省く） */
     speaker?: string;
     text: string;
+    /** 声の台詞の id（campaign/ieyasu1570/story/voiceLines.ts の VOICE_LINES。声を付ける字幕だけ。表示の文は text と同じ） */
+    voice?: string;
 }
 
 /** 地図の場面：時刻ごとに、場所・線が現れる（appear 秒）。強調も時刻ごと */
@@ -178,8 +186,8 @@ export interface SituationView {
     scouted: ScoutEntry[];
     /** まだ物見をしていない所があるときの案内（任意であること） */
     scoutHint?: string;
-    /** 見直せる演出（id と名前） */
-    replays: { moment: CineMoment; title: string }[];
+    /** 見直せる演出（id と名前。kind 'diagram' は情勢の図解（地図の台本）で、ボタンは「図解を見る」） */
+    replays: { moment: CineMoment; title: string; kind?: 'scene' | 'diagram' }[];
 }
 
 // ================================================================ 町の人々と物見

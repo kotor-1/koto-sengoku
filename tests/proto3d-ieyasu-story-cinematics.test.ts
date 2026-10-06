@@ -2,7 +2,7 @@
  * 歴史分岐「元亀元年・家康」の演出の台本（proto3d/src/campaign/ieyasu1570/story/cinematics.ts）。直接状態変更のテスト
  * （状態は flow の関数を普通の順に呼び、合戦は確認用の偽の結果で作る：tests/proto3d-ieyasu-story-states.ts）。
  *
- * - 長さ（章の導入 30〜45 秒・出陣と帰還 8〜15 秒）・情報の札（いつ・どこ・協力・前の結果・危機・判断）・字幕の長さと出す時間・場面のつながり。
+ * - 長さ（章の冒頭 12〜18／12〜24 秒・情勢の図解 30〜45 秒・出陣と帰還 8〜15 秒）・情報の札（いつ・どこ・協力・前の結果・危機・判断）・字幕の長さと出す時間・場面のつながり。
  * - 矛盾を避ける決まり（設計 docs/story-rpg-design.md §2）を、3 方針 × 勝利・撤退・敗北 × 約束（守った・破った・斬り合う前に退いた・引き受けなかった）
  *   × 損害（無し・小・大）× 長政の負傷 × 援兵 0／>0 の組み合わせで：感謝は守ったときだけ／敵方の人物を味方に出さない・信長を出さない／
  *   帰る兵は残った兵から・負傷は失った兵から／援兵の到着は recovered > 0 だけ／C の第一章で守備隊は城門から出ない／長政が負傷なら第二章 B に出さない。
@@ -19,7 +19,7 @@ import type { IeyasuAnyState, Ieyasu2State } from '../proto3d/src/campaign/ieyas
 import { isChapter2 } from '../proto3d/src/campaign/ieyasu1570/chapter2/state';
 import { newIeyasuGame } from '../proto3d/src/campaign/ieyasu1570/flow';
 import type { CineMapBeat, CineMoment, CineSpec, StageEvent } from '../proto3d/src/story/types';
-import { CAPTION_CHARS_PER_SEC, CAPTION_MAX_CHARS, CAPTION_MIN_SEC, INFO_KEYS, PLACE_APPEAR_SEC, ROUTE_DRAW_SEC, frameAt, orderedBeats } from '../proto3d/src/story/timeline';
+import { CAPTION_CHARS_PER_SEC, CAPTION_MAX_CHARS, CAPTION_MIN_SEC, CINE_LENGTH_RANGE, INFO_KEYS, PLACE_APPEAR_SEC, ROUTE_DRAW_SEC, frameAt, orderedBeats } from '../proto3d/src/story/timeline';
 import { CH2_DEFEATS, RESULTS, ch1BeforeBattle, ch1Cases, ch1Ending, ch2Aftermath, ch2Battle, ch2Cases, ch2Muster, ch2Starts, checkBannedWords, type Ch1Case } from './proto3d-ieyasu-story-states';
 import { ieyasuToBattle } from './proto3d-ieyasu-helpers';
 import { createBattle } from '../proto3d/src/battle/sim';
@@ -42,20 +42,31 @@ const eventOf = <K extends StageEvent['id']>(spec: CineSpec, id: K) => events(sp
 /** 台本の形の検査（どの台本にも当てはまる決まり） */
 function checkShape(spec: CineSpec, name: string): void {
     const intro = spec.moment === 'ch1_intro' || spec.moment === 'ch2_intro';
+    const open = spec.moment === 'ch1_open' || spec.moment === 'ch2_open';
     if (intro) {
-        expect(spec.duration, `${name}：章の導入の長さ`).toBeGreaterThanOrEqual(30);
-        expect(spec.duration, `${name}：章の導入の長さ`).toBeLessThanOrEqual(45);
+        expect(spec.duration, `${name}：情勢の図解の長さ`).toBeGreaterThanOrEqual(30);
+        expect(spec.duration, `${name}：情勢の図解の長さ`).toBeLessThanOrEqual(45);
+    } else if (open) {
+        // 章の冒頭（3D の場面だけ）：ロード完了から操作まで 15〜20 秒の目安に収まる長さ
+        const [lo, hi] = CINE_LENGTH_RANGE[spec.moment];
+        expect(spec.duration, `${name}：章の冒頭の長さ`).toBeGreaterThanOrEqual(lo);
+        expect(spec.duration, `${name}：章の冒頭の長さ`).toBeLessThanOrEqual(hi);
     } else {
         expect(spec.duration, `${name}：出陣・帰還の長さ`).toBeGreaterThanOrEqual(8);
         expect(spec.duration, `${name}：出陣・帰還の長さ`).toBeLessThanOrEqual(15);
     }
-    // 場面はすき間なく続き、最初は地図（見出し：いつ・どこ）
+    // 場面はすき間なく続き、最初は地図（見出し：いつ・どこ）。章の冒頭は地図の場面が無い（見出しは題：いつ・どこ）
     expect(spec.beats.length).toBeGreaterThan(1);
     expect(spec.beats[0]!.start).toBe(0);
     for (let i = 1; i < spec.beats.length; i++) expect(spec.beats[i]!.start, name).toBeCloseTo(spec.beats[i - 1]!.end, 5);
     expect(spec.beats[spec.beats.length - 1]!.end).toBeCloseTo(spec.duration, 5);
-    const first = spec.beats.find((b) => b.kind === 'map');
-    expect(first && first.kind === 'map' && first.scene.heading, `${name}：地図の見出し`).toBeTruthy();
+    if (open) {
+        expect(spec.beats.every((b) => b.kind === 'stage'), `${name}：冒頭に地図の場面`).toBe(true);
+        expect(spec.title.length).toBeGreaterThan(3);
+    } else {
+        const first = spec.beats.find((b) => b.kind === 'map');
+        expect(first && first.kind === 'map' && first.scene.heading, `${name}：地図の見出し`).toBeTruthy();
+    }
     // 字幕：短く（30 字まで）、出す時間は文字数 ÷ 8 秒と 2.5 秒の大きい方以上、重ならず、長さの中
     let prevEnd = 0;
     for (const c of spec.captions) {
@@ -110,7 +121,7 @@ function cineTexts(spec: CineSpec): string[] {
     return out;
 }
 
-const MOMENTS: readonly CineMoment[] = ['ch1_intro', 'ch2_intro', 'departure', 'return'];
+const MOMENTS: readonly CineMoment[] = ['ch1_open', 'ch2_open', 'ch1_intro', 'ch2_intro', 'departure', 'return'];
 function allSpecs(s: IeyasuAnyState): CineSpec[] {
     return MOMENTS.map((m) => ieyasuCinematic(s, m)).filter((x): x is CineSpec => !!x);
 }
@@ -249,7 +260,7 @@ describe('地図の出方：字幕より先に出ない・場面の切り替わ�
             n += checkAppearance(spec, name);
             moments.add(spec.moment);
         }
-        expect([...moments].sort()).toEqual(['ch1_intro', 'ch2_intro', 'departure', 'return']);
+        expect([...moments].sort()).toEqual(['ch1_intro', 'ch1_open', 'ch2_intro', 'ch2_open', 'departure', 'return']);
         expect(uniq.size).toBeGreaterThan(100);
         expect(n).toBeGreaterThan(10000);
     }, 120_000);
@@ -312,13 +323,17 @@ describe('流す時が無ければ null（状態に無いことを見せない�
             expect(ieyasuCinematic(c.state, 'return')).toBeNull();
         }
     });
-    it('見直しの一覧：今の章の導入（第二章は第一章の導入も）。戦後は直前の合戦の出陣・帰還', () => {
-        expect(ieyasuReplays(newIeyasuGame()).map((r) => r.moment)).toEqual(['ch1_intro']);
-        expect(ieyasuReplays(CH1[0]!.state).map((r) => r.moment)).toEqual(['ch1_intro', 'departure', 'return']);
-        expect(ieyasuReplays(CH2_STARTS[0]!.state).map((r) => r.moment)).toEqual(['ch2_intro', 'ch1_intro']);
+    it('見直しの一覧：今の章の情勢の図解と冒頭（第二章は第一章の図解も）。戦後は直前の合戦の出陣・帰還。図解は kind diagram', () => {
+        expect(ieyasuReplays(newIeyasuGame()).map((r) => r.moment)).toEqual(['ch1_intro', 'ch1_open']);
+        expect(ieyasuReplays(CH1[0]!.state).map((r) => r.moment)).toEqual(['ch1_intro', 'ch1_open', 'departure', 'return']);
+        expect(ieyasuReplays(CH2_STARTS[0]!.state).map((r) => r.moment)).toEqual(['ch2_intro', 'ch2_open', 'ch1_intro']);
         const after = CH2.find((x) => x.state.phase === 'aftermath')!.state;
-        expect(ieyasuReplays(after).map((r) => r.moment)).toEqual(['ch2_intro', 'ch1_intro', 'departure', 'return']);
-        for (const r of ieyasuReplays(after)) expect(r.title.length).toBeGreaterThan(1);
+        expect(ieyasuReplays(after).map((r) => r.moment)).toEqual(['ch2_intro', 'ch2_open', 'ch1_intro', 'departure', 'return']);
+        for (const r of ieyasuReplays(after)) {
+            expect(r.title.length).toBeGreaterThan(1);
+            expect(r.kind).toBe(r.moment === 'ch1_intro' || r.moment === 'ch2_intro' ? 'diagram' : 'scene');
+            if (r.kind === 'diagram') expect(r.title).toMatch(/^情勢の図解/);
+        }
     });
 });
 
@@ -346,7 +361,8 @@ describe('矛盾を避ける決まり', () => {
     it('敵方の人物を味方に出さない・信長を出さない（A に長政は出ない／B の味方に織田は出ない／C に両家の部隊は出ない）', () => {
         const check = (s: IeyasuAnyState, name: string) => {
             for (const sp of allSpecs(s)) {
-                if (sp.moment === 'ch1_intro') continue;
+                // 第一章の始め（冒頭・図解）は方針を決める前（両家の使者が来る）
+                if (sp.moment === 'ch1_intro' || sp.moment === 'ch1_open') continue;
                 const all = cineTexts(sp).join('\n');
                 expect(all, name).not.toContain('信長');
                 const policy = isChapter2(s) ? s.policy : s.policy;
@@ -370,12 +386,12 @@ describe('矛盾を避ける決まり', () => {
             if (state.characters.nagamasa !== 'wounded' || state.chapter1.characters.nagamasa !== 'wounded') continue;
             wounded++;
             for (const sp of allSpecs(state)) {
-                if (sp.moment === 'ch1_intro') continue;
+                if (sp.moment === 'ch1_intro' || sp.moment === 'ch1_open') continue;
                 // 第一章の振り返り（約束の対象の名前「浅井長政隊」）は第一章の出来事なので除き、第二章の今の場面（関係の行より後の字幕と 3D の出来事）を見る
                 const now = sp.moment === 'ch2_intro' ? sp.captions.filter((c) => c.start >= sp.info.ally!) : sp.captions;
                 const all = [...now.map((c) => `${c.speaker ?? ''}${c.text}`), ...events(sp).map((e) => JSON.stringify(e))].join('\n');
                 expect(all, `${name}.${sp.moment}`).not.toContain('長政');
-                if (sp.moment === 'ch2_intro') expect(all).toContain('浅井勢の後備え');
+                if (sp.moment === 'ch2_intro' || sp.moment === 'ch2_open') expect(all).toContain('浅井勢の後備え');
             }
         }
         expect(wounded).toBeGreaterThan(3);
@@ -678,7 +694,7 @@ describe('第二章 A：織田勢が撤収するわけ（どの隊が・なぜ�
     });
     it('織田の本隊と援軍を混同しない：援軍の出る字幕は第一章の約束の話だけで、退く・撤収するのは本隊（後備え・小荷駄）', () => {
         for (const x of A) {
-            for (const m of ['ch2_intro', 'departure', 'return'] as const) {
+            for (const m of ['ch2_open', 'ch2_intro', 'departure', 'return'] as const) {
                 const spec = ieyasuCinematic(x.state, m);
                 if (!spec) continue;
                 for (const cap of spec.captions) {

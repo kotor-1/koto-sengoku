@@ -36,6 +36,7 @@ import type { CastMember } from '../proto3d/src/explore/cast';
 import type { ExplorePose } from '../proto3d/src/campaign/state';
 import { START, colliders, type Rect } from '../proto3d/src/layout';
 import { sampleCineSpec, sampleSituation } from '../proto3d/src/story/sample';
+import { ENTRY_POSE } from '../proto3d/src/town/spots';
 import type { AmbientSpec, CineMoment, CineSpec, ScoutPoint, SituationView, StageEvent } from '../proto3d/src/story/types';
 import { MemoryStorage } from './proto3d-campaign-helpers';
 import { IEYASU_V3_FIXTURES } from './proto3d-ieyasu-save-v3-fixtures';
@@ -286,22 +287,23 @@ const story = (storage = new MemoryStorage(), o: { reduced?: boolean; throwAfter
 const J = (v: unknown) => JSON.stringify(v);
 const last = <T,>(a: readonly T[]): T | undefined => a[a.length - 1];
 
-describe('第一章の導入（タイトルの「はじめから」の道だけ）', () => {
+describe('第一章の冒頭（タイトルの「はじめから」の道だけ。情勢の図解は自動で流さない）', () => {
     for (const how of ['done', 'skipped'] as const) {
-        it(`はじめから → 城下に入った後に導入（${how}）→ 城下。状態・保存・主人公の位置・操作は始める前のまま`, async () => {
+        it(`はじめから → 城下に入った後に冒頭（${how}）→ 町の入口から操作。状態・保存・主人公の位置・操作は始める前のまま`, async () => {
             const h = story(new MemoryStorage(), { reduced: true });
             void h.game.start();
             (await h.next('title')).answer('new:ieyasu1570');
             const c = await h.next('cinematic');
-            expect(c.spec.moment).toBe('ch1_intro');
+            // 自動で流すのは冒頭（3D の場面だけ）。情勢の図解（ch1_intro）は求めもしない
+            expect(c.spec.moment).toBe('ch1_open');
             expect(c.opts.reduced).toBe(true);
-            expect(h.story.cineCalls).toEqual([{ moment: 'ch1_intro', replay: false }]);
+            expect(h.story.cineCalls).toEqual([{ moment: 'ch1_open', replay: false }]);
             // 城下に入ってから流す（人物・町の人々・HUD は整っている）
             expect(h.game.screen).toBe('cinematic');
             expect(h.world.cast.map((c) => c.id)).toContain('tadakatsu');
             expect(last(h.world.ambient)).toEqual({ groups: [{ kind: 'porter', count: 2, place: 'street' }] });
             expect(h.world.control).toBe(false);
-            expect(h.world.stages).toEqual(['envoys_arrive', 'wounded_rest']);
+            expect(h.world.stages).toEqual(['town_life', 'envoys_arrive', 'retainer_report']);
             const s0 = J(h.game.state);
             // 演出中の入力は、探索の移動・会話・メニュー・情勢へ漏れない
             h.world.walkTo('tadakatsu');
@@ -317,14 +319,17 @@ describe('第一章の導入（タイトルの「はじめから」の道だけ�
             await flush();
             expect(h.game.screen).toBe('explore');
             expect(h.world.control).toBe(true);
-            // 主人公は始める前の位置・向きへ。3D の出来事は片付けた
-            expect(h.world.pose).toEqual({ x: START.x, z: START.z, heading: START.heading });
+            // 主人公は始める前の位置・向き（保存に位置が無いので、町の入口 ENTRY_POSE）へ。3D の出来事は片付けた
+            expect(h.world.pose).toEqual({ x: ENTRY_POSE.x, z: ENTRY_POSE.z, heading: ENTRY_POSE.heading });
             expect(last(h.world.stages)).toBeNull();
+            // 入口の位置は状態にも保存にも書かない（位置の無い保存の文字列は変わらない）
             expect(J(h.game.state)).toBe(s0);
+            expect(h.game.state.explore).toBeNull();
             expect(h.writes()).toEqual([]);
             // 段階の案内をもう一度出す（演出が隠したので）
             expect(h.view.intros.length).toBeGreaterThanOrEqual(2);
-            expect(h.game.cineLog).toEqual(['sample.ch1_intro']);
+            expect(h.game.cineLog).toEqual(['sample.ch1_open']);
+            expect(h.story.cineCalls.map((x) => x.moment)).not.toContain('ch1_intro');
         });
     }
 
@@ -372,15 +377,20 @@ describe('第一章の導入（タイトルの「はじめから」の道だけ�
     });
 });
 
-describe('第二章への移行（保存の後・結果確認の前）', () => {
+describe('第二章への移行（保存の後・結果確認の後に冒頭。情勢の図解は自動で流さない）', () => {
     async function toRecord(h: Harness, cine: boolean) {
         void h.game.start();
         (await h.next('title')).answer('continue:ieyasu1570');
         const e = await h.next('ending');
         e.answer('next_chapter');
+        // 前の章の結果確認の画面 → 第二章の冒頭（3D の場面だけ）→ 操作
+        const r = await h.next('record');
+        expect(h.game.screen).toBe('record');
+        r.answer();
         if (cine) {
             const c = await h.next('cinematic');
-            expect(c.spec.moment).toBe('ch2_intro');
+            expect(c.spec.moment).toBe('ch2_open');
+            expect(h.story.cineCalls.map((x) => x.moment)).toEqual(['ch2_open']);
             expect(h.game.screen).toBe('cinematic');
             // 保存は済んでいる（第一章の控え・第二章の始め）。知らせも出ている
             expect(h.storage.data.has(IEYASU_CHAPTER1_KEY)).toBe(true);
@@ -395,11 +405,11 @@ describe('第二章への移行（保存の後・結果確認の前）', () => {
             expect(h.writes().length).toBe(w);
             expect(J(h.game.state)).toBe(s);
         }
-        const r = await h.next('record');
-        expect(h.game.screen).toBe('record');
-        r.answer();
         await flush();
         expect(h.game.screen).toBe('explore');
+        // 保存に位置が無いので、町の入口から操作を始める（位置は状態に書かない）
+        expect(h.world.pose).toEqual({ x: ENTRY_POSE.x, z: ENTRY_POSE.z, heading: ENTRY_POSE.heading });
+        expect(h.game.state.explore).toBeNull();
     }
     it('演出あり・口が無い：同じ保存・同じ状態・同じ町', async () => {
         const out: string[] = [];
@@ -708,7 +718,7 @@ describe('第二章の戦後の見直し（本物の台本）：状態・保存�
         const pose0 = { ...h.world.pose };
         void h.game.openSituation();
         let v = await h.next('situation');
-        expect(v.view.replays.map((x) => x.moment)).toEqual(['ch2_intro', 'ch1_intro', 'departure', 'return']);
+        expect(v.view.replays.map((x) => x.moment)).toEqual(['ch2_intro', 'ch2_open', 'ch1_intro', 'departure', 'return']);
         for (const [moment, how, spec] of [
             ['departure', 'done', depSpec],
             ['return', 'done', retSpec],

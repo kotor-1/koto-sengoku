@@ -237,7 +237,7 @@ export class DomView implements GameView, LayerHost {
         const cine = top?.kind === 'cine';
         for (const m of this.modals) m.layer.classList.toggle('g-under-cine', cine && m !== top);
         document.body.classList.toggle('g-cine', cine);
-        // 軍議の間は、下に透けて見える目的の札・情勢のボタンを隠す（軍議の「地図で見る」と重ねない）
+        // 軍議の間は、下に透けて見える目的の札・情勢のボタンを隠す（軍議の「詳しく見る」と重ねない）
         document.body.classList.toggle('g-council-open', this.modals.some((m) => m.layer.classList.contains('council')));
         // 何か開いている間は情勢のボタンを隠す（押せないので）
         this.sitBtn.classList.toggle('covered', this.modals.length > 0);
@@ -316,7 +316,7 @@ export class DomView implements GameView, LayerHost {
             if (!e.repeat && this.menuReachable()) this.onMenu();
             return;
         }
-        // 軍議の途中の J：情勢（地図で見る）を重ねて開く（会話は進めない・選ばない）
+        // 軍議の途中の J：情勢（詳しく見る）を重ねて開く（会話は進めない・選ばない）
         if (top?.kind === 'script' && e.code === 'KeyJ' && top.layer.querySelector('.g-council-map')) {
             e.preventDefault();
             if (!e.repeat) this.onSituation();
@@ -549,13 +549,13 @@ export class DomView implements GameView, LayerHost {
                 head.append(el('h2', undefined, '軍議'), el('p', undefined, `城内の軍議所・${opts.label ?? PROVISIONAL_LABEL}`));
                 layer.append(head);
             }
-            // 軍議の「地図で見る」（情勢の画面を重ねて開く。会話は進まない・選ばない）。左上（選択肢・台詞・見出しと重ならない所）
+            // 軍議の「詳しく見る」（情勢の画面を重ねて開く。地図・情勢の図解。会話は進まない・選ばない）。左上（選択肢・台詞・見出しと重ならない所）
             let mapGate: InputGate | null = null;
             if (council && opts.situation) {
                 const mb = el('button', 'g-council-map');
                 mb.type = 'button';
-                mb.append(document.createTextNode('地図で見る'), el('kbd', undefined, 'J'));
-                mb.setAttribute('aria-label', '地図で見る（情勢。見るだけで、選択は決まらない。J）');
+                mb.append(document.createTextNode('詳しく見る'), el('kbd', undefined, 'J'));
+                mb.setAttribute('aria-label', '詳しく見る（情勢の地図と図解。見るだけで、選択は決まらない。J）');
                 mapGate = new InputGate(this.keys, nowMs(), CHOICE_GUARD_MS);
                 const g = mapGate;
                 onPress(mb, (e) => {

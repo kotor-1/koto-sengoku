@@ -3,7 +3,7 @@
  *
  * 中身は SituationView（物語の側が状態から作る）：地図（模式図）・いつ・今いる所・協力・敵対・前の章・今の危機・今回の目的・物見の記録・演出の見直し。
  * 軍議から開いたとき（options がある）は、選択肢ごとのタブ（押すと強調と説明が変わるだけ。閉じない・選ばない）。
- * 返り：閉じた（undefined）・「見直す」（{ replay }）。選択肢の id は返さない。
+ * 返り：閉じた（undefined）・「見直す」「図解を見る」（{ replay }）。選択肢の id は返さない。
  */
 import type { CineMoment, MapScene, SituationView } from '../story/types';
 import { el, nowMs, onPress } from './dom';
@@ -133,7 +133,7 @@ function buildSituation(host: LayerHost, layer: HTMLElement, v: SituationView, o
     right.append(scoutSec);
     const replayBox = el('div', 'g-sit-replays');
     if (v.replays.length > 0) {
-        replayBox.append(el('h2', undefined, '演出を見直す'));
+        replayBox.append(el('h2', undefined, v.replays.some((r) => r.kind === 'diagram') ? '情勢の図解・演出を見直す' : '演出を見直す'));
         right.append(replayBox);
     }
     cols.append(right);
@@ -144,7 +144,7 @@ function buildSituation(host: LayerHost, layer: HTMLElement, v: SituationView, o
     layer.append(scroll);
 
     const items = [
-        ...v.replays.map((r) => ({ id: `replay:${r.moment}`, label: `見直す：${r.title}`, parent: replayBox })),
+        ...v.replays.map((r) => ({ id: `replay:${r.moment}`, label: r.kind === 'diagram' ? `図解を見る：${r.title}` : `見直す：${r.title}`, parent: replayBox })),
         { id: 'close', label: '閉じる', parent: btns },
     ];
     const m: Modal = {
