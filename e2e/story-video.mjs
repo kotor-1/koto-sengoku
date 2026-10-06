@@ -20,7 +20,9 @@
 //
 // PARTS（カンマ区切り。既定はすべて）：
 //   intro     第一章の導入を、タイトルの「はじめから」の本物のクリックから最後まで（844×390）。終わった後に主人公・カメラが戻り、W で歩けるか
-//   ch2       第二章への移行（第一章の結末の保存 oda_victory_kept と home_defeat_broken_heavy から。「つづきから」→「第二章へ進む」→ 演出 → 結果確認 →「城下へ」）
+//   ch2       第二章への移行（第一章の結末の保存から。「つづきから」→「第二章へ進む」→ 演出 → 結果確認 →「城下へ」）。
+//             保存は CH2（カンマ区切り。tests/fixtures/ieyasu-ch1-v3/ の名前）で選ぶ。既定は oda_victory_kept,home_defeat_broken_heavy,asai_victory_kept
+//             （A 勝ち・約束を守った／C 負け・約束を破った・損害大／B 勝ち・約束を守った）
 //   depart    出陣（城門で「出陣する」）と帰還（合戦は全軍撤退 → 結果の「続ける」）を 1 回ずつ
 //   reduced   動きを減らす設定（端末の prefers-reduced-motion を模擬）での第一章の導入
 //   controls  一時停止（クリック）・再開（Space）・次の場面（→）・前の場面（←）・スキップ（クリック）→ 城下 → J → 情勢の「見直す」→ Esc でスキップ → 「閉じる」
@@ -37,6 +39,8 @@ import { launchBrowser, outDir } from './lib.mjs';
 const OUT = outDir(process.argv[2] || 'e2e-out/story-video');
 const BASE = process.env.BASE3D || process.env.BASE || 'http://localhost:8097';
 const PARTS = (process.env.PARTS || 'intro,ch2,depart,reduced,controls').split(',').map((s) => s.trim()).filter(Boolean);
+/** 第二章への移行を撮る第一章の結末の保存（tests/fixtures/ieyasu-ch1-v3/ の名前） */
+const CH2 = (process.env.CH2 || 'oda_victory_kept,home_defeat_broken_heavy,asai_victory_kept').split(',').map((s) => s.trim()).filter(Boolean);
 const FFMPEG = process.env.FFMPEG || '/opt/pw-browsers/ffmpeg-1011/ffmpeg-linux';
 const FPS = 25;
 const VIEW = { width: 844, height: 390 };
@@ -165,6 +169,14 @@ const LOGGER = () => {
         cam: [r3(cam.position.x), r3(cam.position.y), r3(cam.position.z)], dir: [r3(d.x), r3(d.y), r3(d.z)],
         hero: [r3(h.x), r3(h.z), r3(h.heading)], yaw: r3(o.yaw), pitch: r3(o.pitch), ppl,
         appearing: L ? L.querySelectorAll('.g-cine-map [data-state="appearing"]').length : 0,
+        // 3D の場面の始めの待ち（字幕と見出しの不透明な層を 1 コマ出してから 3D の最初の画を描く。data-wait="1"）
+        wait: L?.dataset?.wait === '1',
+        // 演出の後、合戦の画面が出るまでの覆い（不透明な「（戦場）へ…」）・探索の操作の案内が見えるか・合戦の画面か
+        load: (() => { const e = document.querySelector('.g-layer.g-loading[data-kind="loading"]'); return e ? (e.classList.contains('opaque') ? 'opaque' : 'clear') + ':' + (e.textContent ?? '') : null; })(),
+        hold: document.body.classList.contains('g-hold'),
+        help: (() => { const e = document.getElementById('help'); return !!e && getComputedStyle(e).display !== 'none' && e.getClientRects().length > 0; })(),
+        runBtn: (() => { const e = document.getElementById('run-btn'); return !!e && getComputedStyle(e).display !== 'none' && e.getClientRects().length > 0; })(),
+        battle: document.body.classList.contains('mode-battle'),
       };
       window.__vlog.push(row);
       if (L) {
@@ -336,15 +348,20 @@ function analyze(rec, specs = {}) {
       }
       const pplSet = new Set(rr.map((r) => J(r.ppl)));
       const pausedRows = rr.filter((r) => r.paused).length;
+      const waitRows = rr.filter((r) => r.wait).length;
       return {
         beat: bb.beat, mode: bb.mode, ev: evs.join('+') || null, wall: +wall.toFixed(2), clock: +(tEnd - tStart).toFixed(2), ratio: wallLast > 0 ? +((tEnd - tStart) / wallLast).toFixed(3) : null,
         innerRatio: inner === null ? null : +inner.toFixed(3), headSkip, maxTick: +maxTick.toFixed(2), specDur,
         // 場面に入ったコマから次のコマまで（3D の場面の最初の画が出るまでの目安。その間は前の画面か、描いていない暗い画面のまま）
-        firstGap: rr.length > 1 ? +((rr[1].w - rr[0].w) / 1000).toFixed(2) : +((wNext - wStart) / 1000).toFixed(2),
+        // 始めの待ち（data-wait）のコマがあれば、待ちが明けた最初のコマ（3D の最初の画を描くコマ）の次のコマまで
+        firstGap: (() => {
+          const k = Math.max(0, rr.findIndex((r) => !r.wait));
+          return rr.length > k + 1 ? +((rr[k + 1].w - rr[0].w) / 1000).toFixed(2) : +((wNext - wStart) / 1000).toFixed(2);
+        })(),
         lost: bb.mode === 'map' && specDur !== null ? +(specDur - wall).toFixed(2) : null,
         tStart, tEnd, rafRows: rr.length, rafPerSec: wall > 0 ? +(rr.length / wall).toFixed(1) : null, castFrames: framesIn(wStart, wNext),
         people: Math.max(...rr.map((r) => r.people)), figures: Math.max(...rr.map((r) => r.figures)), hidden: Math.max(...rr.map((r) => r.hidden)),
-        camPoses: camSet.size, camMaxStep: +camStep.toFixed(3), camJumps, peopleSets: pplSet.size, appearingMax: Math.max(...rr.map((r) => r.appearing)), pausedRows,
+        camPoses: camSet.size, camMaxStep: +camStep.toFixed(3), camJumps, peopleSets: pplSet.size, appearingMax: Math.max(...rr.map((r) => r.appearing)), pausedRows, waitRows,
         reduced: [...new Set(rr.map((r) => r.reduced))], vStart: +vsec(wStart).toFixed(2), vEnd: +vsec(wNext).toFixed(2),
       };
     });
@@ -407,7 +424,7 @@ async function report(rec, video, runs) {
     note(`[${rec.tag}] 演出 ${run.id}：実時間 ${run.wall} 秒（一時停止 ${run.pausedWall} 秒）・時計の終わり ${run.clockEnd}／台本の長さ ${run.duration}・時計の比（一時停止を除く）${run.overallRatio === null ? '-' : (run.overallRatio * 100).toFixed(0) + '%'}・動画の ${run.vStart}〜${run.vEnd} 秒`);
     for (const b of run.beats) {
       note(`    場面 ${b.beat}（${b.mode}${b.ev ? ' ' + b.ev : ''}）：実時間 ${b.wall} 秒で時計 ${b.clock} 秒（${b.ratio === null ? '-' : (b.ratio * 100).toFixed(0) + '%'}・最初のコマを除くと ${b.innerRatio === null ? '-' : (b.innerRatio * 100).toFixed(0) + '%'}）・場面に入った時に場面の頭から ${b.headSkip ?? '-'} 秒進んでいた・1 コマの時計の最大の進み ${b.maxTick} 秒${b.lost !== null ? `・台本 ${b.specDur.toFixed(1)} 秒のうち画面に出なかった ${b.lost} 秒` : ''}・ページのコマ ${b.rafRows}（毎秒 ${b.rafPerSec}）・画面の流しのコマ ${b.castFrames}` +
-        (b.mode === 'stage' ? `・最初の画が出るまで約 ${b.firstGap} 秒・人 ${b.people}・兵 ${b.figures}・隠した相手 ${b.hidden}・カメラの位置と向き ${b.camPoses} 通り（1 コマの最大の動き ${b.camMaxStep} m・飛び ${b.camJumps}）・人の位置 ${b.peopleSets} 通り` : `・現れる途中の印 最大 ${b.appearingMax}`) +
+        (b.mode === 'stage' ? `・始めの待ち（data-wait）のコマ ${b.waitRows}・最初の画が出るまで約 ${b.firstGap} 秒・人 ${b.people}・兵 ${b.figures}・隠した相手 ${b.hidden}・カメラの位置と向き ${b.camPoses} 通り（1 コマの最大の動き ${b.camMaxStep} m・飛び ${b.camJumps}）・人の位置 ${b.peopleSets} 通り` : `・現れる途中の印 最大 ${b.appearingMax}`) +
         `・動画 ${b.vStart}〜${b.vEnd} 秒`);
       const mid = (b.vStart + b.vEnd) / 2;
       if (b.vEnd - b.vStart > 0.2) {
@@ -486,6 +503,19 @@ function captionCheck(tag, runs) {
   note(`[${tag}] 見出し：${heads.join(' / ')}`);
 }
 
+/** 台本の字幕が、台本の順にすべて画面に出たか（ページの記録で、字幕が変わった時に読んだ文。最後まで流した演出だけ） */
+function specCapsCheck(tag, run, spec) {
+  const want = [...spec.captions].sort((a, b) => a.start - b.start).map((c) => c.text);
+  const shown = run.captions.filter((c) => c.text).map((c) => c.text);
+  const seq = shown.filter((t, i) => t !== shown[i - 1]);
+  const missing = want.filter((t) => !seq.includes(t));
+  const order = J(seq.filter((t) => want.includes(t))) === J(want);
+  check(`[${tag}] 台本の字幕 ${want.length} 件が、台本の順にすべて画面に出た`, missing.length === 0 && order, missing.length ? `出なかった ${J(missing)}` : '');
+  return seq;
+}
+/** 字幕の全部を出力する（見た文の記録） */
+const listCaps = (tag, seq) => note(`[${tag}] 画面に出た字幕（順）：${seq.map((t) => `「${t}」`).join(' → ')}`);
+
 // ================================================================ intro：第一章の導入（本物の「はじめから」から最後まで）
 async function partIntro(tag = 'intro', reducedMotion = 'no-preference') {
   console.log(`=== ${tag}：第一章の導入を、タイトルの「はじめから」の本物のクリックから最後まで（844×390・描画あり ?q=low・通常速度${reducedMotion === 'reduce' ? '・端末の prefers-reduced-motion を模擬' : ''}）`);
@@ -526,6 +556,13 @@ async function partIntro(tag = 'intro', reducedMotion = 'no-preference') {
     check(`[${tag}] 3D の場面（使者の到着・動きを減らす）が描かれた：画面の流しのコマがある・使者 2 人が着いた所に名札つきで現れ、会話の相手の使者はその間だけ隠す`, stages.length > 0 && stages.every((b) => b.castFrames > 0 && b.people >= 2 && b.hidden >= 2), J(stages.map((b) => ({ ev: b.ev, frames: b.castFrames, people: b.people, hidden: b.hidden }))));
   } else check(`[${tag}] 3D の場面（使者の到着）が描かれた：画面の流しのコマがある・使者 2 人・会話の相手の使者は隠す`, stages.length > 0 && stages.every((b) => b.castFrames > 0 && b.people >= 2 && b.hidden >= 2), J(stages.map((b) => ({ ev: b.ev, frames: b.castFrames, people: b.people, hidden: b.hidden }))));
   check(`[${tag}] 時計は最後まで進んだ（台本の長さ ${spec.duration} 秒）`, Math.abs(run.clockEnd - spec.duration) < 0.05, `${run.clockEnd}`);
+  const seq = specCapsCheck(tag, run, spec);
+  listCaps(tag, seq);
+  // 第 2 回の直し（S）：最初の字幕で自分が徳川家康だと分かる（城・町の名前は出さない。見出しの「徳川の城下（三河）」と同じ所）・A の言い方
+  const first = run.captions.find((c) => c.text);
+  check(`[${tag}] 最初の字幕は「元亀元年（1570年）。三河、徳川家康の城下。」で、見出しは「徳川の城下（三河）」（同じ所）`,
+    first?.text === '元亀元年（1570年）。三河、徳川家康の城下。' && /徳川の城下（三河）/.test(first?.head ?? ''), J({ cap: first?.text, head: first?.head }));
+  check(`[${tag}] A の字幕は方針の名前の言い方（織田との協力を続け…）`, seq.some((t) => t.startsWith('A：織田との協力を続け')), J(seq.filter((t) => /^[ABC]：/.test(t))));
   if (reducedMotion === 'reduce') {
     check(`[${tag}] 動きを減らす：どのコマも reduced`, run.beats.every((b) => J(b.reduced) === '[true]'), J(run.beats.map((b) => b.reduced)));
     check(`[${tag}] 動きを減らす：地図の場所・線は現れる途中が無い（すぐ出る）`, run.beats.filter((b) => b.mode === 'map').every((b) => b.appearingMax === 0), J(run.beats.map((b) => b.appearingMax)));
@@ -561,6 +598,7 @@ async function ch2One(name) {
   await waitUi(page, 'record');
   mark(rec, 'record');
   await sleep(2500);
+  const recordText = await page.evaluate(() => document.querySelector('.g-layer[data-kind="record"]')?.textContent ?? '');
   await page.click('.g-btn[data-id="to_town"]');
   await waitExplore(page);
   mark(rec, 'town');
@@ -581,7 +619,29 @@ async function ch2One(name) {
   check(`[${tag}] 時計は最後まで進んだ（台本の長さ ${spec.duration} 秒）`, Math.abs(run.clockEnd - spec.duration) < 0.05, `${run.clockEnd}`);
   const stages = run.beats.filter((b) => b.mode === 'stage');
   check(`[${tag}] 3D の場面が描かれた（どの場面にも画面の流しのコマがある）`, stages.length > 0 && stages.every((b) => b.castFrames > 0), J(stages.map((b) => ({ ev: b.ev, frames: b.castFrames, people: b.people, figures: b.figures }))));
-  return { runs, video, ambient: amb.spec, stageKeys: run.stageKeys };
+  const seq = specCapsCheck(tag, run, spec);
+  listCaps(tag, seq);
+  // 第 2 回の直し（S）の字幕を、画面に出た文で確かめる
+  const evs = run.stageKeys.map((k) => k.ev);
+  const rein = evs.find((e) => e.id === 'reinforcement_arrive');
+  if (rein) {
+    const rc = seq.filter((t) => /援兵|守備隊の者たち/.test(t));
+    check(`[${tag}] 援兵の字幕は「先の戦の後に…隊に加わった。」（記録の「第一章で受け取り済み」と同じ時点）・「援兵 N が着いた」とは言わない`,
+      rc.length > 0 && rc.every((t) => t.includes('先の戦の後に') && t.endsWith('隊に加わった。')) && !seq.some((t) => /援兵 [\d,]+ が着いた/.test(t)), J(rc));
+    note(`[${tag}] 結果確認の画面の援兵の行：${(recordText.match(/援兵[^。]*。?/g) ?? []).slice(0, 3).join(' / ') || '(無し)'}`);
+  }
+  const single = seq.some((t) => /」だけ。$/.test(t));
+  if (single) {
+    check(`[${tag}] 選べる手が 1 つ：「…だけ。」「「…」は、兵が足りず取れない。」「今回決めるのは兵の補充…」を言い、「一つ選ぶ」「もう一つは」とは言わない`,
+      seq.some((t) => /^「[^」]+」は、兵が足りず取れない。$/.test(t)) && seq.some((t) => t.startsWith('今回決めるのは兵の補充')) && !seq.some((t) => /一つ選ぶ|もう一つは/.test(t)), J(seq.slice(-4)));
+  } else {
+    const plans = seq.filter((t) => /^「[^」]+」：/.test(t));
+    check(`[${tag}] 選べる手が 2 つ：手ごとに「「名前」：違いの一言」が 2 つ出る`, plans.length === 2, J(plans));
+  }
+  check(`[${tag}] 「殿を引き受ける」は読み（しんがり）を添える`, !seq.some((t) => t.includes('殿を引き受ける')), J(seq.filter((t) => t.includes('殿'))));
+  const msg = evs.find((e) => e.id === 'messenger_arrive');
+  note(`[${tag}] 使い：${J(msg)}・援兵：${J(rein ?? null)}`);
+  return { runs, video, ambient: amb.spec, stageKeys: run.stageKeys, seq, recordText };
 }
 
 // ================================================================ depart：出陣と帰還
@@ -652,6 +712,15 @@ async function partDepart() {
   Object.assign(recD, await stopRec(recD));
   const res = await battleAllRetreat(page);
   note(`合戦の結果：${res.result}/${res.reason}`);
+  // 結果の画面の数と約束の欄（帰還の字幕と比べる。読むだけ）
+  const resultScreen = await page.evaluate(() => {
+    const box = document.querySelector('.b-result');
+    const t = box?.textContent ?? '';
+    const m = t.match(/味方の失った兵 ([\d,]+) \/ ([\d,]+)/);
+    const pl = box?.querySelector('.b-rpledge');
+    return { lost: m ? Number(m[1].replace(/,/g, '')) : null, start: m ? Number(m[2].replace(/,/g, '')) : null, pledgeTitle: pl?.querySelector('b')?.textContent ?? null, pledgeText: pl?.querySelector('span')?.textContent ?? null, text: t.slice(0, 600) };
+  });
+  note(`結果の画面：味方の失った兵 ${resultScreen.lost} / ${resultScreen.start}・約束「${resultScreen.pledgeTitle}」${resultScreen.pledgeText}`);
   const recR = await startRec(page, 'return');
   await sleep(1200);
   await page.locator('.b-primary:has-text("続ける")').click();
@@ -681,6 +750,42 @@ async function partDepart() {
     // 最後の場面が 3D のときは、時計が長さに着いたコマで層を閉じるので、記録の最後の t は長さの 1 コマ前（1 コマの上限 1 秒）
     check(`[${rec.tag}] 時計は最後まで進んだ（台本の長さ ${spec.duration} 秒。スキップは押していない）・3D の場面が描かれた`, run.clockEnd >= spec.duration - (run.beats.at(-1).mode === 'stage' ? 1.0 : 0.05) - 1e-6 && run.beats.filter((b) => b.mode === 'stage').every((b) => b.castFrames > 0), J(run.beats.map((b) => [b.mode, b.ev, b.castFrames])));
     out[rec.tag] = { runs, video };
+    const seq = specCapsCheck(rec.tag, run, spec);
+    listCaps(rec.tag, seq);
+    out[rec.tag].seq = seq;
+    if (rec.tag === 'depart') {
+      // 第 2 回の直し（T）：演出が閉じてから合戦の画面が出るまで、町の画・操作の案内を出さない（不透明な「（戦場）へ…」で覆う）
+      const L = rec.log;
+      const kEnd = L.findLastIndex((r) => r.id === spec.id);
+      // 合戦の画面に入った＝body の mode-battle（ゲームの screen は覆いを出した時に 'battle' になるので使わない）
+      const kBat = L.findIndex((r, k) => k > kEnd && r.battle);
+      const gap = kEnd >= 0 && kBat > kEnd ? L.slice(kEnd + 1, kBat) : [];
+      const bad = gap.filter((r) => !(r.load && r.load.startsWith('opaque')) || r.help || r.runBtn);
+      const gapSec = gap.length ? (L[kBat].w - L[kEnd + 1].w) / 1000 : 0;
+      check('[depart] 演出が閉じてから合戦の画面まで：どのコマも不透明な読み込みの層（「…へ…」）で覆い、操作の案内（WASD）・歩く／走るのボタンを出さない',
+        gap.length > 0 && bad.length === 0, `間 ${gap.length} コマ・${gapSec.toFixed(2)} 秒・層 ${J([...new Set(gap.map((r) => r.load))])}・覆い ${J([...new Set(gap.map((r) => r.hold))])}${bad.length ? `・覆っていないコマ ${bad.length}` : ''}`);
+      if (gap.length) {
+        const v = (L[kEnd + 1].w + L[kBat].w) / 2;
+        const f = `${OUT}/depart-gap-cover.png`;
+        await extract(video.file, Math.max(0, (rec.origin + v - rec.wall0) / 1000), f);
+        note(`[depart] 覆いの間のコマ：${f}`);
+      }
+      const stg = run.beats.find((b) => b.mode === 'stage');
+      note(`[depart] 3D の場面の始めの待ち（data-wait）のコマ ${stg?.waitRows ?? '-'}・最初の画が出るまで約 ${stg?.firstGap ?? '-'} 秒`);
+    }
+    if (rec.tag === 'return') {
+      // 第 2 回の直し（S）：帰還の損失の文は結果の画面と同じ数（味方全体）。損失があれば「兵を失わずに戻った。」と言わない。約束の行は結果の画面と同じ言葉
+      const lostAny = (resultScreen.lost ?? 0) > 0;
+      check(`[return] 結果の画面の「味方の失った兵 ${resultScreen.lost}」${lostAny ? 'があるので、「兵を失わずに戻った。」は出ない（主語を言う）' : 'が 0 なので「兵を失わずに戻った。」'}`,
+        resultScreen.lost !== null && (lostAny ? !seq.includes('兵を失わずに戻った。') && seq.some((t) => /失った|失わずに/.test(t)) : seq.includes('兵を失わずに戻った。')), J(seq.filter((t) => /失|戻/.test(t))));
+      const nums = seq.flatMap((t) => [...t.matchAll(/([\d,]+) を失った|失った兵 ([\d,]+)/g)].map((m) => Number((m[1] ?? m[2]).replace(/,/g, ''))));
+      check(`[return] 帰還の字幕の失った兵の数の合計（${nums.join('+') || 0}）は、結果の画面の「味方の失った兵」（${resultScreen.lost}）と同じ`, nums.reduce((a, b) => a + b, 0) === (resultScreen.lost ?? -1), '');
+      const pl = seq.filter((t) => t.startsWith('約束を'));
+      const titleHead = (resultScreen.pledgeTitle ?? '').split('：')[0];
+      const unf = /敵と斬り合う前に(退いた|敗れた)/.exec(resultScreen.pledgeText ?? '');
+      const wantPl = !resultScreen.pledgeTitle || resultScreen.pledgeTitle.includes('引き受けていない') ? null : unf ? `${titleHead}：敵と斬り合う前に${unf[1]}。` : `${resultScreen.pledgeTitle}。`;
+      check(`[return] 約束の行は結果の画面と同じ言葉で 1 行（結果の画面「${resultScreen.pledgeTitle}」→ 字幕「${wantPl ?? '出さない'}」）`, wantPl === null ? pl.length === 0 : pl.length === 1 && pl[0] === wantPl, J(pl));
+    }
   }
   out.heroDuringDepart = heroDuring;
   out.after = p;
@@ -781,14 +886,30 @@ try {
     if (part === 'intro') results.intro = await partIntro('intro');
     else if (part === 'reduced') results.reduced = await partIntro('reduced', 'reduce');
     else if (part === 'ch2') {
-      results.win = await ch2One('oda_victory_kept');
-      results.heavy = await ch2One('home_defeat_broken_heavy');
+      results.ch2 = {};
+      for (const name of CH2) {
+        results.ch2[name] = await ch2One(name);
+        note(`第二章への移行の 3D の出来事（${name}）：${J(results.ch2[name].stageKeys.map((k) => k.ev))}`);
+      }
       const ev = (r, id) => r.stageKeys.map((k) => k.ev).filter((e) => e.id === id);
-      note(`第二章への移行の 3D の出来事：勝ち・約束を守った ${J(results.win.stageKeys.map((k) => k.ev))}`);
-      note(`第二章への移行の 3D の出来事：負け・約束を破った・損害大 ${J(results.heavy.stageKeys.map((k) => k.ev))}`);
-      check('第二章への移行：勝ち・約束を守った保存は援兵の到着がある・負け・約束を破った（損害大）の保存は援兵なしで負傷兵が多い',
-        ev(results.win, 'reinforcement_arrive').length > 0 && ev(results.heavy, 'reinforcement_arrive').length === 0 && (ev(results.heavy, 'wounded_rest')[0]?.count ?? 0) > (ev(results.win, 'wounded_rest')[0]?.count ?? 0),
-        J({ win: ev(results.win, 'wounded_rest'), heavy: ev(results.heavy, 'wounded_rest') }));
+      const win = results.ch2.oda_victory_kept;
+      const heavy = results.ch2.home_defeat_broken_heavy;
+      const asai = results.ch2.asai_victory_kept;
+      if (win && heavy) {
+        check('第二章への移行：勝ち・約束を守った保存は援兵の到着がある・負け・約束を破った（損害大）の保存は援兵なしで負傷兵が多い',
+          ev(win, 'reinforcement_arrive').length > 0 && ev(heavy, 'reinforcement_arrive').length === 0 && (ev(heavy, 'wounded_rest')[0]?.count ?? 0) > (ev(win, 'wounded_rest')[0]?.count ?? 0),
+          J({ win: ev(win, 'wounded_rest'), heavy: ev(heavy, 'wounded_rest') }));
+      }
+      if (heavy) {
+        // 第 2 回の直し（S）：C の村の使いは町の人の見た目（武家の使者の見た目の鍵を使わない）
+        const m = ev(heavy, 'messenger_arrive')[0];
+        check('第二章への移行（C）：村の使いは町の人の見た目（townsman_*。武家の使者 tashiro_envoy／omori_envoy ではない）・名札は「村の使い」', !!m && /^townsman_/.test(m.look) && m.name === '村の使い', J(m));
+      }
+      if (asai) {
+        const m = ev(asai, 'messenger_arrive')[0];
+        const r = ev(asai, 'reinforcement_arrive')[0];
+        check('第二章への移行（B 浅井の勝ち・約束を守った）：浅井家の使者が来る・浅井の援兵（旗 浅）が木戸を入る', m?.name === '浅井家の使者' && m.look === 'omori_envoy' && r?.mark === '浅', J({ m, r }));
+      }
     } else if (part === 'depart') results.depart = await partDepart();
     else if (part === 'controls') results.controls = await partControls();
     else throw new Error(`PARTS が分からない：${part}`);
