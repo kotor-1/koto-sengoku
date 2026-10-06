@@ -521,8 +521,9 @@ async function partIntro(tag = 'intro', reducedMotion = 'no-preference') {
   const run = runs.find((r) => r.id === spec.id);
   const stages = run.beats.filter((b) => b.mode === 'stage');
   if (reducedMotion === 'reduce') {
-    // 動きを減らすとき：使者は歩かず、着いた姿（会話の相手の人物そのもの）を城門の前の画で見せる（演出の人は出さない・相手は隠さない）
-    check(`[${tag}] 3D の場面（使者の到着・動きを減らす）が描かれた：画面の流しのコマがある・演出の人は出さず会話の相手の使者をそのまま見せる`, stages.length > 0 && stages.every((b) => b.castFrames > 0 && b.people === 0 && b.hidden === 0), J(stages.map((b) => ({ ev: b.ev, frames: b.castFrames, people: b.people, hidden: b.hidden }))));
+    // 動きを減らすとき：使者は歩かず、着いた姿で城門の前の画に現れる。名札を出すため、同じ見た目の会話の相手は隠して演出の人（名札つき）に替える
+    // （点検の指摘：会話の相手のままでは演出の間に名札が出ず、誰が誰か分からなかった）。人が歩かないことは下の「動きを減らす」の確かめで見る
+    check(`[${tag}] 3D の場面（使者の到着・動きを減らす）が描かれた：画面の流しのコマがある・使者 2 人が着いた所に名札つきで現れ、会話の相手の使者はその間だけ隠す`, stages.length > 0 && stages.every((b) => b.castFrames > 0 && b.people >= 2 && b.hidden >= 2), J(stages.map((b) => ({ ev: b.ev, frames: b.castFrames, people: b.people, hidden: b.hidden }))));
   } else check(`[${tag}] 3D の場面（使者の到着）が描かれた：画面の流しのコマがある・使者 2 人・会話の相手の使者は隠す`, stages.length > 0 && stages.every((b) => b.castFrames > 0 && b.people >= 2 && b.hidden >= 2), J(stages.map((b) => ({ ev: b.ev, frames: b.castFrames, people: b.people, hidden: b.hidden }))));
   check(`[${tag}] 時計は最後まで進んだ（台本の長さ ${spec.duration} 秒）`, Math.abs(run.clockEnd - spec.duration) < 0.05, `${run.clockEnd}`);
   if (reducedMotion === 'reduce') {

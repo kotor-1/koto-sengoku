@@ -1,8 +1,8 @@
 /**
  * 演出の再生器（層の種類 'cine'）。設計：docs/story-rpg-design.md §1・§3。中身の形は story/timeline.ts の純粋な関数で決める。
  *
- * - 時計は実時間（requestAnimationFrame の時刻の差。1 コマの上限 1 秒。場面の境目をまたぐコマは次の場面の頭で止め、場面の切り替え
- *   （地図を作る・3D の最初の画を描く）にかかった時間は数えない）。ページが隠れる・窓が外れる・pagehide で自動の一時停止。
+ * - 時計は実時間（requestAnimationFrame の時刻の差。1 コマの上限 1 秒。場面の境目をまたぐコマは次の場面の頭で止め、場面が替わった
+ *   次のコマは進めない（替わり目の重い描画の時間を数えない））。ページが隠れる・窓が外れる・pagehide で自動の一時停止。
  * - 地図の場面は不透明な層（探索の描画を止める）。3D の場面は字幕と操作だけの透明な層で、毎フレーム onStage(出来事, 場面の始めからの秒, 減らすか)。
  * - 終わり・スキップ・abandon（dispose）では必ず onStage(null, 0, …) を 1 回呼んで片付ける。
  * - ボタン：一時停止／再開・前の場面・次の場面・スキップ・動きを減らす。キー：Space／K 一時停止、←→ 場面、Esc スキップ。
@@ -99,6 +99,8 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
         let frame: CineFrame = clock.frame(reduced);
         let capKey = '';
         let autoPaused = false;
+        /** 場面が替わった：次のコマは時計を進めない（替わり目の重い描画の時間を、次の場面に数えない） */
+        let holdTick = false;
 
         const setPaused = (on: boolean, auto = false) => {
             if (done || clock.ended) return;
@@ -145,6 +147,7 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
             // 場面が変わった：地図を作り直す・覆いを切り替える
             if (f.beatIndex !== beatShown) {
                 beatShown = f.beatIndex;
+                holdTick = true;
                 mode = f.beat.kind;
                 layer.dataset.beat = String(f.beatIndex);
                 layer.dataset.mode = mode;
@@ -210,9 +213,13 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
         const loop = (ts: number) => {
             if (done) return;
             const now = Number.isFinite(ts) ? ts : nowMs();
-            if (last >= 0) clock.tick((now - last) / 1000);
+            // 場面が替わった次のコマは進めない：替わり目の重い描画（3D の場面の最初の画・最後の画の仕上げ・地図の組み立て）は、
+            // コマとコマの間（描画の仕上げ）にかかるので、その時間を次の場面に数えると、場面の頭とその字幕が出ないまま進む
+            if (last >= 0) {
+                if (holdTick) holdTick = false;
+                else clock.tick((now - last) / 1000);
+            }
             last = now;
-            const beatBefore = beatShown;
             try {
                 render();
             } catch (e) {
@@ -222,8 +229,6 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
                 finish('skipped');
                 return;
             }
-            // 場面の切り替え（地図を作る・3D の最初の画を描く）にかかった時間は、時計に数えない（次の場面の頭を飛ばさない）
-            if (beatShown !== beatBefore) last = nowMs();
             if (clock.ended) {
                 finish('done');
                 return;
