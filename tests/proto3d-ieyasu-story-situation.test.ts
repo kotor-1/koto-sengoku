@@ -17,10 +17,11 @@ import { ieyasuScout, SCOUT_MARK_IDS } from '../proto3d/src/campaign/ieyasu1570/
 import { ieyasuSituation } from '../proto3d/src/campaign/ieyasu1570/story/situation';
 import type { IeyasuAnyState, Ieyasu2State } from '../proto3d/src/campaign/ieyasu1570/chapter2/state';
 import { isChapter2 } from '../proto3d/src/campaign/ieyasu1570/chapter2/state';
-import { talkIeyasu2 } from '../proto3d/src/campaign/ieyasu1570/chapter2/flow';
+import { finishTalkIeyasu2, legalIeyasu2Choices, talkIeyasu2 } from '../proto3d/src/campaign/ieyasu1570/chapter2/flow';
+import { availableCh2Plans } from '../proto3d/src/campaign/ieyasu1570/chapter2/rules';
 import { newIeyasuGame, talkIeyasu } from '../proto3d/src/campaign/ieyasu1570/flow';
 import type { SituationView } from '../proto3d/src/story/types';
-import { ch1BeforeBattle, ch1Cases, ch1Ending, ch2Cases, ch2Starts, checkBannedWords } from './proto3d-ieyasu-story-states';
+import { ch1BeforeBattle, ch1Cases, ch1Ending, ch2Aftermath, ch2Cases, ch2Muster, ch2Starts, checkBannedWords } from './proto3d-ieyasu-story-states';
 
 const CH1 = ch1Cases();
 const CH2_STARTS = ch2Starts(CH1);
@@ -315,6 +316,11 @@ describe('町の人々（見た目だけ。保存の兵とは別）', () => {
         }
     });
     it('第二章：第一章の損害が残り、補充で待てば戻った分だけ減る。戦後は第二章の損害も足す', () => {
+        // 負傷兵の元（見た目の数の前）：第一章で失った徳川の兵 − 補充で「待つ」を選んで戻った兵 ＋ 第二章で失った徳川の兵
+        const ch1LostOf = (s: Ieyasu2State) => outcomeTroops(s.chapter1.battle).lost;
+        const backOf = (s: Ieyasu2State) => (s.recovery?.choice === 'wait' ? Object.values(s.recovery.delta).reduce((n, x) => n + Math.max(0, x), 0) : 0);
+        const ch2LostOf = (s: Ieyasu2State) => (s.result ? Object.values(s.result.lost).reduce((n, x) => n + (x ?? 0), 0) : 0);
+        const expected = (s: Ieyasu2State) => visualCount(Math.max(0, ch1LostOf(s) - backOf(s)) + ch2LostOf(s), VISUAL_MAX.wounded);
         for (const { name, state } of CH2) {
             const s = state as Ieyasu2State;
             const g = ieyasuAmbient(s);
@@ -326,7 +332,43 @@ describe('町の人々（見た目だけ。保存の兵とは別）', () => {
             for (const x of g!.groups) expect(x.count).toBeGreaterThanOrEqual(0);
             if (s.phase === 'muster') expect(count(s, 'preparing'), name).toBeGreaterThan(0);
             if (s.phase !== 'battle') expect(count(s, 'reinforcement') > 0, name).toBe(s.chapter1.support.recovered > 0);
+            if (s.phase !== 'battle') expect(count(s, 'wounded'), name).toBe(expected(s));
         }
+        // 同じ支度の状態から補充の答えを変えて比べる：待てば戻った分だけ減り、ほかの答え（守備隊から回す・今の兵で出る）では減らない。
+        // 戦後は、補充の後の数に第二章で失った兵を足す
+        let reduced = 0;
+        let waited = 0;
+        for (const c of CH2_STARTS.filter((x) => x.ch1.loss !== 'none')) {
+            const start = count(c.state, 'wounded');
+            // 第一章の損害が残る（第二章のはじめ）
+            expect(start, c.name).toBe(visualCount(ch1LostOf(c.state), VISUAL_MAX.wounded));
+            expect(start, c.name).toBeGreaterThan(0);
+            for (const plan of availableCh2Plans(c.state)) {
+                const m = ch2Muster(c.state, plan);
+                expect(count(m, 'wounded'), c.name).toBe(start);
+                const legal = legalIeyasu2Choices(m);
+                for (const other of ['recovery_transfer', 'recovery_none'] as const) {
+                    if (legal.includes(other)) expect(count(finishTalkIeyasu2(m, 'ishikawa', other), 'wounded'), `${c.name}.${plan}.${other}`).toBe(start);
+                }
+                if (!legal.includes('recovery_wait')) continue;
+                const w = finishTalkIeyasu2(m, 'ishikawa', 'recovery_wait');
+                const back = backOf(w);
+                expect(back, c.name).toBeGreaterThan(0);
+                waited++;
+                const after = count(w, 'wounded');
+                expect(after, c.name).toBe(visualCount(Math.max(0, ch1LostOf(c.state) - back), VISUAL_MAX.wounded));
+                expect(after, c.name).toBeLessThanOrEqual(start);
+                if (after < start) reduced++;
+                // 戦後：補充の後の数に、第二章で失った兵を足す（失えば減らない）
+                const a = ch2Aftermath(finishTalkIeyasu2(w, 'gate', 'depart'), 'retreat');
+                expect(ch2LostOf(a), c.name).toBeGreaterThan(0);
+                expect(count(a, 'wounded'), c.name).toBe(visualCount(Math.max(0, ch1LostOf(c.state) - back) + ch2LostOf(a), VISUAL_MAX.wounded));
+                expect(count(a, 'wounded'), c.name).toBeGreaterThanOrEqual(after);
+            }
+        }
+        // 見た目の数が実際に減った組み合わせがある（上限 12 に張り付く損害の大きい組み合わせでは、減っても見た目は同じことがある）
+        expect(waited).toBeGreaterThan(10);
+        expect(reduced).toBeGreaterThan(5);
     }, 60_000);
     it('純粋：同じ状態から同じ中身。作っても状態は変わらない（情勢・町の人々）', () => {
         const sc = ieyasuScenario(null);

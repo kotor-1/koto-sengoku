@@ -39,6 +39,8 @@ import { sampleCineSpec, sampleSituation } from '../proto3d/src/story/sample';
 import type { AmbientSpec, CineMoment, CineSpec, ScoutPoint, SituationView, StageEvent } from '../proto3d/src/story/types';
 import { MemoryStorage } from './proto3d-campaign-helpers';
 import { IEYASU_V3_FIXTURES } from './proto3d-ieyasu-save-v3-fixtures';
+import { finishTalkIeyasu2, legalIeyasu2Choices, startChapter2 } from '../proto3d/src/campaign/ieyasu1570/chapter2/flow';
+import { ch1Aftermath, ch1Ending, ch2Muster } from './proto3d-ieyasu-story-states';
 
 type Req =
     | { kind: 'title'; info: TitleInfo; answer: (a: TitleAction) => void }
@@ -663,4 +665,75 @@ describe('物見（保存しない・同じ記録は増えない・やめれば�
         await flush();
         expect(last(h.world.ambient)).toBeNull();
     });
+});
+
+/**
+ * 第二章の戦後の見直し（本物の ieyasuScenario の台本・情勢。点検の指摘：第二章の補充と合戦の後に出陣・帰還を見直しても、
+ * 補充や戦後の処理が再び走らないことを、消した一時のテストでしか確かめていなかった）。
+ * 支度の状態は第一章の結末から flow の関数を普通の順に呼んで作る（直接状態変更）。城門・出陣・合戦（本物の計算で 3 秒に全軍撤退）・
+ * 帰還・情勢・見直しは ChapterGame を偽の画面と場面で動かす。
+ */
+describe('第二章の戦後の見直し（本物の台本）：状態・保存の書き込みは変わらない', () => {
+    it('第二章：出陣 → 合戦 → 帰還 → 戦後。情勢から出陣・帰還を見直して（見た・スキップ）も、状態・保存・合戦の数は同じ', async () => {
+        const storage = new MemoryStorage();
+        const h = new Harness(storage, new StoryView(), new StoryWorld(), { story: false });
+        const start = startChapter2(ch1Ending(ch1Aftermath('oda', 'victory', 'kept', 'light')));
+        const m = ch2Muster(start, 'commit');
+        const ready = finishTalkIeyasu2(m, 'ishikawa', legalIeyasu2Choices(m).includes('recovery_wait') ? 'recovery_wait' : 'recovery_none');
+        expect(ready.phase).toBe('muster');
+        expect(ready.recovery).not.toBeNull();
+        h.game.begin(ready, 'ieyasu1570');
+        await flush();
+        h.world.walkTo('gate');
+        h.game.tick(1 / 30);
+        (await h.next('script')).answer('depart');
+        const d = await h.next('cinematic', 80);
+        expect(d.spec.id).toMatch(/^departure\.ch2\.oda\./);
+        const depSpec = J(d.spec);
+        d.answer('skipped');
+        const r = await h.next('cinematic', 200);
+        expect(r.spec.id).toMatch(/^return\.ch2\.oda\./);
+        const retSpec = J(r.spec);
+        r.answer('done');
+        await flush();
+        expect(h.game.screen).toBe('explore');
+        const s = h.game.state;
+        expect(s.phase).toBe('aftermath');
+        expect(s.appliedBattleId).toBe(s.battleId);
+        expect(h.log.setups).toHaveLength(1);
+        // 戦後の状態・保存（書き込みの数と中身）を覚えて、見直しの後と比べる
+        const s0 = J(h.game.state);
+        const w0 = h.writes().length;
+        const data0 = J([...storage.data.entries()].sort());
+        const pose0 = { ...h.world.pose };
+        void h.game.openSituation();
+        let v = await h.next('situation');
+        expect(v.view.replays.map((x) => x.moment)).toEqual(['ch2_intro', 'ch1_intro', 'departure', 'return']);
+        for (const [moment, how, spec] of [
+            ['departure', 'done', depSpec],
+            ['return', 'done', retSpec],
+            ['departure', 'skipped', depSpec],
+            ['return', 'skipped', retSpec],
+        ] as const) {
+            v.answer({ replay: moment });
+            const c = await h.next('cinematic');
+            // 直前の合戦の出陣・帰還と同じ台本（見直しで作り直しても同じ）
+            expect(J(c.spec), `${moment}.${how}`).toBe(spec);
+            expect(h.game.screen).toBe('cinematic');
+            c.answer(how);
+            v = await h.next('situation');
+            expect(J(h.game.state), `${moment}.${how}`).toBe(s0);
+            expect(h.writes().length, `${moment}.${how}`).toBe(w0);
+        }
+        v.answer();
+        await flush();
+        expect(h.game.screen).toBe('explore');
+        expect(h.world.control).toBe(true);
+        expect(h.world.pose).toEqual(pose0);
+        // 補充・戦後の処理・合戦は再び走らない（状態・保存の中身・書き込みの数・合戦の数が同じ）
+        expect(J(h.game.state)).toBe(s0);
+        expect(h.writes().length).toBe(w0);
+        expect(J([...storage.data.entries()].sort())).toBe(data0);
+        expect(h.log.setups).toHaveLength(1);
+    }, 60_000);
 });
