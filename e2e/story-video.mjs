@@ -26,6 +26,13 @@
 //   depart    出陣（城門で「出陣する」）と帰還（合戦は全軍撤退 → 結果の「続ける」）を 1 回ずつ
 //   reduced   動きを減らす設定（端末の prefers-reduced-motion を模擬）での第一章の導入
 //   controls  一時停止（クリック）・再開（Space）・次の場面（→）・前の場面（←）・スキップ（クリック）→ 城下 → J → 情勢の「見直す」→ Esc でスキップ → 「閉じる」
+//   ch2a      第二章 A（織田勢の撤収を支える）を、第一章の結末の保存から戦後の城下まで、どの演出もスキップせずにつなぐ（docs/ch2a-reason-request.md の確認）：
+//             「つづきから」→「第二章へ進む」→ 移行の演出 →「城下へ」→ J（情勢）→ 忠勝と軍議 → 判断 → 石川と補充 → 城門で「出陣する」→ 出陣の演出 →
+//             合戦 → 結果の「続ける」→ 帰還の演出 → 戦後の城下 → J（情勢）。
+//             CH2A（カンマ区切り。保存:判断:補充:合戦の手）で選ぶ。合戦の手は rear_hold などの作戦の id（chapter2/scripts.ts。命令は本物の入力）・
+//             allret（開始直後に全軍撤退。本物のクリック）・nothing（命令を出さない）。どれも待つ間は早送り。
+//             人の近くへは開発用の口（__game.teleport。直接状態変更）で移し、そこから本物の W で歩いて「話す」を出し、E で話す。行送りは Enter・選択は本物のクリック。
+//             動画は 1 回につき 2 本：<tag>-a（結末の画面 → 合戦の説明の画面）・<tag>-b（結果の画面 → 戦後の城下）。合戦の早送りの間は撮らない
 // 使い方：自動再読み込みなしの開発サーバーを自分用のポートで起動して
 //   (PORT=8097 setsid nohup npx vite --config proto3d/blender/tools/vite.nohmr.mjs > /tmp/vite-8097.log 2>&1 &)
 //   BASE=http://localhost:8097 node e2e/story-video.mjs [出力先（既定 e2e-out/story-video）]
@@ -35,12 +42,22 @@
 import { spawn } from 'node:child_process';
 import { readFileSync, writeFileSync, statSync } from 'node:fs';
 import { launchBrowser, outDir } from './lib.mjs';
+import { battleIO, driveTactic, fastForwardToResult } from './ch2-drive.mjs';
 
 const OUT = outDir(process.argv[2] || 'e2e-out/story-video');
 const BASE = process.env.BASE3D || process.env.BASE || 'http://localhost:8097';
 const PARTS = (process.env.PARTS || 'intro,ch2,depart,reduced,controls').split(',').map((s) => s.trim()).filter(Boolean);
 /** 第二章への移行を撮る第一章の結末の保存（tests/fixtures/ieyasu-ch1-v3/ の名前） */
 const CH2 = (process.env.CH2 || 'oda_victory_kept,home_defeat_broken_heavy,asai_victory_kept').split(',').map((s) => s.trim()).filter(Boolean);
+/**
+ * 第二章 A をつなぐ回（保存:判断:補充:合戦の手）。既定：
+ *   1. 第一章で勝った保存 → 判断 1（殿を引き受ける）・補充「待つ」・作戦 rear_hold（本物の入力）で主目標を果たす
+ *   2. 第一章で負けた保存（損害大）→ 判断 1・補充なし・命令を出さない（主目標を果たせない）
+ *   3. 第一章で勝った保存 → 判断 2（退き口の手前を固める）・補充「待つ」・開始直後に全軍撤退（主目標を果たせない）
+ *   （A の判断 1 で開始直後に全軍撤退すると、撤収の対象が退き口から離れて勝つ：tests/proto3d-ieyasu-ch2-allretreat.test.ts）
+ */
+const CH2A = (process.env.CH2A || 'oda_victory_kept:commit:wait:rear_hold,oda_defeat_broken_heavy:commit:none:nothing,oda_victory_kept:hold:wait:allret')
+  .split(',').map((s) => s.trim()).filter(Boolean).map((s) => { const [name, plan, recovery, tactic] = s.split(':'); return { name, plan, recovery, tactic }; });
 const FFMPEG = process.env.FFMPEG || '/opt/pw-browsers/ffmpeg-1011/ffmpeg-linux';
 const FPS = 25;
 const VIEW = { width: 844, height: 390 };
@@ -146,6 +163,15 @@ const LOGGER = () => {
   let lastHead = null;
   let lastKey = undefined;
   const r3 = (v) => Math.round(v * 1000) / 1000;
+  /** 地図の場面で見る印（場所 data-place・線 data-route） */
+  const MAP_MARKS = [
+    ['camp', '[data-place="oda_camp"]'],
+    ['main', '[data-route="withdraw.oda_main"]'],
+    ['rear', '[data-route="withdraw.oda_rear"]'],
+    ['threat', '[data-route^="threat."]'],
+    ['march', '[data-route^="march."]'],
+    ['return', '[data-route^="return."]'],
+  ];
   // w は rAF の時刻（そのコマの始まり＝前のコマを描き終えた頃。演出の時計もこの差で進む）。wl は記録した瞬間（3D を描いた後になることがある）
   const loop = (ts) => {
     if (!window.__vlogOn) return;
@@ -177,6 +203,12 @@ const LOGGER = () => {
         help: (() => { const e = document.getElementById('help'); return !!e && getComputedStyle(e).display !== 'none' && e.getClientRects().length > 0; })(),
         runBtn: (() => { const e = document.getElementById('run-btn'); return !!e && getComputedStyle(e).display !== 'none' && e.getClientRects().length > 0; })(),
         battle: document.body.classList.contains('mode-battle'),
+        // 地図の場面の印（第二章 A の撤収のわけ）：場所・線の data-state（* は強調）。地図の場面のときだけ
+        mp: (() => {
+          if (!L || c?.mode !== 'map') return null;
+          const q = (s) => { const e = L.querySelector(`.g-cine-map ${s}`); return e ? e.dataset.state + (e.dataset.hl === '1' ? '*' : '') : '-'; };
+          return MAP_MARKS.map(([k, s]) => `${k}:${q(s)}`).join(',');
+        })(),
       };
       window.__vlog.push(row);
       if (L) {
@@ -879,6 +911,313 @@ async function partControls() {
   return { runs, video, h2 };
 }
 
+// ================================================================ ch2a：第二章 A を、第一章の結末の保存から戦後の城下までつなぐ（どの演出もスキップしない）
+/** 第二章 A の撤収のわけの字幕（docs/ch2a-reason.md の表。台本と同じ文） */
+const A_TXT = {
+  mission: '主の本隊が近江の陣を引く。撤収をお支えくだされ。',
+  reason: '近江の浅井・朝倉は健在。織田の本隊は陣を引き払う。',
+  who: '本隊の最後尾、後備え・小荷駄を浅井・朝倉が追う。',
+  guard: '二隊が南の退き口を抜けるまで、徳川が守る。',
+  ch1Win: '国境の原の局地戦に勝ち、浅井・朝倉は退いた。',
+  depart: '本隊の後備え・小荷駄が抜けるまで、退き口を守る。',
+  ret: '撤収を支えきった：後備え・小荷駄は南の退き口を抜けた。',
+};
+/** 勝ちを前提にした言い方（第一章で勝っていない経路・主目標を果たせなかった帰還に出てはいけない） */
+const WIN_WORDS = /勝ち|勝利|勝った|勝って|支えきった|抜けた/;
+/** 状態・保存・書き込みの控え（読むだけ） */
+const snapOf = (page) => page.evaluate(([k, k1]) => ({ st: window.__game.state ? JSON.parse(JSON.stringify(window.__game.state)) : null, raw: localStorage.getItem(k), raw1: localStorage.getItem(k1), w: { ...(window.__writes ?? {}) } }), [KEY, KEY_CH1]);
+const snapDiff = (a, b) => {
+  const out = [];
+  const sa = norm(a.st) ?? {};
+  const sb = norm(b.st) ?? {};
+  for (const k of new Set([...Object.keys(sa), ...Object.keys(sb)])) if (J(sa[k]) !== J(sb[k])) out.push(`状態.${k}`);
+  if (a.raw !== b.raw) out.push('保存（本来のキー）');
+  if (a.raw1 !== b.raw1) out.push('保存（第一章の控え）');
+  if (J(a.w) !== J(b.w)) out.push(`書き込み ${J(a.w)} → ${J(b.w)}`);
+  return out;
+};
+/** 会話の行を本物の Enter で送る（選択肢・ほかの画面が出たら返す） */
+async function readLines(page) {
+  let id = null;
+  const seen = [];
+  for (let i = 0; i < 120; i++) {
+    const u = await ui(page);
+    if (u?.kind === 'script') {
+      id = u.id;
+      const t = `${u.line.name}：${u.line.text}`;
+      if (seen[seen.length - 1] !== t) seen.push(t);
+    }
+    if (!u || u.kind !== 'script' || u.choices.length) return { ...(u ?? {}), seenId: id, seen };
+    await page.keyboard.press('Enter');
+    await sleep(250);
+  }
+  return { ...(await ui(page)), seenId: id, seen };
+}
+/** 選択肢を本物のクリックで選ぶ（押し始めの守りのため少し待つ） */
+const pick = async (page, id) => { await sleep(500); await page.locator(`.g-choice[data-id="${id}"]`).click(); };
+/**
+ * 話す相手の 2.6 m 南へ開発用の口で移し（直接状態変更）、本物の W で北へ歩いて「話す」が出たら、本物の E で話す。行は本物の Enter で送る。
+ * 描画ありの町は 1 コマ 1〜2 秒・1 コマの進みの上限 0.1 秒なので、ゆっくりしか歩かない
+ */
+async function walkTalk(page, tag, id) {
+  const c = (await page.evaluate(() => window.__game.cast)).find((m) => m.id === id);
+  if (!c) throw new Error(`${id} が居ない`);
+  await page.evaluate(([x, z]) => window.__game.teleport(x, z, Math.PI), [c.x, c.z + 2.6]);
+  await sleep(1500);
+  const a = await pose(page);
+  const t0 = Date.now();
+  await page.keyboard.down('KeyW');
+  await page.waitForFunction((id) => window.__game.prompt === id, id, { timeout: 300000, polling: 200 });
+  await page.keyboard.up('KeyW');
+  const b = await pose(page);
+  note(`[${tag}] ${id}：開発用の口で (${a.x.toFixed(2)}, ${a.z.toFixed(2)}) へ移し（直接状態変更）、本物の W で ${Math.hypot(b.x - a.x, b.z - a.z).toFixed(2)} m 歩いて「話す」が出た（${((Date.now() - t0) / 1000).toFixed(1)} 秒）`);
+  await sleep(600);
+  await page.keyboard.press('KeyE');
+  await waitUi(page, 'script');
+  return readLines(page);
+}
+/** 情勢の画面（本物の J → 読む →「閉じる」のクリック）。地図の印と文を返す */
+async function situationJ(page, rec, label) {
+  await page.keyboard.press('KeyJ');
+  await waitUi(page, 'situation');
+  mark(rec, label, 1.5);
+  await sleep(2500);
+  const v = await page.evaluate(() => {
+    const L = document.querySelector('.g-layer[data-kind="situation"]');
+    const st = (s) => { const e = L?.querySelector(s); return e ? e.dataset.state : '-'; };
+    return {
+      text: L?.textContent ?? '',
+      camp: st('[data-place="oda_camp"]'), main: st('[data-route="withdraw.oda_main"]'), rear: st('[data-route="withdraw.oda_rear"]'),
+      threat: st('[data-route^="threat."]'), march: st('[data-route^="march."]'), ret: st('[data-route^="return."]'),
+      campName: L?.querySelector('[data-place="oda_camp"]')?.textContent ?? '',
+    };
+  });
+  await page.locator('.g-layer[data-kind="situation"] .g-btn[data-id="close"]').click();
+  await waitExplore(page);
+  return v;
+}
+/** 字幕の出ていた間の地図の印（ページの記録で、その字幕のコマの最後の値） */
+function mapAtCaption(rec, text) {
+  const rows = rec.log.filter((r) => r.cap === text && r.mp);
+  return rows.length ? rows[rows.length - 1].mp : null;
+}
+const mpHas = (mp, key, want = 'shown') => !!mp && mp.split(',').some((x) => x.startsWith(`${key}:${want}`));
+/** 字幕が出ていた間の 8 割の所のコマを抜き出す（地図の印が出そろった後） */
+async function capFrame(rec, video, text, file) {
+  const k = rec.cap.findIndex((c) => c.cap === text);
+  if (k < 0) return null;
+  const w0 = rec.cap[k].w;
+  const w1 = rec.cap[k + 1]?.w ?? w0 + 3000;
+  const sec = (rec.origin + w0 + (w1 - w0) * 0.8 - rec.wall0) / 1000;
+  await extract(video.file, Math.max(0, Math.min(video.sec - 0.05, sec)), file);
+  return { file, sec: +sec.toFixed(2) };
+}
+
+async function ch2aOne(cfg, idx) {
+  const tag = `ch2a-${idx + 1}-${cfg.name}-${cfg.plan}-${cfg.tactic}`;
+  const src = fixture(cfg.name);
+  const f = JSON.parse(src);
+  const ch1Win = f.battle?.result === 'victory';
+  console.log(`=== ${tag}：第一章の結末の保存（${f.battle?.result}・約束 ${f.pledge?.result ?? '-'}。直接状態変更）→ 第二章 A を戦後の城下まで、どの演出もスキップせずにつなぐ（判断 ${cfg.plan}・補充 ${cfg.recovery}・合戦 ${cfg.tactic}）`);
+  const { ctx, page } = await open({ main: src });
+  await sleep(600);
+  await page.click('.g-btn[data-id="continue:ieyasu1570"]');
+  await waitUi(page, 'ending');
+  await sleep(800);
+  const recA = await startRec(page, `${tag}-a`);
+  await sleep(1200);
+  // 1. 「第二章へ進む」（本物のクリック）→ 移行の演出（スキップしない）
+  await page.click('.g-btn[data-id="next_chapter"]');
+  mark(recA, 'click-next-chapter');
+  await waitUi(page, 'cine');
+  const specI = await specOf(page, 'ch2_intro');
+  const sI0 = await snapOf(page);
+  check(`[${tag}] 本物のクリック「第二章へ進む」→ 移行の演出（${specI?.id}・台本の長さ ${specI?.duration} 秒）`, !!specI && (await page.evaluate(() => window.__game.cine?.id)) === specI.id);
+  await waitUi(page, 'record');
+  const sI1 = await snapOf(page);
+  const dI = snapDiff(sI0, sI1);
+  check(`[${tag}] 移行の演出の間：状態・保存（本来のキー・第一章の控え）・書き込みの数が変わらない`, dI.length === 0, dI.join('・'));
+  mark(recA, 'record');
+  await sleep(2500);
+  const recordText = await page.evaluate(() => document.querySelector('.g-layer[data-kind="record"]')?.textContent ?? '');
+  await page.click('.g-btn[data-id="to_town"]');
+  await waitExplore(page);
+  mark(recA, 'town', 2.0);
+  await sleep(3000);
+  await checkRestored(page, `${tag} 移行`, { x: START.x, z: START.z, yaw: START.yaw, what: '開始の位置と向き' });
+  // 2. 情勢（本物の J）
+  const sit1 = await situationJ(page, recA, 'situation-explore');
+  check(`[${tag}] 情勢（探索・J）：「織田の本隊（近江の陣）」・撤収の線 2 本・脅かす向き・出陣の進路が出る。今の危機に「ゲーム用の創作」「織田援軍とは別の隊」`,
+    sit1.camp === 'shown' && sit1.main === 'shown' && sit1.rear === 'shown' && sit1.threat === 'shown' && sit1.march === 'shown' && sit1.text.includes('ゲーム用の創作') && sit1.text.includes('織田援軍とは別の隊'),
+    J({ camp: sit1.camp, campName: sit1.campName, main: sit1.main, rear: sit1.rear, threat: sit1.threat, march: sit1.march }));
+  if (!ch1Win) check(`[${tag}] 情勢（第一章で勝っていない）：勝ちを前提にした言い方（「勝ち」「勝利」…）が無い`, !/勝ち|勝利|勝った|勝って/.test(sit1.text.replace(/勝敗/g, '')), (sit1.text.match(/.{0,20}(勝ち|勝利|勝った|勝って).{0,20}/g) ?? []).join(' / '));
+  // 3. 忠勝と軍議 → 判断を決める
+  let u = await walkTalk(page, tag, 'tadakatsu');
+  check(`[${tag}] 忠勝（本物の E）→ 軍議を開く`, (u.choices ?? []).includes('open_council'), `${u.seenId}｜${u.seen.join(' / ').slice(0, 300)}`);
+  const tadakatsuLines = u.seen;
+  await pick(page, 'open_council');
+  await page.waitForFunction(() => window.__game.screen === 'council', null, POLL);
+  u = await readLines(page);
+  const councilLines = u.seen;
+  check(`[${tag}] 軍議：判断「${cfg.plan}」を選べる`, (u.choices ?? []).includes(`plan_${cfg.plan}`), J(u.choices));
+  await pick(page, `plan_${cfg.plan}`);
+  u = await readLines(page);
+  await pick(page, 'confirm_plan');
+  await waitExplore(page);
+  const sm = await st(page);
+  check(`[${tag}] 判断を決めた（支度へ）`, sm.phase === 'muster' && sm.plan === cfg.plan && !!sm.terms, J(sm.terms));
+  // 4. 石川と補充
+  u = await walkTalk(page, tag, 'ishikawa');
+  const opts = ['recovery_wait', 'recovery_transfer', 'recovery_none'].filter((x) => (u.choices ?? []).includes(x));
+  const rc = opts.includes(`recovery_${cfg.recovery}`) ? cfg.recovery : opts[0]?.replace('recovery_', '');
+  if (rc !== cfg.recovery) note(`！補充「${cfg.recovery}」が選べないので「${rc}」（選べる：${opts.join(',')}）`);
+  await pick(page, `recovery_${rc}`);
+  await waitExplore(page);
+  const sr = await st(page);
+  check(`[${tag}] 石川と補充「${rc}」（本物の E・クリック）`, sr.recovery?.choice === rc, J(sr.troops));
+  // 5. 城門：手前へ移し（直接状態変更）、本物の W で歩く →「出陣する」（本物のクリック）
+  const g = (await page.evaluate(() => window.__game.cast)).find((m) => m.id === 'gate');
+  await page.evaluate(([x, z]) => window.__game.teleport(x, z, Math.PI), [g.x, g.z + 2.2]);
+  await sleep(1500);
+  const gb = await pose(page);
+  await page.keyboard.down('KeyW');
+  await page.waitForFunction(() => window.__game.ui?.kind === 'script', null, { timeout: 300000, polling: 200 });
+  await page.keyboard.up('KeyW');
+  const ga = await pose(page);
+  note(`[${tag}] 城門：開発用の口で (${gb.x.toFixed(2)}, ${gb.z.toFixed(2)}) へ移し（直接状態変更）、本物の W で城門の輪へ (${ga.x.toFixed(2)}, ${ga.z.toFixed(2)})`);
+  u = await readLines(page);
+  check(`[${tag}] 城門：出陣の確認（主目標（軍議で確定））`, (u.choices ?? []).includes('depart'), u.seen.join(' / ').slice(0, 200));
+  await pick(page, 'depart');
+  mark(recA, 'click-depart');
+  await waitUi(page, 'cine');
+  const specD = await specOf(page, 'departure');
+  const sD0 = await snapOf(page);
+  check(`[${tag}] 本物のクリック「出陣する」→ 出陣の演出（${specD?.id}・${specD?.duration} 秒）`, !!specD && (await page.evaluate(() => window.__game.cine?.id)) === specD.id);
+  await page.waitForFunction(() => window.__battle?.active && window.__battle.ui.modal === 'briefing' && document.querySelector('.b-primary') && !document.querySelector('.b-primary.off'), null, POLL);
+  const sD1 = await snapOf(page);
+  const dD = snapDiff(sD0, sD1);
+  check(`[${tag}] 出陣の演出の間（合戦の説明の画面まで）：状態・保存・書き込みの数が変わらない（出陣前の保存は演出の前）`, dD.length === 0, dD.join('・'));
+  mark(recA, 'briefing', 1.0);
+  await sleep(2000);
+  Object.assign(recA, await stopRec(recA));
+  // 6. 合戦（撮らない）
+  const brief = await page.textContent('.b-modal');
+  await sleep(400);
+  await page.locator('.b-primary:has-text("合戦を始める")').click();
+  await page.waitForFunction(() => window.__battle.ui.started, null, POLL);
+  await sleep(300);
+  const B = battleIO(page, note);
+  await B.init();
+  await B.pause();
+  if (cfg.tactic === 'allret') {
+    const ok = await B.allRetreat();
+    check(`[${tag}] 合戦：開始直後に全軍撤退（本物のクリック：全軍撤退 →「撤退する」）`, ok);
+    await fastForwardToResult(page, note, '全軍撤退の後');
+  } else if (cfg.tactic === 'nothing') {
+    note(`[${tag}] 合戦：命令を出さない`);
+    await fastForwardToResult(page, note, '命令なし');
+  } else {
+    await driveTactic(page, B, 'oda', cfg.tactic, note);
+    check(`[${tag}] 合戦：命令はすべて画面の入力（${B.summary()}）`, B.issues.length === 0, B.issues.join(' | ') + (B.refused.length ? `／出せず ${B.refused.join(' | ')}` : ''));
+  }
+  await page.waitForFunction(() => window.__battle.ui.resultShown && document.querySelector('.b-result'), null, POLL);
+  await sleep(600);
+  const out = await page.evaluate(() => window.__battle.state.result);
+  const resultText = await page.textContent('.b-result');
+  const prim = out?.objectives?.primary?.achieved ?? null;
+  note(`[${tag}] 合戦の結果：${out.result}（${out.reason}）・主目標 ${prim ? '果たした' : '果たせなかった'}・合戦 ${out.elapsedSec?.toFixed(0)} 秒`);
+  // 7. 結果の画面 →「続ける」（本物のクリック）→ 帰還の演出（スキップしない）→ 戦後の城下
+  const recB = await startRec(page, `${tag}-b`);
+  await sleep(1500);
+  await page.locator('.b-primary:has-text("続ける")').click();
+  mark(recB, 'click-continue');
+  await waitUi(page, 'cine');
+  const specR = await specOf(page, 'return');
+  const sR0 = await snapOf(page);
+  check(`[${tag}] 本物のクリック「続ける」→ 帰還の演出（${specR?.id}・${specR?.duration} 秒）`, !!specR && (await page.evaluate(() => window.__game.cine?.id)) === specR.id);
+  await waitExplore(page);
+  const sR1 = await snapOf(page);
+  const dR = snapDiff(sR0, sR1);
+  check(`[${tag}] 帰還の演出の間：状態・保存・書き込みの数が変わらない（戦後の保存は結果の画面で済み）`, dR.length === 0, dR.join('・'));
+  mark(recB, 'after-end', 2.0);
+  await sleep(4000);
+  const pR = await checkRestored(page, `${tag} 帰還`, { x: START.x, z: START.z, yaw: START.yaw, what: '戦後の城下の開始の位置と向き' });
+  const sit2 = await situationJ(page, recB, 'situation-aftermath');
+  Object.assign(recB, await stopRec(recB));
+  await checkWalk(page, `${tag} 帰還`);
+  const sEnd = await st(page);
+  note(`[${tag}] 戦後の状態：段階 ${sEnd.phase}・兵 ${J(sEnd.troops)}・主目標 ${J(sEnd.result?.primary)}`);
+  await ctx.close();
+
+  // ---------------- 動画とまとめ
+  const res = { tag, cfg, ch1: f.battle?.result, battle: { result: out.result, reason: out.reason, prim, sec: out.elapsedSec }, brief, tadakatsuLines, councilLines, recordText: recordText.slice(0, 600), sit1: { ...sit1, text: sit1.text.slice(0, 900) }, sit2: { ...sit2, text: sit2.text.slice(0, 900) }, resultText: resultText.slice(0, 400), frames: {} };
+  for (const [rec, specs] of [[recA, { [specI.id]: specI, [specD.id]: specD }], [recB, { [specR.id]: specR }]]) {
+    const video = await encode(rec);
+    const runs = analyze(rec, specs);
+    await report(rec, video, runs);
+    mapRatioCheck(rec.tag, runs);
+    captionCheck(rec.tag, runs);
+    res[rec === recA ? 'videoA' : 'videoB'] = { file: video.file, sec: video.sec, runs: runs.map((r) => ({ id: r.id, wall: r.wall, clockEnd: r.clockEnd, duration: r.duration, ratio: r.overallRatio, beats: r.beats.map((b) => ({ beat: b.beat, mode: b.mode, ev: b.ev, wall: b.wall, ratio: b.ratio, innerRatio: b.innerRatio, lost: b.lost })) })) };
+    for (const [id, spec] of Object.entries(specs)) {
+      const run = runs.find((r) => r.id === id);
+      if (!run) { check(`[${rec.tag}] 演出 ${id} が記録にある`, false); continue; }
+      const lastStage = run.beats.at(-1)?.mode === 'stage';
+      check(`[${rec.tag}] ${id}：時計は最後まで進んだ（台本 ${spec.duration} 秒。スキップは押していない）`, run.clockEnd >= spec.duration - (lastStage ? 1.0 : 0.05) - 1e-6, `${run.clockEnd}`);
+      const seq = specCapsCheck(rec.tag, run, spec);
+      listCaps(`${rec.tag} ${id}`, seq);
+      res[`seq:${spec.moment}`] = seq;
+      if (spec.moment === 'ch2_intro') {
+        const iM = seq.indexOf(A_TXT.mission);
+        const iR = seq.indexOf(A_TXT.reason);
+        const iW = seq.indexOf(A_TXT.who);
+        const iG = seq.indexOf(A_TXT.guard);
+        check(`[${tag}] 移行：使者の頼み → わけ（近江の浅井・朝倉は健在・本隊は陣を引き払う）→ どの隊（本隊の最後尾、後備え・小荷駄）→ 守るもの（二隊が南の退き口を抜けるまで）の順に出た`,
+          iM >= 0 && iR > iM && iW > iR && iG > iW, J({ iM, iR, iW, iG }));
+        const winSeq = seq.filter((t) => WIN_WORDS.test(t));
+        if (ch1Win) check(`[${tag}] 移行（第一章で勝った）：第一章の結果は「${A_TXT.ch1Win}」（局地戦の勝ち）`, seq.includes(A_TXT.ch1Win), J(winSeq));
+        else check(`[${tag}] 移行（第一章は ${f.battle?.result}）：どの字幕も勝ちを前提にしない（勝ち・勝利・支えきった・抜けた が無い）`, winSeq.length === 0, J(seq.filter((t) => t.includes('国境の原'))));
+        const ally = seq.filter((t) => t.includes('援軍'));
+        check(`[${tag}] 移行：「援軍」の字幕に撤収・後備え・小荷駄・退き口が出ない（第一章の織田援軍と第二章の本隊を混ぜない）`, ally.every((t) => !/撤収|後備え|小荷駄|退き口/.test(t)), J(ally));
+        // 地図の印：わけの字幕で陣と本隊の撤収の線、どの隊の字幕で後備え・小荷駄の撤収の線と脅かす向き
+        const mR = mapAtCaption(rec, A_TXT.reason);
+        const mW = mapAtCaption(rec, A_TXT.who);
+        const mG = mapAtCaption(rec, A_TXT.guard);
+        check(`[${tag}] 移行の地図：わけの字幕で「織田の本隊」の陣と本隊の撤収の線（→ 織田家）が出た`, mpHas(mR, 'camp') && mpHas(mR, 'main'), mR ?? '(記録なし)');
+        check(`[${tag}] 移行の地図：どの隊の字幕で後備え・小荷駄の撤収の線（→ 退き口）と浅井・朝倉の脅かす向きが出た`, mpHas(mW, 'rear') && mpHas(mW, 'threat') && mpHas(mW, 'camp') && mpHas(mW, 'main'), mW ?? '(記録なし)');
+        const marchRows = rec.log.filter((r) => r.id === id && mpHas(r.mp, 'march'));
+        check(`[${tag}] 移行の地図：徳川の出陣の進路が出た（守るものの字幕の地図 ${mG ?? '-'}）`, marchRows.length > 0, marchRows.length ? `最初に出た字幕「${marchRows[0].cap}」` : '');
+        for (const [k, text] of [['ch1', ch1Win ? A_TXT.ch1Win : seq.find((t) => t.startsWith('国境の原'))], ['mission', A_TXT.mission], ['reason', A_TXT.reason], ['who', A_TXT.who], ['guard', A_TXT.guard]]) {
+          if (!text) continue;
+          const fr = await capFrame(rec, video, text, `${OUT}/${rec.tag}-cap-${k}.png`);
+          if (fr) { res.frames[k] = fr; note(`[${tag}] 字幕「${text}」のコマ：${fr.file}（動画 ${fr.sec} 秒）・地図の印 ${mapAtCaption(rec, text) ?? '-'}`); }
+        }
+      }
+      if (spec.moment === 'departure') {
+        const iD = seq.indexOf(A_TXT.depart);
+        check(`[${tag}] 出陣：「行き先：織田勢の退き口。」の後に「${A_TXT.depart}」`, iD > 0 && seq[iD - 1] === '行き先：織田勢の退き口。', J(seq));
+        const mD = mapAtCaption(rec, A_TXT.depart);
+        check(`[${tag}] 出陣の地図：出陣の進路が出ている`, mpHas(mD, 'march'), mD ?? '(記録なし)');
+        const fr = await capFrame(rec, video, A_TXT.depart, `${OUT}/${rec.tag}-cap-depart.png`);
+        if (fr) res.frames.depart = fr;
+      }
+      if (spec.moment === 'return') {
+        const head = seq[0] ?? '';
+        if (prim) check(`[${tag}] 帰還（主目標を果たした）：「${A_TXT.ret}」`, seq.includes(A_TXT.ret), J(seq));
+        else check(`[${tag}] 帰還（主目標を果たせなかった：${out.result}）：「支えきった」「抜けた」「勝ち」を言わず、「主目標を果たせなかった」と言う`, !seq.some((t) => WIN_WORDS.test(t)) && seq.some((t) => t.includes('主目標を果たせなかった')), J(seq));
+        const mRet = mapAtCaption(rec, head);
+        check(`[${tag}] 帰還の地図：帰り道の線が出ている`, mpHas(mRet, 'return'), mRet ?? '(記録なし)');
+        const fr = await capFrame(rec, video, head, `${OUT}/${rec.tag}-cap-return.png`);
+        if (fr) res.frames.ret = fr;
+      }
+    }
+  }
+  check(`[${tag}] 情勢（戦後・J）：陣と撤収の線が出て、帰り道の線が出る（脅かす向き・出陣の進路は出ない）`, sit2.camp === 'shown' && sit2.main === 'shown' && sit2.rear === 'shown' && sit2.ret === 'shown', J({ camp: sit2.camp, main: sit2.main, rear: sit2.rear, threat: sit2.threat, march: sit2.march, ret: sit2.ret }));
+  if (!prim) check(`[${tag}] 情勢（戦後・主目標を果たせなかった）：「支えきった」「抜けた」が無い`, !/支えきった|抜けた/.test(sit2.text), (sit2.text.match(/.{0,20}(支えきった|抜けた).{0,20}/g) ?? []).join(' / '));
+  res.pose = pR;
+  writeFileSync(`${OUT}/ch2a-${idx + 1}.json`, J(res, null, 1));
+  return res;
+}
+
 const results = {};
 try {
   for (const part of PARTS) {
@@ -909,6 +1248,15 @@ try {
         const m = ev(asai, 'messenger_arrive')[0];
         const r = ev(asai, 'reinforcement_arrive')[0];
         check('第二章への移行（B 浅井の勝ち・約束を守った）：浅井家の使者が来る・浅井の援兵（旗 浅）が木戸を入る', m?.name === '浅井家の使者' && m.look === 'omori_envoy' && r?.mark === '浅', J({ m, r }));
+      }
+    } else if (part === 'ch2a') {
+      results.ch2a = [];
+      // 回の番号の始め（CH2A_FROM。別の実行で続きの回を撮るとき、出力の名前が重ならないように）
+      const from = Number(process.env.CH2A_FROM || 0);
+      for (let i = 0; i < CH2A.length; i++) {
+        const t1 = Date.now();
+        results.ch2a.push(await ch2aOne(CH2A[i], from + i));
+        note(`ch2a の ${i + 1} 回目：実時間 ${((Date.now() - t1) / 1000).toFixed(0)} 秒`);
       }
     } else if (part === 'depart') results.depart = await partDepart();
     else if (part === 'controls') results.controls = await partControls();
