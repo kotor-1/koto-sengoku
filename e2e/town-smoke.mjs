@@ -12,16 +12,20 @@
 //     見張りの保存（2D・架空・演習）を入れる。歩く道は町の当たり判定から格子で探す（ページの中で layout.ts を読む）。
 //   - 実機・性能：ここでは未確認（ソフトウェア描画）。
 //
-// PARTS（カンマ区切り。既定はすべて）：walk, lookout, council, intro3d, depart3d, replay3d
+//   - entry（Version 21）：町の入口（town/spots.ts の ENTRY_POSE）から城門の前の本多忠勝まで、描画あり（画質「低」）で本物のキー（W）と見回しの引きずり
+//     （マウス）で歩く。第一章（直接状態変更：探索の段階から）と、第二章（第一章の結末の保存 tests/fixtures/ieyasu-ch1-v3/ から本物のクリックで
+//     「第二章へ進む」→「城下へ」→ 冒頭をスキップ）。途中のコマ（画面の流し）・歩いた実時間・描く量（三角形・描く回数）・見えた町の人々の数を記録する。
+//
+// PARTS（カンマ区切り。既定はすべて）：walk, lookout, council, intro3d, depart3d, replay3d, entry（ENTRY_CASES=ch1,ch2kept,ch2heavy,ch2declined で選ぶ。既定は ch1,ch2kept,ch2heavy。ENTRY_RUN=1 で走る）
 // 使い方：自動再読み込みなしの開発サーバーを自分用のポートで起動して
 //   (PORT=8093 setsid nohup npx vite --config proto3d/blender/tools/vite.nohmr.mjs > /tmp/vite-8093.log 2>&1 &)
 //   BASE=http://localhost:8093 node e2e/town-smoke.mjs [出力先]
-import { writeFileSync } from 'node:fs';
-import { launchBrowser, outDir } from './lib.mjs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { launchBrowser, outDir, skipCinematic } from './lib.mjs';
 
 const OUT = outDir(process.argv[2] || 'e2e-out/town-smoke');
 const BASE = process.env.BASE3D || process.env.BASE || 'http://localhost:8093';
-const PARTS = (process.env.PARTS || 'walk,lookout,council,intro3d,depart3d,replay3d').split(',').map((s) => s.trim()).filter(Boolean);
+const PARTS = (process.env.PARTS || 'walk,lookout,council,intro3d,depart3d,replay3d,entry').split(',').map((s) => s.trim()).filter(Boolean);
 const browser = await launchBrowser();
 let failed = 0;
 let oks = 0;
@@ -335,7 +339,8 @@ const startLog = (page) => page.evaluate(() => {
   const loop = () => {
     const c = window.__game.cine;
     const s = window.__game.world.stageProbe();
-    window.__tlog.push({ w: performance.now(), t: c?.t ?? null, beat: c?.beat ?? null, mode: c?.mode ?? null, state: c?.state ?? null, ev: s.event, st: s.t, people: s.people, figures: s.figures, hide: s.hiddenCast.length });
+    const h = window.__p3.hero;
+    window.__tlog.push({ w: performance.now(), t: c?.t ?? null, beat: c?.beat ?? null, mode: c?.mode ?? null, state: c?.state ?? null, ev: s.event, st: s.t, people: s.people, figures: s.figures, hide: s.hiddenCast.length, hidden: s.hiddenCast.join(','), heroShown: s.shot ? !s.shot.hideHero : null, hx: h.x, hz: h.z });
     if (window.__tlogOn !== false) requestAnimationFrame(loop);
   };
   window.__tlogOn = true;
@@ -399,11 +404,8 @@ if (PARTS.includes('intro3d')) {
   const wall0 = Date.now();
   await page.click('.g-scn[data-scenario="ieyasu1570"] .g-btn[data-id="new:ieyasu1570"]');
   await page.waitForFunction(() => window.__game.ui?.kind === 'cine', null, POLL);
-  // 3D の場面の間：主人公を描かない・カメラを差し替える・使者が歩く（会話の相手の使者は隠す）
-  await page.waitForFunction(() => window.__game.cine?.mode === 'stage', null, POLL);
-  await page.waitForFunction(() => window.__game.world.stageProbe().people > 0, null, POLL);
-  const mid = await page.evaluate(() => ({ probe: window.__game.world.stageProbe(), labels: [...document.querySelectorAll('#stage-labels .npc-label')].filter((l) => !l.hidden).map((l) => l.textContent), stageLabelsShown: getComputedStyle(document.getElementById('stage-labels')).display !== 'none' }));
-  check('導入の 3D の場面：使者 2 人が歩き、会話の相手の使者は着くまで隠す。カメラの差し替え（主人公は描かない）', mid.probe.event === 'envoys_arrive' && mid.probe.people === 2 && mid.probe.hiddenCast.length === 2 && mid.probe.shot?.hideHero === true, J(mid));
+  // 第一章の冒頭（Version 21）：町の様子 → 使者の到着 → 家臣の報告。どれも主人公を町の入口に立たせて描く（記録から確かめる）
+  const ENTRY = await page.evaluate(async () => (await import('/src/town/spots.ts')).ENTRY_POSE);
   await page.waitForFunction(() => window.__game.screen === 'explore' && !window.__game.ui, null, POLL);
   const wall = (Date.now() - wall0) / 1000;
   await cdp.send('Page.stopScreencast');
@@ -412,8 +414,15 @@ if (PARTS.includes('intro3d')) {
   const last = log.filter((r) => r.t !== null).at(-1);
   note(`導入の時計の終わり t=${last?.t}・実時間 ${wall.toFixed(0)} 秒・記録したコマ ${log.length}`);
   check('3D の場面は時計どおりに進んだ（場面の時刻 t が単調に増え、出来事の t も同じ）', stages.length >= 1 && stages.every((s) => s.t1 > s.t0), J(stages.map((s) => ({ beat: s.beat, t0: s.t0, t1: s.t1, n: s.n }))));
-  const end = await page.evaluate(() => ({ probe: window.__game.world.stageProbe(), shot: window.__game.world.cameraShot, hero: { x: window.__p3.hero.x, z: window.__p3.hero.z, h: window.__p3.hero.heading }, orbit: { yaw: window.__p3.orbit.yaw, pitch: window.__p3.orbit.pitch } }));
-  check('演出の後：出来事を片付け・カメラの差し替えを外し・主人公は開始の位置と向き（見回しは開始の構図 yaw 0.36）', !end.probe.active && end.probe.people === 0 && end.shot === null && Math.abs(end.hero.x - 0.3) < 1e-6 && Math.abs(end.hero.z + 1.5) < 1e-6 && Math.abs(end.orbit.yaw - 0.36) < 1e-6, J(end));
+  const evs = [...new Set(log.filter((r) => r.mode === 'stage' && r.ev).map((r) => r.ev))];
+  check('冒頭の 3D の場面の順：町の様子 → 使者の到着 → 家臣の報告', J(evs) === J(['town_life', 'envoys_arrive', 'retainer_report']), J(evs));
+  const atEntry = (r) => Math.abs(r.hx - ENTRY.x) < 1e-6 && Math.abs(r.hz - ENTRY.z) < 1e-6;
+  const inEv = (id) => log.filter((r) => r.mode === 'stage' && r.ev === id);
+  check('町の様子・使者の到着・家臣の報告：主人公を描くカメラ（hideHero でない）で、主人公は町の入口に立つ', ['town_life', 'envoys_arrive', 'retainer_report'].every((id) => inEv(id).length > 0 && inEv(id).every((r) => r.heroShown === true && atEntry(r))), J(['town_life', 'envoys_arrive', 'retainer_report'].map((id) => [id, inEv(id).length, inEv(id).filter((r) => r.heroShown).length])));
+  check('使者の到着：使者 2 人が歩き、会話の相手の使者は着くまで隠す', inEv('envoys_arrive').some((r) => r.people === 2 && r.hide === 2), J(inEv('envoys_arrive').map((r) => [r.people, r.hide]).slice(0, 4)));
+  check('家臣の報告：家臣 1 人が来て、城門の前の忠勝はその間だけ隠す', inEv('retainer_report').every((r) => r.people === 1 && r.hidden === 'tadakatsu'), J(inEv('retainer_report').map((r) => [r.people, r.hidden]).slice(0, 3)));
+  const end = await page.evaluate(() => ({ probe: window.__game.world.stageProbe(), shot: window.__game.world.cameraShot, hero: { x: window.__p3.hero.x, z: window.__p3.hero.z, h: window.__p3.hero.heading }, orbit: { yaw: window.__p3.orbit.yaw, pitch: window.__p3.orbit.pitch }, cast: window.__game.cast.filter((c) => c.id === 'tadakatsu') }));
+  check('演出の後：出来事を片付け・カメラの差し替えを外し・主人公は町の入口で北向き（見回しは真後ろ yaw 0）・忠勝は城門の前の置き場所', !end.probe.active && end.probe.people === 0 && end.shot === null && Math.abs(end.hero.x - ENTRY.x) < 1e-6 && Math.abs(end.hero.z - ENTRY.z) < 1e-6 && Math.abs(end.hero.h - Math.PI) < 1e-6 && Math.abs(end.orbit.yaw) < 1e-6 && end.cast[0]?.z < -5, J(end));
   await ctx.close();
 }
 
@@ -488,6 +497,134 @@ if (PARTS.includes('replay3d')) {
   const r2 = await replay('ch2_intro', 'replay-ch2');
   if (r2) check('第二章への移行の 3D の場面（負傷兵・使い）が流れた', r2.some((s) => s.ev === 'wounded_rest' && s.figures > 0) && r2.some((s) => s.ev === 'messenger_arrive' && s.people > 0), J(r2.map((s) => [s.ev, s.people, s.figures])));
   await ctx.close();
+}
+
+// ================================================================ entry：町の入口から城門の前の忠勝まで、描画ありで本物のキーと見回しで歩く（Version 21）
+if (PARTS.includes('entry')) {
+  const CASES = (process.env.ENTRY_CASES || 'ch1,ch2kept,ch2heavy').split(',').map((x) => x.trim()).filter(Boolean);
+  // ENTRY_RUN=1：Shift を押して走る（このコンテナは描画ありで 1 コマに数秒〜十数秒かかり、歩きは 1 コマ 0.14 m しか進まないので、時間を半分にする）
+  const RUN = process.env.ENTRY_RUN === '1';
+  const moveKeys = RUN ? ['ShiftLeft', 'KeyW'] : ['KeyW'];
+  const keysDown = async (page) => { for (const k of moveKeys) await page.keyboard.down(k); };
+  const keysUp = async (page) => { for (const k of [...moveKeys].reverse()) await page.keyboard.up(k); };
+  const FIX = { ch2kept: 'oda_victory_kept', ch2heavy: 'oda_defeat_broken_heavy', ch2declined: 'home_retreat_declined' };
+  for (const tag of CASES) {
+    console.log(`--- entry/${tag}：町の入口から城門の前の忠勝へ、描画あり（画質「低」844×390）・本物のキー（${RUN ? 'Shift+W で走る' : 'W で歩く'}）と見回しの引きずり（マウス）`);
+    const { ctx, page } = await open('?q=low');
+    if (tag === 'ch1') {
+      await page.evaluate(() => window.__game.setIeyasuPhase('explore', 'oda'));
+      note('（直接状態変更）第一章の探索の段階から始めた（保存に位置が無い：町の入口から）');
+    } else {
+      const fixture = readFileSync(new URL(`../tests/fixtures/ieyasu-ch1-v3/${FIX[tag]}.json`, import.meta.url), 'utf8');
+      await page.evaluate(([k, v]) => localStorage.setItem(k, v), [KEY, fixture]);
+      await page.reload();
+      await page.waitForFunction(() => window.__game?.ui?.kind === 'title' && document.getElementById('loading')?.hidden === true, null, POLL);
+      note(`（直接状態変更）第一章の結末の保存 ${FIX[tag]} を入れて読み込み直した。ここから本物のクリック`);
+      await sleep(600);
+      await page.click('.g-btn[data-id="continue:ieyasu1570"]');
+      await page.waitForFunction(() => window.__game.ui?.kind === 'ending', null, POLL);
+      await sleep(600);
+      await page.click('.g-btn[data-id="next_chapter"]');
+      await page.waitForFunction(() => window.__game.ui?.kind === 'record', null, POLL);
+      await sleep(600);
+      await page.click('.g-btn[data-id="to_town"]');
+      await skipCinematic(page, { what: '第二章の冒頭', log: note });
+    }
+    await waitModels(page);
+    await page.waitForFunction(() => window.__game.screen === 'explore' && !window.__game.ui, null, POLL);
+    // 描画ありでは最初のコマが重い（1 コマに数秒）。案内の印は毎コマの更新で決まるので、1 コマ進むまで待つ
+    await page.waitForFunction(() => window.__game.world.guideProbe().mode !== null, null, { timeout: 180000, polling: 500 }).catch(() => undefined);
+    await sleep(1500);
+    const s0 = await page.evaluate(async () => ({ entry: (await import('/src/town/spots.ts')).ENTRY_POSE, hero: { x: window.__p3.hero.x, z: window.__p3.hero.z, h: window.__p3.hero.heading }, yaw: window.__p3.orbit.yaw, amb: window.__game.world.ambientProbe().spec, guide: window.__game.world.guideProbe() }));
+    const groups = Object.fromEntries((s0.amb?.groups ?? []).map((g) => [g.kind, g.count]));
+    check(`${tag}：探索の始めは町の入口（北向き・見回しは真後ろ）。案内の印は忠勝へ`, Math.abs(s0.hero.x - s0.entry.x) < 1e-6 && Math.abs(s0.hero.z - s0.entry.z) < 1e-6 && Math.abs(s0.yaw) < 1e-6 && s0.guide.id === 'tadakatsu' && !!s0.guide.mode, J({ hero: s0.hero, yaw: s0.yaw, guide: s0.guide }));
+    note(`${tag}：町の人々 ${J(groups)}`);
+    // 毎コマの記録（主人公の位置・見回し・描く量・描いた町の人々）
+    await page.evaluate(() => {
+      window.__wlog = [];
+      const r = window.__p3.renderer;
+      const loop = () => {
+        const h = window.__p3.hero;
+        const a = window.__game.world.ambientProbe();
+        window.__wlog.push({ w: performance.now(), x: h.x, z: h.z, yaw: window.__p3.orbit.yaw, calls: r.info.render.calls, tris: r.info.render.triangles, people: a.peopleDrawn, figs: a.figuresDrawn, guide: window.__game.world.guideProbe().mode, prompt: window.__game.prompt?.id ?? window.__game.prompt ?? null });
+        if (window.__wlogOn !== false) requestAnimationFrame(loop);
+      };
+      window.__wlogOn = true;
+      requestAnimationFrame(loop);
+    });
+    const { cdp, frames } = await startCast(page);
+    const talkShown = () => page.evaluate(() => { const b = document.querySelector('.g-talk'); return !!b && !b.hidden && b.dataset.target === 'tadakatsu'; });
+    const hz = () => page.evaluate(() => window.__p3.hero.z);
+    const lz = await page.evaluate(() => { const r = document.getElementById('look-zone').getBoundingClientRect(); return { x: r.left + r.width * 0.6, y: r.top + r.height * 0.45 }; });
+    const drag = async (dx) => {
+      await page.mouse.move(lz.x, lz.y);
+      await page.mouse.down();
+      for (let i = 1; i <= 6; i++) { await page.mouse.move(lz.x + (dx * i) / 6, lz.y); await sleep(60); }
+      await page.mouse.up();
+    };
+    const wall0 = Date.now();
+    const marks = [];
+    // W を押して北へ。休み場の手前（z 6 あたり）で止まり、右（東）を見回して休み場・援兵を見て、真後ろへ戻してまた W
+    await keysDown(page);
+    for (let i = 0; i < 20000 && (await hz()) > 6.0; i++) await sleep(150);
+    await keysUp(page);
+    marks.push({ what: 'W で歩いて休み場の手前', w: Date.now() });
+    await sleep(800);
+    const yaw0 = await page.evaluate(() => window.__p3.orbit.yaw);
+    await drag(120);
+    const yawR = await page.evaluate(() => window.__p3.orbit.yaw);
+    marks.push({ what: '右を見回す（引きずり +120px）', w: Date.now() });
+    await sleep(5000);
+    const seenR = await page.evaluate(() => window.__game.world.ambientProbe());
+    marks.push({ what: '右を見ている', w: Date.now() });
+    await drag(-120);
+    const yawB = await page.evaluate(() => window.__p3.orbit.yaw);
+    marks.push({ what: '見回しを戻す', w: Date.now() });
+    check(`${tag}：見回しの引きずり（本物のマウス）で右を向き、戻した`, yawR < yaw0 - 0.4 && Math.abs(yawB - yaw0) < 0.05, `yaw ${yaw0.toFixed(2)} → ${yawR.toFixed(2)} → ${yawB.toFixed(2)}`);
+    const wantFigs = (groups.wounded ? Math.min(9, groups.wounded) : 0) + (groups.reinforcement ?? 0);
+    check(`${tag}：右を向くと、詰所の前の休み場の負傷兵（筵・土塀ぎわ）と援兵を描いている（町の人々の兵の形の数）`, seenR.figuresDrawn >= wantFigs, `描いた兵の形 ${seenR.figuresDrawn}・負傷兵 ${groups.wounded ?? 0}・援兵 ${groups.reinforcement ?? 0}`);
+    await sleep(800);
+    await keysDown(page);
+    let ok = false;
+    for (let i = 0; i < 40000; i++) {
+      if (await talkShown()) { ok = true; break; }
+      await sleep(150);
+    }
+    await keysUp(page);
+    marks.push({ what: '忠勝の「話す」が出た', w: Date.now() });
+    const wall = (Date.now() - wall0) / 1000;
+    await cdp.send('Page.stopScreencast');
+    const { log, origin } = await page.evaluate(() => { window.__wlogOn = false; return { log: window.__wlog, origin: performance.timeOrigin }; });
+    const end = await page.evaluate(() => ({ x: window.__p3.hero.x, z: window.__p3.hero.z }));
+    const walked = log.reduce((a, r, i) => (i ? a + Math.hypot(r.x - log[i - 1].x, r.z - log[i - 1].z) : 0), 0);
+    check(`${tag}：本物のキーで町の入口から歩くと、城門の前の忠勝の「話す」が出る`, ok, `(${end.x.toFixed(2)}, ${end.z.toFixed(2)})・歩いた ${walked.toFixed(1)} m・実時間 ${wall.toFixed(0)} 秒（見回しの止まりを含む）・記録したコマ ${log.length}（${(log.length / wall).toFixed(2)} コマ/秒）`);
+    const fin = await page.evaluate(() => window.__game.world.guideProbe());
+    check(`${tag}：話せる所に着くと案内の印は消える`, fin.mode === null, J(fin));
+    // 描く量（歩く間のコマの最小・最大）
+    const calls = log.map((r) => r.calls).filter((v) => v > 0);
+    const tris = log.map((r) => r.tris).filter((v) => v > 0);
+    note(`${tag}：描く量（1 コマ。影の描画を含む）描く回数 ${Math.min(...calls)}〜${Math.max(...calls)}・三角形 ${Math.min(...tris).toLocaleString()}〜${Math.max(...tris).toLocaleString()}`);
+    note(`${tag}：描いた町の人々（人の写し）の最大 ${Math.max(...log.map((r) => r.people))}・兵の形の最大 ${Math.max(...log.map((r) => r.figs))}`);
+    // 画面の流しのコマ：入口・歩く途中（z 10・6）・右を見る・家臣の前
+    const at = (pred) => log.find(pred);
+    const picks = [
+      ['a-entry', log[0]],
+      ['b-z10', at((r) => r.z < 10)],
+      ['c-z6', at((r) => r.z < 6.2)],
+      ['d-look-right', at((r) => r.w + origin > marks[2].w - 300)],
+      ['e-z0', at((r) => r.z < 0 && r.w + origin > marks[3].w)],
+      ['f-talk', log[log.length - 1]],
+    ];
+    for (const [name, r] of picks) {
+      if (!r) continue;
+      const ts = origin + r.w;
+      const f = frames.reduce((b, x) => (!b || Math.abs(x.ts - ts) < Math.abs(b.ts - ts) ? x : b), null);
+      if (!f) continue;
+      writeFileSync(`${OUT}/entry-${tag}-${name}.jpg`, Buffer.from(f.data, 'base64'));
+      note(`撮影 entry-${tag}-${name}.jpg（主人公 (${r.x.toFixed(1)}, ${r.z.toFixed(1)})・描く回数 ${r.calls}・三角形 ${r.tris.toLocaleString()}）`);
+    }
+    await ctx.close();
+  }
 }
 
 console.log(`\n結果：OK ${oks}・NG ${failed}（${secs()}）`);

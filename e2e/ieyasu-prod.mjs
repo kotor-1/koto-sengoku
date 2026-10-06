@@ -159,7 +159,7 @@ try {
   await page.locator('.g-layer[data-kind="script"]').waitFor({ state: 'detached' });
   await page.waitForFunction(() => document.querySelector('.g-hud')?.textContent.includes('約束'), null, W);
   check('軍議で C（自領の防衛）に決める → 出陣の支度（目的：約束）', true);
-  // 忠勝は開始の位置の正面。すぐ前にいなければ W で近づく
+  // 忠勝は町の入口（探索の始め）から真っすぐ北。軍議の後も忠勝の前にいる。すぐ前にいなければ W で近づく
   if (!(await talkShown('tadakatsu'))) ok = await holdUntil(['KeyW'], () => talkShown('tadakatsu'), 200000);
   await page.keyboard.press('KeyE');
   await waitLayer('script');
@@ -172,20 +172,16 @@ try {
   let r = await saveAndReadPose();
   check('支度：メニューから保存（読み戻して確かめた）・方針 C・約束を引き受けた', r.msg.includes('読み戻して確かめました') && r.save?.scenario === 'ieyasu1570' && r.save.phase === 'muster' && r.save.policy === 'home' && r.save.pledge?.accepted === true, r.msg);
   check('架空の第一章の保存・2D 版の保存には触れない', await page.evaluate(() => localStorage.getItem('koto-sengoku/3d-chapter1') === null && localStorage.getItem('koto-sengoku/save') === null));
-  const yaw = 0.36;
+  // 見回しの向きは決め打ちにせず、S を短く押して下がった向きから測る（Version 21：探索の始めは町の入口で、見回しは真後ろ＝ yaw 0）
+  const my = await measureYaw(page, async () => (await saveAndReadPose()).pose);
+  const yaw = my?.yaw ?? 0;
+  if (my) r = { ...r, pose: my.pose };
+  console.log(`   見回しの向き（測った）yaw ${yaw.toFixed(2)}`);
   const gate = { x: 0, z: -10.9 };
   for (let leg = 0; leg < 6 && !(await layer('script').isVisible()); leg++) {
     const p = r.pose;
-    const gx = gate.x - p.x;
-    const gz = gate.z - p.z;
-    const d = Math.hypot(gx, gz);
-    const ix = (Math.cos(yaw) * gx - Math.sin(yaw) * gz) / d;
-    const iy = (Math.sin(yaw) * gx + Math.cos(yaw) * gz) / d;
-    const keys = [];
-    if (iy < -0.38) keys.push('KeyW');
-    if (iy > 0.38) keys.push('KeyS');
-    if (ix > 0.38) keys.push('KeyD');
-    if (ix < -0.38) keys.push('KeyA');
+    const d = Math.hypot(gate.x - p.x, gate.z - p.z);
+    const keys = keysToward(yaw, p, gate.x, gate.z);
     console.log(`   城門へ ${leg + 1}：(${p.x.toFixed(2)}, ${p.z.toFixed(2)}) から ${d.toFixed(1)} m、キー ${keys.join('+')}`);
     ok = await holdUntil(keys, () => layer('script').isVisible(), Math.min(200000, 9000 + d * 25000));
     if (ok) break;
@@ -261,7 +257,7 @@ try {
   await sleep(1500);
   await shot('I09-aftermath');
   ok = await holdUntil(['Shift', 'KeyW'], () => talkShown('tadakatsu'), 420000);
-  check('戦後：開始の位置から忠勝へ歩くと「話す」', ok);
+  check('戦後：探索の始めの位置から W と Shift で北へ歩くと忠勝の「話す」', ok);
   await page.keyboard.press('KeyE');
   await waitLayer('script');
   await readThrough();

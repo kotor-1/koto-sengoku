@@ -44,3 +44,41 @@ export async function skipCinematic(page, { tap = false, what = '', timeout = 60
     log(`演出「${id}」${what ? `（${what}）` : ''}をスキップした（本物の入力：「スキップ」を${tap ? 'タップ' : 'クリック'}。演出そのものの確かめはここでは飛ばす）`);
     return id;
 }
+
+/**
+ * 本番の e2e（開発用のフックが無い）の歩き：肩越しのカメラの見回しの向き（yaw。0 で北を見る）を本物の入力から測る。
+ * S を短く押して下がり（下がれなければ W で進み）、前後の位置（readPose：メニューから保存して読むなど）の差から求める。
+ * 見回しは引きずりでしか変わらないが、演出の後・段階の始めには主人公の向きから決め直す（歴史分岐の町の入口は 0・架空の章の開始の位置は 0.36）ので、
+ * 決め打ちにせず歩く前に測る（Version 21 で歴史分岐の探索の始めが町の入口になった）。返り：{ yaw, pose }（動けなければ null）
+ */
+export async function measureYaw(page, readPose, holdMs = 700) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  let a = await readPose();
+  for (const key of ['KeyS', 'KeyW']) {
+    await page.keyboard.down(key);
+    await sleep(holdMs);
+    await page.keyboard.up(key);
+    await sleep(200);
+    const b = await readPose();
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    if (Math.hypot(dx, dz) >= 0.05) return { yaw: key === 'KeyS' ? Math.atan2(dx, dz) : Math.atan2(-dx, -dz), pose: b };
+    a = b;
+  }
+  return null;
+}
+
+/** 見回し yaw の画面の上で、p（x, z）から (tx, tz) へ向かう移動のキー（WASD） */
+export function keysToward(yaw, p, tx, tz) {
+  const gx = tx - p.x;
+  const gz = tz - p.z;
+  const d = Math.hypot(gx, gz) || 1;
+  const ix = (Math.cos(yaw) * gx - Math.sin(yaw) * gz) / d;
+  const iy = (Math.sin(yaw) * gx + Math.cos(yaw) * gz) / d;
+  const keys = [];
+  if (iy < -0.38) keys.push('KeyW');
+  if (iy > 0.38) keys.push('KeyS');
+  if (ix > 0.38) keys.push('KeyD');
+  if (ix < -0.38) keys.push('KeyA');
+  return keys;
+}

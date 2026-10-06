@@ -23,7 +23,7 @@
 import { createServer } from 'node:http';
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
-import { launchBrowser, outDir } from './lib.mjs';
+import { keysToward as keysFor, launchBrowser, measureYaw, outDir } from './lib.mjs';
 
 const OUT = outDir(process.argv[2] || 'e2e-out/story-prod');
 const DIST = resolve(process.env.DIST || 'dist-proto3d');
@@ -31,9 +31,12 @@ const PORT = Number(process.env.PORT || 8133);
 const [VW, VH] = (process.env.VIEW || '844x390').split('x').map(Number);
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'";
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.glb': 'model/gltf-binary' };
-/** 開始の見回し（proto3d/blender/scene.json の hero_start。e2e の決まり。探索では引きずらないので変わらない） */
-const YAW = 0.36;
-/** 物見櫓（town/spots.ts の LOOKOUT (−6.9, 11.9)）へ、開始の位置から歩く道の点（町の当たり判定と支度の段階の配役から格子で求めた道。道の西の荷置き場の北を通る） */
+/**
+ * 見回しの向き（yaw。0 で北を見る）。決め打ちにせず、歩く前に本物の入力（S を短く押して下がる）で測る（lib.mjs の measureYaw。
+ * Version 21：歴史分岐の探索の始めは町の入口（見回しは真後ろ＝ yaw 0）。探索では引きずらないので、測った後は変わらない）
+ */
+let YAW = 0;
+/** 物見櫓（town/spots.ts の LOOKOUT (−6.9, 11.9)）へ、城門の前（忠勝の前）から歩く道の点（町の当たり判定と支度の段階の配役から格子で求めた道。道の西の荷置き場の北を通る） */
 const TO_LOOKOUT = [[-0.5, 2.0], [-3.0, 10.5], [-3.6, 11.25], [-6.9, 11.25]];
 /** 物見櫓の下から城門（(0, −10.9)）へ歩く道の点 */
 const TO_GATE = [[-3.6, 11.25], [-3.25, 8.75], [0, -10.0]];
@@ -140,26 +143,17 @@ async function saveAndReadPose() {
   return { msg, pose: s?.explore ?? null, save: s };
 }
 /** 見回し yaw の画面の上で、(x, z) から (tx, tz) へ向かうキー */
-function keysToward(p, tx, tz) {
-  const gx = tx - p.x;
-  const gz = tz - p.z;
-  const d = Math.hypot(gx, gz) || 1;
-  const ix = (Math.cos(YAW) * gx - Math.sin(YAW) * gz) / d;
-  const iy = (Math.sin(YAW) * gx + Math.cos(YAW) * gz) / d;
-  const keys = [];
-  if (iy < -0.38) keys.push('KeyW');
-  if (iy > 0.38) keys.push('KeyS');
-  if (ix > 0.38) keys.push('KeyD');
-  if (ix < -0.38) keys.push('KeyA');
-  return keys;
-}
+const keysToward = (p, tx, tz) => keysFor(YAW, p, tx, tz);
 /**
  * 道の点を順に、本物のキーで歩く（位置はメニューの保存で読む）。押す時間は、それまでに測った速さから決める（行き過ぎないよう 0.8 倍）。
  * cond が真になったら止める（「物見」の札・城門の確認など）
  */
 let speed = 0.25;
 async function walkPath(points, cond, tol = 0.6) {
-  let r = await saveAndReadPose();
+  const my = await measureYaw(page, async () => (await saveAndReadPose()).pose);
+  if (my) YAW = my.yaw;
+  note(`見回しの向き（測った）yaw ${YAW.toFixed(2)}`);
+  let r = my ? { pose: my.pose } : await saveAndReadPose();
   for (const [tx, tz] of points) {
     const last = tx === points[points.length - 1][0] && tz === points[points.length - 1][1];
     for (let leg = 0; leg < 14; leg++) {

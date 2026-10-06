@@ -418,13 +418,13 @@ function arrivals(who: { key: string; look: string; name: string }[], t: number,
 // ---------------- 町の様子（章の冒頭の最初の画）
 
 /**
- * 木戸の内（主人公の右うしろ・目より少し高い所）から、北の城門へ向かう通りを見る（ゆっくり前へ寄る）。
+ * 木戸の内（主人公の右うしろ・目の高さより少し上 2.1 m）から、北の城門へ向かう通りを見る（ゆっくり前へ寄る）。
  * 画の中：主人公の背中（左の手前）・荷置き場から店先へ俵を運ぶ人（左）・町家 D の店先へ運ぶ人（右）・店先でお辞儀する店の人・
  * 詰所の前の休み場（右の奥。負傷兵がいれば筵の上）・遠くの城門（門番）。町の人々の荷運び・店の人は隠し、この出来事が同じ人々を
  * 決まった道に出す（どの時刻に始めても同じ画）。
  */
-export const TOWN_LIFE_SHOT_0 = shot(0.6, 2.4, 16.0, -1.0, 1.3, 2.0);
-export const TOWN_LIFE_SHOT_1 = shot(0.4, 2.5, 15.2, -0.8, 1.45, 0.0);
+export const TOWN_LIFE_SHOT_0 = shot(0.9, 2.05, 16.1, -1.1, 1.15, 2.0);
+export const TOWN_LIFE_SHOT_1 = shot(0.75, 2.15, 15.7, -0.95, 1.3, 0.0);
 /** カメラが寄り終わるまで（秒） */
 const TOWN_LIFE_SEC = 10;
 /** 町の様子の人：荷置き場 → 町家 B の店先（荷を担ぐ）・町家の写しの前 → 町家 D の店先（荷を担ぐ）・店先の店の人 */
@@ -469,8 +469,8 @@ const RETAINER_SPEED = 1.6;
 export const RETAINER_CUT = 3.2;
 const RETAINER_SHOT_A0 = shot(ENTRY_POSE.x + 0.75, 1.85, ENTRY_POSE.z + 2.0, ENTRY_POSE.x + 0.4, 1.45, ENTRY_POSE.z - 6.0);
 const RETAINER_SHOT_A1 = shot(ENTRY_POSE.x + 0.7, 1.85, ENTRY_POSE.z + 1.75, ENTRY_POSE.x + 0.4, 1.45, ENTRY_POSE.z - 6.0);
-const RETAINER_SHOT_B0 = shot(ENTRY_POSE.x + 2.8, 1.6, ENTRY_POSE.z - 0.55, ENTRY_POSE.x + 0.1, 1.45, ENTRY_POSE.z - 0.75);
-const RETAINER_SHOT_B1 = shot(ENTRY_POSE.x + 2.55, 1.6, ENTRY_POSE.z - 0.75, ENTRY_POSE.x + 0.1, 1.45, ENTRY_POSE.z - 0.8);
+const RETAINER_SHOT_B0 = shot(ENTRY_POSE.x + 3.7, 1.75, ENTRY_POSE.z - 0.5, ENTRY_POSE.x + 0.1, 1.35, ENTRY_POSE.z - 0.75);
+const RETAINER_SHOT_B1 = shot(ENTRY_POSE.x + 3.45, 1.75, ENTRY_POSE.z - 0.7, ENTRY_POSE.x + 0.1, 1.35, ENTRY_POSE.z - 0.8);
 
 function retainerReport(look: string, name: string, castId: string, t: number, reduced: boolean): StageFrame {
     const path: Pt[] = [RETAINER_FROM, RETAINER_STOP];

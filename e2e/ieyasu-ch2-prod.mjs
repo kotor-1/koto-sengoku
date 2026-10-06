@@ -19,7 +19,7 @@
 import { createServer } from 'node:http';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
-import { launchBrowser, outDir, skipCinematic } from './lib.mjs';
+import { keysToward, launchBrowser, measureYaw, outDir, skipCinematic } from './lib.mjs';
 
 const OUT = outDir(process.argv[2] || 'e2e-out/ieyasu-ch2/prod');
 const DIST = resolve(process.env.DIST || 'dist-proto3d');
@@ -42,7 +42,6 @@ const SPOT = {
   ishikawa: { x: 5.3, z: -2.4 },
   gate: { x: 0, z: -10.9 },
 };
-const YAW = 0.36; // 開始のカメラの向き（proto3d/blender/scene.json の hero_start_yaw。歩いても変わらない）
 
 if (!existsSync(join(DIST, 'index.html'))) throw new Error(`${DIST}/index.html が無い（先に本番ビルド）`);
 const served = [];
@@ -152,22 +151,22 @@ async function saveAndReadPose() {
   const s = await save();
   return { msg, pose: s?.explore ?? null, save: s };
 }
-/** 目標へ歩く（WASD を押し続ける）。done が真になれば終わり。届かなければ保存から位置を読み直して向きを直す */
+/**
+ * 目標へ歩く（WASD を押し続ける）。done が真になれば終わり。届かなければ保存から位置を読み直して向きを直す。
+ * 見回しの向き（yaw）は決め打ちにせず、歩き始めに S を短く押して下がった向きから測る（Version 21：第二章の探索の始めは町の入口で yaw 0。
+ * 戦後の始めなど、段階の始めの位置で変わる）
+ */
 async function walkTo(target, done, label) {
-  let r = await saveAndReadPose();
+  if (await done()) return true;
+  const my = await measureYaw(page, async () => (await saveAndReadPose()).pose);
+  const YAW = my?.yaw ?? 0;
+  let r = my ? { pose: my.pose } : await saveAndReadPose();
+  note(`${label}へ：見回しの向き（測った）yaw ${YAW.toFixed(2)}`);
   for (let leg = 0; leg < 8; leg++) {
     if (await done()) return true;
     const p = r.pose;
-    const gx = target.x - p.x;
-    const gz = target.z - p.z;
-    const d = Math.hypot(gx, gz);
-    const ix = (Math.cos(YAW) * gx - Math.sin(YAW) * gz) / d;
-    const iy = (Math.sin(YAW) * gx + Math.cos(YAW) * gz) / d;
-    const keys = [];
-    if (iy < -0.38) keys.push('KeyW');
-    if (iy > 0.38) keys.push('KeyS');
-    if (ix > 0.38) keys.push('KeyD');
-    if (ix < -0.38) keys.push('KeyA');
+    const d = Math.hypot(target.x - p.x, target.z - p.z);
+    const keys = keysToward(YAW, p, target.x, target.z);
     note(`${label}へ ${leg + 1}：(${p.x.toFixed(2)}, ${p.z.toFixed(2)}) から ${d.toFixed(1)} m、キー ${keys.join('+')}`);
     if (await holdUntil(keys, done, Math.min(200000, 9000 + d * 25000))) return true;
     r = await saveAndReadPose();
