@@ -16,7 +16,7 @@
 import { createServer } from 'node:http';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
-import { launchBrowser, outDir, skipCinematic } from './lib.mjs';
+import { keysToward, launchBrowser, measureYaw, outDir, skipCinematic } from './lib.mjs';
 
 const OUT = outDir(process.argv[2] || 'e2e-out/ieyasu/prod');
 const DIST = resolve(process.env.DIST || 'dist-proto3d');
