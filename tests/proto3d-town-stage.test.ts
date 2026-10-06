@@ -424,4 +424,52 @@ describe('探索の場面の口：stage(null) で片付けて戻る', () => {
         // 主人公は動かしていない（START とは別の位置のまま）
         expect(hero.x).not.toBe(START.x);
     });
+
+    it('出来事の最初の画：探索の描画を止めている間（演出の層が字幕を先に見せている間）は描かず、止めるのをやめた後の次の stage で 1 回描く', async () => {
+        const g = globalThis as Record<string, unknown>;
+        g.document ??= { createElement: (t: string) => fakeElement(t), body: fakeElement('body') };
+        g.window ??= { addEventListener: () => undefined, removeEventListener: () => undefined };
+        const { ExploreWorld } = await import('../proto3d/src/explore/world');
+        const camera = new THREE.PerspectiveCamera(48, 2, 0.1, 2000);
+        const hero = createHero(0.3, -1.5, 3.25);
+        let paused = true;
+        let renders = 0;
+        const host = {
+            scene: new THREE.Scene(),
+            camera,
+            overlay: fakeElement() as unknown as HTMLElement,
+            hero,
+            low: true,
+            load: () => Promise.reject(new Error('素材なし（テスト）')),
+            prepare: () => undefined,
+            setHeroPose: () => undefined,
+            setControl: () => undefined,
+            setRenderPaused: () => undefined,
+            renderPaused: () => paused,
+            setExtraColliders: () => undefined,
+            onFrame: () => undefined,
+            viewSize: () => ({ w: 800, h: 400 }),
+            orbit: { yaw: 0, pitch: 0, dist: 2 },
+            setCameraShot: () => undefined,
+            renderOnce: () => void renders++,
+            setLookHandler: () => undefined,
+        };
+        const world = new ExploreWorld(host as never);
+        await world.preload();
+        const ev: StageEvent = { id: 'column_depart', count: 6, mark: '徳' };
+        world.stage(ev, 0, false);
+        expect(world.stageProbe().active).toBe(true);
+        expect(renders).toBe(0);
+        world.stage(ev, 0, false);
+        expect(renders).toBe(0);
+        paused = false;
+        world.stage(ev, 0, false);
+        expect(renders).toBe(1);
+        world.stage(ev, 0.5, false);
+        expect(renders).toBe(1);
+        // 止めていなければ、新しい出来事はすぐ描く（前と同じ）
+        world.stage({ id: 'column_depart', count: 8, mark: '徳' }, 0, false);
+        expect(renders).toBe(2);
+        world.stage(null, 0, false);
+    });
 });

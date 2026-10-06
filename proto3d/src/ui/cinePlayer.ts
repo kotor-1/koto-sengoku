@@ -4,9 +4,10 @@
  * - 時計は実時間（requestAnimationFrame の時刻の差。1 コマの上限 1 秒。場面の境目をまたぐコマは次の場面の頭で止め、場面が替わった
  *   次のコマは進めない（替わり目の重い描画の時間を数えない））。ページが隠れる・窓が外れる・pagehide で自動の一時停止。
  * - 地図の場面は不透明な層（探索の描画を止める）。3D の場面は字幕と操作だけの透明な層で、毎フレーム onStage(出来事, 場面の始めからの秒, 減らすか)。
- * - 地図の場面・始めから 3D の場面に入ったら、先に字幕と見出し（と前の地図）を 1 コマ見せてから、3D の最初の画を描く（最初の画は重く、
- *   押した直後に画面が何秒も変わらないことがある）。その待ちの間と、最初の画を描いた次のコマは時計を進めない。層の data-wait="1" が待ちの間
- *   （mode・data-mode はまだ前のまま。'stage' になった時には 3D の出来事が置かれている）。
+ * - 地図の場面・始めから 3D の場面に入ったら、先に字幕と見出し（と前の地図）を不透明な層で 1 コマ見せてから、層を透明にして 3D の最初の画を
+ *   見せる（最初の画は重く、押した直後に画面が何秒も変わらないことがあった）。出来事は場面に入ったときに置く（onStage）が、その間は探索を
+ *   覆うので、探索の側（explore/world.ts）は最初の画を覆いが外れるまで描かない。待ちの間と、最初の画を描いた次のコマは時計を進めない。
+ *   層の data-wait="1" が待ちの間（mode・data-mode は場面に入ったときから 'stage'。出来事も置かれている）。
  * - 終わり・スキップ・abandon（dispose）では必ず onStage(null, 0, …) を 1 回呼んで片付ける。
  * - ボタン：一時停止／再開・前の場面・次の場面・スキップ・動きを減らす。キー：Space／K 一時停止、←→ 場面、Esc スキップ。
  *   押し始めの守り（InputGate・CHOICE_GUARD_MS）：演出を始めたタップ・キーでは何も起きない。背景を押しても飛ばない。
@@ -104,8 +105,10 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
         let autoPaused = false;
         /** 場面が替わった：次のコマは時計を進めない（替わり目の重い描画の時間を、次の場面に数えない） */
         let holdTick = false;
-        /** 3D の場面に入った：字幕と見出しを画面に出してから、3D の出来事を始める（それまでは onStage を呼ばない） */
+        /** 3D の場面に入った：字幕と見出しを不透明な層で画面に出してから、層を透明にする（その間は探索を覆う＝3D の最初の画は描かれない） */
         let stageWait = false;
+        /** 層を画面の層に積んだ（積む前は探索を覆っていないので、出来事を置くと最初の画がすぐ描かれる。積んでから置く） */
+        let pushed = false;
         /** 待ちの字幕を出したコマが画面に出た（次のコマで 3D を始める） */
         let waitPainted = false;
 
@@ -168,12 +171,9 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
                 layer.dataset.beat = String(f.beatIndex);
                 // 3D の場面の mode（data-mode・確かめの probe の mode）は、3D の出来事を始めた時に 'stage' にする（beginStage）。
                 // mode が 'stage' なら、もう出来事が置かれている（world の stageProbe が出来事を返す）
-                if (f.beat.kind === 'map') {
-                    mode = 'map';
-                    layer.dataset.mode = mode;
-                }
-                // 3D の場面の待ちは、前が地図・始めのときだけ（不透明なまま・前の地図を残して待つ）。前も 3D の場面なら、その画が出ているので
-                // 待たずに次の出来事へ替える（mode・出来事・場面がいつも食い違わない）
+                mode = f.beat.kind;
+                layer.dataset.mode = mode;
+                // 3D の場面の待ちは、前が地図・始めのときだけ（不透明なまま・前の地図を残して待つ）。前も 3D の場面なら、その画が出ているので待たない
                 stageWait = f.beat.kind === 'stage' && !stageActive;
                 waitPainted = false;
                 layer.dataset.wait = stageWait ? '1' : '0';
@@ -199,12 +199,8 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
                 host.refreshCover();
             }
             if (f.map && map) map.apply(f.map);
-            if (f.stage && !stageWait) {
+            if (f.stage && pushed) {
                 stageActive = true;
-                if (mode !== 'stage') {
-                    mode = 'stage';
-                    layer.dataset.mode = mode;
-                }
                 safeStage(f.stage.event, f.stage.local);
             }
             fill.style.width = `${(f.t / spec.duration) * 100}%`;
@@ -222,11 +218,12 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
             btn.reduce.setAttribute('aria-pressed', reduced ? 'true' : 'false');
         };
 
-        /** 待ちを終えて 3D の場面を始める：地図を外し、層を透明にし、出来事の最初の画を描く（重い。この時間は時計に数えない） */
+        /**
+         * 待ちを終えて 3D の場面を見せる：地図を外し、層を透明にし、探索の覆いを外す。続く onStage で探索の側が出来事の最初の画を描く
+         * （重い。この時間は時計に数えない）
+         */
         const beginStage = () => {
             stageWait = false;
-            mode = 'stage';
-            layer.dataset.mode = mode;
             layer.dataset.wait = '0';
             map = null;
             mapBox.replaceChildren();
@@ -374,6 +371,12 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
         window.addEventListener('blur', onBlur);
         window.addEventListener('pagehide', onHide);
         host.pushModal(m);
+        // 積んだ（3D の場面で始まるなら、ここで探索を覆った）：最初の場面の 3D の出来事を置く（最初の画は覆いが外れてから描かれる）
+        pushed = true;
+        if (frame.stage) {
+            stageActive = true;
+            safeStage(frame.stage.event, frame.stage.local);
+        }
         hooks.onProbe?.(m);
         if (clock.ended) {
             finish('done');

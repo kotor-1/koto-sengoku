@@ -45,6 +45,8 @@ export interface ExploreHost {
     setControl(enabled: boolean): void;
     /** 探索の描画を止める／戻す（画面を覆うものが開いている間） */
     setRenderPaused(paused: boolean): void;
+    /** 探索の描画を止めているか（省ける。無ければ止めていない扱い） */
+    renderPaused?(): boolean;
     /** 歩きの当たり判定に足す四角形（人物・高札） */
     setExtraColliders(r: Rect[]): void;
     /** 毎フレーム（探索の間だけ。カメラを置いた後・描く前） */
@@ -101,6 +103,8 @@ export class ExploreWorld implements GameWorld {
     private stageKey: string | null = null;
     private stageT = 0;
     private stageBefore: { pose: ExplorePose; orbit: { yaw: number; pitch: number; dist: number } } | null = null;
+    /** 出来事の最初の画をまだ描いていない（置いた時は探索の描画を止めていた＝演出の層が覆っていた。覆いが外れた次の stage で描く） */
+    private stageFirstPending = false;
     private hiddenCast = new Set<string>();
     private hiddenAmbient = new Set<string>();
     // ---- 町の人々
@@ -241,8 +245,11 @@ export class ExploreWorld implements GameWorld {
         this.stageActors.setPeople(f.people, t, cam, false);
         this.stageActors.setFigures(f.figures, f.banners, f.litters, t, cam);
         // 出来事の最初の画はすぐ描く（地図の覆いが外れた所に、前の画や暗い画面を出さない。初めて描く重さは演出の時計に数えない）。
-        // 名札も、その描いた画に合わせて置く
-        if (fresh) {
+        // 名札も、その描いた画に合わせて置く。ただし探索の描画を止めている間（演出の層が字幕を先に見せている間）は描かず、
+        // 覆いが外れた後の次の stage で描く（重い最初の画の前に、字幕の層を画面に出すため：ui/cinePlayer.ts の stageWait）
+        if (fresh) this.stageFirstPending = true;
+        if (this.stageFirstPending && !this.host.renderPaused?.()) {
+            this.stageFirstPending = false;
             // 最初の画は frame（毎フレームの隠す・町の人々の置き直し）を通らずに描くので、隠す人物・町の人々をここで当ててから描く
             //（当てないと、最初の 1 コマだけ、隠すはずの人物（出陣の手前の会話の相手など）・支度の兵が映った）
             for (const v of this.views.values()) {
@@ -260,6 +267,7 @@ export class ExploreWorld implements GameWorld {
         if (!this.stageKey && !this.stageBefore && !this.stageShot) return;
         this.stageActors.clear();
         this.stageKey = null;
+        this.stageFirstPending = false;
         this.setHiddenCast([]);
         this.hiddenAmbient = new Set();
         this.stageShot = null;

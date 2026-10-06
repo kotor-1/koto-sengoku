@@ -739,6 +739,7 @@ const exploreHost: ExploreHost = {
     setRenderPaused(paused) {
         renderPaused = paused;
     },
+    renderPaused: () => renderPaused,
     setExtraColliders(r) {
         walkRects = r.length ? [...WALK_RECTS, ...r] : WALK_RECTS;
     },
