@@ -13,3 +13,10 @@ export const HIGHWAY_MOUTH = { x: 0, z: 16.4 } as const;
 export const GUARDPOST = { x: 13, z: -4 } as const;
 /** 軍議所（城内の東。陣幕の囲いの真ん中の少し南） */
 export const COUNCIL_HALL = { x: 13, z: -23 } as const;
+
+/**
+ * 町の入口（章の冒頭の後に操作を始める位置。docs/v20-feedback-request.md【2】）：街道口の木戸の内、通りの南の端。北（城門・軍議）を向く。
+ * ここから城門の前の家臣（軍議）まで、荷の通り・働く町人・詰所の前を通って歩く。町の側（town/）が値を直してよい。
+ * heading は人物と同じ測り方（0 = 南（+z）を向く。π = 北）。
+ */
+export const ENTRY_POSE = { x: 0.6, z: 13.2, heading: Math.PI } as const;

@@ -283,6 +283,10 @@ export function stageFrame(ev: StageEvent, t: number, reduced: boolean, cast: re
             );
         case 'messenger_arrive':
             return arrivals([{ key: 'messenger', look: ev.look, name: ev.name }], tt, reduced, cast);
+        // 冒頭の町の様子・家臣の報告（docs/v20-feedback-request.md）：仮の形（町の担当が作る）。今は負傷兵 0 の詰所の画を使う
+        case 'town_life':
+        case 'retainer_report':
+            return woundedRest(0, tt, reduced);
         case 'wounded_rest':
             return woundedRest(ev.count, tt, reduced);
         case 'reinforcement_arrive':

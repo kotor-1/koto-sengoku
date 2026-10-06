@@ -98,7 +98,18 @@ export interface CineStageBeat {
  * - column_return：街道口から隊列が戻る（count 人・負傷 wounded 人。victory なら旗を掲げる）
  */
 export type StageEvent =
-    | { id: 'envoys_arrive'; envoys: { look: string; name: string }[] }
+    /**
+     * 町の様子（章の冒頭の最初の画。docs/v20-feedback-request.md【1】【2】）：街道口の木戸のあたりから北の城門へ向かう通りを見る。
+     * 荷を運ぶ人・店の人・門番・（あれば）詰所の負傷兵・援兵が働いている。hero：主人公を入口の位置（town/spots.ts の ENTRY_POSE）に立たせて見せる
+     */
+    | { id: 'town_life'; hero: boolean }
+    /** 使者が街道口から城門の前へ。showHero：主人公（入口に立つ）を画に入れる（冒頭）。省けば前どおり描かない */
+    | { id: 'envoys_arrive'; envoys: { look: string; name: string }[]; showHero?: boolean }
+    /**
+     * 家臣が主人公のもとへ来て短く話す（冒頭の「主人公と家臣の短いやり取り」）。主人公（入口）と家臣の二人の画。
+     * 字幕（話し手つき）は台本が出す。終わると家臣は自分の置き場所（城門の前）へ戻る（演出の外で、会話の相手の人物に替わる）
+     */
+    | { id: 'retainer_report'; look: string; name: string; castId: string }
     | { id: 'messenger_arrive'; look: string; name: string }
     | { id: 'wounded_rest'; count: number }
     | { id: 'reinforcement_arrive'; count: number; mark: string; name: string }
