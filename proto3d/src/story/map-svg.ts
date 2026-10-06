@@ -4,7 +4,8 @@
  *
  * 決まり：
  * - viewBox は固定（MAP_VIEW）。地図の点（0〜100）は左の枠の中へ写す。右の欄は凡例。下の行は模式図の注記（必ず出す）。
- * - 文字は 14 単位以上（スマホ横 844×390 で 12px 以上になる大きさ。画面の側で縮みすぎないように置く）。
+ * - 文字は 14 単位以上（スマホ横 844×390 で 12px 以上になる大きさ。画面の側で縮みすぎないように置く）。場所の名前は 16、添え書き・線の名前は 15。
+ * - 文字は線・国の輪より上に重ね（重ねる順：線 → 国 → 場所）、背景の色の太い縁取り（halo）を付ける。線や輪が字の上を通っても読める。
  * - 関係は色だけでなく記号（◎○✕△？）と名前で区別する。凡例は「記号＋名前＋色」。線は種類ごとに実線・破線・点線と矢印。
  * - 要素の属性（確かめ用）：場所 data-place・線 data-route・関係 data-side・種類 data-kind・出方 data-state（hidden／appearing／shown）・強調 data-hl。
  * - 現れる途中の線は、線の上に重ねた覆い（mask）の破線の長さで伸ばす（画面の側が data-draw の要素の stroke-dashoffset を 1−割合にする）。
@@ -22,6 +23,7 @@ export interface SvgNode {
  * 地図の割り付け：viewBox（幅・高さ）と、地図の枠・凡例の欄・注記の行。
  * - standard：480×270（情勢の画面・縦長の画面）。
  * - wide：640×270（横長の演出の画面。高さは同じなので文字の大きさは変わらず、地図の枠だけ横に広い）。
+ *   置く所の縦横の比（aspect）を渡すと、その比いっぱいまで横に広げる（fitLayout。スマホ横 844×390 の演出の地図は約 3.3：1）。
  */
 export interface MapLayout {
     w: number;
@@ -37,10 +39,26 @@ export const MAP_LAYOUTS: Readonly<Record<'standard' | 'wide' | 'full', MapLayou
     /** 凡例を地図の外（画面の文字）に出すとき：枠を幅いっぱいに */
     full: { w: 480, h: 270, frame: { x: 4, y: 4, w: 472, h: 240 }, legendX: 480, legendW: 0, noteY: 262 },
 };
+/** 横に広げる上限：地図の枠（縦 240）の横は 2.8 倍まで（模式図が横に伸びすぎない）。残りの幅は凡例の欄へ */
+const FIT_FRAME_MAX_W = 672;
+
+/**
+ * 置く所の縦横の比（幅 ÷ 高さ）に合わせた横長の割り付け（高さ 270 は同じ。文字の大きさは変わらない）。
+ * 比が wide（640×270）より小さいときは wide のまま。大きいときは地図の枠を広げ（上限 FIT_FRAME_MAX_W）、残りは凡例の欄を広げる。
+ */
+export function fitLayout(aspect: number): MapLayout {
+    const base = MAP_LAYOUTS.wide;
+    const w = Math.round(Math.min(1100, base.h * (Number.isFinite(aspect) ? aspect : 0)));
+    if (w <= base.w) return base;
+    const frameW = Math.min(FIT_FRAME_MAX_W, w - 2 - base.legendW - 12);
+    const legendX = frameW + 4 + 8;
+    return { w, h: base.h, frame: { ...base.frame, w: frameW }, legendX, legendW: w - legendX - 2, noteY: base.noteY };
+}
+
 /** 既定の割り付けの viewBox（互換） */
 export const MAP_VIEW = { w: MAP_LAYOUTS.standard.w, h: MAP_LAYOUTS.standard.h } as const;
 /** 文字の大きさ（単位）。どれも 14 以上 */
-export const MAP_FONT = { label: 15, note: 14, legend: 14, legendTitle: 14, mark: 14, route: 14, foot: 14 } as const;
+export const MAP_FONT = { label: 16, note: 15, legend: 14, legendTitle: 14, mark: 14, route: 15, foot: 14 } as const;
 
 /** 地図の点（0〜100）→ 枠の中の座標 */
 export function mapPoint(x: number, y: number, layout: MapLayout = MAP_LAYOUTS.standard): { x: number; y: number } {
@@ -76,6 +94,8 @@ export const SCOUT_LEGEND = { symbol: '◇', name: '物見で確かめた' } as 
 
 const INK = '#f3ead8';
 const INK_SOFT = '#cbbfa6';
+/** 添え書き・線の名前・注記（小さい字）は明るめに（暗い地の上で、灰色に沈まない） */
+const INK_NOTE = '#e6dcc6';
 const BG = '#191510';
 const HALO = '#0f0c09';
 
@@ -90,11 +110,13 @@ export interface MapSvgOptions {
     name?: string;
     /** 割り付け（省けば standard） */
     layout?: 'standard' | 'wide';
+    /** layout が wide のとき：置く所の縦横の比（幅 ÷ 高さ）。wide より横に長ければ、その比いっぱいまで広げる（fitLayout） */
+    aspect?: number;
 }
 
 /** 地図の 1 場面を SVG の要素の木にする（場所・線は全部入れ、出方・強調は data-state・data-hl で切り替える） */
 export function mapSvgTree(scene: MapScene, opts: MapSvgOptions = {}): SvgNode {
-    const L = MAP_LAYOUTS[opts.noLegend ? 'full' : (opts.layout ?? 'standard')];
+    const L = opts.noLegend ? MAP_LAYOUTS.full : opts.layout === 'wide' && opts.aspect ? fitLayout(opts.aspect) : MAP_LAYOUTS[opts.layout ?? 'standard'];
     const uid = (opts.uid ?? 'm').replace(/[^A-Za-z0-9-]/g, '');
     const scouted = new Set(opts.scouted ?? []);
     const byId = new Map(scene.places.map((p) => [p.id, p]));
@@ -150,10 +172,11 @@ export function mapSvgTree(scene: MapScene, opts: MapSvgOptions = {}): SvgNode {
         routes.push(node);
         defs.push(mask);
     }
-    const children: SvgNode[] = [n('defs', {}, defs), ...back, n('g', { class: 'g-map-regions' }, regions), n('g', { class: 'g-map-routes' }, routes), n('g', { class: 'g-map-places' }, marks)];
+    // 重ねる順：線 → 国（薄い塗りと名前）→ 場所（印と名前）。名前・添え書きが線の下に隠れない
+    const children: SvgNode[] = [n('defs', {}, defs), ...back, n('g', { class: 'g-map-routes' }, routes), n('g', { class: 'g-map-regions' }, regions), n('g', { class: 'g-map-places' }, marks)];
     if (!opts.noLegend) children.push(legendNode(scene, scouted, L));
     // 模式図の注記（必ず出す）
-    children.push(n('text', { x: f.x + 4, y: L.noteY, 'font-size': MAP_FONT.foot, fill: INK_SOFT, class: 'g-map-note', 'data-note': '1' }, [scene.note || '模式図。位置と距離は正確ではない']));
+    children.push(n('text', { x: f.x + 4, y: L.noteY, 'font-size': MAP_FONT.foot, fill: INK_NOTE, class: 'g-map-note', 'data-note': '1' }, [scene.note || '模式図。位置と距離は正確ではない']));
     return n(
         'svg',
         {
@@ -227,10 +250,13 @@ export class LabelPlacer {
     }
 }
 
+/** 名前の行から添え書きの行までの下の線の間（単位） */
+const LINE2 = 17;
+
 /** 文字の塊（1〜2 行）の箱：anchor の位置 x と、1 行目の文字の下の線 y から */
 function blockBox(anchor: 'start' | 'middle' | 'end', x: number, y: number, w: number, lines: number): Box {
     const x0 = anchor === 'start' ? x : anchor === 'end' ? x - w : x - w / 2;
-    return { x0: x0 - 2, y0: y - MAP_FONT.label + 1, x1: x0 + w + 2, y1: y + (lines - 1) * 16 + 4 };
+    return { x0: x0 - 2, y0: y - MAP_FONT.label + 1, x1: x0 + w + 2, y1: y + (lines - 1) * LINE2 + 4 };
 }
 
 function regionNode(p: MapPlace, L: MapLayout, placer: LabelPlacer, scout: boolean): SvgNode {
@@ -246,7 +272,7 @@ function regionNode(p: MapPlace, L: MapLayout, placer: LabelPlacer, scout: boole
     placer.block(blockBox('middle', x, y + 5, w, p.note ? 2 : 1));
     kids.push(labelNode(p, x - (p.mark ? 13 : 0), y + 5, 'middle', scout));
     if (p.mark) kids.push(flagNode(p.mark, st.color, x - 13 + lw / 2 + 4, y - 10));
-    if (p.note) kids.push(n('text', { x, y: y + 21, 'text-anchor': 'middle', 'font-size': MAP_FONT.note, fill: INK_SOFT, class: 'g-map-pnote', ...halo() }, [p.note]));
+    if (p.note) kids.push(n('text', { x, y: y + 22, 'text-anchor': 'middle', 'font-size': MAP_FONT.note, fill: INK_NOTE, class: 'g-map-pnote', ...halo() }, [p.note]));
     return n('g', attrs, kids);
 }
 
@@ -263,7 +289,7 @@ function placeNode(p: MapPlace, L: MapLayout, placer: LabelPlacer, scout: boolea
     // 名前（＋添え書き）の置き場所：下・上・右・左・斜めの中から、重なりの少ない所
     const lines = p.note ? 2 : 1;
     const w = Math.max(textWidth(`${placeSymbol(p, scout)}${p.name}`, MAP_FONT.label), p.note ? textWidth(p.note, MAP_FONT.note) : 0);
-    const up = (p.mark ? 30 : 16) + (lines - 1) * 16;
+    const up = (p.mark ? 30 : 16) + (lines - 1) * LINE2;
     const cands: { anchor: 'start' | 'middle' | 'end'; x: number; y: number }[] = [
         { anchor: 'middle', x, y: y + 27 },
         { anchor: 'middle', x, y: y - up },
@@ -277,7 +303,7 @@ function placeNode(p: MapPlace, L: MapLayout, placer: LabelPlacer, scout: boolea
     const k = placer.choose(cands.map((c) => blockBox(c.anchor, c.x, c.y, w, lines)));
     const c = cands[k]!;
     kids.push(labelNode(p, c.x, c.y, c.anchor, scout));
-    if (p.note) kids.push(n('text', { x: c.x, y: c.y + 16, 'text-anchor': c.anchor, 'font-size': MAP_FONT.note, fill: INK_SOFT, class: 'g-map-pnote', ...halo() }, [p.note]));
+    if (p.note) kids.push(n('text', { x: c.x, y: c.y + LINE2, 'text-anchor': c.anchor, 'font-size': MAP_FONT.note, fill: INK_NOTE, class: 'g-map-pnote', ...halo() }, [p.note]));
     return n('g', attrs, kids);
 }
 
@@ -319,8 +345,9 @@ function labelNode(p: MapPlace, x: number, y: number, anchor: 'start' | 'middle'
     ]);
 }
 
+/** 字の縁取り（地の色の太い線を字の下に描く）。線・国の輪・矢印が字の上や間を通っても、字の形が切れない */
 function halo(): Record<string, string | number> {
-    return { stroke: HALO, 'stroke-width': 3.5, 'paint-order': 'stroke', 'stroke-linejoin': 'round' };
+    return { stroke: HALO, 'stroke-width': 5, 'stroke-opacity': 0.92, 'paint-order': 'stroke', 'stroke-linejoin': 'round' };
 }
 
 /** 線（進路・関係）：端は場所の印から少し離す。矢印は終わりの端。名前は線の途中の、重なりの少ない所に */
@@ -358,7 +385,7 @@ function routeNode(r: MapRoute, a: MapPlace, b: MapPlace, L: MapLayout, uid: str
         }
         const i = placer.choose(cands.map((c) => ({ x0: c.x - w / 2 - 2, y0: c.y - MAP_FONT.route + 1, x1: c.x + w / 2 + 2, y1: c.y + 4 })));
         const c = cands[i]!;
-        kids.push(n('text', { x: c.x, y: c.y, 'text-anchor': 'middle', 'font-size': MAP_FONT.route, fill: INK, class: 'g-map-rlabel', ...halo() }, [r.label]));
+        kids.push(n('text', { x: c.x, y: c.y, 'text-anchor': 'middle', 'font-size': MAP_FONT.route, fill: INK_NOTE, class: 'g-map-rlabel', ...halo() }, [r.label]));
     }
     return {
         node: n('g', { 'data-route': r.id, 'data-side': r.side, 'data-kind': r.kind, 'data-state': 'shown', 'data-hl': '0', class: 'g-map-route', ...(scout ? { 'data-scout': '1' } : {}) }, kids),

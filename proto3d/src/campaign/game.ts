@@ -143,6 +143,10 @@ export interface GameView {
      * opts.option：軍議から開いたとき、いま選ばれている選択肢の id（そのタブを選んでおく。返りに選択肢の id は返さない）。
      */
     situation?(view: SituationView, opts?: { option?: string }): Promise<{ replay?: CineMoment } | void>;
+    /** 画面を覆うものが無い間も探索を覆ったままにする（省ける。合戦の画面が出るまでの間） */
+    holdCover?(on: boolean): void;
+    /** 読み込みの待ちの間の表示（省ける。text を null で消す。opaque は下の画を透かさない） */
+    loading?(text: string | null, opts?: { opaque?: boolean }): void;
 }
 
 /** 演出の再生に添えるもの */
@@ -602,7 +606,8 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
             }
         }
         this.st = next;
-        // 出陣の演出（出陣前の保存の後、合戦の前。状態は読むだけ）。保存の知らせは演出の後に出す（帰還と同じ。隊列の画に重ねない）
+        // 出陣の演出（出陣前の保存の後、合戦の前。状態は読むだけ）。保存の知らせは演出の後に出す（帰還と同じ。隊列の画に重ねない）。
+        // 演出が閉じてから合戦の画面が出るまでは、覆いと「（戦場）へ…」の表示（fight）。知らせはその覆いの上に出る
         const cine = this.cineSpec('departure');
         if (cine) await this.playCinematic(cine);
         if (r.ok) view.toast(`保存しました：${SAVE_POINT_LABELS.departure}`, 'ok');
@@ -679,11 +684,24 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         view.toast(note.ok ? `保存しました：${SAVE_POINT_LABELS.aftermath}` : note.text, note.ok ? 'ok' : 'error');
     }
 
-    /** 合戦を 1 回（部隊を指揮する本物の画面。仮の結果の選択は無い） */
+    /**
+     * 合戦を 1 回（部隊を指揮する本物の画面。仮の結果の選択は無い）。
+     * 合戦の画面が出るまで（画面の塊の読み込み・組み立て）は、探索を覆ったまま「（戦場）へ…」を出す：出陣の演出が閉じた後に、
+     * 町の画と歩く操作の案内が出て、町へ戻ったように見えないように。合戦の画面に入る（battle/entry.ts の enterMode）のは
+     * runner を呼んだ中（同期）なので、呼んだらすぐ外す（その次のコマから合戦の画面が描く）。
+     */
     private async fight(setup: BattleSetup, hooks: BattleRunHooks): Promise<BattleOutcome> {
-        const runner = await this.deps.battleRunner();
-        if (!runner) throw new Error('合戦の画面を読み込めませんでした。');
-        return runner(setup, hooks);
+        const { view } = this.deps;
+        view.holdCover?.(true);
+        view.loading?.(`${setup.map.name || '合戦の場'}へ…`, { opaque: true });
+        try {
+            const runner = await this.deps.battleRunner();
+            if (!runner) throw new Error('合戦の画面を読み込めませんでした。');
+            return runner(setup, hooks);
+        } finally {
+            view.loading?.(null);
+            view.holdCover?.(false);
+        }
     }
 
     // ---------------- 結末 ----------------

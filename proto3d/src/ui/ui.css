@@ -29,6 +29,13 @@ body.mode-battle #look-zone,
 body.mode-battle #hud,
 body.mode-battle #npc-labels { display: none !important; }
 body.g-modal #look-zone { pointer-events: none; }
+/* 覆いを保っている間（出陣の演出の後、合戦の画面が出るまで・演習の読み込み）も、探索の操作部品と名札を隠す */
+body.g-hold #run-btn,
+body.g-hold #stick-zone,
+body.g-hold #help,
+body.g-hold #hero-btn,
+body.g-hold #npc-labels { display: none !important; }
+body.g-hold #look-zone { pointer-events: none; }
 body.g-title #build { display: block; }
 
 /* ---- 目的（左上） ---- */
@@ -409,8 +416,11 @@ body.g-modal #npc-labels { display: none; }
     .g-practice-entry p { font-size: 10.5px; line-height: 1.4; }
 }
 
-/* 読み込みの待ち（DomView.loading） */
+/* 読み込みの待ち（DomView.loading）。opaque は下の画（町）を透かさない（出陣の後、合戦の画面が出るまで） */
 .g-loading { display: flex; align-items: center; justify-content: center; }
+.g-layer.g-loading.opaque { background: #0e0c0a; }
+/* 読み込みの待ちの間も、知らせ（保存しました など）は覆いの上に出す */
+#g-root.g-loading-on > .g-toast { z-index: 2; }
 .g-loading p { margin: 0; padding: 12px 20px; border-radius: 12px; background: rgba(20, 18, 15, 0.9); border: 1px solid var(--hairline); font-size: 14px; letter-spacing: 0.08em; color: var(--ink-soft); }
 
 /* 画面いっぱいの板（DomView.sheet）：中身は縦に動かせる。ボタンの並びは下に留める */
@@ -640,8 +650,10 @@ body.g-cine .g-hud, body.g-cine .g-menu-btn, body.g-cine .g-sit-btn, body.g-cine
 .g-map .g-map-glow { opacity: 0; }
 .g-map [data-hl='1'] .g-map-glow { opacity: 1; }
 .g-map [data-hl='1'] .g-map-glow-r { fill-opacity: 0.24; stroke-opacity: 1; stroke-width: 2.4px; }
-.g-map [data-hl='1'] .g-map-label { text-decoration: underline; text-underline-offset: 3px; }
-.g-map.has-hl [data-place][data-hl='0'], .g-map.has-hl [data-route][data-hl='0'] { opacity: 0.5; }
+/* 強調の名前は少し明るく。下線は付けない（字の縁取りと重なり、記号の前に「_」だけが残って見えた） */
+.g-map [data-hl='1'] .g-map-label { fill: #fff8e8; }
+/* 強調していない物は薄くするが、小さい字が読めなくならない濃さまで */
+.g-map.has-hl [data-place][data-hl='0'], .g-map.has-hl [data-route][data-hl='0'] { opacity: 0.62; }
 .g-sit .g-map [data-place], .g-sit .g-map [data-route], .g-sit .g-map .g-map-glow { transition: opacity 0.25s; }
 .g-cine[data-reduced='1'] *, .g-cine[data-reduced='1'] *::before { transition: none !important; animation: none !important; }
 @media (prefers-reduced-motion: reduce) {

@@ -262,15 +262,22 @@ export class DomView implements GameView, LayerHost {
      */
     holdCover(on: boolean): void {
         this.coverHeld = on;
+        // 探索の操作部品（歩く・走る・WASD の案内）と名札も隠す（町へ戻ったように見せない）
+        document.body.classList.toggle('g-hold', on);
         this.updateCover();
     }
 
-    /** 読み込みの待ちの間の画面（押せるものは無い。text を null で消す） */
-    loading(text: string | null): void {
+    /**
+     * 読み込みの待ちの間の画面（押せるものは無い。text を null で消す）。opaque は下の画を透かさない（出陣の後、合戦の画面が出るまで）。
+     * 出ている間も、知らせ（toast）はこの覆いの上に出る。
+     */
+    loading(text: string | null, opts: { opaque?: boolean } = {}): void {
         this.loadingEl?.remove();
         this.loadingEl = null;
+        this.root.classList.toggle('g-loading-on', text !== null);
         if (text === null) return;
-        const layer = el('div', 'g-layer solid g-loading');
+        const layer = el('div', `g-layer solid g-loading${opts.opaque ? ' opaque' : ''}`);
+        layer.dataset.kind = 'loading';
         layer.addEventListener('pointerdown', (e) => e.preventDefault());
         layer.append(el('p', undefined, text));
         this.introEl.hidden = true;

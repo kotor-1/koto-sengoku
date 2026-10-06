@@ -4,6 +4,9 @@
  * - 時計は実時間（requestAnimationFrame の時刻の差。1 コマの上限 1 秒。場面の境目をまたぐコマは次の場面の頭で止め、場面が替わった
  *   次のコマは進めない（替わり目の重い描画の時間を数えない））。ページが隠れる・窓が外れる・pagehide で自動の一時停止。
  * - 地図の場面は不透明な層（探索の描画を止める）。3D の場面は字幕と操作だけの透明な層で、毎フレーム onStage(出来事, 場面の始めからの秒, 減らすか)。
+ * - 地図の場面・始めから 3D の場面に入ったら、先に字幕と見出し（と前の地図）を 1 コマ見せてから、3D の最初の画を描く（最初の画は重く、
+ *   押した直後に画面が何秒も変わらないことがある）。その待ちの間と、最初の画を描いた次のコマは時計を進めない。層の data-wait="1" が待ちの間
+ *   （mode・data-mode はまだ前のまま。'stage' になった時には 3D の出来事が置かれている）。
  * - 終わり・スキップ・abandon（dispose）では必ず onStage(null, 0, …) を 1 回呼んで片付ける。
  * - ボタン：一時停止／再開・前の場面・次の場面・スキップ・動きを減らす。キー：Space／K 一時停止、←→ 場面、Esc スキップ。
  *   押し始めの守り（InputGate・CHOICE_GUARD_MS）：演出を始めたタップ・キーでは何も起きない。背景を押しても飛ばない。
@@ -101,6 +104,10 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
         let autoPaused = false;
         /** 場面が替わった：次のコマは時計を進めない（替わり目の重い描画の時間を、次の場面に数えない） */
         let holdTick = false;
+        /** 3D の場面に入った：字幕と見出しを画面に出してから、3D の出来事を始める（それまでは onStage を呼ばない） */
+        let stageWait = false;
+        /** 待ちの字幕を出したコマが画面に出た（次のコマで 3D を始める） */
+        let waitPainted = false;
 
         const setPaused = (on: boolean, auto = false) => {
             if (done || clock.ended) return;
@@ -144,39 +151,7 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
         const render = () => {
             frame = clock.frame(reduced);
             const f = frame;
-            // 場面が変わった：地図を作り直す・覆いを切り替える
-            if (f.beatIndex !== beatShown) {
-                beatShown = f.beatIndex;
-                holdTick = true;
-                mode = f.beat.kind;
-                layer.dataset.beat = String(f.beatIndex);
-                layer.dataset.mode = mode;
-                layer.classList.toggle('stage', mode === 'stage');
-                document.body.classList.toggle('g-cine-stage', mode === 'stage');
-                if (f.beat.kind === 'map') {
-                    // 3D の場面から地図の場面へ：出来事を片付ける（地図が覆う間に）
-                    if (stageActive) {
-                        stageActive = false;
-                        safeStage(null, 0);
-                    }
-                    // 横に長い所（スマホ横・PC）では地図の枠を横に広げる（文字の大きさは同じ）
-                    mapBox.hidden = false;
-                    mapBox.replaceChildren();
-                    const wide = mapBox.clientWidth / Math.max(1, mapBox.clientHeight) >= 2;
-                    map = createMap(f.beat.scene, { name: `${spec.id}#${f.beatIndex}`, layout: wide ? 'wide' : 'standard' });
-                    mapBox.append(map.svg);
-                } else {
-                    map = null;
-                    mapBox.replaceChildren();
-                    mapBox.hidden = true;
-                }
-                host.refreshCover();
-            }
-            if (f.map && map) map.apply(f.map);
-            if (f.stage) {
-                stageActive = true;
-                safeStage(f.stage.event, f.stage.local);
-            }
+            // 見出し・字幕を先に（場面が替わったときの地図の枠の大きさは、見出し・字幕の行が入った後の高さで測る）
             heading.textContent = f.heading;
             const ck = f.caption ? `${f.caption.speaker ?? ''}\u0000${f.caption.text}` : '';
             if (ck !== capKey) {
@@ -185,6 +160,52 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
                 who.hidden = !f.caption?.speaker;
                 txt.textContent = f.caption?.text ?? '';
                 cap.classList.toggle('empty', !f.caption);
+            }
+            // 場面が変わった：地図を作り直す・覆いを切り替える
+            if (f.beatIndex !== beatShown) {
+                beatShown = f.beatIndex;
+                holdTick = true;
+                layer.dataset.beat = String(f.beatIndex);
+                // 3D の場面の mode（data-mode・確かめの probe の mode）は、3D の出来事を始めた時に 'stage' にする（beginStage）。
+                // mode が 'stage' なら、もう出来事が置かれている（world の stageProbe が出来事を返す）
+                if (f.beat.kind === 'map') {
+                    mode = 'map';
+                    layer.dataset.mode = mode;
+                }
+                // 3D の場面の待ちは、前が地図・始めのときだけ（不透明なまま・前の地図を残して待つ）。前も 3D の場面なら、その画が出ているので
+                // 待たずに次の出来事へ替える（mode・出来事・場面がいつも食い違わない）
+                stageWait = f.beat.kind === 'stage' && !stageActive;
+                waitPainted = false;
+                layer.dataset.wait = stageWait ? '1' : '0';
+                if (f.beat.kind === 'map' || !stageActive) {
+                    layer.classList.remove('stage');
+                    document.body.classList.remove('g-cine-stage');
+                }
+                if (f.beat.kind === 'map') {
+                    // 3D の場面から地図の場面へ：出来事を片付ける（地図が覆う間に）
+                    if (stageActive) {
+                        stageActive = false;
+                        safeStage(null, 0);
+                    }
+                    // 横に長い所（スマホ横・PC）では地図の枠を横に広げる（文字の大きさは同じ）。置く所の比いっぱいまで広げる
+                    //（スマホ横 844×390 では約 3.3：1。640×270 のままでは左右が空き、地図が約 435×220 にしかならなかった）
+                    mapBox.hidden = false;
+                    mapBox.replaceChildren();
+                    const aspect = mapBox.clientWidth / Math.max(1, mapBox.clientHeight);
+                    const wide = aspect >= 2;
+                    map = createMap(f.beat.scene, { name: `${spec.id}#${f.beatIndex}`, layout: wide ? 'wide' : 'standard', ...(wide ? { aspect } : {}) });
+                    mapBox.append(map.svg);
+                }
+                host.refreshCover();
+            }
+            if (f.map && map) map.apply(f.map);
+            if (f.stage && !stageWait) {
+                stageActive = true;
+                if (mode !== 'stage') {
+                    mode = 'stage';
+                    layer.dataset.mode = mode;
+                }
+                safeStage(f.stage.event, f.stage.local);
             }
             fill.style.width = `${(f.t / spec.duration) * 100}%`;
             const state = done || f.ended ? 'done' : clock.paused ? 'paused' : 'playing';
@@ -201,6 +222,22 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
             btn.reduce.setAttribute('aria-pressed', reduced ? 'true' : 'false');
         };
 
+        /** 待ちを終えて 3D の場面を始める：地図を外し、層を透明にし、出来事の最初の画を描く（重い。この時間は時計に数えない） */
+        const beginStage = () => {
+            stageWait = false;
+            mode = 'stage';
+            layer.dataset.mode = mode;
+            layer.dataset.wait = '0';
+            map = null;
+            mapBox.replaceChildren();
+            mapBox.hidden = true;
+            layer.classList.add('stage');
+            document.body.classList.add('g-cine-stage');
+            host.refreshCover();
+            holdTick = true;
+            render();
+        };
+
         const safeStage = (ev: Parameters<CinematicOptions['onStage']>[0], t: number) => {
             try {
                 opts.onStage(ev, t, reduced);
@@ -213,6 +250,22 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
         const loop = (ts: number) => {
             if (done) return;
             const now = Number.isFinite(ts) ? ts : nowMs();
+            // 3D の場面の始めの待ち：字幕と見出しを出したコマが画面に出てから（次のコマで）3D を始める。待ちの間は時計を進めない
+            if (stageWait) {
+                last = now;
+                if (waitPainted) {
+                    try {
+                        beginStage();
+                    } catch (e) {
+                        console.error(e);
+                        clock.skip();
+                        finish('skipped');
+                        return;
+                    }
+                } else waitPainted = true;
+                raf = requestAnimationFrame(loop);
+                return;
+            }
             // 場面が替わった次のコマは進めない：替わり目の重い描画（3D の場面の最初の画・最後の画の仕上げ・地図の組み立て）は、
             // コマとコマの間（描画の仕上げ）にかかるので、その時間を次の場面に数えると、場面の頭とその字幕が出ないまま進む
             if (last >= 0) {
@@ -233,6 +286,8 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
                 finish('done');
                 return;
             }
+            // このコマで 3D の場面に入った：このコマの後の画面に字幕が出るので、次のコマで 3D を始める
+            if (stageWait) waitPainted = true;
             raf = requestAnimationFrame(loop);
         };
 
@@ -289,7 +344,8 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
                 return true;
             },
             reexpose: () => gate.reset(nowMs()),
-            covers: () => mode === 'map',
+            // 地図の場面と、3D の場面の始めの待ち（前が地図・始めのとき。層は不透明）は探索を覆う
+            covers: () => mode === 'map' || (stageWait && !layer.classList.contains('stage')),
             dispose: () => {
                 done = true;
                 cancelAnimationFrame(raf);

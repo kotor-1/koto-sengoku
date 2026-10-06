@@ -3,7 +3,7 @@
  * 凡例（記号＋名前＋色）・模式図の注記・確かめ用の属性・文字の大きさ・線の種類・物見の印。設定は切り替えたときだけ書く。
  */
 import { describe, expect, it } from 'vitest';
-import { MAP_FONT, MAP_LAYOUTS, MAP_VIEW, ROUTE_STYLE, SIDE_STYLE, findNodes, mapPoint, mapSvgTree, nodeText, svgToString, textWidth, type SvgNode } from '../proto3d/src/story/map-svg';
+import { MAP_FONT, MAP_LAYOUTS, MAP_VIEW, ROUTE_STYLE, SIDE_STYLE, findNodes, fitLayout, mapPoint, mapSvgTree, nodeText, svgToString, textWidth, type SvgNode } from '../proto3d/src/story/map-svg';
 import { PREFS_KEY, StoryPrefsStore, effectiveReduced, loadStoryPrefs, saveStoryPrefs } from '../proto3d/src/story/prefs';
 import { sampleScene } from '../proto3d/src/story/sample';
 import type { MapScene } from '../proto3d/src/story/types';
@@ -145,9 +145,9 @@ describe('地図の SVG の木', () => {
             ],
             routes: [{ id: 'r', from: 'b', to: 'c', kind: 'hostile', side: 'enemy', label: '近江で対立' }],
         };
-        for (const layout of ['standard', 'wide'] as const) {
-            const L = MAP_LAYOUTS[layout];
-            const t = mapSvgTree(dense, { layout });
+        for (const layout of ['standard', 'wide', 'fit'] as const) {
+            const L = layout === 'fit' ? fitLayout(844 / 250) : MAP_LAYOUTS[layout];
+            const t = layout === 'fit' ? mapSvgTree(dense, { layout: 'wide', aspect: 844 / 250 }) : mapSvgTree(dense, { layout });
             expect(t.attrs['viewBox']).toBe(`0 0 ${L.w} ${L.h}`);
             const boxes = findNodes(t, (x) => x.attrs['class'] === 'g-map-label' || x.attrs['class'] === 'g-map-rlabel').map((x) => {
                 const w = textWidth(nodeText(x), Number(x.attrs['font-size']));
@@ -171,6 +171,37 @@ describe('地図の SVG の木', () => {
                 }
             }
         }
+    });
+    it('置く所の比いっぱいまで横に広げる（演出の地図。スマホ横 844×390 は約 3.3：1）：高さ 270 は同じ・地図の枠は 672 まで・残りは凡例の欄', () => {
+        expect(fitLayout(2.0)).toEqual(MAP_LAYOUTS.wide);
+        expect(fitLayout(Number.NaN)).toEqual(MAP_LAYOUTS.wide);
+        const L = fitLayout(3.3);
+        expect(L.w).toBe(891);
+        expect(L.h).toBe(270);
+        expect(L.frame.w).toBe(672);
+        expect(L.legendX).toBeGreaterThanOrEqual(L.frame.x + L.frame.w);
+        expect(L.legendX + L.legendW).toBeLessThanOrEqual(L.w);
+        expect(L.legendW).toBeGreaterThanOrEqual(MAP_LAYOUTS.wide.legendW);
+        const t = mapSvgTree(scene, { layout: 'wide', aspect: 3.3 });
+        expect(t.attrs['viewBox']).toBe('0 0 891 270');
+        // 少し広いだけなら、地図の枠を広げる
+        const M = fitLayout(2.6);
+        expect(M.frame.w).toBeGreaterThan(MAP_LAYOUTS.wide.frame.w);
+        expect(M.legendW).toBe(MAP_LAYOUTS.wide.legendW);
+    });
+    it('字は線・国の輪より上に重ね（線 → 国 → 場所の順）、縁取りを付ける。添え書き・線の名前は 15 単位・明るい色（灰色に沈めない）', () => {
+        const order = tree.children.filter((c): c is SvgNode => typeof c !== 'string').map((c) => String(c.attrs['class'] ?? ''));
+        expect(order.indexOf('g-map-routes')).toBeLessThan(order.indexOf('g-map-regions'));
+        expect(order.indexOf('g-map-regions')).toBeLessThan(order.indexOf('g-map-places'));
+        const small = findNodes(tree, (n) => n.attrs['class'] === 'g-map-pnote' || n.attrs['class'] === 'g-map-rlabel');
+        expect(small.length).toBeGreaterThan(0);
+        for (const n of small) {
+            expect(Number(n.attrs['font-size'])).toBeGreaterThanOrEqual(15);
+            expect(n.attrs['fill']).not.toBe('#cbbfa6');
+            expect(Number(n.attrs['stroke-width'])).toBeGreaterThanOrEqual(5);
+            expect(n.attrs['paint-order']).toBe('stroke');
+        }
+        for (const n of findNodes(tree, (x) => x.attrs['class'] === 'g-map-label')) expect(Number(n.attrs['font-size'])).toBeGreaterThanOrEqual(16);
     });
     it('凡例の長い行は 2 行に折る（欄の幅を超えない）', () => {
         const t = mapSvgTree({ note: '模式図', places: [{ id: 'a', name: 'あ', x: 1, y: 1, kind: 'site', side: 'unknown', mark: '朝' }, { id: 'b', name: 'い', x: 9, y: 9, kind: 'site', side: 'unknown', mark: '浪' }], routes: [] });
