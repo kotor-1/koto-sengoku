@@ -718,7 +718,7 @@ async function ch2One(name, watch, extra = false) {
       await sleep(200);
     }
     const wall = (Date.now() - w0) / 1000;
-    check(`[${name}] 第二章の冒頭を触らずに最後まで（通常速度。描画の省略）：演出の時計と壁の時計がほぼ同じ・12〜24 秒`, Math.abs(wall - lastT) < Math.max(1.5, lastT * 0.08) && lastT >= 11 && lastT <= 25, `演出 ${lastT.toFixed(1)} 秒・壁 ${wall.toFixed(1)} 秒`);
+    check(`[${name}] 第二章の冒頭を触らずに最後まで（通常速度。描画の省略）：演出の時計と壁の時計がほぼ同じ・12〜26 秒`, Math.abs(wall - lastT) < Math.max(1.5, lastT * 0.08) && lastT >= 11 && lastT <= 27, `演出 ${lastT.toFixed(1)} 秒・壁 ${wall.toFixed(1)} 秒`);
   } else {
     // 一時停止して、「次の場面」で場面を送りながら 3D の出来事を記録する（止めたまま。画面写しも止めたまま撮る）
     await sleep(400);

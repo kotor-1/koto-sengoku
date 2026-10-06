@@ -253,7 +253,7 @@ try {
   note(`冒頭の字幕（順）：${si.caps.map((c) => `「${c}」`).join(' → ')}`);
   note(`「はじめから」のクリックから操作の開始（HUD）まで：${toControl.toFixed(1)} 秒（本番ビルド・描画あり・ソフトウェア描画。3D の場面の始めの待ちのコマ ${si.waits}）`);
   check(`第一章の冒頭（${intro.id}）をスキップせずに最後まで：3D の場面だけ（data-mode stage。地図の図解ではない）・字幕 ${si.caps.length} 件・3D の場面の始めの待ちのコマ ${si.waits}・実時間 ${si.wall.toFixed(0)} 秒`,
-    intro.id === 'ch1_open' && J(si.modes) === '["stage"]' && si.caps.length >= 6 && si.caps[0] === '元亀元年（1570年）。三河、徳川家康の城下。' && si.caps.some((c) => c.includes('城門の前')) && si.wall >= 15,
+    intro.id === 'ch1_open' && J(si.modes) === '["stage"]' && si.caps.length >= 5 && si.caps[0] === '元亀元年、徳川家康の城下に、織田と浅井の使者が同じ日に来た。' && si.caps.some((c) => c.includes('城門の前')) && si.wall >= 15,
     J({ modes: si.modes, beats: si.beats, first: si.caps[0], err: lg.err }));
   result.intro = { ...intro, ...si, toControl };
   check('冒頭の後：城下の目的の札（城門の前の本多忠勝と話し、軍議を開く）・歩く／走るの操作が出る', /城門の前の本多忠勝と話し、軍議を開く/.test(await page.textContent('.g-hud')), await page.textContent('.g-hud'));

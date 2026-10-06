@@ -10,6 +10,7 @@
  * - 新しい史実・逸話は足さない（今のシナリオの言葉と、能力の名前の言い換えだけ）。特定の俳優・作品の言い回しをまねない。
  */
 import { generalById } from '../../../battle/generals';
+import { profileOf, readingFor } from '../../../audio/readings';
 
 /** 話し手の id（会話の行の speaker と同じ id：hero は家康。村の使いは village） */
 export type VoiceSpeaker = 'hero' | 'tadakatsu' | 'sakai' | 'ishikawa' | 'sakakibara' | 'nagamasa' | 'oda_envoy' | 'asai_envoy' | 'village';
@@ -100,4 +101,35 @@ export function findVoiceLine(speaker: string, text: string): VoiceLine | undefi
 export function voiceCap(id: string): { speaker: string; text: string; voice: string } {
     const v = voiceLine(id);
     return { speaker: VOICE_SPEAKER_NAMES[v.speaker], text: v.text, voice: v.id };
+}
+
+// ---------------------------------------------------------------- 読み上げの長さの見積もり（字幕を声より先に替えないため）
+
+/** 1 秒に読む拍の数（端末の読み上げの速さ 1 のとき）と、言い始め・言い終わりの余白（秒） */
+export const VOICE_MORA_PER_SEC = 7;
+export const VOICE_PAD_SEC = 0.8;
+const SMALL_KANA = /[ゃゅょぁぃぅぇぉゎャュョァィゥェォヮ]/;
+const KANA = /[ぁ-ゖァ-ヺー]/;
+const KANJI = /[\u4e00-\u9fff々]/;
+
+/** 読み（audio/readings.ts の音声用のかな。漢字が残っていれば 1 字 2 拍と見る）の拍の数。小さいかな・句読点は数えない */
+export function moraCount(reading: string): number {
+    let n = 0;
+    for (const ch of reading) {
+        if (SMALL_KANA.test(ch)) continue;
+        if (KANA.test(ch)) n += 1;
+        else if (KANJI.test(ch)) n += 2;
+        else if (/[0-9０-９]/.test(ch)) n += 2;
+    }
+    return n;
+}
+
+/**
+ * 声の台詞を読み終えるまでの見積もり（秒）：拍の数 ÷（7 × 話し手の読み上げの速さ）＋ 0.8。
+ * 読みは音の側（audio/readings.ts）の物（表の文に対して書いた読みが無ければ辞書で開いた文）。速さは話し手ごとの rate。
+ */
+export function voiceSecFor(id: string): number {
+    const v = voiceLine(id);
+    const rate = Math.max(0.5, profileOf(v.speaker).rate);
+    return moraCount(readingFor(v)) / (VOICE_MORA_PER_SEC * rate) + VOICE_PAD_SEC;
 }

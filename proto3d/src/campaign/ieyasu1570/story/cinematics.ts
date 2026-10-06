@@ -32,7 +32,7 @@ import { PLEDGE_SPECS, type PledgeResult, type PledgeState, type Policy } from '
 import { IEYASU_RESULT_LABELS, IEYASU_TALK_NAMES, supportSourceName } from '../story';
 import { VISUAL_MAX, allyLosses, ch1GateTroops, ch2BattleTroops, ch2Sortie, heavyLoss, outcomeTroops, visualCount, type AllyLosses } from './counts';
 import { CH2_SITE } from './geo';
-import { voiceCap } from './voiceLines';
+import { voiceCap, voiceSecFor } from './voiceLines';
 import {
     ch2SitePlace,
     conflictRoutes,
@@ -100,7 +100,8 @@ export function cineFirstShown(spec: CineSpec): ReadonlyMap<string, number> | un
 function build(id: string, moment: CineMoment, title: string, plans: BeatPlan[]): CineSpec {
     // 1) 場面と字幕の時刻
     const timed = plans.map((p) => {
-        const secs = p.caps.map((c) => captionSec(c.text));
+        // 声の付いた字幕は、読み上げの見積もりより短くしない（次の字幕で前の声が止まるので、声を途中で切らない）
+        const secs = p.caps.map((c) => Math.max(captionSec(c.text), c.voice ? Math.ceil(voiceSecFor(c.voice) * 10) / 10 : 0));
         const sum = secs.reduce((a, b) => a + b, 0);
         const dur = Math.max(p.min ?? 0, sum);
         const extra = p.caps.length ? (dur - sum) / p.caps.length : 0;
@@ -229,15 +230,16 @@ function retainerEvent(): StageEvent {
 /**
  * 第一章の冒頭（docs/v20-feedback-request.md【1】）：町の様子（時代と主人公の字幕）→ 急報（使者 2 人が木戸から入る）
  * → 主人公と家臣の短いやり取り（目前の目的：城門の前の本多忠勝と話し、軍議を開く）→ 操作。地図の場面は無い。
- * 使者の言葉は今の台本（情勢の図解・会話）と同じ文。字幕は 6 つで、長さは 17.4 秒（CINE_LENGTH_RANGE の 12〜18 秒）。
+ * 使者の言葉は今の台本（情勢の図解・会話）と同じ文。声の付いた字幕は読み上げの見積もり（voiceLines.ts の voiceSecFor）より短くしないので、
+ * 地の文は 1 つにまとめる（時代・主人公・急報）。長さは 18.8 秒（CINE_LENGTH_RANGE の 12〜19 秒）。
  */
 function ch1Open(): CineSpec {
     return build('ch1_open', 'ch1_open', CH1_HEADING, [
         {
             kind: 'stage',
             event: { id: 'town_life', hero: true },
-            // 自分が徳川家康だと分かるように（城・町の名前は出さない）
-            caps: [{ text: '元亀元年（1570年）。三河、徳川家康の城下。', info: ['when', 'where'] }],
+            // 時代と、自分が徳川家康だと分かるように（城・町の名前は出さない。1570年・三河は見出しに出す）。急報（同じ日に両家の使者）も同じ 1 行で
+            caps: [{ text: CH1_OPEN_FIRST, info: ['when', 'where', 'crisis'] }],
         },
         {
             kind: 'stage',
@@ -249,7 +251,7 @@ function ch1Open(): CineSpec {
                 ],
                 showHero: true,
             },
-            caps: [{ text: '織田と浅井から、同じ日に使者が来た。', info: ['crisis'] }, voiceCap('ch1.oda_envoy.ask'), voiceCap('ch1.asai_envoy.ask')],
+            caps: [voiceCap('ch1.oda_envoy.ask'), voiceCap('ch1.asai_envoy.ask')],
         },
         {
             kind: 'stage',
@@ -259,8 +261,11 @@ function ch1Open(): CineSpec {
     ]);
 }
 
-/** 援兵の場面（第一章で約束を守り、兵が実際に戻ったときだけ。0 なら null）。冒頭と情勢の図解で同じ */
-function reinforcementBeat(s: Ieyasu2State): BeatPlan | null {
+/** 第一章の冒頭の最初の字幕（時代・主人公・急報） */
+export const CH1_OPEN_FIRST = '元亀元年、徳川家康の城下に、織田と浅井の使者が同じ日に来た。';
+
+/** 援兵の場面（第一章で約束を守り、兵が実際に戻ったときだけ。0 なら null）。冒頭と情勢の図解で同じ（min は場面の最短の長さ） */
+function reinforcementBeat(s: Ieyasu2State, min?: number): BeatPlan | null {
     const c = s.chapter1;
     const sup = c.support;
     if ((c.pledge.result as PledgeResult) !== 'kept' || !sup.reinforcement || !sup.from || !(sup.recovered > 0)) return null;
@@ -273,7 +278,7 @@ function reinforcementBeat(s: Ieyasu2State): BeatPlan | null {
     return {
         kind: 'stage',
         event: { id: 'reinforcement_arrive', count: visualCount(sup.recovered, VISUAL_MAX.reinforcement), mark: HOUSE_MARK[sup.from], name: supportSourceName(sup.from) },
-        min: 4.5,
+        ...(min !== undefined ? { min } : {}),
         caps: [{ text }],
     };
 }
@@ -290,10 +295,8 @@ function ch2Open(s: Ieyasu2State): CineSpec {
     const r = c.battle.result;
     const pl = c.pledge.result as PledgeResult;
     const wounded = visualCount(outcomeTroops(c.battle).lost, VISUAL_MAX.wounded);
-    const head: CapPlan[] = [
-        { text: '第一章の戦から数日。徳川の城下（三河）。', info: ['when', 'where'] },
-        { text: ch1ResultLine(p, c.battle), info: ['prev'] },
-    ];
+    // いつ（数日前の戦）と前章の結果を 1 行で（声の付いた使いの言葉の時間を取るため、地の文を詰める）。どこは画（城下の詰所）と見出し
+    const head: CapPlan[] = [{ text: `数日前、${ch1ResultLine(p, c.battle)}`, info: ['when', 'where', 'prev'] }];
     if (p === 'home') head.push({ text: ch1PledgeLine(c), info: ['prev'] });
     const plans: BeatPlan[] = [{ kind: 'stage', event: wounded > 0 ? { id: 'wounded_rest', count: wounded } : { id: 'town_life', hero: true }, caps: head }];
     const rb = reinforcementBeat(s);
@@ -451,7 +454,7 @@ function ch2Intro(s: Ieyasu2State): CineSpec {
     };
     const at = plans.length;
     // 3D：援兵（第一章で約束を守り、兵が実際に戻ったときだけ。0 なら出さない）
-    const rb = reinforcementBeat(s);
+    const rb = reinforcementBeat(s, 4.5);
     if (rb) plans.push(rb);
     // 3D：使い（第二章の使者・村の使い）。言葉は約束の結果で変える
     const m = messengerLines(s);
@@ -459,7 +462,8 @@ function ch2Intro(s: Ieyasu2State): CineSpec {
         kind: 'stage',
         event: { id: 'messenger_arrive', look: ieyasu2LookOf(s, 'envoy'), name: m.speaker },
         min: 6,
-        caps: [m.first, { ...m.mission, info: ['crisis'] }],
+        // 情勢の図解（任意で見る地図の台本）では使いの言葉に声を付けない（声は冒頭で聞く。図解の長さ 45 秒までに収めるため、字幕の秒は字数で決める）
+        caps: [{ speaker: m.first.speaker, text: m.first.text }, { speaker: m.mission.speaker, text: m.mission.text, info: ['crisis'] }],
     });
     // 地図：今回の危機の場所と脅かす向き・目的
     const cl = crisisLines(s);

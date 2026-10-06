@@ -607,9 +607,9 @@ async function partIntro(tag = 'intro', reducedMotion = 'no-preference') {
   listCaps(tag, seq);
   // 第 2 回の直し（S）：最初の字幕で自分が徳川家康だと分かる（城・町の名前は出さない。見出しの「徳川の城下（三河）」と同じ所）・A の言い方
   const first = run.captions.find((c) => c.text);
-  check(`[${tag}] 最初の字幕は「元亀元年（1570年）。三河、徳川家康の城下。」で、見出しは「徳川の城下（三河）」（同じ所）`,
-    first?.text === '元亀元年（1570年）。三河、徳川家康の城下。' && /徳川の城下（三河）/.test(first?.head ?? ''), J({ cap: first?.text, head: first?.head }));
-  check(`[${tag}] 急報と使者の一言、家臣とのやり取り（目前の目的：城門の前・軍議）が字幕に出た`, seq.includes('織田と浅井から、同じ日に使者が来た。') && seq.some((t) => t.includes('城門の前') && t.includes('軍議')), J(seq));
+  check(`[${tag}] 最初の字幕は「元亀元年、徳川家康の城下に、織田と浅井の使者が同じ日に来た。」（時代・主人公・急報）で、見出しは「元亀元年（1570年）・徳川の城下（三河）」`,
+    first?.text === '元亀元年、徳川家康の城下に、織田と浅井の使者が同じ日に来た。' && /徳川の城下（三河）/.test(first?.head ?? ''), J({ cap: first?.text, head: first?.head }));
+  check(`[${tag}] 急報と使者の一言、家臣とのやり取り（目前の目的：城門の前・軍議）が字幕に出た`, seq.includes('徳川殿にも、兵を出していただきたい。') && seq.includes('主は、徳川殿と手を結びたいと。') && seq.some((t) => t.includes('城門の前') && t.includes('軍議')), J(seq));
   if (reducedMotion === 'reduce') {
     check(`[${tag}] 動きを減らす：どのコマも reduced`, run.beats.every((b) => J(b.reduced) === '[true]'), J(run.beats.map((b) => b.reduced)));
     check(`[${tag}] 動きを減らす：地図の場所・線は現れる途中が無い（すぐ出る）`, run.beats.filter((b) => b.mode === 'map').every((b) => b.appearingMax === 0), J(run.beats.map((b) => b.appearingMax)));

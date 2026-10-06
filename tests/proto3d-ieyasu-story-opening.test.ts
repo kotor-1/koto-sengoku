@@ -24,7 +24,7 @@ import {
 import { ieyasuCastFor, ieyasuScenario, ieyasuStartPose, IEYASU_LOOKS } from '../proto3d/src/campaign/ieyasu1570/scenario';
 import { ieyasuCinematic, ieyasuReplays, CINE_CAPTION_MAX } from '../proto3d/src/campaign/ieyasu1570/story/cinematics';
 import { ieyasuSituation } from '../proto3d/src/campaign/ieyasu1570/story/situation';
-import { VOICE_LINES, VOICE_SPEAKER_NAMES, findVoiceLine, voiceLine } from '../proto3d/src/campaign/ieyasu1570/story/voiceLines';
+import { VOICE_LINES, VOICE_SPEAKER_NAMES, findVoiceLine, moraCount, voiceLine, voiceSecFor } from '../proto3d/src/campaign/ieyasu1570/story/voiceLines';
 import { VISUAL_MAX, outcomeTroops, visualCount } from '../proto3d/src/campaign/ieyasu1570/story/counts';
 import { ieyasu2CastFor } from '../proto3d/src/campaign/ieyasu1570/chapter2/scenario';
 import { ieyasu2Objective } from '../proto3d/src/campaign/ieyasu1570/chapter2/story';
@@ -49,8 +49,8 @@ const CH2_STARTS = ch2Starts(CH1);
 const events = (spec: CineSpec): StageEvent[] => spec.beats.flatMap((b) => (b.kind === 'stage' ? [b.event] : []));
 const said = (spec: CineSpec) => spec.captions.map((c) => `${c.speaker ?? ''}：${c.text}`).join('\n');
 const J = (v: unknown) => JSON.stringify(v);
-/** 「はじめから」から操作の開始までの、演出の外の待ち（タイトルを閉じて城下を整える・演出の層の出入り）の見積もり（秒） */
-const OUTSIDE_SEC = 1.5;
+/** 「はじめから」から操作の開始までの、演出の外の待ち（タイトルを閉じて城下を整える・演出の層の出入り）の見積もり（秒。開発サーバーの描画の省略で 0.3 秒ほど） */
+const OUTSIDE_SEC = 1.0;
 
 /** 声の付いた字幕は、表と同じ文・同じ話し手 */
 function checkVoices(spec: CineSpec, name: string): number {
@@ -82,32 +82,34 @@ describe('第一章の冒頭（ch1_open）', () => {
         expect(retainer.look).toBe(IEYASU_LOOKS.tadakatsu);
         expect(ieyasuCastFor(newIeyasuGame()).some((c) => c.id === retainer.castId && c.key)).toBe(true);
     });
-    it('長さ：台本の決まりどおり（12〜18 秒）。ロード完了から操作まで 15〜20 秒の目安に収まる', () => {
+    it('長さ：台本の決まりどおり（12〜19 秒）。ロード完了から操作まで 15〜20 秒の目安に収まる', () => {
         expect(specProblems(spec)).toEqual([]);
-        expect(CINE_LENGTH_RANGE.ch1_open).toEqual([12, 18]);
+        expect(CINE_LENGTH_RANGE.ch1_open).toEqual([12, 19]);
         expect(spec.duration).toBeGreaterThanOrEqual(12);
-        expect(spec.duration).toBeLessThanOrEqual(18);
+        expect(spec.duration).toBeLessThanOrEqual(19);
         expect(spec.duration + OUTSIDE_SEC).toBeLessThanOrEqual(20);
-        // 長いナレーションにしない：字幕は 6 つまで・1 つ 30 字まで
-        expect(spec.captions.length).toBeLessThanOrEqual(6);
+        // 長いナレーションにしない：地の文は 1 つ・字幕は 5 つまで・1 つ 30 字まで
+        expect(spec.captions.filter((c) => !c.speaker)).toHaveLength(1);
+        expect(spec.captions.length).toBeLessThanOrEqual(5);
         for (const c of spec.captions) expect([...c.text].length).toBeLessThanOrEqual(CINE_CAPTION_MAX);
     });
-    it('字幕：時代と主人公 → 急報 → 使者の一言 → 家臣とのやり取り（目前の目的：城門の前の本多忠勝と話し、軍議を開く）', () => {
+    it('字幕：時代と主人公と急報（1 行）→ 使者の一言 → 家臣とのやり取り（目前の目的：城門の前の本多忠勝と話し、軍議を開く）', () => {
         const t = spec.captions.map((c) => c.text);
-        expect(t[0]).toBe('元亀元年（1570年）。三河、徳川家康の城下。');
-        expect(t[1]).toBe('織田と浅井から、同じ日に使者が来た。');
-        expect(spec.captions[2]).toMatchObject({ speaker: '織田家の使者', text: '徳川殿にも、兵を出していただきたい。' });
-        expect(spec.captions[3]).toMatchObject({ speaker: '浅井家の使者', text: '主は、徳川殿と手を結びたいと。' });
+        expect(t[0]).toBe('元亀元年、徳川家康の城下に、織田と浅井の使者が同じ日に来た。');
+        // 1570年・三河は見出し（台本の題）で出す
+        expect(spec.title).toBe('元亀元年（1570年）・徳川の城下（三河）');
+        expect(spec.captions[1]).toMatchObject({ speaker: '織田家の使者', text: '徳川殿にも、兵を出していただきたい。' });
+        expect(spec.captions[2]).toMatchObject({ speaker: '浅井家の使者', text: '主は、徳川殿と手を結びたいと。' });
         // 家臣の言葉は家臣の場面の中。城門の前・軍議（目的）を言う
         const rb = spec.beats[2]!;
         const ret = spec.captions.filter((c) => c.start >= rb.start - 1e-6);
         expect(ret.map((c) => c.speaker)).toEqual(['忠勝', '家康']);
         expect(ret[0]!.text).toContain('城門の前');
         expect(ret[0]!.text).toContain('軍議');
-        // 情報の札：いつ・どこ（最初）・危機（急報）・判断（軍議）
+        // 情報の札：いつ・どこ・危機（急報。最初の 1 行）・判断（軍議）
         expect(spec.info.when).toBe(0);
         expect(spec.info.where).toBe(0);
-        expect(spec.info.crisis).toBeDefined();
+        expect(spec.info.crisis).toBe(0);
         expect(spec.info.decide).toBeDefined();
         // 使者の一言は、情勢の図解（今までの導入）・会話と同じ文
         const diagram = ieyasuCinematic(newIeyasuGame(), 'ch1_intro')!;
@@ -137,7 +139,7 @@ describe('第一章の冒頭（ch1_open）', () => {
 describe('第二章の冒頭（ch2_open）：前章の結果に合った人物・町の場面', () => {
     const THANKS = /守っていただいた|ご恩|感謝|かたじけ|礼を/;
     const specs = CH2_STARTS.map((c) => ({ c, spec: ieyasuCinematic(c.state, 'ch2_open')! }));
-    it('すべての組み合わせ：3D の場面だけ・台本の決まりどおり（12〜24 秒）・最後は家臣の一言（城門の前・軍議）', () => {
+    it('すべての組み合わせ：3D の場面だけ・台本の決まりどおり（12〜26 秒）・最後は家臣の一言（城門の前・軍議）', () => {
         expect(specs.length).toBeGreaterThan(50);
         let max = 0;
         for (const { c, spec } of specs) {
@@ -158,7 +160,9 @@ describe('第二章の冒頭（ch2_open）：前章の結果に合った人物�
             checkVoices(spec, c.name);
             max = Math.max(max, spec.duration);
         }
-        expect(max).toBeLessThanOrEqual(24);
+        expect(max).toBeLessThanOrEqual(26);
+        // いつと前の結果は 1 行（「数日前、」＋第一章の結果）
+        for (const { c, spec } of specs) expect(spec.captions[0]!.text, c.name).toMatch(/^数日前、国境の原/);
     });
     it('最初の場面：第一章で兵を失っていれば詰所の負傷兵（失った兵から）、失っていなければ町の様子（主人公を画に入れる）', () => {
         let w = 0;
@@ -278,6 +282,38 @@ describe('操作を始める位置（保存に位置が無いとき：町の入�
         expect(ieyasuStartPose(CH2_STARTS[0]!.state)).toEqual({ x: ENTRY_POSE.x, z: ENTRY_POSE.z, heading: ENTRY_POSE.heading });
         for (const c of CH1.slice(0, 5)) expect(ieyasuStartPose(c.state), c.name).toBeNull();
         expect(ieyasuScenario(null).startPose!(s)).toEqual(ieyasuStartPose(s));
+    });
+});
+
+describe('声の付いた字幕は、読み上げの見積もりより短くない（字幕が替わると前の声を止めるので、声を途中で切らない）', () => {
+    it('冒頭・図解・出陣・帰還のすべての組み合わせ：声の付いた字幕の秒 ≥ 読み（audio/readings.ts）の拍 ÷（7 × 話し手の速さ）＋ 0.8', () => {
+        const specs: CineSpec[] = [ieyasuCinematic(newIeyasuGame(), 'ch1_open')!, ieyasuCinematic(newIeyasuGame(), 'ch1_intro')!];
+        for (const c of CH1) for (const m of ['departure', 'return'] as const) { const x = ieyasuCinematic(c.state, m); if (x) specs.push(x); }
+        for (const c of CH2_STARTS) for (const m of ['ch2_open', 'ch2_intro'] as const) specs.push(ieyasuCinematic(c.state, m)!);
+        let n = 0;
+        const ids = new Set<string>();
+        for (const sp of specs) {
+            const caps = [...sp.captions].sort((a, b) => a.start - b.start);
+            caps.forEach((c, i) => {
+                if (!c.voice) return;
+                const need = voiceSecFor(c.voice);
+                expect(c.end - c.start + 1e-6, `${sp.id}：${c.voice}（${c.text}）`).toBeGreaterThanOrEqual(need);
+                // 次の字幕は、声が終わる見積もりより前に来ない
+                const next = caps[i + 1];
+                if (next) expect(next.start + 1e-6, `${sp.id}：${c.voice} の次`).toBeGreaterThanOrEqual(c.start + need);
+                n++;
+                ids.add(c.voice);
+            });
+        }
+        expect(n).toBeGreaterThan(100);
+        // 冒頭と出陣の声の台詞はすべて現れる
+        for (const v of VOICE_LINES.filter((x) => x.where !== 'talk' && x.where !== 'battle')) expect(ids.has(v.id), v.id).toBe(true);
+    });
+    it('見積もりの例：忠勝の「殿、軍議を開きましょう。…」は 4 秒を超え、拍の数は読みのかなから数える', () => {
+        expect(moraCount('との、ぐんぎを')).toBe(6);
+        expect(moraCount('じょうもん')).toBe(4);
+        expect(voiceSecFor('ch1.tadakatsu.council')).toBeGreaterThan(4);
+        expect(voiceSecFor('ch2.asai_envoy.first.broken')).toBeGreaterThan(5);
     });
 });
 
