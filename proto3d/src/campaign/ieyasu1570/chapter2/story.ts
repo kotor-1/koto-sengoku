@@ -439,7 +439,7 @@ function exploreScript(state: Ieyasu2State, id: Ieyasu2TalkId): ScenarioScript {
                 talk: id,
                 lines: [
                     notice('一、先の戦の後なり。町の者は騒がず、家業に励むべし。'),
-                    notice(p === 'oda' ? '一、近江より兵が戻る。道を空けておくべし。' : p === 'asai' ? '一、他家への助勢の噂あり。みだりに言いふらすべからず。' : '一、国境の村々に浪人の一団あり。村の者は城の指図を待つべし。'),
+                    notice(p === 'oda' ? '一、近江の織田勢、陣を引く。触れを待つべし。' : p === 'asai' ? '一、他家への助勢の噂あり。みだりに言いふらすべからず。' : '一、国境の村々に浪人の一団あり。村の者は城の指図を待つべし。'),
                     narrate(`（${IEYASU2_NOTE}）`),
                 ],
             };

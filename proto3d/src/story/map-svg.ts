@@ -132,14 +132,20 @@ export function mapSvgTree(scene: MapScene, opts: MapSvgOptions = {}): SvgNode {
     for (const p of scene.places) {
         const { x, y } = mapPoint(p.x, p.y, L);
         if (p.kind === 'region') continue;
+        // 名前が別の場所の名前に見えないように、ほかの場所の印に近い候補を嫌う（その相手の印）。
+        // 物見の記録の場所（地形）は任務の場所のすぐそばに置くので数えない。名前の付いた線のある地図（確かめ用の見本。物語の地図の線には
+        // 名前が無い）では使わない：線の名前は線の上にしか置けないので、場所の名前を押し出すと線の名前の置き場所が無くなる
+        if (!scouted.has(p.id) && !scene.routes.some((r) => r.label)) placer.marks.push({ id: p.id, x, y });
         placer.block({ x0: x - 12, y0: y - 14, x1: x + 12, y1: y + 10 });
         if (p.mark) placer.block({ x0: x + 6, y0: y - 28, x1: x + 30, y1: y - 6 });
     }
-    // 線をなぞる小さな箱を障害物に（場所の名前・線の名前を、線の上に置かないように。場所の名前を選ぶ前に置く）
-    for (const r of scene.routes) {
+    // 線をなぞる小さな箱を障害物に置く（名前を線の上に置かないように）。
+    // 名前の無い線（物語の地図の線はみな無い）は、場所の名前を選ぶ前に軽く（0.3）置く：字は縁取りで読めるので、線を避けるために名前を遠くへ飛ばさない。
+    // 名前の付いた線は、場所の名前を選んだ後に置く（前と同じ。線の名前を線の上に置く場所を残す）
+    const blockRoute = (r: MapRoute, w: number) => {
         const a = byId.get(r.from);
         const b = byId.get(r.to);
-        if (!a || !b) continue;
+        if (!a || !b) return;
         const pts = [mapPoint(a.x, a.y, L), ...(r.via ?? []).map((v) => mapPoint(v.x, v.y, L)), mapPoint(b.x, b.y, L)];
         for (let i = 1; i < pts.length; i++) {
             const p = pts[i - 1]!;
@@ -148,10 +154,11 @@ export function mapSvgTree(scene: MapScene, opts: MapSvgOptions = {}): SvgNode {
             for (let k = 0; k <= steps; k++) {
                 const x = p.x + ((q.x - p.x) * k) / steps;
                 const y = p.y + ((q.y - p.y) * k) / steps;
-                placer.block({ x0: x - 2, y0: y - 2, x1: x + 2, y1: y + 2 });
+                placer.block({ x0: x - 2, y0: y - 2, x1: x + 2, y1: y + 2, w });
             }
         }
-    }
+    };
+    for (const r of scene.routes) if (!r.label) blockRoute(r, 0.3);
     // 広い所（国）は一番下、線、場所の印、名前の順に重ねる
     const regions: SvgNode[] = [];
     const routes: SvgNode[] = [];
@@ -164,6 +171,7 @@ export function mapSvgTree(scene: MapScene, opts: MapSvgOptions = {}): SvgNode {
         if (p.kind === 'region') continue;
         marks.push(placeNode(p, L, placer, scouted.has(p.id)));
     }
+    for (const r of scene.routes) if (r.label) blockRoute(r, 1);
     for (const r of scene.routes) {
         const a = byId.get(r.from);
         const b = byId.get(r.to);
@@ -219,23 +227,41 @@ interface Box {
     y0: number;
     x1: number;
     y1: number;
+    /** 重なりの重み（省けば 1。線をなぞる箱は軽い：字は縁取りで読めるので、線を避けるために名前が遠くへ飛ばないように） */
+    w?: number;
+    /** 置いた名前の箱（少しでも重なれば大きく嫌う：名前どうしの重なりは、線や印との重なりより読みにくい） */
+    label?: boolean;
 }
 const overlapArea = (a: Box, b: Box) => Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
 
 /** 置いた物の箱を覚え、候補の中から重なりの一番少ない所を選ぶ（貪欲。純粋） */
 export class LabelPlacer {
     readonly boxes: Box[] = [];
+    /** 場所の印の中心（名前が、ほかの場所の印の方へ寄って置かれないように） */
+    readonly marks: { id: string; x: number; y: number }[] = [];
     constructor(private readonly frame: { x: number; y: number; w: number; h: number }) {}
     block(b: Box): void {
         this.boxes.push(b);
     }
-    /** 候補（並びが好みの順）から選んで覚える。返りは選んだ番号 */
-    choose(cands: Box[]): number {
+    /**
+     * 候補（並びが好みの順）から選んで覚える。返りは選んだ番号。
+     * own（その名前の場所の印）を渡すと、自分の印よりほかの場所の印に近い候補を大きく嫌う（名前が別の場所の名前に見えないように）。
+     */
+    choose(cands: Box[], own?: { id: string; x: number; y: number }): number {
         let best = 0;
         let bestScore = Infinity;
         cands.forEach((c, i) => {
             let score = i * 4; // 好みの順の小さな重み
-            for (const b of this.boxes) score += overlapArea(c, b);
+            for (const b of this.boxes) {
+                const ov = overlapArea(c, b);
+                if (ov > 0) score += ov * (b.w ?? 1) + (b.label ? 2000 : 0);
+            }
+            if (own) {
+                const cx = (c.x0 + c.x1) / 2;
+                const cy = (c.y0 + c.y1) / 2;
+                const dOwn = Math.hypot(cx - own.x, cy - own.y);
+                if (this.marks.some((m) => m.id !== own.id && Math.hypot(cx - m.x, cy - m.y) < dOwn)) score += 600;
+            }
             // 枠の外へはみ出す分は大きく嫌う
             const f = this.frame;
             const out = Math.max(0, f.x + 2 - c.x0) + Math.max(0, c.x1 - (f.x + f.w - 2)) + Math.max(0, f.y + 2 - c.y0) + Math.max(0, c.y1 - (f.y + f.h - 2));
@@ -245,7 +271,7 @@ export class LabelPlacer {
                 best = i;
             }
         });
-        this.boxes.push(cands[best]!);
+        this.boxes.push({ ...cands[best]!, label: true });
         return best;
     }
 }
@@ -300,7 +326,10 @@ function placeNode(p: MapPlace, L: MapLayout, placer: LabelPlacer, scout: boolea
         { anchor: 'start', x: x + 10, y: y - up },
         { anchor: 'end', x: x - 10, y: y - up },
     ];
-    const k = placer.choose(cands.map((c) => blockBox(c.anchor, c.x, c.y, w, lines)));
+    const k = placer.choose(
+        cands.map((c) => blockBox(c.anchor, c.x, c.y, w, lines)),
+        { id: p.id, x, y },
+    );
     const c = cands[k]!;
     kids.push(labelNode(p, c.x, c.y, c.anchor, scout));
     if (p.note) kids.push(n('text', { x: c.x, y: c.y + LINE2, 'text-anchor': c.anchor, 'font-size': MAP_FONT.note, fill: INK_NOTE, class: 'g-map-pnote', ...halo() }, [p.note]));

@@ -202,7 +202,7 @@ const PLAN_OF_CHOICE: Readonly<Record<string, Ch2Plan>> = { plan_commit: 'commit
  * 第二章 A の撤収のわけ（ゲーム用の創作。史料にある出来事として言わない。docs/ch2a-reason.md）。
  * 第一章の国境の原は局地戦で、近江の浅井・朝倉はなお陣を構える。織田の本隊は近江の陣を引き払い、最後に退く後備え・小荷駄を追っ手が狙う。
  */
-const ODA_WITHDRAW_REASON = '国境の原の戦は局地戦で、近江の浅井・朝倉はなお陣を構える。織田の本隊は、近江の陣を引き払うと決めた（この撤収はゲーム用の創作）。';
+const ODA_WITHDRAW_REASON = '国境の原の戦は局地戦で、近江の浅井・朝倉はなお陣を構える。そのため織田の本隊は、近江の陣を引き払うと決めた（この撤収はゲーム用の創作）。';
 /** 守る相手は本隊の後備え・小荷駄で、第一章の織田援軍とは別の隊 */
 const ODA_WITHDRAW_WHO = '（第一章で共に戦った織田援軍とは別の隊）';
 
@@ -241,7 +241,9 @@ function ch2View(s: Ieyasu2State, opts: Opts): SituationView {
     // A：近江の織田の本隊の陣と撤収の線（どの隊が・どこへ退くか。ゲーム用の創作。docs/ch2a-reason.md）
     if (p === 'oda') {
         places.push(odaCampPlace());
-        routes.push(...odaWithdrawRoutes());
+        // 戦後・結末は、主目標を果たした（二隊が退き口から離れた）ときだけ後備え・小荷駄の撤収の線を残す（果たせなかったのに、退き口まで来たように見せない）
+        const after = s.phase === 'aftermath' || s.phase === 'ending';
+        routes.push(...odaWithdrawRoutes().filter((r) => r.id !== 'withdraw.oda_rear' || !after || !!s.result?.primary?.achieved));
     }
     if (s.phase === 'aftermath' || s.phase === 'ending') routes.push(returnRoute(site));
     else routes.push(threatRoute(p), marchRoute(site));

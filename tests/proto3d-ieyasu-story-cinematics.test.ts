@@ -645,11 +645,12 @@ describe('第二章 A：織田勢が撤収するわけ（どの隊が・なぜ�
         for (const c of A_STARTS) {
             const spec = ieyasuCinematic(c.state, 'ch2_intro')!;
             const lines = spec.captions.map((x) => x.text);
-            const reason = lines.findIndex((t) => t.includes('織田の本隊は陣を引き払う'));
+            const reason = lines.findIndex((t) => t.includes('織田の本隊は陣を引く'));
             const who = lines.findIndex((t) => t.includes('本隊の最後尾、後備え・小荷駄'));
             const guard = lines.findIndex((t) => t.includes('二隊が南の退き口を抜けるまで、徳川が守る'));
             expect(reason, c.name).toBeGreaterThanOrEqual(0);
-            expect(lines[reason], c.name).toContain('近江の浅井・朝倉は健在');
+            // なぜ：因果の言葉でつなぐ（「健在のため」）
+            expect(lines[reason], c.name).toBe('近江の浅井・朝倉が健在のため、織田の本隊は陣を引く。');
             expect(who, c.name).toBe(reason + 1);
             expect(guard, c.name).toBe(who + 1);
             // 使者の頼み：本隊が近江の陣を引く（援軍が退くとは言わない）

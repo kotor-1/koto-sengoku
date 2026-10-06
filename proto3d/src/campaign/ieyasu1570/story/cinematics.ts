@@ -396,7 +396,7 @@ function ch2Intro(s: Ieyasu2State): CineSpec {
             min: 6,
             caps: [
                 {
-                    text: '近江の浅井・朝倉は健在。織田の本隊は陣を引き払う。',
+                    text: '近江の浅井・朝倉が健在のため、織田の本隊は陣を引く。',
                     info: ['ally'],
                     show: [...rel, 'oda_camp', 'withdraw.oda_main'],
                     focus: ['asai', 'asakura', 'oda_camp', 'withdraw.oda_main'],

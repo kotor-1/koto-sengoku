@@ -35,7 +35,7 @@ export const MAP_POS: Readonly<Record<GeoId, { x: number; y: number }>> = {
     site_asai: { x: 26, y: 64 },
     site_home: { x: 68, y: 48 },
     // 第二章 A：近江の織田の本隊の陣（引き払う。ゲーム用の創作。位置は模式）。浅井・朝倉の東、織田家の南西
-    oda_camp: { x: 20, y: 22 },
+    oda_camp: { x: 26, y: 24 },
 };
 
 /**

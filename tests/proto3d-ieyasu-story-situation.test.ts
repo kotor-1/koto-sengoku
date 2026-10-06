@@ -159,10 +159,14 @@ describe('第二章 A の情勢：織田勢が撤収するわけ（ゲーム用�
         for (const x of A) {
             const v = ieyasuSituation(x.state, { from: 'explore' })!;
             expect(v.map.places.find((p) => p.id === 'oda_camp')?.name, x.name).toBe('織田の本隊');
-            expect(v.map.routes.map((r) => r.id), x.name).toEqual(expect.arrayContaining(['withdraw.oda_main', 'withdraw.oda_rear']));
+            expect(v.map.routes.map((r) => r.id), x.name).toContain('withdraw.oda_main');
             const s = x.state as Ieyasu2State;
-            if (s.phase === 'aftermath' || s.phase === 'ending') continue;
-            expect(v.crisis, x.name).toContain('織田の本隊は、近江の陣を引き払うと決めた（この撤収はゲーム用の創作）');
+            if (s.phase === 'aftermath' || s.phase === 'ending') {
+                // 戦後：後備え・小荷駄の撤収の線は、主目標を果たした（二隊が退き口から離れた）ときだけ
+                expect(v.map.routes.some((r) => r.id === 'withdraw.oda_rear'), x.name).toBe(!!s.result?.primary?.achieved);
+                continue;
+            }
+            expect(v.crisis, x.name).toContain('そのため織田の本隊は、近江の陣を引き払うと決めた（この撤収はゲーム用の創作）');
             expect(v.crisis, x.name).toContain('本隊の最後尾、後備え・小荷駄を浅井・朝倉が追う');
             expect(v.crisis, x.name).toContain('織田援軍とは別の隊');
             // 第一章の勝敗によらず同じ文（勝ちを前提にしない）
