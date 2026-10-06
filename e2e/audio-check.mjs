@@ -665,7 +665,8 @@ async function partInterrupt() {
 // ---------------------------------------------------------------- video：音付きの実際のプレイ映像
 
 async function partVideo() {
-  const VIEW = { width: 844, height: 390 };
+  const [vw, vh] = (process.env.VIDEO_VIEW || '844x390').split('x').map(Number);
+  const VIEW = { width: vw, height: vh };
   const SEC = Number(process.env.VIDEO_SEC || 75);
   note(`== video：音付きの実際のプレイ映像（最初の約 ${SEC} 秒。描画あり ?q=low・${VIEW.width}×${VIEW.height}。画面の流しと Web Audio の出力を同じ実行で同時に取る）`);
   const { page, ctx } = await openPage({ ...VIEW, query: '?q=low' });
@@ -676,7 +677,14 @@ async function partVideo() {
     cdp.send('Page.screencastFrameAck', { sessionId: f.sessionId }).catch(() => {});
   });
   await page.locator('button[data-id="new:ieyasu1570"]').waitFor({ state: 'visible' });
-  await sleep(800);
+  // 読み込みの後の重い処理（素材の組み立て）が終わって、ページが空くまで待つ（setTimeout の遅れが 80 ms 未満を 5 回続けて。最大 240 秒）
+  const idle0 = Date.now();
+  for (let ok = 0; ok < 5 && Date.now() - idle0 < 240000; ) {
+    const late = await page.evaluate(() => new Promise((r) => { const t = performance.now(); setTimeout(() => r(performance.now() - t - 50), 50); }));
+    ok = late < 80 ? ok + 1 : 0;
+    await sleep(200);
+  }
+  note(`   ページが空くまで ${((Date.now() - idle0) / 1000).toFixed(1)} 秒待った`);
   const wall0 = Date.now();
   await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 70, everyNthFrame: 1 });
   await sleep(1500);
