@@ -34,6 +34,8 @@ import {
     field1Place,
     homePlace,
     marchRoute,
+    odaCampPlace,
+    odaWithdrawRoutes,
     partyPlaces,
     relationRoutes,
     returnRoute,
@@ -181,7 +183,8 @@ function ch1ResultLine(policy: Policy, o: Chapter1Record['battle']): string {
     const r = o.result;
     if (r === 'retreat') return '国境の原は決着がつかず、兵を引いた。';
     if (r === 'defeat') return hqRouted(o) ? '国境の原で本陣が崩れ、家康は落ち延びた。' : '国境の原で味方の諸隊が崩れ、兵を引いた。';
-    return policy === 'oda' ? '国境の原で勝ち、浅井・朝倉の勢は退いた。' : policy === 'asai' ? '国境の原で勝ち、織田方の追撃は止まった。' : '国境の原で勝ち、浪人どもは国境の外へ散った。';
+    // A：国境の原の勝ちは局地戦（第二章で織田の本隊が近江の陣を引き払うことと矛盾しないように。docs/ch2a-reason.md）
+    return policy === 'oda' ? '国境の原の局地戦に勝ち、浅井・朝倉は退いた。' : policy === 'asai' ? '国境の原で勝ち、織田方の追撃は止まった。' : '国境の原で勝ち、浪人どもは国境の外へ散った。';
 }
 
 /** 第一章の約束の 1 文（守った／守れなかった／引き受けなかった。破ったのに感謝しない） */
@@ -285,7 +288,8 @@ function messengerLines(s: Ieyasu2State): { speaker: string; first: string; miss
         return {
             speaker: '織田家の使者',
             first: pl === 'kept' ? '先の戦では、援軍の退路を守っていただいた。' : pl === 'broken' ? '約束の退路は守られなんだ。されど手が足りぬ。' : '頼みを断られたのは、徳川殿のお考え。',
-            mission: '織田勢が陣を引く。撤収を支えていただきたい。',
+            // 退くのは近江にいた織田の本隊（第一章の織田援軍ではない）。支えるのは、その後備え（と小荷駄）の撤収
+            mission: '主の本隊が近江の陣を引く。撤収をお支えくだされ。',
         };
     }
     return {
@@ -297,7 +301,7 @@ function messengerLines(s: Ieyasu2State): { speaker: string; first: string; miss
 
 /** 第二章の危機と目的の 2 文（主目標の基本の説明。物見をしなくても分かる）。情勢の画面でも使う */
 export function crisisLines(s: Ieyasu2State): { crisis: string; objective: string } {
-    if (s.policy === 'oda') return { crisis: '織田勢の退き口に、浅井・朝倉の追っ手が迫る。', objective: '織田勢の後備え・小荷駄を、南の退き口から退かせる。' };
+    if (s.policy === 'oda') return { crisis: '本隊の最後尾、後備え・小荷駄を浅井・朝倉が追う。', objective: '後備え・小荷駄が南の退き口を抜けるまで、徳川が守る。' };
     if (s.policy === 'asai') {
         // 長政が負傷なら、丘にいるのは浅井勢の後備え（長政は出ない）
         const alive = s.characters.nagamasa === 'alive';
@@ -314,8 +318,9 @@ function ch2Intro(s: Ieyasu2State): CineSpec {
     const p = s.policy;
     const r = c.battle.result;
     const site = CH2_SITE[p];
-    const places = [homePlace(), ...partyPlaces(p), field1Place(r), ch2SitePlace(p)];
-    const routes = [...relationRoutes(p), threatRoute(p), marchRoute(site)];
+    // A は、近江の織田の本隊の陣と撤収の線も出す（どの隊が・なぜ退くか。docs/ch2a-reason.md）
+    const places = [homePlace(), ...partyPlaces(p), field1Place(r), ch2SitePlace(p), ...(p === 'oda' ? [odaCampPlace()] : [])];
+    const routes = [...relationRoutes(p), threatRoute(p), marchRoute(site), ...(p === 'oda' ? odaWithdrawRoutes() : [])];
     const heading = '元亀元年（1570年）・第一章の戦から数日後';
     const base = scene(places, routes, { heading });
     const pl = c.pledge.result as PledgeResult;
@@ -330,13 +335,16 @@ function ch2Intro(s: Ieyasu2State): CineSpec {
                 { text: ch1PledgeLine(c), info: ['prev'], focus: ['field1'] },
             ],
         },
-        {
+    ];
+    // 協力と敵対の 1 行（A は後の「撤収のわけ」の地図の場面で、近江の浅井・朝倉の 1 行として言う）
+    if (p !== 'oda') {
+        plans.push({
             kind: 'map',
             scene: base,
             min: 3.5,
             caps: [{ text: relationLine(p), info: ['ally'], show: relationRoutes(p).map((x) => x.id), focus: relationRoutes(p).map((x) => x.id) }],
-        },
-    ];
+        });
+    }
     // 3D：負傷兵（第一章で失った兵から。見た目の数）
     const lost = outcomeTroops(c.battle);
     const wounded = visualCount(lost.lost, VISUAL_MAX.wounded);
@@ -377,15 +385,37 @@ function ch2Intro(s: Ieyasu2State): CineSpec {
     });
     // 地図：今回の危機の場所と脅かす向き・目的
     const cl = crisisLines(s);
-    plans.push({
-        kind: 'map',
-        scene: base,
-        min: 6,
-        caps: [
-            { text: cl.crisis, info: ['crisis'], show: [site, `threat.${p}`], focus: [site, `threat.${p}`] },
-            { text: cl.objective, focus: [site] },
-        ],
-    });
+    if (p === 'oda') {
+        // A：撤収のわけ（ゲーム用の創作。docs/ch2a-reason.md）。第一章の勝敗によらず同じ文（勝ちを前提にしない）：
+        // 近江の浅井・朝倉は健在で、織田の本隊は近江の陣を引き払う → 本隊の最後尾（後備え・小荷駄）を浅井・朝倉が追う → 徳川が守る。
+        // 導入の長さ（45 秒まで）に収めるため、わけは 1 行にまとめ、目的は直前の行の「後備え・小荷駄」を受けて「二隊」と言う
+        const rel = relationRoutes(p).map((x) => x.id);
+        plans.push({
+            kind: 'map',
+            scene: base,
+            min: 6,
+            caps: [
+                {
+                    text: '近江の浅井・朝倉は健在。織田の本隊は陣を引き払う。',
+                    info: ['ally'],
+                    show: [...rel, 'oda_camp', 'withdraw.oda_main'],
+                    focus: ['asai', 'asakura', 'oda_camp', 'withdraw.oda_main'],
+                },
+                { text: cl.crisis, info: ['crisis'], show: [site, 'withdraw.oda_rear', `threat.${p}`], focus: [site, 'withdraw.oda_rear', `threat.${p}`] },
+                { text: '二隊が南の退き口を抜けるまで、徳川が守る。', focus: [site] },
+            ],
+        });
+    } else {
+        plans.push({
+            kind: 'map',
+            scene: base,
+            min: 6,
+            caps: [
+                { text: cl.crisis, info: ['crisis'], show: [site, `threat.${p}`], focus: [site, `threat.${p}`] },
+                { text: cl.objective, focus: [site] },
+            ],
+        });
+    }
     // 地図：判断（軍議で 2 つの手から 1 つ・出陣の前に補充を決める。量・代償はここで変えない）。長さに収まる言い方を decideCaps で選ぶ
     const decide = (compact: boolean): BeatPlan => ({ kind: 'map', scene: base, min: 6, caps: decideCaps(s, site, compact) });
     const key = `ch2_intro.${POLICY_TAG[p]}.${r}.${pl}`;
@@ -459,7 +489,16 @@ function departure(s: IeyasuAnyState): CineSpec | null {
         const sc = scene([homePlace(), ch2SitePlace(p)], [marchRoute(site)], { heading: `出陣：徳川の城下 → ${ch2SitePlace(p).name}` });
         return build(`departure.ch2.${POLICY_TAG[p]}.${s.plan ?? 'none'}`, 'departure', `出陣（${CH2_MISSION_TITLES[p]}）`, [
             { kind: 'stage', event: { id: 'column_depart', count: visualCount(so.troops, VISUAL_MAX.column), mark: '徳' }, min: 6, caps },
-            { kind: 'map', scene: sc, min: 3.5, caps: [{ text: `行き先：${ch2SitePlace(p).name}。`, info: ['where'], show: [`march.${site}`], focus: [`march.${site}`, site] }] },
+            {
+                kind: 'map',
+                scene: sc,
+                min: 3.5,
+                caps: [
+                    { text: `行き先：${ch2SitePlace(p).name}。`, info: ['where'], show: [`march.${site}`], focus: [`march.${site}`, site] },
+                    // A：何を守りに行くか（移行の「撤収のわけ」とつなぐ）
+                    ...(p === 'oda' ? [{ text: '本隊の後備え・小荷駄が抜けるまで、退き口を守る。', focus: [site] }] : []),
+                ],
+            },
         ]);
     }
     if (s.phase !== 'battle' && s.phase !== 'aftermath' && s.phase !== 'ending') return null;
@@ -537,8 +576,12 @@ function returnSpec(s: IeyasuAnyState): CineSpec | null {
         const sc = scene([homePlace(), ch2SitePlace(p, r)], [returnRoute(site)], { heading: `帰還：${ch2SitePlace(p).name} → 徳川の城下` });
         const prim = s.result.primary;
         const prev = `${CH2_MISSION_TITLES[p]}：${IEYASU_RESULT_LABELS[r]}${prim ? `（主目標を${prim.achieved ? '果たした' : '果たせなかった'}）` : ''}。`;
+        // A で主目標（家康本陣と後備え・小荷駄が南の退き口から離れる）を果たしたときは、守った二隊がどうなったかを言う。
+        // 果たせなかったとき（撤退・敗北）は今までの言い方のまま（二隊がどうなったかは結果しだいなので、言い切らない）
+        const head2 = p === 'oda' && prim?.achieved ? '撤収を支えきった：後備え・小荷駄は南の退き口を抜けた。' : prev.length > CINE_CAPTION_MAX ? `${CH2_MISSION_TITLES[p]}：${IEYASU_RESULT_LABELS[r]}。` : prev;
+        const mapCaps: CapPlan[] = [{ text: head2, info: ['prev'], show: [`return.${site}`], focus: [site, `return.${site}`] }];
         return build(`return.ch2.${POLICY_TAG[p]}.${r}`, 'return', `帰還（${CH2_MISSION_TITLES[p]}）`, [
-            { kind: 'map', scene: sc, min: 3.5, caps: [{ text: prev.length > CINE_CAPTION_MAX ? `${CH2_MISSION_TITLES[p]}：${IEYASU_RESULT_LABELS[r]}。` : prev, info: ['prev'], show: [`return.${site}`], focus: [site, `return.${site}`] }] },
+            { kind: 'map', scene: sc, min: 3.5, caps: mapCaps },
             {
                 kind: 'stage',
                 event: { id: 'column_return', count: visualCount(t.left, VISUAL_MAX.column), wounded: woundedOf(t), mark: '徳', victory: r === 'victory' },

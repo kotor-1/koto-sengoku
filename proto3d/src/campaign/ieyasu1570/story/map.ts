@@ -146,6 +146,23 @@ export function returnRoute(from: GeoId): MapRoute {
     return { id: `return.${from}`, from, to: 'home', kind: 'withdraw', side: 'self' };
 }
 
+/**
+ * 第二章 A の背景（ゲーム用の創作。docs/ch2a-reason.md）：近江に陣を張っていた織田の本隊が、その陣を引き払う。
+ * 本隊は先に織田家の方へ退き、最後に退く後備え・小荷駄が南の切れ目（織田勢の退き口）へ向かう。
+ * 第一章で徳川と共に戦った「織田援軍」とは別の隊（援軍は国境の原の戦の隊。ここに出るのは本隊の後備え・小荷駄）。
+ */
+export function odaCampPlace(): MapPlace {
+    return { id: 'oda_camp', name: '織田の本隊', ...MAP_POS.oda_camp, kind: 'site', side: 'ally', note: '近江の陣' };
+}
+
+/** 第二章 A の撤収の線：本隊は先に織田家の方へ・後備えと小荷駄は南の退き口へ（どちらも撤収。協力の色） */
+export function odaWithdrawRoutes(): MapRoute[] {
+    return [
+        { id: 'withdraw.oda_main', from: 'oda_camp', to: 'oda', kind: 'withdraw', side: 'ally' },
+        { id: 'withdraw.oda_rear', from: 'oda_camp', to: 'site_oda', kind: 'withdraw', side: 'ally' },
+    ];
+}
+
 /** 第二章の危機の脅かす向き（誰が来るか。向きは推定で、正確な位置ではない） */
 export function threatRoute(policy: Policy): MapRoute {
     const site = CH2_SITE[policy];

@@ -26,6 +26,8 @@ import {
     field1Place,
     homePlace,
     marchRoute,
+    odaCampPlace,
+    odaWithdrawRoutes,
     partyLine,
     partyPlaces,
     prospectRoutes,
@@ -196,6 +198,14 @@ function onMap(m: MapScene, ids: string[]): string[] {
 
 const PLAN_OF_CHOICE: Readonly<Record<string, Ch2Plan>> = { plan_commit: 'commit', plan_hold: 'hold' };
 
+/**
+ * 第二章 A の撤収のわけ（ゲーム用の創作。史料にある出来事として言わない。docs/ch2a-reason.md）。
+ * 第一章の国境の原は局地戦で、近江の浅井・朝倉はなお陣を構える。織田の本隊は近江の陣を引き払い、最後に退く後備え・小荷駄を追っ手が狙う。
+ */
+const ODA_WITHDRAW_REASON = '国境の原の戦は局地戦で、近江の浅井・朝倉はなお陣を構える。織田の本隊は、近江の陣を引き払うと決めた（この撤収はゲーム用の創作）。';
+/** 守る相手は本隊の後備え・小荷駄で、第一章の織田援軍とは別の隊 */
+const ODA_WITHDRAW_WHO = '（第一章で共に戦った織田援軍とは別の隊）';
+
 function ch2Option(s: Ieyasu2State, id: string, label: string): SituationOption | null {
     let plan: Ch2Plan | undefined = PLAN_OF_CHOICE[id];
     let prefix = '';
@@ -228,6 +238,11 @@ function ch2View(s: Ieyasu2State, opts: Opts): SituationView {
     const r2 = s.battle?.result ?? null;
     const places: MapPlace[] = [homePlace(), ...partyPlaces(p), field1Place(c.battle.result), ch2SitePlace(p, r2)];
     const routes: MapRoute[] = [...relationRoutes(p)];
+    // A：近江の織田の本隊の陣と撤収の線（どの隊が・どこへ退くか。ゲーム用の創作。docs/ch2a-reason.md）
+    if (p === 'oda') {
+        places.push(odaCampPlace());
+        routes.push(...odaWithdrawRoutes());
+    }
     if (s.phase === 'aftermath' || s.phase === 'ending') routes.push(returnRoute(site));
     else routes.push(threatRoute(p), marchRoute(site));
     const sc = withScout(places, routes, s);
@@ -249,7 +264,8 @@ function ch2View(s: Ieyasu2State, opts: Opts): SituationView {
         enemies.push(partyLine('ronin', rel.ronin, '浪人衆'));
     }
     const cl = crisisLines(s);
-    let crisis = cl.crisis;
+    // A：撤収のわけと、どの隊か（第一章の勝敗によらず同じ文。勝ちを前提にしない）
+    let crisis = p === 'oda' ? `${ODA_WITHDRAW_REASON}${cl.crisis.replace(/。$/, '')}${ODA_WITHDRAW_WHO}。` : cl.crisis;
     let objective: string;
     if (s.phase === 'aftermath' || s.phase === 'ending') {
         const o = s.battle!;

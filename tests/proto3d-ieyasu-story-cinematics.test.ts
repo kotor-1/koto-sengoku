@@ -637,6 +637,70 @@ describe('第二章への移行：援兵の時点・判断の字幕・村の使�
     });
 });
 
+describe('第二章 A：織田勢が撤収するわけ（どの隊が・なぜ・家康が何を守るか。docs/ch2a-reason.md）', () => {
+    const A_STARTS = CH2_STARTS.filter((c) => c.state.policy === 'oda');
+    const A = CH2.filter((x) => x.state.policy === 'oda');
+    it('移行：近江の浅井・朝倉は健在で、織田の本隊が陣を引き払う → 本隊の最後尾（後備え・小荷駄）を追っ手が追う → 徳川が二隊を守る。地図に本隊の陣と撤収の線', () => {
+        expect(A_STARTS.length).toBeGreaterThan(0);
+        for (const c of A_STARTS) {
+            const spec = ieyasuCinematic(c.state, 'ch2_intro')!;
+            const lines = spec.captions.map((x) => x.text);
+            const reason = lines.findIndex((t) => t.includes('織田の本隊は陣を引き払う'));
+            const who = lines.findIndex((t) => t.includes('本隊の最後尾、後備え・小荷駄'));
+            const guard = lines.findIndex((t) => t.includes('二隊が南の退き口を抜けるまで、徳川が守る'));
+            expect(reason, c.name).toBeGreaterThanOrEqual(0);
+            expect(lines[reason], c.name).toContain('近江の浅井・朝倉は健在');
+            expect(who, c.name).toBe(reason + 1);
+            expect(guard, c.name).toBe(who + 1);
+            // 使者の頼み：本隊が近江の陣を引く（援軍が退くとは言わない）
+            expect(lines.some((t) => t.includes('主の本隊が近江の陣を引く')), c.name).toBe(true);
+            // 地図：本隊の陣・本隊の撤収（織田家へ）・後備えと小荷駄の撤収（退き口へ）は、わけの字幕で現れる
+            const first = cineFirstShown(spec)!;
+            const at = spec.captions[reason]!.start;
+            expect(first.get('oda_camp'), c.name).toBeCloseTo(at + 0.3, 1);
+            expect(first.get('withdraw.oda_main'), c.name).toBeCloseTo(at + 0.3, 1);
+            expect(first.get('withdraw.oda_rear'), c.name).toBeCloseTo(spec.captions[who]!.start, 1);
+            const map = spec.beats.find((b): b is CineMapBeat => b.kind === 'map')!;
+            const camp = map.scene.places.find((p) => p.id === 'oda_camp')!;
+            expect(camp.name).toBe('織田の本隊');
+            expect(camp.side).toBe('ally');
+            expect(map.scene.routes.filter((r) => r.id.startsWith('withdraw.oda_')).map((r) => `${r.from}>${r.to}:${r.kind}`).sort()).toEqual(['oda_camp>oda:withdraw', 'oda_camp>site_oda:withdraw']);
+        }
+    });
+    it('勝ちを前提にしない：第一章が撤退・敗北なら、どの字幕も勝ちと言わない（局地戦の勝ちの 1 文は第一章で勝ったときだけ）', () => {
+        for (const c of A_STARTS) {
+            const spec = ieyasuCinematic(c.state, 'ch2_intro')!;
+            const won = spec.captions.some((x) => x.text.includes('国境の原の局地戦に勝ち'));
+            expect(won, c.name).toBe(c.ch1.result === 'victory');
+            if (c.ch1.result !== 'victory') for (const x of spec.captions) expect(x.text, c.name).not.toMatch(/勝ち|勝利|勝った/);
+        }
+    });
+    it('織田の本隊と援軍を混同しない：援軍の出る字幕は第一章の約束の話だけで、退く・撤収するのは本隊（後備え・小荷駄）', () => {
+        for (const x of A) {
+            for (const m of ['ch2_intro', 'departure', 'return'] as const) {
+                const spec = ieyasuCinematic(x.state, m);
+                if (!spec) continue;
+                for (const cap of spec.captions) {
+                    if (!cap.text.includes('援軍')) continue;
+                    expect(cap.text, `${x.name}.${m}`).not.toMatch(/陣を引|撤収|後備え|小荷駄|退き口/);
+                }
+            }
+        }
+    });
+    it('出陣：何を守りに行くか。帰還：主目標を果たしたときだけ「支えきった・二隊は退き口を抜けた」。果たせなかったときは言い切らない', () => {
+        for (const x of A) {
+            const dep = ieyasuCinematic(x.state, 'departure');
+            if (dep) expect(texts(dep), x.name).toContain('本隊の後備え・小荷駄が抜けるまで、退き口を守る。');
+            const ret = ieyasuCinematic(x.state, 'return');
+            if (!ret) continue;
+            const s = x.state as Ieyasu2State;
+            const achieved = !!s.result?.primary?.achieved;
+            expect(texts(ret).includes('撤収を支えきった：後備え・小荷駄は南の退き口を抜けた。'), x.name).toBe(achieved);
+            if (!achieved) expect(texts(ret), x.name).not.toMatch(/支えきった|抜けた/);
+        }
+    });
+});
+
 describe('純粋さ（状態を読むだけ）', () => {
     it('同じ状態から同じ台本。作っても状態は変わらない。シナリオの口も同じ物を返す', () => {
         const sc = ieyasuScenario(null);

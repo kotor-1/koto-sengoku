@@ -14,7 +14,7 @@ import type { Policy } from '../state';
 export const MAP_NOTE = '模式図。国・城・道の位置と距離は正確ではない';
 
 /** 場所の id（地図の場所・線の id に使う。演出の台本・情勢の画面・物見で同じ物） */
-export type GeoId = 'home' | 'oda' | 'asai' | 'asakura' | 'border' | 'field1' | 'site_oda' | 'site_asai' | 'site_home';
+export type GeoId = 'home' | 'oda' | 'asai' | 'asakura' | 'border' | 'field1' | 'site_oda' | 'site_asai' | 'site_home' | 'oda_camp';
 
 /** 場所の位置（模式。向きの目安だけ） */
 export const MAP_POS: Readonly<Record<GeoId, { x: number; y: number }>> = {
@@ -34,6 +34,8 @@ export const MAP_POS: Readonly<Record<GeoId, { x: number; y: number }>> = {
     site_oda: { x: 38, y: 64 },
     site_asai: { x: 26, y: 64 },
     site_home: { x: 68, y: 48 },
+    // 第二章 A：近江の織田の本隊の陣（引き払う。ゲーム用の創作。位置は模式）。浅井・朝倉の東、織田家の南西
+    oda_camp: { x: 20, y: 22 },
 };
 
 /**
@@ -71,6 +73,7 @@ export const SCOUT_SLOTS: Readonly<Record<GeoId, readonly { x: number; y: number
         { x: -4, y: 10 },
         { x: -14, y: 2 },
     ],
+    oda_camp: [],
 };
 
 type Pt = { x: number; y: number };

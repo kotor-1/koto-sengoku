@@ -135,19 +135,7 @@ export function mapSvgTree(scene: MapScene, opts: MapSvgOptions = {}): SvgNode {
         placer.block({ x0: x - 12, y0: y - 14, x1: x + 12, y1: y + 10 });
         if (p.mark) placer.block({ x0: x + 6, y0: y - 28, x1: x + 30, y1: y - 6 });
     }
-    // 広い所（国）は一番下、線、場所の印、名前の順に重ねる
-    const regions: SvgNode[] = [];
-    const routes: SvgNode[] = [];
-    const marks: SvgNode[] = [];
-    for (const p of scene.places) {
-        if (p.kind !== 'region') continue;
-        regions.push(regionNode(p, L, placer, scouted.has(p.id)));
-    }
-    for (const p of scene.places) {
-        if (p.kind === 'region') continue;
-        marks.push(placeNode(p, L, placer, scouted.has(p.id)));
-    }
-    // 線の名前は、ほかの線の上にも置かないように（線をなぞる小さな箱を障害物に）
+    // 線をなぞる小さな箱を障害物に（場所の名前・線の名前を、線の上に置かないように。場所の名前を選ぶ前に置く）
     for (const r of scene.routes) {
         const a = byId.get(r.from);
         const b = byId.get(r.to);
@@ -163,6 +151,18 @@ export function mapSvgTree(scene: MapScene, opts: MapSvgOptions = {}): SvgNode {
                 placer.block({ x0: x - 2, y0: y - 2, x1: x + 2, y1: y + 2 });
             }
         }
+    }
+    // 広い所（国）は一番下、線、場所の印、名前の順に重ねる
+    const regions: SvgNode[] = [];
+    const routes: SvgNode[] = [];
+    const marks: SvgNode[] = [];
+    for (const p of scene.places) {
+        if (p.kind !== 'region') continue;
+        regions.push(regionNode(p, L, placer, scouted.has(p.id)));
+    }
+    for (const p of scene.places) {
+        if (p.kind === 'region') continue;
+        marks.push(placeNode(p, L, placer, scouted.has(p.id)));
     }
     for (const r of scene.routes) {
         const a = byId.get(r.from);

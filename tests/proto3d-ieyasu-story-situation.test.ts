@@ -152,6 +152,30 @@ describe('情勢の画面：どの状態でも作れ、地図と短い説明が�
     }, 60_000);
 });
 
+describe('第二章 A の情勢：織田勢が撤収するわけ（ゲーム用の創作と書く・本隊と援軍を分ける・勝ちを前提にしない）', () => {
+    it('地図に織田の本隊の陣と撤収の線。危機の文に、わけ・どの隊か・創作であること・援軍とは別の隊であること', () => {
+        const A = CH2.filter((x) => x.state.policy === 'oda');
+        expect(A.length).toBeGreaterThan(0);
+        for (const x of A) {
+            const v = ieyasuSituation(x.state, { from: 'explore' })!;
+            expect(v.map.places.find((p) => p.id === 'oda_camp')?.name, x.name).toBe('織田の本隊');
+            expect(v.map.routes.map((r) => r.id), x.name).toEqual(expect.arrayContaining(['withdraw.oda_main', 'withdraw.oda_rear']));
+            const s = x.state as Ieyasu2State;
+            if (s.phase === 'aftermath' || s.phase === 'ending') continue;
+            expect(v.crisis, x.name).toContain('織田の本隊は、近江の陣を引き払うと決めた（この撤収はゲーム用の創作）');
+            expect(v.crisis, x.name).toContain('本隊の最後尾、後備え・小荷駄を浅井・朝倉が追う');
+            expect(v.crisis, x.name).toContain('織田援軍とは別の隊');
+            // 第一章の勝敗によらず同じ文（勝ちを前提にしない）
+            expect(v.crisis, x.name).not.toMatch(/勝ち|勝利|勝った/);
+        }
+        // B・C には出さない
+        for (const x of CH2.filter((y) => y.state.policy !== 'oda').slice(0, 40)) {
+            const v = ieyasuSituation(x.state, { from: 'explore' })!;
+            expect(v.map.places.some((p) => p.id === 'oda_camp'), x.name).toBe(false);
+        }
+    });
+});
+
 describe('協力の欄の言い方', () => {
     it('C（自領の防衛）：どの段階でも協力の欄に △（戦わないだけの相手）を入れない', () => {
         const all = [...ch1BeforeBattle().map((x) => x.state), ...CH1.map((c) => c.state), ...CH1.map((c) => ch1Ending(c.state)), ...CH2.map((x) => x.state)];
