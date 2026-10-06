@@ -204,8 +204,7 @@ try {
   check('第一章の結末の画面：「第二章へ進む」と「タイトルへ」', J(ids) === '["next_chapter","title"]', J(ids));
   await shot('P02-ch1-ending');
   await pressBtn('next_chapter');
-  // 第二章への移行の演出（保存の後・結果確認の前）：スキップのボタンを本物のクリックで押す（層の属性だけで待つ）
-  await skipCinematic(page, { what: '第二章への移行', log: note });
+  // 保存の後：結果確認の画面 →「城下へ」→ 第二章の冒頭（スキップのボタンを本物のクリックで押す。層の属性だけで待つ）
   await waitLayer('record');
   const rec = await page.textContent('.g-layer[data-kind="record"]');
   const sv = await save();
@@ -214,6 +213,7 @@ try {
   check('第二章のはじめの兵＝第一章の終わりの兵（援兵は足さない）', J(sv?.troops) === J(JSON.parse(FIXTURE).troops), J(sv?.troops));
   await shot('P03-record');
   await pressBtn('to_town');
+  await skipCinematic(page, { what: '第二章の冒頭', log: note });
   await page.locator('.g-hud').waitFor({ state: 'visible' });
   await sleep(1500);
   check('第二章の城下（HUD に第二章）', (await page.textContent('.g-hud')).includes('第二章'), (await page.textContent('.g-hud')).slice(0, 60));

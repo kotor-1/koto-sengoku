@@ -1,9 +1,10 @@
-// 物語の見せ方の「画面と流れ」の小さな確かめ（開発サーバー）：演出の再生器・情勢の画面・軍議の「地図で見る」・動きを減らす・自動の一時停止。
+// 物語の見せ方の「画面と流れ」の小さな確かめ（開発サーバー）：演出の再生器・情勢の画面・軍議の「詳しく見る」・動きを減らす・自動の一時停止。
+// 章の冒頭（ch1_open：3D の場面だけ）が自動で流れ、情勢の図解（ch1_intro）は情勢の画面から任意で見る（docs/v20-feedback-request.md【1】）。
 // 依頼：docs/story-rpg-request.md【1】【2】【5】・設計 docs/story-rpg-design.md §1・§3・§4。
 //
 // 確認の種類（出力の行にも書く）：
 //   - 本物の入力：タイトルの「はじめから」・演出のボタン（一時停止／再開・次の場面・前の場面・スキップ・動きを減らす）とキー（Space・K・←→・Esc）・
-//     演出中の W・E・Enter（漏れないこと）・HUD の「情勢」・J・情勢の「見直す」「閉じる」・軍議の選択肢と「地図で見る」・情勢のタブ（タップ）。
+//     演出中の W・E・Enter（漏れないこと）・HUD の「情勢」・J・情勢の「見直す」「図解を見る」「閉じる」・軍議の選択肢と「詳しく見る」・情勢のタブ（タップ）。
 //     PC（マウスとキー）と、スマホ横 844×390（タッチ）。
 //   - 描画の省略：?q=low&render=manual（探索の 3D を描かない。演出の時計は実時間で進む＝通常速度。3D の場面の見た目はここでは見ない）。
 //     intro3d だけは描画を省かずに流し、3D を描きながら時計がどれだけ進むかを記録する（このコンテナは毎秒 1 コマ未満。1 コマの上限 1 秒）。
@@ -100,10 +101,10 @@ async function cineLooks(page, tag) {
   if (r.texts > 0) check(`${tag}：地図の文字 12px 以上・凡例・模式図の注記`, r.minPx >= 12 && r.legend && r.noteText.includes('模式図'), `最小 ${r.minPx.toFixed(1)}px・注記「${r.noteText}」`);
 }
 
-// ================================================================ intro：通常速度の導入（PC）
+// ================================================================ intro：通常速度の冒頭（PC）
 let introState = null;
 if (PARTS.includes('intro')) {
-  console.log('--- intro：第一章の導入を通常速度で（PC：マウスとキー。描画の省略）');
+  console.log('--- intro：第一章の冒頭を通常速度で（PC：マウスとキー。描画の省略）');
   const { ctx, page } = await open();
   await sleep(600);
   await page.click('.g-scn[data-scenario="ieyasu1570"] .g-btn[data-id="new:ieyasu1570"]');
@@ -115,9 +116,9 @@ if (PARTS.includes('intro')) {
   check('始めた直後の Esc（守りの中）では飛ばない', c?.state === 'playing', J({ state: c?.state, t: c?.t }));
   const S0 = await st(page);
   const h0 = await hero(page);
-  check('本物の入力：はじめから → 第一章の導入（層 cine・地図の場面から）', c?.id === 'ch1_intro' && c.mode === 'map' && (await page.evaluate(() => window.__game.screen)) === 'cinematic', J({ id: c?.id, count: c?.count, mode: c?.mode }));
-  await cineLooks(page, '導入');
-  await page.screenshot({ path: `${OUT}/intro-map-844x390.png` });
+  check('本物の入力：はじめから → 第一章の冒頭（層 cine・台本 ch1_open・3D の場面＝町の様子から。図解の地図ではない）', c?.id === 'ch1_open' && c.mode === 'stage' && c.count === 3 && (await page.evaluate(() => window.__game.screen)) === 'cinematic', J({ id: c?.id, count: c?.count, mode: c?.mode }));
+  await cineLooks(page, '冒頭');
+  await page.screenshot({ path: `${OUT}/intro-open-844x390.png` });
   // 演出中の入力（W を押し続ける・E・Enter）は、探索の移動・会話へ漏れない
   await page.keyboard.down('KeyW');
   await sleep(1200);
@@ -181,7 +182,7 @@ if (PARTS.includes('intro')) {
   const remain = (cap?.t ?? tStart) - tStart;
   note(`場面：${beats.map((b) => `${b.beat}(${b.mode}) t=${b.t.toFixed(1)} 壁 ${b.wall.toFixed(1)}s`).join(' / ')}`);
   check('通常速度：触らずに見た区間の演出の時間と壁の時計がほぼ同じ（描画の省略）', Math.abs(wall - remain) < Math.max(1.5, remain * 0.08), `演出 ${remain.toFixed(1)} 秒・壁 ${wall.toFixed(1)} 秒`);
-  check('最後に出した情報の札：いつ・どこ・協力・危機・判断', ['when', 'where', 'ally', 'crisis', 'decide'].every((k) => (cap?.info ?? []).includes(k)), J(cap?.info));
+  check('最後に出した情報の札：いつ・どこ・危機（急報）・判断（軍議）。場面はすべて 3D', ['when', 'where', 'crisis', 'decide'].every((k) => (cap?.info ?? []).includes(k)) && beats.every((b) => b.mode === 'stage'), J({ info: cap?.info, modes: beats.map((b) => b.mode) }));
   await page.waitForFunction(() => window.__game.screen === 'explore', null, POLL);
   const S1 = await st(page);
   const h2 = await hero(page);
@@ -202,12 +203,12 @@ if (PARTS.includes('intro')) {
 
 // ================================================================ skip：スマホ横（タッチ）でスキップ
 if (PARTS.includes('skip')) {
-  console.log('--- skip：スマホ横 844×390（タッチ）で導入をスキップ');
+  console.log('--- skip：スマホ横 844×390（タッチ）で冒頭をスキップ');
   const { ctx, page } = await open({ isMobile: true, hasTouch: true });
   await sleep(600);
   await page.locator('.g-scn[data-scenario="ieyasu1570"] .g-btn[data-id="new:ieyasu1570"]').tap();
   await waitCine(page);
-  // 背景（地図の外の何もない所）を押しても飛ばない
+  // 背景（ボタンの外の何もない所）を押しても飛ばない
   await page.touchscreen.tap(40, 200);
   await sleep(400);
   await page.touchscreen.tap(40, 200);
@@ -261,12 +262,13 @@ if (PARTS.includes('situation')) {
   await page.waitForFunction(() => window.__game.ui?.kind === 'situation', null, POLL);
   check('キー：J で情勢を閉じる・開く', true);
   // 見直し（タップ）→ 演出 → Esc でスキップ → 情勢へ戻る → 閉じる
-  check('情勢に「演出を見直す」（第一章の導入）', v.replays.includes('replay:ch1_intro'), J(v.replays));
+  const lab = await page.locator('.g-btn[data-id="replay:ch1_intro"]').textContent();
+  check('情勢に「図解を見る：情勢の図解（第一章の始め）」（任意）と、冒頭の「見直す」', v.replays.includes('replay:ch1_intro') && v.replays.includes('replay:ch1_open') && (lab ?? '').includes('図解を見る'), J({ replays: v.replays, lab }));
   await sleep(450);
   await page.locator('.g-btn[data-id="replay:ch1_intro"]').tap();
   await waitCine(page);
   const r1 = await cine(page);
-  check('本物の入力：「見直す」で演出を最初から（状態は読むだけ）', r1.id === 'ch1_intro' && r1.t < 1.5, J({ id: r1.id, t: r1.t }));
+  check('本物の入力：「図解を見る」で情勢の図解（地図の台本）を最初から（状態は読むだけ）', r1.id === 'ch1_intro' && r1.mode === 'map' && r1.t < 1.5, J({ id: r1.id, t: r1.t, mode: r1.mode }));
   await sleep(1500);
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => window.__game.ui?.kind === 'situation', null, POLL);
@@ -278,9 +280,9 @@ if (PARTS.includes('situation')) {
   await ctx.close();
 }
 
-// ================================================================ council：軍議の「地図で見る」とタブ（見るだけ）
+// ================================================================ council：軍議の「詳しく見る」とタブ（見るだけ）
 if (PARTS.includes('council')) {
-  console.log('--- council：軍議の「地図で見る」・タブ（スマホ横・タッチ）');
+  console.log('--- council：軍議の「詳しく見る」・タブ（スマホ横・タッチ）');
   const { ctx, page } = await open({ isMobile: true, hasTouch: true });
   await sleep(600);
   await page.locator('.g-btn[data-id="new:ieyasu1570"]').tap();
@@ -324,12 +326,13 @@ if (PARTS.includes('council')) {
     const hit = (x) => b.right > x.left && x.right > b.left && b.bottom > x.top && x.bottom > b.top;
     return { btn: { l: b.left, t: b.top, r: b.right, b: b.bottom }, choices: [...document.querySelectorAll('.g-choice')].some((c) => hit(r(c))), dialog: hit(r(document.querySelector('.g-dialog'))), head: hit(r(document.querySelector('.g-council-head'))), inView: b.top >= 0 && b.left >= 0 && b.right <= innerWidth, empty: b.left <= 120 && 120 <= b.right && b.top <= 150 && 150 <= b.bottom };
   });
-  check('軍議の「地図で見る」は選択肢・台詞・見出しと重ならず、画面の中（844×390）。行送りのタップの所（120,150）とも別', !lay.choices && !lay.dialog && !lay.head && lay.inView && !lay.empty, J(lay));
+  check('軍議の「詳しく見る」は選択肢・台詞・見出しと重ならず、画面の中（844×390）。行送りのタップの所（120,150）とも別', !lay.choices && !lay.dialog && !lay.head && lay.inView && !lay.empty, J(lay));
   await page.screenshot({ path: `${OUT}/council-mapbtn-844x390.png` });
   await page.locator('.g-council-map').tap();
   await page.waitForFunction(() => window.__game.ui?.kind === 'situation', null, POLL);
   let s = await ui(page);
-  check('本物の入力：「地図で見る」→ 情勢（軍議から・選択肢のタブ・いま選ばれている選択肢のタブ）', s.from === 'council' && J(s.options) === J(before.choices) && s.option === before.selected, J({ options: s.options, option: s.option, sel: before.selected }));
+  const mbText = await page.locator('.g-council-map').textContent().catch(() => '');
+  check('本物の入力：「詳しく見る」→ 情勢（軍議から・選択肢のタブ・いま選ばれている選択肢のタブ・情勢の図解を任意で見られる）', s.from === 'council' && J(s.options) === J(before.choices) && s.option === before.selected && (mbText ?? '').includes('詳しく見る') && (s.buttons ?? []).some((b) => (b.id ?? b) === 'replay:ch1_intro'), J({ options: s.options, option: s.option, sel: before.selected, buttons: s.buttons, mbText }));
   const hl0 = s.highlight;
   const other = s.options.find((o) => o !== s.option);
   await sleep(450);
@@ -443,7 +446,7 @@ if (PARTS.includes('hidden')) {
 
 // ================================================================ intro3d：描画を省かずに（3D を描きながら時計がどう進むか）
 if (PARTS.includes('intro3d')) {
-  console.log('--- intro3d：描画を省かずに導入を流す（3D の場面のコマと時計。このコンテナはソフトウェア描画）');
+  console.log('--- intro3d：描画を省かずに冒頭を流す（3D の場面のコマと時計。このコンテナはソフトウェア描画）');
   const { ctx, page } = await open({}, '?q=low');
   await sleep(600);
   await page.click('.g-btn[data-id="new:ieyasu1570"]');

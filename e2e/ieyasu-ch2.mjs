@@ -285,8 +285,8 @@ async function newIeyasu(page, io) {
   await io.btn('new:ieyasu1570');
   await page.waitForFunction(() => ['explore', 'cinematic'].includes(window.__game.screen) || window.__game.ui?.kind === 'confirm', null, POLL);
   if ((await ui(page))?.kind === 'confirm') await io.btn('new');
-  // 第一章の導入の演出（はじめからの道だけ）：スキップのボタンを本物の入力で押す
-  await skipCinematic(page, { tap: io.phone, what: '第一章の導入', log: note });
+  // 第一章の冒頭の演出（はじめからの道だけ）：スキップのボタンを本物の入力で押す
+  await skipCinematic(page, { tap: io.phone, what: '第一章の冒頭', log: note });
   await waitScreen(page, 'explore');
 }
 async function council1(page, io, P, policy) {
@@ -783,8 +783,7 @@ async function chapter2(page, io, P, policy, ch1) {
   await countWrites(page);
   if (c.enter === 'enter') { await sleep(500); await page.keyboard.press('Enter'); }
   else await io.btn('next_chapter');
-  // 第二章への移行の演出（保存の後・結果確認の前）：スキップのボタンを本物の入力で押す
-  await skipCinematic(page, { tap: io.phone, what: '第二章への移行', log: note });
+  // 保存の後：結果確認の画面 →「城下へ」→ 第二章の冒頭（3D の場面だけ）。冒頭はスキップのボタンを本物の入力で押す
   await waitUi(page, 'record');
   await sleep(400);
   const w = await writes(page);
@@ -799,6 +798,8 @@ async function chapter2(page, io, P, policy, ch1) {
     `書き込み ${J(w)}${same1.length ? `・違う ${same1.join(',')}` : ''}`);
   await shot(page, `${P}-2-record`);
   await io.btn('to_town');
+  const open2 = await skipCinematic(page, { tap: io.phone, what: '第二章の冒頭', log: note });
+  check(`${P} 「城下へ」→ 第二章の冒頭（台本 ${open2}。情勢の図解は自動で流さない）`, /^ch2_open\./.test(open2 ?? ''), open2);
   await waitScreen(page, 'explore');
   await sleep(500);
   const s0 = await st(page);
@@ -1010,11 +1011,11 @@ async function compare() {
     await io.btn('continue:ieyasu1570');
     await waitUi(page, 'ending');
     await io.btn('next_chapter');
-    await skipCinematic(page, { what: '第二章への移行', log: note });
     await waitUi(page, 'record');
     await sleep(300);
     const rec = (await ui(page)).text;
     await io.btn('to_town');
+    await skipCinematic(page, { what: '第二章の冒頭', log: note });
     await waitScreen(page, 'explore');
     const s0 = await st(page);
     const ik = await talkDev(page, io, 'ishikawa');
@@ -1107,7 +1108,7 @@ async function idem() {
       ...Array.from({ length: 6 }, () => page.mouse.click(box.x + box.width / 2, box.y + box.height / 2).catch(() => {})),
       ...Array.from({ length: 4 }, () => page.keyboard.press('Enter').catch(() => {})),
     ]);
-    await skipCinematic(page, { what: '第二章への移行', log: note });
+    // 移った後は結果確認の画面（第二章の冒頭は「城下へ」の後）
     await page.waitForFunction(() => window.__game.state?.chapter === 2 && (window.__game.ui?.kind === 'record' || window.__game.screen === 'explore'), null, POLL);
     await sleep(1500);
     const w = await writes(page);
@@ -1203,9 +1204,9 @@ async function idem() {
     await io.btn('next_chapter');
     await waitUi(page, 'confirm');
     await io.btn('go');
-    await skipCinematic(page, { what: '第二章への移行（保存せずに始める）', log: note });
     await waitUi(page, 'record');
     await io.btn('to_town');
+    await skipCinematic(page, { what: '第二章の冒頭（保存せずに始める）', log: note });
     await waitScreen(page, 'explore');
     const s = await st(page);
     check('idem 「保存せずに第二章を始める」→ 第二章の城下（本来のキーは第一章の結末のまま）', s.chapter === 2 && s.phase === 'explore' && (await raw(page, KEY)) === src);
@@ -1225,9 +1226,9 @@ async function idem() {
     await waitUi(page, 'ending');
     check(`idem ${label}の結末の保存：読むだけでは書き換えない・結末の画面に「第二章へ進む」`, (await raw(page, KEY)) === src && J((await ui(page)).buttons.map((b) => b.id)) === '["next_chapter","title"]' && ct.includes('章の結末'));
     await io.btn('next_chapter');
-    await skipCinematic(page, { what: '第二章への移行', log: note });
     await waitUi(page, 'record');
     await io.btn('to_town');
+    await skipCinematic(page, { what: '第二章の冒頭', log: note });
     await waitScreen(page, 'explore');
     const s = await st(page);
     const sv = await saved(page);

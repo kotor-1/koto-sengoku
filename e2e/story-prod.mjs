@@ -9,7 +9,7 @@
 // 使い方：DIST=<本番ビルドの dist-proto3d> node e2e/story-prod.mjs [出力先]   （PORT=8133 VIEW=844x390 で変えられる）
 // この中で、次のヘッダー付きの簡易サーバーを立てる（e2e/ieyasu-prod.mjs と同じ作り）：
 //   content-security-policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'
-// 経路：タイトル（歴史分岐のはじめから）→ 第一章の導入をスキップせずに最後まで（3D の場面を含む）→ J で情勢を開いて閉じる
+// 経路：タイトル（歴史分岐のはじめから）→ 第一章の冒頭（3D の場面だけ）をスキップせずに最後まで → J で情勢を開いて閉じる
 //       → 本多忠勝と話す → 軍議で C（自領の防衛）→ 支度で忠勝の約束を引き受ける → 物見櫓まで歩いて物見を 1 回（印に向いて「調べる」→「終える」）
 //       → J で情勢（物見の記録が載る）→ 城門まで歩いて「出陣する」→ 出陣の演出を最後まで → 合戦（×2・すぐに全軍撤退）→ 結果の「続ける」
 //       → 帰還の演出を最後まで → 戦後の城下。CSP の違反・ページの誤り・読めなかったファイル・data: の URL が無いこと。
@@ -238,7 +238,7 @@ async function playThrough(what) {
 
 const result = {};
 try {
-  // ================================================================ タイトル → 第一章の導入を最後まで
+  // ================================================================ タイトル → 第一章の冒頭を最後まで（情勢の図解は自動で流れない）
   const t0 = Date.now();
   await page.goto(URL0);
   await page.locator('.g-btn[data-id="new:ieyasu1570"]').waitFor({ state: 'visible', timeout: 1200000 });
@@ -249,17 +249,20 @@ try {
   // 人物の素材を読み終えるまで少し待つ（読み込みの途中で演出の 3D を描かせない。遊ぶ人もタイトルを見ている間）
   await sleep(4000);
   await startLog();
+  const tNew = Date.now();
   await pressBtn('new:ieyasu1570');
-  const intro = await playThrough('第一章の導入');
+  const intro = await playThrough('第一章の冒頭');
   await page.waitForFunction(() => { const h = document.querySelector('.g-hud'); return !!h && !h.hidden; }, null, W);
+  const toControl = (Date.now() - tNew) / 1000;
   let lg = await stopLog();
   const si = cineSummary(lg.log, intro.id);
-  note(`導入の字幕（順）：${si.caps.map((c) => `「${c}」`).join(' → ')}`);
-  check(`第一章の導入（${intro.id}）をスキップせずに最後まで：地図と 3D の場面（data-mode map・stage）・字幕 ${si.caps.length} 件・3D の場面の始めの待ちのコマ ${si.waits}・実時間 ${si.wall.toFixed(0)} 秒`,
-    intro.id === 'ch1_intro' && si.modes.includes('map') && si.modes.includes('stage') && si.caps.length >= 10 && si.caps[0] === '元亀元年（1570年）。三河、徳川家康の城下。' && si.wall >= 30,
+  note(`冒頭の字幕（順）：${si.caps.map((c) => `「${c}」`).join(' → ')}`);
+  note(`「はじめから」のクリックから操作の開始（HUD）まで：${toControl.toFixed(1)} 秒（本番ビルド・描画あり・ソフトウェア描画。3D の場面の始めの待ちのコマ ${si.waits}）`);
+  check(`第一章の冒頭（${intro.id}）をスキップせずに最後まで：3D の場面だけ（data-mode stage。地図の図解ではない）・字幕 ${si.caps.length} 件・3D の場面の始めの待ちのコマ ${si.waits}・実時間 ${si.wall.toFixed(0)} 秒`,
+    intro.id === 'ch1_open' && J(si.modes) === '["stage"]' && si.caps.length >= 6 && si.caps[0] === '元亀元年（1570年）。三河、徳川家康の城下。' && si.caps.some((c) => c.includes('城門の前')) && si.wall >= 15,
     J({ modes: si.modes, beats: si.beats, first: si.caps[0], err: lg.err }));
-  result.intro = { ...intro, ...si };
-  check('導入の後：城下の目的の札（忠勝と話す）・歩く／走るの操作が出る', (await page.textContent('.g-hud')).includes('忠勝'), await page.textContent('.g-hud'));
+  result.intro = { ...intro, ...si, toControl };
+  check('冒頭の後：城下の目的の札（城門の前の本多忠勝と話し、軍議を開く）・歩く／走るの操作が出る', /城門の前の本多忠勝と話し、軍議を開く/.test(await page.textContent('.g-hud')), await page.textContent('.g-hud'));
   await sleep(1500);
   await shot('P01-after-intro');
 

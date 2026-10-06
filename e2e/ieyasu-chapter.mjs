@@ -245,8 +245,8 @@ async function runA() {
     u.text.includes('1570年の情勢を背景にした歴史分岐シナリオ。会話・能力・分岐後の出来事はゲーム用の創作'));
   await sleep(500);
   await tap('.g-btn[data-id="new:ieyasu1570"]');
-  // 第一章の導入の演出（はじめからの道だけ）：スキップのボタンを本物の入力で押す
-  await skipCinematic(page, { tap: true, what: '第一章の導入' });
+  // 第一章の冒頭の演出（はじめからの道だけ。3D の場面だけ）：スキップのボタンを本物の入力で押す
+  await skipCinematic(page, { tap: true, what: '第一章の冒頭' });
   await waitScreen(page, 'explore');
   let s = await st(page);
   check('はじめから（歴史分岐）→ 城下（家康編・目的は忠勝）', s.scenario === 'ieyasu1570' && s.phase === 'explore' && (await page.textContent('.g-hud')).includes('忠勝'), await page.textContent('.g-hud'));
@@ -460,7 +460,7 @@ async function runB() {
     check('はじめから：前の保存（歴史分岐）の上書きを確かめる', (await ui(page)).text.includes('ほかのシナリオの保存'));
     await pressBtn('new');
   }
-  await skipCinematic(page, { what: '第一章の導入' });
+  await skipCinematic(page, { what: '第一章の冒頭' });
   await waitScreen(page, 'explore');
   let u = await talkTo(page, 'tadakatsu', kb);
   await pick('open_council');
@@ -526,7 +526,7 @@ async function runC() {
     await sleep(450);
     await page.locator('.g-btn[data-id="new"]').click();
   }
-  await skipCinematic(page, { what: '第一章の導入' });
+  await skipCinematic(page, { what: '第一章の冒頭' });
   await waitScreen(page, 'explore');
   await talkTo(page, 'tadakatsu', mouse);
   await pick('open_council');

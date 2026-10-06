@@ -25,12 +25,12 @@ export function outDir(dir) {
 }
 
 /**
- * 物語の演出（層 `.g-layer[data-kind="cine"]`。第一章の導入・第二章への移行・出陣・帰還）が出るのを待ち、
+ * 物語の演出（層 `.g-layer[data-kind="cine"]`。章の冒頭・情勢の図解の見直し・出陣・帰還）が出るのを待ち、
  * 「スキップ」のボタンを本物の入力（クリック。tap なら Playwright のタップ）で押して、層が閉じるまで待つ。
  * - 押し始めの守り（350ms）があるので、出てから 0.5 秒待ってから押す。
  * - 演出そのものの確かめ（中身・通常速度）は飛ばすので、出力に「スキップした」と書く（演出の確かめは e2e/story-*.mjs・town-smoke.mjs）。
  * - 開発用のフック（__game）を使わないので、本番ビルドの e2e でも同じに使える。
- * 返り：台本の id（層の data-cine。例 'ch1_intro'）。
+ * 返り：台本の id（層の data-cine。例 'ch1_open'）。
  */
 export async function skipCinematic(page, { tap = false, what = '', timeout = 600000, log = (t) => console.log(`   ${t}`) } = {}) {
     const sel = '.g-layer[data-kind="cine"]';

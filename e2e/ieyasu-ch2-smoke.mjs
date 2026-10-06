@@ -162,8 +162,7 @@ async function enterCh2(page, io, prefix, how) {
     await sleep(500);
     await page.keyboard.press('Enter');
   } else await io.btn('next_chapter');
-  // 第二章への移行の演出（保存の後・結果確認の前）：スキップのボタンを本物の入力で押す
-  await skipCinematic(page, { tap: how === 'tap', what: '第二章への移行', log: note });
+  // 保存の後：結果確認の画面 →「城下へ」→ 第二章の冒頭（3D の場面だけ。スキップのボタンを本物の入力で押す）
   await waitUi(page, 'record');
   await sleep(300);
   const r = await ui(page);
@@ -174,6 +173,7 @@ async function enterCh2(page, io, prefix, how) {
   check(`${prefix} 移るときの保存：本来のキーは第二章の始め（版 4）・第一章の結末は控えのキー（版 3）`, sv?.version === 4 && sv.chapter === 2 && sv.point === 'chapter' && b1?.version === 3 && b1.phase === 'ending', JSON.stringify({ v: sv?.version, point: sv?.point, ch1: b1?.phase }));
   await shot(page, `${prefix}-ch1-record`);
   await io.btn('to_town');
+  await skipCinematic(page, { tap: how === 'tap', what: '第二章の冒頭', log: note });
   await waitScreen(page, 'explore');
   await sleep(500);
   const s = await st(page);

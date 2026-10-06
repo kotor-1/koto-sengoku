@@ -134,8 +134,8 @@ try {
   check('ページの題（タブ）にシナリオの名前・「仮シナリオ」を付けない（タイトルではシナリオが決まっていない）', (await page.title()) === '戦国探索記 3D', await page.title());
   await shot('I01-title');
   await pressBtn('new:ieyasu1570');
-  // 第一章の導入の演出（はじめからの道だけ）：スキップのボタンを本物のクリックで押す（層の属性だけで待つ）
-  await skipCinematic(page, { what: '第一章の導入' });
+  // 第一章の冒頭の演出（はじめからの道だけ。3D の場面だけ）：スキップのボタンを本物のクリックで押す（層の属性だけで待つ）
+  await skipCinematic(page, { what: '第一章の冒頭' });
   await page.locator('.g-hud').waitFor({ state: 'visible' });
   check('歴史分岐のはじめから → 城下（目的：忠勝と話す）', (await page.textContent('.g-hud')).includes('忠勝') && (await page.textContent('.g-hud')).includes('歴史分岐'), await page.textContent('.g-hud'));
   check('ページの題：元亀元年・家康（仮シナリオとは出さない）', (await page.title()).includes('元亀元年・家康') && !(await page.title()).includes('仮シナリオ'), await page.title());

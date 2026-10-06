@@ -4,7 +4,7 @@
 // 確認の種類（出力の行にも書く）：
 //   - 本物の入力：タイトルの「はじめから」「つづきから」・演出のボタン（一時停止／再開・次の場面・スキップ）とキー（Esc）・
 //     HUD の「情勢」・J・情勢の「閉じる」「見直す」・城下を歩く（キーの W・A・S・D。カメラの向きに合わせて押す）・「物見」（E）・
-//     見回し（マウスの引きずり）・「調べる」「終える」（クリック）・話す（E）・行送り（Enter）・選択肢（クリック）・軍議の「地図で見る」とタブ・
+//     見回し（マウスの引きずり）・「調べる」「終える」（クリック）・話す（E）・行送り（Enter）・選択肢（クリック）・軍議の「詳しく見る」とタブ・
 //     城門（歩いて入る）・合戦の「合戦を始める」・指揮（Space）・全軍撤退と確認・結果の「続ける」・結末の「第二章へ進む」・結果確認の「城下へ」（タップ）。
 //     ch1 は PC 1280×720（キーとマウス）、ch2 はスマホ横 844×390（タッチ）。
 //   - 早送り：合戦の待つ間だけ（全軍撤退を出した後、指揮（一時停止）のまま window.__battle.fastForward(1) で 1 秒ずつ結果まで）。
@@ -15,14 +15,14 @@
 //   - 実機・性能：ここでは未確認（このコンテナはソフトウェア描画）。
 //
 // PARTS（カンマ区切り。既定はすべて）：ch1, ch2
-//   ch1  はじめから → 第一章の導入（一時停止・次の場面・スキップ）→ 城下（HUD の「情勢」・J）→ 物見櫓へ歩いて物見（調べる・終える）→
-//        情勢の地図に記録 → 忠勝と軍議（地図で見る・タブで強調・決めない → 方針を決める）→ 支度（約束）→ 城門 → 出陣の演出（通常速度で最後まで）→
+//   ch1  はじめから → 第一章の冒頭（3D の場面だけ。一時停止・次の場面・スキップ）→ 町の入口から城下（HUD の「情勢」・J）→ 物見櫓へ歩いて物見（調べる・終える）→
+//        情勢の地図に記録 → 忠勝と軍議（詳しく見る・タブで強調・決めない → 方針を決める）→ 支度（約束）→ 城門 → 出陣の演出（通常速度で最後まで）→
 //        合戦（全軍撤退）→ 帰還の演出（Esc でスキップ）→ 戦後 → 情勢から演出を見直す
-//   ch2  第一章の結末の保存 2 つ（勝ち・約束を守った／敗北・約束を破った・損害大）から「第二章へ進む」→ 移行の演出 → 結果確認 → 城下。
-//        勝ちの保存は移行の演出を触らずに最後まで（通常速度）、損害大の保存は一時停止 →「次の場面」で送る →「スキップ」。
+//   ch2  第一章の結末の保存 2 つ（勝ち・約束を守った／敗北・約束を破った・損害大）から「第二章へ進む」→ 結果確認 → 第二章の冒頭 → 城下。
+//        勝ちの保存は冒頭を触らずに最後まで（通常速度）、損害大の保存は一時停止 →「次の場面」で送る →「スキップ」。
 //        演出の 3D の出来事と町の人々が第一章の結果で違うこと・兵は保存のまま。
-//        勝ちの保存では続けて、タッチのスティックで物見櫓へ歩いて物見（指でなぞる・タップ）→ 忠勝へ歩いて軍議（判断の「物見：」・地図で見る・タブ）
-//        → 軍議から開いた情勢で移行の演出を見直す（スキップ）→ 軍議へ戻る
+//        勝ちの保存では続けて、タッチのスティックで物見櫓へ歩いて物見（指でなぞる・タップ）→ 忠勝へ歩いて軍議（判断の「物見：」・詳しく見る・タブ）
+//        → 軍議から開いた情勢（詳しく見る）で第二章の情勢の図解を見る（スキップ）→ 軍議へ戻る
 // 使い方：自動再読み込みなしの開発サーバーを自分用のポートで起動して
 //   (PORT=5391 setsid nohup npx vite --config proto3d/blender/tools/vite.nohmr.mjs > /tmp/vite-5391.log 2>&1 &)
 //   BASE=http://localhost:5391 node e2e/story-integrate-smoke.mjs [出力先]
@@ -305,15 +305,15 @@ async function battleAllRetreat(page) {
 
 // ================================================================ ch1：はじめから → 戦後 → 見直し（PC・キーとマウス）
 async function ch1() {
-  console.log('=== ch1（PC 1280×720・キーとマウス。描画の省略 ?q=low&render=manual）：はじめから → 導入 → 城下 → 物見 → 軍議 → 出陣 → 合戦 → 帰還 → 戦後 → 見直し');
+  console.log('=== ch1（PC 1280×720・キーとマウス。描画の省略 ?q=low&render=manual）：はじめから → 冒頭 → 城下 → 物見 → 軍議 → 出陣 → 合戦 → 帰還 → 戦後 → 見直し');
   const { ctx, page } = await open();
-  // ---- 1. はじめから → 第一章の導入
+  // ---- 1. はじめから → 第一章の冒頭（3D の場面だけ。情勢の図解は自動で流さない）
   await sleep(600);
   await page.click('.g-scn[data-scenario="ieyasu1570"] .g-btn[data-id="new:ieyasu1570"]');
   await waitUi(page, 'cine');
   const S0 = await st(page);
   let c = await cine(page);
-  check('本物の入力：はじめから → 第一章の導入（層 cine・台本 ch1_intro・最初は地図の場面）', c.id === 'ch1_intro' && c.mode === 'map' && (await screen(page)) === 'cinematic', J({ id: c.id, count: c.count, mode: c.mode }));
+  check('本物の入力：はじめから → 第一章の冒頭（層 cine・台本 ch1_open・最初は 3D の場面＝町の様子。地図の図解ではない）', c.id === 'ch1_open' && c.mode === 'stage' && (await screen(page)) === 'cinematic', J({ id: c.id, count: c.count, mode: c.mode }));
   const h0 = await pose(page);
   // 演出中の W は歩きへ漏れない
   await page.keyboard.down('KeyW');
@@ -336,19 +336,21 @@ async function ch1() {
   await cineBtn(page, 'next');
   const n1 = await cine(page);
   check('本物の入力：「次の場面」で次の場面の頭へ', n1.beat === b0 + 1, J({ from: b0, to: n1.beat, t: n1.t, mode: n1.mode }));
-  // 3D の場面（使者の到着）まで次の場面で進め、出来事が町に出ることを見る（描画の省略：見た目ではなく出来事の置き方）
-  for (let i = 0; i < 6 && (await cine(page))?.mode !== 'stage'; i++) await cineBtn(page, 'next');
+  // 使者の到着（冒頭の 2 つ目の場面）へ、次の場面・前の場面で合わせる
+  for (let i = 0; i < 4 && (await cine(page))?.beat !== 1; i++) await cineBtn(page, (await cine(page)).beat > 1 ? 'prev' : 'next');
+  // 使者の到着の場面（冒頭の 2 つ目）にいることを見て、出来事が町に出ることを見る（描画の省略：見た目ではなく出来事の置き方）
   await sleep(600);
   const sp = await page.evaluate(() => window.__game.world.stageProbe());
-  check('導入の 3D の場面：使者の到着の出来事が町に出る（使者 2 人・会話の相手の使者は隠す・カメラの差し替え）', sp.event === 'envoys_arrive' && sp.people === 2 && sp.hiddenCast.length === 2 && !!sp.shot, J({ ev: sp.event, people: sp.people, hidden: sp.hiddenCast, t: sp.t.toFixed(1) }));
+  check('冒頭の 3D の場面：使者の到着の出来事が町に出る（使者 2 人・会話の相手の使者は隠す・カメラの差し替え）', sp.event === 'envoys_arrive' && sp.people === 2 && sp.hiddenCast.length === 2 && !!sp.shot, J({ ev: sp.event, people: sp.people, hidden: sp.hiddenCast, t: sp.t.toFixed(1) }));
   await sleep(500);
   await cineBtn(page, 'skip');
   await waitScreen(page, 'explore');
   const S1 = await st(page);
   const h2 = await pose(page);
   const sp2 = await page.evaluate(() => ({ probe: window.__game.world.stageProbe(), shot: window.__game.world.cameraShot }));
-  check('本物の入力：「スキップ」→ 城下。状態は始める前と同じ・出来事を片付けカメラを戻す・主人公は始めの位置', J(norm(S1)) === J(norm(S0)) && !sp2.probe.active && sp2.shot === null && Math.hypot(h2.x - h0.x, h2.z - h0.z) < 1e-6 && Math.abs(h2.yaw - 0.36) < 1e-6, J({ h0: [h0.x, h0.z], h2: [h2.x, h2.z, h2.yaw] }));
-  check('導入を見てもスキップしても保存は書かない', Object.keys(await writes(page)).length === 0, J(await writes(page)));
+  // 主人公は町の入口（南の木戸の内。town/spots.ts の ENTRY_POSE）から操作を始める。位置は状態に書かない
+  check('本物の入力：「スキップ」→ 城下。状態は始める前と同じ・出来事を片付けカメラを戻す・主人公は町の入口（南の木戸の内）', J(norm(S1)) === J(norm(S0)) && S1.explore === null && !sp2.probe.active && sp2.shot === null && Math.hypot(h2.x - h0.x, h2.z - h0.z) < 1e-6 && h2.z > 8 && Math.abs(h2.yaw - h0.yaw) < 1e-6, J({ h0: [h0.x, h0.z, h0.yaw], h2: [h2.x, h2.z, h2.yaw] }));
+  check('冒頭を見てもスキップしても保存は書かない', Object.keys(await writes(page)).length === 0, J(await writes(page)));
   // ---- 2. 城下：HUD の「情勢」・J
   await sleep(400);
   await page.locator('.g-sit-btn').click();
@@ -357,7 +359,7 @@ async function ch1() {
     const L = document.querySelector('.g-layer[data-kind="situation"]');
     return { facts: Object.fromEntries([...L.querySelectorAll('[data-fact]')].map((d) => [d.dataset.fact, d.textContent])), scouted: L.querySelectorAll('[data-scout]').length, hint: L.querySelector('.g-sit-scout')?.textContent ?? '', replays: [...L.querySelectorAll('.g-btn[data-id^="replay:"]')].map((b) => b.dataset.id) };
   });
-  check('本物の入力：HUD の「情勢」→ いつ・今いる所・協力・敵対・危機・目的。物見はまだ（任意の案内）。見直しは導入', ['when', 'where', 'allies', 'enemies', 'crisis', 'objective'].every((k) => (sit0.facts[k] ?? '').length > 0) && sit0.scouted === 0 && sit0.hint.includes('物見') && sit0.replays.includes('replay:ch1_intro'), J({ ...sit0.facts, hint: sit0.hint.slice(0, 60), replays: sit0.replays }));
+  check('本物の入力：HUD の「情勢」→ いつ・今いる所・協力・敵対・危機・目的。物見はまだ（任意の案内）。情勢の図解（任意）と冒頭を見直せる', ['when', 'where', 'allies', 'enemies', 'crisis', 'objective'].every((k) => (sit0.facts[k] ?? '').length > 0) && sit0.scouted === 0 && sit0.hint.includes('物見') && sit0.replays.includes('replay:ch1_intro') && sit0.replays.includes('replay:ch1_open'), J({ ...sit0.facts, hint: sit0.hint.slice(0, 60), replays: sit0.replays }));
   await shot(page, 'ch1-situation-before-scout');
   await sleep(400);
   await page.keyboard.press('KeyJ');
@@ -427,7 +429,7 @@ async function ch1() {
   await sleep(400);
   await page.keyboard.press('Escape');
   await waitScreen(page, 'explore');
-  // ---- 5. 忠勝と軍議（地図で見る・タブで強調・決めない）
+  // ---- 5. 忠勝と軍議（詳しく見る・タブで強調・決めない）
   let u = await talkTo(page, 'tadakatsu');
   check('本物の入力：忠勝へ歩いて話す → 軍議を開く', (u.choices ?? []).includes('open_council'), u.seenId);
   await pick(page, 'open_council');
@@ -444,7 +446,7 @@ async function ch1() {
   await waitUi(page, 'situation');
   let s = await ui(page);
   const hl0 = s.highlight;
-  check('本物の入力：「地図で見る」→ 情勢（軍議から・選択肢のタブ）', s.from === 'council' && s.options.length >= 3 && s.option === sel0, J({ options: s.options, option: s.option }));
+  check('本物の入力：「詳しく見る」→ 情勢（軍議から・選択肢のタブ）', s.from === 'council' && s.options.length >= 3 && s.option === sel0, J({ options: s.options, option: s.option }));
   const other = s.options.find((o) => o !== s.option);
   await sleep(450);
   await page.locator(`.g-sit-tab[data-option="${other}"]`).click();
@@ -538,7 +540,7 @@ async function ch1() {
   await page.locator('.g-sit-btn').click();
   await waitUi(page, 'situation');
   const reps = await page.evaluate(() => [...document.querySelectorAll('.g-layer[data-kind="situation"] .g-btn[data-id^="replay:"]')].map((b) => b.dataset.id));
-  check('戦後の情勢：見直せる演出は導入・出陣・帰還', ['replay:ch1_intro', 'replay:departure', 'replay:return'].every((x) => reps.includes(x)), J(reps));
+  check('戦後の情勢：見直せるのは情勢の図解・冒頭・出陣・帰還', ['replay:ch1_intro', 'replay:ch1_open', 'replay:departure', 'replay:return'].every((x) => reps.includes(x)), J(reps));
   await sleep(450);
   await page.locator('.g-btn[data-id="replay:return"]').click();
   await waitUi(page, 'cine');
@@ -567,7 +569,7 @@ async function ch1() {
 
 /**
  * 第二章の城下（スマホ横・タッチ）：スティックで物見櫓へ歩いて物見（見回しの面を指でなぞる・「調べる」「終える」をタップ）→
- * 忠勝へ歩いて軍議（判断の選択肢の「物見：」・「地図で見る」・タブ・決めない）→ 軍議から情勢を開き、第二章への移行を見直す（スキップ）→ 軍議所へ戻る。
+ * 忠勝へ歩いて軍議（判断の選択肢の「物見：」・「詳しく見る」・タブ・決めない）→ 軍議から情勢を開き、第二章の情勢の図解を見る（スキップ）→ 軍議所へ戻る。
  */
 async function ch2Extra(page, ctx, name) {
   const cdp = await ctx.newCDPSession(page);
@@ -652,8 +654,8 @@ async function ch2Extra(page, ctx, name) {
   await tapSel(`.g-sit-tab[data-option="${other}"]`);
   sv = await ui(page);
   const s2 = await st(page);
-  check(`[${name}] 第二章：「地図で見る」→ タブで強調が変わるだけ（判断・条件は決まらない）`, sv.option === other && J(sv.highlight) !== J(hl0) && s2.plan === null && s2.terms === null, J({ options: sv.options, option: sv.option }));
-  // 軍議から開いた情勢で、第二章への移行を見直す（スキップ）→ 情勢 → 閉じる → 軍議（軍議所を映したまま）
+  check(`[${name}] 第二章：「詳しく見る」→ タブで強調が変わるだけ（判断・条件は決まらない）`, sv.option === other && J(sv.highlight) !== J(hl0) && s2.plan === null && s2.terms === null, J({ options: sv.options, option: sv.option }));
+  // 軍議から開いた情勢（「詳しく見る」）で、第二章の情勢の図解を見る（スキップ）→ 情勢 → 閉じる → 軍議（軍議所を映したまま）
   const reps = await page.evaluate(() => [...document.querySelectorAll('.g-layer[data-kind="situation"] .g-btn[data-id^="replay:"]')].map((b) => b.dataset.id));
   if (reps.includes('replay:ch2_intro')) {
     await countWrites(page);
@@ -666,9 +668,9 @@ async function ch2Extra(page, ctx, name) {
     await waitUi(page, 'script');
     const hall1 = await page.evaluate(() => window.__game.world.cameraShot);
     const s3 = await st(page);
-    check(`[${name}] 第二章：軍議から開いた情勢で移行の演出を見直す（タップでスキップ）→ 軍議へ戻る（軍議所を映したまま・同じ選択肢・状態と保存は同じ）`,
+    check(`[${name}] 第二章：軍議から開いた情勢で情勢の図解を見る（タップでスキップ）→ 軍議へ戻る（軍議所を映したまま・同じ選択肢・状態と保存は同じ）`,
       (await screen(page)) === 'council' && J(hall1) === J(hall0) && !!hall1 && J((await ui(page)).choices) === J(u.choices) && J(norm(s3)) === J(norm(s2)) && Object.keys(await writes(page)).length === 0, J({ reps, hall1 }));
-  } else check(`[${name}] 第二章：情勢に第二章への移行の見直しがある`, false, J(reps));
+  } else check(`[${name}] 第二章：情勢に第二章の情勢の図解がある`, false, J(reps));
 }
 
 // ================================================================ ch2：第一章の結末の保存から第二章へ（スマホ横・タッチ）
@@ -681,10 +683,16 @@ async function ch2One(name, watch, extra = false) {
   await waitUi(page, 'ending');
   await sleep(600);
   await page.locator('.g-btn[data-id="next_chapter"]').tap();
+  // 保存の後：結果確認の画面 →「城下へ」→ 第二章の冒頭（3D の場面だけ。情勢の図解は自動で流さない）
+  await waitUi(page, 'record');
+  const r = await ui(page);
+  const sv = await saved(page);
+  check(`[${name}] 本物の入力：「第二章へ進む」（タップ）→ 保存（版 4・chapter）の後に結果確認（ボタンは「城下へ」）`, J(r.buttons.map((b) => b.id)) === '["to_town"]' && sv?.version === 4 && sv.point === 'chapter', J(r.buttons.map((b) => b.id)));
+  await sleep(500);
+  await page.locator('.g-btn[data-id="to_town"]').tap();
   await waitUi(page, 'cine');
   const c0 = await cine(page);
-  const sv = await saved(page);
-  check(`[${name}] 本物の入力：「第二章へ進む」（タップ）→ 保存（版 4・chapter）の後に移行の演出`, c0.id.startsWith('ch2_intro') && sv?.version === 4 && sv.point === 'chapter', c0.id);
+  check(`[${name}] 本物の入力：「城下へ」（タップ）→ 第二章の冒頭（台本 ch2_open・最初は 3D の場面）`, c0.id.startsWith('ch2_open') && c0.mode === 'stage', J({ id: c0.id, mode: c0.mode, count: c0.count }));
   const events = [];
   const infos = new Set();
   const byBeat = new Map();
@@ -710,7 +718,7 @@ async function ch2One(name, watch, extra = false) {
       await sleep(200);
     }
     const wall = (Date.now() - w0) / 1000;
-    check(`[${name}] 移行の演出を触らずに最後まで（通常速度。描画の省略）：演出の時計と壁の時計がほぼ同じ・30〜45 秒`, Math.abs(wall - lastT) < Math.max(1.5, lastT * 0.08) && lastT >= 29 && lastT <= 46, `演出 ${lastT.toFixed(1)} 秒・壁 ${wall.toFixed(1)} 秒`);
+    check(`[${name}] 第二章の冒頭を触らずに最後まで（通常速度。描画の省略）：演出の時計と壁の時計がほぼ同じ・12〜24 秒`, Math.abs(wall - lastT) < Math.max(1.5, lastT * 0.08) && lastT >= 11 && lastT <= 25, `演出 ${lastT.toFixed(1)} 秒・壁 ${wall.toFixed(1)} 秒`);
   } else {
     // 一時停止して、「次の場面」で場面を送りながら 3D の出来事を記録する（止めたまま。画面写しも止めたまま撮る）
     await sleep(400);
@@ -738,14 +746,11 @@ async function ch2One(name, watch, extra = false) {
     await sleep(400);
     await cineBtn(page, 'skip', true);
   }
-  note(`[${name}] 移行の 3D の出来事：${events.map((e) => `${e.id}${e.count !== undefined ? ` ×${e.count}` : ''}${e.mark ? ` 旗 ${e.mark}` : ''}${e.name ? ` ${e.name}` : ''}（人 ${e.people}・兵 ${e.figures}）`).join(' / ')}`);
+  note(`[${name}] 第二章の冒頭の 3D の出来事：${events.map((e) => `${e.id}${e.count !== undefined ? ` ×${e.count}` : ''}${e.mark ? ` 旗 ${e.mark}` : ''}${e.name ? ` ${e.name}` : ''}（人 ${e.people}・兵 ${e.figures}）`).join(' / ')}`);
   note(`[${name}] 出した情報の札：${[...infos].join(',')}`);
-  await waitUi(page, 'record');
-  const r = await ui(page);
-  check(`[${name}] ${watch ? '演出が終わる' : '本物の入力：「スキップ」（タップ）'} → 結果確認（ボタンは「城下へ」）`, J(r.buttons.map((b) => b.id)) === '["to_town"]');
-  await sleep(500);
-  await page.locator('.g-btn[data-id="to_town"]').tap();
   await waitScreen(page, 'explore');
+  const hp = await pose(page);
+  check(`[${name}] ${watch ? '冒頭が終わる' : '本物の入力：「スキップ」（タップ）'} → 第二章の城下。主人公は町の入口（南の木戸の内）から`, hp.z > 8, J([hp.x, hp.z]));
   await sleep(500);
   const s = await st(page);
   const amb = await page.evaluate(() => window.__game.world.ambientProbe());
@@ -758,15 +763,15 @@ async function ch2One(name, watch, extra = false) {
   return { events, infos: [...infos], ambient: amb.spec, figures: amb.figures, walkers: amb.walkers.map((w) => w.role) };
 }
 async function ch2() {
-  console.log('=== ch2（スマホ横 844×390・タッチ。描画の省略）：第一章の結末の保存 2 つ（直接状態変更）から第二章へ。移行の演出と町の人々が結果で違う');
+  console.log('=== ch2（スマホ横 844×390・タッチ。描画の省略）：第一章の結末の保存 2 つ（直接状態変更）から第二章へ。冒頭と町の人々が結果で違う');
   const win = await ch2One('oda_victory_kept', true, true);
   const heavy = await ch2One('oda_defeat_broken_heavy', false);
   const g = (a, k) => a.ambient?.groups?.find((x) => x.kind === k) ?? null;
   const ev = (a, id) => a.events.find((e) => e.id === id) ?? null;
   note(`町の人々：勝ち ${J(win.ambient?.groups)}／損害大 ${J(heavy.ambient?.groups)}`);
-  check('移行の演出：勝ち・約束を守った保存は援兵の到着（旗 織）、損害大・約束を破った保存は援兵なし', ev(win, 'reinforcement_arrive')?.mark === '織' && !ev(heavy, 'reinforcement_arrive'), J({ win: ev(win, 'reinforcement_arrive'), heavy: ev(heavy, 'reinforcement_arrive') }));
-  check('移行の演出：損害大の保存は負傷兵の場面が多い（見た目の人数）', (ev(heavy, 'wounded_rest')?.count ?? 0) > (ev(win, 'wounded_rest')?.count ?? 0), `${ev(win, 'wounded_rest')?.count ?? 0} → ${ev(heavy, 'wounded_rest')?.count ?? 0}`);
-  check('移行の演出：どちらも使いの到着と、いつ・どこ・協力・前の結果・危機・判断の札', [win, heavy].every((a) => !!ev(a, 'messenger_arrive') && ['when', 'where', 'ally', 'prev', 'crisis', 'decide'].every((k) => a.infos.includes(k))), J([win.infos, heavy.infos]));
+  check('第二章の冒頭：勝ち・約束を守った保存は援兵の到着（旗 織）、損害大・約束を破った保存は援兵なし', ev(win, 'reinforcement_arrive')?.mark === '織' && !ev(heavy, 'reinforcement_arrive'), J({ win: ev(win, 'reinforcement_arrive'), heavy: ev(heavy, 'reinforcement_arrive') }));
+  check('第二章の冒頭：損害大の保存は負傷兵の場面が多い（見た目の人数）', (ev(heavy, 'wounded_rest')?.count ?? 0) > (ev(win, 'wounded_rest')?.count ?? 0), `${ev(win, 'wounded_rest')?.count ?? 0} → ${ev(heavy, 'wounded_rest')?.count ?? 0}`);
+  check('第二章の冒頭：どちらも使いの到着と家臣の一言、いつ・どこ・協力（A の撤収のわけ）・前の結果・危機・判断の札', [win, heavy].every((a) => !!ev(a, 'messenger_arrive') && !!ev(a, 'retainer_report') && ['when', 'where', 'ally', 'prev', 'crisis', 'decide'].every((k) => a.infos.includes(k))), J([win.infos, heavy.infos]));
   check('第二章の町の人々：損害大の保存は詰所の負傷兵が多い。援兵（旗 織）は勝ち・約束を守った保存だけ', (g(heavy, 'wounded')?.count ?? 0) > (g(win, 'wounded')?.count ?? 0) && g(win, 'reinforcement')?.mark === '織' && !g(heavy, 'reinforcement'), `負傷 ${g(win, 'wounded')?.count ?? 0} → ${g(heavy, 'wounded')?.count ?? 0}・援兵 ${J(g(win, 'reinforcement'))} / ${J(g(heavy, 'reinforcement'))}`);
 }
 

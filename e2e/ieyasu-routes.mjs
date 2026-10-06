@@ -224,8 +224,8 @@ async function newIeyasu(page, io) {
     check('はじめから：前の保存（歴史分岐）の上書きを確かめる（ほかのシナリオの保存には触れない）', (await ui(page)).text.includes('ほかのシナリオの保存'));
     await io.btn('new');
   }
-  // 第一章の導入の演出（はじめからの道だけ）：スキップのボタンを本物の入力で押す
-  await skipCinematic(page, { tap: io.phone, what: '第一章の導入', log: note });
+  // 第一章の冒頭の演出（はじめからの道だけ。3D の場面だけ）：スキップのボタンを本物の入力で押す
+  await skipCinematic(page, { tap: io.phone, what: '第一章の冒頭', log: note });
   await waitScreen(page, 'explore');
 }
 async function council(page, io, policy) {
