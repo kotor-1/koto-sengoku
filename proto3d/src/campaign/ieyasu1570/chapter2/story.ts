@@ -66,7 +66,8 @@ export const CH2_MISSION_TITLES: Readonly<Record<Policy, string>> = { oda: '織�
 
 /** 判断の名前（方針ごと。判断 1 commit・判断 2 hold） */
 export const CH2_PLAN_LABELS: Readonly<Record<Policy, Readonly<Record<Ch2Plan, string>>>> = {
-    oda: { commit: '殿を引き受ける', hold: '退き口の手前を固める' },
+    // 「殿」はしんがり（退く軍の最後尾で追っ手を防ぐ役）。「徳川殿」の「殿（どの）」と読み違えないように読みを添える
+    oda: { commit: '殿（しんがり）を引き受ける', hold: '退き口の手前を固める' },
     asai: { commit: '南から急いで救う', hold: '西の筋から救う' },
     home: { commit: '全軍で村を守る', hold: '守備隊は城に残す' },
 };

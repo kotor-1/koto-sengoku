@@ -9,7 +9,7 @@
  */
 import { IEYASU_UNIT_IDS } from '../../../battle/maps';
 import type { BattleOutcome } from '../../../battle/types';
-import type { Ch2SupportId } from '../chapter2/battle';
+import { CH2_UNIT, type Ch2SupportId } from '../chapter2/battle';
 import { ieyasu2BattleInfo } from '../chapter2/rules';
 import { isChapter2, type Ieyasu2State, type IeyasuAnyState } from '../chapter2/state';
 import { TOKUGAWA_UNIT_IDS, type IeyasuState, type TokugawaUnitId } from '../state';
@@ -42,6 +42,61 @@ export function outcomeTroops(o: BattleOutcome, only?: readonly TokugawaUnitId[]
         left += u.endStrength;
     }
     return { sortie, lost: Math.max(0, sortie - left), left };
+}
+
+/**
+ * 徳川のほかの味方の部隊の呼び名（帰還の字幕で、失った兵の主語にする）。第一章は結果の画面の部隊の名前、
+ * 第二章は家ごとにまとめる（織田勢の後備え・小荷駄・鉄砲隊＝織田勢、浅井の部隊＝浅井勢。長政の名は出さない）。
+ */
+const OTHER_ALLY_NAMES: Readonly<Record<string, string>> = {
+    a_oda: '織田援軍',
+    a_nagamasa: '浅井長政隊',
+    [CH2_UNIT.odaRear]: '織田勢',
+    [CH2_UNIT.odaBaggage]: '織田勢',
+    [CH2_UNIT.odaTeppo]: '織田勢',
+    [CH2_UNIT.asai]: '浅井勢',
+    [CH2_UNIT.asaiGuide]: '浅井勢',
+    [CH2_UNIT.village]: '村の衆',
+};
+const OTHER_ALLY_BY_CLAN: Readonly<Record<string, string>> = { oda: '織田勢', asai: '浅井勢' };
+
+/** 味方の失った兵（結果の画面と同じ数え方）。徳川と、そのほかの味方（呼び名ごと） */
+export interface AllyLosses {
+    /** 徳川の部隊（出た・失った・残った） */
+    tokugawa: { sortie: number; lost: number; left: number };
+    /** 徳川のほかの味方（呼び名ごと。出た順。失った兵が 0 の組も入る） */
+    others: { name: string; start: number; lost: number }[];
+    /** 味方全体の失った兵（結果の画面の「味方の失った兵」と同じ数） */
+    total: number;
+}
+
+/**
+ * 味方の失った兵を、結果の画面（battle/control.ts の resultRows：部隊ごとに始めと終わりの兵を丸めて引き、味方の部隊を全部足す）と
+ * 同じ数え方で求める。帰還の字幕は、この数で「誰が何人失ったか」を言う（徳川だけを数えて、援軍の損失を見落とさない）。
+ */
+export function allyLosses(o: BattleOutcome): AllyLosses {
+    const tokugawa = { sortie: 0, lost: 0, left: 0 };
+    const others: AllyLosses['others'] = [];
+    let total = 0;
+    for (const u of o.units) {
+        if (u.side !== 'ally') continue;
+        const st = Math.round(u.startStrength);
+        const lost = st - Math.round(u.endStrength);
+        total += lost;
+        if (isTokugawa(u)) {
+            tokugawa.sortie += st;
+            tokugawa.lost += lost;
+            continue;
+        }
+        const name = OTHER_ALLY_NAMES[u.id] ?? OTHER_ALLY_BY_CLAN[u.clan] ?? '味方の諸隊';
+        const g = others.find((x) => x.name === name);
+        if (g) {
+            g.start += st;
+            g.lost += lost;
+        } else others.push({ name, start: st, lost });
+    }
+    tokugawa.left = Math.max(0, tokugawa.sortie - tokugawa.lost);
+    return { tokugawa, others, total };
 }
 
 /** 第一章の合戦（第一章の戦後・結末は state.battle、第二章は記録 chapter1.battle）。合戦の前は null */

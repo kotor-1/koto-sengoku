@@ -20,7 +20,14 @@ import { isChapter2 } from '../proto3d/src/campaign/ieyasu1570/chapter2/state';
 import { newIeyasuGame } from '../proto3d/src/campaign/ieyasu1570/flow';
 import type { CineMapBeat, CineMoment, CineSpec, StageEvent } from '../proto3d/src/story/types';
 import { CAPTION_CHARS_PER_SEC, CAPTION_MAX_CHARS, CAPTION_MIN_SEC, INFO_KEYS, PLACE_APPEAR_SEC, ROUTE_DRAW_SEC, frameAt, orderedBeats } from '../proto3d/src/story/timeline';
-import { ch1BeforeBattle, ch1Cases, ch1Ending, ch2Cases, ch2Starts, checkBannedWords, type Ch1Case } from './proto3d-ieyasu-story-states';
+import { CH2_DEFEATS, RESULTS, ch1BeforeBattle, ch1Cases, ch1Ending, ch2Aftermath, ch2Battle, ch2Cases, ch2Muster, ch2Starts, checkBannedWords, type Ch1Case } from './proto3d-ieyasu-story-states';
+import { ieyasuToBattle } from './proto3d-ieyasu-helpers';
+import { createBattle } from '../proto3d/src/battle/sim';
+import { pledgeResultModel, resultRows } from '../proto3d/src/battle/control';
+import { ieyasuBattleSetup } from '../proto3d/src/campaign/ieyasu1570/flow';
+import { ieyasu2BattleSetup } from '../proto3d/src/campaign/ieyasu1570/chapter2/flow';
+import { availableCh2Plans } from '../proto3d/src/campaign/ieyasu1570/chapter2/rules';
+import { CH2_PLAN_LABELS } from '../proto3d/src/campaign/ieyasu1570/chapter2/story';
 
 const CH1 = ch1Cases();
 const CH2_STARTS = ch2Starts(CH1);
@@ -118,7 +125,12 @@ describe('第一章の導入', () => {
     it('地図：1570 年・徳川の城下（三河）・近江の対立・国境の浪人。3D：両家の使者（今の見た目の鍵）。軍議で 3 つの道', () => {
         const all = texts(spec);
         expect(all).toContain('元亀元年（1570年）');
-        expect(all).toContain('徳川の城下（三河）');
+        // 最初の字幕で、自分が徳川家康だと分かる（点検の指摘）。場所は見出し「徳川の城下（三河）」と同じ（城・町の名前は出さない）
+        expect(spec.captions[0]!.text).toBe('元亀元年（1570年）。三河、徳川家康の城下。');
+        const first = spec.beats[0]!;
+        expect(first.kind === 'map' && first.scene.heading).toBe('元亀元年（1570年）・徳川の城下（三河）');
+        // A は今までの道（方針の名前「織田との協力を続ける」の言い方）
+        expect(all).toContain('A：織田との協力を続け、浅井・朝倉と戦う。');
         expect(all).toContain('近江で、織田と浅井・朝倉が敵味方に分かれた');
         expect(all).toContain('浪人');
         expect(all).toMatch(/A：.*\n.*B：.*史実から分かれた道.*\n.*C：/);
@@ -458,6 +470,171 @@ describe('矛盾を避ける決まり', () => {
             expect(texts(sp)).not.toMatch(/城下から.*加わる/);
         }
     }, 60_000);
+});
+
+/**
+ * 帰還の字幕と、直前の結果の画面（battle/control.ts の resultRows・pledgeResultModel。本物の合戦の状態 createBattle を作って呼ぶ）が食い違わない
+ * （点検の blocker：撤退の結果の画面は「味方の失った兵 23」「織田援軍 400 → 377」なのに、帰還が「兵を失わずに戻った。」だった）：
+ * - 味方全体（徳川・援軍・味方の家の部隊）で損失があれば、「兵を失わずに戻った」（主語の無い無傷の言い方）を出さない。
+ * - 字幕の失った兵（徳川の数＋ほかの味方の数）の合計は、結果の画面の「味方の失った兵」と同じ。徳川の数は徳川の部隊の行の合計と同じ。
+ * - 約束の行は結果の画面の約束の欄と同じ言葉（守った／守れなかった／斬り合う前に退いた）。引き受けなかったとき・約束の無い第二章は出さない。
+ */
+describe('帰還の字幕は結果の画面と合う（損失の主語と数・約束の行）', () => {
+    const num = (x: string) => Number(x.replace(/,/g, ''));
+    const TOKUGAWA_IDS = new Set<string>(Object.values(IEYASU_UNIT_IDS));
+    /** 帰還の字幕から、徳川の失った兵とほかの味方の失った兵を読む（字幕の言い方の決まりも確かめる） */
+    function lossesIn(sp: CineSpec, name: string): { tokugawa: number; others: { name: string; lost: number }[]; bare: boolean } {
+        const stage = sp.beats.find((b) => b.kind === 'stage')!;
+        const caps = sp.captions.filter((c) => c.start >= stage.start - 1e-6).slice(1);
+        let tokugawa = 0;
+        const others: { name: string; lost: number }[] = [];
+        let bare = false;
+        for (const c of caps) {
+            let m: RegExpMatchArray | null;
+            if (c.text === '兵を失わずに戻った。') bare = true;
+            else if ((m = c.text.match(/^徳川の兵 ([\d,]+) のうち、([\d,]+) を失った。$/))) tokugawa = num(m[2]!);
+            else if ((m = c.text.match(/^徳川の兵の多くは戻った（失った兵 ([\d,]+)）。$/))) tokugawa = num(m[1]!);
+            else if ((m = c.text.match(/^徳川の兵は失わずに戻った（(.+)は ([\d,]+) を失った）。$/))) others.push({ name: m[1]!, lost: num(m[2]!) });
+            else if ((m = c.text.match(/^(.+)は ([\d,]+) を失った。$/))) others.push({ name: m[1]!, lost: num(m[2]!) });
+            else if (c.text !== '徳川の兵は失わずに戻った。') throw new Error(`${name}：帰還の損失の字幕「${c.text}」が決まりの形でない`);
+        }
+        return { tokugawa, others, bare };
+    }
+    it('第一章：3 方針 × 勝敗 × 約束 × 損害のすべて（結果の画面の数・約束の欄と比べる）', () => {
+        let alliesOnly = 0;
+        let both = 0;
+        const pledgeSeen = new Set<string>();
+        for (const c of CH1) {
+            const bs = createBattle(ieyasuBattleSetup(ieyasuToBattle(c.policy, c.pledge === 'declined' ? 'decline' : 'accept')));
+            const o = c.state.battle!;
+            const rows = resultRows(bs, o);
+            for (const s of [c.state, ch1Ending(c.state)]) {
+                const sp = ieyasuCinematic(s, 'return')!;
+                const got = lossesIn(sp, c.name);
+                // 味方全体で損失があれば、主語の無い「兵を失わずに戻った」を出さない
+                expect(got.bare, `${c.name}：味方の失った兵 ${rows.lost.ally}`).toBe(rows.lost.ally === 0);
+                // 数は結果の画面と同じ（合計＝味方の失った兵。徳川の数＝徳川の部隊の行の合計。ほかの味方は行の名前で）
+                const tokugawaRows = rows.rows.filter((r) => r.side === 'ally' && TOKUGAWA_IDS.has(r.id));
+                const otherRows = rows.rows.filter((r) => r.side === 'ally' && !TOKUGAWA_IDS.has(r.id) && r.lost > 0);
+                expect(got.tokugawa + got.others.reduce((a, x) => a + x.lost, 0), c.name).toBe(rows.lost.ally);
+                expect(got.tokugawa, c.name).toBe(tokugawaRows.reduce((a, r) => a + r.lost, 0));
+                expect(got.others, c.name).toEqual(otherRows.map((r) => ({ name: r.name, lost: r.lost })));
+                if (got.tokugawa === 0 && got.others.length) alliesOnly++;
+                if (got.tokugawa > 0 && got.others.length) both++;
+                // 約束の行：結果の画面の約束の欄と同じ言葉。引き受けなかったときは出さない
+                const pm = pledgeResultModel(bs, o)!;
+                const caps = sp.captions.map((x) => x.text);
+                pledgeSeen.add(`${pm.result}.${c.pledge}`);
+                if (pm.result === 'declined') expect(texts(sp), c.name).not.toContain('約束');
+                else if (pm.result === 'kept') expect(caps, c.name).toContain(`${pm.title}。`);
+                else if (pm.text.includes('斬り合う前に')) {
+                    expect(c.pledge, c.name).toBe('unfought');
+                    expect(caps, c.name).toContain(`約束を守れなかった：敵と斬り合う前に${o.result === 'defeat' ? '敗れた' : '退いた'}。`);
+                } else expect(caps, c.name).toContain(`${pm.title}。`);
+                // 約束の行は 1 つだけで、地図の場面（結果の印の後）にある
+                if (pm.result !== 'declined') {
+                    const lines = sp.captions.filter((x) => x.text.startsWith('約束を'));
+                    expect(lines.length, c.name).toBe(1);
+                    expect(frameAt(sp, lines[0]!.start + 0.1, false).map, c.name).toBeTruthy();
+                }
+                checkShape(sp, `${c.name}.return`);
+            }
+        }
+        // 「徳川は失わず、援軍だけが失った」（点検の場面）と「両方が失った」の組み合わせを、どちらも確かめた
+        expect(alliesOnly).toBeGreaterThan(10);
+        expect(both).toBeGreaterThan(10);
+        expect([...pledgeSeen].sort()).toEqual(['broken.broken', 'broken.unfought', 'declined.declined', 'kept.kept']);
+    }, 120_000);
+    it('第二章：判断 × 結果 × 敗北の理由（結果の画面の数と比べる。第二章の合戦には約束が無いので約束の行は出さない）', () => {
+        let alliesLost = 0;
+        for (const c of CH2_STARTS.filter((x) => x.ch1.loss !== 'light' && x.ch1.pledge !== 'unfought')) {
+            for (const plan of availableCh2Plans(c.state)) {
+                const b = ch2Battle(ch2Muster(c.state, plan));
+                const bs = createBattle(ieyasu2BattleSetup(b));
+                for (const r of RESULTS) {
+                    for (const reason of r === 'defeat' ? CH2_DEFEATS : [undefined]) {
+                        const a = ch2Aftermath(b, r, reason ? { reason, heavy: reason === 'ally_hq_routed' } : {});
+                        const name = `${c.name}.${plan}.${r}.${reason ?? ''}`;
+                        const rows = resultRows(bs, a.battle!);
+                        const sp = ieyasuCinematic(a, 'return')!;
+                        const got = lossesIn(sp, name);
+                        expect(got.bare, name).toBe(rows.lost.ally === 0);
+                        expect(got.tokugawa + got.others.reduce((x, y) => x + y.lost, 0), name).toBe(rows.lost.ally);
+                        expect(got.tokugawa, name).toBe(rows.rows.filter((x) => x.side === 'ally' && TOKUGAWA_IDS.has(x.id)).reduce((x, y) => x + y.lost, 0));
+                        if (got.others.length) alliesLost++;
+                        // 長政の名は出さない（浅井の部隊は「浅井勢」）
+                        for (const x of got.others) expect(['織田勢', '浅井勢', '村の衆'], name).toContain(x.name);
+                        expect(pledgeResultModel(bs, a.battle!), name).toBeNull();
+                        expect(texts(sp), name).not.toContain('約束');
+                        checkShape(sp, `${name}.return`);
+                    }
+                }
+            }
+        }
+        expect(alliesLost).toBeGreaterThan(50);
+    }, 120_000);
+});
+
+describe('第二章への移行：援兵の時点・判断の字幕・村の使いの見た目（点検の指摘）', () => {
+    it('援兵は「先の戦の後に着き、隊に加わった」（記録の「第一章で受け取り済み・今の兵に含む」と同じ時点。今着いた、と言わない）', () => {
+        let n = 0;
+        for (const c of CH2_STARTS) {
+            const sp = ieyasuCinematic(c.state, 'ch2_intro')!;
+            const sup = c.state.chapter1.support;
+            if (!(sup.recovered > 0)) continue;
+            n++;
+            const all = texts(sp);
+            expect(all, c.name).toContain(`${sup.recovered} は、先の戦の後に`);
+            expect(all, c.name).toContain('隊に加わった。');
+            expect(all, c.name).not.toMatch(/援兵 \d+ が着いた/);
+        }
+        expect(n).toBeGreaterThan(10);
+    });
+    it('判断：2 つ選べるときは手ごとに名前と違いの一言（「殿（しんがり）」と読みを添える）。1 つしか選べないときは選べない手の名前と理由・今回決めるのは兵の補充と言う', () => {
+        let two = 0;
+        let one = 0;
+        for (const c of CH2_STARTS) {
+            const sp = ieyasuCinematic(c.state, 'ch2_intro')!;
+            const caps = sp.captions.map((x) => x.text);
+            const all = caps.join('\n');
+            const L = CH2_PLAN_LABELS[c.state.policy];
+            const avail = availableCh2Plans(c.state);
+            // 判断の札は判断の場面の最初の字幕の時刻
+            expect(sp.captions.find((x) => x.start === sp.info.decide), c.name).toBeDefined();
+            if (avail.length === 2) {
+                two++;
+                for (const pl of ['commit', 'hold'] as const) expect(caps.some((t) => t.startsWith(`「${L[pl]}」：`)), `${c.name}：${pl}`).toBe(true);
+                expect(all, c.name).toMatch(/一つ選ぶ|どちらかを選び/);
+            } else {
+                one++;
+                expect(avail).toEqual(['commit']);
+                expect(caps, c.name).toContain(`軍議の手は「${L.commit}」だけ。`);
+                expect(caps, c.name).toContain(`「${L.hold}」は、兵が足りず取れない。`);
+                expect(all, c.name).toContain('今回決めるのは兵の補充');
+                // 「一つ選ぶ」と言いながら手が 1 つ、にしない
+                expect(all, c.name).not.toMatch(/一つ選ぶ|もう一つは/);
+            }
+            if (c.state.policy === 'oda') expect(all, c.name).toContain('殿（しんがり）を引き受ける');
+            expect(all, c.name).not.toContain('「殿を引き受ける」');
+        }
+        expect(two).toBeGreaterThan(10);
+        expect(one).toBeGreaterThan(3);
+    });
+    it('村の使い（C）は町の人の見た目で、配役と演出で同じ見た目（武家の使者の見た目の鍵を使わない）', () => {
+        const sc = ieyasuScenario(null);
+        for (const c of CH2_STARTS) {
+            const sp = ieyasuCinematic(c.state, 'ch2_intro')!;
+            const ev = eventOf(sp, 'messenger_arrive')!;
+            const muster = ch2Muster(c.state, availableCh2Plans(c.state)[0]!);
+            const cast = sc.cast(muster).find((x) => x.id === 'envoy');
+            if (c.state.policy === 'home') {
+                expect(ev.look, c.name).toBe('townsman_a');
+                expect(Object.values(IEYASU_LOOKS)).not.toContain(ev.look);
+            } else expect(ev.look).toBe(c.state.policy === 'oda' ? IEYASU_LOOKS.oda_envoy : IEYASU_LOOKS.asai_envoy);
+            // 同じ人は配役と演出で同じ見た目（演出の使いは城下の使いの置き場所へ歩く：explore/stage.ts は見た目の鍵で配役を探す）
+            expect(cast?.look, c.name).toBe(ev.look);
+        }
+    });
 });
 
 describe('純粋さ（状態を読むだけ）', () => {

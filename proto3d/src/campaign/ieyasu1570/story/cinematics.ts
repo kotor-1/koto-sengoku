@@ -8,6 +8,8 @@
  * - 感謝の言葉は約束を守ったときだけ（破った・引き受けなかったときは、使者は感謝しない）。
  * - 敵方の人物を味方に出さない（A の長政、B の織田の武将）。信長は出さない。
  * - 帰る兵の数は残った兵から、負傷兵は失った兵から（損害の大きい帰還を無傷に見せない）。
+ * - 帰還の失った兵の字幕は、結果の画面と同じ数え方（味方全体＝徳川と援軍・味方の家の部隊）で、主語（徳川・織田援軍など）を言う。
+ *   味方のだれかが兵を失っていれば「兵を失わずに戻った」と言わない。約束の行は結果の画面の約束の欄と同じ言葉（引き受けなかったときは出さない）。
  * - 援兵の到着は第一章の support.recovered > 0 のときだけ（0 なら出さない）。忠勝の約束の援兵は守備隊（旗は徳）。
  * - C の第一章で、岡崎の守備隊は国境の砦にいて城門から出陣しない。支援の部隊は戦場で加わる（城下から出ない）。
  * - 長政が負傷なら、第二章 B に長政を出さない（丘にいるのは浅井勢の後備え）。
@@ -21,9 +23,9 @@ import { CH2_MISSION_TITLES, CH2_PLAN_LABELS, CH2_SUPPORT_NAMES } from '../chapt
 import { ieyasu2LookOf } from '../chapter2/scenario';
 import { IEYASU_LOOKS } from '../looks';
 import { IEYASU_PLEDGE_MIN_RATIO } from '../../../battle/maps';
-import { PLEDGE_SPECS, type PledgeResult, type Policy } from '../state';
+import { PLEDGE_SPECS, type PledgeResult, type PledgeState, type Policy } from '../state';
 import { IEYASU_RESULT_LABELS, supportSourceName } from '../story';
-import { VISUAL_MAX, ch1GateTroops, ch2BattleTroops, ch2Sortie, heavyLoss, outcomeTroops, visualCount } from './counts';
+import { VISUAL_MAX, allyLosses, ch1GateTroops, ch2BattleTroops, ch2Sortie, heavyLoss, outcomeTroops, visualCount, type AllyLosses } from './counts';
 import { CH2_SITE } from './geo';
 import {
     ch2SitePlace,
@@ -217,7 +219,8 @@ function ch1Intro(): CineSpec {
             scene: base,
             min: 9,
             caps: [
-                { text: '元亀元年（1570年）。徳川の城下（三河）。', info: ['when', 'where'], show: ['home'], focus: ['home'] },
+                // 自分が徳川家康だと分かるように（見出しの「徳川の城下（三河）」と同じ所。城・町の名前は出さない）
+                { text: '元亀元年（1570年）。三河、徳川家康の城下。', info: ['when', 'where'], show: ['home'], focus: ['home'] },
                 { text: '近江で、織田と浅井・朝倉が敵味方に分かれた。', info: ['crisis'], show: ['oda', 'asai', 'asakura', 'conflict.asai', 'conflict.asakura'], focus: ['conflict.asai', 'conflict.asakura'] },
                 // 国境の原（合戦の場所）は、ここでは出さない（判断の場面で「どの道でも国境の原で戦う」と出す）
                 { text: '国境では、浪人の一団が村を荒らしている。', show: ['border'], focus: ['border'] },
@@ -254,7 +257,8 @@ function ch1Intro(): CineSpec {
             min: 9,
             caps: [
                 { text: '軍議で、進む道を一つ選ぶ。', info: ['decide'], focus: ['home'] },
-                { text: 'A：織田と組み、浅井・朝倉と戦う。', focus: ['oda', 'rel.oda'] },
+                // A は今までの道（方針の名前「織田との協力を続ける」の言い方。B の「史実から分かれた道」と並べて分かる）
+                { text: 'A：織田との協力を続け、浅井・朝倉と戦う。', focus: ['oda', 'rel.oda'] },
                 { text: 'B：浅井と組み、織田方の一隊と戦う（史実から分かれた道）。', focus: ['asai', 'envoy.asai', 'oda'] },
                 { text: 'C：両家とは戦わず、国境の浪人を討つ。', focus: ['border'] },
                 // 第一章の合戦の場所はどの方針でも同じ（geo.ts：国境の原は架空の局地戦。出陣の行き先と同じ言葉）
@@ -347,7 +351,12 @@ function ch2Intro(s: Ieyasu2State): CineSpec {
     // 3D：援兵（第一章で約束を守り、兵が実際に戻ったときだけ。0 なら出さない）
     const sup = c.support;
     if (pl === 'kept' && sup.reinforcement && sup.from && sup.recovered > 0) {
-        const text = sup.from === 'tadakatsu' ? `守備隊の者たち ${sup.recovered} が、そのまま加わった。` : `${supportSourceName(sup.from)}からの援兵 ${sup.recovered} が着いた。`;
+        // 援兵は第一章の戦後に受け取り済みで、今の兵に入っている（記録の「第一章で受け取り済み・今の兵に含む。第二章では足さない」と同じ時点）。
+        // 3D の場面（援兵が木戸を入る）はそのままに、字幕は「先の戦の後に着き、すでに隊に加わった」と言う
+        const text =
+            sup.from === 'tadakatsu'
+                ? `守備隊の者たち ${sup.recovered} は、先の戦の後に隊に加わった。`
+                : `${supportSourceName(sup.from)}の援兵 ${sup.recovered} は、先の戦の後に着き、隊に加わった。`;
         plans.push({
             kind: 'stage',
             event: { id: 'reinforcement_arrive', count: visualCount(sup.recovered, VISUAL_MAX.reinforcement), mark: HOUSE_MARK[sup.from], name: supportSourceName(sup.from) },
@@ -377,30 +386,61 @@ function ch2Intro(s: Ieyasu2State): CineSpec {
             { text: cl.objective, focus: [site] },
         ],
     });
-    // 地図：判断（軍議で 2 つの手から 1 つ・出陣の前に補充を決める。量・代償はここで変えない）
-    const plansAvail = availableCh2Plans(s);
-    const L = CH2_PLAN_LABELS[p];
-    const planText = plansAvail.length >= 2 ? `「${L.commit}」か、「${L.hold}」か。` : `「${L[plansAvail[0] ?? 'commit']}」（もう一つは兵が足りない）。`;
-    plans.push({
-        kind: 'map',
-        scene: base,
-        min: 6,
-        caps: [
-            { text: '軍議で、今回の手を一つ選ぶ。', info: ['decide'], show: [`march.${site}`], focus: [site, `march.${site}`] },
-            { text: planText, focus: [site] },
-            { text: '出陣の前に、石川数正と兵の補充を決める。', focus: ['home'] },
-        ],
-    });
+    // 地図：判断（軍議で 2 つの手から 1 つ・出陣の前に補充を決める。量・代償はここで変えない）。長さに収まる言い方を decideCaps で選ぶ
+    const decide = (compact: boolean): BeatPlan => ({ kind: 'map', scene: base, min: 6, caps: decideCaps(s, site, compact) });
     const key = `ch2_intro.${POLICY_TAG[p]}.${r}.${pl}`;
     const title = `第二章への移り（${CH2_MISSION_TITLES[p]}）`;
-    const withWound = (short: boolean) => {
+    const variant = (short: boolean, compact: boolean) => {
         const b = woundBeat(short);
-        const ps = [...plans];
+        const ps = [...plans, decide(compact)];
         if (b) ps.splice(at, 0, b);
         return build(key, 'ch2_intro', title, ps);
     };
-    const full = withWound(false);
-    return full.duration <= INTRO_MAX_SEC ? full : withWound(true);
+    // 導入の長さ（45 秒まで）に収まる最初の物：全部 → 判断の字幕を詰める → 忠勝の傷の 1 行も省く
+    for (const [short, compact] of [
+        [false, false],
+        [false, true],
+    ] as const) {
+        const spec = variant(short, compact);
+        if (spec.duration <= INTRO_MAX_SEC) return spec;
+    }
+    return variant(true, true);
+}
+
+/**
+ * 判断の手の違いの一言（今ある文の言い方から：軍議の酒井・石川の言葉 COUNCIL_OPINIONS・決める時の言葉・始めの陣 PLAN_POS。chapter2/story.ts）。
+ * 量・代償・主目標は言わない（軍議の選択肢の説明が言う）。
+ */
+const PLAN_GIST: Readonly<Record<Policy, Readonly<Record<'commit' | 'hold', string>>>> = {
+    oda: { commit: '追っ手を正面から受ける', hold: '織田勢は自分で退いてくる' },
+    asai: { commit: '早く丘に着ける', hold: '西の囲みを誘い出す' },
+    home: { commit: '屋敷の前が厚くなる', hold: '主力だけで屋敷の前を守る' },
+};
+
+/**
+ * 第二章への移行の判断の字幕。
+ * - 2 つの手を選べる：「軍議で、今回の手を一つ選ぶ」→ 手ごとに「「名前」：違いの一言」→ 出陣の前の補充。
+ *   compact（導入が長くなりすぎるとき）は前置きを省き、終わりの 1 行を「軍議でどちらかを選び、出陣の前に兵の補充を決める」にする。
+ * - 1 つしか選べない（第一章の損害で判断 2 の兵が足りない）：選べる手の名前・選べない手の名前と理由（兵が足りない）・
+ *   今回決めるのは兵の補充だ、と言う（「一つ選ぶ」と言いながら手が 1 つ、にしない）。
+ */
+function decideCaps(s: Ieyasu2State, site: string, compact: boolean): CapPlan[] {
+    const p = s.policy;
+    const L = CH2_PLAN_LABELS[p];
+    const avail = availableCh2Plans(s);
+    const head = { info: ['decide'] as InfoKey[], show: [`march.${site}`], focus: [site, `march.${site}`] };
+    if (avail.length < 2) {
+        const only = avail[0] ?? 'commit';
+        const blocked = only === 'commit' ? 'hold' : 'commit';
+        return [
+            { text: `軍議の手は「${L[only]}」だけ。`, ...head },
+            { text: `「${L[blocked]}」は、兵が足りず取れない。`, focus: [site] },
+            { text: '今回決めるのは兵の補充。出陣の前に石川数正と話す。', focus: ['home'] },
+        ];
+    }
+    const plans: CapPlan[] = (['commit', 'hold'] as const).map((pl) => ({ text: `「${L[pl]}」：${PLAN_GIST[p][pl]}。`, focus: [site] }));
+    if (compact) return [{ ...plans[0]!, ...head }, plans[1]!, { text: '軍議でどちらかを選び、出陣の前に兵の補充を決める。', focus: ['home'] }];
+    return [{ text: '軍議で、今回の手を一つ選ぶ。', ...head }, ...plans, { text: '出陣の前に、石川数正と兵の補充を決める。', focus: ['home'] }];
 }
 
 // ================================================================ 出陣
@@ -438,8 +478,14 @@ function departure(s: IeyasuAnyState): CineSpec | null {
 
 // ================================================================ 帰還
 
-/** 帰還の言葉（勝敗・損害で変える。損害の大きい帰還を無傷に見せない） */
-function returnLines(o: { result: 'victory' | 'retreat' | 'defeat'; reason: string; units: { id: string; status: string }[] }, t: { sortie: number; lost: number; left: number }): string[] {
+/**
+ * 帰還の言葉（勝敗・損害で変える。損害の大きい帰還を無傷に見せない）。損害の数は結果の画面と同じ数え方（allyLosses：
+ * 味方全体＝徳川と、援軍・味方の家の部隊）。主語をはっきりさせる：
+ * - 味方のだれも兵を失わなかったときだけ「兵を失わずに戻った」。
+ * - 徳川は失わず、ほかの味方が失ったときは「徳川の兵は失わずに戻った（織田援軍は N を失った）」。
+ * - 徳川が失ったときは徳川の数（損害が大きいと「徳川の兵 N のうち、M を失った」）。ほかの味方も失っていれば、その 1 行を続ける。
+ */
+function returnLines(o: { result: 'victory' | 'retreat' | 'defeat'; reason: string; units: { id: string; status: string }[] }, losses: AllyLosses): string[] {
     const result = o.result;
     const head =
         result === 'victory'
@@ -452,8 +498,32 @@ function returnLines(o: { result: 'victory' | 'retreat' | 'defeat'; reason: stri
                   ? '務めを果たせず、兵を引いて城へ戻った。'
                   : '諸隊が崩れ、兵を引いて城へ戻った。';
     const n = (x: number) => x.toLocaleString('ja-JP');
-    const loss = t.lost <= 0 ? '兵を失わずに戻った。' : heavyLoss(t) ? `出た兵 ${n(t.sortie)} のうち、${n(t.lost)} を失った。` : `兵の多くは戻った（失った兵 ${n(t.lost)}）。`;
-    return [head, loss];
+    if (losses.total <= 0) return [head, '兵を失わずに戻った。'];
+    const t = losses.tokugawa;
+    const hurt = losses.others.filter((x) => x.lost > 0);
+    const othersLost = hurt.reduce((a, x) => a + x.lost, 0);
+    // ほかの味方の失った兵（呼び名が 1 つならその名前で。まれに 2 つ以上なら合わせて）
+    const others = hurt.length === 0 ? null : hurt.length === 1 ? `${hurt[0]!.name}は ${n(othersLost)} を失った` : `ほかの味方は ${n(othersLost)} を失った`;
+    if (t.lost <= 0 && others) {
+        const one = `徳川の兵は失わずに戻った（${others}）。`;
+        return len(one) <= CINE_CAPTION_MAX ? [head, one] : [head, '徳川の兵は失わずに戻った。', `${others}。`];
+    }
+    const mine = heavyLoss(t) ? `徳川の兵 ${n(t.sortie)} のうち、${n(t.lost)} を失った。` : `徳川の兵の多くは戻った（失った兵 ${n(t.lost)}）。`;
+    return others ? [head, mine, `${others}。`] : [head, mine];
+}
+
+/**
+ * 帰還の約束の 1 行（その合戦に戦前の約束があったときだけ：第一章。第二章の合戦には約束が無く、結果の画面にも約束の欄が無いので出さない）。
+ * 結果の画面の約束の欄（battle/control.ts の pledgeResultModel）と同じ言葉：守った／守れなかった（対象が崩れた・兵が減りすぎた）／
+ * 守れなかった（対象は無事だが、敵と斬り合う前に退いた・敗れた）。引き受けなかったときは何も出さない。
+ */
+function returnPledgeLine(policy: Policy, pledge: PledgeState | null, battle: Chapter1Record['battle']): string | null {
+    const r = pledge?.result;
+    if (!pledge || !r || r === 'declined') return null;
+    const t = PLEDGE_SPECS[policy].targetName;
+    if (r === 'kept') return `約束を守った：${t}の退路を守る。`;
+    if (unfought({ pledge, battle })) return `約束を守れなかった：敵と斬り合う前に${battle.result === 'defeat' ? '敗れた' : '退いた'}。`;
+    return `約束を守れなかった：${t}の退路を守る。`;
 }
 
 function returnSpec(s: IeyasuAnyState): CineSpec | null {
@@ -463,7 +533,7 @@ function returnSpec(s: IeyasuAnyState): CineSpec | null {
         const r = s.battle.result;
         const site = CH2_SITE[p];
         const t = ch2BattleTroops(s)!;
-        const [head, loss] = returnLines(s.battle, t);
+        const [head, ...loss] = returnLines(s.battle, allyLosses(s.battle));
         const sc = scene([homePlace(), ch2SitePlace(p, r)], [returnRoute(site)], { heading: `帰還：${ch2SitePlace(p).name} → 徳川の城下` });
         const prim = s.result.primary;
         const prev = `${CH2_MISSION_TITLES[p]}：${IEYASU_RESULT_LABELS[r]}${prim ? `（主目標を${prim.achieved ? '果たした' : '果たせなかった'}）` : ''}。`;
@@ -473,22 +543,26 @@ function returnSpec(s: IeyasuAnyState): CineSpec | null {
                 kind: 'stage',
                 event: { id: 'column_return', count: visualCount(t.left, VISUAL_MAX.column), wounded: woundedOf(t), mark: '徳', victory: r === 'victory' },
                 min: 6,
-                caps: [{ text: head }, { text: loss }],
+                caps: [{ text: head! }, ...loss.map((text) => ({ text }))],
             },
         ]);
     }
     if (!s.battle || !s.policy || (s.phase !== 'aftermath' && s.phase !== 'ending')) return null;
     const r = s.battle.result;
     const t = outcomeTroops(s.battle);
-    const [head, loss] = returnLines(s.battle, t);
+    const [head, ...loss] = returnLines(s.battle, allyLosses(s.battle));
     const sc = scene([homePlace(), field1Place(r)], [returnRoute('field1')], { heading: '帰還：国境の原 → 徳川の城下' });
+    // 約束の結果（結果の画面と同じ言葉。引き受けなかったときは出さない）は、地図の結果の印の後に
+    const pledge = returnPledgeLine(s.policy, s.pledge, s.battle);
+    const mapCaps: CapPlan[] = [{ text: `国境の原の戦い：${IEYASU_RESULT_LABELS[r]}。`, info: ['prev'], show: ['return.field1'], focus: ['field1', 'return.field1'] }];
+    if (pledge) mapCaps.push({ text: pledge, focus: ['field1'] });
     return build(`return.ch1.${POLICY_TAG[s.policy]}.${r}`, 'return', '帰還（国境の原から）', [
-        { kind: 'map', scene: sc, min: 3.5, caps: [{ text: `国境の原の戦い：${IEYASU_RESULT_LABELS[r]}。`, info: ['prev'], show: ['return.field1'], focus: ['field1', 'return.field1'] }] },
+        { kind: 'map', scene: sc, min: 3.5, caps: mapCaps },
         {
             kind: 'stage',
             event: { id: 'column_return', count: visualCount(t.left, VISUAL_MAX.column), wounded: woundedOf(t), mark: '徳', victory: r === 'victory' },
             min: 6,
-            caps: [{ text: head }, { text: loss }],
+            caps: [{ text: head! }, ...loss.map((text) => ({ text }))],
         },
     ]);
 }

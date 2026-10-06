@@ -13,16 +13,21 @@ import { presentIeyasu2Talks } from './flow';
 import type { Ieyasu2State, Ieyasu2TalkId } from './state';
 import { ieyasu2StatusRows, ieyasu2TalkName } from './story';
 import { lookoutCast } from '../story/lookout';
+import { IEYASU_LOOKS, VILLAGER_LOOK } from '../looks';
 
 const WEST = -Math.PI / 2;
 const SOUTH = 0;
 const rectAround = (x: number, z: number, hx: number, hz = hx): Rect => ({ x0: x - hx, x1: x + hx, z0: z - hz, z1: z + hz });
 
-/** 人物の見た目（既存の人物の見た目を暫定で使う。忠勝は第一章と同じ、石川は源蔵の見た目、使いは方針ごと） */
+/**
+ * 人物の見た目（既存の人物の見た目を暫定で使う。忠勝は第一章と同じ、石川は源蔵の見た目、使いは方針ごと：
+ * A 織田家の使者・B 浅井家の使者は第一章と同じ武家の使者の見た目、C 村の使いは町の人の見た目＝VILLAGER_LOOK）。
+ * 城下の配役と演出の使いの到着（story/cinematics.ts）が同じ物を使う。
+ */
 export function ieyasu2LookOf(state: Ieyasu2State, id: 'tadakatsu' | 'ishikawa' | 'envoy'): CharacterId {
-    if (id === 'tadakatsu') return 'shinpachi';
+    if (id === 'tadakatsu') return IEYASU_LOOKS.tadakatsu;
     if (id === 'ishikawa') return 'genzo';
-    return state.policy === 'asai' ? 'omori_envoy' : 'tashiro_envoy';
+    return state.policy === 'asai' ? IEYASU_LOOKS.asai_envoy : state.policy === 'oda' ? IEYASU_LOOKS.oda_envoy : VILLAGER_LOOK;
 }
 
 function spotFor(phase: 'explore' | 'muster' | 'aftermath', id: Ieyasu2TalkId, sit: boolean): Spot | undefined {
