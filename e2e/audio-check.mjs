@@ -12,6 +12,7 @@
 //          声：このコンテナの Chromium には日本語の声が無いので、偽の speechSynthesis（ページに差し込む）で、呼び出しの文・読み・止め方を記録する。
 //   interrupt  アプリの切り替え（ページの中で visibilitychange を起こす。直接）で止まり・戻り、演出のスキップ（本物の Esc）で声が止まり、
 //          会話の途中にメニューからタイトルへ（本物の M・クリック）で声と曲が止まること（描画の省略・偽の speechSynthesis）。
+//   prod   本番ビルド（DIST。既定 dist-proto3d）を CSP の下で開き、「はじめから」の後に音が出ること・CSP の違反が無いこと（既定の PARTS には入れない）。
 //   video  音付きの実際のプレイ映像（最初の約 70 秒。描画あり ?q=low）：CDP の画面の流し（コマと時刻）と、Web Audio の出力の MediaRecorder を
 //          同じ実行で同時に取り、時刻を合わせて 1 つの webm にする（コマ撮りに後から音を付けた物ではない）。声は入らない（日本語の声が無い）。
 //
@@ -748,7 +749,88 @@ async function partVideo() {
   await ctx.close();
 }
 
+// ---------------------------------------------------------------- prod：本番ビルド（CSP の下）で音が出ること
+
+async function partProd() {
+  const { createServer } = await import('node:http');
+  const { existsSync, readFileSync } = await import('node:fs');
+  const { extname, join, normalize, resolve } = await import('node:path');
+  const DIST = resolve(process.env.DIST || 'dist-proto3d');
+  const PORT = Number(process.env.PORT || 8614);
+  const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'";
+  const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.glb': 'model/gltf-binary' };
+  note(`== prod：本番ビルド（${DIST}）を CSP の下で。開発用の口は無いので、AudioContext をページの外から包んで（出力の手前に測りを足すだけ）大きさを測る`);
+  if (!existsSync(join(DIST, 'index.html'))) throw new Error(`${DIST}/index.html が無い`);
+  const missing = [];
+  const server = createServer((req, res) => {
+    const path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+    const file = normalize(join(DIST, path === '/' ? 'index.html' : path));
+    if (!file.startsWith(DIST) || !existsSync(file)) {
+      missing.push(path);
+      res.writeHead(404, { 'content-security-policy': CSP });
+      res.end('not found');
+      return;
+    }
+    res.writeHead(200, { 'content-type': MIME[extname(file)] || 'application/octet-stream', 'content-security-policy': CSP, 'cache-control': 'no-store' });
+    res.end(readFileSync(file));
+  });
+  await new Promise((r) => server.listen(PORT, r));
+  const ctx = await browser.newContext({ viewport: { width: 844, height: 390 } });
+  await ctx.addInitScript(() => {
+    window.__csp = [];
+    document.addEventListener('securitypolicyviolation', (e) => window.__csp.push(`${e.violatedDirective} ${e.blockedURI}`));
+    const C = window.AudioContext;
+    window.__ctxs = [];
+    window.AudioContext = class extends C {
+      constructor(o) {
+        super(o);
+        window.__ctxs.push(this);
+        this.__an = super.createAnalyser();
+        this.__an.fftSize = 2048;
+      }
+    };
+    const orig = AudioNode.prototype.connect;
+    AudioNode.prototype.connect = function (dst, ...rest) {
+      const c = this.context;
+      if (c && c.__an && dst === c.destination && this !== c.__an) orig.call(this, c.__an);
+      return orig.call(this, dst, ...rest);
+    };
+    window.__level = () => {
+      const c = window.__ctxs[0];
+      if (!c) return null;
+      const b = new Float32Array(2048);
+      c.__an.getFloatTimeDomainData(b);
+      let s = 0;
+      for (const v of b) s += v * v;
+      return { state: c.state, t: c.currentTime, rms: Math.sqrt(s / b.length) };
+    };
+  });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on('pageerror', (e) => errs.push(e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()); });
+  await page.goto(`http://localhost:${PORT}/?q=low`);
+  await page.locator('button[data-id="new:ieyasu1570"]').waitFor({ state: 'visible', timeout: 600000 });
+  const before = await page.evaluate(() => window.__ctxs.length);
+  await sleep(800);
+  await page.locator('button[data-id="new:ieyasu1570"]').click();
+  const levels = [];
+  for (let i = 0; i < 20; i++) {
+    await sleep(1000);
+    levels.push(await page.evaluate(() => window.__level()));
+  }
+  const csp = await page.evaluate(() => window.__csp);
+  const loud = levels.filter((l) => l && l.rms > 0.005).length;
+  note(`   大きさ（1 秒ごと）：${levels.map((l) => (l ? l.rms.toFixed(3) : '-')).join(' ')}`);
+  check('prod 「はじめから」の前は AudioContext を作らない', before === 0, `${before}`);
+  check('prod 押した後に音が出る（20 秒のうち 15 回以上 RMS > 0.005）', loud >= 15, `${loud}/20`);
+  check('prod CSP の違反・ページの誤り・読めなかったファイルが無い', csp.length === 0 && errs.length === 0 && missing.length === 0, JSON.stringify({ csp, errs: errs.slice(0, 3), missing: missing.slice(0, 5) }));
+  await ctx.close();
+  server.close();
+}
+
 try {
+  if (PARTS.includes('prod')) await partProd();
   if (PARTS.includes('songs')) await partSongs();
   if (PARTS.includes('flow')) await partFlow();
   if (PARTS.includes('interrupt')) await partInterrupt();

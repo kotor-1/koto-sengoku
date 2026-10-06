@@ -35,3 +35,11 @@
 - 読み込みは自作（`proto3d/blender/hero/mpfb_base.py`：`base.obj` と `*.target.gz` を読んで重みを掛けて足すだけ）。MPFB のプログラム（GPLv3）は使っていない・写していない・ゲームに入れていない
 - 重みの一覧は `proto3d/blender/hero/head_mpfb.py`（`MACRO`・`MODS`）。作り直すと `proto3d/blender/build/hero/hero_v3_mpfb-info.json` の `mpfb.files` に読んだファイルが記録される
 - 眼球・まぶたの縁の線・眉・髪（生え際の毛の板・顔の横の毛束を含む）・肌の色味・画像はすべて自作（MakeHuman の追加素材は取得できなかったため使っていない）
+
+## 音（BGM・環境音・効果音・声）
+
+第三者の素材は使っていない（Version 21。docs/audio.md）。
+
+- BGM 3 種・環境音・効果音：すべてこのリポジトリのコード（`proto3d/src/audio/`）で合成したオリジナル。音源のファイル・既存の曲や録音・購入・外注・有料 API は無い。
+- 声：端末の読み上げ（Web Speech API。OS・ブラウザの音声）を使う。声のデータはゲームに入れていない。
+- 取得できなかったもの：VOICEVOX Nemo（配布元 voicevox.hiroshiba.jp・github.com がこの環境の通信制限で拒否（403））。使っていない。
