@@ -199,3 +199,7 @@ on：陣幕の西の外の高い所から、幕の上越しに床几と机を見
   chapter1-routes OK 96・NG 0、chapter1-input OK 28・NG 0、town-smoke（walk・lookout・council・intro3d・depart3d・replay3d・entry/ch1）OK 42・NG 1
   （entry/ch1 の始めの案内の印の確かめが、描画ありの最初のコマより先に読んだ。1 コマ待つように直し、第二章の 2 つでは OK）・entry/ch2kept・ch2heavy OK 10・NG 0。
   本番ビルドの e2e（ieyasu-prod・ieyasu-ch2-prod・story-prod・chapter1-prod）は見回しの向きを測るように直したが、ここでは流していない。
+- 見直しの直し（5aa41f6・e29db20）：休み場の負傷兵（筵・土塀ぎわ）と援兵の並びに、いるときだけ当たり判定（並びを囲む四角。`explore/ambient.ts` の ambientColliders。
+  人物・高札の分と合わせて歩きの判定へ。カメラ除けには足さない）。名札の大きさは文と far が変わったときだけ測る。e2e は西を向いて立つ相手（石川・浅井の使者の所）へ
+  西から近づく（2.4 m 南は筵の上）。直した後に流した：town-smoke entry/ch1（描画あり・本物の W と引きずり・18.7 m・実時間 558 秒）OK 5・NG 0、
+  ieyasu-ch2 OK 151・NG 0、story-integrate-smoke OK 62・NG 0、ieyasu-chapter OK 75・NG 0、ieyasu-routes OK 141・NG 0。
