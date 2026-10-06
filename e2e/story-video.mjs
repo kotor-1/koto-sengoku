@@ -915,7 +915,7 @@ async function partControls() {
 /** 第二章 A の撤収のわけの字幕（docs/ch2a-reason.md の表。台本と同じ文） */
 const A_TXT = {
   mission: '主の本隊が近江の陣を引く。撤収をお支えくだされ。',
-  reason: '近江の浅井・朝倉は健在。織田の本隊は陣を引き払う。',
+  reason: '近江の浅井・朝倉が健在のため、織田の本隊は陣を引く。',
   who: '本隊の最後尾、後備え・小荷駄を浅井・朝倉が追う。',
   guard: '二隊が南の退き口を抜けるまで、徳川が守る。',
   ch1Win: '国境の原の局地戦に勝ち、浅井・朝倉は退いた。',
@@ -1171,7 +1171,7 @@ async function ch2aOne(cfg, idx) {
         const iR = seq.indexOf(A_TXT.reason);
         const iW = seq.indexOf(A_TXT.who);
         const iG = seq.indexOf(A_TXT.guard);
-        check(`[${tag}] 移行：使者の頼み → わけ（近江の浅井・朝倉は健在・本隊は陣を引き払う）→ どの隊（本隊の最後尾、後備え・小荷駄）→ 守るもの（二隊が南の退き口を抜けるまで）の順に出た`,
+        check(`[${tag}] 移行：使者の頼み → わけ（近江の浅井・朝倉が健在のため、本隊は陣を引く）→ どの隊（本隊の最後尾、後備え・小荷駄）→ 守るもの（二隊が南の退き口を抜けるまで）の順に出た`,
           iM >= 0 && iR > iM && iW > iR && iG > iW, J({ iM, iR, iW, iG }));
         const winSeq = seq.filter((t) => WIN_WORDS.test(t));
         if (ch1Win) check(`[${tag}] 移行（第一章で勝った）：第一章の結果は「${A_TXT.ch1Win}」（局地戦の勝ち）`, seq.includes(A_TXT.ch1Win), J(winSeq));
@@ -1211,7 +1211,8 @@ async function ch2aOne(cfg, idx) {
       }
     }
   }
-  check(`[${tag}] 情勢（戦後・J）：陣と撤収の線が出て、帰り道の線が出る（脅かす向き・出陣の進路は出ない）`, sit2.camp === 'shown' && sit2.main === 'shown' && sit2.rear === 'shown' && sit2.ret === 'shown', J({ camp: sit2.camp, main: sit2.main, rear: sit2.rear, threat: sit2.threat, march: sit2.march, ret: sit2.ret }));
+  // 後備え・小荷駄の撤収の線は、主目標を果たしたときだけ残す（果たせなかったのに退き口まで来たように見せない。docs/ch2a-reason.md）
+  check(`[${tag}] 情勢（戦後・J）：陣と本隊の撤収の線・帰り道の線が出る。後備え・小荷駄の撤収の線は主目標を果たしたときだけ（脅かす向き・出陣の進路は出ない）`, sit2.camp === 'shown' && sit2.main === 'shown' && (sit2.rear === 'shown') === !!prim && sit2.ret === 'shown', J({ camp: sit2.camp, main: sit2.main, rear: sit2.rear, threat: sit2.threat, march: sit2.march, ret: sit2.ret }));
   if (!prim) check(`[${tag}] 情勢（戦後・主目標を果たせなかった）：「支えきった」「抜けた」が無い`, !/支えきった|抜けた/.test(sit2.text), (sit2.text.match(/.{0,20}(支えきった|抜けた).{0,20}/g) ?? []).join(' / '));
   res.pose = pR;
   writeFileSync(`${OUT}/ch2a-${idx + 1}.json`, J(res, null, 1));
