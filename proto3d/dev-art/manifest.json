@@ -1,0 +1,105 @@
+{
+    "version": 1,
+    "assets": {
+        "portrait.ieyasu": {
+            "file": "art/portraits/ieyasu.webp",
+            "w": 745,
+            "h": 1453,
+            "kind": "portrait",
+            "bytes": 37292,
+            "sha256": "be9728f65d705f7d6abc645bc9c4fa965c3b8b42bdbbfdcee539c3a03fa81d76",
+            "meta": {
+                "eyeY": 0.1543,
+                "faceX": 0.507
+            }
+        },
+        "portrait.tadakatsu": {
+            "file": "art/portraits/tadakatsu.webp",
+            "w": 745,
+            "h": 1453,
+            "kind": "portrait",
+            "bytes": 40138,
+            "sha256": "34767f615aea80b68c4ffc729ff720edc00ec0d8a44149a1b6f393ea4c8cd803",
+            "meta": {
+                "eyeY": 0.1543,
+                "faceX": 0.507
+            }
+        },
+        "face.ieyasu": {
+            "file": "art/faces/ieyasu.webp",
+            "w": 256,
+            "h": 256,
+            "kind": "face",
+            "bytes": 7496,
+            "sha256": "8f4e916c171b24008b8e71da90bf424616d6517a3a8d0a6e38afe0bc9c900a66"
+        },
+        "face.tadakatsu": {
+            "file": "art/faces/tadakatsu.webp",
+            "w": 256,
+            "h": 256,
+            "kind": "face",
+            "bytes": 7972,
+            "sha256": "6b1b0071bf435a85622a90acce61c9d465ca87f7b099686cb3e55f0e343c5469"
+        },
+        "bg.council": {
+            "file": "art/story/council.webp",
+            "w": 1536,
+            "h": 1024,
+            "kind": "background",
+            "bytes": 50350,
+            "sha256": "fcdc803c20720fdaecf6666adfc092556d00582554cf1dd70b4f13ae947de25b"
+        },
+        "bg.council.front": {
+            "file": "art/story/council_front.webp",
+            "w": 1536,
+            "h": 1024,
+            "kind": "overlay",
+            "bytes": 7802,
+            "sha256": "da9fc9de0fa1b3b0f1272306094da0bf4c5255e4c1c0dc1465a63639e6c1e57f"
+        },
+        "tex.plains.grass": {
+            "file": "art/battle/plains_grass.webp",
+            "w": 1024,
+            "h": 1024,
+            "kind": "texture",
+            "bytes": 38858,
+            "sha256": "1f2909efa08f3fd65c43b28727a5ec87493054b8cf20cc1c1ebca9e6d5fcdca7",
+            "meta": {
+                "tileMeters": 8
+            }
+        },
+        "tex.plains.dirt": {
+            "file": "art/battle/plains_dirt.webp",
+            "w": 1024,
+            "h": 1024,
+            "kind": "texture",
+            "bytes": 38212,
+            "sha256": "dbfb1b2b92fd84f1fe1e0e203ff77b0b4445a5191463312eaadda75eb9d98b21",
+            "meta": {
+                "tileMeters": 8
+            }
+        },
+        "tex.plains.road": {
+            "file": "art/battle/plains_road.webp",
+            "w": 1024,
+            "h": 1024,
+            "kind": "texture",
+            "bytes": 38134,
+            "sha256": "d2b92d6fad7b93c68e8bc85ba8dde93c874de30ee1f63310c413bdb55b328057",
+            "meta": {
+                "tileMeters": 8
+            }
+        },
+        "tex.plains.forest": {
+            "file": "art/battle/plains_forest.webp",
+            "w": 1024,
+            "h": 1024,
+            "kind": "texture",
+            "bytes": 35960,
+            "sha256": "f3730b0a80ed02e7e2fdc064817d2e927343c34136b587e17b3d9b01492b6902",
+            "meta": {
+                "tileMeters": 8
+            }
+        }
+    }
+}

@@ -1,0 +1,823 @@
+{
+  "version": 1,
+  "title": "Version 22 生成イラスト素材の正本の記録（原画・作り方・加工版・利用条件）",
+  "about": [
+    "素材 1 件ごとの記録の正本。ゲームはこのファイルを読まない（プロンプトや原画の記録を配信物に入れないため）。",
+    "ゲームが読むのは proto3d/tools/art-build.py build が作る proto3d/src/art/manifest.gen.json（file・w・h・kind・bytes・sha256・meta だけ）。",
+    "人が読む一覧 docs/art-assets.md は art-build.py がこのファイルから作り直す（手で直さない）。",
+    "この作業環境では画像を生成できない。原画は利用者が ChatGPT で生成し、incoming/ に置いた PNG を受け取ったままの中身で <id>/original.png に保管する。",
+    "null は「まだ分からない（利用者の報告待ち・受け取り待ち）」の意味。推測で埋めない。"
+  ],
+  "request": {
+    "original": "docs/art-v22-request.md",
+    "assetList": "docs/art-v22-asset-request.md",
+    "requestedOn": "2026-10-07"
+  },
+  "paths": {
+    "incoming": "proto3d/assets-src/art-v22/incoming",
+    "originals": "proto3d/assets-src/art-v22/<id>/original.png",
+    "work": "proto3d/assets-src/art-v22/<id>/_work/（確かめ用の途中の画像。リポジトリに入れない）",
+    "public": "proto3d/public/art",
+    "generated": "proto3d/src/art/manifest.gen.json",
+    "docs": "docs/art-assets.md",
+    "devFixtures": "proto3d/dev-art（確かめ用の TEST 画像。見た目の素材ではない。公開版に入らない）"
+  },
+  "statusValues": {
+    "requested": "依頼済み・まだ受け取っていない",
+    "received": "受け取り、検査を通った（加工はまだ）",
+    "rejected": "受け取ったが使えない（理由は rejection）。作り直しを依頼する",
+    "built": "ゲーム用の加工版を作った（画面での見た目の確認はまだ）",
+    "approved": "ゲームの画面で見た目と操作を確かめた"
+  },
+  "terms": {
+    "confirmedByUser": null,
+    "questions": "docs/art-v22-asset-request.md §8（加工・配布の可否、実在の人物を題材にすること、クレジットや AI 生成の表示、参考画像を渡したか、確認した規約の名前と日付）",
+    "notes": "この作業環境からは OpenAI の利用規約を読めない（通信制限）。利用者が確認した内容だけを書く。確認できるまで公開版に入れない。"
+  },
+  "assets": [
+    {
+      "id": "portrait.ieyasu",
+      "kind": "portrait",
+      "status": "requested",
+      "required": true,
+      "purpose": "会話・軍議の立ち絵（通常の表情の半身画）。同じ原画から合戦の顔 face.ieyasu を切り出す",
+      "subject": "徳川家康（20代後半の若い大名。この作品の主人公。ゲーム用の創作デザインで、実在の容貌の復元ではない）",
+      "usedIn": [
+        "城門の前の忠勝との会話の立ち絵",
+        "軍議の立ち絵",
+        "合戦の顔（face.ieyasu の元）"
+      ],
+      "incoming": "portrait_ieyasu.png",
+      "expected": {
+        "w": 1024,
+        "h": 1536,
+        "alpha": "required",
+        "notes": "画面の右を向く 3/4。下端で体がまっすぐ切れる。頭頂は上端から約 6%、目の高さは約 20%。左右反転しない（衿が左前になる）"
+      },
+      "method": {
+        "how": "ChatGPT で利用者が生成",
+        "service": "ChatGPT",
+        "feature": null,
+        "model": null,
+        "generatedOn": null,
+        "sameChatAs": [
+          "portrait.tadakatsu"
+        ],
+        "promptRef": "docs/art-v22-asset-request.md §5.1 #1",
+        "promptAsUsed": null,
+        "referenceImages": null,
+        "styleNotes": "承認済みの参考画像（e2e-out/ref/ref_*.png。文字が焼き込まれた完成予想図）は、画風の言葉としてプロンプトに反映しただけで、素材には使わない"
+      },
+      "original": null,
+      "anchors": {
+        "eyeY": null,
+        "faceX": null
+      },
+      "recipe": {
+        "steps": [
+          "透過の確かめ：本物の透明（RGBA で、上端と左右の上 6 割がほぼ完全に透明）だけを受け取る。市松模様が描き込まれた物は受け取らない",
+          "透明でなく、背景が単色のマゼンタ（#FF00FF）なら、色を抜いて透明にする（縁はなめらかに、縁のマゼンタの色かぶりを取る）。抜いたことを記録する",
+          "透明な余白を切る（下端の体の切れ目は切らない。余白 8px を残す）",
+          "拡大しない。1024×1536 に収まるように縮小だけ",
+          "WebP（品質 85 から、260KB に収まるまで 5 ずつ下げる。下限 60。透明は劣化させない）"
+        ],
+        "alphaCheck": {
+          "regions": [
+            [
+              0,
+              0,
+              1,
+              0.04
+            ],
+            [
+              0,
+              0,
+              0.1,
+              0.6
+            ],
+            [
+              0.9,
+              0,
+              1,
+              0.6
+            ]
+          ],
+          "regionMinShare": 0.9,
+          "minTransparentShare": 0.15,
+          "transparentMax": 8
+        },
+        "key": {
+          "color": [
+            255,
+            0,
+            255
+          ],
+          "tolerance": 48,
+          "minShare": 0.85,
+          "fgMax": 0.3,
+          "bgMin": 0.8,
+          "despillBandPx": 3
+        },
+        "trim": {
+          "alphaThreshold": 8,
+          "padPx": 8,
+          "keepBottom": true
+        },
+        "maxW": 1024,
+        "maxH": 1536,
+        "upscale": false,
+        "webp": {
+          "quality": 85,
+          "minQuality": 60,
+          "step": 5,
+          "method": 6,
+          "alphaExact": true
+        },
+        "capBytes": 266240,
+        "publicFile": "art/portraits/ieyasu.webp"
+      },
+      "outputs": [],
+      "derivedFrom": null,
+      "terms": {
+        "confirmedByUser": null,
+        "notes": "利用者に確認を依頼中（docs/art-v22-asset-request.md §8）。実在の人物を題材にした創作の人物画として扱い、ゲームでは「ゲーム用の創作」と表示する"
+      }
+    },
+    {
+      "id": "portrait.tadakatsu",
+      "kind": "portrait",
+      "status": "requested",
+      "required": true,
+      "purpose": "会話・軍議の立ち絵（通常の表情の半身画）。同じ原画から合戦の顔 face.tadakatsu を切り出す",
+      "subject": "本多忠勝（20代前半の、最前線で戦う槍隊の主将。参謀役にはしない。ゲーム用の創作デザインで、実在の容貌の復元ではない）",
+      "usedIn": [
+        "城門の前の忠勝との会話の立ち絵",
+        "軍議の立ち絵",
+        "合戦の顔（face.tadakatsu の元）"
+      ],
+      "incoming": "portrait_tadakatsu.png",
+      "expected": {
+        "w": 1024,
+        "h": 1536,
+        "alpha": "required",
+        "notes": "portrait.ieyasu と同じ画風・光・枠。画面の右を向く 3/4。鎧・兜なし、くすんだ深い松葉色の小袖"
+      },
+      "method": {
+        "how": "ChatGPT で利用者が生成",
+        "service": "ChatGPT",
+        "feature": null,
+        "model": null,
+        "generatedOn": null,
+        "sameChatAs": [
+          "portrait.ieyasu"
+        ],
+        "promptRef": "docs/art-v22-asset-request.md §5.1 #2",
+        "promptAsUsed": null,
+        "referenceImages": null,
+        "styleNotes": "承認済みの参考画像（e2e-out/ref/ref_*.png）は、画風の言葉としてプロンプトに反映しただけで、素材には使わない"
+      },
+      "original": null,
+      "anchors": {
+        "eyeY": null,
+        "faceX": null
+      },
+      "recipe": {
+        "steps": [
+          "透過の確かめ：本物の透明（RGBA で、上端と左右の上 6 割がほぼ完全に透明）だけを受け取る。市松模様が描き込まれた物は受け取らない",
+          "透明でなく、背景が単色のマゼンタ（#FF00FF）なら、色を抜いて透明にする（縁はなめらかに、縁のマゼンタの色かぶりを取る）。抜いたことを記録する",
+          "透明な余白を切る（下端の体の切れ目は切らない。余白 8px を残す）",
+          "拡大しない。1024×1536 に収まるように縮小だけ",
+          "WebP（品質 85 から、260KB に収まるまで 5 ずつ下げる。下限 60。透明は劣化させない）"
+        ],
+        "alphaCheck": {
+          "regions": [
+            [
+              0,
+              0,
+              1,
+              0.04
+            ],
+            [
+              0,
+              0,
+              0.1,
+              0.6
+            ],
+            [
+              0.9,
+              0,
+              1,
+              0.6
+            ]
+          ],
+          "regionMinShare": 0.9,
+          "minTransparentShare": 0.15,
+          "transparentMax": 8
+        },
+        "key": {
+          "color": [
+            255,
+            0,
+            255
+          ],
+          "tolerance": 48,
+          "minShare": 0.85,
+          "fgMax": 0.3,
+          "bgMin": 0.8,
+          "despillBandPx": 3
+        },
+        "trim": {
+          "alphaThreshold": 8,
+          "padPx": 8,
+          "keepBottom": true
+        },
+        "maxW": 1024,
+        "maxH": 1536,
+        "upscale": false,
+        "webp": {
+          "quality": 85,
+          "minQuality": 60,
+          "step": 5,
+          "method": 6,
+          "alphaExact": true
+        },
+        "capBytes": 266240,
+        "publicFile": "art/portraits/tadakatsu.webp"
+      },
+      "outputs": [],
+      "derivedFrom": null,
+      "terms": {
+        "confirmedByUser": null,
+        "notes": "利用者に確認を依頼中（docs/art-v22-asset-request.md §8）。実在の人物を題材にした創作の人物画として扱い、ゲームでは「ゲーム用の創作」と表示する"
+      }
+    },
+    {
+      "id": "face.ieyasu",
+      "kind": "face",
+      "status": "requested",
+      "required": true,
+      "purpose": "合戦の顔（部隊情報・能力の表示・能力の知らせ・演習の編成）",
+      "subject": "徳川家康（portrait.ieyasu と同じ原画から切り出す）",
+      "usedIn": [
+        "合戦の能力の欄の武将の行",
+        "合戦の部隊の札の見出し",
+        "能力の知らせ",
+        "演習の編成の表"
+      ],
+      "incoming": null,
+      "expected": {
+        "w": 256,
+        "h": 256,
+        "alpha": "from-portrait",
+        "notes": "顔を別に生成し直さない。faceRect は受け取った人物画を見てから決める"
+      },
+      "method": {
+        "how": "portrait.ieyasu の原画から切り出す（顔だけを別に生成しない）",
+        "service": null,
+        "feature": null,
+        "model": null,
+        "generatedOn": null,
+        "sameChatAs": [],
+        "promptRef": null,
+        "promptAsUsed": null,
+        "referenceImages": [],
+        "styleNotes": null
+      },
+      "original": null,
+      "faceRect": null,
+      "recipe": {
+        "steps": [
+          "portrait.ieyasu の原画（色を抜いた場合はその透明）から faceRect（原画の画素の座標 [x, y, 幅, 高さ]）を切り出す",
+          "正方形にそろえる（短い辺を中心から広げる。原画の外は透明）",
+          "256×256 に縮小（faceRect が 256 より小さいときだけ拡大になり、記録する）",
+          "WebP（品質 85 から、30KB に収まるまで 5 ずつ下げる。下限 50。透明は劣化させない）"
+        ],
+        "source": "portrait.ieyasu",
+        "size": 256,
+        "webp": {
+          "quality": 85,
+          "minQuality": 50,
+          "step": 5,
+          "method": 6,
+          "alphaExact": true
+        },
+        "capBytes": 30720,
+        "publicFile": "art/faces/ieyasu.webp"
+      },
+      "outputs": [],
+      "derivedFrom": "portrait.ieyasu",
+      "terms": {
+        "confirmedByUser": null,
+        "notes": "portrait.ieyasu と同じ"
+      }
+    },
+    {
+      "id": "face.tadakatsu",
+      "kind": "face",
+      "status": "requested",
+      "required": true,
+      "purpose": "合戦の顔（部隊情報・能力の表示・能力の知らせ・演習の編成）",
+      "subject": "本多忠勝（portrait.tadakatsu と同じ原画から切り出す）",
+      "usedIn": [
+        "合戦の能力の欄の武将の行",
+        "合戦の部隊の札の見出し",
+        "能力の知らせ",
+        "演習の編成の表"
+      ],
+      "incoming": null,
+      "expected": {
+        "w": 256,
+        "h": 256,
+        "alpha": "from-portrait",
+        "notes": "顔を別に生成し直さない。faceRect は受け取った人物画を見てから決める"
+      },
+      "method": {
+        "how": "portrait.tadakatsu の原画から切り出す（顔だけを別に生成しない）",
+        "service": null,
+        "feature": null,
+        "model": null,
+        "generatedOn": null,
+        "sameChatAs": [],
+        "promptRef": null,
+        "promptAsUsed": null,
+        "referenceImages": [],
+        "styleNotes": null
+      },
+      "original": null,
+      "faceRect": null,
+      "recipe": {
+        "steps": [
+          "portrait.tadakatsu の原画（色を抜いた場合はその透明）から faceRect（原画の画素の座標 [x, y, 幅, 高さ]）を切り出す",
+          "正方形にそろえる（短い辺を中心から広げる。原画の外は透明）",
+          "256×256 に縮小（faceRect が 256 より小さいときだけ拡大になり、記録する）",
+          "WebP（品質 85 から、30KB に収まるまで 5 ずつ下げる。下限 50。透明は劣化させない）"
+        ],
+        "source": "portrait.tadakatsu",
+        "size": 256,
+        "webp": {
+          "quality": 85,
+          "minQuality": 50,
+          "step": 5,
+          "method": 6,
+          "alphaExact": true
+        },
+        "capBytes": 30720,
+        "publicFile": "art/faces/tadakatsu.webp"
+      },
+      "outputs": [],
+      "derivedFrom": "portrait.tadakatsu",
+      "terms": {
+        "confirmedByUser": null,
+        "notes": "portrait.tadakatsu と同じ"
+      }
+    },
+    {
+      "id": "bg.council",
+      "kind": "background",
+      "status": "requested",
+      "required": true,
+      "purpose": "軍議の画面の背景（人のいない陣幕の内）。人物画と選択肢をこの上に重ねる",
+      "subject": "城の中の庭に張った陣幕の内側（軍議の場。人物・旗・家紋・文字なし）",
+      "usedIn": [
+        "軍議（.g-layer.council の背景）"
+      ],
+      "incoming": "bg_council.png",
+      "expected": {
+        "w": 1536,
+        "h": 1024,
+        "alpha": "none",
+        "notes": "左の 3 分の 1 と右の中央は落ち着いた面（人物画・選択肢）。上 20% は中間〜暗めの色（見出しの文字）。大事な物は上下 18% より内側"
+      },
+      "method": {
+        "how": "ChatGPT で利用者が生成",
+        "service": "ChatGPT",
+        "feature": null,
+        "model": null,
+        "generatedOn": null,
+        "sameChatAs": [
+          "bg.council.front"
+        ],
+        "promptRef": "docs/art-v22-asset-request.md §5.2 #3",
+        "promptAsUsed": null,
+        "referenceImages": null,
+        "styleNotes": "承認済みの参考画像（e2e-out/ref/ref_*.png）は、画風の言葉としてプロンプトに反映しただけで、素材には使わない"
+      },
+      "original": null,
+      "recipe": {
+        "steps": [
+          "不透明であることを確かめる",
+          "拡大しない。幅 1536・高さ 1024 に収まるように縮小だけ（引き伸ばし・切り抜きで画面に合わせない）",
+          "WebP（品質 82 から、450KB に収まるまで 4 ずつ下げる。下限 55）"
+        ],
+        "opaque": true,
+        "maxW": 1536,
+        "maxH": 1024,
+        "upscale": false,
+        "webp": {
+          "quality": 82,
+          "minQuality": 55,
+          "step": 4,
+          "method": 6
+        },
+        "capBytes": 460800,
+        "publicFile": "art/story/council.webp"
+      },
+      "outputs": [],
+      "derivedFrom": null,
+      "terms": {
+        "confirmedByUser": null,
+        "notes": "利用者に確認を依頼中（docs/art-v22-asset-request.md §8）"
+      }
+    },
+    {
+      "id": "bg.council.front",
+      "kind": "overlay",
+      "status": "requested",
+      "required": false,
+      "purpose": "（任意）軍議の手前の柱と幕の端。背景の手前にわずかにずらして重ね、奥行きを出す",
+      "subject": "軍議の陣幕の手前の左右の柱と幕の布の端（中央は透明）",
+      "usedIn": [
+        "軍議（.g-council-bg-front）"
+      ],
+      "incoming": "bg_council_front.png",
+      "expected": {
+        "w": 1536,
+        "h": 1024,
+        "alpha": "required",
+        "notes": "bg.council と同じ画角・大きさ。中央の約 7 割は完全に透明"
+      },
+      "method": {
+        "how": "ChatGPT で利用者が生成",
+        "service": "ChatGPT",
+        "feature": null,
+        "model": null,
+        "generatedOn": null,
+        "sameChatAs": [
+          "bg.council"
+        ],
+        "promptRef": "docs/art-v22-asset-request.md §5.2 #4",
+        "promptAsUsed": null,
+        "referenceImages": null,
+        "styleNotes": null
+      },
+      "original": null,
+      "recipe": {
+        "steps": [
+          "透過の確かめ：本物の透明（中央がほぼ完全に透明）だけを受け取る。市松模様が描き込まれた物は受け取らない",
+          "透明でなく、柱と幕以外が単色のマゼンタなら色を抜く（記録する）",
+          "bg.council の原画と同じ大きさであることを確かめる（ずれると重ならない）。余白は切らない",
+          "拡大しない。幅 1536・高さ 1024 に収まるように縮小だけ",
+          "WebP（品質 85 から、220KB に収まるまで 5 ずつ下げる。下限 55。透明は劣化させない）"
+        ],
+        "alphaCheck": {
+          "regions": [
+            [
+              0.3,
+              0.15,
+              0.7,
+              0.85
+            ]
+          ],
+          "regionMinShare": 0.9,
+          "minTransparentShare": 0.4,
+          "transparentMax": 8
+        },
+        "key": {
+          "color": [
+            255,
+            0,
+            255
+          ],
+          "tolerance": 48,
+          "minShare": 0.85,
+          "fgMax": 0.3,
+          "bgMin": 0.8,
+          "despillBandPx": 3
+        },
+        "matchSizeOf": "bg.council",
+        "maxW": 1536,
+        "maxH": 1024,
+        "upscale": false,
+        "webp": {
+          "quality": 85,
+          "minQuality": 55,
+          "step": 5,
+          "method": 6,
+          "alphaExact": true
+        },
+        "capBytes": 225280,
+        "publicFile": "art/story/council_front.webp"
+      },
+      "outputs": [],
+      "derivedFrom": null,
+      "terms": {
+        "confirmedByUser": null,
+        "notes": "利用者に確認を依頼中（docs/art-v22-asset-request.md §8）"
+      }
+    },
+    {
+      "id": "tex.plains.grass",
+      "kind": "texture",
+      "status": "requested",
+      "required": true,
+      "purpose": "大平原の合戦の地面（草地）の色の素材（繰り返して貼る）",
+      "subject": "初夏の日本の平野の短い草地（真上から。約 8m 四方）",
+      "usedIn": [
+        "合戦・大平原の地面（草地）"
+      ],
+      "incoming": "tex_plains_grass.png",
+      "expected": {
+        "w": 1024,
+        "h": 1024,
+        "alpha": "none",
+        "notes": "真上から・均一な光・影や遠近なし。青・赤茶の点や塊なし（軍勢の色と紛れる）"
+      },
+      "method": {
+        "how": "ChatGPT で利用者が生成",
+        "service": "ChatGPT",
+        "feature": null,
+        "model": null,
+        "generatedOn": null,
+        "sameChatAs": [
+          "tex.plains.dirt",
+          "tex.plains.road",
+          "tex.plains.forest"
+        ],
+        "promptRef": "docs/art-v22-asset-request.md §5.3 #5",
+        "promptAsUsed": null,
+        "referenceImages": null,
+        "styleNotes": null
+      },
+      "original": null,
+      "recipe": {
+        "steps": [
+          "不透明であることを確かめる",
+          "正方形でなければ中央を正方形に切る。1024×1024 に縮小（拡大しない。小さいときは 2 の累乗の大きさに縮小）",
+          "焼き込まれた大きな明暗のむらをならす：明るさ（線形の光の量）を大きくぼかした物で割り、元の平均の色に戻す",
+          "継ぎ目の大きさを測り、大きければ半分ずらした画像と、縁だけなめらかに混ぜて継ぎ目を消す（混ぜてもコントラストが落ちないように分散を保つ）。前後の値を記録する",
+          "WebP（品質 85 から、320KB に収まるまで 5 ずつ下げる。下限 60）",
+          "色の画像（アルベド）としてだけ使う。法線や粗さの画像とは称さない"
+        ],
+        "opaque": true,
+        "size": 1024,
+        "flatten": {
+          "sigmaFrac": 0.125,
+          "gainMin": 0.5,
+          "gainMax": 2.0
+        },
+        "seamless": {
+          "method": "offset-crossfade",
+          "threshold": 1.6,
+          "absMin": 0.008,
+          "band": 0.25
+        },
+        "webp": {
+          "quality": 85,
+          "minQuality": 60,
+          "step": 5,
+          "method": 6
+        },
+        "capBytes": 327680,
+        "mapType": "albedo",
+        "meta": {
+          "tileMeters": 8
+        },
+        "publicFile": "art/battle/plains_grass.webp"
+      },
+      "outputs": [],
+      "derivedFrom": null,
+      "terms": {
+        "confirmedByUser": null,
+        "notes": "利用者に確認を依頼中（docs/art-v22-asset-request.md §8）"
+      }
+    },
+    {
+      "id": "tex.plains.dirt",
+      "kind": "texture",
+      "status": "requested",
+      "required": true,
+      "purpose": "大平原の合戦の地面（裸の土。草地の中のむら・境目）の色の素材",
+      "subject": "乾いて踏み固められた裸の土（真上から。約 8m 四方）",
+      "usedIn": [
+        "合戦・大平原の地面（土のむら・境目）"
+      ],
+      "incoming": "tex_plains_dirt.png",
+      "expected": {
+        "w": 1024,
+        "h": 1024,
+        "alpha": "none",
+        "notes": "赤みを強くしない（敵勢の赤茶色と紛れる）"
+      },
+      "method": {
+        "how": "ChatGPT で利用者が生成",
+        "service": "ChatGPT",
+        "feature": null,
+        "model": null,
+        "generatedOn": null,
+        "sameChatAs": [
+          "tex.plains.grass",
+          "tex.plains.road",
+          "tex.plains.forest"
+        ],
+        "promptRef": "docs/art-v22-asset-request.md §5.3 #6",
+        "promptAsUsed": null,
+        "referenceImages": null,
+        "styleNotes": null
+      },
+      "original": null,
+      "recipe": {
+        "steps": [
+          "不透明であることを確かめる",
+          "正方形でなければ中央を正方形に切る。1024×1024 に縮小（拡大しない。小さいときは 2 の累乗の大きさに縮小）",
+          "焼き込まれた大きな明暗のむらをならす：明るさ（線形の光の量）を大きくぼかした物で割り、元の平均の色に戻す",
+          "継ぎ目の大きさを測り、大きければ半分ずらした画像と、縁だけなめらかに混ぜて継ぎ目を消す（混ぜてもコントラストが落ちないように分散を保つ）。前後の値を記録する",
+          "WebP（品質 85 から、320KB に収まるまで 5 ずつ下げる。下限 60）",
+          "色の画像（アルベド）としてだけ使う。法線や粗さの画像とは称さない"
+        ],
+        "opaque": true,
+        "size": 1024,
+        "flatten": {
+          "sigmaFrac": 0.125,
+          "gainMin": 0.5,
+          "gainMax": 2.0
+        },
+        "seamless": {
+          "method": "offset-crossfade",
+          "threshold": 1.6,
+          "absMin": 0.008,
+          "band": 0.25
+        },
+        "webp": {
+          "quality": 85,
+          "minQuality": 60,
+          "step": 5,
+          "method": 6
+        },
+        "capBytes": 327680,
+        "mapType": "albedo",
+        "meta": {
+          "tileMeters": 8
+        },
+        "publicFile": "art/battle/plains_dirt.webp"
+      },
+      "outputs": [],
+      "derivedFrom": null,
+      "terms": {
+        "confirmedByUser": null,
+        "notes": "利用者に確認を依頼中（docs/art-v22-asset-request.md §8）"
+      }
+    },
+    {
+      "id": "tex.plains.road",
+      "kind": "texture",
+      "status": "requested",
+      "required": true,
+      "purpose": "大平原の合戦の道の表面の色の素材（地形データの道の範囲だけに貼る）",
+      "subject": "人や馬に踏み固められた土の道の表面（真上から。道の縁・形は描かない）",
+      "usedIn": [
+        "合戦・大平原の道"
+      ],
+      "incoming": "tex_plains_road.png",
+      "expected": {
+        "w": 1024,
+        "h": 1024,
+        "alpha": "none",
+        "notes": "向きのない均一な模様。轍・足跡・水たまりなし"
+      },
+      "method": {
+        "how": "ChatGPT で利用者が生成",
+        "service": "ChatGPT",
+        "feature": null,
+        "model": null,
+        "generatedOn": null,
+        "sameChatAs": [
+          "tex.plains.grass",
+          "tex.plains.dirt",
+          "tex.plains.forest"
+        ],
+        "promptRef": "docs/art-v22-asset-request.md §5.3 #7",
+        "promptAsUsed": null,
+        "referenceImages": null,
+        "styleNotes": null
+      },
+      "original": null,
+      "recipe": {
+        "steps": [
+          "不透明であることを確かめる",
+          "正方形でなければ中央を正方形に切る。1024×1024 に縮小（拡大しない。小さいときは 2 の累乗の大きさに縮小）",
+          "焼き込まれた大きな明暗のむらをならす：明るさ（線形の光の量）を大きくぼかした物で割り、元の平均の色に戻す",
+          "継ぎ目の大きさを測り、大きければ半分ずらした画像と、縁だけなめらかに混ぜて継ぎ目を消す（混ぜてもコントラストが落ちないように分散を保つ）。前後の値を記録する",
+          "WebP（品質 85 から、320KB に収まるまで 5 ずつ下げる。下限 60）",
+          "色の画像（アルベド）としてだけ使う。法線や粗さの画像とは称さない"
+        ],
+        "opaque": true,
+        "size": 1024,
+        "flatten": {
+          "sigmaFrac": 0.125,
+          "gainMin": 0.5,
+          "gainMax": 2.0
+        },
+        "seamless": {
+          "method": "offset-crossfade",
+          "threshold": 1.6,
+          "absMin": 0.008,
+          "band": 0.25
+        },
+        "webp": {
+          "quality": 85,
+          "minQuality": 60,
+          "step": 5,
+          "method": 6
+        },
+        "capBytes": 327680,
+        "mapType": "albedo",
+        "meta": {
+          "tileMeters": 8
+        },
+        "publicFile": "art/battle/plains_road.webp"
+      },
+      "outputs": [],
+      "derivedFrom": null,
+      "terms": {
+        "confirmedByUser": null,
+        "notes": "利用者に確認を依頼中（docs/art-v22-asset-request.md §8）"
+      }
+    },
+    {
+      "id": "tex.plains.forest",
+      "kind": "texture",
+      "status": "requested",
+      "required": true,
+      "purpose": "大平原の合戦の林の範囲の地面（林床）の色の素材。木は今の 3D の松を植える",
+      "subject": "松林の地面（落ち葉・松葉・苔・低い下草。真上から。木の幹・根・影は描かない）",
+      "usedIn": [
+        "合戦・大平原の林の範囲の地面"
+      ],
+      "incoming": "tex_plains_forest.png",
+      "expected": {
+        "w": 1024,
+        "h": 1024,
+        "alpha": "none",
+        "notes": "暗めの緑がかった茶色。青・赤茶の点や塊なし"
+      },
+      "method": {
+        "how": "ChatGPT で利用者が生成",
+        "service": "ChatGPT",
+        "feature": null,
+        "model": null,
+        "generatedOn": null,
+        "sameChatAs": [
+          "tex.plains.grass",
+          "tex.plains.dirt",
+          "tex.plains.road"
+        ],
+        "promptRef": "docs/art-v22-asset-request.md §5.3 #8",
+        "promptAsUsed": null,
+        "referenceImages": null,
+        "styleNotes": null
+      },
+      "original": null,
+      "recipe": {
+        "steps": [
+          "不透明であることを確かめる",
+          "正方形でなければ中央を正方形に切る。1024×1024 に縮小（拡大しない。小さいときは 2 の累乗の大きさに縮小）",
+          "焼き込まれた大きな明暗のむらをならす：明るさ（線形の光の量）を大きくぼかした物で割り、元の平均の色に戻す",
+          "継ぎ目の大きさを測り、大きければ半分ずらした画像と、縁だけなめらかに混ぜて継ぎ目を消す（混ぜてもコントラストが落ちないように分散を保つ）。前後の値を記録する",
+          "WebP（品質 85 から、320KB に収まるまで 5 ずつ下げる。下限 60）",
+          "色の画像（アルベド）としてだけ使う。法線や粗さの画像とは称さない"
+        ],
+        "opaque": true,
+        "size": 1024,
+        "flatten": {
+          "sigmaFrac": 0.125,
+          "gainMin": 0.5,
+          "gainMax": 2.0
+        },
+        "seamless": {
+          "method": "offset-crossfade",
+          "threshold": 1.6,
+          "absMin": 0.008,
+          "band": 0.25
+        },
+        "webp": {
+          "quality": 85,
+          "minQuality": 60,
+          "step": 5,
+          "method": 6
+        },
+        "capBytes": 327680,
+        "mapType": "albedo",
+        "meta": {
+          "tileMeters": 8
+        },
+        "publicFile": "art/battle/plains_forest.webp"
+      },
+      "outputs": [],
+      "derivedFrom": null,
+      "terms": {
+        "confirmedByUser": null,
+        "notes": "利用者に確認を依頼中（docs/art-v22-asset-request.md §8）"
+      }
+    }
+  ]
+}

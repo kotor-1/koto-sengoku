@@ -35,3 +35,6 @@ dist-proto3d
 # Blender の作業用（焼き込みの途中の画像など）
 proto3d/blender/build/
 __pycache__/
+
+# 生成イラスト素材の作業用（art-build.py の確かめ用の途中の画像）
+proto3d/assets-src/**/_work/
