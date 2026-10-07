@@ -5,7 +5,8 @@
  * - 正本の記録（proto3d/assets-src/art-v22/manifest.json）が素材の ID とそろい、加工版の記録が manifest.gen.json と一致する。
  * - 開発用の TEST の模様（proto3d/dev-art/manifest.json）も同じ形で、全部の ID がそろい、ファイルがある。
  * - ゲームのコード（proto3d/src）は、正本の記録も dev-art も import しない（プロンプトの記録や TEST の模様を本番に入れない）。
- * - 読み込みの口（registry）：旧表示（?art=old）・一覧に無い・読めない は null で、例外を投げず、同じ ID は 1 回だけ読む。
+ * - 読み込みの口（registry）：旧表示（?art=old）・一覧に無い・読めない は null で、例外を投げず、同じ ID を同時に重ねて読まない。
+ *   失敗は覚えたままにせず、前の失敗から 10 秒たった後の呼び出しで読み直す。時間切れ（30 秒）は通信の間だけ。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ART_IDS, FACE_OF, FIELD_ART, PORTRAIT_OF } from '../proto3d/src/art/ids';
@@ -51,7 +52,8 @@ const KB = 1024;
 /** 種類ごとの上限（art-build.py の作り方と同じ。docs/art-assets.md） */
 const CAP: Record<Kind, number> = { portrait: 260 * KB, face: 30 * KB, background: 450 * KB, overlay: 220 * KB, texture: 320 * KB };
 const DIR: Record<Kind, string> = { portrait: 'art/portraits/', face: 'art/faces/', background: 'art/story/', overlay: 'art/story/', texture: 'art/battle/' };
-const HAS_ALPHA: Record<Kind, boolean> = { portrait: true, face: true, background: false, overlay: true, texture: false };
+/** 透明の層の有無。顔は切り出した範囲が全部不透明なら透明の層の無い WebP になってよい（art-build.py はそのことを記録する） */
+const HAS_ALPHA: Record<Kind, boolean | 'either'> = { portrait: true, face: 'either', background: false, overlay: true, texture: false };
 
 function kindOfId(id: string): Kind {
     if (id.startsWith('portrait.')) return 'portrait';
@@ -134,7 +136,7 @@ function problems(m: unknown, base: string): string[] {
         if (!info) out.push(`${id}: WebP として読めない`);
         else {
             if (info.w !== w || info.h !== h) out.push(`${id}: WebP の寸法 ${info.w}×${info.h} が記録 ${w}×${h} と違う`);
-            if (info.alpha !== HAS_ALPHA[kind]) out.push(`${id}: 透明の有無が ${info.alpha}（${kind} は ${HAS_ALPHA[kind]} のはず）`);
+            if (HAS_ALPHA[kind] !== 'either' && info.alpha !== HAS_ALPHA[kind]) out.push(`${id}: 透明の有無が ${info.alpha}（${kind} は ${HAS_ALPHA[kind]} のはず）`);
         }
     }
     return out;
@@ -366,7 +368,7 @@ describe('読み込みの口（registry）', () => {
         expect(error).not.toHaveBeenCalled();
     });
 
-    it('同じ ID は 1 回だけ読む（同じ約束を返す。先読みも重ねて読まない。失敗も読み直さない）', async () => {
+    it('同じ ID は 1 回だけ読む（同じ約束を返す。先読みも重ねて読まない。失敗の直後は読み直さない）', async () => {
         const a = loadArtBitmap(ART_IDS.portraitIeyasu);
         const b = loadArtBitmap(ART_IDS.portraitIeyasu);
         preloadArt(ART_IDS.portraitIeyasu, ART_IDS.portraitIeyasu);
@@ -385,6 +387,100 @@ describe('読み込みの口（registry）', () => {
         await loadArtBitmap(ART_IDS.portraitIeyasu);
         await loadArtBitmap(ART_IDS.portraitIeyasu);
         expect(fetchMock).toHaveBeenCalledTimes(3);
+    });
+
+    describe('失敗の後の読み直しと時間切れ（時計を進める）', () => {
+        beforeEach(() => {
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+        });
+        afterEach(() => {
+            vi.useRealTimers();
+        });
+
+        it('失敗はずっと覚えない：10 秒のうちは読みに行かず null、10 秒たった後の呼び出しで読み直し、読めたらその後は読まない', async () => {
+            fetchMock.mockImplementationOnce(async () => {
+                throw new Error('network');
+            });
+            await expect(loadArtBitmap(ART_IDS.portraitIeyasu)).resolves.toBeNull();
+            expect(fetchMock).toHaveBeenCalledTimes(1);
+            await vi.advanceTimersByTimeAsync(9900);
+            await expect(loadArtBitmap(ART_IDS.portraitIeyasu)).resolves.toBeNull();
+            preloadArt(ART_IDS.portraitIeyasu);
+            expect(fetchMock).toHaveBeenCalledTimes(1);
+            await vi.advanceTimersByTimeAsync(100);
+            // 読み直しの間も同じ ID を同時に重ねて読まない
+            const a = loadArtBitmap(ART_IDS.portraitIeyasu);
+            const b = loadArtBitmap(ART_IDS.portraitIeyasu);
+            expect(a).toBe(b);
+            const x = await a;
+            expect(x).not.toBeNull();
+            expect(fetchMock).toHaveBeenCalledTimes(2);
+            await vi.advanceTimersByTimeAsync(60000);
+            await expect(loadArtBitmap(ART_IDS.portraitIeyasu)).resolves.toBe(x);
+            expect(fetchMock).toHaveBeenCalledTimes(2);
+            expect(warn).toHaveBeenCalledTimes(1);
+            expect(error).not.toHaveBeenCalled();
+        });
+
+        it('何度失敗しても警告は ID ごとに 1 回。読み直しは 10 秒に 1 回まで', async () => {
+            fetchMock.mockImplementation(async () => ({ ok: false, status: 503, blob: async () => new Blob([]) }));
+            for (let i = 0; i < 5; i++) {
+                await expect(loadArtBitmap(ART_IDS.portraitIeyasu)).resolves.toBeNull();
+                await vi.advanceTimersByTimeAsync(4000);
+            }
+            // 0 秒・12 秒（10 秒を過ぎた最初の呼び出し）に読み、ほかは待つ
+            expect(fetchMock).toHaveBeenCalledTimes(2);
+            expect(warn).toHaveBeenCalledTimes(1);
+            expect(error).not.toHaveBeenCalled();
+        });
+
+        it('時間切れは通信だけ（30 秒）：返事の無い通信は 30 秒で止めて null、その後は読み直せる', async () => {
+            let signal: AbortSignal | undefined;
+            fetchMock.mockImplementationOnce(
+                (_url: string, init?: { signal?: AbortSignal }) =>
+                    new Promise((_res, rej) => {
+                        signal = init?.signal;
+                        signal?.addEventListener('abort', () => rej(new DOMException('aborted', 'AbortError')));
+                    }),
+            );
+            let done: ImageBitmap | null | 'pending' = 'pending';
+            void loadArtBitmap(ART_IDS.portraitIeyasu).then((b) => (done = b));
+            await vi.advanceTimersByTimeAsync(29000);
+            expect(done).toBe('pending');
+            expect(signal?.aborted).toBe(false);
+            await vi.advanceTimersByTimeAsync(1000);
+            expect(signal?.aborted).toBe(true);
+            expect(done).toBeNull();
+            await vi.advanceTimersByTimeAsync(10000);
+            await expect(loadArtBitmap(ART_IDS.portraitIeyasu)).resolves.not.toBeNull();
+            expect(fetchMock).toHaveBeenCalledTimes(2);
+        });
+
+        it('画像の展開（createImageBitmap）が遅くても時間切れにしない（時計は通信の後で止める）', async () => {
+            const bmp = { width: 700, height: 1400, close() {} };
+            bitmapMock.mockImplementationOnce(() => new Promise((res) => setTimeout(() => res(bmp), 45000)));
+            let signal: AbortSignal | undefined;
+            fetchMock.mockImplementationOnce(async (_url: string, init?: { signal?: AbortSignal }) => {
+                signal = init?.signal;
+                return { ok: true, status: 200, blob: async () => new Blob([new Uint8Array([1])]) };
+            });
+            const p = loadArtBitmap(ART_IDS.portraitIeyasu);
+            await vi.advanceTimersByTimeAsync(45000);
+            await expect(p).resolves.toBe(bmp);
+            expect(signal?.aborted).toBe(false);
+            expect(warn).not.toHaveBeenCalled();
+        });
+
+        it('旧表示では失敗の後も読みに行かない', async () => {
+            fetchMock.mockImplementationOnce(async () => {
+                throw new Error('network');
+            });
+            await loadArtBitmap(ART_IDS.portraitIeyasu);
+            vi.stubGlobal('location', { search: '?art=old', hash: '' });
+            await vi.advanceTimersByTimeAsync(20000);
+            await expect(loadArtBitmap(ART_IDS.portraitIeyasu)).resolves.toBeNull();
+            expect(fetchMock).toHaveBeenCalledTimes(1);
+        });
     });
 
     it('置き場はページからの相対（./art/…）。data: の URL は作らない', () => {
