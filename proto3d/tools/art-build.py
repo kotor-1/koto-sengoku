@@ -406,7 +406,10 @@ def _checker_message(cb: dict, inside: bool) -> str:
 
 def _judge_transparency(decision: str, rep: dict, st: dict, check: dict, rgba: np.ndarray, failed_reason: str):
     """透明の量の判断。全体の透明（transparentMax 以下）が minTransparentShare 未満なら断る（意味のある透明が無い）。
-    外側の確かめの範囲（regions）の透明が regionMinShare 未満でも、全体がはっきり透明なら断らず、構図の注意として記録する"""
+    外側の確かめの範囲（regions）の透明が regionMinShare 未満でも、全体がはっきり透明なら断らず、構図の注意として記録する。
+    透明ではない所が 1 画素も無い（人物・柱が写っていない）物は断る"""
+    if not (rgba[..., 3] > check.get('transparentMax', 8)).any():
+        return _refuse(rep, 'empty', f'全部透明（不透明度 {check.get("transparentMax", 8)} を超える所が無い）。人物・柱が写っていない。作り直しを依頼する')
     if st['transparentShare'] < check['minTransparentShare']:
         what = 'マゼンタの背景を抜いても、' if failed_reason == 'magenta-key-failed' else '透明の部分はあるが少なすぎる。'
         return _refuse(rep, failed_reason,
@@ -801,9 +804,22 @@ def encode_webp(img: Image.Image, cfg: dict, cap: int) -> tuple[bytes, int, list
 
 # ---------------------------------------------------------------- ingest
 
-def _move_incoming(ctx: Ctx, src: Path, dst: Path, data: bytes, sha: str, log) -> None:
-    """incoming/ の原画を <id>/original.* へ移す（中身は 1 バイトも変えない。原画を 2 か所に置かない）。
-    先に写して sha256 を確かめ、incoming/ の物が読んだ時のままなら消す（途中で書き換えられていたら残して知らせる）"""
+def _drop_incoming(ctx: Ctx, done: list, log) -> None:
+    """受け取りを素材の記録に保存した後で、incoming/ の物を消す（読んだ時のままの物だけ。途中で書き換えられていたら残して知らせる）。
+    記録の保存より先に消すと、途中で止まったとき原画が <id>/ に移ったのに記録は「まだ届いていない」のまま残る"""
+    for src, data in done:
+        if not src.exists():
+            continue
+        if src.read_bytes() == data:
+            src.unlink()
+        else:
+            log(f'      注意：{ctx.rel(src)} が読んだ後に書き換えられたので、incoming/ に残した（もう一度 ingest する）')
+    done.clear()
+
+
+def _move_incoming(ctx: Ctx, src: Path, dst: Path, data: bytes, sha: str, log, done: list) -> None:
+    """incoming/ の原画を <id>/original.* へ写す（中身は 1 バイトも変えない。原画を 2 か所に置かない）。
+    先に写して sha256 を確かめる。incoming/ の物は done に積み、記録を保存した後に _drop_incoming が消す"""
     dst.parent.mkdir(parents=True, exist_ok=True)
     part = dst.with_name(dst.name + '.part')
     part.write_bytes(data)
@@ -811,10 +827,7 @@ def _move_incoming(ctx: Ctx, src: Path, dst: Path, data: bytes, sha: str, log) -
         part.unlink()
         raise ArtError(f'{ctx.rel(dst)} に写した中身が違う')
     part.replace(dst)
-    if src.read_bytes() == data:
-        src.unlink()
-    else:
-        log(f'      注意：{ctx.rel(src)} が読んだ後に書き換えられたので、incoming/ に残した（もう一度 ingest する）')
+    done.append((src, data))
 
 
 def _reject(a: dict, rej: dict, log) -> str:
@@ -829,9 +842,10 @@ def _reject(a: dict, rej: dict, log) -> str:
     return 'rejected'
 
 
-def ingest_one(ctx: Ctx, a: dict, replace: bool, log) -> str:
+def ingest_one(ctx: Ctx, a: dict, replace: bool, log, done: list) -> str:
     """戻り値：'skip'|'missing'|'unchanged'|'received'|'replaced'|'rejected'|'conflict'。
-    受け取った原画は incoming/ から <id>/original.* へ移す（incoming/ には README.md だけが残る）。断った物・差し替えを断った物は incoming/ に残す"""
+    受け取った原画は incoming/ から <id>/original.* へ移す（incoming/ には README.md だけが残る）。断った物・差し替えを断った物は incoming/ に残す。
+    incoming/ の物は done に積むだけで、消すのは cmd_ingest が記録を保存した後"""
     name = a.get('incoming')
     if not name:
         return 'skip'
@@ -849,10 +863,10 @@ def ingest_one(ctx: Ctx, a: dict, replace: bool, log) -> str:
             log(f'  {a["id"]:<20} 差し替えを断った後に、受け取り済みの原画と同じ物が置かれたので、その原画に戻した')
         kept = original_path(ctx, a)
         if kept.exists() and sha256_bytes(kept.read_bytes()) == sha:
-            src.unlink()
+            done.append((src, data))
             log(f'  {a["id"]:<20} 受け取り済みと同じ（{sha[:12]}）。incoming/ の同じ物は消した')
         else:
-            _move_incoming(ctx, src, kept, data, sha, log)
+            _move_incoming(ctx, src, kept, data, sha, log, done)
             log(f'  {a["id"]:<20} 受け取り済みと同じ（{sha[:12]}）。保管の原画が無い・壊れていたので incoming/ の物を移して戻した')
         return 'unchanged'
     if a.get('original') and not replace:
@@ -900,17 +914,22 @@ def ingest_one(ctx: Ctx, a: dict, replace: bool, log) -> str:
                 rec['key'] = rep['keyed']
                 rec['notes'].append(f'透明が無く、単色マゼンタ {rep["magenta"]["key"]} の背景だったので色を抜いた（縁はなめらか・色かぶりを取った）')
             if kind == 'portrait':
-                share, warn = bottom_cut_check(rgba[..., 3], a['recipe']['trim'])
-                rec['checks']['bottomRowOpaqueShare'] = share
-                if warn:
-                    rec['warnings'].append(warn)
-            work = ctx.src / a['id'] / '_work'
-            work.mkdir(parents=True, exist_ok=True)
-            Image.fromarray(rgba, 'RGBA').save(work / 'alpha.png')
-            # 確かめ用：中間の灰色の上に置いた物（縁の色かぶり・欠けを見る）
-            g = Image.new('RGBA', (w, h), (128, 128, 128, 255))
-            g.alpha_composite(Image.fromarray(rgba, 'RGBA'))
-            g.convert('RGB').save(work / 'on_grey.png')
+                try:
+                    share, warn = bottom_cut_check(rgba[..., 3], a['recipe']['trim'])
+                except ArtError as e:
+                    refuse = ('empty', f'{e}。人物が写っていない。作り直しを依頼する')
+                else:
+                    rec['checks']['bottomRowOpaqueShare'] = share
+                    if warn:
+                        rec['warnings'].append(warn)
+            if not refuse:
+                work = ctx.src / a['id'] / '_work'
+                work.mkdir(parents=True, exist_ok=True)
+                Image.fromarray(rgba, 'RGBA').save(work / 'alpha.png')
+                # 確かめ用：中間の灰色の上に置いた物（縁の色かぶり・欠けを見る）
+                g = Image.new('RGBA', (w, h), (128, 128, 128, 255))
+                g.alpha_composite(Image.fromarray(rgba, 'RGBA'))
+                g.convert('RGB').save(work / 'on_grey.png')
     else:
         ok, rep = check_opaque(img)
         rec['checks']['opaque'] = rep
@@ -933,7 +952,7 @@ def ingest_one(ctx: Ctx, a: dict, replace: bool, log) -> str:
             a['anchors'] = {k: None for k in a['anchors']}
             rec['warnings'].append({'reason': 'anchors-cleared', 'message': '原画を差し替えたので、前の原画の座標のアンカー（eyeY など）を消した。新しい原画を見て set-anchor をやり直す'})
         rec['replaced'] = {'sha256': prev['sha256'], 'receivedAs': prev.get('receivedAs')}
-    _move_incoming(ctx, src, dst, data, sha, log)
+    _move_incoming(ctx, src, dst, data, sha, log, done)
     rec['path'] = ctx.rel(dst)
     a['original'] = rec
     a['rejection'] = None
@@ -956,10 +975,11 @@ def cmd_ingest(ctx: Ctx, ids=None, replace=False, log=print) -> int:
     m = load_master(ctx)
     bad = 0
     log('受け取り（ingest）')
+    done: list = []
     for a in m['assets']:
         if ids and a['id'] not in ids:
             continue
-        r = ingest_one(ctx, a, replace, log)
+        r = ingest_one(ctx, a, replace, log, done)
         if r in ('rejected', 'conflict'):
             bad += 1
         if r in ('received', 'replaced', 'rejected'):
@@ -976,6 +996,10 @@ def cmd_ingest(ctx: Ctx, ids=None, replace=False, log=print) -> int:
                 if r == 'replaced' and f.get('faceRect'):
                     f['faceRect'] = None
                     log(f'      注意（faceRect-cleared）：{a["id"]} を差し替えたので、{f["id"]} の faceRect（前の原画の座標）を消した。set-face-rect をやり直すまで顔は作らない')
+        if done:
+            # 素材ごとに記録を保存してから incoming/ の物を消す（後の素材で止まっても、移した原画が記録に無いままにならない）
+            save_master(ctx, m)
+            _drop_incoming(ctx, done, log)
     save_master(ctx, m)
     write_gen(ctx, m)
     write_docs(ctx, m)
@@ -1779,6 +1803,46 @@ def _selftest_c(root: Path, real: dict, ok, quiet: list) -> None:
        '差し替えを断った後に受け取り済みの原画と同じ物を置くと、その原画に戻る')
     docs = ctx.docs.read_text(encoding='utf-8')
     ok('注意（bottom-cut）' in docs and '注意（composition）' in docs, 'docs/art-assets.md に注意が載る')
+
+    # 全部透明の人物画は断る（落ちない）。同じ ingest で先に受け取った物は記録に残る
+    ctxe = _setup_root(root.with_name(root.name + '-empty'), real)
+    Image.fromarray(v1, 'RGBA').save(ctxe.incoming / 'portrait_ieyasu.png')
+    Image.fromarray(np.zeros((h2, w2, 4), np.uint8), 'RGBA').save(ctxe.incoming / 'portrait_tadakatsu.png')
+    rc = cmd_ingest(ctxe, ids=['portrait.ieyasu', 'portrait.tadakatsu'], log=quiet.append)
+    g = {a_['id']: a_ for a_ in load_master(ctxe)['assets']}
+    ok(rc == 1 and g['portrait.ieyasu']['status'] == 'received' and g['portrait.tadakatsu']['status'] == 'rejected'
+       and g['portrait.tadakatsu']['rejection']['reason'] == 'empty'
+       and sorted(q.name for q in ctxe.incoming.iterdir()) == ['README.md', 'portrait_tadakatsu.png'],
+       f'全部透明の人物画は断り（{(g["portrait.tadakatsu"].get("rejection") or {}).get("reason")}）、先に受け取った人物画は記録に残る')
+    # 途中で止まっても、移した原画が記録に無いままにならない（incoming/ の物は記録を保存した後に消す）
+    ctxi = _setup_root(root.with_name(root.name + '-interrupt'), real)
+    Image.fromarray(v1, 'RGBA').save(ctxi.incoming / 'portrait_ieyasu.png')
+    Image.fromarray(v1, 'RGBA').save(ctxi.incoming / 'portrait_tadakatsu.png')
+    real_classify, calls = globals()['classify_alpha'], []
+
+    def stop_second(img, recipe):
+        calls.append(1)
+        if len(calls) == 2:
+            raise KeyboardInterrupt
+        return real_classify(img, recipe)
+    globals()['classify_alpha'] = stop_second
+    try:
+        cmd_ingest(ctxi, ids=['portrait.ieyasu', 'portrait.tadakatsu'], log=quiet.append)
+        stopped = False
+    except KeyboardInterrupt:
+        stopped = True
+    finally:
+        globals()['classify_alpha'] = real_classify
+    g = {a_['id']: a_ for a_ in load_master(ctxi)['assets']}
+    ok(stopped and g['portrait.ieyasu']['status'] == 'received' and (ctxi.root / g['portrait.ieyasu']['original']['path']).exists()
+       and g['portrait.tadakatsu']['status'] == 'requested'
+       and sorted(q.name for q in ctxi.incoming.iterdir()) == ['README.md', 'portrait_tadakatsu.png'],
+       '2 枚目の途中で止まっても、1 枚目は記録に残り、2 枚目は incoming/ に残る')
+    rc = cmd_ingest(ctxi, ids=['portrait.ieyasu', 'portrait.tadakatsu'], log=quiet.append)
+    g = {a_['id']: a_ for a_ in load_master(ctxi)['assets']}
+    ok(rc == 0 and g['portrait.tadakatsu']['status'] == 'received' and sorted(q.name for q in ctxi.incoming.iterdir()) == ['README.md']
+       and cmd_check(ctxi, log=quiet.append) == 0,
+       '止まった後の ingest のやり直しで残りを受け取り、check が通る')
 
 
 def cmd_selftest(ctx_real: Ctx, log=print) -> int:
