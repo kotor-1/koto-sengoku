@@ -29,6 +29,8 @@ export function loadFace(id: ArtId): Promise<ImageBitmap | null> {
     if (!p) {
         p = loadArtBitmap(id).then((b) => {
             if (b) ready.set(id, b);
+            // 読めなかった：覚えずに外す（次に呼ばれたとき、登録の読み込みが間を空けて読み直す）
+            else loading.delete(id);
             return b;
         });
         loading.set(id, p);

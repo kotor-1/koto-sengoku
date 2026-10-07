@@ -367,8 +367,8 @@ export interface GroundData {
     noise: TerrainMask;
 }
 
-/** 1 回の区切りで計算に使う時間の目安（ms）。これを超えたら次の処理（描画など）に譲る */
-export const GROUND_SLICE_MS = 6;
+/** 1 回の区切りで計算に使う時間の目安（ms）。これを超えたら次の処理（描画など）に譲る。譲るたびに 1 コマ待つ端末があるので、細かくしすぎない（遅い端末でも開始のボタンまでに作り終える） */
+export const GROUND_SLICE_MS = 12;
 /** 覚えておく戦場の形の数（大平原の演習のやり直し・次の合戦で作り直さない。古いものから捨てる） */
 const GROUND_CACHE_MAX = 2;
 const groundCache = new Map<string, Promise<GroundData>>();

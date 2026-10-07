@@ -6,8 +6,8 @@
             "w": 745,
             "h": 1453,
             "kind": "portrait",
-            "bytes": 37292,
-            "sha256": "be9728f65d705f7d6abc645bc9c4fa965c3b8b42bdbbfdcee539c3a03fa81d76",
+            "bytes": 36572,
+            "sha256": "e80e437e6787bc50bd60af60b16cd1ddce36ae064cc8eb209544ebd50ee377db",
             "meta": {
                 "eyeY": 0.1543,
                 "faceX": 0.507
@@ -18,8 +18,8 @@
             "w": 745,
             "h": 1453,
             "kind": "portrait",
-            "bytes": 40138,
-            "sha256": "34767f615aea80b68c4ffc729ff720edc00ec0d8a44149a1b6f393ea4c8cd803",
+            "bytes": 39242,
+            "sha256": "67170bf47d90e18e9006534a9016fd3cc5a1fa9bedb9a2aed21939328196f037",
             "meta": {
                 "eyeY": 0.1543,
                 "faceX": 0.507
@@ -30,16 +30,16 @@
             "w": 256,
             "h": 256,
             "kind": "face",
-            "bytes": 7496,
-            "sha256": "8f4e916c171b24008b8e71da90bf424616d6517a3a8d0a6e38afe0bc9c900a66"
+            "bytes": 7554,
+            "sha256": "cbf579da17116796fe7cc3c6db3c6d9c4034cb2e1579bc61ce996364f512899b"
         },
         "face.tadakatsu": {
             "file": "art/faces/tadakatsu.webp",
             "w": 256,
             "h": 256,
             "kind": "face",
-            "bytes": 7972,
-            "sha256": "6b1b0071bf435a85622a90acce61c9d465ca87f7b099686cb3e55f0e343c5469"
+            "bytes": 7970,
+            "sha256": "68fe4edb8fec6320ff5a2edf15771836dee31eaabfde5f000f4d9d607c95d0b8"
         },
         "bg.council": {
             "file": "art/story/council.webp",

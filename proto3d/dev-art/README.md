@@ -8,14 +8,14 @@
 - 作り方：`python3 -I proto3d/tools/make-dev-art.py`。本物と同じ ID・種類・原画の大きさの模様を作り、`proto3d/tools/art-build.py` の ingest → build をそのまま通します（透明の検査・余白の切り詰め・同じ原画からの顔の切り出し・地面の処理・WebP の上限）。手で直さないでください。
 - `manifest.json` は `proto3d/src/art/manifest.gen.json` と同じ形です（file はこのフォルダからの相対）。
 
-合計 302,214 バイト（10 件）。
+合計 300,654 バイト（10 件）。
 
 | ID | 種類 | ファイル | 寸法 | 容量（バイト） | meta |
 |---|---|---|---|---|---|
-| `portrait.ieyasu` | portrait | `art/portraits/ieyasu.webp` | 745×1453 | 37,292 | {"eyeY": 0.1543, "faceX": 0.507} |
-| `portrait.tadakatsu` | portrait | `art/portraits/tadakatsu.webp` | 745×1453 | 40,138 | {"eyeY": 0.1543, "faceX": 0.507} |
-| `face.ieyasu` | face | `art/faces/ieyasu.webp` | 256×256 | 7,496 | {} |
-| `face.tadakatsu` | face | `art/faces/tadakatsu.webp` | 256×256 | 7,972 | {} |
+| `portrait.ieyasu` | portrait | `art/portraits/ieyasu.webp` | 745×1453 | 36,572 | {"eyeY": 0.1543, "faceX": 0.507} |
+| `portrait.tadakatsu` | portrait | `art/portraits/tadakatsu.webp` | 745×1453 | 39,242 | {"eyeY": 0.1543, "faceX": 0.507} |
+| `face.ieyasu` | face | `art/faces/ieyasu.webp` | 256×256 | 7,554 | {} |
+| `face.tadakatsu` | face | `art/faces/tadakatsu.webp` | 256×256 | 7,970 | {} |
 | `bg.council` | background | `art/story/council.webp` | 1536×1024 | 50,350 | {} |
 | `bg.council.front` | overlay | `art/story/council_front.webp` | 1536×1024 | 7,802 | {} |
 | `tex.plains.grass` | texture | `art/battle/plains_grass.webp` | 1024×1024 | 38,858 | {"tileMeters": 8} |

@@ -417,6 +417,12 @@ def _judge_transparency(decision: str, rep: dict, st: dict, check: dict, rgba: n
                        '背景が透明になっていない。作り直しを依頼する')
     warnings = []
     reg_share = st['regionTransparentShare'] or 0
+    refuse_below = check.get('regionRefuseShare', 0.5)
+    if reg_share < refuse_below:
+        # 外側の帯の半分以上が不透明：袖がかかる程度ではなく、背景が残っている（切り抜きの失敗）
+        return _refuse(rep, 'background-left',
+                       f'外側の確かめの範囲（alphaCheck.regions）の透明が {reg_share:.0%}（{refuse_below:.0%} 未満）。'
+                       '背景が抜けきらずに残っている。本物の透明の PNG か、単色マゼンタの背景で作り直しを依頼する')
     if reg_share < check['regionMinShare']:
         warnings.append({
             'reason': 'composition',
@@ -492,16 +498,21 @@ def open_original(ctx: Ctx, a: dict) -> Image.Image:
 
 
 def source_rgba(ctx: Ctx, a: dict) -> np.ndarray:
-    """人物画・手前の幕の原画を、記録した透明の作り方（そのまま／マゼンタを抜く）で RGBA にする"""
+    """人物画・手前の幕の原画を、記録した透明の作り方（そのまま／マゼンタを抜く）で RGBA にする。
+    不透明度が transparentMax 以下のかすかな所（受け取りの検査で透明と数えた所）は、加工版では完全に透明にする
+    （うっすら残った背景を画面に出さない。原画はそのまま保管する）"""
     img = open_original(ctx, a)
     src = a['original'].get('alphaSource')
     if src == 'magenta-key':
         rgb = np.asarray(img.convert('RGB'))
         out, _ = chroma_key(rgb, a['original']['key']['key'], a['recipe']['key'])
-        return out
-    if src != 'alpha':
+    elif src == 'alpha':
+        out = np.asarray(img.convert('RGBA')).copy()
+    else:
         raise ArtError(f'{a["id"]} の透明の作り方が記録に無い（ingest をやり直す）')
-    return np.asarray(img.convert('RGBA')).copy()
+    tmax = a['recipe'].get('alphaCheck', {}).get('transparentMax', 8)
+    out[out[..., 3] <= tmax, 3] = 0
+    return out
 
 
 def clear_hidden_rgb(rgba: np.ndarray) -> np.ndarray:
@@ -1687,6 +1698,11 @@ def _selftest_c(root: Path, real: dict, ok, quiet: list) -> None:
        f'人物が外側の帯にかかる本物の透明の人物画は受け取り、構図の注意を記録する（外側の透明 {r["regionTransparentShare"]:.0%}）')
     d, r, _ = cls(_rgba_u8(np.maximum(fa, 1 / 255), body))
     ok(d == 'alpha' and r['zeroShare'] == 0 and not r['warnings'], f'背景の不透明度が 1（transparentMax 以下）の物も透明として受け取る（{d}）')
+    left = fa.copy()
+    left[:, :int(0.12 * W)] = 1.0  # 左の帯が上から下まで不透明（背景が残った）
+    left[:int(0.05 * H), :] = 1.0  # 上の帯も不透明
+    d, r, _ = cls(_rgba_u8(left, body))
+    ok(d == 'refuse' and r['reason'] == 'background-left', f'外側の帯に背景が残った物は断る（外側の透明 {r.get("regionTransparentShare", 0):.0%}・{r.get("reason")}）')
     a = np.ones((H, W))
     a[:70, :] = 0
     d, r, _ = cls(_rgba_u8(a, body))
@@ -1934,6 +1950,7 @@ def cmd_selftest(ctx_real: Ctx, log=print) -> int:
         ok(abs(po['meta']['eyeY'] - (307 - box[1]) / (box[3] - box[1])) < 1e-3, f'目の高さを加工版の割合に直して meta に入れる（{po["meta"]["eyeY"]}）')
         src_full = source_rgba(ctx, g['portrait.ieyasu'])
         ok(np.array_equal(dec[..., 3], src_full[box[1]:box[3], box[0]:box[2], 3]), '人物画の透明は劣化しない（加工版の透明 = 原画の透明）')
+        ok(not ((dec[..., 3] > 0) & (dec[..., 3] <= 8)).any(), '不透明度 1〜8 のかすかな所は加工版で完全に透明にする（うっすら残った背景を出さない）')
         fo = g['face.ieyasu']['outputs'][0]
         ok((fo['w'], fo['h']) == (256, 256) and fo['sourceSha256'] == g['portrait.ieyasu']['original']['sha256'], '顔は同じ原画から切り出した 256×256')
         ok(g['face.tadakatsu']['processing']['squareRect'][2] == 320, '顔の範囲は長い辺に合わせて正方形にする')
