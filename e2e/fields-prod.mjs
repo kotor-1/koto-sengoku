@@ -22,7 +22,7 @@ const DIST = resolve(process.env.DIST || 'dist-proto3d');
 const PORT = Number(process.env.PORT || 8133);
 const [VW, VH] = (process.env.VIEW || '1280x720').split('x').map(Number);
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'";
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.glb': 'model/gltf-binary' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.glb': 'model/gltf-binary' };
 const FIELD_IDS = ['plains', 'river_ford', 'hills', 'forest', 'mountain_pass', 'single_bridge', 'multi_bridge', 'ridge', 'valley', 'paddy', 'marsh', 'village', 'temple', 'town_edge', 'siege_front', 'besieged_camp', 'relief', 'rearguard', 'night_raid', 'shore'];
 /** 全軍撤退も退き口の判定に入り、目標の前に打ち切らない戦場（第4群） */
 const COUNT_RETREAT_IDS = ['besieged_camp', 'rearguard'];

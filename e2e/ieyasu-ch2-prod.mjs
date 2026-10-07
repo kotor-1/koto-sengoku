@@ -26,7 +26,7 @@ const DIST = resolve(process.env.DIST || 'dist-proto3d');
 const PORT = Number(process.env.PORT || 8134);
 const [VW, VH] = (process.env.VIEW || '960x540').split('x').map(Number);
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'";
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.glb': 'model/gltf-binary' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.glb': 'model/gltf-binary' };
 const KEY = 'koto-sengoku/3d-ieyasu1570';
 const KEY_CH1 = 'koto-sengoku/3d-ieyasu1570/chapter1';
 const FKEY = 'koto-sengoku/3d-chapter1';

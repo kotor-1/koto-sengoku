@@ -766,7 +766,7 @@ async function partProd() {
   const DIST = resolve(process.env.DIST || 'dist-proto3d');
   const PORT = Number(process.env.PORT || 8614);
   const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'";
-  const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.glb': 'model/gltf-binary' };
+  const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.glb': 'model/gltf-binary' };
   note(`== prod：本番ビルド（${DIST}）を CSP の下で。開発用の口は無いので、AudioContext をページの外から包んで（出力の手前に測りを足すだけ）大きさを測る`);
   if (!existsSync(join(DIST, 'index.html'))) throw new Error(`${DIST}/index.html が無い`);
   const missing = [];

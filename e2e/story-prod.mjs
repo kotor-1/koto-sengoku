@@ -30,7 +30,7 @@ const DIST = resolve(process.env.DIST || 'dist-proto3d');
 const PORT = Number(process.env.PORT || 8133);
 const [VW, VH] = (process.env.VIEW || '844x390').split('x').map(Number);
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'";
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.glb': 'model/gltf-binary' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.glb': 'model/gltf-binary' };
 /**
  * 見回しの向き（yaw。0 で北を見る）。決め打ちにせず、歩く前に本物の入力（S を短く押して下がる）で測る（lib.mjs の measureYaw。
  * Version 21：歴史分岐の探索の始めは町の入口（見回しは真後ろ＝ yaw 0）。探索では引きずらないので、測った後は変わらない）

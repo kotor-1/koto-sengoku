@@ -82,3 +82,51 @@ export function keysToward(yaw, p, tx, tz) {
   if (ix < -0.38) keys.push('KeyA');
   return keys;
 }
+
+// ---------------------------------------------------------------- 本番ビルドの e2e の共通（Version 22〜。今までの *-prod.mjs は自分の表を持つまま）
+
+/** 公開先に近い決まり（すべての本番の e2e と同じ CSP） */
+export const PROD_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'";
+
+/** 本番の簡易サーバーの種類の表（生成イラスト素材の .webp を足した） */
+export const PROD_MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.glb': 'model/gltf-binary' };
+
+/**
+ * dist を CSP のヘッダー付きで出す簡易サーバー（ほかの本番の e2e と同じ作り）。返り：{ served, missing, close }。
+ * served は出したパス（例 '/art/portraits/ieyasu.webp'）の順の記録、missing は 404 にしたパス。
+ */
+export async function serveDist(dist, port, { csp = PROD_CSP, mime = PROD_MIME } = {}) {
+    const { createServer } = await import('node:http');
+    const { existsSync: has, readFileSync, statSync } = await import('node:fs');
+    const { extname, join, normalize } = await import('node:path');
+    const served = [];
+    const missing = [];
+    const server = createServer((req, res) => {
+        const path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+        const file = normalize(join(dist, path === '/' ? 'index.html' : path));
+        if (!file.startsWith(dist) || !has(file) || !statSync(file).isFile()) {
+            missing.push(path);
+            res.writeHead(404, { 'content-security-policy': csp });
+            res.end('not found');
+            return;
+        }
+        served.push(path);
+        res.writeHead(200, { 'content-type': mime[extname(file)] || 'application/octet-stream', 'content-security-policy': csp, 'cache-control': 'no-store' });
+        res.end(readFileSync(file));
+    });
+    await new Promise((r) => server.listen(port, r));
+    return {
+        served,
+        missing,
+        close: () =>
+            new Promise((r) => {
+                server.close(r);
+                server.closeAllConnections?.();
+            }),
+    };
+}
+
+/** 2 つの四角（{l,t,r,b}。CSS px）が重なるか（tol px までの接しは重なりにしない） */
+export function boxesOverlap(a, b, tol = 0.5) {
+    return !!a && !!b && a.l < b.r - tol && b.l < a.r - tol && a.t < b.b - tol && b.t < a.b - tol;
+}
