@@ -5,6 +5,7 @@
  */
 import { GATE_REACH, SPOTS, TALK_REACH, headingToward, type CastMember, type Spot } from '../../explore/cast';
 import { START, type Rect } from '../../layout';
+import { ART_IDS, PORTRAIT_OF, type ArtId } from '../../art/ids';
 import type { Scenario, StatusLine } from '../scenario';
 import { formatSavedTime, signed } from '../scenario';
 import { IEYASU_LOOKS } from './looks';
@@ -191,6 +192,22 @@ export function ieyasuStatusLines(s: IeyasuState, extraPlaySec = 0): StatusLine[
     return lines;
 }
 
+// ================= 生成イラスト素材（Version 22） =================
+
+/**
+ * 会話・軍議の話し手 → 人物画（第一章・第二章で同じ。話し手の id は両章の story.ts の Speaker）。
+ * 絵があるのは家康（'hero'）と忠勝だけ。酒井・石川・使者・村の使い・高札・地の文は名前だけ（ほかの人の絵を代わりに使わない）。
+ * 負傷している場面も同じ絵（表情・負傷の差分はまだ無い。負傷は台詞で伝える）。状態は見ない。
+ */
+export function ieyasuPortraitOf(speaker: string): ArtId | null {
+    if (speaker === 'hero') return PORTRAIT_OF.ieyasu ?? null;
+    if (speaker === 'tadakatsu') return PORTRAIT_OF.tadakatsu ?? null;
+    return null;
+}
+
+/** 軍議の背景（城内の陣幕の内。第一章・第二章の軍議で同じ。人のいない画で、状態で変わる物は描かない） */
+export const IEYASU_COUNCIL_ART: { base: ArtId; front?: ArtId } = { base: ART_IDS.bgCouncil, front: ART_IDS.bgCouncilFront };
+
 // ================= シナリオ =================
 
 /**
@@ -244,5 +261,8 @@ export function ieyasuScenario(storage: StorageLike | null, store: IeyasuCampaig
         ambient: (s) => ieyasuAmbient(s),
         scoutPoints: (s) => ieyasuScoutPoints(s),
         scout: (s, pointId, marks) => ieyasuScout(s, pointId, marks),
+        // 生成イラスト素材（Version 22）：家康・忠勝の人物画と、軍議の背景（素材が無い・旧表示なら画面は今までのまま）
+        portraitOf: (_s, speaker) => ieyasuPortraitOf(speaker),
+        councilArt: IEYASU_COUNCIL_ART,
     };
 }

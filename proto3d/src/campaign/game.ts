@@ -23,6 +23,8 @@ import { formatSavedTime, type AnyScenario, type ScenarioEndingView, type Scenar
 import type { Alliance, CampaignState, ChoiceId, ExplorePose } from './state';
 import type { Rect } from '../layout';
 import type { AmbientSpec, CineMoment, CineSpec, ScoutPoint, SituationView, StageEvent } from '../story/types';
+import type { ArtId } from '../art/ids';
+import { preloadArt } from '../art/registry';
 
 export { statusLines } from './fictional';
 export type { StatusLine } from './scenario';
@@ -100,6 +102,13 @@ export interface ScriptOptions {
     label?: string;
     /** 軍議の「詳しく見る」（情勢の画面。J）を出す（シナリオが情勢の画面を持つとき） */
     situation?: boolean;
+    /**
+     * 話し手（台詞の speaker）の人物画の素材の ID（Version 22。シナリオの portraitOf を、この会話を始めた時の状態で引く）。
+     * 省けば人物画を出さない（架空の章）。素材が無い・旧表示（?art=old）・読めないときは、画面が出さない。
+     */
+    portraitOf?: (speaker: string) => ArtId | null;
+    /** 軍議の背景（Version 22。シナリオの councilArt。軍議の画面だけ）。省けば今までの 3D の陣幕の画 */
+    councilArt?: { base: ArtId; front?: ArtId };
 }
 
 /** 結末の画面に添えるもの（どのシナリオの結末か） */
@@ -521,8 +530,10 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         await this.exclusive(async () => {
             this._screen = 'talk';
             this.deps.world.faceTalk?.(target);
+            // 城下で話している間に、次に開く軍議の背景を読み始めておく（軍議の画面が開いてから絵が遅れて出ないように）
+            if (this.st.phase === 'explore') this.preloadCouncilArt();
             const script = this.sc.talk(this.st, target);
-            const choice = await this.deps.view.script(script, { mode: 'talk', chapter: this.chapterTitle(), label: this.sc.label });
+            const choice = await this.deps.view.script(script, { mode: 'talk', chapter: this.chapterTitle(), label: this.sc.label, ...this.artOptions(false) });
             if (this.sc.isDeparture(target, choice)) {
                 await this.depart(target, choice!);
                 return;
@@ -543,12 +554,32 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         if (after.ending) void this.reachEnding();
     }
 
+    /**
+     * 会話・軍議の画面に渡す生成イラスト素材の口（Version 22）。シナリオが持つ物だけ（架空の章は何も渡さない）。
+     * 人物画は、この会話を始めた時の状態で引く（会話の途中で状態は変わらない）。
+     */
+    private artOptions(council: boolean): Pick<ScriptOptions, 'portraitOf' | 'councilArt'> {
+        const sc = this.sc;
+        const st = this.st;
+        return {
+            ...(sc.portraitOf ? { portraitOf: (speaker: string) => sc.portraitOf?.(st, speaker) ?? null } : {}),
+            ...(council && sc.councilArt ? { councilArt: sc.councilArt } : {}),
+        };
+    }
+
+    /** 軍議の背景を先に読み始める（待たない。旧表示・一覧に無いときは何もしない） */
+    private preloadCouncilArt(): void {
+        const a = this.sc.councilArt;
+        if (a) preloadArt(...(a.front ? [a.base, a.front] : [a.base]));
+    }
+
     /** 軍議：方針を選び、確かめて決める（考え直すと選び直し）。決めたら出陣の支度（muster）へ */
     private async runCouncil(): Promise<void> {
         const { view, world } = this.deps;
         this._screen = 'council';
         this.setPrompt(null);
         view.hud(this.hudInfo());
+        this.preloadCouncilArt();
         const intro = this.sc.phaseIntro(this.st);
         view.intro(intro.title, intro.text);
         // 軍議所を背景に映す（終われば戻す）
@@ -560,7 +591,13 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
             while (this.st.phase === 'council') {
                 const script = this.sc.talk(this.st, 'council');
                 this.councilChoices = (script.choices ?? []).map((c) => ({ id: c.id, label: c.label }));
-                const choice = await view.script(script, { mode: 'council', chapter: this.chapterTitle(), label: this.sc.label, ...(this.canSituation() ? { situation: true } : {}) });
+                const choice = await view.script(script, {
+                    mode: 'council',
+                    chapter: this.chapterTitle(),
+                    label: this.sc.label,
+                    ...(this.canSituation() ? { situation: true } : {}),
+                    ...this.artOptions(true),
+                });
                 if (!choice) throw new Error('軍議で選択肢が選ばれませんでした');
                 this.st = this.sc.finishTalk(this.st, 'council', choice);
             }

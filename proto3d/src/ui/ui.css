@@ -715,3 +715,65 @@ body.touch .g-sit-tab .n { display: none; }
     .g-sit-facts { font-size: 13px; line-height: 1.45; }
     .g-sit-right { padding: 8px 12px; }
 }
+
+/* ---- 生成イラスト素材（Version 22）：会話の人物画・軍議の背景（ui/view.ts の PortraitSlot・CouncilBackdrop） ----
+   どちらも画像が読めたときだけ作る（旧表示 ?art=old・素材が無い・読めないときは要素も無く、Version 21 と同じ画面）。
+   押せない飾り：層の「どこを押しても進む」をそのまま通し、長押しで画像の操作の menu を出さない。 */
+.g-portrait,
+.g-council-bg,
+.g-council-bg canvas {
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-user-drag: none;
+}
+/* 人物画：左下。下端は画面の下の端（腰で切れた下端を画面の端に合わせる。台詞の枠の後ろに下の方が隠れる）。大きさは JS が決める */
+.g-portrait {
+    position: absolute;
+    left: calc(var(--safe-l) + 24px);
+    bottom: 0;
+    display: block;
+    opacity: 0;
+    transition: opacity 0.14s ease-out;
+}
+.g-portrait.on { opacity: 1; }
+.g-portrait[hidden] { display: none; }
+@media (max-height: 430px) {
+    .g-portrait { left: calc(var(--safe-l) + 8px); }
+}
+/* 軍議の背景：層のいちばん奥（下の 3D の陣幕の画は、そのまま後ろに残る） */
+.g-council-bg {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    opacity: 0;
+    transition: opacity 0.22s ease-out;
+}
+.g-council-bg.on { opacity: 1; }
+.g-council-bg canvas { position: absolute; top: 0; left: 0; display: block; will-change: transform; }
+.g-council-bg .g-council-bg-base { will-change: auto; }
+/* 背景の上の弱い周辺の暗さ（今までの軍議の 0.72〜0.9 の暗い覆いの代わり。端で 0.32 まで） */
+.g-council-bg::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 72% 68% at 50% 48%, rgba(10, 8, 6, 0) 46%, rgba(10, 8, 6, 0.32) 100%);
+}
+/* 背景が出ている間の見出し：文字の後ろだけ薄く暗くし、縁取りの影を付ける（文字の位置は今までと同じ：上の余白の分だけ上へ） */
+.g-layer.council.g-art .g-council-head {
+    top: calc(var(--safe-t) + 10px);
+    padding: 8px 34px 10px;
+    border-radius: 20px;
+    background: radial-gradient(ellipse 60% 62% at 50% 50%, rgba(14, 12, 10, 0.66), rgba(14, 12, 10, 0.4) 62%, rgba(14, 12, 10, 0) 100%);
+}
+.g-layer.council.g-art .g-council-head h2,
+.g-layer.council.g-art .g-council-head p { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9), 0 0 8px rgba(0, 0, 0, 0.7); }
+.g-layer.council.g-art .g-council-head p { color: #d9cdb6; }
+/* 背景は不透明なので、知らせ・段階の案内を軍議の層の上へ（今までは層の下から透けて見えていた。背景が出ている間だけ） */
+body.g-council-art .g-toast,
+body.g-council-art .g-intro { z-index: 2; }
+@media (prefers-reduced-motion: reduce) {
+    .g-portrait,
+    .g-council-bg { transition: none; }
+}
