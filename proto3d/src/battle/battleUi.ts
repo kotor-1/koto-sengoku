@@ -250,6 +250,9 @@ export class BattleUi {
     private readonly maxToasts: number;
     /** 武将の顔の canvas（置き場所ごと。1 度描いたら使い回す。Version 22） */
     private readonly faceEls = new Map<string, HTMLCanvasElement>();
+    /** 能力の欄の武将と、その顔の素材の ID（選び直したときだけ調べ直す。毎フレーム URL を読まない） */
+    private abilFaceGen: string | null | undefined = undefined;
+    private abilFaceId: ArtId | null = null;
     private disposed = false;
 
     constructor(
@@ -807,14 +810,23 @@ export class BattleUi {
 
     /**
      * 能力の欄の武将の行に顔を置く（欄の文字列は毎秒作り直すので、作り直した後に同じ canvas を置き直す。描き直さない）。
-     * 顔の無い武将・旧表示・まだ読めていない間は何もしない（with-face の印も付けない）
+     * 置くのは、武将の行のすぐ下に能力の見出し（.b-ab-h）がある時だけ。顔は武将の行の高さの中の小さな絵で、その分だけ武将の行の
+     * 「固有能力「…」」（すぐ下の見出しと同じ名前）を省く（battle.css の .with-face）。欄の高さ・能力の見出しの行の幅は変えない。
+     * 顔の無い武将・旧表示・まだ読めていない間・武将の行だけの欄では何もしない（with-face の印も付けない）
      */
     private syncAbilFace(generalId: string | null): void {
-        const id = faceIdOf(generalId);
+        if (generalId !== this.abilFaceGen) {
+            this.abilFaceGen = generalId;
+            this.abilFaceId = faceIdOf(generalId);
+        }
+        const id = this.abilFaceId;
         const cv = id ? this.faceEl('abil', id) : null;
         const gen = cv ? (this.abil.querySelector('.b-gen') as HTMLElement | null) : null;
-        if (cv && gen && cv.parentElement !== gen) gen.prepend(cv);
-        setClass(this.abil, 'with-face', !!(cv && gen));
+        const fits = !!(gen && gen.nextElementSibling?.classList.contains('b-ab-h'));
+        if (cv && gen && fits) {
+            if (cv.parentElement !== gen) gen.prepend(cv);
+        } else if (cv?.parentElement) cv.remove();
+        setClass(this.abil, 'with-face', !!(cv && gen && fits));
     }
 
     // ---------------------------------------------------------------- 名札

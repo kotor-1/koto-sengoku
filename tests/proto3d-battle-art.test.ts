@@ -5,26 +5,43 @@
  * - 円の林の木：決まりの区域の内側だけ（縁から 3 m 内側）。素材の地面を使わない間は Version 21 と同じ（円の林には植えない）。
  * - 素材の地面・足元の影・砂ぼこりを使って毎刻み更新しても、合戦の状態は表示なし・素材なしと 1 刻みも同じ。押す判定（pick）・名札の位置も同じ。
  * - 旧表示（?art=old）・素材の一覧に無い戦場では使わない。顔は家康・忠勝だけ（ほかの武将に代わりの顔を出さない）。
+ * - 読み込み（loadFieldArt）：4 枚とも読めたら使う（meta.tileMeters・低い画質の anisotropy 1）。1 枚でも読めない・旧表示・一覧に無いなら null
+ *   （一覧に無ければ型紙も作らない）。型紙と雑音は戦場の形ごとに 1 度だけ作り（区切って作る・同じ中身）、覚えておく。
+ * - 開始のボタンの待ち（BriefingGate）：素材の無いときは Version 21 と同じ（木だけ・12 秒で打ち切り）。素材は木の後 ART_WAIT_MS まで。
+ *   出した後・合戦が始まった後に届いた素材は使わずに捨てる（takeGroundArt。地面は今までのまま）。
+ * - 能力の欄の顔（battle.css）：顔は流れの外の小さな絵で、能力の見出しの行の幅・欄の高さを変えない（第二章の忠勝の「信頼」の行でも）。
  * 画像は WebGL なしで作れる DataTexture（確かめ用の 4×4 の色）を渡す（本物の画像は読まない）。状態は台本の命令と stepBattle だけで進める。
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { createBattle, inTerrain, issueOrder, stepBattle, type BattleState } from '../proto3d/src/battle/sim';
 import { FIELDS, buildBattleSetup, getField } from '../proto3d/src/battle/fields';
 import {
+    ART_WAIT_MS,
+    BriefingGate,
+    DIRT_MAX,
+    DIRT_ROAD_M,
+    DIRT_WOODS_M,
     MASK_RANGE_M,
     ROAD_BAND_M,
     WOODS_BAND_M,
+    __clearGroundCacheForTest,
     areaSignedDist,
+    buildGroundData,
     buildGroundNoise,
     buildTerrainMask,
     coverageFromSd,
     dirtWeight,
+    disposeGroundArtSet,
+    groundDataCached,
     groundNoiseAt,
+    fieldArtWanted,
     fieldHasArt,
     loadFieldArt,
+    makeGroundArtMaterial,
     roundWoodsSpots,
     sampleMaskSd,
+    takeGroundArt,
     type GroundArtSet,
     type MaskChannel,
 } from '../proto3d/src/battle/groundArt';
@@ -32,6 +49,7 @@ import { DUST_MAX, UnitFx, type FxPose } from '../proto3d/src/battle/unitFx';
 import { faceIdOf } from '../proto3d/src/battle/faceArt';
 import { hash01 } from '../proto3d/src/battle/control';
 import { __setArtManifestForTest } from '../proto3d/src/art/registry';
+import { ART_IDS } from '../proto3d/src/art/ids';
 import type { BattleMap, TerrainKind } from '../proto3d/src/battle/types';
 
 const plains = () => createBattle(buildBattleSetup(getField('plains')!, 'standard'));
@@ -169,8 +187,8 @@ describe('地面の型紙は決まりの地形の形と一致する', () => {
     });
 });
 
-describe('土のむら（低い周波数の雑音）は草地の中のまるい斑で、道・川・障害物に見える筋にならない', () => {
-    it('大平原：道・林の縁の近くには出ない。斑は丸く（80 m² 以上の斑は長さと幅の比 2 まで）、長さ 30 m まで。覆う所は原の 1〜20%', () => {
+describe('土のむら（低い周波数の雑音）は草地の中の薄い不ぞろいの斑で、道・川・障害物・決まりのある地形に見えない', () => {
+    it('大平原：道の縁から 6 m・林の縁から 5 m の内側には出ない。斑（少しでも土の混ざる所の全体）は丸みがあり（80 m² 以上の斑は長さと幅の比 2 まで）、長さ 22 m まで。覆う所は原の 1〜20%', () => {
         const map = plains().map;
         const mask = buildTerrainMask(map);
         const W = map.width;
@@ -182,9 +200,12 @@ describe('土のむら（低い周波数の雑音）は草地の中のまるい�
                 const x = -W / 2 + i + 0.5;
                 const z = -D / 2 + j + 0.5;
                 const d = dirtWeight(groundNoiseAt(x, z).dirt, sampleMaskSd(mask, 0, x, z), sampleMaskSd(mask, 1, x, z), sampleMaskSd(mask, 2, x, z));
-                // 道の縁から 4 m・林の縁から 3 m の内側には出さない
-                if (Math.abs(x) <= 7 + 4 || Math.hypot(x - 130, z + 20) <= 38 + 3) expect(d, `(${x}, ${z})`).toBe(0);
-                if (d >= 0.35) {
+                // 道の縁から 6 m・林の縁から 5 m の内側には出さない（型紙の 8 bit の刻み 0.125 m の分だけ内側で確かめる）
+                expect(DIRT_ROAD_M[0]).toBeGreaterThanOrEqual(6);
+                expect(DIRT_WOODS_M[0]).toBeGreaterThanOrEqual(5);
+                if (Math.abs(x) <= 7 + 6 - 0.2 || Math.hypot(x - 130, z + 20) <= 38 + 5 - 0.2) expect(d, `(${x}, ${z})`).toBe(0);
+                // 斑は「少しでも土の混ざる所」の全体で形を見る（濃い真ん中だけでなく、薄い縁まで含めた広がり）
+                if (d > 0.02) {
                     vis[j * W + i] = 1;
                     covered++;
                 }
@@ -255,10 +276,44 @@ describe('土のむら（低い周波数の雑音）は草地の中のまるい�
         }
         expect(blobs.length).toBeGreaterThan(3);
         for (const b of blobs) {
-            expect(b.len, JSON.stringify(b)).toBeLessThan(30);
+            expect(b.len, JSON.stringify(b)).toBeLessThan(22);
             // 丸い（道・林の縁の近くで削られた斑は三日月形になるが、短い）。細長い筋（長さと幅の比が大きく長いもの）は無い
             if (!b.edge) expect(b.ratio, JSON.stringify(b)).toBeLessThan(b.area >= 80 ? 2 : 3.5);
         }
+    });
+    it('土のむらは薄く、縁はなだらか（くっきりした楕円にしない）：混ぜる割合は 0.4 まで。描く側が読む 2 m の画素の隣どうしの差は 0.6 まで・1 m で変わる混ぜる割合は 0.12 まで', () => {
+        expect(DIRT_MAX).toBeLessThanOrEqual(0.4);
+        const map = plains().map;
+        const mask = buildTerrainMask(map);
+        const nm = buildGroundNoise(mask);
+        let maxStep = 0;
+        let maxV = 0;
+        let some = 0;
+        for (let j = 0; j + 1 < nm.h; j++) {
+            for (let i = 0; i + 1 < nm.w; i++) {
+                const v = nm.data[(j * nm.w + i) * 4 + 2];
+                const r = nm.data[(j * nm.w + i + 1) * 4 + 2];
+                const b = nm.data[((j + 1) * nm.w + i) * 4 + 2];
+                maxV = Math.max(maxV, v);
+                if (v > 0) some++;
+                maxStep = Math.max(maxStep, Math.abs(r - v), Math.abs(b - v));
+            }
+        }
+        expect(some).toBeGreaterThan(100);
+        expect(maxV).toBeGreaterThan(200);
+        expect(maxStep / 255, '隣の画素との差（斑の濃さ 0〜1 に対して）').toBeLessThanOrEqual(0.6);
+        // CPU の式でも、1 m 動いたときの混ぜる割合の変わりは 0.12 まで（0 から上限 0.35 まで 3 m 以上かけて変わる。
+        // 前の斑（上限 0.7・縁は半径の 45% の幅）は 1 m で 0.47 まで変わり、くっきりした楕円に見えた）
+        let maxGrad = 0;
+        for (let k = 0; k < 40000; k++) {
+            const x = ((k * 7919) % 400) - 200 + 0.37;
+            const z = ((k * 104729) % 320) - 160 + 0.61;
+            const w = (px: number, pz: number) => dirtWeight(groundNoiseAt(px, pz).dirt, sampleMaskSd(mask, 0, px, pz), sampleMaskSd(mask, 1, px, pz), sampleMaskSd(mask, 2, px, pz));
+            const d = w(x, z);
+            maxGrad = Math.max(maxGrad, Math.abs(w(x + 0.5, z) - d) * 2, Math.abs(w(x, z + 0.5) - d) * 2);
+        }
+        expect(maxGrad).toBeLessThanOrEqual(0.12);
+        expect(maxGrad).toBeGreaterThan(0);
     });
     it('雑音の画像は CPU の式（groundNoiseAt）と同じ値（2 m の画素）', () => {
         const mask = buildTerrainMask(plains().map);
@@ -297,14 +352,15 @@ describe('円の林の木（素材の地面を使うときだけ）', () => {
 
 // ---------------------------------------------------------------- 表示は合戦の状態を変えない
 
-/** 確かめ用の地面の素材（4×4 の色。本物の画像ではない） */
-function fakeSet(): GroundArtSet {
+/** 確かめ用の地面の素材（4×4 の色。本物の画像ではない）。型紙と雑音はその戦場の物 */
+function fakeSet(map: BattleMap = plains().map, low = false): GroundArtSet {
     const tex = (v: number) => {
         const t = new THREE.DataTexture(new Uint8Array(4 * 4 * 4).fill(v), 4, 4);
         t.needsUpdate = true;
         return { texture: t as THREE.Texture, tileMeters: 8 };
     };
-    return { grass: tex(120), dirt: tex(90), road: tex(160), forest: tex(60) };
+    const mask = buildTerrainMask(map);
+    return { grass: tex(120), dirt: tex(90), road: tex(160), forest: tex(60), ground: { mask, noise: buildGroundNoise(mask) }, low };
 }
 
 /** 大平原の台本：騎馬を回し、時間で攻めかかる（斬り合い・敗走が起きる。能力は使わない） */
@@ -365,8 +421,8 @@ describe('素材の地面・足元の影・砂ぼこりは合戦の状態を変�
             // 作っただけでは今までの地面（画像は読まない）。円の林には木を植えない（Version 21 と同じ）
             expect(on.artProbe()).toEqual({ ground: 'vertex', trees: 0, shadows: 0, dust: 0 });
             expect(on.treeSpots()).toEqual([]);
-            expect(on.setGroundArt(fakeSet())).toBe(true);
-            expect(on.setGroundArt(fakeSet())).toBe(false);
+            expect(on.setGroundArt(fakeSet(b.map))).toBe(true);
+            expect(on.setGroundArt(fakeSet(b.map))).toBe(false);
             expect(on.groundArtActive).toBe(true);
             expect(off.groundArtActive).toBe(false);
             expect(on.artProbe().ground).toBe('textured');
@@ -454,11 +510,12 @@ describe('使うかどうか（旧表示・素材の一覧）', () => {
     it('素材の地面は大平原だけ。旧表示（?art=old）では使わない。一覧に無ければ読まずに null（今までの地面）', async () => {
         expect(fieldHasArt('plains')).toBe(true);
         expect(fieldHasArt('forest')).toBe(false);
-        expect(await loadFieldArt('plains', 4)).toBeNull();
-        expect(await loadFieldArt('forest', 4)).toBeNull();
+        const forest = createBattle(buildBattleSetup(getField('forest')!, 'standard')).map;
+        expect(await loadFieldArt(plains().map, { anisotropy: 4, low: false })).toBeNull();
+        expect(await loadFieldArt(forest, { anisotropy: 4, low: false })).toBeNull();
         g.location = { search: '?art=old', hash: '' };
         expect(fieldHasArt('plains')).toBe(false);
-        expect(await loadFieldArt('plains', 4)).toBeNull();
+        expect(await loadFieldArt(plains().map, { anisotropy: 4, low: false })).toBeNull();
     });
     it('顔は家康・忠勝だけ（ほかの武将・主人公には出さない）。旧表示では出さない', () => {
         expect(faceIdOf('ieyasu')).toBe('face.ieyasu');
@@ -466,5 +523,371 @@ describe('使うかどうか（旧表示・素材の一覧）', () => {
         for (const id of ['sakai', 'ishikawa', 'sakakibara', 'nagamasa', 'hero', '', null, undefined]) expect(faceIdOf(id)).toBeNull();
         g.location = { search: '?art=old', hash: '' };
         expect(faceIdOf('ieyasu')).toBeNull();
+    });
+});
+
+// ---------------------------------------------------------------- 読み込み・型紙の覚え・開始のボタンの待ち・遅れて届いた素材
+
+/** 大平原の地面の素材 4 枚の記録（確かめ用。本物の画像ではない） */
+const GROUND_ASSETS = {
+    [ART_IDS.plainsGrass]: { file: 'art/tex/plains_grass.webp', w: 1024, h: 1024, kind: 'texture' as const, meta: { tileMeters: 6 } },
+    [ART_IDS.plainsDirt]: { file: 'art/tex/plains_dirt.webp', w: 1024, h: 1024, kind: 'texture' as const },
+    [ART_IDS.plainsRoad]: { file: 'art/tex/plains_road.webp', w: 1024, h: 1024, kind: 'texture' as const, meta: { tileMeters: 4 } },
+    [ART_IDS.plainsForest]: { file: 'art/tex/plains_forest.webp', w: 1024, h: 1024, kind: 'texture' as const, meta: { tileMeters: 'x' } },
+};
+
+/** 素材の一覧と読み込み（fetch → createImageBitmap）の偽物。fail に入れた画像は 404。読んだ URL を返す */
+function fakeArt(o: { fail?: string[]; assets?: Record<string, unknown> } = {}): string[] {
+    __setArtManifestForTest({ version: 1, assets: (o.assets ?? GROUND_ASSETS) as never });
+    const urls: string[] = [];
+    vi.stubGlobal('location', { search: '', hash: '' });
+    vi.stubGlobal('fetch', async (url: string) => {
+        urls.push(String(url));
+        const bad = (o.fail ?? []).some((f) => String(url).endsWith(f));
+        return bad ? { ok: false, status: 404 } : { ok: true, status: 200, blob: async () => ({ url: String(url) }) };
+    });
+    vi.stubGlobal('createImageBitmap', async () => ({ width: 1024, height: 1024, close() {} }));
+    return urls;
+}
+
+/** 大きなバイト列が同じか（toEqual は 1 要素ずつで遅い） */
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+}
+
+/** 4 枚の素材が捨てられたか（three の dispose の知らせを数える） */
+function watchDispose(set: GroundArtSet): () => number {
+    let n = 0;
+    for (const t of [set.grass, set.dirt, set.road, set.forest]) t.texture.addEventListener('dispose', () => n++);
+    return () => n;
+}
+
+describe('地面の素材の読み込み（loadFieldArt）と型紙・雑音の覚え', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        __setArtManifestForTest(null);
+        __clearGroundCacheForTest();
+    });
+    it('4 枚とも読めたら使う：1 枚の大きさは meta.tileMeters（無い・数でない時は 8 m）。anisotropy は 4 まで、低い画質では 1。型紙と雑音は大平原の物', async () => {
+        const urls = fakeArt();
+        const map = plains().map;
+        expect(fieldArtWanted('plains')).toBe(true);
+        const set = await loadFieldArt(map, { anisotropy: 16, low: false });
+        expect(set).not.toBeNull();
+        expect(urls.length).toBe(4);
+        expect([set!.grass.tileMeters, set!.dirt.tileMeters, set!.road.tileMeters, set!.forest.tileMeters]).toEqual([6, 8, 4, 8]);
+        expect(set!.grass.texture.anisotropy).toBe(4);
+        expect(set!.low).toBe(false);
+        // 型紙と雑音は一度に作った物と同じ中身（区切って作っても同じ）
+        const mask = buildTerrainMask(map);
+        expect(sameBytes(set!.ground.mask.data, mask.data)).toBe(true);
+        expect(sameBytes(set!.ground.noise.data, buildGroundNoise(mask).data)).toBe(true);
+        // 低い画質：anisotropy 1。型紙は覚えている物をそのまま使う（作り直さない）
+        const low = await loadFieldArt(map, { anisotropy: 16, low: true });
+        expect(low!.grass.texture.anisotropy).toBe(1);
+        expect(low!.low).toBe(true);
+        expect(low!.ground).toBe(set!.ground);
+        // 画像は同じ ID を 2 度読まない（読み込みの登録が覚えている）
+        expect(urls.length).toBe(4);
+        disposeGroundArtSet(set);
+        disposeGroundArtSet(low);
+    }, 30000);
+    it('1 枚でも読めないときは null（今までの地面）。作り始めた型紙は次の合戦のために覚えておく', async () => {
+        const urls = fakeArt({ fail: ['plains_road.webp'] });
+        const map = plains().map;
+        expect(await loadFieldArt(map, { anisotropy: 4, low: false })).toBeNull();
+        expect(urls.length).toBe(4);
+        expect(groundDataCached(map)).toBe(true);
+    }, 30000);
+    it('一覧に 4 枚とも無い・旧表示・素材の無い戦場：画像を読みに行かず、型紙も作らない（Version 21 と同じ。開始のボタンも待たない）', async () => {
+        const map = plains().map;
+        // 一覧が空（今の本番）
+        __setArtManifestForTest(null);
+        const urls = fakeArt({ assets: {} });
+        expect(fieldArtWanted('plains')).toBe(false);
+        expect(await loadFieldArt(map, { anisotropy: 4, low: false })).toBeNull();
+        // 一覧に 3 枚だけ
+        const { [ART_IDS.plainsForest]: _f, ...three } = GROUND_ASSETS;
+        fakeArt({ assets: three });
+        expect(fieldArtWanted('plains')).toBe(false);
+        expect(await loadFieldArt(map, { anisotropy: 4, low: false })).toBeNull();
+        // 旧表示
+        fakeArt();
+        vi.stubGlobal('location', { search: '?art=old', hash: '' });
+        expect(fieldArtWanted('plains')).toBe(false);
+        expect(await loadFieldArt(map, { anisotropy: 4, low: false })).toBeNull();
+        // 素材の無い戦場
+        vi.stubGlobal('location', { search: '', hash: '' });
+        expect(fieldArtWanted('forest')).toBe(false);
+        expect(urls.length).toBe(0);
+        expect(groundDataCached(map)).toBe(false);
+    });
+    it('型紙と雑音は戦場の形ごとに 1 度だけ作る（同時に呼んでも同じ約束）。区切って作る（間に他の処理が入る）。形が違えば別の物', async () => {
+        const map = plains().map;
+        let ticks = 0;
+        const iv = setInterval(() => ticks++, 0);
+        const p1 = buildGroundData(map, 2);
+        const p2 = buildGroundData(map, 2);
+        expect(p2).toBe(p1);
+        const g = await p1;
+        clearInterval(iv);
+        // 2 ms ずつ区切ったので、作る間に他の処理（ここでは時計）が何度も動いた
+        expect(ticks).toBeGreaterThan(3);
+        expect(sameBytes(g.mask.data, buildTerrainMask(map).data)).toBe(true);
+        expect(await buildGroundData(map)).toBe(g);
+        // 同じ id でも地形の形が違えば取り違えない
+        const other = { ...map, terrain: map.terrain.filter((a) => a.kind !== 'woods') };
+        const g2 = await buildGroundData(other);
+        expect(g2).not.toBe(g);
+        expect(sampleMaskSd(g2.mask, 1, 130, -20)).toBeGreaterThan(MASK_RANGE_M - 0.2);
+    }, 30000);
+});
+
+describe('開始のボタンの待ち（BriefingGate）と遅れて届いた素材（takeGroundArt）', () => {
+    /** 手で進める時計 */
+    function clock() {
+        let now = 0;
+        const timers: { at: number; fn: () => void; live: boolean }[] = [];
+        const timer = (fn: () => void, ms: number) => {
+            const t = { at: now + ms, fn, live: true };
+            timers.push(t);
+            return () => void (t.live = false);
+        };
+        const advance = (ms: number) => {
+            now += ms;
+            for (const t of timers) if (t.live && t.at <= now) (t.live = false), t.fn();
+        };
+        return { timer, advance, live: () => timers.filter((t) => t.live).length };
+    }
+    it('素材を読みに行かない（wantArt false）：Version 21 と同じ。木が済んだその時に出す・木が来なければ 12 秒で出す。1 度だけ', () => {
+        for (const late of [false, true]) {
+            const c = clock();
+            let ready = 0;
+            const g = new BriefingGate({ treeTimeoutMs: 12000, artWaitMs: ART_WAIT_MS, wantArt: false, onReady: () => ready++, timer: c.timer });
+            if (!late) {
+                c.advance(800);
+                expect(ready).toBe(0);
+                g.treesDone();
+                expect(ready).toBe(1);
+                expect(c.live()).toBe(0);
+            } else {
+                c.advance(11999);
+                expect(ready).toBe(0);
+                c.advance(1);
+                expect(ready).toBe(1);
+                g.treesDone();
+            }
+            c.advance(20000);
+            expect(ready).toBe(1);
+            expect(g.settled).toBe(true);
+        }
+    });
+    it('素材を読みに行く：木の後 ART_WAIT_MS まで待つ。先に届けば木と同時、間に届けばその時、過ぎたら待たずに出す（12 秒の打ち切りは同じ）', () => {
+        expect(ART_WAIT_MS).toBeLessThanOrEqual(3000);
+        // 素材が先
+        let c = clock();
+        let ready = 0;
+        let g = new BriefingGate({ treeTimeoutMs: 12000, artWaitMs: ART_WAIT_MS, wantArt: true, onReady: () => ready++, timer: c.timer });
+        g.artDone();
+        expect(ready).toBe(0);
+        c.advance(500);
+        g.treesDone();
+        expect(ready).toBe(1);
+        // 木の後、待ちの間に届く
+        c = clock();
+        ready = 0;
+        g = new BriefingGate({ treeTimeoutMs: 12000, artWaitMs: ART_WAIT_MS, wantArt: true, onReady: () => ready++, timer: c.timer });
+        g.treesDone();
+        c.advance(ART_WAIT_MS - 1);
+        expect(ready).toBe(0);
+        expect(g.settled).toBe(false);
+        g.artDone();
+        expect(ready).toBe(1);
+        // 届かない：木の後 ART_WAIT_MS で出す。その後に届いても何もしない（settled）
+        c = clock();
+        ready = 0;
+        g = new BriefingGate({ treeTimeoutMs: 12000, artWaitMs: ART_WAIT_MS, wantArt: true, onReady: () => ready++, timer: c.timer });
+        c.advance(1000);
+        g.treesDone();
+        c.advance(ART_WAIT_MS);
+        expect(ready).toBe(1);
+        expect(g.settled).toBe(true);
+        g.artDone();
+        expect(ready).toBe(1);
+        // 木も来ない：12 秒で出す（Version 21 より遅くしない）
+        c = clock();
+        ready = 0;
+        g = new BriefingGate({ treeTimeoutMs: 12000, artWaitMs: ART_WAIT_MS, wantArt: true, onReady: () => ready++, timer: c.timer });
+        c.advance(12000);
+        expect(ready).toBe(1);
+        // 片付けた後は出さない
+        c = clock();
+        ready = 0;
+        g = new BriefingGate({ treeTimeoutMs: 12000, artWaitMs: ART_WAIT_MS, wantArt: true, onReady: () => ready++, timer: c.timer });
+        g.dispose();
+        g.treesDone();
+        g.artDone();
+        c.advance(20000);
+        expect(ready).toBe(0);
+        expect(c.live()).toBe(0);
+    });
+    it('開始のボタンを出した後・合戦が始まった後に届いた素材は使わずに捨てる（地面は今までのまま）。間に合えば使う', async () => {
+        await withFakeDocument(async () => {
+            const { BattleView } = await import('../proto3d/src/battle/view');
+            const s = plains();
+            const v = new BattleView(s, { low: false });
+            // 遅れて届いた（open = false）：使わない・4 枚とも捨てる
+            const late = fakeSet(s.map);
+            const lateDisposed = watchDispose(late);
+            let applied = 0;
+            expect(
+                takeGroundArt(late, false, (a) => {
+                    applied++;
+                    return v.setGroundArt(a);
+                }),
+            ).toBe(false);
+            expect(applied).toBe(0);
+            expect(lateDisposed()).toBe(4);
+            expect(v.artProbe().ground).toBe('vertex');
+            expect(v.treeSpots()).toEqual([]);
+            // 間に合った：使う（捨てない）
+            const ok = fakeSet(s.map);
+            const okDisposed = watchDispose(ok);
+            expect(takeGroundArt(ok, true, (a) => v.setGroundArt(a))).toBe(true);
+            expect(okDisposed()).toBe(0);
+            expect(v.artProbe().ground).toBe('textured');
+            // もう使っている（2 組目）：受け取らないので捨てる
+            const dup = fakeSet(s.map);
+            const dupDisposed = watchDispose(dup);
+            expect(takeGroundArt(dup, true, (a) => v.setGroundArt(a))).toBe(false);
+            expect(dupDisposed()).toBe(4);
+            expect(takeGroundArt(null, true, () => true)).toBe(false);
+            // 片付けで、使った素材も捨てる
+            v.dispose();
+            expect(okDisposed()).toBe(4);
+            // 片付けた後の表示には使わない
+            const after = fakeSet(s.map);
+            const afterDisposed = watchDispose(after);
+            expect(takeGroundArt(after, true, (a) => v.setGroundArt(a))).toBe(false);
+            expect(afterDisposed()).toBe(4);
+        });
+    });
+});
+
+describe('地面の材質：背景の色（昼・夜）と低い画質', () => {
+    /** onBeforeCompile に渡る形（three の WebGL なしで、足した uniform と式を見る） */
+    function compiled(mat: THREE.Material): { uniforms: Record<string, { value: unknown }>; frag: string } {
+        const shader = {
+            uniforms: {} as Record<string, { value: unknown }>,
+            vertexShader: '#include <common>\n#include <begin_vertex>',
+            fragmentShader: '#include <common>\n#include <color_fragment>',
+        };
+        (mat.onBeforeCompile as (s: typeof shader, r: unknown) => void)(shader, null);
+        return { uniforms: shader.uniforms, frag: shader.fragmentShader };
+    }
+    it('戦場の外を薄める色は表示の背景の色（夜の合戦は夜の背景）。低い画質では草地を 1 回だけ読む（GA_LOW）', async () => {
+        await withFakeDocument(async () => {
+            const { BattleView } = await import('../proto3d/src/battle/view');
+            const day = plains();
+            const setup = buildBattleSetup(getField('plains')!, 'standard');
+            const night = createBattle({ ...setup, night: { sight: 90, detectRange: 70 } });
+            for (const [s, low] of [
+                [day, false],
+                [night, true],
+            ] as const) {
+                const v = new BattleView(s, { low });
+                expect(v.setGroundArt(fakeSet(s.map, low))).toBe(true);
+                const mesh = (v as unknown as { groundMesh: THREE.Mesh }).groundMesh;
+                const mat = mesh.material as THREE.MeshLambertMaterial;
+                const c = compiled(mat);
+                const bg = (v as unknown as { scene: THREE.Scene }).scene.background as THREE.Color;
+                expect((c.uniforms.gaBg.value as THREE.Color).getHex()).toBe(bg.getHex());
+                expect(bg.getHex()).toBe(s === night ? 0x26301f : 0x56653f);
+                expect(!!mat.defines && 'GA_LOW' in mat.defines).toBe(low);
+                expect(mat.customProgramCacheKey()).toBe(low ? 'battle-ground-art-4-low' : 'battle-ground-art-4');
+                expect(c.frag).toContain('#ifdef GA_LOW');
+                v.dispose();
+            }
+        });
+    });
+    it('makeGroundArtMaterial：背景の色を渡さなければ昼の背景', () => {
+        const s = plains();
+        const set = fakeSet(s.map);
+        const m = makeGroundArtMaterial(s.map, null, set);
+        expect((compiled(m.material).uniforms.gaBg.value as THREE.Color).getHex()).toBe(0x56653f);
+        m.material.dispose();
+        m.mask.dispose();
+        m.noise.dispose();
+        disposeGroundArtSet(set);
+    });
+});
+
+// ---------------------------------------------------------------- 能力の欄の顔（battle.css）
+
+describe('能力の欄の顔は欄の高さ・能力の見出しの行の幅を変えない（第二章の忠勝の「信頼 40」の行でも）', () => {
+    // テストは Node で動く。Node の型定義は入れていないので、使う関数だけ型を付ける
+    const fsName = 'node:fs';
+    const cssText = (async () => {
+        const fs = (await import(/* @vite-ignore */ fsName)) as { readFileSync(p: URL, enc: 'utf8'): string };
+        return fs.readFileSync(new URL('../proto3d/public/battle.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    })();
+    let css = '';
+    beforeAll(async () => {
+        css = await cssText;
+    });
+    /** 規則（選ぶ側 → 中身）の一覧。@media の中は media に入れる */
+    function rules(): { media: string; sel: string; body: string }[] {
+        const out: { media: string; sel: string; body: string }[] = [];
+        const re = /@media([^{]+)\{((?:[^{}]*\{[^{}]*\})*)\s*\}|([^{}@]+)\{([^{}]*)\}/g;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(css))) {
+            if (m[1] !== undefined) {
+                const inner = /([^{}]+)\{([^{}]*)\}/g;
+                let n: RegExpExecArray | null;
+                while ((n = inner.exec(m[2]))) out.push({ media: m[1].trim(), sel: n[1].trim(), body: n[2] });
+            } else out.push({ media: '', sel: m[3].trim(), body: m[4] });
+        }
+        return out;
+    }
+    const prop = (body: string, name: string): string | null => {
+        const m = new RegExp(`(?:^|;)\\s*${name}\\s*:\\s*([^;]+)`).exec(body);
+        return m ? m[1].trim() : null;
+    };
+    it('with-face の規則は武将の行（.b-gen）と顔だけに掛かる：能力の見出し（.b-ab-h）・ほかの行の幅・余白を変えない', () => {
+        const rs = rules().filter((r) => r.sel.includes('.b-abil.with-face'));
+        expect(rs.length).toBeGreaterThan(2);
+        for (const r of rs) {
+            for (const sel of r.sel.split(',').map((x) => x.trim())) {
+                expect(sel, sel).not.toMatch(/\.b-ab-h|\.b-ab-r|\.b-ab-why|\.b-ab-long|\.b-ab-note/);
+                // 欄そのもの（.b-abil.with-face だけ）の大きさ・余白は変えない
+                if (sel === '.b-abil.with-face') for (const p of ['padding', 'height', 'min-height', 'margin', 'width']) expect(prop(r.body, p), `${sel} ${p}`).toBeNull();
+            }
+        }
+        // 顔は流れの外（行の高さを押し広げない）。武将の行の「固有能力「…」」は省く（すぐ下の見出しと同じ名前）
+        const face = rs.find((r) => r.media === '' && r.sel === '.b-abil.with-face > .b-gen > .b-face')!;
+        expect(prop(face.body, 'position')).toBe('absolute');
+        const ab = rs.find((r) => r.media === '' && r.sel === '.b-abil.with-face > .b-gen > .b-gen-ab')!;
+        expect(prop(ab.body, 'display')).toBe('none');
+    });
+    it('武将の行は「固有能力「…」」を省いた分より少しだけ右へ寄せる（折り返しを増やさない）。顔は武将の行の上の余白と下の区切りの間に収まる', () => {
+        const all = rules();
+        const px = (v: string | null) => (v === null ? NaN : parseFloat(v));
+        const find = (media: string, sel: string) => all.find((r) => r.media.includes(media) && r.sel.split(',').map((x) => x.trim()).includes(sel));
+        // PC（12 px・行の高さ 1.45）：上の余白 6 px・下の区切りまで 3 px
+        const genPad = px(prop(find('', '.b-abil.with-face > .b-gen')!.body, 'padding-left'));
+        const faceH = px(prop(find('', '.b-abil.with-face > .b-gen > .b-face')!.body, 'height'));
+        const lineH = 12 * 1.45;
+        expect(faceH).toBeLessThanOrEqual(lineH + 2 * 3);
+        // 省く「固有能力「X」」は 11 px の字で 7 字以上（固有能力「」の 6 字＋名前）＝ 77 px 以上。寄せる幅（顔＋すき間）はそれより狭い
+        expect(genPad).toBeLessThan(7 * 11 - 8);
+        // 縦の狭い画面（10.5 px・行の高さ 1.2）：上の余白 4 px・下の区切りまで 1＋1 px。武将の行の「固有能力」は元から省いている
+        const cGen = find('max-height: 520px', '.b-abil.with-face > .b-gen')!;
+        const cFace = find('max-height: 520px', '.b-abil.with-face > .b-gen > .b-face')!;
+        expect(px(prop(cFace.body, 'height'))).toBeLessThanOrEqual(10.5 * 1.2 + 2 * 2);
+        expect(px(prop(cGen.body, 'padding-left'))).toBeLessThan(7 * 10 - 6);
+        const compactHide = find('max-height: 520px', '.b-gen:has(+ .b-ab-h) .b-gen-ab');
+        expect(compactHide && prop(compactHide.body, 'display')).toBe('none');
     });
 });

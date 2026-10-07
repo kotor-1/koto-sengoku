@@ -49,7 +49,7 @@ import { ABILITY_DATA, abilityInfo } from './abilities';
 import { troopTier } from './troops';
 import { POLE_H, TroopLayer, type TroopStats } from './troopsView';
 import { CLAN_CHAR, CLAN_COLOR, makeBannerTexture } from '../shared/figures';
-import { buildTerrainMask, makeGroundArtMaterial, roundWoodsSpots, type GroundArtSet } from './groundArt';
+import { DAY_BG, makeGroundArtMaterial, roundWoodsSpots, type GroundArtSet } from './groundArt';
 import { UnitFx } from './unitFx';
 
 /** 特殊能力の範囲の輪の色（敵方の能力は赤みの色） */
@@ -186,6 +186,8 @@ export class BattleView {
     private readonly gateZones: { id: string; mesh: THREE.Mesh }[] = [];
     /** 通れる範囲（fieldRules.passable。無ければ null） */
     private readonly passable: { x0: number; x1: number; z0: number; z1: number } | null;
+    /** 背景の色（昼・夜。素材の地面の戦場の外もこの色へ薄める） */
+    private readonly bg: THREE.Color;
     private time = 0;
     /** 夜の合戦（第4群）。発見していない敵の位置を表示の層に残さない */
     private readonly night: boolean;
@@ -202,7 +204,8 @@ export class BattleView {
         this.night = !!s.setup.night;
         this.low = opts.low;
         this.passable = s.setup.fieldRules?.passable ?? null;
-        const bg = new THREE.Color(s.setup.night ? NIGHT_LIGHT.bg : '#56653f');
+        const bg = new THREE.Color(s.setup.night ? NIGHT_LIGHT.bg : DAY_BG);
+        this.bg = bg;
         this.scene.background = bg;
         this.scene.fog = new THREE.Fog(bg, 600, 1400);
         this.camera = new THREE.PerspectiveCamera(CAM.fovDeg, 1, 1, 5000);
@@ -561,13 +564,16 @@ export class BattleView {
     }
 
     /**
-     * 生成イラスト素材の地面（Version 22）。つなぎ（entry.ts）が素材を 4 枚とも読めたときだけ呼ぶ（読めなければ呼ばない＝今までの地面のまま）。
-     * 地面の材質を、決まりの地形の形の型紙で素材を混ぜるものに差し替え、道の帯を隠す（道は型紙で決まりの幅に描く）。
+     * 生成イラスト素材の地面（Version 22）。つなぎ（entry.ts）が素材を 4 枚とも読めたときだけ、合戦の前の説明の間に呼ぶ
+     * （読めなければ呼ばない＝今までの地面のまま。開始のボタンを出した後・合戦の途中には呼ばない）。
+     * 地面の材質を、決まりの地形の形の型紙で素材を混ぜるものに差し替え、道の帯を隠す（道は型紙で決まりの幅に描く）。型紙と雑音は作り済みの物
+     * （set.ground）を使う（ここで重い計算はしない）。戦場の外は背景の色（昼・夜）へ薄める。
      * 円・カプセルの林にも木を植え直し、足元の影と砂ぼこりを足す。合戦の状態・押す判定・名札には関わらない。使い始めたら true
+     * （false のときは素材を受け取らない：呼んだ側が捨てる）
      */
     setGroundArt(set: GroundArtSet | null): boolean {
         if (!set || this.artOn || this.disposed || !this.groundMesh) return false;
-        const { material, mask, noise } = makeGroundArtMaterial(this.map, this.passable, buildTerrainMask(this.map), set);
+        const { material, mask, noise } = makeGroundArtMaterial(this.map, this.passable, set, this.bg);
         this.own(material, mask, noise, set.grass.texture, set.dirt.texture, set.road.texture, set.forest.texture);
         this.groundMesh.material = material;
         if (this.roadMesh) this.roadMesh.visible = false;

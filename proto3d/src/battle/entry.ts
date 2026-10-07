@@ -25,7 +25,9 @@
  *   目標の欄に進み具合、結果の画面に主目標・副目標を勝敗・約束と別の行で出す。
  * - 結果を出し、「続ける」で後片付け（形・材質・画像・DOM・listener）をして探索へ戻り（exitMode）、結果を返す。
  * - 生成イラスト素材の地面（Version 22。groundArt.ts）：表示を作った後で、その戦場の素材（FIELD_ART）を 4 枚とも読めたら view.setGroundArt で使う。
- *   旧表示（?art=old）・素材の一覧に無い・1 枚でも読めないときは何もしない（Version 21 と同じ地面）。合戦の計算・押す判定には関わらない。
+ *   旧表示（?art=old）・素材の一覧に無い・1 枚でも読めないときは何もしない（Version 21 と同じ地面・同じ開始のボタンの時）。
+ *   素材は木が済んでから ART_WAIT_MS まで待ち、開始のボタンを出した後に届いた物は使わない（合戦の途中で地面を差し替えない）。
+ *   合戦の計算・押す判定には関わらない。
  */
 import { appContext, enterMode, exitMode, registerBattleRunner, type AppContext, type Mode } from '../app/modes';
 import { audio } from '../audio';
@@ -33,7 +35,7 @@ import { loadModel } from '../app/models';
 import type { BattleOutcome, BattleRunHooks, BattleSetup, Order } from './types';
 import { canCommand, createBattle, elevationAt, isActive, issueOrder, meleeUnreachable, orderAllRetreat, stepBattle, unitById, waitReason, type BattleEvent, type BattleState } from './sim';
 import { BattleView } from './view';
-import { loadFieldArt } from './groundArt';
+import { ART_WAIT_MS, BriefingGate, fieldArtWanted, loadFieldArt, takeGroundArt } from './groundArt';
 import { nightLabels } from './night';
 import { withdrawalNote } from './objectives';
 import { BattleUi, type CommandKind } from './battleUi';
@@ -218,44 +220,48 @@ class BattleRun implements Mode {
     // ---------------------------------------------------------------- 準備
 
     private loadTrees(): void {
-        let settled = false;
-        // 木と地面の素材（Version 22）の両方が済んだら始められる（地面の素材の無い戦場・旧表示では、地面はすぐ済む）
-        let waiting = 2;
-        const ready = () => {
-            if (settled || this.finished) return;
-            settled = true;
-            this.ui.setBriefingReady(true);
-        };
-        const part = () => {
-            if (--waiting <= 0) ready();
-        };
-        const timer = window.setTimeout(ready, TREE_TIMEOUT_MS);
-        this.off.push(() => window.clearTimeout(timer));
+        // 開始のボタン：木（Version 21 と同じ。12 秒で打ち切り）と、地面の素材（Version 22。素材のある戦場で一覧に載っているときだけ。
+        // 木が済んでから ART_WAIT_MS まで待つ）。素材を読みに行かない戦場・旧表示・一覧に無いときは、Version 21 と同じ時に出す
+        const wantArt = fieldArtWanted(this.s.map.id);
+        const gate = new BriefingGate({
+            treeTimeoutMs: TREE_TIMEOUT_MS,
+            artWaitMs: ART_WAIT_MS,
+            wantArt,
+            onReady: () => {
+                if (!this.finished) this.ui.setBriefingReady(true);
+            },
+        });
+        this.off.push(() => gate.dispose());
         loadModel('tree_pine_far')
             .then((g) => {
                 if (this.finished) return;
                 this.view.setTrees(g.scene);
-                part();
+                gate.treesDone();
             })
             .catch((e: unknown) => {
                 // 読めなければ円すいの木のまま（見た目だけの問題。合戦はできる）
                 console.warn('林の木を読み込めませんでした（円すいの木で続けます）', e);
-                part();
+                gate.treesDone();
             });
-        // 地面の素材：表示を作った後で読む（読めなければ今までの地面のまま。時間切れでも始められる）
-        const aniso = this.ctx.renderer.capabilities.getMaxAnisotropy();
-        loadFieldArt(this.s.map.id, Math.min(4, aniso))
+        if (wantArt) this.loadGroundArt(gate);
+    }
+
+    /**
+     * 地面の素材（Version 22）：表示を作った後で読む（読めなければ今までの地面のまま）。開始のボタンを出す前に届いたときだけ使う。
+     * 出した後・合戦が始まった後・終わった後に届いたら、合戦の途中で地面を差し替えないように使わずに捨てる
+     * （読んだ画像と型紙は覚えているので、次の合戦では待たずに使える）。低い画質（?q=low）では anisotropy 1・草地は 1 回だけ読む
+     */
+    private loadGroundArt(gate: BriefingGate): void {
+        const low = this.ctx.low;
+        const aniso = low ? 1 : this.ctx.renderer.capabilities.getMaxAnisotropy();
+        loadFieldArt(this.s.map, { anisotropy: aniso, low })
             .then((set) => {
-                if (this.finished) {
-                    for (const t of set ? [set.grass, set.dirt, set.road, set.forest] : []) t.texture.dispose();
-                    return;
-                }
-                if (set && !this.view.setGroundArt(set)) for (const t of [set.grass, set.dirt, set.road, set.forest]) t.texture.dispose();
-                part();
+                takeGroundArt(set, !(gate.settled || this.started || this.finished), (a) => this.view.setGroundArt(a));
+                gate.artDone();
             })
             .catch((e: unknown) => {
                 console.warn('地面の素材を使えませんでした（今までの地面で続けます）', e);
-                part();
+                gate.artDone();
             });
     }
 
