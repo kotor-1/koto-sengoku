@@ -24,7 +24,6 @@ import type { Alliance, CampaignState, ChoiceId, ExplorePose } from './state';
 import type { Rect } from '../layout';
 import type { AmbientSpec, CineMoment, CineSpec, ScoutPoint, SituationView, StageEvent } from '../story/types';
 import type { ArtId } from '../art/ids';
-import { preloadArt } from '../art/registry';
 
 export { statusLines } from './fictional';
 export type { StatusLine } from './scenario';
@@ -156,6 +155,11 @@ export interface GameView {
     holdCover?(on: boolean): void;
     /** 読み込みの待ちの間の表示（省ける。text を null で消す。opaque は下の画を透かさない） */
     loading?(text: string | null, opts?: { opaque?: boolean }): void;
+    /**
+     * 使いそうな生成イラスト素材（Version 22）を先に読み始める（省ける。待たない）。読めた物は、会話・軍議の画面が開いた
+     * 同じフレームのうちに出せる。旧表示（?art=old）・一覧に無いときは何も読まない（画面が決める）。
+     */
+    preloadArt?(ids: ArtId[]): void;
 }
 
 /** 演出の再生に添えるもの */
@@ -248,6 +252,8 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
     private councilChoices: { id: string; label: string }[] | null = null;
     /** 軍議所を背景に映している（タイトルへ戻るときに外す） */
     private councilHall = false;
+    /** 城下に入ってから、人物画を先に読み始めたか（入るたびに戻す。操作できるようになった最初のフレームで読む） */
+    private portraitsAsked = false;
     /** 確認用：再生した演出の台本の id（古い順。状態・保存には入らない） */
     readonly cineLog: string[] = [];
     /** 並べるシナリオ（タイトルの順） */
@@ -445,6 +451,7 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         this.inGate = inGateZone(this.cast, p.x, p.z);
         this._screen = 'explore';
         this.prompted = null;
+        this.portraitsAsked = false;
         view.hud(this.hudInfo());
         this.applyAmbient();
         const intro = this.sc.phaseIntro(s);
@@ -491,6 +498,11 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         if (!this.run || this._screen !== 'explore') return;
         if (Number.isFinite(dt) && dt > 0) this.playAcc += Math.min(dt, 1);
         if (this.busy) return;
+        if (!this.portraitsAsked) {
+            // 操作できるようになった最初のフレーム（章の冒頭の演出の後）：主人公と城下の人物の人物画を先に読み始める
+            this.portraitsAsked = true;
+            this.preloadPortraits(['hero', ...this.cast.filter((c) => c.kind === 'person').map((c) => c.id)]);
+        }
         const p = this.deps.world.heroPose();
         const gate = inGateZone(this.cast, p.x, p.z);
         if (gate && !this.inGate) {
@@ -507,6 +519,8 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         if (c === this.prompted) return;
         this.prompted = c;
         this.deps.view.prompt(c ? { id: c.id, verb: c.verb, label: c.label } : null);
+        // 「話す」が出た：その相手と主人公の人物画を先に読み始める（もう読んでいれば何もしない）
+        if (c?.kind === 'person') this.preloadPortraits(['hero', c.id]);
     }
 
     // ---------------- 話す ----------------
@@ -567,10 +581,26 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         };
     }
 
-    /** 軍議の背景を先に読み始める（待たない。旧表示・一覧に無いときは何もしない） */
+    /** 軍議の背景を先に読み始める（待たない。旧表示・一覧に無いときは画面が何もしない） */
     private preloadCouncilArt(): void {
         const a = this.sc.councilArt;
-        if (a) preloadArt(...(a.front ? [a.base, a.front] : [a.base]));
+        if (a) this.deps.view.preloadArt?.(a.front ? [a.base, a.front] : [a.base]);
+    }
+
+    /**
+     * 話し手の人物画を先に読み始める（待たない。シナリオの portraitOf を今の状態で引く。絵の無い話し手は何もしない）。
+     * 城下に入って操作できるようになった時（章の冒頭の後）と、「話す」が出た時に呼ぶ（遅い端末でも、会話の 1 行目から絵が出るように）。
+     */
+    private preloadPortraits(speakers: string[]): void {
+        const sc = this.sc;
+        if (!sc.portraitOf || !this.deps.view.preloadArt) return;
+        const st = this.st;
+        const ids = new Set<ArtId>();
+        for (const sp of speakers) {
+            const id = sc.portraitOf(st, sp);
+            if (id) ids.add(id);
+        }
+        if (ids.size) this.deps.view.preloadArt([...ids]);
     }
 
     /** 軍議：方針を選び、確かめて決める（考え直すと選び直し）。決めたら出陣の支度（muster）へ */

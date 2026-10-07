@@ -716,7 +716,7 @@ body.touch .g-sit-tab .n { display: none; }
     .g-sit-right { padding: 8px 12px; }
 }
 
-/* ---- 生成イラスト素材（Version 22）：会話の人物画・軍議の背景（ui/view.ts の PortraitSlot・CouncilBackdrop） ----
+/* ---- 生成イラスト素材（Version 22）：会話の人物画・軍議の背景（ui/artCanvas.ts の PortraitSlot・CouncilBackdrop。ui/view.ts の script() が作る） ----
    どちらも画像が読めたときだけ作る（旧表示 ?art=old・素材が無い・読めないときは要素も無く、Version 21 と同じ画面）。
    押せない飾り：層の「どこを押しても進む」をそのまま通し、長押しで画像の操作の menu を出さない。 */
 .g-portrait,
@@ -735,9 +735,11 @@ body.touch .g-sit-tab .n { display: none; }
     bottom: 0;
     display: block;
     opacity: 0;
-    transition: opacity 0.14s ease-out;
+    transition: opacity 0.14s ease-out, filter 0.14s ease-out;
 }
 .g-portrait.on { opacity: 1; }
+/* 絵の無い人物（酒井・石川・使者・村の使い）の行：前の人の絵を、同じ位置のまま暗く残す（消して出し直さない） */
+.g-portrait.dim { filter: brightness(0.55); }
 .g-portrait[hidden] { display: none; }
 @media (max-height: 430px) {
     .g-portrait { left: calc(var(--safe-l) + 8px); }
@@ -751,8 +753,20 @@ body.touch .g-sit-tab .n { display: none; }
     transition: opacity 0.22s ease-out;
 }
 .g-council-bg.on { opacity: 1; }
-.g-council-bg canvas { position: absolute; top: 0; left: 0; display: block; will-change: transform; }
-.g-council-bg .g-council-bg-base { will-change: auto; }
+.g-council-bg canvas { position: absolute; top: 0; left: 0; display: block; }
+/* 手前の幕・柱の、ゆっくりした横の揺れ（12 秒で 1 往復。幅は JS が --g-sway に入れる。JS で毎フレーム動かさない）。
+   動くのは軍議の層が一番上の間（body.g-council-art）だけ。ほかの画面が重なれば、その位置で止まる */
+@keyframes g-council-sway {
+    0%,
+    100% { transform: translate3d(calc(-1 * var(--g-sway, 0px)), 0, 0); }
+    50% { transform: translate3d(var(--g-sway, 0px), 0, 0); }
+}
+.g-council-bg .g-council-bg-front.sway {
+    will-change: transform;
+    animation: g-council-sway 12s ease-in-out -3s infinite;
+    animation-play-state: paused;
+}
+body.g-council-art .g-council-bg .g-council-bg-front.sway { animation-play-state: running; }
 /* 背景の上の弱い周辺の暗さ（今までの軍議の 0.72〜0.9 の暗い覆いの代わり。端で 0.32 まで） */
 .g-council-bg::after {
     content: '';
@@ -760,20 +774,29 @@ body.touch .g-sit-tab .n { display: none; }
     inset: 0;
     background: radial-gradient(ellipse 72% 68% at 50% 48%, rgba(10, 8, 6, 0) 46%, rgba(10, 8, 6, 0.32) 100%);
 }
-/* 背景が出ている間の見出し：文字の後ろだけ薄く暗くし、縁取りの影を付ける（文字の位置は今までと同じ：上の余白の分だけ上へ） */
-.g-layer.council.g-art .g-council-head {
-    top: calc(var(--safe-t) + 10px);
-    padding: 8px 34px 10px;
+/* 背景が出ている間の見出し：文字の後ろだけ薄く暗くし、縁取りの影を付ける。
+   暗さは見出しの箱の外へ広げた ::before（見出しの位置・大きさ・折り返しは今までと同じ。人物画はこの暗さも避ける） */
+.g-layer.council.g-art .g-council-head::before {
+    content: '';
+    position: absolute;
+    top: -8px;
+    right: -34px;
+    bottom: -10px;
+    left: -34px;
+    z-index: -1;
     border-radius: 20px;
     background: radial-gradient(ellipse 60% 62% at 50% 50%, rgba(14, 12, 10, 0.66), rgba(14, 12, 10, 0.4) 62%, rgba(14, 12, 10, 0) 100%);
+    pointer-events: none;
 }
 .g-layer.council.g-art .g-council-head h2,
 .g-layer.council.g-art .g-council-head p { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9), 0 0 8px rgba(0, 0, 0, 0.7); }
 .g-layer.council.g-art .g-council-head p { color: #d9cdb6; }
-/* 背景は不透明なので、知らせ・段階の案内を軍議の層の上へ（今までは層の下から透けて見えていた。背景が出ている間だけ） */
+/* 背景は不透明なので、知らせ・段階の案内を軍議の層の上へ（今までは層の下から透けて見えていた）。
+   背景の出ている軍議の層が一番上の間だけ（メニュー・情勢・演出・確認が重なれば外れる：ui/view.ts の syncUnder） */
 body.g-council-art .g-toast,
 body.g-council-art .g-intro { z-index: 2; }
 @media (prefers-reduced-motion: reduce) {
     .g-portrait,
     .g-council-bg { transition: none; }
+    .g-council-bg .g-council-bg-front.sway { animation: none; }
 }

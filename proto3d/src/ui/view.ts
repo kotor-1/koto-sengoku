@@ -25,7 +25,7 @@ import { soundPanel } from './soundPanel';
 import { audio } from '../audio';
 import { deviceReducedMotion } from '../story/prefs';
 import type { ArtId } from '../art/ids';
-import { artCanvasEl, loadArt, paintArt, parallaxAmp, parallaxOffset, peekArt, portraitLayout, sizeArtCanvas, watchResize, type ArtCut, type ArtLayer, type Box } from './artCanvas';
+import { CouncilBackdrop, PortraitSlot, loadArt } from './artCanvas';
 
 export type { ModalProbe } from './modal';
 
@@ -244,6 +244,9 @@ export class DomView implements GameView, LayerHost {
         document.body.classList.toggle('g-cine', cine);
         // 軍議の間は、下に透けて見える目的の札・情勢のボタンを隠す（軍議の「詳しく見る」と重ねない）
         document.body.classList.toggle('g-council-open', this.modals.some((m) => m.layer.classList.contains('council')));
+        // 軍議の背景（Version 22。層に g-art）が一番上の間だけ：知らせ・案内をその層の上へ出し、手前の幕を揺らす（ui.css）。
+        // メニュー・情勢・演出・確認が重なれば外す（今までどおり、それらの層の下）。背景が無ければ付かない（Version 21 と同じ）
+        document.body.classList.toggle('g-council-art', !!top && top.layer.classList.contains('g-art'));
         // 何か開いている間は情勢のボタンを隠す（押せないので）
         this.sitBtn.classList.toggle('covered', this.modals.length > 0);
     }
@@ -637,7 +640,7 @@ export class DomView implements GameView, LayerHost {
                 const atEnd = i === lines.length - 1;
                 more.hidden = atEnd && choices.length > 0;
                 if (atEnd && choices.length > 0 && choicesEl.hidden) showChoices();
-                // 人物画：この行の話し手に絵があれば出す（地の文・高札・絵の無い人物は出さない。選択肢が出た後の空きで大きさを決める）
+                // 人物画：この行の話し手に絵があれば出す。絵の無い人物の行は前の人の絵を暗く残し、地の文・高札では下げる（選択肢が出た後の空きで大きさを決める）
                 portrait?.set(line.speaker);
                 // 声：表にある短い台詞だけ読む（前の行の声は止める。docs/audio.md）
                 audio()?.line(line.speaker, line.name, line.text);
@@ -858,6 +861,14 @@ export class DomView implements GameView, LayerHost {
         return [this.hudEl, this.menuBtn, this.sitBtn];
     }
 
+    /**
+     * 使いそうな素材を先に読み始める（待たない。城下に入ったら人物画・忠勝と話している間に軍議の背景）。
+     * 読めた物は、会話・軍議の画面が開いた同じフレームのうちに出せる（artCanvas の peekArt）。旧表示・一覧に無いときは何も読まない。
+     */
+    preloadArt(ids: ArtId[]): void {
+        for (const id of new Set(ids)) void loadArt(id);
+    }
+
     // ---------------- 演出・情勢 ----------------
 
     /**
@@ -927,350 +938,5 @@ export class DomView implements GameView, LayerHost {
             });
             this.push(m);
         });
-    }
-}
-
-// ================= 生成イラスト素材（Version 22）：会話の人物画・軍議の背景 =================
-//
-// どちらも、画像が読めてから初めて要素を作る（旧表示 ?art=old・一覧に無い・読めないときは何も作らない＝Version 21 と同じ画面）。
-// 押せない飾り（pointer-events: none）。層の押し方（どこを押しても進む）・キー・声・見張りには触れない。
-
-/** 人物画の入れ替え（話し手が変わった）の重ね変わりの時間（ミリ秒。動きを減らすときは無し） */
-const PORTRAIT_FADE_MS = 140;
-
-/**
- * 出ている（hidden・display: none でない）物の四角。outside（層の外の物：目的の札・メニュー）は visibility: hidden も「無い」とみなす。
- * 層の中の物は visibility を見ない（見直しの演出の下で層ごと隠れている間に測っても、選択肢・台詞の枠を避ける）。
- */
-function visibleBox(e: Element | null, origin: DOMRect, outside = false): Box | null {
-    if (!e || (e as HTMLElement).hidden) return null;
-    const cs = getComputedStyle(e);
-    if (cs.display === 'none' || (outside && cs.visibility === 'hidden')) return null;
-    const r = e.getBoundingClientRect();
-    if (r.width <= 0 || r.height <= 0) return null;
-    return { left: r.left - origin.left, top: r.top - origin.top, right: r.right - origin.left, bottom: r.bottom - origin.top };
-}
-
-/**
- * 会話・軍議の話し手の人物画（左下。<canvas class="g-portrait" data-art-id>）。選択肢・台詞の枠より下に重なる（DOM で前に置く）。
- * 大きさは、選択肢・軍議の見出し・詳しく見る・メニュー・目的の札と重ならない一番大きな物（artCanvas.ts の portraitLayout）。下の方は台詞の枠の後ろ。
- * 空きが小さすぎれば出さない。左右の反転はしない（着物の合わせが逆になる）。
- */
-class PortraitSlot {
-    private canvas: HTMLCanvasElement | null = null;
-    /** 見せている人物画（無ければ null） */
-    private shown: ArtId | null = null;
-    /** この行で見せたい人物画 */
-    private want: ArtId | null = null;
-    /** 今の大きさと、台詞の枠で抜いた所（同じなら描き直さない） */
-    private key = '';
-    private fadeRaf = 0;
-    private hideTimer = 0;
-    private stopResize: (() => void) | null = null;
-    private disposed = false;
-
-    constructor(
-        private readonly layer: HTMLElement,
-        /** この要素の前に置く（軍議は見出し、会話は選択肢） */
-        private readonly anchor: HTMLElement,
-        /** 台詞の枠（人物画の、この枠の後ろに入る所は描かない：枠の半透明の地から透けて字の後ろに出ないように） */
-        private readonly dialog: HTMLElement,
-        private readonly resolve: (speaker: string) => ArtId | null,
-        private readonly reduced: () => boolean,
-        private readonly outside: () => Element[],
-    ) {}
-
-    /** この会話で使う人物画を先に読み始める（待たない） */
-    preload(speakers: string[]): void {
-        const ids = new Set<ArtId>();
-        for (const sp of speakers) {
-            const id = this.resolve(sp);
-            if (id) ids.add(id);
-        }
-        for (const id of ids) void loadArt(id);
-    }
-
-    /** 今の行の話し手 */
-    set(speaker: string): void {
-        if (this.disposed) return;
-        const id = this.resolve(speaker);
-        this.want = id;
-        if (!id) {
-            this.hide();
-            return;
-        }
-        const bmp = peekArt(id);
-        if (bmp) {
-            this.show(id, bmp);
-            return;
-        }
-        // まだ読めていない：前の人の絵は下げ、読めたときにまだその人の行なら出す
-        if (this.shown !== id) this.hide();
-        void loadArt(id).then((b) => {
-            if (b && !this.disposed && this.want === id) this.show(id, b);
-        });
-    }
-
-    private ensureCanvas(id: ArtId): HTMLCanvasElement {
-        if (this.canvas) return this.canvas;
-        const c = artCanvasEl('g-portrait', id);
-        c.hidden = true;
-        this.layer.insertBefore(c, this.anchor.parentNode === this.layer ? this.anchor : null);
-        this.canvas = c;
-        this.stopResize = watchResize(() => this.relayout());
-        return c;
-    }
-
-    /** 大きさと、台詞の枠の後ろで抜く所を測る（canvas は出ている前提。左端は CSS が決める：安全域を含む）。狭すぎれば null */
-    private measure(c: HTMLCanvasElement, bmp: ImageBitmap): { w: number; h: number; cut: ArtCut | null } | null {
-        const origin = this.layer.getBoundingClientRect();
-        const avoid: Box[] = [];
-        for (const sel of ['.g-choices', '.g-council-head', '.g-council-map']) {
-            const b = visibleBox(this.layer.querySelector(sel), origin);
-            if (b) avoid.push(b);
-        }
-        for (const e of this.outside()) {
-            const b = visibleBox(e, origin, true);
-            if (b) avoid.push(b);
-        }
-        const left = c.getBoundingClientRect().left - origin.left;
-        const size = portraitLayout({ vw: origin.width, vh: origin.height, left, bottom: origin.height, aspect: bmp.width / bmp.height, avoid });
-        if (!size) return null;
-        const d = visibleBox(this.dialog, origin);
-        const top = origin.height - size.h;
-        const cut = d && d.left < left + size.w && d.right > left && d.bottom > top ? { x: d.left - left, y: d.top - top, w: d.right - d.left, h: d.bottom - d.top, r: 14 } : null;
-        return { ...size, cut };
-    }
-
-    private paint(c: HTMLCanvasElement, m: { w: number; h: number; cut: ArtCut | null }, layers: ArtLayer[]): void {
-        paintArt(c, m.w, m.h, layers, undefined, m.cut);
-    }
-
-    private show(id: ArtId, bmp: ImageBitmap): void {
-        const c = this.ensureCanvas(id);
-        clearTimeout(this.hideTimer);
-        const wasShown = this.shown;
-        const prev = wasShown && wasShown !== id ? peekArt(wasShown) : null;
-        c.hidden = false;
-        const m = this.measure(c, bmp);
-        if (!m) {
-            // 空きが小さすぎる（低い画面・選択肢が左まで来る）：出さない
-            this.hide(true);
-            return;
-        }
-        const key = `${m.w}x${m.h}|${m.cut ? `${Math.round(m.cut.x)},${Math.round(m.cut.y)},${Math.round(m.cut.w)},${Math.round(m.cut.h)}` : '-'}`;
-        const changed = key !== this.key;
-        this.key = key;
-        sizeArtCanvas(c, m.w, m.h, bmp.height / m.h);
-        c.dataset.artId = id;
-        this.shown = id;
-        const reduced = this.reduced();
-        c.style.transition = reduced ? 'none' : '';
-        const visible = c.classList.contains('on');
-        const fit = { alignX: 0, alignY: 1 };
-        if (prev && !reduced && visible) {
-            // 話し手が変わった：同じ枠の中で重ね変わる（後の絵は足し合わせで重ね、途中で薄くならない）
-            cancelAnimationFrame(this.fadeRaf);
-            const t0 = performance.now();
-            const step = (now: number) => {
-                const t = Math.min(1, (now - t0) / PORTRAIT_FADE_MS);
-                this.paint(c, m, [
-                    { bitmap: prev, fit: 'contain', opts: fit, alpha: 1 - t },
-                    { bitmap: bmp, fit: 'contain', opts: fit, alpha: t, op: 'lighter' },
-                ]);
-                this.fadeRaf = t < 1 && !this.disposed ? requestAnimationFrame(step) : 0;
-            };
-            step(t0);
-        } else if (wasShown !== id || changed || !visible) {
-            cancelAnimationFrame(this.fadeRaf);
-            this.fadeRaf = 0;
-            this.paint(c, m, [{ bitmap: bmp, fit: 'contain', opts: fit }]);
-        }
-        if (!visible) {
-            // 出る：薄い所から（動きを減らすときはすぐ）
-            if (!reduced) void c.offsetWidth;
-            c.classList.add('on');
-        }
-    }
-
-    private hide(now = false): void {
-        const c = this.canvas;
-        this.shown = null;
-        this.key = '';
-        cancelAnimationFrame(this.fadeRaf);
-        this.fadeRaf = 0;
-        if (!c || c.hidden) return;
-        clearTimeout(this.hideTimer);
-        const instant = now || this.reduced() || !c.classList.contains('on');
-        c.style.transition = instant ? 'none' : '';
-        c.classList.remove('on');
-        if (instant) c.hidden = true;
-        else this.hideTimer = window.setTimeout(() => (c.hidden = true), PORTRAIT_FADE_MS + 20);
-    }
-
-    /** 画面の大きさが変わった：測り直して描き直す（重ね変わりはしない。狭くて隠していた絵は、広がれば出す） */
-    private relayout(): void {
-        if (this.disposed || !this.canvas) return;
-        const id = this.want;
-        const bmp = id ? peekArt(id) : null;
-        if (!id || !bmp) return;
-        if (this.shown === id) {
-            // 重ね変わりの途中なら、新しい大きさで描き切る
-            cancelAnimationFrame(this.fadeRaf);
-            this.fadeRaf = 0;
-            this.key = '';
-        }
-        this.show(id, bmp);
-    }
-
-    dispose(): void {
-        this.disposed = true;
-        cancelAnimationFrame(this.fadeRaf);
-        clearTimeout(this.hideTimer);
-        this.stopResize?.();
-        this.stopResize = null;
-    }
-}
-
-/**
- * 軍議の背景（<div class="g-council-bg"> を軍議の層のいちばん前に置く。中に canvas.g-council-bg-base と、あれば canvas.g-council-bg-front）。
- * - 奥の画は箱を埋める（cover）。大事な物を置く上下 18%〜82% の内側は切らない（それ以上の横長では左右に暗い帯）。引き伸ばさない。
- * - 手前の幕・柱は、ゆっくり横に揺らす（1280 で 7.5px・844 で 5px まで）。軍議が一番上で見えている間だけ。動きを減らすときは揺らさない。
- * - 背景が出ている間は、層の暗い覆いの代わりに弱い周辺の暗さ（CSS）。見出しには、その後ろだけ薄い暗さを付ける（CSS の .g-art）。
- * - 下の 3D の陣幕の画（showCouncilHall）はそのまま（画像が読めなければ、今までの画面のまま）。
- */
-class CouncilBackdrop {
-    private root: HTMLDivElement | null = null;
-    private base: HTMLCanvasElement | null = null;
-    private front: HTMLCanvasElement | null = null;
-    private baseBmp: ImageBitmap | null = null;
-    private frontBmp: ImageBitmap | null = null;
-    private amp = 0;
-    private raf = 0;
-    /** 揺れの時計（秒。止めていた間は進めない） */
-    private clock = 0;
-    private last = 0;
-    private stopResize: (() => void) | null = null;
-    private disposed = false;
-    private readonly onVisibility = () => this.resume();
-
-    constructor(
-        private readonly layer: HTMLElement,
-        private readonly art: { base: ArtId; front?: ArtId },
-        private readonly reduced: () => boolean,
-        /** 軍議がいちばん上か（情勢・メニュー・演出が重なっている間は揺らさない） */
-        private readonly isTop: () => boolean,
-    ) {}
-
-    start(): void {
-        const b = peekArt(this.art.base);
-        const f = this.art.front ? peekArt(this.art.front) : null;
-        if (b) {
-            // もう読めている（2 回目からの軍議の画面・考え直す）：同じフレームのうちに出す（ちらつかせない）
-            this.build(b, f, false);
-        } else {
-            void loadArt(this.art.base).then((bmp) => {
-                if (bmp && !this.disposed && this.layer.isConnected) this.build(bmp, this.art.front ? peekArt(this.art.front) : null, true);
-            });
-        }
-        if (this.art.front && !f) {
-            const fid = this.art.front;
-            void loadArt(fid).then((bmp) => {
-                if (bmp && !this.disposed && this.root && !this.front) this.addFront(bmp);
-            });
-        }
-    }
-
-    private build(bmp: ImageBitmap, front: ImageBitmap | null, fade: boolean): void {
-        const root = el('div', 'g-council-bg');
-        root.setAttribute('aria-hidden', 'true');
-        const base = artCanvasEl('g-council-bg-base', this.art.base);
-        root.append(base);
-        this.root = root;
-        this.base = base;
-        this.baseBmp = bmp;
-        this.layer.insertBefore(root, this.layer.firstChild);
-        this.layer.classList.add('g-art');
-        document.body.classList.add('g-council-art');
-        if (front && this.art.front) {
-            const c = artCanvasEl('g-council-bg-front', this.art.front);
-            root.append(c);
-            this.front = c;
-            this.frontBmp = front;
-        }
-        this.draw();
-        this.stopResize = watchResize(() => this.draw());
-        document.addEventListener('visibilitychange', this.onVisibility);
-        if (fade && !this.reduced()) {
-            void root.offsetWidth;
-        } else {
-            root.style.transition = 'none';
-        }
-        root.classList.add('on');
-        this.resume();
-    }
-
-    private addFront(bmp: ImageBitmap): void {
-        if (!this.root || !this.art.front) return;
-        const c = artCanvasEl('g-council-bg-front', this.art.front);
-        this.root.append(c);
-        this.front = c;
-        this.frontBmp = bmp;
-        this.draw();
-        this.resume();
-    }
-
-    private draw(): void {
-        if (this.disposed || !this.root || !this.base || !this.baseBmp) return;
-        const r = this.layer.getBoundingClientRect();
-        const w = Math.max(1, Math.round(r.width));
-        const h = Math.max(1, Math.round(r.height));
-        const crop = { maxCropY: 0.18 };
-        const b = this.baseBmp;
-        sizeArtCanvas(this.base, w, h, Math.max(b.width / w, b.height / h));
-        // 横に余りが出る（とても横長の画面）ときの帯は、今までの軍議の覆いに近い暗い色
-        paintArt(this.base, w, h, [{ bitmap: b, fit: 'cover', opts: crop }], '#0e0c0a');
-        if (this.front && this.frontBmp) {
-            const f = this.frontBmp;
-            this.amp = this.reduced() ? 0 : parallaxAmp(w);
-            // 揺らしても端に隙間が出ないよう、左右に amp ずつ広い箱に描く
-            const fw = w + 2 * Math.ceil(this.amp);
-            sizeArtCanvas(this.front, fw, h, Math.max(f.width / fw, f.height / h));
-            this.front.style.left = `${-Math.ceil(this.amp)}px`;
-            paintArt(this.front, fw, h, [{ bitmap: f, fit: 'cover', opts: crop }]);
-            this.place();
-        }
-    }
-
-    private place(): void {
-        if (!this.front) return;
-        const x = this.amp > 0 ? parallaxOffset(this.clock, this.amp) : 0;
-        this.front.style.transform = `translate3d(${x.toFixed(2)}px, 0, 0)`;
-    }
-
-    /** 揺れを（止まっていれば）始める。軍議が一番上で、ページが見えていて、動きを減らしていないときだけ */
-    resume(): void {
-        if (this.disposed || this.raf || !this.front || this.amp <= 0) return;
-        if (this.reduced() || !this.isTop() || document.visibilityState === 'hidden') return;
-        this.last = performance.now();
-        const tick = (now: number) => {
-            this.raf = 0;
-            if (this.disposed || !this.isTop() || document.visibilityState === 'hidden' || this.reduced()) return;
-            this.clock += Math.min(0.1, Math.max(0, (now - this.last) / 1000));
-            this.last = now;
-            this.place();
-            this.raf = requestAnimationFrame(tick);
-        };
-        this.raf = requestAnimationFrame(tick);
-    }
-
-    dispose(): void {
-        this.disposed = true;
-        cancelAnimationFrame(this.raf);
-        this.raf = 0;
-        this.stopResize?.();
-        this.stopResize = null;
-        document.removeEventListener('visibilitychange', this.onVisibility);
-        if (this.root) document.body.classList.remove('g-council-art');
     }
 }
