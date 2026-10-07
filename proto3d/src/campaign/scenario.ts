@@ -15,6 +15,7 @@ import type { CastMember } from '../explore/cast';
 import type { SaveFailureReason, SavePoint } from './save';
 import type { CampaignPhase, ExplorePose } from './state';
 import type { AmbientSpec, CineMoment, CineSpec, ScoutPoint, SituationView } from '../story/types';
+import type { ArtId } from '../art/ids';
 
 /** シナリオの id（保存・タイトルの選択に使う） */
 export type ScenarioId = 'fictional' | 'ieyasu1570';
@@ -136,6 +137,13 @@ export interface Scenario<S extends ScenarioStateCore = ScenarioStateCore> {
      * 状態を読むだけ（位置を状態や保存に書かない：位置の無い保存の文字列は変わらない）。手動の保存に位置があれば、その位置が先。
      */
     startPose?(s: S): ExplorePose | null;
+    /**
+     * 会話・軍議で、話し手（台詞の speaker）に出す人物画の素材の ID（Version 22。art/ids.ts）。省くか null なら人物画を出さない。
+     * 架空の章は省く（話し手の id 'hero' が別の人物のため）。素材が無い・旧表示（?art=old）のときは画面が出さない。
+     */
+    portraitOf?(s: S, speaker: string): ArtId | null;
+    /** 軍議の画面の背景（Version 22）。省くと今までの 3D の陣幕の画。front は手前に重ねる幕・柱（無くてよい） */
+    readonly councilArt?: { base: ArtId; front?: ArtId };
     addPlayTime(s: S, sec: number): S;
     canSaveManually(s: S): boolean;
 
