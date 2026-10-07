@@ -1065,14 +1065,15 @@ export function abilityTargetHint(s: BattleState, userId: string | null): string
 }
 
 /**
- * 発動の知らせ（能力名・武将・対象。2.5 秒ほど出す）。対象：選んだ部隊・自隊・範囲の説明
+ * 発動の知らせ（能力名・武将・対象。2.5 秒ほど出す）。対象：選んだ部隊・自隊・範囲の説明。
+ * generalId は率いる武将の id（知らせに武将の顔を添えるため。Version 22。武将のいない部隊は null）
  */
-export function abilityNoticeModel(s: BattleState, unitId: string): { title: string; general: string; target: string } | null {
+export function abilityNoticeModel(s: BattleState, unitId: string): { title: string; general: string; target: string; generalId: string | null } | null {
     const info = abilityInfo(s, unitId);
     const u = unitById(s, unitId);
     if (!info || !u) return null;
     const target = info.needsTarget ? (info.targetName ?? '') : info.target === 'self' ? u.name : info.rangeText;
-    return { title: `「${info.name}」`, general: info.generalName, target };
+    return { title: `「${info.name}」`, general: info.generalName, target, generalId: u.generalId ?? u.leaderId ?? null };
 }
 
 /** 効果が切れた知らせ（短く）。能力のデータの名前で */

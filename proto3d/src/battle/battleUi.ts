@@ -20,6 +20,9 @@
  *   .b-gen[data-general]・結果の .b-robj の行 [data-role][data-achieved]・名札 .b-label[data-mark]（救出・守る・崩す）・
  *   部隊の名札 .b-label[data-id][data-ab]（ready・active・choosing・target・untargetable）・発動の知らせ .b-abnote[data-kind]・
  *   名札の優先表示 .b-label[data-fit]（mini＝小さく・hide＝一時的に隠す。付いていなければそのまま）。
+ * 武将の顔（Version 22。家康・忠勝だけ。faceArt.ts）：生成イラスト素材が読めたときだけ、部隊の札の見出し・能力の欄の武将の行・発動の知らせ（自軍だけ）に
+ *   <canvas class="b-face" data-art-id> を置く（毎秒作り直す欄の文字列の外に持ち、作り直した後に置き直す）。読めない・旧表示では何も置かない（Version 21 と同じ）。
+ *   札の高さ・下の列・左上の見出し（カメラの「全体」の余白 insets）は変えない。
  * ボタンは押した瞬間（pointerdown）に反応し、その後の click は無視する（キーボードの Enter／Space の click だけ受ける）。
  * 画面を押して地図を動かす面（input）は一番下に敷き、つなぎがそこへ指・マウスの処理を付ける。
  */
@@ -47,6 +50,8 @@ import {
 import type { Side } from './types';
 import { deadlineName } from './objectives';
 import { boxOf, layoutLabels, layoutMapLabels, type Box, type LabelFit, type LabelLayoutItem, type MapLabelItem } from './labelLayout';
+import { attachFaceWhenReady, faceCanvas, faceIdOf, loadFace, peekFace } from './faceArt';
+import type { ArtId } from '../art/ids';
 
 export type CommandKind = 'move' | 'attack' | 'hold' | 'retreat' | 'face';
 
@@ -243,6 +248,9 @@ export class BattleUi {
     private flashText = '';
     private readonly timers = new Set<number>();
     private readonly maxToasts: number;
+    /** 武将の顔の canvas（置き場所ごと。1 度描いたら使い回す。Version 22） */
+    private readonly faceEls = new Map<string, HTMLCanvasElement>();
+    private disposed = false;
 
     constructor(
         parent: HTMLElement,
@@ -376,6 +384,9 @@ export class BattleUi {
             if (u.side !== 'ally') continue;
             const c = this.makeCard(u.id, u.name, key++);
             cards.append(c.root);
+            // 武将の顔（家康・忠勝だけ。読めたら見出しの先頭に小さく。札の高さは変えない）
+            const head = c.root.querySelector('.b-card-h') as HTMLElement | null;
+            if (head) attachFaceWhenReady(u.generalId ?? u.leaderId, head, () => !this.disposed);
         }
         // 札が 5 部隊以上なら小さな札にする（PC は 8 部隊まで並べる。スマホは横になぞってずらす）
         cards.dataset.count = String(key - 1);
@@ -775,6 +786,35 @@ export class BattleUi {
             this.abil.innerHTML = html;
         }
         if (this.abil.dataset.side !== side) this.abil.dataset.side = side;
+        this.syncAbilFace(gm?.generalId ?? null);
+    }
+
+    /** 顔の canvas（置き場所 place ごとに 1 つ）。まだ読めていなければ読み始めて null */
+    private faceEl(place: string, id: ArtId): HTMLCanvasElement | null {
+        const key = `${place}:${id}`;
+        let c = this.faceEls.get(key);
+        if (!c) {
+            const bmp = peekFace(id);
+            if (!bmp) {
+                void loadFace(id);
+                return null;
+            }
+            c = faceCanvas(id, bmp);
+            this.faceEls.set(key, c);
+        }
+        return c;
+    }
+
+    /**
+     * 能力の欄の武将の行に顔を置く（欄の文字列は毎秒作り直すので、作り直した後に同じ canvas を置き直す。描き直さない）。
+     * 顔の無い武将・旧表示・まだ読めていない間は何もしない（with-face の印も付けない）
+     */
+    private syncAbilFace(generalId: string | null): void {
+        const id = faceIdOf(generalId);
+        const cv = id ? this.faceEl('abil', id) : null;
+        const gen = cv ? (this.abil.querySelector('.b-gen') as HTMLElement | null) : null;
+        if (cv && gen && cv.parentElement !== gen) gen.prepend(cv);
+        setClass(this.abil, 'with-face', !!(cv && gen));
     }
 
     // ---------------------------------------------------------------- 名札
@@ -1074,10 +1114,15 @@ export class BattleUi {
     /**
      * 発動の知らせ（上の真ん中。能力名・武将・対象）と、効果が切れた知らせ。ms だけ出して消える（画面全体は光らせない）。
      */
-    abilityNotice(kind: 'use' | 'end', title: string, sub: string, ms = kind === 'use' ? 2500 : 1800): void {
+    abilityNotice(kind: 'use' | 'end', title: string, sub: string, ms = kind === 'use' ? 2500 : 1800, generalId: string | null = null): void {
         const e = this.abNote;
         e.dataset.kind = kind;
         e.innerHTML = `<b>${escapeHtml(title)}</b>${sub ? `<span>${escapeHtml(sub)}</span>` : ''}`;
+        // 発動の知らせの顔（自軍の武将の発動だけ。つなぎが味方のときだけ generalId を渡す。家康・忠勝の顔が読めているときだけ。短く、全画面にしない）
+        const fid = kind === 'use' ? faceIdOf(generalId) : null;
+        const face = fid ? this.faceEl('note', fid) : null;
+        if (face) e.prepend(face);
+        setClass(e, 'with-face', !!face);
         e.hidden = false;
         e.classList.remove('fade');
         if (this.abNoteTimer) {
@@ -1365,6 +1410,7 @@ export class BattleUi {
     }
 
     dispose(): void {
+        this.disposed = true;
         for (const t of this.timers) window.clearTimeout(t);
         this.timers.clear();
         this.closeModal();

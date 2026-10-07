@@ -1,0 +1,470 @@
+/**
+ * 合戦の画面の生成イラスト素材（Version 22）の確かめ（battle/groundArt.ts・unitFx.ts・faceArt.ts・view.ts の setGroundArt）。
+ * - 地面の型紙：決まりの地形の形（sim.ts の inTerrain）と、型紙の中・外の分け方が一致する（大平原の道・円の林。ほかの戦場の道・林も）。
+ *   混ぜる帯は決まりの縁を中心に 2 m 以内。
+ * - 円の林の木：決まりの区域の内側だけ（縁から 3 m 内側）。素材の地面を使わない間は Version 21 と同じ（円の林には植えない）。
+ * - 素材の地面・足元の影・砂ぼこりを使って毎刻み更新しても、合戦の状態は表示なし・素材なしと 1 刻みも同じ。押す判定（pick）・名札の位置も同じ。
+ * - 旧表示（?art=old）・素材の一覧に無い戦場では使わない。顔は家康・忠勝だけ（ほかの武将に代わりの顔を出さない）。
+ * 画像は WebGL なしで作れる DataTexture（確かめ用の 4×4 の色）を渡す（本物の画像は読まない）。状態は台本の命令と stepBattle だけで進める。
+ */
+import { afterEach, describe, expect, it } from 'vitest';
+import * as THREE from 'three';
+import { createBattle, inTerrain, issueOrder, stepBattle, type BattleState } from '../proto3d/src/battle/sim';
+import { FIELDS, buildBattleSetup, getField } from '../proto3d/src/battle/fields';
+import {
+    MASK_RANGE_M,
+    ROAD_BAND_M,
+    WOODS_BAND_M,
+    areaSignedDist,
+    buildGroundNoise,
+    buildTerrainMask,
+    coverageFromSd,
+    dirtWeight,
+    groundNoiseAt,
+    fieldHasArt,
+    loadFieldArt,
+    roundWoodsSpots,
+    sampleMaskSd,
+    type GroundArtSet,
+    type MaskChannel,
+} from '../proto3d/src/battle/groundArt';
+import { DUST_MAX, UnitFx, type FxPose } from '../proto3d/src/battle/unitFx';
+import { faceIdOf } from '../proto3d/src/battle/faceArt';
+import { hash01 } from '../proto3d/src/battle/control';
+import { __setArtManifestForTest } from '../proto3d/src/art/registry';
+import type { BattleMap, TerrainKind } from '../proto3d/src/battle/types';
+
+const plains = () => createBattle(buildBattleSetup(getField('plains')!, 'standard'));
+
+/** 決まった並びの乱数（0〜1） */
+function rng(seed: number): () => number {
+    let a = seed >>> 0;
+    return () => {
+        a = (a + 0x6d2b79f5) >>> 0;
+        let t = a;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+/** その種類の地形の区域の縁からの、本当の符号付き距離（同じ種類の区域の重なりは一番近いもの） */
+function trueSd(map: BattleMap, kind: TerrainKind, x: number, z: number): number {
+    let d = Number.POSITIVE_INFINITY;
+    for (const a of map.terrain) if (a.kind === kind) d = Math.min(d, areaSignedDist(a, x, z));
+    return d;
+}
+
+/**
+ * 型紙と決まりの比べ：戦場の中の点で、縁から 0.15 m より離れた所は中・外が一致。
+ * 混ぜる帯の中（縁から 1 m 以内）の距離のずれは distTol まで（戦場の端から 2 m 以内は除く：端に触れる道は、見た目だけ戦場の外へ伸ばしている）。
+ * 同じ種類の区域が重なる・接する所（継ぎ目）の内側も、本当の縁までの距離（継ぎ目に混ぜる帯の筋を出さない）
+ */
+function checkMask(map: BattleMap, n: number, seed: number, distTol = 0.2): { inside: Record<string, number>; checked: number } {
+    const mask = buildTerrainMask(map);
+    const r = rng(seed);
+    const kinds: [TerrainKind, MaskChannel][] = [
+        ['road', 0],
+        ['woods', 1],
+    ];
+    const inside: Record<string, number> = { road: 0, woods: 0 };
+    let checked = 0;
+    const pts: [number, number][] = [];
+    for (let k = 0; k < n; k++) pts.push([(r() - 0.5) * map.width, (r() - 0.5) * map.depth]);
+    // 縁のすぐ近くの点（区域ごとに、縁をはさんで ±0.2〜3 m）
+    for (const a of map.terrain) {
+        if (a.kind !== 'road' && a.kind !== 'woods') continue;
+        for (let k = 0; k < 400; k++) {
+            const x = (r() - 0.5) * map.width;
+            const z = (r() - 0.5) * map.depth;
+            // 縁の上の点へ寄せる：中心から外へ向かう線の上で距離 0 の所を二分で探す
+            const c = a.circle ? { x: a.circle.cx, z: a.circle.cz } : a.rect ? { x: (a.rect.x0 + a.rect.x1) / 2, z: (a.rect.z0 + a.rect.z1) / 2 } : a.capsule ? { x: a.capsule.ax, z: a.capsule.az } : null;
+            if (!c) continue;
+            let lo = 0;
+            let hi = 1;
+            for (let i = 0; i < 40; i++) {
+                const m = (lo + hi) / 2;
+                if (areaSignedDist(a, c.x + (x - c.x) * m, c.z + (z - c.z) * m) <= 0) lo = m;
+                else hi = m;
+            }
+            const ex = c.x + (x - c.x) * lo;
+            const ez = c.z + (z - c.z) * lo;
+            const off = (r() < 0.5 ? -1 : 1) * (0.2 + r() * 2.8);
+            const len = Math.hypot(x - c.x, z - c.z) || 1;
+            pts.push([ex + ((x - c.x) / len) * off, ez + ((z - c.z) / len) * off]);
+        }
+    }
+    for (const [x, z] of pts) {
+        if (Math.abs(x) > map.width / 2 || Math.abs(z) > map.depth / 2) continue;
+        for (const [kind, ch] of kinds) {
+            const t = trueSd(map, kind, x, z);
+            const s = sampleMaskSd(mask, ch, x, z);
+            const nearEdge = Math.abs(x) > map.width / 2 - 2 || Math.abs(z) > map.depth / 2 - 2;
+            // 距離の比べは、その種類の区域が 1 つだけ近い所（区域の距離がそのまま縁までの距離）。継ぎ目は下の別の確かめ
+            const single = map.terrain.filter((a) => a.kind === kind && areaSignedDist(a, x, z) < 3).length === 1;
+            if (Math.abs(t) < 1 && !nearEdge && single) expect(Math.abs(s - t), `${map.id} ${kind} (${x.toFixed(2)}, ${z.toFixed(2)})`).toBeLessThan(distTol);
+            if (Math.abs(t) <= 0.15) continue;
+            const rule = inTerrain(map, kind, x, z);
+            expect(s <= 0, `${map.id} ${kind} (${x.toFixed(2)}, ${z.toFixed(2)}) 決まり ${rule} 距離 ${t.toFixed(3)} 型紙 ${s.toFixed(3)}`).toBe(rule);
+            if (rule) inside[kind]++;
+            checked++;
+        }
+    }
+    return { inside, checked };
+}
+
+describe('地面の型紙は決まりの地形の形と一致する', () => {
+    it('大平原：道（x −7〜7）と円の林（中心 (130,−20)・半径 38）。多くの点で inTerrain と中・外が同じ', () => {
+        const map = plains().map;
+        const r = checkMask(map, 20000, 1570);
+        expect(r.checked).toBeGreaterThan(40000);
+        expect(r.inside.road).toBeGreaterThan(500);
+        expect(r.inside.woods).toBeGreaterThan(500);
+        const mask = buildTerrainMask(map);
+        // 決まりの縁の上で混ざり具合は半分、縁から帯の半分（道 0.75 m・林 1 m）で完全に切り替わる
+        expect(coverageFromSd(sampleMaskSd(mask, 0, 7, 50), ROAD_BAND_M)).toBeCloseTo(0.5, 1);
+        expect(coverageFromSd(sampleMaskSd(mask, 0, 7 + ROAD_BAND_M / 2 + 0.1, 50), ROAD_BAND_M)).toBe(0);
+        expect(coverageFromSd(sampleMaskSd(mask, 0, 7 - ROAD_BAND_M / 2 - 0.1, 50), ROAD_BAND_M)).toBe(1);
+        expect(coverageFromSd(sampleMaskSd(mask, 1, 130 + 38, -20), WOODS_BAND_M)).toBeCloseTo(0.5, 1);
+        expect(coverageFromSd(sampleMaskSd(mask, 1, 130 + 38 + WOODS_BAND_M / 2 + 0.1, -20), WOODS_BAND_M)).toBe(0);
+        expect(coverageFromSd(sampleMaskSd(mask, 1, 130 + 38 - WOODS_BAND_M / 2 - 0.1, -20), WOODS_BAND_M)).toBe(1);
+        expect(ROAD_BAND_M).toBeLessThanOrEqual(2);
+        expect(WOODS_BAND_M).toBeLessThanOrEqual(2);
+        // 道は戦場の端に触れるので、戦場の外へも続く（見た目だけ。戦場の中の幅は決まりのまま）
+        expect(sampleMaskSd(mask, 0, 0, -200)).toBeLessThan(-5);
+        expect(sampleMaskSd(mask, 0, 0, 200)).toBeLessThan(-5);
+        expect(sampleMaskSd(mask, 0, 7.5, 159)).toBeGreaterThan(0);
+        // ほかの地形（湿地・川など）は大平原には無い
+        expect(sampleMaskSd(mask, 2, 0, 0)).toBeGreaterThan(MASK_RANGE_M - 0.2);
+    });
+
+    it('ほかの戦場の道・林（四角・円・カプセル）でも中・外が同じ（素材は大平原だけだが、形の作り方は同じ）', () => {
+        let total = 0;
+        for (const f of FIELDS) {
+            const map = createBattle(buildBattleSetup(f, f.presets[0].id)).map;
+            if (!map.terrain.some((a) => a.kind === 'road' || a.kind === 'woods')) continue;
+            // 四角の角（中の距離が折れ曲がる所）は、1 m の画素の間の補間で 1/4 画素＋8 bit の刻みまでずれる（0.32 m まで。角がわずかに丸くなるだけ）
+            total += checkMask(map, 1500, f.id.length * 97, 0.32).checked;
+        }
+        expect(total).toBeGreaterThan(20000);
+    }, 60000);
+
+    it('同じ種類の区域が接する所（継ぎ目）に混ぜる帯の筋を出さない（森林の西の林：四角が 4 つ接する。空き地の縁は縁のまま）', () => {
+        const map = createBattle(buildBattleSetup(getField('forest')!, 'standard')).map;
+        const mask = buildTerrainMask(map);
+        // 四角どうしが接する線の上（林の奥）は林のまま
+        for (const [x, z] of [
+            [-190, -55],
+            [-190, -95],
+            [-135, -95],
+            [-135, -55],
+        ] as const) {
+            expect(inTerrain(map, 'woods', x, z)).toBe(true);
+            expect(coverageFromSd(sampleMaskSd(mask, 1, x, z), WOODS_BAND_M), `(${x}, ${z})`).toBe(1);
+        }
+        // 林の中の空き地（x −180〜−140・z −95〜−55）の縁は、決まりの縁で半分
+        expect(coverageFromSd(sampleMaskSd(mask, 1, -180, -75), WOODS_BAND_M)).toBeCloseTo(0.5, 1);
+        expect(coverageFromSd(sampleMaskSd(mask, 1, -160, -55), WOODS_BAND_M)).toBeCloseTo(0.5, 1);
+        expect(coverageFromSd(sampleMaskSd(mask, 1, -160, -75), WOODS_BAND_M)).toBe(0);
+    });
+});
+
+describe('土のむら（低い周波数の雑音）は草地の中のまるい斑で、道・川・障害物に見える筋にならない', () => {
+    it('大平原：道・林の縁の近くには出ない。斑は丸く（80 m² 以上の斑は長さと幅の比 2 まで）、長さ 30 m まで。覆う所は原の 1〜20%', () => {
+        const map = plains().map;
+        const mask = buildTerrainMask(map);
+        const W = map.width;
+        const D = map.depth;
+        const vis = new Uint8Array(W * D);
+        let covered = 0;
+        for (let j = 0; j < D; j++) {
+            for (let i = 0; i < W; i++) {
+                const x = -W / 2 + i + 0.5;
+                const z = -D / 2 + j + 0.5;
+                const d = dirtWeight(groundNoiseAt(x, z).dirt, sampleMaskSd(mask, 0, x, z), sampleMaskSd(mask, 1, x, z), sampleMaskSd(mask, 2, x, z));
+                // 道の縁から 4 m・林の縁から 3 m の内側には出さない
+                if (Math.abs(x) <= 7 + 4 || Math.hypot(x - 130, z + 20) <= 38 + 3) expect(d, `(${x}, ${z})`).toBe(0);
+                if (d >= 0.35) {
+                    vis[j * W + i] = 1;
+                    covered++;
+                }
+            }
+        }
+        const frac = covered / (W * D);
+        expect(frac).toBeGreaterThan(0.01);
+        expect(frac).toBeLessThan(0.2);
+        // つながった斑ごとに：長さ（主な向きの広がり）と平均の幅（面積 ÷ 長さ）。筋（長く細い）にならない
+        const seen = new Uint8Array(W * D);
+        const blobs: { area: number; len: number; width: number; ratio: number; edge: boolean }[] = [];
+        for (let k = 0; k < W * D; k++) {
+            if (!vis[k] || seen[k]) continue;
+            const stack = [k];
+            seen[k] = 1;
+            const cells: number[] = [];
+            while (stack.length) {
+                const c = stack.pop()!;
+                cells.push(c);
+                const ci = c % W;
+                const cj = (c - ci) / W;
+                for (const [di, dj] of [
+                    [1, 0],
+                    [-1, 0],
+                    [0, 1],
+                    [0, -1],
+                ]) {
+                    const ni = ci + di;
+                    const nj = cj + dj;
+                    if (ni < 0 || nj < 0 || ni >= W || nj >= D) continue;
+                    const n = nj * W + ni;
+                    if (vis[n] && !seen[n]) {
+                        seen[n] = 1;
+                        stack.push(n);
+                    }
+                }
+            }
+            if (cells.length < 30) continue;
+            // 調べた範囲（戦場）の端で切れた斑は、形を比べない（長さだけ）
+            const edge = cells.some((c) => c % W === 0 || c % W === W - 1 || c < W || c >= W * (D - 1));
+            let mx = 0;
+            let mz = 0;
+            for (const c of cells) {
+                mx += c % W;
+                mz += Math.floor(c / W);
+            }
+            mx /= cells.length;
+            mz /= cells.length;
+            let sxx = 0;
+            let szz = 0;
+            let sxz = 0;
+            for (const c of cells) {
+                const dx = (c % W) - mx;
+                const dz = Math.floor(c / W) - mz;
+                sxx += dx * dx;
+                szz += dz * dz;
+                sxz += dx * dz;
+            }
+            sxx /= cells.length;
+            szz /= cells.length;
+            sxz /= cells.length;
+            const tr = sxx + szz;
+            const det = sxx * szz - sxz * sxz;
+            const l1 = tr / 2 + Math.sqrt(Math.max(0, (tr * tr) / 4 - det));
+            const l2 = Math.max(1e-6, tr / 2 - Math.sqrt(Math.max(0, (tr * tr) / 4 - det)));
+            const len = Math.sqrt(12 * l1);
+            blobs.push({ area: cells.length, len, width: cells.length / len, ratio: Math.sqrt(l1 / l2), edge });
+        }
+        expect(blobs.length).toBeGreaterThan(3);
+        for (const b of blobs) {
+            expect(b.len, JSON.stringify(b)).toBeLessThan(30);
+            // 丸い（道・林の縁の近くで削られた斑は三日月形になるが、短い）。細長い筋（長さと幅の比が大きく長いもの）は無い
+            if (!b.edge) expect(b.ratio, JSON.stringify(b)).toBeLessThan(b.area >= 80 ? 2 : 3.5);
+        }
+    });
+    it('雑音の画像は CPU の式（groundNoiseAt）と同じ値（2 m の画素）', () => {
+        const mask = buildTerrainMask(plains().map);
+        const nm = buildGroundNoise(mask);
+        expect(nm.cell).toBe(2);
+        for (const [i, j] of [
+            [10, 10],
+            [160, 140],
+            [300, 250],
+        ]) {
+            const n = groundNoiseAt(nm.x0 + (i + 0.5) * nm.cell, nm.z0 + (j + 0.5) * nm.cell);
+            const o = (j * nm.w + i) * 4;
+            expect(nm.data[o]).toBe(Math.round(n.big * 255));
+            expect(nm.data[o + 2]).toBe(Math.round(n.dirt * 255));
+            expect(nm.data[o + 3]).toBe(Math.round(n.tile * 255));
+        }
+    });
+});
+
+describe('円の林の木（素材の地面を使うときだけ）', () => {
+    it('大平原の東の林：決まりの区域の内側（縁から 3 m 内側）だけに植える', () => {
+        const wood = getField('plains')!.terrain.find((a) => a.kind === 'woods')!;
+        const map = plains().map;
+        for (const sp of [16, 24]) {
+            const spots = roundWoodsSpots(wood, sp, hash01);
+            expect(spots.length).toBeGreaterThan(sp === 16 ? 10 : 4);
+            for (const t of spots) {
+                expect(inTerrain(map, 'woods', t.x, t.z)).toBe(true);
+                expect(Math.hypot(t.x - 130, t.z + 20)).toBeLessThanOrEqual(38 - 3 + 1e-9);
+            }
+            // 同じ配置（決まった乱数）
+            expect(roundWoodsSpots(wood, sp, hash01)).toEqual(spots);
+        }
+    });
+});
+
+// ---------------------------------------------------------------- 表示は合戦の状態を変えない
+
+/** 確かめ用の地面の素材（4×4 の色。本物の画像ではない） */
+function fakeSet(): GroundArtSet {
+    const tex = (v: number) => {
+        const t = new THREE.DataTexture(new Uint8Array(4 * 4 * 4).fill(v), 4, 4);
+        t.needsUpdate = true;
+        return { texture: t as THREE.Texture, tileMeters: 8 };
+    };
+    return { grass: tex(120), dirt: tex(90), road: tex(160), forest: tex(60) };
+}
+
+/** 大平原の台本：騎馬を回し、時間で攻めかかる（斬り合い・敗走が起きる。能力は使わない） */
+function plainsScript(s: BattleState): void {
+    const t = Math.round(s.t * 10) / 10;
+    if (t === 5) issueOrder(s, 'a_kiba', { type: 'move', x: -150, z: -40 });
+    if (t === 60) issueOrder(s, 'a_kiba', { type: 'attack', targetId: 'e_left' });
+    if (t === 90) issueOrder(s, 'a_ishikawa', { type: 'attack', targetId: 'e_sente' });
+    if (t === 150) for (const id of ['a_tadakatsu', 'a_sakai', 'a_sakakibara']) issueOrder(s, id, { type: 'attack', targetId: 'e_hq' });
+}
+
+function snapshot(s: BattleState): string {
+    return JSON.stringify(s, (_k, v) => (v instanceof Map ? [...v.entries()] : v instanceof Set ? [...v] : v));
+}
+
+function run(s: BattleState, script: (s: BattleState) => void, each: ((s: BattleState) => void) | null, maxSec: number): string[] {
+    const snaps: string[] = [];
+    let k = 0;
+    while (!s.result && s.t < maxSec) {
+        script(s);
+        stepBattle(s, 0.1);
+        each?.(s);
+        if (++k % 100 === 0) snaps.push(snapshot(s));
+    }
+    snaps.push(snapshot(s));
+    return snaps;
+}
+
+/** のぼりの画像の canvas だけ、何もしない仮にする（node には document が無い） */
+async function withFakeDocument<T>(fn: () => Promise<T>): Promise<T> {
+    const g = globalThis as unknown as { document?: unknown };
+    const had = 'document' in g;
+    const prev = g.document;
+    const ctx2d = new Proxy({}, { get: () => () => undefined, set: () => true });
+    g.document = { createElement: () => ({ width: 0, height: 0, getContext: () => ctx2d, style: {} }) };
+    try {
+        return await fn();
+    } finally {
+        if (had) g.document = prev;
+        else delete g.document;
+    }
+}
+
+describe('素材の地面・足元の影・砂ぼこりは合戦の状態を変えない', () => {
+    it('BattleView に素材の地面を付けて毎刻み update しても、表示なしと同じ。押す判定・名札の位置も素材なしと同じ', async () => {
+        await withFakeDocument(async () => {
+            const { BattleView } = await import('../proto3d/src/battle/view');
+            const a = plains();
+            const plain = run(a, plainsScript, null, 240);
+
+            const b = plains();
+            const on = new BattleView(b, { low: false });
+            const off = new BattleView(b, { low: false });
+            for (const v of [on, off]) {
+                v.resize(1280, 720);
+                v.fit({ top: 60, bottom: 110, left: 10, right: 10 });
+            }
+            // 作っただけでは今までの地面（画像は読まない）。円の林には木を植えない（Version 21 と同じ）
+            expect(on.artProbe()).toEqual({ ground: 'vertex', trees: 0, shadows: 0, dust: 0 });
+            expect(on.treeSpots()).toEqual([]);
+            expect(on.setGroundArt(fakeSet())).toBe(true);
+            expect(on.setGroundArt(fakeSet())).toBe(false);
+            expect(on.groundArtActive).toBe(true);
+            expect(off.groundArtActive).toBe(false);
+            expect(on.artProbe().ground).toBe('textured');
+            expect(on.artProbe().trees).toBeGreaterThan(10);
+            let k = 0;
+            let maxShadows = 0;
+            let maxDust = 0;
+            let pickChecks = 0;
+            const drawn = run(
+                b,
+                plainsScript,
+                (s) => {
+                    const ui = { selectedId: k % 50 < 25 ? 'a_tadakatsu' : null, pending: 'none' as const, speed: k % 400 < 200 ? 1 : 2 };
+                    on.update(s, 1 / 30, ui);
+                    off.update(s, 1 / 30, ui);
+                    const p = on.artProbe();
+                    maxShadows = Math.max(maxShadows, p.shadows);
+                    maxDust = Math.max(maxDust, p.dust);
+                    expect(p.dust).toBeLessThanOrEqual(DUST_MAX);
+                    if (k % 97 === 0) {
+                        for (let sx = 40; sx < 1280; sx += 120) {
+                            for (let sy = 40; sy < 720; sy += 90) {
+                                expect(on.pick(s, sx, sy, 20)).toBe(off.pick(s, sx, sy, 20));
+                                pickChecks++;
+                            }
+                        }
+                        for (let i = 0; i < s.units.length; i++) expect(on.labelAnchor(i)).toEqual(off.labelAnchor(i));
+                    }
+                    k++;
+                },
+                240,
+            );
+            expect(drawn).toEqual(plain);
+            expect(b.result).toEqual(a.result);
+            expect(pickChecks).toBeGreaterThan(1000);
+            // 影は見えている部隊に出ていた・斬り合い・騎馬の動きで砂ぼこりも出た（上限の中）
+            expect(maxShadows).toBeGreaterThanOrEqual(7);
+            expect(maxDust).toBeGreaterThan(0);
+            expect(on.troopStats().visibleSoldiers).toBe(off.troopStats().visibleSoldiers);
+            on.dispose();
+            off.dispose();
+        });
+    }, 120000);
+
+    it('影と砂ぼこりは見えている部隊だけ（見えていない敵には出さず、見えなくなった部隊の煙はすぐ消す）', () => {
+        const s = plains();
+        const fx = new UnitFx(s.map, s.units.length);
+        const poses: FxPose[] = s.units.map((u) => ({ px: u.x, pz: u.z, sx: 0, sz: 0, face: u.facing, halfW: 10, halfD: 5, shown: u.side === 'ally', routT: -1 }));
+        // 騎馬（味方）を動かしている扱い：合戦の時計を進めながら
+        const kiba = s.units.findIndex((u) => u.id === 'a_kiba');
+        const ekiba = s.units.findIndex((u) => u.id === 'e_kiba');
+        s.units[kiba].moving = true;
+        s.units[ekiba].moving = true;
+        let t = 0;
+        for (let i = 0; i < 60; i++) {
+            s.t = Math.round(i / 3) * 0.1;
+            fx.update(s, poses, t, 1 / 30, 1);
+            t += 1 / 30;
+        }
+        const c = fx.counts();
+        expect(c.shadows).toBe(s.units.filter((u) => u.side === 'ally').length);
+        expect(c.dust).toBeGreaterThan(0);
+        // 見えなくなったら、その部隊の煙はその場で消える
+        poses[kiba].shown = false;
+        fx.update(s, poses, t, 1 / 30, 1);
+        expect(fx.counts().dust).toBe(0);
+        expect(fx.counts().shadows).toBe(c.shadows - 1);
+        // 止めている間（合戦の時計が進まない）は新しく出さない
+        poses[kiba].shown = true;
+        for (let i = 0; i < 30; i++) {
+            t += 1 / 30;
+            fx.update(s, poses, t, 1 / 30, 1);
+        }
+        expect(fx.counts().dust).toBe(0);
+        fx.dispose();
+    });
+});
+
+describe('使うかどうか（旧表示・素材の一覧）', () => {
+    const g = globalThis as unknown as { location?: unknown };
+    afterEach(() => {
+        delete g.location;
+        __setArtManifestForTest(null);
+    });
+    it('素材の地面は大平原だけ。旧表示（?art=old）では使わない。一覧に無ければ読まずに null（今までの地面）', async () => {
+        expect(fieldHasArt('plains')).toBe(true);
+        expect(fieldHasArt('forest')).toBe(false);
+        expect(await loadFieldArt('plains', 4)).toBeNull();
+        expect(await loadFieldArt('forest', 4)).toBeNull();
+        g.location = { search: '?art=old', hash: '' };
+        expect(fieldHasArt('plains')).toBe(false);
+        expect(await loadFieldArt('plains', 4)).toBeNull();
+    });
+    it('顔は家康・忠勝だけ（ほかの武将・主人公には出さない）。旧表示では出さない', () => {
+        expect(faceIdOf('ieyasu')).toBe('face.ieyasu');
+        expect(faceIdOf('tadakatsu')).toBe('face.tadakatsu');
+        for (const id of ['sakai', 'ishikawa', 'sakakibara', 'nagamasa', 'hero', '', null, undefined]) expect(faceIdOf(id)).toBeNull();
+        g.location = { search: '?art=old', hash: '' };
+        expect(faceIdOf('ieyasu')).toBeNull();
+    });
+});

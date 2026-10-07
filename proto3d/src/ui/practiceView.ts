@@ -5,6 +5,7 @@
  * タイトルの「合戦場の演習」から ui/boot.ts が読み込む（別の塊。選んだときだけ読む）。
  * DOM の印（e2e 用）：層に data-sheet（practice-list／practice-briefing／practice-result）、戦場の札に data-field、
  * ボタンに data-id（'field:<戦場id>'／'back'／'go'／'list'）。目標の行に data-objective（primary／secondary）と data-achieved。
+ * 編成の表の「率いる武将」には、家康・忠勝の顔（Version 22。生成イラスト素材が読めたときだけ。<canvas class="b-face">）を名前の前に小さく置く。
  */
 import {
     PracticeMode,
@@ -19,6 +20,7 @@ import {
 import type { StorageLike } from '../campaign/save';
 import { el } from './dom';
 import type { DomView } from './view';
+import { attachFaceWhenReady } from '../battle/faceArt';
 
 /** 札（小さな枠の文字） */
 function tag(text: string): HTMLElement {
@@ -129,7 +131,10 @@ export class PracticeDomView implements PracticeView {
                 ab.append(document.createTextNode(u.ability.name));
                 if (u.ability.provisional) ab.append(tag('仮'));
             } else ab.textContent = '—';
-            tr.append(name, el('td', undefined, u.kind), el('td', 'num', String(u.strength)), el('td', undefined, u.general ?? '—'), ab);
+            const gen = el('td', undefined, u.general ?? '—');
+            // 武将の顔（家康・忠勝の素材が読めたときだけ。名前は文字のまま。表の行の高さは変えない）
+            if (u.general) attachFaceWhenReady(u.generalId, gen, () => true);
+            tr.append(name, el('td', undefined, u.kind), el('td', 'num', String(u.strength)), gen, ab);
             table.append(tr);
         }
         units.append(table, el('p', 'g-note', `相手：${info.enemies}。能力はゲーム用の創作で、「仮」は数値・効果を差し替える予定の能力です。`));

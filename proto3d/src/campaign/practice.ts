@@ -302,6 +302,8 @@ export interface PracticeUnitLine {
     strength: number;
     /** 率いる武将の名前（いなければ null） */
     general: string | null;
+    /** 率いる武将の id（顔の素材を引くため。Version 22。いなければ null） */
+    generalId?: string | null;
     /** 固有能力の名前（仮の能力は provisional） */
     ability: { name: string; provisional: boolean } | null;
     /** 援軍・遅れて着く部隊（開始から何秒で着くか） */
@@ -397,6 +399,7 @@ export function practiceBriefingInfo(field: BattlefieldDef): PracticeBriefingInf
                 kind: KIND_SHORT[u.kind],
                 strength: Math.round(u.strength),
                 general: g?.name ?? null,
+                generalId: g?.id ?? null,
                 ability: ab ? { name: abilityDisplayName(ab).replace(/（仮）$/, ''), provisional: !!ABILITY_DATA[ab].provisional } : null,
                 arriveAt: u.arriveAt && u.arriveAt > 0 ? u.arriveAt : null,
             };

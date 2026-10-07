@@ -24,6 +24,8 @@
  * - 合戦場のデータの戦場（fields/ の buildBattleSetup）：目標の区域・援軍の出る所・狭い正面を地図に描き（view.ts）、名札（control.ts の mapLabels）、
  *   目標の欄に進み具合、結果の画面に主目標・副目標を勝敗・約束と別の行で出す。
  * - 結果を出し、「続ける」で後片付け（形・材質・画像・DOM・listener）をして探索へ戻り（exitMode）、結果を返す。
+ * - 生成イラスト素材の地面（Version 22。groundArt.ts）：表示を作った後で、その戦場の素材（FIELD_ART）を 4 枚とも読めたら view.setGroundArt で使う。
+ *   旧表示（?art=old）・素材の一覧に無い・1 枚でも読めないときは何もしない（Version 21 と同じ地面）。合戦の計算・押す判定には関わらない。
  */
 import { appContext, enterMode, exitMode, registerBattleRunner, type AppContext, type Mode } from '../app/modes';
 import { audio } from '../audio';
@@ -31,6 +33,7 @@ import { loadModel } from '../app/models';
 import type { BattleOutcome, BattleRunHooks, BattleSetup, Order } from './types';
 import { canCommand, createBattle, elevationAt, isActive, issueOrder, meleeUnreachable, orderAllRetreat, stepBattle, unitById, waitReason, type BattleEvent, type BattleState } from './sim';
 import { BattleView } from './view';
+import { loadFieldArt } from './groundArt';
 import { nightLabels } from './night';
 import { withdrawalNote } from './objectives';
 import { BattleUi, type CommandKind } from './battleUi';
@@ -216,10 +219,15 @@ class BattleRun implements Mode {
 
     private loadTrees(): void {
         let settled = false;
+        // 木と地面の素材（Version 22）の両方が済んだら始められる（地面の素材の無い戦場・旧表示では、地面はすぐ済む）
+        let waiting = 2;
         const ready = () => {
             if (settled || this.finished) return;
             settled = true;
             this.ui.setBriefingReady(true);
+        };
+        const part = () => {
+            if (--waiting <= 0) ready();
         };
         const timer = window.setTimeout(ready, TREE_TIMEOUT_MS);
         this.off.push(() => window.clearTimeout(timer));
@@ -227,12 +235,27 @@ class BattleRun implements Mode {
             .then((g) => {
                 if (this.finished) return;
                 this.view.setTrees(g.scene);
-                ready();
+                part();
             })
             .catch((e: unknown) => {
                 // 読めなければ円すいの木のまま（見た目だけの問題。合戦はできる）
                 console.warn('林の木を読み込めませんでした（円すいの木で続けます）', e);
-                ready();
+                part();
+            });
+        // 地面の素材：表示を作った後で読む（読めなければ今までの地面のまま。時間切れでも始められる）
+        const aniso = this.ctx.renderer.capabilities.getMaxAnisotropy();
+        loadFieldArt(this.s.map.id, Math.min(4, aniso))
+            .then((set) => {
+                if (this.finished) {
+                    for (const t of set ? [set.grass, set.dirt, set.road, set.forest] : []) t.texture.dispose();
+                    return;
+                }
+                if (set && !this.view.setGroundArt(set)) for (const t of [set.grass, set.dirt, set.road, set.forest]) t.texture.dispose();
+                part();
+            })
+            .catch((e: unknown) => {
+                console.warn('地面の素材を使えませんでした（今までの地面で続けます）', e);
+                part();
             });
     }
 
@@ -312,7 +335,7 @@ class BattleRun implements Mode {
         // 援護の対象選び：選んだ部隊の能力が使えなくなったら（崩れた・合戦が終わった）やめる
         if (this.pending === 'ability' && !(sel && abilityPanelModel(this.s, sel.id)?.usable)) this.pending = 'none';
 
-        this.view.update(this.s, dt, { selectedId: this.selectedId, pending: this.pending });
+        this.view.update(this.s, dt, { selectedId: this.selectedId, pending: this.pending, speed: this.speed });
         this.placeLabels();
         this.ui.update(this.s, { selectedId: this.selectedId, selection: this.selection, pending: this.pending, paused: this.paused, started: this.started, speed: this.speed });
         if (this.frameTargetsFor) {
@@ -527,7 +550,8 @@ class BattleRun implements Mode {
             const how = pm?.info.id === 'nagamasa_support' ? 'を援護' : 'へ差配';
             this.ui.flash(`${user.name}：「${name}」${tgt ? `— ${tgt}${how}` : ''}${this.paused ? '（再開すると時間が進む）' : ''}`, 2400);
             const note = abilityNoticeModel(this.s, user.id);
-            if (note) this.ui.abilityNotice('use', `${note.general}${note.title}`, `対象：${note.target}`);
+            // 武将の顔（家康・忠勝の素材が読めたときだけ）は自軍の発動だけに添える
+            if (note) this.ui.abilityNotice('use', `${note.general}${note.title}`, `対象：${note.target}`, undefined, user.side === 'ally' ? note.generalId : null);
             // 音：能力の発動の太鼓と、武将の掛け声（味方の武将だけ）
             audio()?.battleCue('ability', this.speed);
             if (user.side === 'ally' && pm) this.shout(`battle.ability.${pm.info.id}`);
@@ -1335,6 +1359,8 @@ function exposeDev(run: BattleRun): void {
         noticeFold: () => Number((document.querySelector('.b-topmid') as HTMLElement | null)?.dataset.fold ?? 0),
         /** 兵士の表示の数え上げ（直前のフレーム）：見えている兵士の数・部隊ごとの人数・描画の呼び出しの数・InstancedMesh ごとの数 */
         troopStats: () => run.view.troopStats(),
+        /** 生成イラスト素材（Version 22）の地面の様子（読むだけ）：textured（素材の地面）か vertex（今までの地面）・植えた木の数・直前のフレームで描いた足元の影と砂ぼこりの数 */
+        art: () => run.view.artProbe(),
         info() {
             const i = appContext().renderer.info;
             return { calls: i.render.calls, triangles: i.render.triangles, geometries: i.memory.geometries, textures: i.memory.textures };

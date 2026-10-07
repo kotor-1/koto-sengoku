@@ -382,10 +382,12 @@ describe('当たり判定を付ける名札・知らせの文', () => {
     it('発動の知らせ：能力名・武将・対象（範囲・選んだ部隊・自隊）', () => {
         const s = plains();
         useAbility(s, 'a_ieyasu');
-        expect(abilityNoticeModel(s, 'a_ieyasu')).toEqual({ title: '「立て直しの号令」', general: '徳川家康', target: '半径 110 m（家康本陣の周り）' });
+        expect(abilityNoticeModel(s, 'a_ieyasu')).toEqual({ title: '「立て直しの号令」', general: '徳川家康', target: '半径 110 m（家康本陣の周り）', generalId: 'ieyasu' });
         useAbility(s, 'a_sakakibara');
         const sk = abilityNoticeModel(s, 'a_sakakibara')!;
         expect(sk.general).toBe('榊原康政');
+        // 知らせに添える顔は、率いる武将の id で引く（Version 22。顔の無い武将の id もそのまま渡し、顔を出すかは画面の側が決める）
+        expect(sk.generalId).toBe('sakakibara');
         expect(sk.target).toBe('榊原康政隊');
         useAbility(s, 'a_ishikawa', 'a_kiba');
         const ik = abilityNoticeModel(s, 'a_ishikawa')!;

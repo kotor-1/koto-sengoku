@@ -22,6 +22,9 @@
  *   援軍の出る所の小さな印、狭い正面の区域の縁。名札（短い名前）は battleUi.ts が control.ts の mapLabels で出す。
  * 描画命令は部隊の数では増えない（兵士・旗で 7〜10。のぼりは合戦に出る家の数 × 大きさ）。戦場の地形・印が増えると 10 ほど増える。影・画面の仕上げは使わない。
  * 状態は読むだけ（sim.ts の BattleState を書き換えない）。
+ * - 生成イラスト素材の地面（Version 22。groundArt.ts）：旧表示（?art=old）でなく、その戦場の素材（art/ids.ts の FIELD_ART）が 4 枚とも読めたときだけ
+ *   （つなぎ entry.ts が読んで setGroundArt を呼ぶ。作る時には画像を読まない）、地面の材質を素材を混ぜるものに差し替え、道の帯を隠し（道は型紙で決まりの幅に描く）、
+ *   円・カプセルの林にも木を植え、足元の影と短い砂ぼこり（unitFx.ts）を足す。素材が無い・読めない間は Version 21 と同じ見た目のまま。
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -46,6 +49,8 @@ import { ABILITY_DATA, abilityInfo } from './abilities';
 import { troopTier } from './troops';
 import { POLE_H, TroopLayer, type TroopStats } from './troopsView';
 import { CLAN_CHAR, CLAN_COLOR, makeBannerTexture } from '../shared/figures';
+import { buildTerrainMask, makeGroundArtMaterial, roundWoodsSpots, type GroundArtSet } from './groundArt';
+import { UnitFx } from './unitFx';
 
 /** 特殊能力の範囲の輪の色（敵方の能力は赤みの色） */
 const ABILITY_COLOR: Record<string, string> = {
@@ -152,6 +157,16 @@ export class BattleView {
     private readonly clashSprites: THREE.Sprite[] = [];
     private readonly clashMats: Record<'front' | 'flank' | 'rear', THREE.SpriteMaterial>;
     private trees: THREE.Object3D | null = null;
+    /** 林の木の元（読み込んだ松。null は円すいの木）と、植えた木の数 */
+    private treeSrc: THREE.Object3D | null = null;
+    private treeCount = 0;
+    /** 地面（頂点の色の面）と道の帯（素材の地面では隠す） */
+    private groundMesh: THREE.Mesh | null = null;
+    private roadMesh: THREE.Mesh | null = null;
+    /** 生成イラスト素材の地面を使っている（Version 22。setGroundArt）。足元の影・砂ぼこりはこの時だけ */
+    private artOn = false;
+    private fx: UnitFx | null = null;
+    private disposed = false;
     /** 特殊能力の範囲の輪（s.abilityList の順） */
     private readonly abilRings: { ring: THREE.Mesh; fill: THREE.Mesh; ringMat: THREE.MeshBasicMaterial; fillMat: THREE.MeshBasicMaterial; rad: number }[] = [];
     /** 能力の記録の見張り（s.abilityList の順。使った・終わったの変わり目で波紋を出す） */
@@ -495,7 +510,8 @@ export class BattleView {
         geo.computeVertexNormals();
         const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
         this.own(geo, mat);
-        this.scene.add(new THREE.Mesh(geo, mat));
+        this.groundMesh = new THREE.Mesh(geo, mat);
+        this.scene.add(this.groundMesh);
     }
 
     /**
@@ -540,7 +556,38 @@ export class BattleView {
         geo.computeVertexNormals();
         const mat = new THREE.MeshLambertMaterial({ color: '#a48c63', polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
         this.own(geo, mat);
-        this.scene.add(new THREE.Mesh(geo, mat));
+        this.roadMesh = new THREE.Mesh(geo, mat);
+        this.scene.add(this.roadMesh);
+    }
+
+    /**
+     * 生成イラスト素材の地面（Version 22）。つなぎ（entry.ts）が素材を 4 枚とも読めたときだけ呼ぶ（読めなければ呼ばない＝今までの地面のまま）。
+     * 地面の材質を、決まりの地形の形の型紙で素材を混ぜるものに差し替え、道の帯を隠す（道は型紙で決まりの幅に描く）。
+     * 円・カプセルの林にも木を植え直し、足元の影と砂ぼこりを足す。合戦の状態・押す判定・名札には関わらない。使い始めたら true
+     */
+    setGroundArt(set: GroundArtSet | null): boolean {
+        if (!set || this.artOn || this.disposed || !this.groundMesh) return false;
+        const { material, mask, noise } = makeGroundArtMaterial(this.map, this.passable, buildTerrainMask(this.map), set);
+        this.own(material, mask, noise, set.grass.texture, set.dirt.texture, set.road.texture, set.forest.texture);
+        this.groundMesh.material = material;
+        if (this.roadMesh) this.roadMesh.visible = false;
+        this.artOn = true;
+        this.fx = new UnitFx(this.map, this.vis.length);
+        this.scene.add(this.fx.group);
+        // 円の林（大平原の東の林）にも木を植える（読み込み済みの松。まだなら円すいの木で、松が届いたら setTrees で植え直す）
+        this.setTrees(this.treeSrc);
+        return true;
+    }
+
+    /** 素材の地面を使っているか */
+    get groundArtActive(): boolean {
+        return this.artOn;
+    }
+
+    /** 開発用の確かめ（window.__battle.art）：地面の描き方・植えた木の数・直前のフレームで描いた影と砂ぼこりの数 */
+    artProbe(): { ground: 'textured' | 'vertex'; trees: number; shadows: number; dust: number } {
+        const c = this.fx?.counts() ?? { shadows: 0, dust: 0 };
+        return { ground: this.artOn ? 'textured' : 'vertex', trees: this.treeCount, shadows: c.shadows, dust: c.dust };
     }
 
     /**
@@ -1151,6 +1198,7 @@ export class BattleView {
      * 読み込みが後から終わったら、もう一度呼んで差し替える。
      */
     setTrees(src: THREE.Object3D | null): void {
+        this.treeSrc = src;
         if (this.trees) {
             this.scene.remove(this.trees);
             this.trees.traverse((o) => {
@@ -1204,14 +1252,22 @@ export class BattleView {
             group.add(im);
         }
         this.trees = group;
+        this.treeCount = spots.length;
         this.scene.add(group);
     }
 
-    /** 林の木の位置（決まった配置。格子を少しずらす） */
-    private treeSpots(): { x: number; z: number; rot: number; scale: number }[] {
+    /**
+     * 林の木の位置（決まった配置。格子を少しずらす）。四角の林は今までどおり。円・カプセルの林（大平原の東の林）は、
+     * 素材の地面を使うときだけ植える（groundArt.ts の roundWoodsSpots。決まりの区域の内側だけ）。それ以外は Version 21 と同じ（植えない）
+     */
+    treeSpots(): { x: number; z: number; rot: number; scale: number }[] {
         const out: { x: number; z: number; rot: number; scale: number }[] = [];
         const sp = this.low ? 24 : 16;
         for (const a of this.map.terrain) {
+            if (a.kind === 'woods' && !a.rect && this.artOn) {
+                out.push(...roundWoodsSpots(a, sp, hash01));
+                continue;
+            }
             if (a.kind !== 'woods' || !a.rect) continue;
             const { x0, x1, z0, z1 } = a.rect;
             let i = 0;
@@ -1249,7 +1305,7 @@ export class BattleView {
     /**
      * 状態に合わせて描くものを動かす（読むだけ）。dt は実時間（秒。一時停止中も動く：旗のはためき・選んだ輪）。
      */
-    update(s: BattleState, dt: number, ui: { selectedId: string | null; pending: Pending }): void {
+    update(s: BattleState, dt: number, ui: { selectedId: string | null; pending: Pending; speed?: number }): void {
         this.time += dt;
         const t = this.time;
         const kPos = 1 - Math.exp(-14 * dt);
@@ -1378,6 +1434,8 @@ export class BattleView {
         if (this.ringMesh.instanceColor) this.ringMesh.instanceColor.needsUpdate = true;
         // 兵士と旗（画面外の部隊は書かない。カメラの行列は applyCam で今のもの）
         this.troops.update(s, this.vis, this.camera, t, dt);
+        // 足元の影・砂ぼこり（素材の地面を使うときだけ。見えている部隊だけ）
+        this.fx?.update(s, this.vis, t, dt, ui.speed ?? 1);
         for (let i = clashN; i < this.clashSprites.length; i++) this.clashSprites[i].visible = false;
 
         // 選んだ部隊の輪
@@ -1647,7 +1705,10 @@ export class BattleView {
     }
 
     dispose(): void {
+        this.disposed = true;
         this.setTreesDisposeOnly();
+        this.fx?.dispose();
+        this.fx = null;
         for (const o of this.owned) o.dispose();
         this.owned.length = 0;
         this.troops.dispose();

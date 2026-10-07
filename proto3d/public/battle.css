@@ -391,6 +391,34 @@ body.mode-battle #build { display: none !important; }
 .b-topmid[data-fold="2"] .b-toasts, .b-topmid[data-fold="2"] .b-abnote { visibility: hidden; }
 .b-ab-r.b-ab-left { color: #c4f8ef; }
 
+/* 武将の顔（Version 22。家康・忠勝だけ。生成イラスト素材が読めたときだけ battleUi.ts・practiceView.ts が置く。押せない飾り。
+   名前・数字は文字のまま。札の高さ・下の列・左上の見出しの大きさ（カメラの「全体」の余白）は変えない） */
+.b-face {
+    display: block;
+    flex: none;
+    box-sizing: border-box;
+    border-radius: 5px;
+    background: rgba(0, 0, 0, 0.3);
+    box-shadow: 0 0 0 1px rgba(255, 246, 225, 0.22);
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-user-drag: none;
+    -webkit-touch-callout: none;
+}
+/* 札の見出し：文字の行の高さのまま、名前の前に小さく */
+.b-card-h > .b-face { width: 17px; height: 17px; border-radius: 4px; }
+/* 能力の欄：武将の行と能力の見出しの左に、2 行分の高さで（欄の文字列は毎秒作り直すので、顔は作り直した後に置き直す） */
+.b-abil.with-face { position: relative; }
+.b-abil.with-face .b-gen > .b-face { position: absolute; left: 11px; top: 7px; width: 36px; height: 36px; }
+.b-abil.with-face > .b-gen, .b-abil.with-face > .b-gen + .b-ab-h { margin-left: 44px; }
+/* 発動の知らせ：顔を左に、能力名と対象を右に（高さは今の 2 行のまま。畳んだときは顔を出さない） */
+.b-abnote.with-face:not([hidden]) { display: grid; grid-template-columns: auto auto; column-gap: 9px; align-items: center; justify-items: start; }
+.b-abnote.with-face > .b-face { grid-row: 1 / span 2; width: 34px; height: 34px; }
+.b-topmid[data-fold="1"] .b-abnote > .b-face { display: none; }
+/* 演習の編成の表：名前の前に、文字の行の高さで */
+.g-pr-units td > .b-face { display: inline-block; width: 1.35em; height: 1.35em; margin-right: 5px; vertical-align: top; border-radius: 4px; }
+
 /* ---- 右上：一時停止・速さ・全軍撤退 ---- */
 .b-ctrl {
     position: absolute;
@@ -764,4 +792,10 @@ body.mode-battle #build { display: none !important; }
     .b-bottom.many .b-cmd { padding: 7px 8px; font-size: 12.5px; }
     .b-bottom.many .b-cmds.with-ability .b-cmd { min-width: 58px; padding: 7px 6px; }
     .b-bottom.many ~ .b-hint { bottom: calc(var(--safe-b) + var(--card-h) + 14px); }
+    /* 武将の顔（Version 22）：縦の狭い画面では小さく */
+    .b-card-h > .b-face { width: 14px; height: 14px; border-radius: 3px; }
+    .b-abil.with-face .b-gen > .b-face { left: 8px; top: 5px; width: 28px; height: 28px; }
+    .b-abil.with-face > .b-gen, .b-abil.with-face > .b-gen + .b-ab-h { margin-left: 34px; }
+    .b-abnote.with-face { column-gap: 7px; }
+    .b-abnote.with-face > .b-face { width: 28px; height: 28px; }
 }
