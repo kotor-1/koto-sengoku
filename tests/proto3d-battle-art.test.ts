@@ -891,4 +891,27 @@ describe('能力の欄の顔は欄の高さ・能力の見出しの行の幅を�
         const compactHide = find('max-height: 520px', '.b-gen:has(+ .b-ab-h) .b-gen-ab');
         expect(compactHide && prop(compactHide.body, 'display')).toBe('none');
     });
+    it('札の見出しの顔：細い顔は高さを変えずに幅とすき間を詰め、出さない時は並びから外す（札・見出しの大きさの規則は足さない）', () => {
+        const all = rules();
+        const px = (v: string | null) => (v === null ? NaN : parseFloat(v));
+        const find = (media: string, sel: string) => all.find((r) => (media ? r.media.includes(media) : r.media === '') && r.sel.split(',').map((x) => x.trim()).includes(sel));
+        for (const media of ['', 'max-height: 520px']) {
+            const full = find(media, '.b-card-h > .b-face')!;
+            const narrow = find(media, '.b-card-h > .b-face.b-face-narrow')!;
+            expect(full && narrow, media).toBeTruthy();
+            // 高さはそのまま（見出しの行の高さ＝札の高さを変えない）。幅とすき間で 6 px 以上詰める（小さな札の騎馬の榊原康政隊で名前が収まる）
+            expect(prop(narrow.body, 'height'), media).toBeNull();
+            const saved = px(prop(full.body, 'width')) - px(prop(narrow.body, 'width')) - px(prop(narrow.body, 'margin-right'));
+            expect(saved, media).toBeGreaterThanOrEqual(6);
+            expect(px(prop(narrow.body, 'width')), media).toBeGreaterThanOrEqual(8);
+        }
+        expect(prop(find('', '.b-card-h > .b-face.b-face-narrow')!.body, 'object-fit')).toBe('cover');
+        expect(prop(find('', '.b-card-h > .b-face.b-face-off')!.body, 'display')).toBe('none');
+        // 顔のある見出しだけ、空の状態の印を並びから外す（文字のある印・顔の無い見出し＝旧表示には掛からない）
+        const badgeRules = all.filter((r) => r.sel.includes('.b-badge') && r.sel.includes('has-face'));
+        expect(badgeRules.map((r) => r.sel)).toEqual(['.b-card-h.has-face > .b-badge:empty']);
+        expect(prop(badgeRules[0]!.body, 'display')).toBe('none');
+        // 顔の規則は札そのもの・見出しの行の大きさを変えない
+        for (const r of all.filter((x) => /b-face/.test(x.sel))) for (const sel of r.sel.split(',').map((x) => x.trim())) expect(sel, sel).not.toMatch(/\.b-card(-h)?$|\.b-card(-h)?\s*[,{]|\.b-cards$/);
+    });
 });

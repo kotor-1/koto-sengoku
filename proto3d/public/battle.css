@@ -391,7 +391,7 @@ body.mode-battle #build { display: none !important; }
 .b-topmid[data-fold="2"] .b-toasts, .b-topmid[data-fold="2"] .b-abnote { visibility: hidden; }
 .b-ab-r.b-ab-left { color: #c4f8ef; }
 
-/* 武将の顔（Version 22。家康・忠勝だけ。生成イラスト素材が読めたときだけ battleUi.ts・practiceView.ts が置く。押せない飾り。
+/* 武将の顔（Version 22。素材の届いた武将＝家康・忠勝・酒井・石川・榊原・長政だけ。生成イラスト素材が読めたときだけ battleUi.ts・practiceView.ts が置く。押せない飾り。
    名前・数字は文字のまま。札の高さ・下の列・左上の見出しの大きさ（カメラの「全体」の余白）は変えない） */
 .b-face {
     display: block;
@@ -406,8 +406,15 @@ body.mode-battle #build { display: none !important; }
     -webkit-user-drag: none;
     -webkit-touch-callout: none;
 }
-/* 札の見出し：文字の行の高さのまま、名前の前に小さく */
+/* 札の見出し：文字の行の高さのまま、名前の前に小さく。部隊の名前が切れるなら（騎馬の札・小さな札）、両脇を切った細い顔にして
+   すき間も詰める（b-face-narrow。高さはそのまま）。それでも切れるなら出さない（b-face-off＝Version 21 と同じ並び）。決めるのは battleUi.ts の
+   fitCardFaces（名前を Version 21 より短く切らない）。札の大きさ・押せる所は変えない */
 .b-card-h > .b-face { width: 17px; height: 17px; border-radius: 4px; }
+.b-card-h > .b-face.b-face-narrow { width: 10px; margin-right: -2px; object-fit: cover; border-radius: 3px; }
+.b-card-h > .b-face.b-face-off { display: none; }
+/* 顔のある見出しでは、空の状態の印（.b-badge。到着待ち・撤退済みなどの時だけ文字がある）を並びから外し、そのすき間を名前に回す
+   （空の印は見えないので、見た目は変わらない。印に文字が入れば今までどおり出る） */
+.b-card-h.has-face > .b-badge:empty { display: none; }
 /* 能力の欄：武将の行の左に、行の高さの中の小さな絵で（欄の文字列は毎秒作り直すので、顔は作り直した後に置き直す）。
    with-face は武将の行のすぐ下に能力の見出しがある時だけ付く（battleUi.ts）。顔の幅だけ武将の行を右へ寄せ、その代わりに武将の行の
    「固有能力「…」」（すぐ下の見出しと同じ名前。縦の狭い画面では元から省いている）を省く：武将の行は短くなるだけで、折り返しは増えない。
@@ -797,6 +804,7 @@ body.mode-battle #build { display: none !important; }
     .b-bottom.many ~ .b-hint { bottom: calc(var(--safe-b) + var(--card-h) + 14px); }
     /* 武将の顔（Version 22）：縦の狭い画面では小さく */
     .b-card-h > .b-face { width: 14px; height: 14px; border-radius: 3px; }
+    .b-card-h > .b-face.b-face-narrow { width: 8px; margin-right: -2px; border-radius: 2px; }
     .b-abil.with-face > .b-gen { padding-left: 20px; }
     .b-abil.with-face > .b-gen > .b-face { width: 15px; height: 15px; margin-top: -7.5px; border-radius: 3px; }
     .b-abnote.with-face { column-gap: 7px; }

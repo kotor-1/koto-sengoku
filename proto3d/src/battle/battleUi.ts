@@ -20,9 +20,10 @@
  *   .b-gen[data-general]・結果の .b-robj の行 [data-role][data-achieved]・名札 .b-label[data-mark]（救出・守る・崩す）・
  *   部隊の名札 .b-label[data-id][data-ab]（ready・active・choosing・target・untargetable）・発動の知らせ .b-abnote[data-kind]・
  *   名札の優先表示 .b-label[data-fit]（mini＝小さく・hide＝一時的に隠す。付いていなければそのまま）。
- * 武将の顔（Version 22。素材の届いた武将だけ。faceArt.ts）：生成イラスト素材が読めたときだけ、部隊の札の見出し・能力の欄の武将の行・発動の知らせ（自軍だけ）に
- *   <canvas class="b-face" data-art-id> を置く（毎秒作り直す欄の文字列の外に持ち、作り直した後に置き直す）。読めない・旧表示では何も置かない（Version 21 と同じ）。
- *   札の高さ・下の列・左上の見出し（カメラの「全体」の余白 insets）は変えない。
+ * 武将の顔（Version 22。素材の届いた武将だけ＝家康・忠勝・酒井・石川・榊原・長政。faceArt.ts）：生成イラスト素材が読めたときだけ、部隊の札の見出し・
+ *   能力の欄の武将の行・発動の知らせ（自軍だけ）に <canvas class="b-face" data-art-id> を置く（毎秒作り直す欄の文字列の外に持ち、作り直した後に置き直す）。
+ *   読めない・旧表示では何も置かない（Version 21 と同じ）。札の高さ・下の列・左上の見出し（カメラの「全体」の余白 insets）は変えない。
+ *   札の見出しで部隊の名前が切れるなら、顔を細く・それでも切れるなら出さない（.b-card[data-face]＝full・narrow・off。名前を Version 21 より短く切らない）。
  * ボタンは押した瞬間（pointerdown）に反応し、その後の click は無視する（キーボードの Enter／Space の click だけ受ける）。
  * 画面を押して地図を動かす面（input）は一番下に敷き、つなぎがそこへ指・マウスの処理を付ける。
  */
@@ -50,7 +51,7 @@ import {
 import type { Side } from './types';
 import { deadlineName } from './objectives';
 import { boxOf, layoutLabels, layoutMapLabels, type Box, type LabelFit, type LabelLayoutItem, type MapLabelItem } from './labelLayout';
-import { attachFaceWhenReady, faceCanvas, faceIdOf, loadFace, peekFace } from './faceArt';
+import { attachFaceWhenReady, faceCanvas, faceIdOf, fitFaceBeforeName, loadFace, peekFace } from './faceArt';
 import type { ArtId } from '../art/ids';
 
 export type CommandKind = 'move' | 'attack' | 'hold' | 'retreat' | 'face';
@@ -187,6 +188,13 @@ interface CardEls {
     eng: HTMLElement;
     abl: HTMLElement;
     last: string;
+    /** 見出しの種類・名前（顔の大きさを決めるときに測る） */
+    kind: HTMLElement;
+    name: HTMLElement;
+    /** 見出しの武将の顔（Version 22。読めて置いた後だけ。旧表示・顔の無い武将は null） */
+    face: HTMLCanvasElement | null;
+    /** 顔の大きさを決めた時の札の幅・種類・状態の印・名前（変わったら測り直す） */
+    faceSig: string;
 }
 
 export class BattleUi {
@@ -387,9 +395,23 @@ export class BattleUi {
             if (u.side !== 'ally') continue;
             const c = this.makeCard(u.id, u.name, key++);
             cards.append(c.root);
-            // 武将の顔（素材の届いた武将だけ。読めたら見出しの先頭に小さく。札の高さは変えない）
+            // 武将の顔（素材の届いた武将だけ。読めたら見出しの先頭に小さく。札の高さは変えない）。
+            // 大きさは次の update で決める（名前が切れるなら細く・それでも切れるなら出さない。fitCardFaces）
             const head = c.root.querySelector('.b-card-h') as HTMLElement | null;
-            if (head) attachFaceWhenReady(u.generalId ?? u.leaderId, head, () => !this.disposed);
+            if (head)
+                void attachFaceWhenReady(u.generalId ?? u.leaderId, head, () => !this.disposed).then((f) => {
+                    if (!f) return;
+                    c.face = f;
+                    // 空の状態の印のすき間を名前に回す（battle.css の .has-face。見た目は変わらない）
+                    head.classList.add('has-face');
+                });
+        }
+        // 敵の武将（第一章 A の浅井長政）の顔も先に読んでおく（見えている敵を調べた時に、欄の顔が遅れて出て武将の行の並びが後から
+        // 変わらないように）。読むだけで画面には何も置かない（見えていない敵を選べないので、欄にも出ない）
+        for (const u of s.units) {
+            if (u.side === 'ally') continue;
+            const fid = faceIdOf(u.generalId ?? u.leaderId);
+            if (fid) void loadFace(fid);
         }
         // 札が 5 部隊以上なら小さな札にする（PC は 8 部隊まで並べる。スマホは横になぞってずらす）
         cards.dataset.count = String(key - 1);
@@ -459,7 +481,7 @@ export class BattleUi {
         line.append(ord, eng, abl);
         root.append(head, str, mor, line);
         root.dataset.key = String(key);
-        const c: CardEls = { root, badge, strBar, strText, morBar, morText, ord, eng, abl, last: '' };
+        const c: CardEls = { root, badge, strBar, strText, morBar, morText, ord, eng, abl, last: '', kind, name: nm, face: null, faceSig: '' };
         (kind as HTMLElement).dataset.kind = '';
         this.cards.set(id, c);
         return c;
@@ -553,6 +575,21 @@ export class BattleUi {
         setClass(l, 'more-r', l.scrollLeft + l.clientWidth < l.scrollWidth - 2);
     }
 
+    /**
+     * 札の見出しの武将の顔（Version 22）：部隊の名前が切れるなら細い顔、それでも切れるなら出さない（faceArt.ts の fitFaceBeforeName。
+     * 名前を Version 21 より短く切らない。札の大きさ・押せる所は変えない）。札の幅・種類・状態の印・名前の文字が変わった時だけ測り直す。
+     * 決めた大きさは札の data-face（full・narrow・off。e2e が読む。顔の無い札には付けない）
+     */
+    private fitCardFaces(): void {
+        for (const c of this.cards.values()) {
+            if (!c.face) continue;
+            const sig = `${c.root.clientWidth}|${c.kind.textContent}|${c.badge.textContent}|${c.name.textContent}`;
+            if (sig === c.faceSig) continue;
+            c.faceSig = sig;
+            c.root.dataset.face = fitFaceBeforeName(c.face, c.name);
+        }
+    }
+
     /** 選んだ部隊の札が列の外なら、見える所までずらす（選び直したときだけ） */
     private revealCard(id: string | null): void {
         if (id === this.shownCardId) return;
@@ -583,6 +620,7 @@ export class BattleUi {
         }
         this.revealCard(st.selectedId && this.cards.has(st.selectedId) ? st.selectedId : null);
         this.updateCardEdges();
+        this.fitCardFaces();
         this.updatePledge(s);
         this.updateGoals(s);
         // 敵を調べている
@@ -1008,18 +1046,21 @@ export class BattleUi {
             const r = l.e.getBoundingClientRect();
             if (r.width > 0 && r.height > 0) imp.push(r);
         }
+        const hits = (b: { l: number; t: number; r: number; b: number } | null) => !!b && imp.some((r) => r.left < b.r && r.right > b.l && r.top < b.b && r.bottom > b.t);
         // 今の知らせの四角（見えている知らせ・発動の知らせを合わせた外枠）
         let cur: { l: number; t: number; r: number; b: number } | null = null;
+        const addBox = (q: { l: number; t: number; r: number; b: number }) => {
+            cur = cur ? { l: Math.min(cur.l, q.l), t: Math.min(cur.t, q.t), r: Math.max(cur.r, q.r), b: Math.max(cur.b, q.b) } : q;
+        };
         const add = (e: Element) => {
             const r = e.getBoundingClientRect();
             if (!(r.width > 0 && r.height > 0)) return;
-            cur = cur ? { l: Math.min(cur.l, r.left), t: Math.min(cur.t, r.top), r: Math.max(cur.r, r.right), b: Math.max(cur.b, r.bottom) } : { l: r.left, t: r.top, r: r.right, b: r.bottom };
+            addBox({ l: r.left, t: r.top, r: r.right, b: r.bottom });
         };
         for (const c of Array.from(this.toasts.children)) add(c);
-        if (!this.abNote.hidden) add(this.abNote);
+        if (!this.abNote.hidden) this.addNoteBox(add, addBox, hits);
         const box = cur as { l: number; t: number; r: number; b: number } | null;
         if (this.noticeFold === 0) this.noticeFull = box;
-        const hits = (b: { l: number; t: number; r: number; b: number } | null) => !!b && imp.some((r) => r.left < b.r && r.right > b.l && r.top < b.b && r.bottom > b.t);
         let fold = this.noticeFold;
         if (hits(box) || (fold > 0 && hits(this.noticeFull))) {
             this.noticeHitT = now;
@@ -1032,6 +1073,32 @@ export class BattleUi {
             if (fold === 0) delete this.topmid.dataset.fold;
             else this.topmid.dataset.fold = String(fold);
         }
+    }
+
+    /**
+     * 発動の知らせの四角を tuckNotices の外枠に足す。顔（Version 22）のある知らせは、顔の無い知らせ（Version 21 と同じ大きさ：真ん中そろえなので、
+     * 顔とすき間の幅の半分ずつ左右を狭めた四角）で数える（顔のせいで畳まない）。顔を足した分だけが重要な名札にかかるときは、この知らせの顔を外す
+     * （Version 21 と同じ知らせにする。顔で名札を覆わない）。次の知らせはまた顔を置く
+     */
+    private addNoteBox(add: (e: Element) => void, addBox: (q: { l: number; t: number; r: number; b: number }) => void, hits: (b: { l: number; t: number; r: number; b: number } | null) => boolean): void {
+        const e = this.abNote;
+        const f = e.querySelector(':scope > .b-face') as HTMLElement | null;
+        const fr = f?.getBoundingClientRect();
+        const text = f ? (e.querySelector(':scope > b') as HTMLElement | null)?.getBoundingClientRect() : undefined;
+        if (!f || !fr || !(fr.width > 0) || !text) {
+            add(e);
+            return;
+        }
+        const r = e.getBoundingClientRect();
+        const shift = Math.max(0, text.left - fr.left) / 2;
+        const plain = { l: r.left + shift, t: r.top, r: r.right - shift, b: r.bottom };
+        if (this.noticeFold === 0 && hits({ l: r.left, t: r.top, r: r.right, b: r.bottom }) && !hits(plain)) {
+            f.remove();
+            e.classList.remove('with-face');
+            add(e);
+            return;
+        }
+        addBox(plain);
     }
 
     /** 名札の優先表示の見せ方を書く（data-fit：mini＝名前だけ小さく・hide＝一時的に隠す。full は付けない） */
@@ -1130,7 +1197,7 @@ export class BattleUi {
         const e = this.abNote;
         e.dataset.kind = kind;
         e.innerHTML = `<b>${escapeHtml(title)}</b>${sub ? `<span>${escapeHtml(sub)}</span>` : ''}`;
-        // 発動の知らせの顔（自軍の武将の発動だけ。つなぎが味方のときだけ generalId を渡す。家康・忠勝の顔が読めているときだけ。短く、全画面にしない）
+        // 発動の知らせの顔（自軍の武将の発動だけ。つなぎが味方のときだけ generalId を渡す。その武将の顔が読めているときだけ。短く、全画面にしない）
         const fid = kind === 'use' ? faceIdOf(generalId) : null;
         const face = fid ? this.faceEl('note', fid) : null;
         if (face) e.prepend(face);

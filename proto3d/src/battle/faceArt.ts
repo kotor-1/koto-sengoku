@@ -4,7 +4,10 @@
  * - 画像は art/registry.ts の loadArtBitmap（fetch → createImageBitmap）だけで読み、<canvas class="b-face" data-art-id> に描く
  *   （<img>・CSS の背景・data: の URL は使わない）。canvas は 1 度描けば、置き場所を移しても描き直さない（毎秒作り直す欄の中でもちらつかない）。
  * - 旧表示（?art=old）・一覧に無い・読めないときは何も作らない（Version 21 と同じ画面。代わりの絵は描かない）。
- * - ほかの武将（酒井・石川・榊原・長政・主人公など）には顔を出さない（この二人の顔で代用しない）。
+ * - 顔があるのは素材パック sengoku_art_pack_v1 の 6 人（家康・忠勝・酒井・石川・榊原・長政）だけ。顔の ID は武将の id から引く
+ *   （酒井忠次・本多忠勝・榊原康政を取り違えない）。ほかの武将・部隊（弓隊・騎馬隊・織田援軍など）・主人公・架空の人物には顔を出さない。
+ * - 部隊の札の見出しでは、顔のせいで部隊の名前が切れるなら、細い顔（両脇を切った縦長）にし、それでも切れるなら顔を出さない
+ *   （fitFaceBeforeName。名前を Version 21 より短く切らない。札の大きさ・押せる所は変えない）。
  * - 名前・数字は画像にしない（今までどおりの文字）。顔は飾りで、押せない・読み上げない（aria-hidden）。
  */
 import { FACE_OF, type ArtId } from '../art/ids';
@@ -63,15 +66,43 @@ export function faceCanvas(id: ArtId, bmp: ImageBitmap): HTMLCanvasElement {
 }
 
 /**
- * 武将の顔を、読めたら parent の先頭に置く（読めなければ何もしない）。isLive が false になっていたら置かない（画面を閉じた後）
+ * 武将の顔を、読めたら parent の先頭に置く（読めなければ何もしない）。isLive が false になっていたら置かない（画面を閉じた後）。
+ * 置いた canvas を返す（置かなかったら null）
  */
-export function attachFaceWhenReady(generalId: string | null | undefined, parent: HTMLElement, isLive: () => boolean, cls = ''): void {
+export function attachFaceWhenReady(generalId: string | null | undefined, parent: HTMLElement, isLive: () => boolean, cls = ''): Promise<HTMLCanvasElement | null> {
     const id = faceIdOf(generalId);
-    if (!id) return;
-    void loadFace(id).then((bmp) => {
-        if (!bmp || !isLive()) return;
+    if (!id) return Promise.resolve(null);
+    return loadFace(id).then((bmp) => {
+        if (!bmp || !isLive()) return null;
         const c = faceCanvas(id, bmp);
         if (cls) c.classList.add(cls);
         parent.prepend(c);
+        return c;
     });
+}
+
+/** 名前の文字が枠に収まっているか（文字の幅 ≦ 枠の幅。切れて「…」になっていない） */
+function nameFits(name: HTMLElement): boolean {
+    const r = document.createRange();
+    r.selectNodeContents(name);
+    const text = r.getBoundingClientRect().width;
+    return text <= name.getBoundingClientRect().width + 0.05;
+}
+
+export type FaceFit = 'full' | 'narrow' | 'off';
+
+/**
+ * 部隊の札の見出しの顔の大きさを決める（同じ行の名前 name が切れないように）。
+ * full：今の大きさ。narrow：両脇を切った細い顔（b-face-narrow。高さはそのまま）。off：顔を出さない（b-face-off。Version 21 と同じ並び）。
+ * 顔を出さなくても名前が切れる（状態の印「撤退済み」などで、Version 21 でも切れていた）ときは off（Version 21 より短く切らない）。
+ * 文字の幅を測るので、札の幅・種類・状態の印が変わった時だけ呼ぶ
+ */
+export function fitFaceBeforeName(face: HTMLElement, name: HTMLElement): FaceFit {
+    face.classList.remove('b-face-narrow', 'b-face-off');
+    if (nameFits(name)) return 'full';
+    face.classList.add('b-face-narrow');
+    if (nameFits(name)) return 'narrow';
+    face.classList.remove('b-face-narrow');
+    face.classList.add('b-face-off');
+    return 'off';
 }
