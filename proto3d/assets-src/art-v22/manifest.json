@@ -233,7 +233,7 @@
     {
       "id": "face.ieyasu",
       "kind": "face",
-      "status": "built",
+      "status": "approved",
       "required": true,
       "purpose": "顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成）",
       "subject": "徳川家康（portrait.ieyasu と同じ原画から切り出す）",
@@ -326,6 +326,10 @@
             13762
           ]
         ]
+      },
+      "review": {
+        "outputSha256": "ca0d186e84412692d0374a54f493d897c2f2d12b2c645f6d9a26a487b9dc0cce",
+        "note": "会話・軍議の台詞の枠（1280x720・844x390）と合戦の部隊の札・能力の欄（1280x720・844x390）の前後比較で確認（scratchpad v22/final2/compare-*）。持ち主の一致・重なり無し"
       }
     },
     {
@@ -524,7 +528,7 @@
     {
       "id": "face.tadakatsu",
       "kind": "face",
-      "status": "built",
+      "status": "approved",
       "required": true,
       "purpose": "顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成）",
       "subject": "本多忠勝（portrait.tadakatsu と同じ原画から切り出す）",
@@ -617,6 +621,10 @@
             12714
           ]
         ]
+      },
+      "review": {
+        "outputSha256": "b4e754ae51888928a062975406aec932cc8820f97516c7dae1a9443da6c1034c",
+        "note": "会話・軍議の台詞の枠（1280x720・844x390）と合戦の部隊の札・能力の欄（1280x720・844x390）の前後比較で確認（scratchpad v22/final2/compare-*）。持ち主の一致・重なり無し"
       }
     },
     {
@@ -805,7 +813,7 @@
     {
       "id": "face.sakai",
       "kind": "face",
-      "status": "built",
+      "status": "approved",
       "required": true,
       "purpose": "顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成）",
       "subject": "酒井忠次（portrait.sakai と同じ原画から切り出す）",
@@ -898,6 +906,10 @@
             11368
           ]
         ]
+      },
+      "review": {
+        "outputSha256": "9575e69559c1985b111597c61973b6f112b7f98e9c46942f968b0304cc7e96be",
+        "note": "会話・軍議の台詞の枠（1280x720・844x390）と合戦の部隊の札・能力の欄（1280x720・844x390）の前後比較で確認（scratchpad v22/final2/compare-*）。持ち主の一致・重なり無し"
       }
     },
     {
@@ -1086,7 +1098,7 @@
     {
       "id": "face.ishikawa",
       "kind": "face",
-      "status": "built",
+      "status": "approved",
       "required": true,
       "purpose": "顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成）",
       "subject": "石川数正（portrait.ishikawa と同じ原画から切り出す）",
@@ -1179,6 +1191,10 @@
             14370
           ]
         ]
+      },
+      "review": {
+        "outputSha256": "4f9a154cb0d1db076887cfbb9eef24672ac8c3eb69773766f1cedbe987228d6e",
+        "note": "会話・軍議の台詞の枠（1280x720・844x390）と合戦の部隊の札・能力の欄（1280x720・844x390）の前後比較で確認（scratchpad v22/final2/compare-*）。持ち主の一致・重なり無し"
       }
     },
     {
@@ -1366,7 +1382,7 @@
     {
       "id": "face.sakakibara",
       "kind": "face",
-      "status": "built",
+      "status": "approved",
       "required": true,
       "purpose": "顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成）",
       "subject": "榊原康政（portrait.sakakibara と同じ原画から切り出す）",
@@ -1458,6 +1474,10 @@
             12832
           ]
         ]
+      },
+      "review": {
+        "outputSha256": "acded0f8d4c907cce623a0efe882804fed749bd3aa718d88f67a2594407ec37e",
+        "note": "会話・軍議の台詞の枠（1280x720・844x390）と合戦の部隊の札・能力の欄（1280x720・844x390）の前後比較で確認（scratchpad v22/final2/compare-*）。持ち主の一致・重なり無し"
       }
     },
     {
@@ -1645,7 +1665,7 @@
     {
       "id": "face.nagamasa",
       "kind": "face",
-      "status": "built",
+      "status": "approved",
       "required": true,
       "purpose": "顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成）",
       "subject": "浅井長政（portrait.nagamasa と同じ原画から切り出す）",
@@ -1737,6 +1757,10 @@
             14760
           ]
         ]
+      },
+      "review": {
+        "outputSha256": "1e51b6b29b7cb3bfe113f644bd98cd39268f04a33563a94253edb514940f0eac",
+        "note": "会話・軍議の台詞の枠（1280x720・844x390）と合戦の部隊の札・能力の欄（1280x720・844x390）の前後比較で確認（scratchpad v22/final2/compare-*）。持ち主の一致・重なり無し"
       }
     },
     {

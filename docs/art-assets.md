@@ -20,17 +20,17 @@
 | ID | 状態 | 種類・用途 | 人物・場面 | 原画（受け取りの名前 → 保管） | 加工版（公開） | 寸法 | 容量（バイト） | 作り方・参照 | 利用条件 |
 |---|---|---|---|---|---|---|---|---|---|
 | `portrait.ieyasu` | 受け取り済み | 人物画：人物画（原画）。同じ原画から顔 face.ieyasu を切り出す。立ち絵としての採用は、ゲームの画面で解像度と品質を確かめてから決める | 徳川家康（この作品の主人公。ゲーム用の創作デザインで、実在の容貌・衣装の復元ではない） | `portrait_ieyasu.png` → `proto3d/assets-src/art-v22/portrait.ieyasu/original.png` | `art/portraits/ieyasu.webp`（未作成） | 原画 347×471 | 原画 343,783（上限 266,240） | 利用者が ChatGPT の画像生成で作った複数人のデザインシートから、その人の範囲を切り出し・背景を透過した素材パック sengoku_art_pack_v1 の人物画。原画には補間前の原解像度の版（portraits/portrait_ieyasu_native.png）を使う（2 倍に補間した版は細部が増えていないので使わない）。docs/art-v22-asset-request.md §5.1 を元にした依頼（1024×1536 で個別に生成という条件・髭なし・家紋なしには完全には沿っていない：パックの README）（2026-10-08（素材パックの作成日））。参考画像：利用者が承認した生成のコンセプト画像と、それに続く生成のデザインシート（パックの docs/利用条件と来歴.md） | 確認済み |
-| `face.ieyasu` | 加工済み（見た目の確認待ち） | 顔（人物画から切り出し）：顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成） | 徳川家康（portrait.ieyasu と同じ原画から切り出す） | portrait.ieyasu の原画から切り出し | `art/faces/ieyasu.webp` | 依頼 256×256 → 256×256 | 13,762（上限 30,720） | portrait.ieyasu の原画から切り出す（顔だけを別に生成しない。切り出しの範囲は素材パックの docs/portraits.json の face_rect_native_xywh）。参考画像：なし | 確認済み |
+| `face.ieyasu` | 確認済み | 顔（人物画から切り出し）：顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成） | 徳川家康（portrait.ieyasu と同じ原画から切り出す） | portrait.ieyasu の原画から切り出し | `art/faces/ieyasu.webp` | 依頼 256×256 → 256×256 | 13,762（上限 30,720） | portrait.ieyasu の原画から切り出す（顔だけを別に生成しない。切り出しの範囲は素材パックの docs/portraits.json の face_rect_native_xywh）。参考画像：なし | 確認済み |
 | `portrait.tadakatsu` | 受け取り済み | 人物画：人物画（原画）。同じ原画から顔 face.tadakatsu を切り出す。立ち絵としての採用は、ゲームの画面で解像度と品質を確かめてから決める | 本多忠勝（徳川家の家臣・前線の主将。ゲーム用の創作デザインで、実在の容貌・衣装の復元ではない） | `portrait_tadakatsu.png` → `proto3d/assets-src/art-v22/portrait.tadakatsu/original.png` | `art/portraits/tadakatsu.webp`（未作成） | 原画 348×471 | 原画 326,724（上限 266,240） | 利用者が ChatGPT の画像生成で作った複数人のデザインシートから、その人の範囲を切り出し・背景を透過した素材パック sengoku_art_pack_v1 の人物画。原画には補間前の原解像度の版（portraits/portrait_tadakatsu_native.png）を使う（2 倍に補間した版は細部が増えていないので使わない）。docs/art-v22-asset-request.md §5.1 を元にした依頼（1024×1536 で個別に生成という条件・髭なし・家紋なしには完全には沿っていない：パックの README）（2026-10-08（素材パックの作成日））。参考画像：利用者が承認した生成のコンセプト画像と、それに続く生成のデザインシート（パックの docs/利用条件と来歴.md） | 確認済み |
-| `face.tadakatsu` | 加工済み（見た目の確認待ち） | 顔（人物画から切り出し）：顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成） | 本多忠勝（portrait.tadakatsu と同じ原画から切り出す） | portrait.tadakatsu の原画から切り出し | `art/faces/tadakatsu.webp` | 依頼 256×256 → 256×256 | 12,714（上限 30,720） | portrait.tadakatsu の原画から切り出す（顔だけを別に生成しない。切り出しの範囲は素材パックの docs/portraits.json の face_rect_native_xywh）。参考画像：なし | 確認済み |
+| `face.tadakatsu` | 確認済み | 顔（人物画から切り出し）：顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成） | 本多忠勝（portrait.tadakatsu と同じ原画から切り出す） | portrait.tadakatsu の原画から切り出し | `art/faces/tadakatsu.webp` | 依頼 256×256 → 256×256 | 12,714（上限 30,720） | portrait.tadakatsu の原画から切り出す（顔だけを別に生成しない。切り出しの範囲は素材パックの docs/portraits.json の face_rect_native_xywh）。参考画像：なし | 確認済み |
 | `portrait.sakai` | 受け取り済み | 人物画：人物画（原画）。同じ原画から顔 face.sakai を切り出す。立ち絵としての採用は、ゲームの画面で解像度と品質を確かめてから決める | 酒井忠次（徳川家の重臣。軍議で話す。演習の部隊の武将。ゲーム用の創作デザイン） | `portrait_sakai.png` → `proto3d/assets-src/art-v22/portrait.sakai/original.png` | `art/portraits/sakai.webp`（未作成） | 原画 203×270 | 原画 106,801（上限 266,240） | 利用者が ChatGPT の画像生成で作った複数人のデザインシートから、その人の範囲を切り出し・背景を透過した素材パック sengoku_art_pack_v1 の人物画。原画には補間前の原解像度の版（portraits/portrait_sakai_native.png）を使う（2 倍に補間した版は細部が増えていないので使わない）。docs/art-v22-asset-request.md §5.1 を元にした依頼（1024×1536 で個別に生成という条件・髭なし・家紋なしには完全には沿っていない：パックの README）（2026-10-08（素材パックの作成日））。参考画像：利用者が承認した生成のコンセプト画像と、それに続く生成のデザインシート（パックの docs/利用条件と来歴.md） | 確認済み |
-| `face.sakai` | 加工済み（見た目の確認待ち） | 顔（人物画から切り出し）：顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成） | 酒井忠次（portrait.sakai と同じ原画から切り出す） | portrait.sakai の原画から切り出し | `art/faces/sakai.webp` | 依頼 256×256 → 256×256 | 11,368（上限 30,720） | portrait.sakai の原画から切り出す（顔だけを別に生成しない。切り出しの範囲は素材パックの docs/portraits.json の face_rect_native_xywh）。参考画像：なし | 確認済み |
+| `face.sakai` | 確認済み | 顔（人物画から切り出し）：顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成） | 酒井忠次（portrait.sakai と同じ原画から切り出す） | portrait.sakai の原画から切り出し | `art/faces/sakai.webp` | 依頼 256×256 → 256×256 | 11,368（上限 30,720） | portrait.sakai の原画から切り出す（顔だけを別に生成しない。切り出しの範囲は素材パックの docs/portraits.json の face_rect_native_xywh）。参考画像：なし | 確認済み |
 | `portrait.ishikawa` | 受け取り済み | 人物画：人物画（原画）。同じ原画から顔 face.ishikawa を切り出す。立ち絵としての採用は、ゲームの画面で解像度と品質を確かめてから決める | 石川数正（徳川家の重臣。軍議・第二章の補充で話す。演習の部隊の武将。ゲーム用の創作デザイン） | `portrait_ishikawa.png` → `proto3d/assets-src/art-v22/portrait.ishikawa/original.png` | `art/portraits/ishikawa.webp`（未作成） | 原画 250×319 | 原画 159,441（上限 266,240） | 利用者が ChatGPT の画像生成で作った複数人のデザインシートから、その人の範囲を切り出し・背景を透過した素材パック sengoku_art_pack_v1 の人物画。原画には補間前の原解像度の版（portraits/portrait_ishikawa_native.png）を使う（2 倍に補間した版は細部が増えていないので使わない）。docs/art-v22-asset-request.md §5.1 を元にした依頼（1024×1536 で個別に生成という条件・髭なし・家紋なしには完全には沿っていない：パックの README）（2026-10-08（素材パックの作成日））。参考画像：利用者が承認した生成のコンセプト画像と、それに続く生成のデザインシート（パックの docs/利用条件と来歴.md） | 確認済み |
-| `face.ishikawa` | 加工済み（見た目の確認待ち） | 顔（人物画から切り出し）：顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成） | 石川数正（portrait.ishikawa と同じ原画から切り出す） | portrait.ishikawa の原画から切り出し | `art/faces/ishikawa.webp` | 依頼 256×256 → 256×256 | 14,370（上限 30,720） | portrait.ishikawa の原画から切り出す（顔だけを別に生成しない。切り出しの範囲は素材パックの docs/portraits.json の face_rect_native_xywh）。参考画像：なし | 確認済み |
+| `face.ishikawa` | 確認済み | 顔（人物画から切り出し）：顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成） | 石川数正（portrait.ishikawa と同じ原画から切り出す） | portrait.ishikawa の原画から切り出し | `art/faces/ishikawa.webp` | 依頼 256×256 → 256×256 | 14,370（上限 30,720） | portrait.ishikawa の原画から切り出す（顔だけを別に生成しない。切り出しの範囲は素材パックの docs/portraits.json の face_rect_native_xywh）。参考画像：なし | 確認済み |
 | `portrait.sakakibara` | 受け取り済み | 人物画：人物画（原画）。同じ原画から顔 face.sakakibara を切り出す。立ち絵としての採用は、ゲームの画面で解像度と品質を確かめてから決める | 榊原康政（演習の部隊の武将。歴史分岐の章の会話には出ない。ゲーム用の創作デザイン） | `portrait_sakakibara.png` → `proto3d/assets-src/art-v22/portrait.sakakibara/original.png` | `art/portraits/sakakibara.webp`（未作成） | 原画 247×319 | 原画 156,773（上限 266,240） | 利用者が ChatGPT の画像生成で作った複数人のデザインシートから、その人の範囲を切り出し・背景を透過した素材パック sengoku_art_pack_v1 の人物画。原画には補間前の原解像度の版（portraits/portrait_sakakibara_native.png）を使う（2 倍に補間した版は細部が増えていないので使わない）。docs/art-v22-asset-request.md §5.1 を元にした依頼（1024×1536 で個別に生成という条件・髭なし・家紋なしには完全には沿っていない：パックの README）（2026-10-08（素材パックの作成日））。参考画像：利用者が承認した生成のコンセプト画像と、それに続く生成のデザインシート（パックの docs/利用条件と来歴.md） | 確認済み |
-| `face.sakakibara` | 加工済み（見た目の確認待ち） | 顔（人物画から切り出し）：顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成） | 榊原康政（portrait.sakakibara と同じ原画から切り出す） | portrait.sakakibara の原画から切り出し | `art/faces/sakakibara.webp` | 依頼 256×256 → 256×256 | 12,832（上限 30,720） | portrait.sakakibara の原画から切り出す（顔だけを別に生成しない。切り出しの範囲は素材パックの docs/portraits.json の face_rect_native_xywh）。参考画像：なし | 確認済み |
+| `face.sakakibara` | 確認済み | 顔（人物画から切り出し）：顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成） | 榊原康政（portrait.sakakibara と同じ原画から切り出す） | portrait.sakakibara の原画から切り出し | `art/faces/sakakibara.webp` | 依頼 256×256 → 256×256 | 12,832（上限 30,720） | portrait.sakakibara の原画から切り出す（顔だけを別に生成しない。切り出しの範囲は素材パックの docs/portraits.json の face_rect_native_xywh）。参考画像：なし | 確認済み |
 | `portrait.nagamasa` | 受け取り済み | 人物画：人物画（原画）。同じ原画から顔 face.nagamasa を切り出す。立ち絵としての採用は、ゲームの画面で解像度と品質を確かめてから決める | 浅井長政（合戦の部隊の武将：第一章 A は敵・B は味方、第二章 B、演習の援軍救出。会話には出ない。ゲーム用の創作デザイン） | `portrait_nagamasa.png` → `proto3d/assets-src/art-v22/portrait.nagamasa/original.png` | `art/portraits/nagamasa.webp`（未作成） | 原画 248×261 | 原画 136,004（上限 266,240） | 利用者が ChatGPT の画像生成で作った複数人のデザインシートから、その人の範囲を切り出し・背景を透過した素材パック sengoku_art_pack_v1 の人物画。原画には補間前の原解像度の版（portraits/portrait_nagamasa_native.png）を使う（2 倍に補間した版は細部が増えていないので使わない）。docs/art-v22-asset-request.md §5.1 を元にした依頼（1024×1536 で個別に生成という条件・髭なし・家紋なしには完全には沿っていない：パックの README）（2026-10-08（素材パックの作成日））。参考画像：利用者が承認した生成のコンセプト画像と、それに続く生成のデザインシート（パックの docs/利用条件と来歴.md） | 確認済み |
-| `face.nagamasa` | 加工済み（見た目の確認待ち） | 顔（人物画から切り出し）：顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成） | 浅井長政（portrait.nagamasa と同じ原画から切り出す） | portrait.nagamasa の原画から切り出し | `art/faces/nagamasa.webp` | 依頼 256×256 → 256×256 | 14,760（上限 30,720） | portrait.nagamasa の原画から切り出す（顔だけを別に生成しない。切り出しの範囲は素材パックの docs/portraits.json の face_rect_native_xywh）。参考画像：なし | 確認済み |
+| `face.nagamasa` | 確認済み | 顔（人物画から切り出し）：顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成） | 浅井長政（portrait.nagamasa と同じ原画から切り出す） | portrait.nagamasa の原画から切り出し | `art/faces/nagamasa.webp` | 依頼 256×256 → 256×256 | 14,760（上限 30,720） | portrait.nagamasa の原画から切り出す（顔だけを別に生成しない。切り出しの範囲は素材パックの docs/portraits.json の face_rect_native_xywh）。参考画像：なし | 確認済み |
 | `bg.council` | 依頼済み | 物語の背景：軍議の画面の背景（人のいない陣幕の内）。人物画と選択肢をこの上に重ねる | 城の中の庭に張った陣幕の内側（軍議の場。人物・旗・家紋・文字なし） | `bg_council.png`（未着） | `art/story/council.webp`（未作成） | 依頼 1536×1024 | （上限 460,800） | ChatGPT で利用者が生成。docs/art-v22-asset-request.md §5.2 #3。参考画像：報告待ち | 未確認 |
 | `bg.council.front` | 依頼済み | 背景の手前の重ね：（任意）軍議の手前の柱と幕の端。背景の手前にわずかにずらして重ね、奥行きを出す | 軍議の陣幕の手前の左右の柱と幕の布の端（中央は透明） | `bg_council_front.png`（未着）・任意 | `art/story/council_front.webp`（未作成） | 依頼 1536×1024 | （上限 225,280） | ChatGPT で利用者が生成。docs/art-v22-asset-request.md §5.2 #4。参考画像：報告待ち | 未確認 |
 | `tex.plains.grass` | 依頼済み | 地面の色の素材：大平原の合戦の地面（草地）の色の素材（繰り返して貼る） | 初夏の日本の平野の短い草地（真上から。約 8m 四方） | `tex_plains_grass.png`（未着） | `art/battle/plains_grass.webp`（未作成） | 依頼 1024×1024 | （上限 327,680） | ChatGPT で利用者が生成。docs/art-v22-asset-request.md §5.3 #5。参考画像：報告待ち | 未確認 |
@@ -88,7 +88,7 @@
   1. WebP（品質 85 から、260KB に収まるまで 5 ずつ下げる。下限 60。透明は劣化させない）
 - 利用条件：確認済み。素材パックの docs/利用条件と来歴.md（2026-10-08）。全体の terms を見る
 
-### `face.ieyasu`（顔（人物画から切り出し）・加工済み（見た目の確認待ち））
+### `face.ieyasu`（顔（人物画から切り出し）・確認済み）
 
 - 用途：顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成）
 - 人物・場面：徳川家康（portrait.ieyasu と同じ原画から切り出す）
@@ -130,7 +130,7 @@
   1. WebP（品質 85 から、260KB に収まるまで 5 ずつ下げる。下限 60。透明は劣化させない）
 - 利用条件：確認済み。素材パックの docs/利用条件と来歴.md（2026-10-08）。全体の terms を見る
 
-### `face.tadakatsu`（顔（人物画から切り出し）・加工済み（見た目の確認待ち））
+### `face.tadakatsu`（顔（人物画から切り出し）・確認済み）
 
 - 用途：顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成）
 - 人物・場面：本多忠勝（portrait.tadakatsu と同じ原画から切り出す）
@@ -171,7 +171,7 @@
   1. WebP（品質 85 から、260KB に収まるまで 5 ずつ下げる。下限 60。透明は劣化させない）
 - 利用条件：確認済み。素材パックの docs/利用条件と来歴.md（2026-10-08）。全体の terms を見る
 
-### `face.sakai`（顔（人物画から切り出し）・加工済み（見た目の確認待ち））
+### `face.sakai`（顔（人物画から切り出し）・確認済み）
 
 - 用途：顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成）
 - 人物・場面：酒井忠次（portrait.sakai と同じ原画から切り出す）
@@ -212,7 +212,7 @@
   1. WebP（品質 85 から、260KB に収まるまで 5 ずつ下げる。下限 60。透明は劣化させない）
 - 利用条件：確認済み。素材パックの docs/利用条件と来歴.md（2026-10-08）。全体の terms を見る
 
-### `face.ishikawa`（顔（人物画から切り出し）・加工済み（見た目の確認待ち））
+### `face.ishikawa`（顔（人物画から切り出し）・確認済み）
 
 - 用途：顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成）
 - 人物・場面：石川数正（portrait.ishikawa と同じ原画から切り出す）
@@ -253,7 +253,7 @@
   1. WebP（品質 85 から、260KB に収まるまで 5 ずつ下げる。下限 60。透明は劣化させない）
 - 利用条件：確認済み。素材パックの docs/利用条件と来歴.md（2026-10-08）。全体の terms を見る
 
-### `face.sakakibara`（顔（人物画から切り出し）・加工済み（見た目の確認待ち））
+### `face.sakakibara`（顔（人物画から切り出し）・確認済み）
 
 - 用途：顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成）
 - 人物・場面：榊原康政（portrait.sakakibara と同じ原画から切り出す）
@@ -294,7 +294,7 @@
   1. WebP（品質 85 から、260KB に収まるまで 5 ずつ下げる。下限 60。透明は劣化させない）
 - 利用条件：確認済み。素材パックの docs/利用条件と来歴.md（2026-10-08）。全体の terms を見る
 
-### `face.nagamasa`（顔（人物画から切り出し）・加工済み（見た目の確認待ち））
+### `face.nagamasa`（顔（人物画から切り出し）・確認済み）
 
 - 用途：顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成）
 - 人物・場面：浅井長政（portrait.nagamasa と同じ原画から切り出す）
