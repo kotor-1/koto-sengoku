@@ -1,0 +1,386 @@
+[
+  {
+    "id": "ieyasu",
+    "game_id": "ieyasu",
+    "display_name": "徳川家康",
+    "portrait": "portraits/portrait_ieyasu.png",
+    "portrait_native": "portraits/portrait_ieyasu_native.png",
+    "face": "faces/face_ieyasu.png",
+    "face_small": "faces/face_ieyasu_128.png",
+    "native_size": [
+      347,
+      471
+    ],
+    "delivered_size": [
+      778,
+      998
+    ],
+    "transparent_padding_native": [
+      21,
+      28
+    ],
+    "face_rect_display_xywh": [
+      138,
+      146,
+      564,
+      564
+    ],
+    "resampling": "2x Lanczos, NOT new detail",
+    "face_rect_native_xywh": [
+      48,
+      45,
+      282,
+      282
+    ],
+    "alpha_zero_fraction": 0.27608803392132747,
+    "source_sheet": "a_clean_illustrated_collage_asset_sheet_style_ima.png",
+    "source_rect": [
+      2,
+      2,
+      349,
+      473
+    ],
+    "status": "illustrated_face_asset_v1_not_historical_reconstruction",
+    "asset_key": "ieyasu",
+    "historical_accuracy": "Creative depiction, not an authenticated portrait. Age, clothing and decorative marks require period review.",
+    "source_limitations": "Cropped from a generated design sheet; some hair/shoulder edges are source-cropped. Alpha has been processed, not natively generated.",
+    "eye_y_display_px": 324,
+    "crop_anchors_note": "Manual visual anchors, check in actual game; do not assume the requested 20%-height eye anchor."
+  },
+  {
+    "id": "tadakatsu",
+    "game_id": "tadakatsu",
+    "display_name": "本多忠勝",
+    "portrait": "portraits/portrait_tadakatsu.png",
+    "portrait_native": "portraits/portrait_tadakatsu_native.png",
+    "face": "faces/face_tadakatsu.png",
+    "face_small": "faces/face_tadakatsu_128.png",
+    "native_size": [
+      348,
+      471
+    ],
+    "delivered_size": [
+      780,
+      998
+    ],
+    "transparent_padding_native": [
+      21,
+      28
+    ],
+    "face_rect_display_xywh": [
+      122,
+      130,
+      592,
+      592
+    ],
+    "resampling": "2x Lanczos, NOT new detail",
+    "face_rect_native_xywh": [
+      40,
+      37,
+      296,
+      296
+    ],
+    "alpha_zero_fraction": 0.2916758181418845,
+    "source_sheet": "a_clean_illustrated_collage_asset_sheet_style_ima.png",
+    "source_rect": [
+      355,
+      2,
+      703,
+      473
+    ],
+    "status": "illustrated_face_asset_v1_not_historical_reconstruction",
+    "asset_key": "tadakatsu",
+    "historical_accuracy": "Creative depiction, not an authenticated portrait. Age, clothing and decorative marks require period review.",
+    "source_limitations": "Cropped from a generated design sheet; some hair/shoulder edges are source-cropped. Alpha has been processed, not natively generated.",
+    "eye_y_display_px": 322,
+    "crop_anchors_note": "Manual visual anchors, check in actual game; do not assume the requested 20%-height eye anchor."
+  },
+  {
+    "id": "tadatsugu",
+    "game_id": "sakai",
+    "display_name": "酒井忠次",
+    "portrait": "portraits/portrait_sakai.png",
+    "portrait_native": "portraits/portrait_sakai_native.png",
+    "face": "faces/face_sakai.png",
+    "face_small": "faces/face_sakai_128.png",
+    "native_size": [
+      203,
+      270
+    ],
+    "delivered_size": [
+      454,
+      572
+    ],
+    "transparent_padding_native": [
+      12,
+      16
+    ],
+    "face_rect_display_xywh": [
+      54,
+      92,
+      374,
+      374
+    ],
+    "resampling": "2x Lanczos, NOT new detail",
+    "face_rect_native_xywh": [
+      15,
+      30,
+      187,
+      187
+    ],
+    "alpha_zero_fraction": 0.3984856777960226,
+    "source_sheet": "a_detailed_high_quality_game_concept_art_style_co.png",
+    "source_rect": [
+      668,
+      52,
+      871,
+      322
+    ],
+    "status": "illustrated_face_asset_v1_not_historical_reconstruction",
+    "asset_key": "sakai",
+    "historical_accuracy": "Creative depiction, not an authenticated portrait. Age, clothing and decorative marks require period review.",
+    "source_limitations": "Cropped from a generated design sheet; some hair/shoulder edges are source-cropped. Alpha has been processed, not natively generated.",
+    "eye_y_display_px": 258,
+    "crop_anchors_note": "Manual visual anchors, check in actual game; do not assume the requested 20%-height eye anchor."
+  },
+  {
+    "id": "kazumasa",
+    "game_id": "ishikawa",
+    "display_name": "石川数正",
+    "portrait": "portraits/portrait_ishikawa.png",
+    "portrait_native": "portraits/portrait_ishikawa_native.png",
+    "face": "faces/face_ishikawa.png",
+    "face_small": "faces/face_ishikawa_128.png",
+    "native_size": [
+      250,
+      319
+    ],
+    "delivered_size": [
+      560,
+      676
+    ],
+    "transparent_padding_native": [
+      15,
+      19
+    ],
+    "face_rect_display_xywh": [
+      104,
+      122,
+      408,
+      408
+    ],
+    "resampling": "2x Lanczos, NOT new detail",
+    "face_rect_native_xywh": [
+      37,
+      42,
+      204,
+      204
+    ],
+    "alpha_zero_fraction": 0.3882382445141066,
+    "source_sheet": "a_clean_game_art_style_compilation_image_on_a_whi.png",
+    "source_rect": [
+      519,
+      2,
+      769,
+      321
+    ],
+    "status": "illustrated_face_asset_v1_not_historical_reconstruction",
+    "asset_key": "ishikawa",
+    "historical_accuracy": "Creative depiction, not an authenticated portrait. Age, clothing and decorative marks require period review.",
+    "source_limitations": "Cropped from a generated design sheet; some hair/shoulder edges are source-cropped. Alpha has been processed, not natively generated.",
+    "eye_y_display_px": 302,
+    "crop_anchors_note": "Manual visual anchors, check in actual game; do not assume the requested 20%-height eye anchor."
+  },
+  {
+    "id": "yasumasa",
+    "game_id": "sakakibara",
+    "display_name": "榊原康政",
+    "portrait": "portraits/portrait_sakakibara.png",
+    "portrait_native": "portraits/portrait_sakakibara_native.png",
+    "face": "faces/face_sakakibara.png",
+    "face_small": "faces/face_sakakibara_128.png",
+    "native_size": [
+      247,
+      319
+    ],
+    "delivered_size": [
+      554,
+      676
+    ],
+    "transparent_padding_native": [
+      15,
+      19
+    ],
+    "face_rect_display_xywh": [
+      86,
+      112,
+      422,
+      422
+    ],
+    "resampling": "2x Lanczos, NOT new detail",
+    "face_rect_native_xywh": [
+      28,
+      37,
+      211,
+      211
+    ],
+    "alpha_zero_fraction": 0.3747414110390517,
+    "source_sheet": "a_clean_game_art_style_compilation_image_on_a_whi.png",
+    "source_rect": [
+      776,
+      2,
+      1023,
+      321
+    ],
+    "status": "illustrated_face_asset_v1_not_historical_reconstruction",
+    "asset_key": "sakakibara",
+    "historical_accuracy": "Creative depiction, not an authenticated portrait. Age, clothing and decorative marks require period review.",
+    "source_limitations": "Cropped from a generated design sheet; some hair/shoulder edges are source-cropped. Alpha has been processed, not natively generated.",
+    "eye_y_display_px": 304,
+    "crop_anchors_note": "Manual visual anchors, check in actual game; do not assume the requested 20%-height eye anchor."
+  },
+  {
+    "id": "nobunaga",
+    "game_id": "nobunaga",
+    "display_name": "織田信長",
+    "portrait": "portraits/portrait_nobunaga.png",
+    "portrait_native": "portraits/portrait_nobunaga_native.png",
+    "face": "faces/face_nobunaga.png",
+    "face_small": "faces/face_nobunaga_128.png",
+    "native_size": [
+      251,
+      319
+    ],
+    "delivered_size": [
+      562,
+      676
+    ],
+    "transparent_padding_native": [
+      15,
+      19
+    ],
+    "face_rect_display_xywh": [
+      74,
+      108,
+      440,
+      440
+    ],
+    "resampling": "2x Lanczos, NOT new detail",
+    "face_rect_native_xywh": [
+      22,
+      35,
+      220,
+      220
+    ],
+    "alpha_zero_fraction": 0.38962644718929923,
+    "source_sheet": "a_clean_game_art_style_compilation_image_on_a_whi.png",
+    "source_rect": [
+      1283,
+      2,
+      1534,
+      321
+    ],
+    "status": "illustrated_face_asset_v1_not_historical_reconstruction",
+    "asset_key": "nobunaga",
+    "historical_accuracy": "Creative depiction, not an authenticated portrait. Age, clothing and decorative marks require period review.",
+    "source_limitations": "Cropped from a generated design sheet; some hair/shoulder edges are source-cropped. Alpha has been processed, not natively generated.",
+    "eye_y_display_px": 294,
+    "crop_anchors_note": "Manual visual anchors, check in actual game; do not assume the requested 20%-height eye anchor."
+  },
+  {
+    "id": "nagamasa",
+    "game_id": "nagamasa",
+    "display_name": "浅井長政",
+    "portrait": "portraits/portrait_nagamasa.png",
+    "portrait_native": "portraits/portrait_nagamasa_native.png",
+    "face": "faces/face_nagamasa.png",
+    "face_small": "faces/face_nagamasa_128.png",
+    "native_size": [
+      248,
+      261
+    ],
+    "delivered_size": [
+      556,
+      554
+    ],
+    "transparent_padding_native": [
+      15,
+      16
+    ],
+    "face_rect_display_xywh": [
+      82,
+      72,
+      442,
+      442
+    ],
+    "resampling": "2x Lanczos, NOT new detail",
+    "face_rect_native_xywh": [
+      26,
+      20,
+      221,
+      221
+    ],
+    "alpha_zero_fraction": 0.26396613521196394,
+    "source_sheet": "a_clean_game_art_style_compilation_image_on_a_whi.png",
+    "source_rect": [
+      4,
+      357,
+      252,
+      618
+    ],
+    "status": "illustrated_face_asset_v1_not_historical_reconstruction",
+    "asset_key": "nagamasa",
+    "historical_accuracy": "Creative depiction, not an authenticated portrait. Age, clothing and decorative marks require period review.",
+    "source_limitations": "Cropped from a generated design sheet; some hair/shoulder edges are source-cropped. Alpha has been processed, not natively generated.",
+    "eye_y_display_px": 282,
+    "crop_anchors_note": "Manual visual anchors, check in actual game; do not assume the requested 20%-height eye anchor."
+  },
+  {
+    "id": "yoshikage",
+    "game_id": "yoshikage",
+    "display_name": "朝倉義景",
+    "portrait": "portraits/portrait_yoshikage.png",
+    "portrait_native": "portraits/portrait_yoshikage_native.png",
+    "face": "faces/face_yoshikage.png",
+    "face_small": "faces/face_yoshikage_128.png",
+    "native_size": [
+      249,
+      261
+    ],
+    "delivered_size": [
+      558,
+      554
+    ],
+    "transparent_padding_native": [
+      15,
+      16
+    ],
+    "face_rect_display_xywh": [
+      80,
+      72,
+      430,
+      430
+    ],
+    "resampling": "2x Lanczos, NOT new detail",
+    "face_rect_native_xywh": [
+      25,
+      20,
+      215,
+      215
+    ],
+    "alpha_zero_fraction": 0.4213482281616889,
+    "source_sheet": "a_clean_game_art_style_compilation_image_on_a_whi.png",
+    "source_rect": [
+      260,
+      357,
+      509,
+      618
+    ],
+    "status": "illustrated_face_asset_v1_not_historical_reconstruction",
+    "asset_key": "yoshikage",
+    "historical_accuracy": "Creative depiction, not an authenticated portrait. Age, clothing and decorative marks require period review.",
+    "source_limitations": "Cropped from a generated design sheet; some hair/shoulder edges are source-cropped. Alpha has been processed, not natively generated.",
+    "eye_y_display_px": 254,
+    "crop_anchors_note": "Manual visual anchors, check in actual game; do not assume the requested 20%-height eye anchor."
+  }
+]

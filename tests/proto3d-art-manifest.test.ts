@@ -212,12 +212,18 @@ describe('正本の記録（proto3d/assets-src/art-v22/manifest.json）', () => 
             }
         }
         const names = master.assets.map((a) => a.incoming).filter((n): n is string => !!n).sort();
-        expect(names).toEqual(
-            ['bg_council.png', 'bg_council_front.png', 'portrait_ieyasu.png', 'portrait_tadakatsu.png', 'tex_plains_dirt.png', 'tex_plains_forest.png', 'tex_plains_road.png', 'tex_plains_grass.png'].sort(),
-        );
-        // 依頼リスト（利用者に送った物）にも同じ名前がある
+        // 依頼リスト（利用者に送った物）の 8 枚と、素材パック sengoku_art_pack_v1 で届いた武将 4 人の人物画
+        const requested = ['bg_council.png', 'bg_council_front.png', 'portrait_ieyasu.png', 'portrait_tadakatsu.png', 'tex_plains_dirt.png', 'tex_plains_forest.png', 'tex_plains_road.png', 'tex_plains_grass.png'];
+        const fromPack = ['portrait_ishikawa.png', 'portrait_nagamasa.png', 'portrait_sakai.png', 'portrait_sakakibara.png'];
+        expect(names).toEqual([...requested, ...fromPack].sort());
         const req = readText(`${ROOT}docs/art-v22-asset-request.md`);
-        for (const n of names) expect(req, n).toContain(n);
+        for (const n of requested) expect(req, n).toContain(n);
+        // パックの記録（保管した docs/portraits.json）に、同じ人物の人物画がある
+        const pack = JSON.parse(readText(`${ROOT}proto3d/assets-src/art-v22/pack-v1/docs/portraits.json`)) as { game_id: string; portrait: string }[];
+        for (const n of fromPack) {
+            const g = n.replace(/^portrait_|\.png$/g, '');
+            expect(pack.find((p) => p.game_id === g)?.portrait, n).toBe(`portraits/${n}`);
+        }
     });
 
     it('加工版の記録が manifest.gen.json と一致する（作った物だけが載り、載る物は全部記録がある）', () => {
@@ -303,9 +309,14 @@ describe('ゲームのコードは正本の記録も dev-art も読み込まな�
         expect(reg).toMatch(/import\.meta\.env\??\.DEV[\s\S]{0,120}artFixture/);
     });
 
-    it('人物画・顔・地面の対応は ids.ts の ID だけを指す（ほかの武将にこの二人の顔を使わない）', () => {
+    it('人物画・顔・地面の対応は ids.ts の ID だけを指す（武将ごとに自分の顔。ほかの人の顔を代わりに使わない）', () => {
         for (const v of [...Object.values(PORTRAIT_OF), ...Object.values(FACE_OF)]) expect(ALL_IDS).toContain(v);
-        expect(Object.keys(FACE_OF).sort()).toEqual(['ieyasu', 'tadakatsu']);
+        // 素材パック sengoku_art_pack_v1 で絵が届いた 6 人だけ（信長・義景は画面に出ないので対応させない）
+        expect(Object.keys(FACE_OF).sort()).toEqual(['ieyasu', 'ishikawa', 'nagamasa', 'sakai', 'sakakibara', 'tadakatsu']);
+        // 武将 id と素材の ID の名前が一致する（酒井・本多・榊原を取り違えない）
+        for (const [g, v] of Object.entries(FACE_OF)) expect(v).toBe(`face.${g}`);
+        for (const [g, v] of Object.entries(PORTRAIT_OF)) expect(v).toBe(`portrait.${g}`);
+        expect(new Set(Object.values(FACE_OF)).size).toBe(Object.keys(FACE_OF).length);
         for (const f of Object.values(FIELD_ART)) for (const v of Object.values(f)) expect(kindOfId(v)).toBe('texture');
     });
 });

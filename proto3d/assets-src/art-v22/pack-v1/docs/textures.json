@@ -1,0 +1,110 @@
+[
+  {
+    "id": "tex.plains.grass",
+    "name": "草地",
+    "file": "textures/tex_plains_grass.png",
+    "size": [
+      512,
+      512
+    ],
+    "native_crop_size": [
+      354,
+      354
+    ],
+    "source_sheet": "a_clean_illustrated_collage_asset_sheet_style_ima.png",
+    "source_rect": [
+      18,
+      542,
+      372,
+      896
+    ],
+    "processing": "crop; low-frequency shading reduction; local opposite-edge blend; Lanczos resize; opposite edge pixel match",
+    "maps_supplied": [
+      "color_only"
+    ],
+    "roughness_normal_height": "NOT supplied; do not label this color image a normal or height map",
+    "opposite_edge_max_delta": 0,
+    "tiling_status": "edges numerically matched; real game tiling/scale untested"
+  },
+  {
+    "id": "tex.plains.dirt",
+    "name": "裸の土",
+    "file": "textures/tex_plains_dirt.png",
+    "size": [
+      512,
+      512
+    ],
+    "native_crop_size": [
+      354,
+      354
+    ],
+    "source_sheet": "a_clean_illustrated_collage_asset_sheet_style_ima.png",
+    "source_rect": [
+      393,
+      542,
+      747,
+      896
+    ],
+    "processing": "crop; low-frequency shading reduction; local opposite-edge blend; Lanczos resize; opposite edge pixel match",
+    "maps_supplied": [
+      "color_only"
+    ],
+    "roughness_normal_height": "NOT supplied; do not label this color image a normal or height map",
+    "opposite_edge_max_delta": 0,
+    "tiling_status": "edges numerically matched; real game tiling/scale untested"
+  },
+  {
+    "id": "tex.plains.road",
+    "name": "踏み固めた道の表面",
+    "file": "textures/tex_plains_road.png",
+    "size": [
+      512,
+      512
+    ],
+    "native_crop_size": [
+      346,
+      346
+    ],
+    "source_sheet": "a_wide_composite_image_asset_sheet_with_multiple.png",
+    "source_rect": [
+      398,
+      525,
+      744,
+      871
+    ],
+    "processing": "crop; low-frequency shading reduction; local opposite-edge blend; Lanczos resize; opposite edge pixel match",
+    "maps_supplied": [
+      "color_only"
+    ],
+    "roughness_normal_height": "NOT supplied; do not label this color image a normal or height map",
+    "opposite_edge_max_delta": 0,
+    "tiling_status": "edges numerically matched; real game tiling/scale untested"
+  },
+  {
+    "id": "tex.plains.forest",
+    "name": "林床",
+    "file": "textures/tex_plains_forest.png",
+    "size": [
+      512,
+      512
+    ],
+    "native_crop_size": [
+      280,
+      280
+    ],
+    "source_sheet": "a_crisp_high_resolution_composite_illustration_as.png",
+    "source_rect": [
+      1190,
+      653,
+      1470,
+      933
+    ],
+    "processing": "crop; low-frequency shading reduction; local opposite-edge blend; Lanczos resize; opposite edge pixel match",
+    "maps_supplied": [
+      "color_only"
+    ],
+    "roughness_normal_height": "NOT supplied; do not label this color image a normal or height map",
+    "opposite_edge_max_delta": 0,
+    "tiling_status": "edges numerically matched; real game tiling/scale untested"
+  }
+]

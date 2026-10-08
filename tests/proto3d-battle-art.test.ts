@@ -4,7 +4,7 @@
  *   混ぜる帯は決まりの縁を中心に 2 m 以内。
  * - 円の林の木：決まりの区域の内側だけ（縁から 3 m 内側）。素材の地面を使わない間は Version 21 と同じ（円の林には植えない）。
  * - 素材の地面・足元の影・砂ぼこりを使って毎刻み更新しても、合戦の状態は表示なし・素材なしと 1 刻みも同じ。押す判定（pick）・名札の位置も同じ。
- * - 旧表示（?art=old）・素材の一覧に無い戦場では使わない。顔は家康・忠勝だけ（ほかの武将に代わりの顔を出さない）。
+ * - 旧表示（?art=old）・素材の一覧に無い戦場では使わない。顔は絵の届いた武将の自分の顔だけ（ほかの人の顔で代用しない）。
  * - 読み込み（loadFieldArt）：4 枚とも読めたら使う（meta.tileMeters・低い画質の anisotropy 1）。1 枚でも読めない・旧表示・一覧に無いなら null
  *   （一覧に無ければ型紙も作らない）。型紙と雑音は戦場の形ごとに 1 度だけ作り（区切って作る・同じ中身）、覚えておく。
  * - 開始のボタンの待ち（BriefingGate）：素材の無いときは Version 21 と同じ（木だけ・12 秒で打ち切り）。素材は木の後 ART_WAIT_MS まで。
@@ -517,10 +517,11 @@ describe('使うかどうか（旧表示・素材の一覧）', () => {
         expect(fieldHasArt('plains')).toBe(false);
         expect(await loadFieldArt(plains().map, { anisotropy: 4, low: false })).toBeNull();
     });
-    it('顔は家康・忠勝だけ（ほかの武将・主人公には出さない）。旧表示では出さない', () => {
-        expect(faceIdOf('ieyasu')).toBe('face.ieyasu');
-        expect(faceIdOf('tadakatsu')).toBe('face.tadakatsu');
-        for (const id of ['sakai', 'ishikawa', 'sakakibara', 'nagamasa', 'hero', '', null, undefined]) expect(faceIdOf(id)).toBeNull();
+    it('顔は絵の届いた武将の自分の顔だけ（ほかの人の顔で代用しない・主人公や架空の人物には出さない）。旧表示では出さない', () => {
+        // 素材パック sengoku_art_pack_v1 で届いた 6 人。酒井・本多・榊原を取り違えない（武将 id と素材の ID が一致）
+        for (const id of ['ieyasu', 'tadakatsu', 'sakai', 'ishikawa', 'sakakibara', 'nagamasa']) expect(faceIdOf(id)).toBe(`face.${id}`);
+        // 主人公（国境の原の若殿）・架空の人物・画面に出ない人物（信長・義景）には出さない
+        for (const id of ['hero', 'genzo', 'shinpachi', 'washio_gen', 'nobunaga', 'yoshikage', '', null, undefined]) expect(faceIdOf(id)).toBeNull();
         g.location = { search: '?art=old', hash: '' };
         expect(faceIdOf('ieyasu')).toBeNull();
     });

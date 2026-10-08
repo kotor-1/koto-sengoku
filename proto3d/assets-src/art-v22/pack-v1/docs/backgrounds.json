@@ -1,0 +1,194 @@
+[
+  {
+    "id": "bg_council",
+    "display_name": "軍議・陣幕の内側",
+    "file": "backgrounds/bg_council.png",
+    "native_file": "backgrounds/bg_council_native.png",
+    "native_size": [
+      522,
+      464
+    ],
+    "size": [
+      1044,
+      928
+    ],
+    "source_sheet": "a_crisp_high_resolution_composite_illustration_as.png",
+    "source_rect": [
+      643,
+      3,
+      1165,
+      467
+    ],
+    "resampling": "2x Lanczos, NOT new detail",
+    "purpose": "story_background_not_playable_map",
+    "notes": "Fixed illustrated scene. Some scenes include people, banners or props; do not use as dynamic outcome evidence."
+  },
+  {
+    "id": "bg_town_day",
+    "display_name": "城下町の通り・昼",
+    "file": "backgrounds/bg_town_day.png",
+    "native_file": "backgrounds/bg_town_day_native.png",
+    "native_size": [
+      491,
+      229
+    ],
+    "size": [
+      982,
+      458
+    ],
+    "source_sheet": "a_clean_game_art_style_concept_sheet_asset_pack.png",
+    "source_rect": [
+      15,
+      498,
+      506,
+      727
+    ],
+    "resampling": "2x Lanczos, NOT new detail",
+    "purpose": "story_background_not_playable_map",
+    "notes": "Fixed illustrated scene. Some scenes include people, banners or props; do not use as dynamic outcome evidence."
+  },
+  {
+    "id": "bg_town_wide",
+    "display_name": "城下町の通り・広場",
+    "file": "backgrounds/bg_town_wide.png",
+    "native_file": "backgrounds/bg_town_wide_native.png",
+    "native_size": [
+      505,
+      240
+    ],
+    "size": [
+      1010,
+      480
+    ],
+    "source_sheet": "a_clean_high_resolution_illustrated_concept_art_s.png",
+    "source_rect": [
+      9,
+      508,
+      514,
+      748
+    ],
+    "resampling": "2x Lanczos, NOT new detail",
+    "purpose": "story_background_not_playable_map",
+    "notes": "Fixed illustrated scene. Some scenes include people, banners or props; do not use as dynamic outcome evidence."
+  },
+  {
+    "id": "bg_plains",
+    "display_name": "合戦前の大平原・情景用",
+    "file": "backgrounds/bg_plains.png",
+    "native_file": "backgrounds/bg_plains_native.png",
+    "native_size": [
+      437,
+      225
+    ],
+    "size": [
+      874,
+      450
+    ],
+    "source_sheet": "a_clean_game_art_style_compilation_image_on_a_whi.png",
+    "source_rect": [
+      777,
+      660,
+      1214,
+      885
+    ],
+    "resampling": "2x Lanczos, NOT new detail",
+    "purpose": "story_background_not_playable_map",
+    "notes": "Fixed illustrated scene. Some scenes include people, banners or props; do not use as dynamic outcome evidence."
+  },
+  {
+    "id": "bg_forest_path",
+    "display_name": "森の道・情景用",
+    "file": "backgrounds/bg_forest_path.png",
+    "native_file": "backgrounds/bg_forest_path_native.png",
+    "native_size": [
+      313,
+      225
+    ],
+    "size": [
+      626,
+      450
+    ],
+    "source_sheet": "a_clean_game_art_style_compilation_image_on_a_whi.png",
+    "source_rect": [
+      1220,
+      660,
+      1533,
+      885
+    ],
+    "resampling": "2x Lanczos, NOT new detail",
+    "purpose": "story_background_not_playable_map",
+    "notes": "Fixed illustrated scene. Some scenes include people, banners or props; do not use as dynamic outcome evidence."
+  },
+  {
+    "id": "bg_castle_overlook",
+    "display_name": "城からの眺望・夕景",
+    "file": "backgrounds/bg_castle_overlook.png",
+    "native_file": "backgrounds/bg_castle_overlook_native.png",
+    "native_size": [
+      429,
+      179
+    ],
+    "size": [
+      858,
+      358
+    ],
+    "source_sheet": "a_detailed_high_quality_game_concept_art_style_co.png",
+    "source_rect": [
+      923,
+      581,
+      1352,
+      760
+    ],
+    "resampling": "2x Lanczos, NOT new detail",
+    "purpose": "story_background_not_playable_map",
+    "notes": "Fixed illustrated scene. Some scenes include people, banners or props; do not use as dynamic outcome evidence."
+  },
+  {
+    "id": "bg_encampment",
+    "display_name": "陣からの眺め・情景用",
+    "file": "backgrounds/bg_encampment.png",
+    "native_file": "backgrounds/bg_encampment_native.png",
+    "native_size": [
+      492,
+      229
+    ],
+    "size": [
+      984,
+      458
+    ],
+    "source_sheet": "a_clean_game_art_style_concept_sheet_asset_pack.png",
+    "source_rect": [
+      1029,
+      498,
+      1521,
+      727
+    ],
+    "resampling": "2x Lanczos, NOT new detail",
+    "purpose": "story_background_not_playable_map",
+    "notes": "Fixed illustrated scene. Some scenes include people, banners or props; do not use as dynamic outcome evidence."
+  },
+  {
+    "id": "bg_council_open",
+    "display_name": "開放された軍議の陣幕",
+    "file": "backgrounds/bg_council_open.png",
+    "native_file": "backgrounds/bg_council_open_native.png",
+    "native_size": [
+      488,
+      470
+    ],
+    "size": [
+      976,
+      940
+    ],
+    "source_sheet": "a_clean_illustrated_collage_asset_sheet_style_ima.png",
+    "source_rect": [
+      714,
+      2,
+      1202,
+      472
+    ],
+    "resampling": "2x Lanczos, NOT new detail",
+    "purpose": "story_background_not_playable_map",
+    "notes": "Fixed illustrated scene. Some scenes include people, banners or props; do not use as dynamic outcome evidence."
+  }
+]

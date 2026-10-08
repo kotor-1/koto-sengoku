@@ -170,6 +170,15 @@ def texture_fixture(prefix: str, tint) -> Image.Image:
     return im
 
 
+PORTRAIT_TINT = {
+    'ieyasu': (122, 126, 134),
+    'tadakatsu': (112, 128, 116),
+    'sakai': (128, 120, 112),
+    'ishikawa': (116, 118, 132),
+    'sakakibara': (126, 124, 110),
+    'nagamasa': (118, 112, 126),
+}
+
 TEX = {
     'tex.plains.grass': ('G', (104, 122, 84)),
     'tex.plains.dirt': ('D', (138, 122, 98)),
@@ -186,11 +195,14 @@ def main() -> int:
         ctx = ab._setup_root(Path(tmp), real)
         m = ab.load_master(ctx)
         src = {
-            'portrait.ieyasu': portrait_fixture('portrait.ieyasu', 'IEYASU', (122, 126, 134)),
-            'portrait.tadakatsu': portrait_fixture('portrait.tadakatsu', 'TADAKATSU', (112, 128, 116)),
             'bg.council': background_fixture(),
             'bg.council.front': overlay_fixture(),
         }
+        # 人物画：正本の記録にある人物ごとに 1 枚（名前の文字と色だけ違う同じ模様。人の顔は描かない）
+        for a in m['assets']:
+            if a['kind'] == 'portrait':
+                name = a['id'].split('.', 1)[1]
+                src[a['id']] = portrait_fixture(a['id'], name.upper(), PORTRAIT_TINT.get(name, (120, 124, 128)))
         for aid, (p, tint) in TEX.items():
             src[aid] = texture_fixture(p, tint)
         for a in m['assets']:

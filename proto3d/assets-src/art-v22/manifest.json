@@ -30,47 +30,131 @@
     "approved": "ゲームの画面で見た目と操作を確かめた"
   },
   "terms": {
-    "confirmedByUser": null,
+    "confirmedByUser": true,
     "questions": "docs/art-v22-asset-request.md §8（加工・配布の可否、実在の人物を題材にすること、クレジットや AI 生成の表示、参考画像を渡したか、確認した規約の名前と日付）",
-    "notes": "この作業環境からは OpenAI の利用規約を読めない（通信制限）。利用者が確認した内容だけを書く。確認できるまで公開版に入れない。"
+    "notes": "利用者が渡した素材パック sengoku_art_pack_v1 の docs/利用条件と来歴.md（確認日 2026-10-08）による：OpenAI の利用規約（Terms of Use の Content / Ownership of content）では、適用法令で認められる範囲で、利用者と OpenAI の間の出力の権利は利用者に帰属すると説明されている。出力が唯一であることや第三者の権利を侵害しないことまでは保証されない。共有・公開のポリシーは AI 生成の明示を求めるので、ゲームに「一部の人物・背景画像は AI 生成画像を加工して使用」と表示する。CC0 ではない。OpenAI の公認・監修とは表示しない。実在の人物の容貌の復元とは称さず、ゲーム用の創作デザインとして扱う。Claude はこの作業環境から規約の本文を読んでいない（通信制限）。この記録は法的な保証ではない。",
+    "source": "素材パックの docs/利用条件と来歴.md（2026-10-08）。確認した公式ページ：https://openai.com/policies/terms-of-use/ ・ https://openai.com/policies/sharing-publication-policy/ ・ https://openai.com/policies/service-terms/",
+    "credit": "一部の人物・背景画像はAI生成画像を加工して使用"
   },
   "assets": [
     {
       "id": "portrait.ieyasu",
       "kind": "portrait",
-      "status": "requested",
+      "status": "received",
       "required": true,
-      "purpose": "会話・軍議の立ち絵（通常の表情の半身画）。同じ原画から合戦の顔 face.ieyasu を切り出す",
-      "subject": "徳川家康（20代後半の若い大名。この作品の主人公。ゲーム用の創作デザインで、実在の容貌の復元ではない）",
+      "purpose": "人物画（原画）。同じ原画から顔 face.ieyasu を切り出す。立ち絵としての採用は、ゲームの画面で解像度と品質を確かめてから決める",
+      "subject": "徳川家康（この作品の主人公。ゲーム用の創作デザインで、実在の容貌・衣装の復元ではない）",
       "usedIn": [
-        "城門の前の忠勝との会話の立ち絵",
-        "軍議の立ち絵",
-        "合戦の顔（face.ieyasu の元）"
+        "会話・軍議の台詞の枠の顔（face.ieyasu）の元",
+        "立ち絵（画面で品質を確かめてから採用を決める）"
       ],
       "incoming": "portrait_ieyasu.png",
       "expected": {
-        "w": 1024,
-        "h": 1536,
+        "w": 347,
+        "h": 471,
         "alpha": "required",
-        "notes": "画面の右を向く 3/4。下端で体がまっすぐ切れる。頭頂は上端から約 6%、目の高さは約 20%。左右反転しない（衿が左前になる）"
+        "notes": "素材パックの補間前の原解像度。胸から上の半身。左右反転しない"
       },
       "method": {
-        "how": "ChatGPT で利用者が生成",
+        "how": "利用者が ChatGPT の画像生成で作った複数人のデザインシートから、その人の範囲を切り出し・背景を透過した素材パック sengoku_art_pack_v1 の人物画。原画には補間前の原解像度の版（portraits/portrait_ieyasu_native.png）を使う（2 倍に補間した版は細部が増えていないので使わない）",
         "service": "ChatGPT",
-        "feature": null,
+        "feature": "画像生成（デザインシートの出力。人物 1 人ずつの個別生成ではない）",
         "model": null,
-        "generatedOn": null,
-        "sameChatAs": [
-          "portrait.tadakatsu"
-        ],
-        "promptRef": "docs/art-v22-asset-request.md §5.1 #1",
+        "generatedOn": "2026-10-08（素材パックの作成日）",
+        "sameChatAs": [],
+        "promptRef": "docs/art-v22-asset-request.md §5.1 を元にした依頼（1024×1536 で個別に生成という条件・髭なし・家紋なしには完全には沿っていない：パックの README）",
         "promptAsUsed": null,
-        "referenceImages": null,
-        "styleNotes": "承認済みの参考画像（e2e-out/ref/ref_*.png。文字が焼き込まれた完成予想図）は、画風の言葉としてプロンプトに反映しただけで、素材には使わない"
+        "referenceImages": [
+          "利用者が承認した生成のコンセプト画像と、それに続く生成のデザインシート（パックの docs/利用条件と来歴.md）"
+        ],
+        "styleNotes": "衣装・年齢・装飾はゲーム用の創作デザイン。衣装の紋様は史実の家紋として確かめていない（家紋として説明しない）",
+        "pack": {
+          "name": "sengoku_art_pack_v1",
+          "packId": "ieyasu",
+          "sourceSheet": "a_clean_illustrated_collage_asset_sheet_style_ima.png",
+          "sourceRect": [
+            2,
+            2,
+            349,
+            473
+          ],
+          "nativeSize": [
+            347,
+            471
+          ],
+          "faceRectNative": [
+            48,
+            45,
+            282,
+            282
+          ],
+          "eyeYDisplayPx": 324,
+          "transparentPaddingNative": [
+            21,
+            28
+          ],
+          "limitations": "Cropped from a generated design sheet; some hair/shoulder edges are source-cropped. Alpha has been processed, not natively generated."
+        }
       },
-      "original": null,
+      "original": {
+        "path": "proto3d/assets-src/art-v22/portrait.ieyasu/original.png",
+        "receivedAs": "portrait_ieyasu.png",
+        "w": 347,
+        "h": 471,
+        "bytes": 343783,
+        "sha256": "1edfb14632b66cb6d81132dd7dc3d8d3d0efbf240e42f59656cad66319317fe4",
+        "format": "PNG",
+        "mode": "RGBA",
+        "hasAlpha": true,
+        "alphaSource": "alpha",
+        "metadata": {
+          "format": "PNG",
+          "chunks": {
+            "IHDR": 1,
+            "IDAT": 6,
+            "IEND": 1
+          },
+          "text": [],
+          "c2pa": false,
+          "exif": false,
+          "icc": null,
+          "note": "メタデータの塊は無い"
+        },
+        "checks": {
+          "alpha": {
+            "hasAlphaChannel": true,
+            "transparentShare": 0.2761,
+            "zeroShare": 0.2761,
+            "opaqueShare": 0.7108,
+            "regionTransparentShare": 0.8476,
+            "checkerboardPatch": {
+              "found": false,
+              "candidatePx": 408,
+              "evidencePx": 0,
+              "square": null,
+              "box": null,
+              "minPx": 750
+            },
+            "decision": "alpha",
+            "warnings": [
+              {
+                "reason": "composition",
+                "message": "外側の確かめの範囲（alphaCheck.regions）の透明が 85%（目安 90%）。全体は 28% が透明なので受け取るが、人物（柱・幕）が端まで広がる構図。画面で切れ方と重なりを確かめる"
+              }
+            ]
+          },
+          "bottomRowOpaqueShare": 1.0
+        },
+        "notes": [],
+        "warnings": [
+          {
+            "reason": "composition",
+            "message": "外側の確かめの範囲（alphaCheck.regions）の透明が 85%（目安 90%）。全体は 28% が透明なので受け取るが、人物（柱・幕）が端まで広がる構図。画面で切れ方と重なりを確かめる"
+          }
+        ]
+      },
       "anchors": {
-        "eyeY": null,
+        "eyeY": 134.0,
         "faceX": null
       },
       "recipe": {
@@ -141,46 +225,227 @@
       "outputs": [],
       "derivedFrom": null,
       "terms": {
-        "confirmedByUser": null,
-        "notes": "利用者に確認を依頼中（docs/art-v22-asset-request.md §8）。実在の人物を題材にした創作の人物画として扱い、ゲームでは「ゲーム用の創作」と表示する"
+        "confirmedByUser": true,
+        "notes": "素材パックの docs/利用条件と来歴.md（2026-10-08）。全体の terms を見る"
+      },
+      "rejection": null
+    },
+    {
+      "id": "face.ieyasu",
+      "kind": "face",
+      "status": "built",
+      "required": true,
+      "purpose": "顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成）",
+      "subject": "徳川家康（portrait.ieyasu と同じ原画から切り出す）",
+      "usedIn": [
+        "会話・軍議の台詞の枠",
+        "合戦の部隊の札・能力の欄・能力の知らせ・演習の編成の表"
+      ],
+      "incoming": null,
+      "expected": {
+        "w": 256,
+        "h": 256,
+        "alpha": "from-portrait",
+        "notes": "顔を別に生成し直さない。faceRect は受け取った人物画を見てから決める"
+      },
+      "method": {
+        "how": "portrait.ieyasu の原画から切り出す（顔だけを別に生成しない。切り出しの範囲は素材パックの docs/portraits.json の face_rect_native_xywh）",
+        "service": null,
+        "feature": null,
+        "model": null,
+        "generatedOn": null,
+        "sameChatAs": [],
+        "promptRef": null,
+        "promptAsUsed": null,
+        "referenceImages": [],
+        "styleNotes": null
+      },
+      "original": null,
+      "faceRect": [
+        48,
+        45,
+        282,
+        282
+      ],
+      "recipe": {
+        "steps": [
+          "portrait.ieyasu の原画（色を抜いた場合はその透明）から faceRect（原画の画素の座標 [x, y, 幅, 高さ]）を切り出す",
+          "正方形にそろえる（短い辺を中心から広げる。原画の外は透明）",
+          "256×256 に縮小（faceRect が 256 より小さいときだけ拡大になり、記録する）",
+          "WebP（品質 85 から、30KB に収まるまで 5 ずつ下げる。下限 50。透明は劣化させない。切り出した範囲が全部不透明なら透明の層の無い WebP になり、そのことを記録する）"
+        ],
+        "source": "portrait.ieyasu",
+        "size": 256,
+        "webp": {
+          "quality": 85,
+          "minQuality": 50,
+          "step": 5,
+          "method": 6,
+          "alphaExact": true
+        },
+        "capBytes": 30720,
+        "publicFile": "art/faces/ieyasu.webp"
+      },
+      "outputs": [
+        {
+          "path": "proto3d/public/art/faces/ieyasu.webp",
+          "w": 256,
+          "h": 256,
+          "bytes": 13762,
+          "sha256": "ca0d186e84412692d0374a54f493d897c2f2d12b2c645f6d9a26a487b9dc0cce",
+          "decodedBytes": 262144,
+          "quality": 85,
+          "sourceSha256": "1edfb14632b66cb6d81132dd7dc3d8d3d0efbf240e42f59656cad66319317fe4"
+        }
+      ],
+      "derivedFrom": "portrait.ieyasu",
+      "terms": {
+        "confirmedByUser": true,
+        "notes": "portrait.ieyasu と同じ"
+      },
+      "processing": {
+        "faceRect": [
+          48,
+          45,
+          282,
+          282
+        ],
+        "squareRect": [
+          48,
+          45,
+          282,
+          282
+        ],
+        "scale": 0.9078,
+        "upscaled": false,
+        "outsideOriginal": false,
+        "opaque": false,
+        "qualityTried": [
+          [
+            85,
+            13762
+          ]
+        ]
       }
     },
     {
       "id": "portrait.tadakatsu",
       "kind": "portrait",
-      "status": "requested",
+      "status": "received",
       "required": true,
-      "purpose": "会話・軍議の立ち絵（通常の表情の半身画）。同じ原画から合戦の顔 face.tadakatsu を切り出す",
-      "subject": "本多忠勝（20代前半の、最前線で戦う槍隊の主将。参謀役にはしない。ゲーム用の創作デザインで、実在の容貌の復元ではない）",
+      "purpose": "人物画（原画）。同じ原画から顔 face.tadakatsu を切り出す。立ち絵としての採用は、ゲームの画面で解像度と品質を確かめてから決める",
+      "subject": "本多忠勝（徳川家の家臣・前線の主将。ゲーム用の創作デザインで、実在の容貌・衣装の復元ではない）",
       "usedIn": [
-        "城門の前の忠勝との会話の立ち絵",
-        "軍議の立ち絵",
-        "合戦の顔（face.tadakatsu の元）"
+        "会話・軍議の台詞の枠の顔（face.tadakatsu）の元",
+        "立ち絵（画面で品質を確かめてから採用を決める）"
       ],
       "incoming": "portrait_tadakatsu.png",
       "expected": {
-        "w": 1024,
-        "h": 1536,
+        "w": 348,
+        "h": 471,
         "alpha": "required",
-        "notes": "portrait.ieyasu と同じ画風・光・枠。画面の右を向く 3/4。鎧・兜なし、くすんだ深い松葉色の小袖"
+        "notes": "素材パックの補間前の原解像度。胸から上の半身。左右反転しない"
       },
       "method": {
-        "how": "ChatGPT で利用者が生成",
+        "how": "利用者が ChatGPT の画像生成で作った複数人のデザインシートから、その人の範囲を切り出し・背景を透過した素材パック sengoku_art_pack_v1 の人物画。原画には補間前の原解像度の版（portraits/portrait_tadakatsu_native.png）を使う（2 倍に補間した版は細部が増えていないので使わない）",
         "service": "ChatGPT",
-        "feature": null,
+        "feature": "画像生成（デザインシートの出力。人物 1 人ずつの個別生成ではない）",
         "model": null,
-        "generatedOn": null,
-        "sameChatAs": [
-          "portrait.ieyasu"
-        ],
-        "promptRef": "docs/art-v22-asset-request.md §5.1 #2",
+        "generatedOn": "2026-10-08（素材パックの作成日）",
+        "sameChatAs": [],
+        "promptRef": "docs/art-v22-asset-request.md §5.1 を元にした依頼（1024×1536 で個別に生成という条件・髭なし・家紋なしには完全には沿っていない：パックの README）",
         "promptAsUsed": null,
-        "referenceImages": null,
-        "styleNotes": "承認済みの参考画像（e2e-out/ref/ref_*.png）は、画風の言葉としてプロンプトに反映しただけで、素材には使わない"
+        "referenceImages": [
+          "利用者が承認した生成のコンセプト画像と、それに続く生成のデザインシート（パックの docs/利用条件と来歴.md）"
+        ],
+        "styleNotes": "衣装・年齢・装飾はゲーム用の創作デザイン。衣装の紋様は史実の家紋として確かめていない（家紋として説明しない）",
+        "pack": {
+          "name": "sengoku_art_pack_v1",
+          "packId": "tadakatsu",
+          "sourceSheet": "a_clean_illustrated_collage_asset_sheet_style_ima.png",
+          "sourceRect": [
+            355,
+            2,
+            703,
+            473
+          ],
+          "nativeSize": [
+            348,
+            471
+          ],
+          "faceRectNative": [
+            40,
+            37,
+            296,
+            296
+          ],
+          "eyeYDisplayPx": 322,
+          "transparentPaddingNative": [
+            21,
+            28
+          ],
+          "limitations": "Cropped from a generated design sheet; some hair/shoulder edges are source-cropped. Alpha has been processed, not natively generated."
+        }
       },
-      "original": null,
+      "original": {
+        "path": "proto3d/assets-src/art-v22/portrait.tadakatsu/original.png",
+        "receivedAs": "portrait_tadakatsu.png",
+        "w": 348,
+        "h": 471,
+        "bytes": 326724,
+        "sha256": "209692d2ba74200dc60dfbf7b6fd7f42b1e871bbce12f5812ba617dfce120941",
+        "format": "PNG",
+        "mode": "RGBA",
+        "hasAlpha": true,
+        "alphaSource": "alpha",
+        "metadata": {
+          "format": "PNG",
+          "chunks": {
+            "IHDR": 1,
+            "IDAT": 5,
+            "IEND": 1
+          },
+          "text": [],
+          "c2pa": false,
+          "exif": false,
+          "icc": null,
+          "note": "メタデータの塊は無い"
+        },
+        "checks": {
+          "alpha": {
+            "hasAlphaChannel": true,
+            "transparentShare": 0.2917,
+            "zeroShare": 0.2917,
+            "opaqueShare": 0.6956,
+            "regionTransparentShare": 0.8911,
+            "checkerboardPatch": {
+              "found": false,
+              "candidatePx": 67,
+              "evidencePx": 0,
+              "square": null,
+              "box": null,
+              "minPx": 750
+            },
+            "decision": "alpha",
+            "warnings": [
+              {
+                "reason": "composition",
+                "message": "外側の確かめの範囲（alphaCheck.regions）の透明が 89%（目安 90%）。全体は 29% が透明なので受け取るが、人物（柱・幕）が端まで広がる構図。画面で切れ方と重なりを確かめる"
+              }
+            ]
+          },
+          "bottomRowOpaqueShare": 1.0
+        },
+        "notes": [],
+        "warnings": [
+          {
+            "reason": "composition",
+            "message": "外側の確かめの範囲（alphaCheck.regions）の透明が 89%（目安 90%）。全体は 29% が透明なので受け取るが、人物（柱・幕）が端まで広がる構図。画面で切れ方と重なりを確かめる"
+          }
+        ]
+      },
       "anchors": {
-        "eyeY": null,
+        "eyeY": 133.0,
         "faceX": null
       },
       "recipe": {
@@ -251,82 +516,21 @@
       "outputs": [],
       "derivedFrom": null,
       "terms": {
-        "confirmedByUser": null,
-        "notes": "利用者に確認を依頼中（docs/art-v22-asset-request.md §8）。実在の人物を題材にした創作の人物画として扱い、ゲームでは「ゲーム用の創作」と表示する"
-      }
-    },
-    {
-      "id": "face.ieyasu",
-      "kind": "face",
-      "status": "requested",
-      "required": true,
-      "purpose": "合戦の顔（部隊情報・能力の表示・能力の知らせ・演習の編成）",
-      "subject": "徳川家康（portrait.ieyasu と同じ原画から切り出す）",
-      "usedIn": [
-        "合戦の能力の欄の武将の行",
-        "合戦の部隊の札の見出し",
-        "能力の知らせ",
-        "演習の編成の表"
-      ],
-      "incoming": null,
-      "expected": {
-        "w": 256,
-        "h": 256,
-        "alpha": "from-portrait",
-        "notes": "顔を別に生成し直さない。faceRect は受け取った人物画を見てから決める"
+        "confirmedByUser": true,
+        "notes": "素材パックの docs/利用条件と来歴.md（2026-10-08）。全体の terms を見る"
       },
-      "method": {
-        "how": "portrait.ieyasu の原画から切り出す（顔だけを別に生成しない）",
-        "service": null,
-        "feature": null,
-        "model": null,
-        "generatedOn": null,
-        "sameChatAs": [],
-        "promptRef": null,
-        "promptAsUsed": null,
-        "referenceImages": [],
-        "styleNotes": null
-      },
-      "original": null,
-      "faceRect": null,
-      "recipe": {
-        "steps": [
-          "portrait.ieyasu の原画（色を抜いた場合はその透明）から faceRect（原画の画素の座標 [x, y, 幅, 高さ]）を切り出す",
-          "正方形にそろえる（短い辺を中心から広げる。原画の外は透明）",
-          "256×256 に縮小（faceRect が 256 より小さいときだけ拡大になり、記録する）",
-          "WebP（品質 85 から、30KB に収まるまで 5 ずつ下げる。下限 50。透明は劣化させない。切り出した範囲が全部不透明なら透明の層の無い WebP になり、そのことを記録する）"
-        ],
-        "source": "portrait.ieyasu",
-        "size": 256,
-        "webp": {
-          "quality": 85,
-          "minQuality": 50,
-          "step": 5,
-          "method": 6,
-          "alphaExact": true
-        },
-        "capBytes": 30720,
-        "publicFile": "art/faces/ieyasu.webp"
-      },
-      "outputs": [],
-      "derivedFrom": "portrait.ieyasu",
-      "terms": {
-        "confirmedByUser": null,
-        "notes": "portrait.ieyasu と同じ"
-      }
+      "rejection": null
     },
     {
       "id": "face.tadakatsu",
       "kind": "face",
-      "status": "requested",
+      "status": "built",
       "required": true,
-      "purpose": "合戦の顔（部隊情報・能力の表示・能力の知らせ・演習の編成）",
+      "purpose": "顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成）",
       "subject": "本多忠勝（portrait.tadakatsu と同じ原画から切り出す）",
       "usedIn": [
-        "合戦の能力の欄の武将の行",
-        "合戦の部隊の札の見出し",
-        "能力の知らせ",
-        "演習の編成の表"
+        "会話・軍議の台詞の枠",
+        "合戦の部隊の札・能力の欄・能力の知らせ・演習の編成の表"
       ],
       "incoming": null,
       "expected": {
@@ -336,7 +540,7 @@
         "notes": "顔を別に生成し直さない。faceRect は受け取った人物画を見てから決める"
       },
       "method": {
-        "how": "portrait.tadakatsu の原画から切り出す（顔だけを別に生成しない）",
+        "how": "portrait.tadakatsu の原画から切り出す（顔だけを別に生成しない。切り出しの範囲は素材パックの docs/portraits.json の face_rect_native_xywh）",
         "service": null,
         "feature": null,
         "model": null,
@@ -348,7 +552,12 @@
         "styleNotes": null
       },
       "original": null,
-      "faceRect": null,
+      "faceRect": [
+        40,
+        37,
+        296,
+        296
+      ],
       "recipe": {
         "steps": [
           "portrait.tadakatsu の原画（色を抜いた場合はその透明）から faceRect（原画の画素の座標 [x, y, 幅, 高さ]）を切り出す",
@@ -368,11 +577,1166 @@
         "capBytes": 30720,
         "publicFile": "art/faces/tadakatsu.webp"
       },
-      "outputs": [],
+      "outputs": [
+        {
+          "path": "proto3d/public/art/faces/tadakatsu.webp",
+          "w": 256,
+          "h": 256,
+          "bytes": 12714,
+          "sha256": "b4e754ae51888928a062975406aec932cc8820f97516c7dae1a9443da6c1034c",
+          "decodedBytes": 262144,
+          "quality": 85,
+          "sourceSha256": "209692d2ba74200dc60dfbf7b6fd7f42b1e871bbce12f5812ba617dfce120941"
+        }
+      ],
       "derivedFrom": "portrait.tadakatsu",
       "terms": {
-        "confirmedByUser": null,
+        "confirmedByUser": true,
         "notes": "portrait.tadakatsu と同じ"
+      },
+      "processing": {
+        "faceRect": [
+          40,
+          37,
+          296,
+          296
+        ],
+        "squareRect": [
+          40,
+          37,
+          296,
+          296
+        ],
+        "scale": 0.8649,
+        "upscaled": false,
+        "outsideOriginal": false,
+        "opaque": false,
+        "qualityTried": [
+          [
+            85,
+            12714
+          ]
+        ]
+      }
+    },
+    {
+      "id": "portrait.sakai",
+      "kind": "portrait",
+      "status": "received",
+      "required": true,
+      "purpose": "人物画（原画）。同じ原画から顔 face.sakai を切り出す。立ち絵としての採用は、ゲームの画面で解像度と品質を確かめてから決める",
+      "subject": "酒井忠次（徳川家の重臣。軍議で話す。演習の部隊の武将。ゲーム用の創作デザイン）",
+      "usedIn": [
+        "軍議の台詞の枠の顔・合戦の顔（face.sakai）の元",
+        "立ち絵（画面で品質を確かめてから採用を決める）"
+      ],
+      "incoming": "portrait_sakai.png",
+      "expected": {
+        "w": 203,
+        "h": 270,
+        "alpha": "required",
+        "notes": "素材パックの補間前の原解像度。胸から上の半身。左右反転しない"
+      },
+      "method": {
+        "how": "利用者が ChatGPT の画像生成で作った複数人のデザインシートから、その人の範囲を切り出し・背景を透過した素材パック sengoku_art_pack_v1 の人物画。原画には補間前の原解像度の版（portraits/portrait_sakai_native.png）を使う（2 倍に補間した版は細部が増えていないので使わない）",
+        "service": "ChatGPT",
+        "feature": "画像生成（デザインシートの出力。人物 1 人ずつの個別生成ではない）",
+        "model": null,
+        "generatedOn": "2026-10-08（素材パックの作成日）",
+        "sameChatAs": [],
+        "promptRef": "docs/art-v22-asset-request.md §5.1 を元にした依頼（1024×1536 で個別に生成という条件・髭なし・家紋なしには完全には沿っていない：パックの README）",
+        "promptAsUsed": null,
+        "referenceImages": [
+          "利用者が承認した生成のコンセプト画像と、それに続く生成のデザインシート（パックの docs/利用条件と来歴.md）"
+        ],
+        "styleNotes": "衣装・年齢・装飾はゲーム用の創作デザイン。衣装の紋様は史実の家紋として確かめていない（家紋として説明しない）",
+        "pack": {
+          "name": "sengoku_art_pack_v1",
+          "packId": "tadatsugu",
+          "sourceSheet": "a_detailed_high_quality_game_concept_art_style_co.png",
+          "sourceRect": [
+            668,
+            52,
+            871,
+            322
+          ],
+          "nativeSize": [
+            203,
+            270
+          ],
+          "faceRectNative": [
+            15,
+            30,
+            187,
+            187
+          ],
+          "eyeYDisplayPx": 258,
+          "transparentPaddingNative": [
+            12,
+            16
+          ],
+          "limitations": "Cropped from a generated design sheet; some hair/shoulder edges are source-cropped. Alpha has been processed, not natively generated."
+        }
+      },
+      "original": {
+        "path": "proto3d/assets-src/art-v22/portrait.sakai/original.png",
+        "receivedAs": "portrait_sakai.png",
+        "w": 203,
+        "h": 270,
+        "bytes": 106801,
+        "sha256": "df5ce7f04ea20449d380664bcd0352550a1caeee475a2268d64caadb40412d48",
+        "format": "PNG",
+        "mode": "RGBA",
+        "hasAlpha": true,
+        "alphaSource": "alpha",
+        "metadata": {
+          "format": "PNG",
+          "chunks": {
+            "IHDR": 1,
+            "IDAT": 2,
+            "IEND": 1
+          },
+          "text": [],
+          "c2pa": false,
+          "exif": false,
+          "icc": null,
+          "note": "メタデータの塊は無い"
+        },
+        "checks": {
+          "alpha": {
+            "hasAlphaChannel": true,
+            "transparentShare": 0.3985,
+            "zeroShare": 0.3985,
+            "opaqueShare": 0.5798,
+            "regionTransparentShare": 0.9287,
+            "checkerboardPatch": {
+              "found": false,
+              "candidatePx": 120,
+              "evidencePx": 0,
+              "square": null,
+              "box": null,
+              "minPx": 750
+            },
+            "decision": "alpha",
+            "warnings": []
+          },
+          "bottomRowOpaqueShare": 0.99
+        },
+        "notes": [],
+        "warnings": []
+      },
+      "anchors": {
+        "eyeY": 113.0,
+        "faceX": null
+      },
+      "recipe": {
+        "steps": [
+          "透過の確かめ：本物の透明（RGBA で、全体の 15% 以上がほぼ完全に透明）だけを受け取る。市松模様が描き込まれた物は受け取らない（透明の画像の中の、不透明の灰色と白の市松模様も断る）",
+          "透明でなく、背景が単色のマゼンタ（#FF00FF）なら、色を抜いて透明にする（縁はなめらかに、縁のマゼンタの色かぶりを取る）。抜いたことを記録する",
+          "上端と左右の上 6 割がほぼ透明でない（人物が端まで広がる）構図は、断らずに構図の注意として記録する。下端がまっすぐな体の切れ目でない（下端の行の不透明が 2 割未満）ときは下端の注意を記録する",
+          "透明な余白を切る（下端の体の切れ目は切らない。余白 8px を残す）",
+          "拡大しない。1024×1536 に収まるように縮小だけ",
+          "WebP（品質 85 から、260KB に収まるまで 5 ずつ下げる。下限 60。透明は劣化させない）"
+        ],
+        "alphaCheck": {
+          "regions": [
+            [
+              0,
+              0,
+              1,
+              0.04
+            ],
+            [
+              0,
+              0,
+              0.1,
+              0.6
+            ],
+            [
+              0.9,
+              0,
+              1,
+              0.6
+            ]
+          ],
+          "regionMinShare": 0.9,
+          "minTransparentShare": 0.15,
+          "transparentMax": 8
+        },
+        "key": {
+          "color": [
+            255,
+            0,
+            255
+          ],
+          "tolerance": 48,
+          "minShare": 0.85,
+          "fgMax": 0.3,
+          "bgMin": 0.8,
+          "despillBandPx": 3
+        },
+        "trim": {
+          "alphaThreshold": 8,
+          "padPx": 8,
+          "keepBottom": true,
+          "bottomCutMinShare": 0.2
+        },
+        "maxW": 1024,
+        "maxH": 1536,
+        "upscale": false,
+        "webp": {
+          "quality": 85,
+          "minQuality": 60,
+          "step": 5,
+          "method": 6,
+          "alphaExact": true
+        },
+        "capBytes": 266240,
+        "publicFile": "art/portraits/sakai.webp"
+      },
+      "outputs": [],
+      "derivedFrom": null,
+      "terms": {
+        "confirmedByUser": true,
+        "notes": "素材パックの docs/利用条件と来歴.md（2026-10-08）。全体の terms を見る"
+      },
+      "rejection": null
+    },
+    {
+      "id": "face.sakai",
+      "kind": "face",
+      "status": "built",
+      "required": true,
+      "purpose": "顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成）",
+      "subject": "酒井忠次（portrait.sakai と同じ原画から切り出す）",
+      "usedIn": [
+        "軍議の台詞の枠",
+        "合戦の部隊の札・能力の欄・能力の知らせ・演習の編成の表"
+      ],
+      "incoming": null,
+      "expected": {
+        "w": 256,
+        "h": 256,
+        "alpha": "from-portrait",
+        "notes": "顔を別に生成し直さない。faceRect は受け取った人物画を見てから決める"
+      },
+      "method": {
+        "how": "portrait.sakai の原画から切り出す（顔だけを別に生成しない。切り出しの範囲は素材パックの docs/portraits.json の face_rect_native_xywh）",
+        "service": null,
+        "feature": null,
+        "model": null,
+        "generatedOn": null,
+        "sameChatAs": [],
+        "promptRef": null,
+        "promptAsUsed": null,
+        "referenceImages": [],
+        "styleNotes": null
+      },
+      "original": null,
+      "faceRect": [
+        15,
+        30,
+        187,
+        187
+      ],
+      "recipe": {
+        "steps": [
+          "portrait.sakai の原画（色を抜いた場合はその透明）から faceRect（原画の画素の座標 [x, y, 幅, 高さ]）を切り出す",
+          "正方形にそろえる（短い辺を中心から広げる。原画の外は透明）",
+          "256×256 に縮小（faceRect が 256 より小さいときだけ拡大になり、記録する）",
+          "WebP（品質 85 から、30KB に収まるまで 5 ずつ下げる。下限 50。透明は劣化させない。切り出した範囲が全部不透明なら透明の層の無い WebP になり、そのことを記録する）"
+        ],
+        "source": "portrait.sakai",
+        "size": 256,
+        "webp": {
+          "quality": 85,
+          "minQuality": 50,
+          "step": 5,
+          "method": 6,
+          "alphaExact": true
+        },
+        "capBytes": 30720,
+        "publicFile": "art/faces/sakai.webp"
+      },
+      "outputs": [
+        {
+          "path": "proto3d/public/art/faces/sakai.webp",
+          "w": 256,
+          "h": 256,
+          "bytes": 11368,
+          "sha256": "9575e69559c1985b111597c61973b6f112b7f98e9c46942f968b0304cc7e96be",
+          "decodedBytes": 262144,
+          "quality": 85,
+          "sourceSha256": "df5ce7f04ea20449d380664bcd0352550a1caeee475a2268d64caadb40412d48"
+        }
+      ],
+      "derivedFrom": "portrait.sakai",
+      "terms": {
+        "confirmedByUser": true,
+        "notes": "portrait.sakai と同じ"
+      },
+      "processing": {
+        "faceRect": [
+          15,
+          30,
+          187,
+          187
+        ],
+        "squareRect": [
+          15,
+          30,
+          187,
+          187
+        ],
+        "scale": 1.369,
+        "upscaled": true,
+        "outsideOriginal": false,
+        "opaque": false,
+        "qualityTried": [
+          [
+            85,
+            11368
+          ]
+        ]
+      }
+    },
+    {
+      "id": "portrait.ishikawa",
+      "kind": "portrait",
+      "status": "received",
+      "required": true,
+      "purpose": "人物画（原画）。同じ原画から顔 face.ishikawa を切り出す。立ち絵としての採用は、ゲームの画面で解像度と品質を確かめてから決める",
+      "subject": "石川数正（徳川家の重臣。軍議・第二章の補充で話す。演習の部隊の武将。ゲーム用の創作デザイン）",
+      "usedIn": [
+        "軍議・補充の台詞の枠の顔・合戦の顔（face.ishikawa）の元",
+        "立ち絵（画面で品質を確かめてから採用を決める）"
+      ],
+      "incoming": "portrait_ishikawa.png",
+      "expected": {
+        "w": 250,
+        "h": 319,
+        "alpha": "required",
+        "notes": "素材パックの補間前の原解像度。胸から上の半身。左右反転しない"
+      },
+      "method": {
+        "how": "利用者が ChatGPT の画像生成で作った複数人のデザインシートから、その人の範囲を切り出し・背景を透過した素材パック sengoku_art_pack_v1 の人物画。原画には補間前の原解像度の版（portraits/portrait_ishikawa_native.png）を使う（2 倍に補間した版は細部が増えていないので使わない）",
+        "service": "ChatGPT",
+        "feature": "画像生成（デザインシートの出力。人物 1 人ずつの個別生成ではない）",
+        "model": null,
+        "generatedOn": "2026-10-08（素材パックの作成日）",
+        "sameChatAs": [],
+        "promptRef": "docs/art-v22-asset-request.md §5.1 を元にした依頼（1024×1536 で個別に生成という条件・髭なし・家紋なしには完全には沿っていない：パックの README）",
+        "promptAsUsed": null,
+        "referenceImages": [
+          "利用者が承認した生成のコンセプト画像と、それに続く生成のデザインシート（パックの docs/利用条件と来歴.md）"
+        ],
+        "styleNotes": "衣装・年齢・装飾はゲーム用の創作デザイン。衣装の紋様は史実の家紋として確かめていない（家紋として説明しない）",
+        "pack": {
+          "name": "sengoku_art_pack_v1",
+          "packId": "kazumasa",
+          "sourceSheet": "a_clean_game_art_style_compilation_image_on_a_whi.png",
+          "sourceRect": [
+            519,
+            2,
+            769,
+            321
+          ],
+          "nativeSize": [
+            250,
+            319
+          ],
+          "faceRectNative": [
+            37,
+            42,
+            204,
+            204
+          ],
+          "eyeYDisplayPx": 302,
+          "transparentPaddingNative": [
+            15,
+            19
+          ],
+          "limitations": "Cropped from a generated design sheet; some hair/shoulder edges are source-cropped. Alpha has been processed, not natively generated."
+        }
+      },
+      "original": {
+        "path": "proto3d/assets-src/art-v22/portrait.ishikawa/original.png",
+        "receivedAs": "portrait_ishikawa.png",
+        "w": 250,
+        "h": 319,
+        "bytes": 159441,
+        "sha256": "f1716d695d3769e06c9d7864d335588173e51c69f76a33768e24563cdc6c9718",
+        "format": "PNG",
+        "mode": "RGBA",
+        "hasAlpha": true,
+        "alphaSource": "alpha",
+        "metadata": {
+          "format": "PNG",
+          "chunks": {
+            "IHDR": 1,
+            "IDAT": 3,
+            "IEND": 1
+          },
+          "text": [],
+          "c2pa": false,
+          "exif": false,
+          "icc": null,
+          "note": "メタデータの塊は無い"
+        },
+        "checks": {
+          "alpha": {
+            "hasAlphaChannel": true,
+            "transparentShare": 0.3882,
+            "zeroShare": 0.3882,
+            "opaqueShare": 0.594,
+            "regionTransparentShare": 0.9324,
+            "checkerboardPatch": {
+              "found": false,
+              "candidatePx": 83,
+              "evidencePx": 0,
+              "square": null,
+              "box": null,
+              "minPx": 750
+            },
+            "decision": "alpha",
+            "warnings": []
+          },
+          "bottomRowOpaqueShare": 1.0
+        },
+        "notes": [],
+        "warnings": []
+      },
+      "anchors": {
+        "eyeY": 132.0,
+        "faceX": null
+      },
+      "recipe": {
+        "steps": [
+          "透過の確かめ：本物の透明（RGBA で、全体の 15% 以上がほぼ完全に透明）だけを受け取る。市松模様が描き込まれた物は受け取らない（透明の画像の中の、不透明の灰色と白の市松模様も断る）",
+          "透明でなく、背景が単色のマゼンタ（#FF00FF）なら、色を抜いて透明にする（縁はなめらかに、縁のマゼンタの色かぶりを取る）。抜いたことを記録する",
+          "上端と左右の上 6 割がほぼ透明でない（人物が端まで広がる）構図は、断らずに構図の注意として記録する。下端がまっすぐな体の切れ目でない（下端の行の不透明が 2 割未満）ときは下端の注意を記録する",
+          "透明な余白を切る（下端の体の切れ目は切らない。余白 8px を残す）",
+          "拡大しない。1024×1536 に収まるように縮小だけ",
+          "WebP（品質 85 から、260KB に収まるまで 5 ずつ下げる。下限 60。透明は劣化させない）"
+        ],
+        "alphaCheck": {
+          "regions": [
+            [
+              0,
+              0,
+              1,
+              0.04
+            ],
+            [
+              0,
+              0,
+              0.1,
+              0.6
+            ],
+            [
+              0.9,
+              0,
+              1,
+              0.6
+            ]
+          ],
+          "regionMinShare": 0.9,
+          "minTransparentShare": 0.15,
+          "transparentMax": 8
+        },
+        "key": {
+          "color": [
+            255,
+            0,
+            255
+          ],
+          "tolerance": 48,
+          "minShare": 0.85,
+          "fgMax": 0.3,
+          "bgMin": 0.8,
+          "despillBandPx": 3
+        },
+        "trim": {
+          "alphaThreshold": 8,
+          "padPx": 8,
+          "keepBottom": true,
+          "bottomCutMinShare": 0.2
+        },
+        "maxW": 1024,
+        "maxH": 1536,
+        "upscale": false,
+        "webp": {
+          "quality": 85,
+          "minQuality": 60,
+          "step": 5,
+          "method": 6,
+          "alphaExact": true
+        },
+        "capBytes": 266240,
+        "publicFile": "art/portraits/ishikawa.webp"
+      },
+      "outputs": [],
+      "derivedFrom": null,
+      "terms": {
+        "confirmedByUser": true,
+        "notes": "素材パックの docs/利用条件と来歴.md（2026-10-08）。全体の terms を見る"
+      },
+      "rejection": null
+    },
+    {
+      "id": "face.ishikawa",
+      "kind": "face",
+      "status": "built",
+      "required": true,
+      "purpose": "顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成）",
+      "subject": "石川数正（portrait.ishikawa と同じ原画から切り出す）",
+      "usedIn": [
+        "軍議・補充の台詞の枠",
+        "合戦の部隊の札・能力の欄・能力の知らせ・演習の編成の表"
+      ],
+      "incoming": null,
+      "expected": {
+        "w": 256,
+        "h": 256,
+        "alpha": "from-portrait",
+        "notes": "顔を別に生成し直さない。faceRect は受け取った人物画を見てから決める"
+      },
+      "method": {
+        "how": "portrait.ishikawa の原画から切り出す（顔だけを別に生成しない。切り出しの範囲は素材パックの docs/portraits.json の face_rect_native_xywh）",
+        "service": null,
+        "feature": null,
+        "model": null,
+        "generatedOn": null,
+        "sameChatAs": [],
+        "promptRef": null,
+        "promptAsUsed": null,
+        "referenceImages": [],
+        "styleNotes": null
+      },
+      "original": null,
+      "faceRect": [
+        37,
+        42,
+        204,
+        204
+      ],
+      "recipe": {
+        "steps": [
+          "portrait.ishikawa の原画（色を抜いた場合はその透明）から faceRect（原画の画素の座標 [x, y, 幅, 高さ]）を切り出す",
+          "正方形にそろえる（短い辺を中心から広げる。原画の外は透明）",
+          "256×256 に縮小（faceRect が 256 より小さいときだけ拡大になり、記録する）",
+          "WebP（品質 85 から、30KB に収まるまで 5 ずつ下げる。下限 50。透明は劣化させない。切り出した範囲が全部不透明なら透明の層の無い WebP になり、そのことを記録する）"
+        ],
+        "source": "portrait.ishikawa",
+        "size": 256,
+        "webp": {
+          "quality": 85,
+          "minQuality": 50,
+          "step": 5,
+          "method": 6,
+          "alphaExact": true
+        },
+        "capBytes": 30720,
+        "publicFile": "art/faces/ishikawa.webp"
+      },
+      "outputs": [
+        {
+          "path": "proto3d/public/art/faces/ishikawa.webp",
+          "w": 256,
+          "h": 256,
+          "bytes": 14370,
+          "sha256": "4f9a154cb0d1db076887cfbb9eef24672ac8c3eb69773766f1cedbe987228d6e",
+          "decodedBytes": 262144,
+          "quality": 85,
+          "sourceSha256": "f1716d695d3769e06c9d7864d335588173e51c69f76a33768e24563cdc6c9718"
+        }
+      ],
+      "derivedFrom": "portrait.ishikawa",
+      "terms": {
+        "confirmedByUser": true,
+        "notes": "portrait.ishikawa と同じ"
+      },
+      "processing": {
+        "faceRect": [
+          37,
+          42,
+          204,
+          204
+        ],
+        "squareRect": [
+          37,
+          42,
+          204,
+          204
+        ],
+        "scale": 1.2549,
+        "upscaled": true,
+        "outsideOriginal": false,
+        "opaque": false,
+        "qualityTried": [
+          [
+            85,
+            14370
+          ]
+        ]
+      }
+    },
+    {
+      "id": "portrait.sakakibara",
+      "kind": "portrait",
+      "status": "received",
+      "required": true,
+      "purpose": "人物画（原画）。同じ原画から顔 face.sakakibara を切り出す。立ち絵としての採用は、ゲームの画面で解像度と品質を確かめてから決める",
+      "subject": "榊原康政（演習の部隊の武将。歴史分岐の章の会話には出ない。ゲーム用の創作デザイン）",
+      "usedIn": [
+        "合戦の顔（face.sakakibara）の元"
+      ],
+      "incoming": "portrait_sakakibara.png",
+      "expected": {
+        "w": 247,
+        "h": 319,
+        "alpha": "required",
+        "notes": "素材パックの補間前の原解像度。胸から上の半身。左右反転しない"
+      },
+      "method": {
+        "how": "利用者が ChatGPT の画像生成で作った複数人のデザインシートから、その人の範囲を切り出し・背景を透過した素材パック sengoku_art_pack_v1 の人物画。原画には補間前の原解像度の版（portraits/portrait_sakakibara_native.png）を使う（2 倍に補間した版は細部が増えていないので使わない）",
+        "service": "ChatGPT",
+        "feature": "画像生成（デザインシートの出力。人物 1 人ずつの個別生成ではない）",
+        "model": null,
+        "generatedOn": "2026-10-08（素材パックの作成日）",
+        "sameChatAs": [],
+        "promptRef": "docs/art-v22-asset-request.md §5.1 を元にした依頼（1024×1536 で個別に生成という条件・髭なし・家紋なしには完全には沿っていない：パックの README）",
+        "promptAsUsed": null,
+        "referenceImages": [
+          "利用者が承認した生成のコンセプト画像と、それに続く生成のデザインシート（パックの docs/利用条件と来歴.md）"
+        ],
+        "styleNotes": "衣装・年齢・装飾はゲーム用の創作デザイン。衣装の紋様は史実の家紋として確かめていない（家紋として説明しない）",
+        "pack": {
+          "name": "sengoku_art_pack_v1",
+          "packId": "yasumasa",
+          "sourceSheet": "a_clean_game_art_style_compilation_image_on_a_whi.png",
+          "sourceRect": [
+            776,
+            2,
+            1023,
+            321
+          ],
+          "nativeSize": [
+            247,
+            319
+          ],
+          "faceRectNative": [
+            28,
+            37,
+            211,
+            211
+          ],
+          "eyeYDisplayPx": 304,
+          "transparentPaddingNative": [
+            15,
+            19
+          ],
+          "limitations": "Cropped from a generated design sheet; some hair/shoulder edges are source-cropped. Alpha has been processed, not natively generated."
+        }
+      },
+      "original": {
+        "path": "proto3d/assets-src/art-v22/portrait.sakakibara/original.png",
+        "receivedAs": "portrait_sakakibara.png",
+        "w": 247,
+        "h": 319,
+        "bytes": 156773,
+        "sha256": "df74ac4eda553a98906a157a49b8a9b8da7a3cbff4535022f70fac1454de4391",
+        "format": "PNG",
+        "mode": "RGBA",
+        "hasAlpha": true,
+        "alphaSource": "alpha",
+        "metadata": {
+          "format": "PNG",
+          "chunks": {
+            "IHDR": 1,
+            "IDAT": 3,
+            "IEND": 1
+          },
+          "text": [],
+          "c2pa": false,
+          "exif": false,
+          "icc": null,
+          "note": "メタデータの塊は無い"
+        },
+        "checks": {
+          "alpha": {
+            "hasAlphaChannel": true,
+            "transparentShare": 0.3747,
+            "zeroShare": 0.3747,
+            "opaqueShare": 0.6077,
+            "regionTransparentShare": 0.9327,
+            "checkerboardPatch": {
+              "found": false,
+              "candidatePx": 28,
+              "evidencePx": 0,
+              "square": null,
+              "box": null,
+              "minPx": 750
+            },
+            "decision": "alpha",
+            "warnings": []
+          },
+          "bottomRowOpaqueShare": 1.0
+        },
+        "notes": [],
+        "warnings": []
+      },
+      "anchors": {
+        "eyeY": 133.0,
+        "faceX": null
+      },
+      "recipe": {
+        "steps": [
+          "透過の確かめ：本物の透明（RGBA で、全体の 15% 以上がほぼ完全に透明）だけを受け取る。市松模様が描き込まれた物は受け取らない（透明の画像の中の、不透明の灰色と白の市松模様も断る）",
+          "透明でなく、背景が単色のマゼンタ（#FF00FF）なら、色を抜いて透明にする（縁はなめらかに、縁のマゼンタの色かぶりを取る）。抜いたことを記録する",
+          "上端と左右の上 6 割がほぼ透明でない（人物が端まで広がる）構図は、断らずに構図の注意として記録する。下端がまっすぐな体の切れ目でない（下端の行の不透明が 2 割未満）ときは下端の注意を記録する",
+          "透明な余白を切る（下端の体の切れ目は切らない。余白 8px を残す）",
+          "拡大しない。1024×1536 に収まるように縮小だけ",
+          "WebP（品質 85 から、260KB に収まるまで 5 ずつ下げる。下限 60。透明は劣化させない）"
+        ],
+        "alphaCheck": {
+          "regions": [
+            [
+              0,
+              0,
+              1,
+              0.04
+            ],
+            [
+              0,
+              0,
+              0.1,
+              0.6
+            ],
+            [
+              0.9,
+              0,
+              1,
+              0.6
+            ]
+          ],
+          "regionMinShare": 0.9,
+          "minTransparentShare": 0.15,
+          "transparentMax": 8
+        },
+        "key": {
+          "color": [
+            255,
+            0,
+            255
+          ],
+          "tolerance": 48,
+          "minShare": 0.85,
+          "fgMax": 0.3,
+          "bgMin": 0.8,
+          "despillBandPx": 3
+        },
+        "trim": {
+          "alphaThreshold": 8,
+          "padPx": 8,
+          "keepBottom": true,
+          "bottomCutMinShare": 0.2
+        },
+        "maxW": 1024,
+        "maxH": 1536,
+        "upscale": false,
+        "webp": {
+          "quality": 85,
+          "minQuality": 60,
+          "step": 5,
+          "method": 6,
+          "alphaExact": true
+        },
+        "capBytes": 266240,
+        "publicFile": "art/portraits/sakakibara.webp"
+      },
+      "outputs": [],
+      "derivedFrom": null,
+      "terms": {
+        "confirmedByUser": true,
+        "notes": "素材パックの docs/利用条件と来歴.md（2026-10-08）。全体の terms を見る"
+      },
+      "rejection": null
+    },
+    {
+      "id": "face.sakakibara",
+      "kind": "face",
+      "status": "built",
+      "required": true,
+      "purpose": "顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成）",
+      "subject": "榊原康政（portrait.sakakibara と同じ原画から切り出す）",
+      "usedIn": [
+        "合戦の部隊の札・能力の欄・能力の知らせ・演習の編成の表"
+      ],
+      "incoming": null,
+      "expected": {
+        "w": 256,
+        "h": 256,
+        "alpha": "from-portrait",
+        "notes": "顔を別に生成し直さない。faceRect は受け取った人物画を見てから決める"
+      },
+      "method": {
+        "how": "portrait.sakakibara の原画から切り出す（顔だけを別に生成しない。切り出しの範囲は素材パックの docs/portraits.json の face_rect_native_xywh）",
+        "service": null,
+        "feature": null,
+        "model": null,
+        "generatedOn": null,
+        "sameChatAs": [],
+        "promptRef": null,
+        "promptAsUsed": null,
+        "referenceImages": [],
+        "styleNotes": null
+      },
+      "original": null,
+      "faceRect": [
+        28,
+        37,
+        211,
+        211
+      ],
+      "recipe": {
+        "steps": [
+          "portrait.sakakibara の原画（色を抜いた場合はその透明）から faceRect（原画の画素の座標 [x, y, 幅, 高さ]）を切り出す",
+          "正方形にそろえる（短い辺を中心から広げる。原画の外は透明）",
+          "256×256 に縮小（faceRect が 256 より小さいときだけ拡大になり、記録する）",
+          "WebP（品質 85 から、30KB に収まるまで 5 ずつ下げる。下限 50。透明は劣化させない。切り出した範囲が全部不透明なら透明の層の無い WebP になり、そのことを記録する）"
+        ],
+        "source": "portrait.sakakibara",
+        "size": 256,
+        "webp": {
+          "quality": 85,
+          "minQuality": 50,
+          "step": 5,
+          "method": 6,
+          "alphaExact": true
+        },
+        "capBytes": 30720,
+        "publicFile": "art/faces/sakakibara.webp"
+      },
+      "outputs": [
+        {
+          "path": "proto3d/public/art/faces/sakakibara.webp",
+          "w": 256,
+          "h": 256,
+          "bytes": 12832,
+          "sha256": "acded0f8d4c907cce623a0efe882804fed749bd3aa718d88f67a2594407ec37e",
+          "decodedBytes": 262144,
+          "quality": 85,
+          "sourceSha256": "df74ac4eda553a98906a157a49b8a9b8da7a3cbff4535022f70fac1454de4391"
+        }
+      ],
+      "derivedFrom": "portrait.sakakibara",
+      "terms": {
+        "confirmedByUser": true,
+        "notes": "portrait.sakakibara と同じ"
+      },
+      "processing": {
+        "faceRect": [
+          28,
+          37,
+          211,
+          211
+        ],
+        "squareRect": [
+          28,
+          37,
+          211,
+          211
+        ],
+        "scale": 1.2133,
+        "upscaled": true,
+        "outsideOriginal": false,
+        "opaque": false,
+        "qualityTried": [
+          [
+            85,
+            12832
+          ]
+        ]
+      }
+    },
+    {
+      "id": "portrait.nagamasa",
+      "kind": "portrait",
+      "status": "received",
+      "required": true,
+      "purpose": "人物画（原画）。同じ原画から顔 face.nagamasa を切り出す。立ち絵としての採用は、ゲームの画面で解像度と品質を確かめてから決める",
+      "subject": "浅井長政（合戦の部隊の武将：第一章 A は敵・B は味方、第二章 B、演習の援軍救出。会話には出ない。ゲーム用の創作デザイン）",
+      "usedIn": [
+        "合戦の顔（face.nagamasa）の元"
+      ],
+      "incoming": "portrait_nagamasa.png",
+      "expected": {
+        "w": 248,
+        "h": 261,
+        "alpha": "required",
+        "notes": "素材パックの補間前の原解像度。胸から上の半身。左右反転しない"
+      },
+      "method": {
+        "how": "利用者が ChatGPT の画像生成で作った複数人のデザインシートから、その人の範囲を切り出し・背景を透過した素材パック sengoku_art_pack_v1 の人物画。原画には補間前の原解像度の版（portraits/portrait_nagamasa_native.png）を使う（2 倍に補間した版は細部が増えていないので使わない）",
+        "service": "ChatGPT",
+        "feature": "画像生成（デザインシートの出力。人物 1 人ずつの個別生成ではない）",
+        "model": null,
+        "generatedOn": "2026-10-08（素材パックの作成日）",
+        "sameChatAs": [],
+        "promptRef": "docs/art-v22-asset-request.md §5.1 を元にした依頼（1024×1536 で個別に生成という条件・髭なし・家紋なしには完全には沿っていない：パックの README）",
+        "promptAsUsed": null,
+        "referenceImages": [
+          "利用者が承認した生成のコンセプト画像と、それに続く生成のデザインシート（パックの docs/利用条件と来歴.md）"
+        ],
+        "styleNotes": "衣装・年齢・装飾はゲーム用の創作デザイン。衣装の紋様は史実の家紋として確かめていない（家紋として説明しない）",
+        "pack": {
+          "name": "sengoku_art_pack_v1",
+          "packId": "nagamasa",
+          "sourceSheet": "a_clean_game_art_style_compilation_image_on_a_whi.png",
+          "sourceRect": [
+            4,
+            357,
+            252,
+            618
+          ],
+          "nativeSize": [
+            248,
+            261
+          ],
+          "faceRectNative": [
+            26,
+            20,
+            221,
+            221
+          ],
+          "eyeYDisplayPx": 282,
+          "transparentPaddingNative": [
+            15,
+            16
+          ],
+          "limitations": "Cropped from a generated design sheet; some hair/shoulder edges are source-cropped. Alpha has been processed, not natively generated."
+        }
+      },
+      "original": {
+        "path": "proto3d/assets-src/art-v22/portrait.nagamasa/original.png",
+        "receivedAs": "portrait_nagamasa.png",
+        "w": 248,
+        "h": 261,
+        "bytes": 136004,
+        "sha256": "ee12b4f2fa6e1610fd14cd0537cd3e463c374d1ada4a8073d03da6823883bf0d",
+        "format": "PNG",
+        "mode": "RGBA",
+        "hasAlpha": true,
+        "alphaSource": "alpha",
+        "metadata": {
+          "format": "PNG",
+          "chunks": {
+            "IHDR": 1,
+            "IDAT": 3,
+            "IEND": 1
+          },
+          "text": [],
+          "c2pa": false,
+          "exif": false,
+          "icc": null,
+          "note": "メタデータの塊は無い"
+        },
+        "checks": {
+          "alpha": {
+            "hasAlphaChannel": true,
+            "transparentShare": 0.264,
+            "zeroShare": 0.264,
+            "opaqueShare": 0.7193,
+            "regionTransparentShare": 0.9471,
+            "checkerboardPatch": {
+              "found": false,
+              "candidatePx": 280,
+              "evidencePx": 0,
+              "square": null,
+              "box": null,
+              "minPx": 750
+            },
+            "decision": "alpha",
+            "warnings": []
+          },
+          "bottomRowOpaqueShare": 1.0
+        },
+        "notes": [],
+        "warnings": []
+      },
+      "anchors": {
+        "eyeY": 125.0,
+        "faceX": null
+      },
+      "recipe": {
+        "steps": [
+          "透過の確かめ：本物の透明（RGBA で、全体の 15% 以上がほぼ完全に透明）だけを受け取る。市松模様が描き込まれた物は受け取らない（透明の画像の中の、不透明の灰色と白の市松模様も断る）",
+          "透明でなく、背景が単色のマゼンタ（#FF00FF）なら、色を抜いて透明にする（縁はなめらかに、縁のマゼンタの色かぶりを取る）。抜いたことを記録する",
+          "上端と左右の上 6 割がほぼ透明でない（人物が端まで広がる）構図は、断らずに構図の注意として記録する。下端がまっすぐな体の切れ目でない（下端の行の不透明が 2 割未満）ときは下端の注意を記録する",
+          "透明な余白を切る（下端の体の切れ目は切らない。余白 8px を残す）",
+          "拡大しない。1024×1536 に収まるように縮小だけ",
+          "WebP（品質 85 から、260KB に収まるまで 5 ずつ下げる。下限 60。透明は劣化させない）"
+        ],
+        "alphaCheck": {
+          "regions": [
+            [
+              0,
+              0,
+              1,
+              0.04
+            ],
+            [
+              0,
+              0,
+              0.1,
+              0.6
+            ],
+            [
+              0.9,
+              0,
+              1,
+              0.6
+            ]
+          ],
+          "regionMinShare": 0.9,
+          "minTransparentShare": 0.15,
+          "transparentMax": 8
+        },
+        "key": {
+          "color": [
+            255,
+            0,
+            255
+          ],
+          "tolerance": 48,
+          "minShare": 0.85,
+          "fgMax": 0.3,
+          "bgMin": 0.8,
+          "despillBandPx": 3
+        },
+        "trim": {
+          "alphaThreshold": 8,
+          "padPx": 8,
+          "keepBottom": true,
+          "bottomCutMinShare": 0.2
+        },
+        "maxW": 1024,
+        "maxH": 1536,
+        "upscale": false,
+        "webp": {
+          "quality": 85,
+          "minQuality": 60,
+          "step": 5,
+          "method": 6,
+          "alphaExact": true
+        },
+        "capBytes": 266240,
+        "publicFile": "art/portraits/nagamasa.webp"
+      },
+      "outputs": [],
+      "derivedFrom": null,
+      "terms": {
+        "confirmedByUser": true,
+        "notes": "素材パックの docs/利用条件と来歴.md（2026-10-08）。全体の terms を見る"
+      },
+      "rejection": null
+    },
+    {
+      "id": "face.nagamasa",
+      "kind": "face",
+      "status": "built",
+      "required": true,
+      "purpose": "顔（会話・軍議の台詞の枠、合戦の部隊情報・能力の表示・能力の知らせ・演習の編成）",
+      "subject": "浅井長政（portrait.nagamasa と同じ原画から切り出す）",
+      "usedIn": [
+        "合戦の部隊の札・能力の欄・能力の知らせ（見えている間・味方のときだけ）・演習の編成の表"
+      ],
+      "incoming": null,
+      "expected": {
+        "w": 256,
+        "h": 256,
+        "alpha": "from-portrait",
+        "notes": "顔を別に生成し直さない。faceRect は受け取った人物画を見てから決める"
+      },
+      "method": {
+        "how": "portrait.nagamasa の原画から切り出す（顔だけを別に生成しない。切り出しの範囲は素材パックの docs/portraits.json の face_rect_native_xywh）",
+        "service": null,
+        "feature": null,
+        "model": null,
+        "generatedOn": null,
+        "sameChatAs": [],
+        "promptRef": null,
+        "promptAsUsed": null,
+        "referenceImages": [],
+        "styleNotes": null
+      },
+      "original": null,
+      "faceRect": [
+        26,
+        20,
+        221,
+        221
+      ],
+      "recipe": {
+        "steps": [
+          "portrait.nagamasa の原画（色を抜いた場合はその透明）から faceRect（原画の画素の座標 [x, y, 幅, 高さ]）を切り出す",
+          "正方形にそろえる（短い辺を中心から広げる。原画の外は透明）",
+          "256×256 に縮小（faceRect が 256 より小さいときだけ拡大になり、記録する）",
+          "WebP（品質 85 から、30KB に収まるまで 5 ずつ下げる。下限 50。透明は劣化させない。切り出した範囲が全部不透明なら透明の層の無い WebP になり、そのことを記録する）"
+        ],
+        "source": "portrait.nagamasa",
+        "size": 256,
+        "webp": {
+          "quality": 85,
+          "minQuality": 50,
+          "step": 5,
+          "method": 6,
+          "alphaExact": true
+        },
+        "capBytes": 30720,
+        "publicFile": "art/faces/nagamasa.webp"
+      },
+      "outputs": [
+        {
+          "path": "proto3d/public/art/faces/nagamasa.webp",
+          "w": 256,
+          "h": 256,
+          "bytes": 14760,
+          "sha256": "1e51b6b29b7cb3bfe113f644bd98cd39268f04a33563a94253edb514940f0eac",
+          "decodedBytes": 262144,
+          "quality": 85,
+          "sourceSha256": "ee12b4f2fa6e1610fd14cd0537cd3e463c374d1ada4a8073d03da6823883bf0d"
+        }
+      ],
+      "derivedFrom": "portrait.nagamasa",
+      "terms": {
+        "confirmedByUser": true,
+        "notes": "portrait.nagamasa と同じ"
+      },
+      "processing": {
+        "faceRect": [
+          26,
+          20,
+          221,
+          221
+        ],
+        "squareRect": [
+          26,
+          20,
+          221,
+          221
+        ],
+        "scale": 1.1584,
+        "upscaled": true,
+        "outsideOriginal": false,
+        "opaque": false,
+        "qualityTried": [
+          [
+            85,
+            14760
+          ]
+        ]
       }
     },
     {

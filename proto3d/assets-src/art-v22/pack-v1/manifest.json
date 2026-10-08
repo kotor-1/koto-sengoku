@@ -1,0 +1,1997 @@
+{
+  "pack": "sengoku_art_pack_v1",
+  "created_utc_date": "2026-10-08",
+  "status": "initial_illustration_assets_for_game_comparison_not_final_art",
+  "image_generation": "ChatGPT image generation tool; exact backend model not independently exposed",
+  "production_method": "AI-generated design sheets, followed by content-only cropping, manual-seeded background extraction, and image resampling. Not individually generated full-resolution originals.",
+  "person_count": 8,
+  "background_count": 8,
+  "terrain_count": 4,
+  "portraits": [
+    {
+      "id": "ieyasu",
+      "game_id": "ieyasu",
+      "display_name": "徳川家康",
+      "portrait": "portraits/portrait_ieyasu.png",
+      "portrait_native": "portraits/portrait_ieyasu_native.png",
+      "face": "faces/face_ieyasu.png",
+      "face_small": "faces/face_ieyasu_128.png",
+      "native_size": [
+        347,
+        471
+      ],
+      "delivered_size": [
+        778,
+        998
+      ],
+      "transparent_padding_native": [
+        21,
+        28
+      ],
+      "face_rect_display_xywh": [
+        138,
+        146,
+        564,
+        564
+      ],
+      "resampling": "2x Lanczos, NOT new detail",
+      "face_rect_native_xywh": [
+        48,
+        45,
+        282,
+        282
+      ],
+      "alpha_zero_fraction": 0.27608803392132747,
+      "source_sheet": "a_clean_illustrated_collage_asset_sheet_style_ima.png",
+      "source_rect": [
+        2,
+        2,
+        349,
+        473
+      ],
+      "status": "illustrated_face_asset_v1_not_historical_reconstruction",
+      "asset_key": "ieyasu",
+      "historical_accuracy": "Creative depiction, not an authenticated portrait. Age, clothing and decorative marks require period review.",
+      "source_limitations": "Cropped from a generated design sheet; some hair/shoulder edges are source-cropped. Alpha has been processed, not natively generated.",
+      "eye_y_display_px": 324,
+      "crop_anchors_note": "Manual visual anchors, check in actual game; do not assume the requested 20%-height eye anchor."
+    },
+    {
+      "id": "tadakatsu",
+      "game_id": "tadakatsu",
+      "display_name": "本多忠勝",
+      "portrait": "portraits/portrait_tadakatsu.png",
+      "portrait_native": "portraits/portrait_tadakatsu_native.png",
+      "face": "faces/face_tadakatsu.png",
+      "face_small": "faces/face_tadakatsu_128.png",
+      "native_size": [
+        348,
+        471
+      ],
+      "delivered_size": [
+        780,
+        998
+      ],
+      "transparent_padding_native": [
+        21,
+        28
+      ],
+      "face_rect_display_xywh": [
+        122,
+        130,
+        592,
+        592
+      ],
+      "resampling": "2x Lanczos, NOT new detail",
+      "face_rect_native_xywh": [
+        40,
+        37,
+        296,
+        296
+      ],
+      "alpha_zero_fraction": 0.2916758181418845,
+      "source_sheet": "a_clean_illustrated_collage_asset_sheet_style_ima.png",
+      "source_rect": [
+        355,
+        2,
+        703,
+        473
+      ],
+      "status": "illustrated_face_asset_v1_not_historical_reconstruction",
+      "asset_key": "tadakatsu",
+      "historical_accuracy": "Creative depiction, not an authenticated portrait. Age, clothing and decorative marks require period review.",
+      "source_limitations": "Cropped from a generated design sheet; some hair/shoulder edges are source-cropped. Alpha has been processed, not natively generated.",
+      "eye_y_display_px": 322,
+      "crop_anchors_note": "Manual visual anchors, check in actual game; do not assume the requested 20%-height eye anchor."
+    },
+    {
+      "id": "tadatsugu",
+      "game_id": "sakai",
+      "display_name": "酒井忠次",
+      "portrait": "portraits/portrait_sakai.png",
+      "portrait_native": "portraits/portrait_sakai_native.png",
+      "face": "faces/face_sakai.png",
+      "face_small": "faces/face_sakai_128.png",
+      "native_size": [
+        203,
+        270
+      ],
+      "delivered_size": [
+        454,
+        572
+      ],
+      "transparent_padding_native": [
+        12,
+        16
+      ],
+      "face_rect_display_xywh": [
+        54,
+        92,
+        374,
+        374
+      ],
+      "resampling": "2x Lanczos, NOT new detail",
+      "face_rect_native_xywh": [
+        15,
+        30,
+        187,
+        187
+      ],
+      "alpha_zero_fraction": 0.3984856777960226,
+      "source_sheet": "a_detailed_high_quality_game_concept_art_style_co.png",
+      "source_rect": [
+        668,
+        52,
+        871,
+        322
+      ],
+      "status": "illustrated_face_asset_v1_not_historical_reconstruction",
+      "asset_key": "sakai",
+      "historical_accuracy": "Creative depiction, not an authenticated portrait. Age, clothing and decorative marks require period review.",
+      "source_limitations": "Cropped from a generated design sheet; some hair/shoulder edges are source-cropped. Alpha has been processed, not natively generated.",
+      "eye_y_display_px": 258,
+      "crop_anchors_note": "Manual visual anchors, check in actual game; do not assume the requested 20%-height eye anchor."
+    },
+    {
+      "id": "kazumasa",
+      "game_id": "ishikawa",
+      "display_name": "石川数正",
+      "portrait": "portraits/portrait_ishikawa.png",
+      "portrait_native": "portraits/portrait_ishikawa_native.png",
+      "face": "faces/face_ishikawa.png",
+      "face_small": "faces/face_ishikawa_128.png",
+      "native_size": [
+        250,
+        319
+      ],
+      "delivered_size": [
+        560,
+        676
+      ],
+      "transparent_padding_native": [
+        15,
+        19
+      ],
+      "face_rect_display_xywh": [
+        104,
+        122,
+        408,
+        408
+      ],
+      "resampling": "2x Lanczos, NOT new detail",
+      "face_rect_native_xywh": [
+        37,
+        42,
+        204,
+        204
+      ],
+      "alpha_zero_fraction": 0.3882382445141066,
+      "source_sheet": "a_clean_game_art_style_compilation_image_on_a_whi.png",
+      "source_rect": [
+        519,
+        2,
+        769,
+        321
+      ],
+      "status": "illustrated_face_asset_v1_not_historical_reconstruction",
+      "asset_key": "ishikawa",
+      "historical_accuracy": "Creative depiction, not an authenticated portrait. Age, clothing and decorative marks require period review.",
+      "source_limitations": "Cropped from a generated design sheet; some hair/shoulder edges are source-cropped. Alpha has been processed, not natively generated.",
+      "eye_y_display_px": 302,
+      "crop_anchors_note": "Manual visual anchors, check in actual game; do not assume the requested 20%-height eye anchor."
+    },
+    {
+      "id": "yasumasa",
+      "game_id": "sakakibara",
+      "display_name": "榊原康政",
+      "portrait": "portraits/portrait_sakakibara.png",
+      "portrait_native": "portraits/portrait_sakakibara_native.png",
+      "face": "faces/face_sakakibara.png",
+      "face_small": "faces/face_sakakibara_128.png",
+      "native_size": [
+        247,
+        319
+      ],
+      "delivered_size": [
+        554,
+        676
+      ],
+      "transparent_padding_native": [
+        15,
+        19
+      ],
+      "face_rect_display_xywh": [
+        86,
+        112,
+        422,
+        422
+      ],
+      "resampling": "2x Lanczos, NOT new detail",
+      "face_rect_native_xywh": [
+        28,
+        37,
+        211,
+        211
+      ],
+      "alpha_zero_fraction": 0.3747414110390517,
+      "source_sheet": "a_clean_game_art_style_compilation_image_on_a_whi.png",
+      "source_rect": [
+        776,
+        2,
+        1023,
+        321
+      ],
+      "status": "illustrated_face_asset_v1_not_historical_reconstruction",
+      "asset_key": "sakakibara",
+      "historical_accuracy": "Creative depiction, not an authenticated portrait. Age, clothing and decorative marks require period review.",
+      "source_limitations": "Cropped from a generated design sheet; some hair/shoulder edges are source-cropped. Alpha has been processed, not natively generated.",
+      "eye_y_display_px": 304,
+      "crop_anchors_note": "Manual visual anchors, check in actual game; do not assume the requested 20%-height eye anchor."
+    },
+    {
+      "id": "nobunaga",
+      "game_id": "nobunaga",
+      "display_name": "織田信長",
+      "portrait": "portraits/portrait_nobunaga.png",
+      "portrait_native": "portraits/portrait_nobunaga_native.png",
+      "face": "faces/face_nobunaga.png",
+      "face_small": "faces/face_nobunaga_128.png",
+      "native_size": [
+        251,
+        319
+      ],
+      "delivered_size": [
+        562,
+        676
+      ],
+      "transparent_padding_native": [
+        15,
+        19
+      ],
+      "face_rect_display_xywh": [
+        74,
+        108,
+        440,
+        440
+      ],
+      "resampling": "2x Lanczos, NOT new detail",
+      "face_rect_native_xywh": [
+        22,
+        35,
+        220,
+        220
+      ],
+      "alpha_zero_fraction": 0.38962644718929923,
+      "source_sheet": "a_clean_game_art_style_compilation_image_on_a_whi.png",
+      "source_rect": [
+        1283,
+        2,
+        1534,
+        321
+      ],
+      "status": "illustrated_face_asset_v1_not_historical_reconstruction",
+      "asset_key": "nobunaga",
+      "historical_accuracy": "Creative depiction, not an authenticated portrait. Age, clothing and decorative marks require period review.",
+      "source_limitations": "Cropped from a generated design sheet; some hair/shoulder edges are source-cropped. Alpha has been processed, not natively generated.",
+      "eye_y_display_px": 294,
+      "crop_anchors_note": "Manual visual anchors, check in actual game; do not assume the requested 20%-height eye anchor."
+    },
+    {
+      "id": "nagamasa",
+      "game_id": "nagamasa",
+      "display_name": "浅井長政",
+      "portrait": "portraits/portrait_nagamasa.png",
+      "portrait_native": "portraits/portrait_nagamasa_native.png",
+      "face": "faces/face_nagamasa.png",
+      "face_small": "faces/face_nagamasa_128.png",
+      "native_size": [
+        248,
+        261
+      ],
+      "delivered_size": [
+        556,
+        554
+      ],
+      "transparent_padding_native": [
+        15,
+        16
+      ],
+      "face_rect_display_xywh": [
+        82,
+        72,
+        442,
+        442
+      ],
+      "resampling": "2x Lanczos, NOT new detail",
+      "face_rect_native_xywh": [
+        26,
+        20,
+        221,
+        221
+      ],
+      "alpha_zero_fraction": 0.26396613521196394,
+      "source_sheet": "a_clean_game_art_style_compilation_image_on_a_whi.png",
+      "source_rect": [
+        4,
+        357,
+        252,
+        618
+      ],
+      "status": "illustrated_face_asset_v1_not_historical_reconstruction",
+      "asset_key": "nagamasa",
+      "historical_accuracy": "Creative depiction, not an authenticated portrait. Age, clothing and decorative marks require period review.",
+      "source_limitations": "Cropped from a generated design sheet; some hair/shoulder edges are source-cropped. Alpha has been processed, not natively generated.",
+      "eye_y_display_px": 282,
+      "crop_anchors_note": "Manual visual anchors, check in actual game; do not assume the requested 20%-height eye anchor."
+    },
+    {
+      "id": "yoshikage",
+      "game_id": "yoshikage",
+      "display_name": "朝倉義景",
+      "portrait": "portraits/portrait_yoshikage.png",
+      "portrait_native": "portraits/portrait_yoshikage_native.png",
+      "face": "faces/face_yoshikage.png",
+      "face_small": "faces/face_yoshikage_128.png",
+      "native_size": [
+        249,
+        261
+      ],
+      "delivered_size": [
+        558,
+        554
+      ],
+      "transparent_padding_native": [
+        15,
+        16
+      ],
+      "face_rect_display_xywh": [
+        80,
+        72,
+        430,
+        430
+      ],
+      "resampling": "2x Lanczos, NOT new detail",
+      "face_rect_native_xywh": [
+        25,
+        20,
+        215,
+        215
+      ],
+      "alpha_zero_fraction": 0.4213482281616889,
+      "source_sheet": "a_clean_game_art_style_compilation_image_on_a_whi.png",
+      "source_rect": [
+        260,
+        357,
+        509,
+        618
+      ],
+      "status": "illustrated_face_asset_v1_not_historical_reconstruction",
+      "asset_key": "yoshikage",
+      "historical_accuracy": "Creative depiction, not an authenticated portrait. Age, clothing and decorative marks require period review.",
+      "source_limitations": "Cropped from a generated design sheet; some hair/shoulder edges are source-cropped. Alpha has been processed, not natively generated.",
+      "eye_y_display_px": 254,
+      "crop_anchors_note": "Manual visual anchors, check in actual game; do not assume the requested 20%-height eye anchor."
+    }
+  ],
+  "backgrounds": [
+    {
+      "id": "bg_council",
+      "display_name": "軍議・陣幕の内側",
+      "file": "backgrounds/bg_council.png",
+      "native_file": "backgrounds/bg_council_native.png",
+      "native_size": [
+        522,
+        464
+      ],
+      "size": [
+        1044,
+        928
+      ],
+      "source_sheet": "a_crisp_high_resolution_composite_illustration_as.png",
+      "source_rect": [
+        643,
+        3,
+        1165,
+        467
+      ],
+      "resampling": "2x Lanczos, NOT new detail",
+      "purpose": "story_background_not_playable_map",
+      "notes": "Fixed illustrated scene. Some scenes include people, banners or props; do not use as dynamic outcome evidence."
+    },
+    {
+      "id": "bg_town_day",
+      "display_name": "城下町の通り・昼",
+      "file": "backgrounds/bg_town_day.png",
+      "native_file": "backgrounds/bg_town_day_native.png",
+      "native_size": [
+        491,
+        229
+      ],
+      "size": [
+        982,
+        458
+      ],
+      "source_sheet": "a_clean_game_art_style_concept_sheet_asset_pack.png",
+      "source_rect": [
+        15,
+        498,
+        506,
+        727
+      ],
+      "resampling": "2x Lanczos, NOT new detail",
+      "purpose": "story_background_not_playable_map",
+      "notes": "Fixed illustrated scene. Some scenes include people, banners or props; do not use as dynamic outcome evidence."
+    },
+    {
+      "id": "bg_town_wide",
+      "display_name": "城下町の通り・広場",
+      "file": "backgrounds/bg_town_wide.png",
+      "native_file": "backgrounds/bg_town_wide_native.png",
+      "native_size": [
+        505,
+        240
+      ],
+      "size": [
+        1010,
+        480
+      ],
+      "source_sheet": "a_clean_high_resolution_illustrated_concept_art_s.png",
+      "source_rect": [
+        9,
+        508,
+        514,
+        748
+      ],
+      "resampling": "2x Lanczos, NOT new detail",
+      "purpose": "story_background_not_playable_map",
+      "notes": "Fixed illustrated scene. Some scenes include people, banners or props; do not use as dynamic outcome evidence."
+    },
+    {
+      "id": "bg_plains",
+      "display_name": "合戦前の大平原・情景用",
+      "file": "backgrounds/bg_plains.png",
+      "native_file": "backgrounds/bg_plains_native.png",
+      "native_size": [
+        437,
+        225
+      ],
+      "size": [
+        874,
+        450
+      ],
+      "source_sheet": "a_clean_game_art_style_compilation_image_on_a_whi.png",
+      "source_rect": [
+        777,
+        660,
+        1214,
+        885
+      ],
+      "resampling": "2x Lanczos, NOT new detail",
+      "purpose": "story_background_not_playable_map",
+      "notes": "Fixed illustrated scene. Some scenes include people, banners or props; do not use as dynamic outcome evidence."
+    },
+    {
+      "id": "bg_forest_path",
+      "display_name": "森の道・情景用",
+      "file": "backgrounds/bg_forest_path.png",
+      "native_file": "backgrounds/bg_forest_path_native.png",
+      "native_size": [
+        313,
+        225
+      ],
+      "size": [
+        626,
+        450
+      ],
+      "source_sheet": "a_clean_game_art_style_compilation_image_on_a_whi.png",
+      "source_rect": [
+        1220,
+        660,
+        1533,
+        885
+      ],
+      "resampling": "2x Lanczos, NOT new detail",
+      "purpose": "story_background_not_playable_map",
+      "notes": "Fixed illustrated scene. Some scenes include people, banners or props; do not use as dynamic outcome evidence."
+    },
+    {
+      "id": "bg_castle_overlook",
+      "display_name": "城からの眺望・夕景",
+      "file": "backgrounds/bg_castle_overlook.png",
+      "native_file": "backgrounds/bg_castle_overlook_native.png",
+      "native_size": [
+        429,
+        179
+      ],
+      "size": [
+        858,
+        358
+      ],
+      "source_sheet": "a_detailed_high_quality_game_concept_art_style_co.png",
+      "source_rect": [
+        923,
+        581,
+        1352,
+        760
+      ],
+      "resampling": "2x Lanczos, NOT new detail",
+      "purpose": "story_background_not_playable_map",
+      "notes": "Fixed illustrated scene. Some scenes include people, banners or props; do not use as dynamic outcome evidence."
+    },
+    {
+      "id": "bg_encampment",
+      "display_name": "陣からの眺め・情景用",
+      "file": "backgrounds/bg_encampment.png",
+      "native_file": "backgrounds/bg_encampment_native.png",
+      "native_size": [
+        492,
+        229
+      ],
+      "size": [
+        984,
+        458
+      ],
+      "source_sheet": "a_clean_game_art_style_concept_sheet_asset_pack.png",
+      "source_rect": [
+        1029,
+        498,
+        1521,
+        727
+      ],
+      "resampling": "2x Lanczos, NOT new detail",
+      "purpose": "story_background_not_playable_map",
+      "notes": "Fixed illustrated scene. Some scenes include people, banners or props; do not use as dynamic outcome evidence."
+    },
+    {
+      "id": "bg_council_open",
+      "display_name": "開放された軍議の陣幕",
+      "file": "backgrounds/bg_council_open.png",
+      "native_file": "backgrounds/bg_council_open_native.png",
+      "native_size": [
+        488,
+        470
+      ],
+      "size": [
+        976,
+        940
+      ],
+      "source_sheet": "a_clean_illustrated_collage_asset_sheet_style_ima.png",
+      "source_rect": [
+        714,
+        2,
+        1202,
+        472
+      ],
+      "resampling": "2x Lanczos, NOT new detail",
+      "purpose": "story_background_not_playable_map",
+      "notes": "Fixed illustrated scene. Some scenes include people, banners or props; do not use as dynamic outcome evidence."
+    }
+  ],
+  "textures": [
+    {
+      "id": "tex.plains.grass",
+      "name": "草地",
+      "file": "textures/tex_plains_grass.png",
+      "size": [
+        512,
+        512
+      ],
+      "native_crop_size": [
+        354,
+        354
+      ],
+      "source_sheet": "a_clean_illustrated_collage_asset_sheet_style_ima.png",
+      "source_rect": [
+        18,
+        542,
+        372,
+        896
+      ],
+      "processing": "crop; low-frequency shading reduction; local opposite-edge blend; Lanczos resize; opposite edge pixel match",
+      "maps_supplied": [
+        "color_only"
+      ],
+      "roughness_normal_height": "NOT supplied; do not label this color image a normal or height map",
+      "opposite_edge_max_delta": 0,
+      "tiling_status": "edges numerically matched; real game tiling/scale untested"
+    },
+    {
+      "id": "tex.plains.dirt",
+      "name": "裸の土",
+      "file": "textures/tex_plains_dirt.png",
+      "size": [
+        512,
+        512
+      ],
+      "native_crop_size": [
+        354,
+        354
+      ],
+      "source_sheet": "a_clean_illustrated_collage_asset_sheet_style_ima.png",
+      "source_rect": [
+        393,
+        542,
+        747,
+        896
+      ],
+      "processing": "crop; low-frequency shading reduction; local opposite-edge blend; Lanczos resize; opposite edge pixel match",
+      "maps_supplied": [
+        "color_only"
+      ],
+      "roughness_normal_height": "NOT supplied; do not label this color image a normal or height map",
+      "opposite_edge_max_delta": 0,
+      "tiling_status": "edges numerically matched; real game tiling/scale untested"
+    },
+    {
+      "id": "tex.plains.road",
+      "name": "踏み固めた道の表面",
+      "file": "textures/tex_plains_road.png",
+      "size": [
+        512,
+        512
+      ],
+      "native_crop_size": [
+        346,
+        346
+      ],
+      "source_sheet": "a_wide_composite_image_asset_sheet_with_multiple.png",
+      "source_rect": [
+        398,
+        525,
+        744,
+        871
+      ],
+      "processing": "crop; low-frequency shading reduction; local opposite-edge blend; Lanczos resize; opposite edge pixel match",
+      "maps_supplied": [
+        "color_only"
+      ],
+      "roughness_normal_height": "NOT supplied; do not label this color image a normal or height map",
+      "opposite_edge_max_delta": 0,
+      "tiling_status": "edges numerically matched; real game tiling/scale untested"
+    },
+    {
+      "id": "tex.plains.forest",
+      "name": "林床",
+      "file": "textures/tex_plains_forest.png",
+      "size": [
+        512,
+        512
+      ],
+      "native_crop_size": [
+        280,
+        280
+      ],
+      "source_sheet": "a_crisp_high_resolution_composite_illustration_as.png",
+      "source_rect": [
+        1190,
+        653,
+        1470,
+        933
+      ],
+      "processing": "crop; low-frequency shading reduction; local opposite-edge blend; Lanczos resize; opposite edge pixel match",
+      "maps_supplied": [
+        "color_only"
+      ],
+      "roughness_normal_height": "NOT supplied; do not label this color image a normal or height map",
+      "opposite_edge_max_delta": 0,
+      "tiling_status": "edges numerically matched; real game tiling/scale untested"
+    }
+  ],
+  "sources_reviewed": {
+    "request": "https://raw.githubusercontent.com/kotor-1/koto-sengoku/claude/brave-babbage-n70egj/docs/art-v22-asset-request.md",
+    "structure": "https://raw.githubusercontent.com/kotor-1/koto-sengoku/claude/brave-babbage-n70egj/docs/art-v22-structure.md",
+    "generals": "https://raw.githubusercontent.com/kotor-1/koto-sengoku/claude/brave-babbage-n70egj/proto3d/src/battle/generals.ts",
+    "terms": "https://openai.com/policies/terms-of-use/",
+    "sharing": "https://openai.com/policies/sharing-publication-policy/"
+  },
+  "integration_status": "Not uploaded to GitHub; not integrated or tested in the game; existing game was not changed.",
+  "optional_foreground_curtain": "Not included: no suitable independently transparent foreground asset was produced.",
+  "known_limits": [
+    "Original portrait content is 203–348px wide. Larger provided files are interpolated, not freshly generated high-resolution detail.",
+    "Native backgrounds are 313–522px wide, not final full-screen HD artwork.",
+    "Faces have a family of semi-realistic styles; age, facial hair, decorative emblems and costumes do not fully match the previous strict 1570 art brief.",
+    "Hair/shoulder edges may need further cleanup on the actual game background.",
+    "Landscape paintings may contain fixed people, props, maps, flags or decorative crests; do not treat them as gameplay-state-driven elements.",
+    "Terrain images are color maps only; not measured PBR materials. Actual tiling scale remains untested.",
+    "This is 2D imagery, not 3D character meshes or explorable environments."
+  ],
+  "asset_files": [
+    {
+      "path": "README_最初にお読みください.md",
+      "bytes": 4053,
+      "sha256": "465b3033eb76ff1ab17ef013e71b8ffc47423a0e719c03c89a2423b9806eca1c"
+    },
+    {
+      "path": "SHA256SUMS.txt",
+      "bytes": 10900,
+      "sha256": "54ccb849c65f52bc217df331b5d85c1057b7dc4109fd8a435abc151e2598e728"
+    },
+    {
+      "path": "backgrounds/bg_castle_overlook.png",
+      "bytes": 407149,
+      "sha256": "04f1f87ed7703fababa65609678ca766a510d64fed547f42a2e1abb62ce6febe",
+      "dimensions": [
+        858,
+        358
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "backgrounds/bg_castle_overlook_native.png",
+      "bytes": 139743,
+      "sha256": "ae6a4c11c92bdd98e2eaf40a98f29b59bd05a412482dc4f1912a425f2066e937",
+      "dimensions": [
+        429,
+        179
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "backgrounds/bg_council.png",
+      "bytes": 1075621,
+      "sha256": "f9b3a719143680f4f92fcff69b6c50a4e2941a0e5aacae296ea94b4e0f6fcf1e",
+      "dimensions": [
+        1044,
+        928
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "backgrounds/bg_council_native.png",
+      "bytes": 367056,
+      "sha256": "9874e8c87f285d69f81f805274ccdec7e6eba23eae2bcaaa3d4297ced18da9ab",
+      "dimensions": [
+        522,
+        464
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "backgrounds/bg_council_open.png",
+      "bytes": 1253349,
+      "sha256": "d6464e617d697134d2c8e18a93da19ccbad0b625c8157cb3afa03bde338df230",
+      "dimensions": [
+        976,
+        940
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "backgrounds/bg_council_open_native.png",
+      "bytes": 424400,
+      "sha256": "c15a295b55b090eb637d2e034961c7a9a8ee8f3f1859acc1c7c6559cd27770d4",
+      "dimensions": [
+        488,
+        470
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "backgrounds/bg_encampment.png",
+      "bytes": 618791,
+      "sha256": "560930597601e5433955f25225a73461835d9631322ae0ae964e32a7d6607de8",
+      "dimensions": [
+        984,
+        458
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "backgrounds/bg_encampment_native.png",
+      "bytes": 208906,
+      "sha256": "b5cf5f193d4f2d4f47d693eba6a48d743e98ad78832ce5719dbf690d6fc5d330",
+      "dimensions": [
+        492,
+        229
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "backgrounds/bg_forest_path.png",
+      "bytes": 463467,
+      "sha256": "9d7be6552a901684d8de0b7705bb62b805398b0bf311dde3dcfaf6ede0e39b03",
+      "dimensions": [
+        626,
+        450
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "backgrounds/bg_forest_path_native.png",
+      "bytes": 153753,
+      "sha256": "641edff7fd06912e0dcc6263689d21ca5692c2f4e32573ce6235e938321de8c0",
+      "dimensions": [
+        313,
+        225
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "backgrounds/bg_plains.png",
+      "bytes": 551289,
+      "sha256": "dc6088834e4d43e6d923d58aae5f9e5a3e11a39e97dcad315d8a702a6c5d497f",
+      "dimensions": [
+        874,
+        450
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "backgrounds/bg_plains_native.png",
+      "bytes": 183641,
+      "sha256": "848925440a288b1baf7e1e7880b65ca54b3a32fa91bc8734174dc2debccfee47",
+      "dimensions": [
+        437,
+        225
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "backgrounds/bg_town_day.png",
+      "bytes": 636802,
+      "sha256": "51205d816724502b8a62ea41071b132b4d2308859c1b6b9dcfe7852134788013",
+      "dimensions": [
+        982,
+        458
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "backgrounds/bg_town_day_native.png",
+      "bytes": 213781,
+      "sha256": "17cb5a8fb22cdcf4219f2ef7b93a554d7eec0575e3e6b6ca061ff2ec238e42f9",
+      "dimensions": [
+        491,
+        229
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "backgrounds/bg_town_wide.png",
+      "bytes": 694280,
+      "sha256": "a401c32d538df5d18158b05e9f927f47dcc8c0975b750b5da775f915267bd197",
+      "dimensions": [
+        1010,
+        480
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "backgrounds/bg_town_wide_native.png",
+      "bytes": 233514,
+      "sha256": "8935733e0853d37c62f843477a94ec345f35cfaeddf8fed4283aa7509d71f33f",
+      "dimensions": [
+        505,
+        240
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "docs/Opusへの取り込み指示.txt",
+      "bytes": 2523,
+      "sha256": "5834cc0ec70ac714b361cfa3919ff5cbc418a31abb60e92f26b5360c86735bad"
+    },
+    {
+      "path": "docs/backgrounds.json",
+      "bytes": 5243,
+      "sha256": "ff9fb84bb5f9206c788f04ffb2eb947f341b58ce999c300b590fdf74b4a414d8"
+    },
+    {
+      "path": "docs/portraits.json",
+      "bytes": 11348,
+      "sha256": "61a39e6fe08ff5b795db67d45ecedb21ce78fbd06dc1dbb4e696a5823a186904"
+    },
+    {
+      "path": "docs/textures.json",
+      "bytes": 3004,
+      "sha256": "1a2ca3d13a03399fc631d23041db19e78150a55d1cca9bcd9e58a7b49027d7e7"
+    },
+    {
+      "path": "docs/利用条件と来歴.md",
+      "bytes": 2500,
+      "sha256": "0982bcf2b85c13efb3763c8c650f4e03bcdd2c0886b3a9a3d2aa6ce435216fcb"
+    },
+    {
+      "path": "docs/検証範囲.txt",
+      "bytes": 655,
+      "sha256": "e56ae8567d9df50c726f17db8c776f129132b42f17bc520274db36d78e77eb11"
+    },
+    {
+      "path": "faces/face_ieyasu.png",
+      "bytes": 111025,
+      "sha256": "ad7a6e167c30530a2186e40fabf2dcaa30f5ac0d66b9ccf783296894652dc211",
+      "dimensions": [
+        256,
+        256
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "faces/face_ieyasu_128.png",
+      "bytes": 30769,
+      "sha256": "0cb894294e60cc37dad7151bb533e4891a0270d4e9e613e79cf76c786ddf0194",
+      "dimensions": [
+        128,
+        128
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "faces/face_ishikawa.png",
+      "bytes": 99961,
+      "sha256": "6712cd3fc1f1eee66a5e1f6d5b7afc64fcf9c973a6dab9717a860724f77cc847",
+      "dimensions": [
+        256,
+        256
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "faces/face_ishikawa_128.png",
+      "bytes": 30995,
+      "sha256": "88b0d20f9b05adae226439ec52513eecbe99e6c8abd16f870fa64d65038711b6",
+      "dimensions": [
+        128,
+        128
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "faces/face_nagamasa.png",
+      "bytes": 118676,
+      "sha256": "54263793d0bab6fef31308707fe9ab1a105e6ee45fd8f27ad8fd079bc07130d2",
+      "dimensions": [
+        256,
+        256
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "faces/face_nagamasa_128.png",
+      "bytes": 35655,
+      "sha256": "135e42149c2c622e5f232e8bbfda62c8686a6df26a1c812a0774b3c1de7b4584",
+      "dimensions": [
+        128,
+        128
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "faces/face_nobunaga.png",
+      "bytes": 98552,
+      "sha256": "9ef740583b3a8862fe85c593b0227b9450bdfc7d6d90258505de42ca6169c5e6",
+      "dimensions": [
+        256,
+        256
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "faces/face_nobunaga_128.png",
+      "bytes": 29831,
+      "sha256": "db4e471e2752fbf801090d4d71bc0bede5993d6d2fa477e903aef610da8e51a5",
+      "dimensions": [
+        128,
+        128
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "faces/face_sakai.png",
+      "bytes": 82712,
+      "sha256": "8f6233e112167af4da7a7a980ad7d217ffee496567264013b262bc79f2f171dc",
+      "dimensions": [
+        256,
+        256
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "faces/face_sakai_128.png",
+      "bytes": 26137,
+      "sha256": "87e9e97ef5876e15868eb735ce548ef23df825071b2e3f91a9d6ddb9dcd6b13d",
+      "dimensions": [
+        128,
+        128
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "faces/face_sakakibara.png",
+      "bytes": 95263,
+      "sha256": "c6f40d8ef03b0b7647c643b5bf2eef11a0ef8d2317b453ede5d46175be9c33a2",
+      "dimensions": [
+        256,
+        256
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "faces/face_sakakibara_128.png",
+      "bytes": 29386,
+      "sha256": "fe7bb16edf65163a7f447298c1c1da68277ea4e8bb009ddf8077a14771cb6fad",
+      "dimensions": [
+        128,
+        128
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "faces/face_tadakatsu.png",
+      "bytes": 102670,
+      "sha256": "d02ebbab9fc5af41d9fa1075af89c9f7391f07128ca7cbda5b5ee08259f7b157",
+      "dimensions": [
+        256,
+        256
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "faces/face_tadakatsu_128.png",
+      "bytes": 28655,
+      "sha256": "11a6b835c1f1826f0b6d7f377ac678dc7e08c938c4c679b887b27d0e18d908c5",
+      "dimensions": [
+        128,
+        128
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "faces/face_yoshikage.png",
+      "bytes": 95700,
+      "sha256": "cca7389e651b864abb8066203d1313fce352b56617254aee1c4f35574163b23c",
+      "dimensions": [
+        256,
+        256
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "faces/face_yoshikage_128.png",
+      "bytes": 29231,
+      "sha256": "cf743e80bb7c8966d8ed5ee9bc7ceec92bac3e3baaf94ca912115ed3167ff8d3",
+      "dimensions": [
+        128,
+        128
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "gallery.html",
+      "bytes": 7265,
+      "sha256": "0c31904218844e5164ef3e0fd997ad510ee81e3acae1ef040e55a05a2becfc77"
+    },
+    {
+      "path": "manifest.json",
+      "bytes": 51102,
+      "sha256": "35e8140db73cc064207513147730ddb10dc246ce7cf070eeb4b99c63d1d75623"
+    },
+    {
+      "path": "portraits/portrait_ieyasu.png",
+      "bytes": 851710,
+      "sha256": "8bf38c4aa8b97eb4248fa25a1c9b7651cc228e197f86e0dba63e44ba670cc461",
+      "dimensions": [
+        778,
+        998
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "portraits/portrait_ieyasu_native.png",
+      "bytes": 343783,
+      "sha256": "1edfb14632b66cb6d81132dd7dc3d8d3d0efbf240e42f59656cad66319317fe4",
+      "dimensions": [
+        347,
+        471
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "portraits/portrait_ishikawa.png",
+      "bytes": 356681,
+      "sha256": "f0eb804a108f85a4ff6535ef9694163388d599f0c264fddedf5f1017fb6f9623",
+      "dimensions": [
+        560,
+        676
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "portraits/portrait_ishikawa_native.png",
+      "bytes": 159441,
+      "sha256": "f1716d695d3769e06c9d7864d335588173e51c69f76a33768e24563cdc6c9718",
+      "dimensions": [
+        250,
+        319
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "portraits/portrait_nagamasa.png",
+      "bytes": 338794,
+      "sha256": "388546247129279ba08099df284a2971e0dd3c2609def71b1a11b5bf364cc3e5",
+      "dimensions": [
+        556,
+        554
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "portraits/portrait_nagamasa_native.png",
+      "bytes": 136004,
+      "sha256": "ee12b4f2fa6e1610fd14cd0537cd3e463c374d1ada4a8073d03da6823883bf0d",
+      "dimensions": [
+        248,
+        261
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "portraits/portrait_nobunaga.png",
+      "bytes": 365491,
+      "sha256": "9192ef2b12d2d36dabbf4d521655bcebb553c4b752da0abc4f19a7c9b92f6f97",
+      "dimensions": [
+        562,
+        676
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "portraits/portrait_nobunaga_native.png",
+      "bytes": 165893,
+      "sha256": "170a1a988292e7d5be8bb9a2edce95ea78f0361ac44479c33aa2d92a43d4789b",
+      "dimensions": [
+        251,
+        319
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "portraits/portrait_sakai.png",
+      "bytes": 233317,
+      "sha256": "2e06a3f52a9fdfe91420acb94f674742d25f9b9f5861670744ec726d679e26b0",
+      "dimensions": [
+        454,
+        572
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "portraits/portrait_sakai_native.png",
+      "bytes": 106801,
+      "sha256": "df5ce7f04ea20449d380664bcd0352550a1caeee475a2268d64caadb40412d48",
+      "dimensions": [
+        203,
+        270
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "portraits/portrait_sakakibara.png",
+      "bytes": 350570,
+      "sha256": "de92a91d1dcc7d42ed3a9391a910adadb1d93fe10133f970ab2a08a028141321",
+      "dimensions": [
+        554,
+        676
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "portraits/portrait_sakakibara_native.png",
+      "bytes": 156773,
+      "sha256": "df74ac4eda553a98906a157a49b8a9b8da7a3cbff4535022f70fac1454de4391",
+      "dimensions": [
+        247,
+        319
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "portraits/portrait_tadakatsu.png",
+      "bytes": 780873,
+      "sha256": "35cafcc2fa77a66c5482f0906d51857719fc2a1f18b806712b82cb375c062f11",
+      "dimensions": [
+        780,
+        998
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "portraits/portrait_tadakatsu_native.png",
+      "bytes": 326724,
+      "sha256": "209692d2ba74200dc60dfbf7b6fd7f42b1e871bbce12f5812ba617dfce120941",
+      "dimensions": [
+        348,
+        471
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "portraits/portrait_yoshikage.png",
+      "bytes": 288404,
+      "sha256": "8256470bf597a5de2d1631dea5c7844e4dce92cd4ae34e449c4ddc0fe0089dba",
+      "dimensions": [
+        558,
+        554
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "portraits/portrait_yoshikage_native.png",
+      "bytes": 133024,
+      "sha256": "2862df3170a322780c6fa8b5828d848e5151859fdf8ef5c5d6e0f79be6f9e1d0",
+      "dimensions": [
+        249,
+        261
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "previews/characters.png",
+      "bytes": 1001573,
+      "sha256": "81bdd17747a8a62278b841412e01a02f2896390b7e722e19bfad9bf7b8c5ed68",
+      "dimensions": [
+        1360,
+        1100
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "previews/faces.png",
+      "bytes": 733177,
+      "sha256": "713689e99c2bade4b6d51326d37243a5e12865789c544f4a583cd1eedda7170e",
+      "dimensions": [
+        1280,
+        820
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "previews/scenery.png",
+      "bytes": 2107723,
+      "sha256": "4c0a37da925eb6aceb34dc067c998703d6820b9092055d30e191dfde4826bf83",
+      "dimensions": [
+        1500,
+        1250
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "previews/textures.png",
+      "bytes": 1413746,
+      "sha256": "bc615f5deced29b8311340e3ae82eb93690bfb87f438a6b1195802d24af5cc84",
+      "dimensions": [
+        1200,
+        790
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "previews/tile_dirt_2x2.jpg",
+      "bytes": 389604,
+      "sha256": "9c9f1bc34ef1a454c19e2b559f6952d18e565febd72b6e9f8cd0c844a0efb4d4",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "previews/tile_forest_2x2.jpg",
+      "bytes": 327025,
+      "sha256": "0b3ac4a03cd1980bb647bc20591692f85dcdd471ce552214665e665f201c2947",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "previews/tile_grass_2x2.jpg",
+      "bytes": 441798,
+      "sha256": "69b59a14d28f926e9fe929cb94d58f0e1da9a5c6ad8b7f29aa5b31cb210d3eed",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "previews/tile_road_2x2.jpg",
+      "bytes": 265851,
+      "sha256": "d4e058914e7ef405ff64e4187128b187858745e399759271430a63d4cd240d24",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "source/bg_council_open_unprocessed.png",
+      "bytes": 424400,
+      "sha256": "c15a295b55b090eb637d2e034961c7a9a8ee8f3f1859acc1c7c6559cd27770d4",
+      "dimensions": [
+        488,
+        470
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "source/bg_council_unprocessed.png",
+      "bytes": 386123,
+      "sha256": "74ced601a7fb4c279aac6d9dfc3ae8fad816a8727f4b632e08127541d20a3c11",
+      "dimensions": [
+        522,
+        464
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "source/portrait_ieyasu_with_background.png",
+      "bytes": 308697,
+      "sha256": "2e1d0366c3c358fedb74aa833f35922f22577c15c4674fcf7c5c411c5aec69ed",
+      "dimensions": [
+        347,
+        471
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "source/portrait_kazumasa_with_background.png",
+      "bytes": 141897,
+      "sha256": "323aff956845e1f06cde42144d8aa8f264e0ac6f251ba6366f02714f01923a81",
+      "dimensions": [
+        250,
+        319
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "source/portrait_nagamasa_with_background.png",
+      "bytes": 121993,
+      "sha256": "3ca946c261212d3bc8b9ac0441f289f29fed1ac3135e326debcdd9ae4d460d19",
+      "dimensions": [
+        248,
+        261
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "source/portrait_nobunaga_with_background.png",
+      "bytes": 147604,
+      "sha256": "99c4c3a6b2c1927d2ec36ddfd9b1609356c346d543a920e6ceded8fd5272daf0",
+      "dimensions": [
+        251,
+        319
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "source/portrait_tadakatsu_with_background.png",
+      "bytes": 295921,
+      "sha256": "c994ec7508e9871fdc4e2416ad658b11dcf1a7cb541fd153b7f5ea2d30d8e6e1",
+      "dimensions": [
+        348,
+        471
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "source/portrait_tadatsugu_with_background.png",
+      "bytes": 95201,
+      "sha256": "8d0a3eff30f80790998c7fbbbf3f63afb2da2b2833c845467acd586929954de7",
+      "dimensions": [
+        203,
+        270
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "source/portrait_yasumasa_with_background.png",
+      "bytes": 139742,
+      "sha256": "c49fa8b5129935008794782f0dfbdc941fb3bb86f662e0071727e5d54e404bc6",
+      "dimensions": [
+        247,
+        319
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "source/portrait_yoshikage_with_background.png",
+      "bytes": 118168,
+      "sha256": "5bed59435de1e77da5b2b7344148ad6a2940c7e61f2962f4c02fd77a5842f5ef",
+      "dimensions": [
+        249,
+        261
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "source/prepare_portraits.py",
+      "bytes": 7516,
+      "sha256": "6fd2e26de63399c97ceb4ce8936b95a9b92c3ae6f6b85df544ece40143b1417b"
+    },
+    {
+      "path": "source/prepare_scenery.py",
+      "bytes": 3509,
+      "sha256": "21bd4fc322d301fc713e6e1649c7aa1b41b6816f9066aa5ac9aace2d7da8a753"
+    },
+    {
+      "path": "source/prepare_textures.py",
+      "bytes": 3750,
+      "sha256": "109d7eab8f967305b8614b8066f965e59037b566f81a8a1efede06da61ab0035"
+    },
+    {
+      "path": "source/tex_plains_dirt_crop.png",
+      "bytes": 295439,
+      "sha256": "be5921a758f5eb7da97e43b278092f093ac1679c503ea329003f70bd55e4b7d6",
+      "dimensions": [
+        354,
+        354
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "source/tex_plains_forest_crop.png",
+      "bytes": 176365,
+      "sha256": "9df281a1ebb0cc17896cb0aa9083050616f8bb711002a47597abace1e7a6debb",
+      "dimensions": [
+        280,
+        280
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "source/tex_plains_grass_crop.png",
+      "bytes": 312159,
+      "sha256": "a019348aaf0556d43d835f49977937cf34fff509cb1bbde42f8d0e69269f946d",
+      "dimensions": [
+        354,
+        354
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "source/tex_plains_road_crop.png",
+      "bytes": 264391,
+      "sha256": "0640efe3a1ce6831bad8c886da7b85d415141fc43a35d4f79bc03e1cde9b7f09",
+      "dimensions": [
+        346,
+        346
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "textures/tex_plains_dirt.png",
+      "bytes": 516492,
+      "sha256": "756d5117bbde2bafebe162ed9fee89a86f5fda472c72542ef86fe4e3e86e781a",
+      "dimensions": [
+        512,
+        512
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "textures/tex_plains_forest.png",
+      "bytes": 438397,
+      "sha256": "2ef71c16a22dec4654cd6659a3479abfea999d2419bdfa1b82a17914c6ff47dc",
+      "dimensions": [
+        512,
+        512
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "textures/tex_plains_grass.png",
+      "bytes": 551954,
+      "sha256": "d725dfcd6031fefcde9969fd0222836b676645beefae73ac7f032f83fa599dbd",
+      "dimensions": [
+        512,
+        512
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "textures/tex_plains_road.png",
+      "bytes": 376674,
+      "sha256": "f500281ec2302d8aa603d1ac1964532aadc2547685edb43225ecdbb511c0ba0d",
+      "dimensions": [
+        512,
+        512
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "web/bg_castle_overlook.webp",
+      "bytes": 46176,
+      "sha256": "d9aff7b62bdfb0420e85671d16bb675ecf96dcf42387a6062c16b89b6a387804",
+      "dimensions": [
+        858,
+        358
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "web/bg_council.webp",
+      "bytes": 86410,
+      "sha256": "e5a42080ce06f90a74445502a252bbe3c7d9d8779d4ef3308a48e6642eb13269",
+      "dimensions": [
+        1044,
+        928
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "web/bg_council_open.webp",
+      "bytes": 129840,
+      "sha256": "aed9f5a67d50ee2d9d31eb1d032fe9799511ca52cd639b826781296014ef2df8",
+      "dimensions": [
+        976,
+        940
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "web/bg_encampment.webp",
+      "bytes": 67748,
+      "sha256": "d69eab55e5e77204853111455733d1090953fe12a77bb6bc0197ebda0bfb0bf2",
+      "dimensions": [
+        984,
+        458
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "web/bg_forest_path.webp",
+      "bytes": 62148,
+      "sha256": "40edec42c4327b0959ad9cafdc3561bce58aff4532635a8728b024e4d8fa73e6",
+      "dimensions": [
+        626,
+        450
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "web/bg_plains.webp",
+      "bytes": 63636,
+      "sha256": "c06704606e1d09c70c0a7f75dab76b68514614e1c043a708f1280315ea3374da",
+      "dimensions": [
+        874,
+        450
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "web/bg_town_day.webp",
+      "bytes": 70950,
+      "sha256": "8fdbfd3468b2eba2436224035ac352f4590495e655a79cf17aaf86c30185a08b",
+      "dimensions": [
+        982,
+        458
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "web/bg_town_wide.webp",
+      "bytes": 78358,
+      "sha256": "3141d596afbb7348dd5dd538bb771fb05f572a871be1f2aa52bb187f688c6e98",
+      "dimensions": [
+        1010,
+        480
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "web/face_ieyasu.webp",
+      "bytes": 15750,
+      "sha256": "34b2d674fec2233d8a3e9d001c68cf93bea157d7b64bfceb5cd8e82fced84d17",
+      "dimensions": [
+        256,
+        256
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "web/face_ishikawa.webp",
+      "bytes": 15868,
+      "sha256": "3df4877e081f018bf7a61024379f2d5e36e5e4b8dc743a7a22b979a44ddfc8a1",
+      "dimensions": [
+        256,
+        256
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "web/face_nagamasa.webp",
+      "bytes": 16574,
+      "sha256": "e74dddf6bff2519cc6e2913951ba89983e865b06b1a9c2a4671d985a110ca31d",
+      "dimensions": [
+        256,
+        256
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "web/face_nobunaga.webp",
+      "bytes": 15332,
+      "sha256": "97e87a03c055ac3f4dfc66c308c189cf42e03aad3234a5f4b04c90f11b1413fd",
+      "dimensions": [
+        256,
+        256
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "web/face_sakai.webp",
+      "bytes": 12666,
+      "sha256": "6c182d9a2a0b0d34bee2616d8f0f5152e884d589029ae6ecd6d6caa465d7021c",
+      "dimensions": [
+        256,
+        256
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "web/face_sakakibara.webp",
+      "bytes": 14290,
+      "sha256": "9d733ea21ec103dbb5c2d4ef45ab94a5b877c8204c87e3f8d3b85d88b096d161",
+      "dimensions": [
+        256,
+        256
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "web/face_tadakatsu.webp",
+      "bytes": 14694,
+      "sha256": "8e55636b0e66ba3f6c8d23a25b3ab58edac7cb2a0773c7bcdc612d316945693e",
+      "dimensions": [
+        256,
+        256
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "web/face_yoshikage.webp",
+      "bytes": 14908,
+      "sha256": "a573543a39ddb75b59793d3bee62a47ec82e7cbd8cf4d2149c765092d0b2e434",
+      "dimensions": [
+        256,
+        256
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "web/portrait_ieyasu.webp",
+      "bytes": 92052,
+      "sha256": "e1bffbbf43354d74115e5ea96164d565eca51fe2774376b8fc62153a661fcbb6",
+      "dimensions": [
+        778,
+        998
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "web/portrait_ishikawa.webp",
+      "bytes": 41394,
+      "sha256": "edb698310759fc19c04bf91f0f62c68d96b266fb393f88ba9e139f2d2b10f9c4",
+      "dimensions": [
+        560,
+        676
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "web/portrait_nagamasa.webp",
+      "bytes": 37272,
+      "sha256": "500370c1ec50a7faa75d4eebd8a7b0a8ed72cfc37141692a1a638703c869ec17",
+      "dimensions": [
+        556,
+        554
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "web/portrait_nobunaga.webp",
+      "bytes": 43048,
+      "sha256": "82a319a4cb6fa72188c643abe4589133efc2353453adb5169e3607d520e56b08",
+      "dimensions": [
+        562,
+        676
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "web/portrait_sakai.webp",
+      "bytes": 26194,
+      "sha256": "89dee59a4a53eccc3b604dc8a390edd35c66e5625d1135ec28d57c979552c55c",
+      "dimensions": [
+        454,
+        572
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "web/portrait_sakakibara.webp",
+      "bytes": 38934,
+      "sha256": "ef0c03fcdd812090ec6a634568f8a4cc59d40bc775e3306dfe4901e940bb045b",
+      "dimensions": [
+        554,
+        676
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "web/portrait_tadakatsu.webp",
+      "bytes": 78046,
+      "sha256": "e5c2aaba86ee89e796ef272845ed8a947ad92dde01aaa62643f169bb0fd51191",
+      "dimensions": [
+        780,
+        998
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "web/portrait_yoshikage.webp",
+      "bytes": 35298,
+      "sha256": "3f4607530e489c6d36c2dd1147a3a9297d04ad91f4de499a262fba8076c34f88",
+      "dimensions": [
+        558,
+        554
+      ],
+      "mode": "RGBA",
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "path": "web/tex_plains_dirt.webp",
+      "bytes": 77652,
+      "sha256": "cbe5dabe7cd238ad83dfcfbd512cba37994fb853a6c4a443c5c085d42fb9c7e9",
+      "dimensions": [
+        512,
+        512
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "web/tex_plains_forest.webp",
+      "bytes": 56906,
+      "sha256": "1e5a5cbdc8a7be48609c51a70d29e61b4641a2a7eb467d848bd228bd6ece6baa",
+      "dimensions": [
+        512,
+        512
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "web/tex_plains_grass.webp",
+      "bytes": 89828,
+      "sha256": "484382c91e3630884e6af95222594aa34bc937c16d0a64084bb290259d3f747b",
+      "dimensions": [
+        512,
+        512
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "web/tex_plains_road.webp",
+      "bytes": 41536,
+      "sha256": "bf119511ffe2673813a355a1e0414e7b3f7a00852b75f13f1223a5f9afe7c8d5",
+      "dimensions": [
+        512,
+        512
+      ],
+      "mode": "RGB"
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 /**
- * 合戦の武将の顔（Version 22。家康・忠勝だけ。art/ids.ts の FACE_OF）。部隊の札・能力の欄・発動の知らせ・演習の編成の表で使う。
+ * 合戦の武将の顔（Version 22。art/ids.ts の FACE_OF：素材の届いた武将だけ。ほかの人の顔で代用しない）。部隊の札・能力の欄・発動の知らせ・演習の編成の表で使う。
  *
  * - 画像は art/registry.ts の loadArtBitmap（fetch → createImageBitmap）だけで読み、<canvas class="b-face" data-art-id> に描く
  *   （<img>・CSS の背景・data: の URL は使わない）。canvas は 1 度描けば、置き場所を移しても描き直さない（毎秒作り直す欄の中でもちらつかない）。

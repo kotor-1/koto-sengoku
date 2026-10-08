@@ -8,14 +8,22 @@
 - 作り方：`python3 -I proto3d/tools/make-dev-art.py`。本物と同じ ID・種類・原画の大きさの模様を作り、`proto3d/tools/art-build.py` の ingest → build をそのまま通します（透明の検査・余白の切り詰め・同じ原画からの顔の切り出し・地面の処理・WebP の上限）。手で直さないでください。
 - `manifest.json` は `proto3d/src/art/manifest.gen.json` と同じ形です（file はこのフォルダからの相対）。
 
-合計 300,654 バイト（10 件）。
+合計 484,538 バイト（18 件）。
 
 | ID | 種類 | ファイル | 寸法 | 容量（バイト） | meta |
 |---|---|---|---|---|---|
 | `portrait.ieyasu` | portrait | `art/portraits/ieyasu.webp` | 745×1453 | 36,572 | {"eyeY": 0.1543, "faceX": 0.507} |
-| `portrait.tadakatsu` | portrait | `art/portraits/tadakatsu.webp` | 745×1453 | 39,242 | {"eyeY": 0.1543, "faceX": 0.507} |
 | `face.ieyasu` | face | `art/faces/ieyasu.webp` | 256×256 | 7,554 | {} |
+| `portrait.tadakatsu` | portrait | `art/portraits/tadakatsu.webp` | 745×1453 | 39,242 | {"eyeY": 0.1543, "faceX": 0.507} |
 | `face.tadakatsu` | face | `art/faces/tadakatsu.webp` | 256×256 | 7,970 | {} |
+| `portrait.sakai` | portrait | `art/portraits/sakai.webp` | 745×1453 | 36,722 | {"eyeY": 0.1543, "faceX": 0.507} |
+| `face.sakai` | face | `art/faces/sakai.webp` | 256×256 | 7,522 | {} |
+| `portrait.ishikawa` | portrait | `art/portraits/ishikawa.webp` | 745×1453 | 38,090 | {"eyeY": 0.1543, "faceX": 0.507} |
+| `face.ishikawa` | face | `art/faces/ishikawa.webp` | 256×256 | 7,780 | {} |
+| `portrait.sakakibara` | portrait | `art/portraits/sakakibara.webp` | 745×1453 | 39,360 | {"eyeY": 0.1543, "faceX": 0.507} |
+| `face.sakakibara` | face | `art/faces/sakakibara.webp` | 256×256 | 8,162 | {} |
+| `portrait.nagamasa` | portrait | `art/portraits/nagamasa.webp` | 745×1453 | 38,296 | {"eyeY": 0.1543, "faceX": 0.507} |
+| `face.nagamasa` | face | `art/faces/nagamasa.webp` | 256×256 | 7,952 | {} |
 | `bg.council` | background | `art/story/council.webp` | 1536×1024 | 50,350 | {} |
 | `bg.council.front` | overlay | `art/story/council_front.webp` | 1536×1024 | 7,802 | {} |
 | `tex.plains.grass` | texture | `art/battle/plains_grass.webp` | 1024×1024 | 38,858 | {"tileMeters": 8} |

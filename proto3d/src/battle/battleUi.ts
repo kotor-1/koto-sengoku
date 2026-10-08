@@ -20,7 +20,7 @@
  *   .b-gen[data-general]・結果の .b-robj の行 [data-role][data-achieved]・名札 .b-label[data-mark]（救出・守る・崩す）・
  *   部隊の名札 .b-label[data-id][data-ab]（ready・active・choosing・target・untargetable）・発動の知らせ .b-abnote[data-kind]・
  *   名札の優先表示 .b-label[data-fit]（mini＝小さく・hide＝一時的に隠す。付いていなければそのまま）。
- * 武将の顔（Version 22。家康・忠勝だけ。faceArt.ts）：生成イラスト素材が読めたときだけ、部隊の札の見出し・能力の欄の武将の行・発動の知らせ（自軍だけ）に
+ * 武将の顔（Version 22。素材の届いた武将だけ。faceArt.ts）：生成イラスト素材が読めたときだけ、部隊の札の見出し・能力の欄の武将の行・発動の知らせ（自軍だけ）に
  *   <canvas class="b-face" data-art-id> を置く（毎秒作り直す欄の文字列の外に持ち、作り直した後に置き直す）。読めない・旧表示では何も置かない（Version 21 と同じ）。
  *   札の高さ・下の列・左上の見出し（カメラの「全体」の余白 insets）は変えない。
  * ボタンは押した瞬間（pointerdown）に反応し、その後の click は無視する（キーボードの Enter／Space の click だけ受ける）。
@@ -387,7 +387,7 @@ export class BattleUi {
             if (u.side !== 'ally') continue;
             const c = this.makeCard(u.id, u.name, key++);
             cards.append(c.root);
-            // 武将の顔（家康・忠勝だけ。読めたら見出しの先頭に小さく。札の高さは変えない）
+            // 武将の顔（素材の届いた武将だけ。読めたら見出しの先頭に小さく。札の高さは変えない）
             const head = c.root.querySelector('.b-card-h') as HTMLElement | null;
             if (head) attachFaceWhenReady(u.generalId ?? u.leaderId, head, () => !this.disposed);
         }
