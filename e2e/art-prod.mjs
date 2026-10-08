@@ -26,6 +26,8 @@ const DIST = resolve(process.env.DIST || 'dist-proto3d');
 const PORT = Number(process.env.PORT || 8134);
 const [VW, VH] = (process.env.VIEW || '960x540').split('x').map(Number);
 const RUNS = (process.env.RUNS || 'art,abort,old').split(',').filter(Boolean);
+/** 大平原の演習の武将のいる部隊（a_<武将の id>）。顔は一覧にある武将だけ（弓隊 a_yumi・騎馬隊 a_kiba には武将がいない） */
+const PLAINS_GENERALS = ['ieyasu', 'tadakatsu', 'sakai', 'ishikawa', 'sakakibara'];
 if (!existsSync(join(DIST, 'index.html'))) throw new Error(`${DIST}/index.html が無い（先に本番ビルド）`);
 
 // 素材の一覧：dist を作ったチェックアウトの manifest.gen.json（dist の隣に proto3d があればそれ。無ければ今の場所から）
@@ -86,9 +88,17 @@ async function run(kind) {
   const csp = [];
   page.on('pageerror', (e) => errors.push(`pageerror ${e.message}`));
   const artWarn = [];
+  // /art/ の読み込みの時刻（この回の始めからの秒）：頼んだ・通信が済んだ・失敗の知らせ。失敗の知らせが出た時、通信は済んでいたか
+  //（済んでいたなら、ページの中で中身を受け取る処理が時間切れまでに回らなかった＝ページの重さ）を報告で見分ける
+  const tRun = Date.now();
+  const sec = () => Math.round((Date.now() - tRun) / 100) / 10;
+  const artTiming = [];
   page.on('console', (m) => {
     // 素材の読み込みの失敗（registry.ts の console.warn「[art] … を読めませんでした」）は誤りにしないが、書き出す
-    if (m.type() === 'warning' && m.text().includes('[art]')) artWarn.push(m.text().slice(0, 160));
+    if (m.type() === 'warning' && m.text().includes('[art]')) {
+      artWarn.push(m.text().slice(0, 160));
+      artTiming.push({ ev: 'warn', at: sec(), text: m.text().slice(0, 60) });
+    }
     if (m.type() !== 'error') return;
     const where = m.location()?.url ?? '';
     // abort の回：止めた /art/ の読み込みの失敗の知らせ（ブラウザが出す）は数えない
@@ -99,6 +109,15 @@ async function run(kind) {
     const u = r.url();
     if (u.startsWith('data:')) dataUrls.push(u.slice(0, 40));
     else if (/\/dev-art\//.test(new URL(u).pathname)) devArt.push(new URL(u).pathname);
+    if (new URL(u).pathname.startsWith('/art/')) artTiming.push({ ev: 'request', at: sec(), path: new URL(u).pathname });
+  });
+  page.on('requestfinished', (r) => {
+    const p = new URL(r.url()).pathname;
+    if (p.startsWith('/art/')) artTiming.push({ ev: 'finished', at: sec(), path: p });
+  });
+  page.on('requestfailed', (r) => {
+    const p = new URL(r.url()).pathname;
+    if (p.startsWith('/art/')) artTiming.push({ ev: 'failed', at: sec(), path: p, why: r.failure()?.errorText ?? '' });
   });
   page.on('response', async (r) => {
     const p = new URL(r.url()).pathname;
@@ -231,8 +250,8 @@ async function run(kind) {
     check(`${kind}: 演習の説明：編成の表の文字と「出陣」`, brief.rows.length >= 4 && brief.rows.every((r) => r.text) && brief.go, brief.rows.length);
     const faceRows = brief.rows.filter((r) => r.face).map((r) => `${r.unit}:${r.face}`).sort();
     if (kind === 'art') {
-      const want = [has('face.ieyasu') ? 'a_ieyasu:face.ieyasu' : null, has('face.tadakatsu') ? 'a_tadakatsu:face.tadakatsu' : null].filter(Boolean).sort();
-      check('art: 編成の表の顔は一覧にある家康・忠勝だけ', JSON.stringify(faceRows) === JSON.stringify(want), faceRows);
+      const want = PLAINS_GENERALS.filter((g) => has(`face.${g}`)).map((g) => `a_${g}:face.${g}`).sort();
+      check('art: 編成の表の顔は、一覧に顔のある武将の部隊だけ・その武将の顔（弓隊・騎馬隊には無い）', JSON.stringify(faceRows) === JSON.stringify(want), faceRows);
     } else check(`${kind}: 編成の表に顔は無い`, faceRows.length === 0, faceRows);
     await pressBtn('go', '.g-layer[data-sheet="practice-briefing"]');
     await page.locator('.b-root[data-field="plains"]').waitFor({ state: 'visible' });
@@ -259,9 +278,9 @@ async function run(kind) {
     check(`${kind}: 合戦の札（4 以上）の文字・目標・操作の部品が出る`, bs.cards.length >= 4 && bs.cards.every((c) => c.text) && Object.values(bs.parts).every(Boolean), bs.parts);
     check(`${kind}: 忠勝の札を選ぶと能力の欄が出る`, !!bs.abil, bs.abil);
     if (kind === 'art') {
-      const want = [has('face.ieyasu') ? 'a_ieyasu:face.ieyasu' : null, has('face.tadakatsu') ? 'a_tadakatsu:face.tadakatsu' : null].filter(Boolean).sort();
+      const want = PLAINS_GENERALS.filter((g) => has(`face.${g}`)).map((g) => `a_${g}:face.${g}`).sort();
       const got = bs.cards.filter((c) => c.face).map((c) => `${c.id}:${c.face}`).sort();
-      check('art: 札の顔は一覧にある家康・忠勝だけ', JSON.stringify(got) === JSON.stringify(want), got);
+      check('art: 札の顔は、一覧に顔のある武将の部隊だけ・その武将の顔（弓隊・騎馬隊には無い）', JSON.stringify(got) === JSON.stringify(want), got);
       if (has('face.tadakatsu')) check('art: 能力の欄の武将の行に忠勝の顔', bs.genFace === 'face.tadakatsu', bs.genFace);
       const tex = ['tex.plains.grass', 'tex.plains.dirt', 'tex.plains.road', 'tex.plains.forest'].filter(has).map((id) => `/${assets[id].file}`);
       if (tex.length) check('art: 大平原の地面の素材を読んだ', tex.every((p) => artResp.some((r) => r.path === p && r.status === 200)), tex);
@@ -292,8 +311,10 @@ async function run(kind) {
   if (kind === 'old') check('old: ?art=old は /art/ を 1 つも読まない', artResp.length === 0 && aborted.length === 0, artResp.map((r) => r.path));
   if (artWarn.length) console.log(`   素材の読み込みの知らせ（console.warn）：${artWarn.join(' / ')}`);
   if (kind === 'art') check('art: 一覧の素材の読み込みの失敗の知らせが無い（[art] … を読めませんでした）', !artWarn.some((w) => w.includes('読めません')), artWarn);
+  if (artWarn.length) console.log(`   /art/ の読み込みの時刻（秒）：${JSON.stringify(artTiming)}`);
   out.artWarn = artWarn;
   out.artRequests = artResp;
+  out.artTiming = artTiming;
   out.aborted = [...new Set(aborted)];
   out.errors = errors;
   out.csp = csp;
