@@ -422,9 +422,11 @@ body.mode-battle #build { display: none !important; }
 .b-abil.with-face > .b-gen { position: relative; padding-left: 28px; }
 .b-abil.with-face > .b-gen > .b-gen-ab { display: none; }
 .b-abil.with-face > .b-gen > .b-face { position: absolute; left: 0; top: 50%; width: 22px; height: 22px; margin-top: -11px; border-radius: 4px; }
-/* 発動の知らせ：顔を左に、能力名と対象を右に（高さは今の 2 行のまま。畳んだときは顔を出さない） */
+/* 発動の知らせ：顔を左に、能力名と対象を右に（高さは今の 2 行のまま。顔で文字の折り返しが増えて高くなる時は battleUi.ts が顔を置かない）。
+   畳んだときは顔を出さず、並びも Version 21 と同じ（縦の並び。顔とのすき間を残さない＝幅・真ん中も Version 21 のまま） */
 .b-abnote.with-face:not([hidden]) { display: grid; grid-template-columns: auto auto; column-gap: 9px; align-items: center; justify-items: start; }
 .b-abnote.with-face > .b-face { grid-row: 1 / span 2; width: 34px; height: 34px; }
+.b-topmid[data-fold="1"] .b-abnote.with-face:not([hidden]) { display: flex; }
 .b-topmid[data-fold="1"] .b-abnote > .b-face { display: none; }
 /* 演習の編成の表：名前の前に、文字の行の高さで */
 .g-pr-units td > .b-face { display: inline-block; width: 1.35em; height: 1.35em; margin-right: 5px; vertical-align: top; border-radius: 4px; }
@@ -807,6 +809,6 @@ body.mode-battle #build { display: none !important; }
     .b-card-h > .b-face.b-face-narrow { width: 8px; margin-right: -2px; border-radius: 2px; }
     .b-abil.with-face > .b-gen { padding-left: 20px; }
     .b-abil.with-face > .b-gen > .b-face { width: 15px; height: 15px; margin-top: -7.5px; border-radius: 3px; }
-    .b-abnote.with-face { column-gap: 7px; }
+    .b-abnote.with-face:not([hidden]) { column-gap: 7px; }
     .b-abnote.with-face > .b-face { width: 28px; height: 28px; }
 }

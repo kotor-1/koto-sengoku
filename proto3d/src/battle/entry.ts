@@ -556,7 +556,7 @@ class BattleRun implements Mode {
             const how = pm?.info.id === 'nagamasa_support' ? 'を援護' : 'へ差配';
             this.ui.flash(`${user.name}：「${name}」${tgt ? `— ${tgt}${how}` : ''}${this.paused ? '（再開すると時間が進む）' : ''}`, 2400);
             const note = abilityNoticeModel(this.s, user.id);
-            // 武将の顔（家康・忠勝の素材が読めたときだけ）は自軍の発動だけに添える
+            // 武将の顔（素材の届いた 6 人＝家康・忠勝・酒井・石川・榊原・長政の顔が読めたときだけ。知らせが Version 21 より高くなるなら付けない）は自軍の発動だけに添える
             if (note) this.ui.abilityNotice('use', `${note.general}${note.title}`, `対象：${note.target}`, undefined, user.side === 'ally' ? note.generalId : null);
             // 音：能力の発動の太鼓と、武将の掛け声（味方の武将だけ）
             audio()?.battleCue('ability', this.speed);

@@ -798,6 +798,23 @@ body.touch .g-sit-tab .n { display: none; }
     .g-dialog.has-face { --g-face-x: 7px; --g-face-gap: 8px; }
     .g-dialog.has-face .text { letter-spacing: 0; }
 }
+/* 縦に長い画面で幅の狭い所（タブレットの縦・小さな窓・スマホの縦）：顔 72px の空きの分だけ枠を左へ広げられるのは幅 968px 以上。
+   幅 967px までは顔を 52px にし（幅 912px 以上ならこれで広げきれる＝台詞の幅は Version 21 のまま）、幅 911px までは台詞の字も
+   16 → 15px・字の間を 0.03 → 0.01em にする。スマホの縦（幅 480px まで）は顔 44px・字の間 0。
+   歴史分岐の台本の全部の行（476 行）で測った：768×1024・800×600・900×700・940×700・960×540・1024×768 で Version 21 より高い枠は 0。
+   360×740・390×844・412×915 では選択肢に新しく重なる枠は 0（Version 21 と同じ 48 件）、高くなる枠は 1 行分（+22px）まで */
+@media (min-height: 430.02px) and (max-width: 967px) {
+    .g-dialog.has-face { --g-face: 52px; --g-face-x: 8px; --g-face-gap: 10px; }
+    .g-dialog .g-face { border-radius: 10px; }
+}
+@media (min-height: 430.02px) and (max-width: 911px) {
+    .g-dialog.has-face .text { font-size: 15px; letter-spacing: 0.01em; }
+}
+@media (min-height: 430.02px) and (max-width: 480px) {
+    .g-dialog.has-face { --g-face: 44px; --g-face-x: 7px; --g-face-gap: 8px; }
+    .g-dialog.has-face .text { letter-spacing: 0; }
+    .g-dialog .g-face { border-radius: 9px; }
+}
 /* 軍議の背景：層のいちばん奥（下の 3D の陣幕の画は、そのまま後ろに残る） */
 .g-council-bg {
     position: absolute;

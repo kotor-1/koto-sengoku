@@ -547,3 +547,55 @@ describe('台詞の枠の顔（DialogFace）', () => {
         expect(faceEl(box2)!.dataset.artId).toBe(ART_IDS.faceIeyasu);
     });
 });
+
+describe('台詞の枠の顔の CSS：縦に長い画面で幅の狭い所（タブレットの縦・小さな窓・スマホの縦）でも枠を高くしない', () => {
+    // テストは Node で動く。Node の型定義は入れていないので、使う関数だけ型を付ける
+    const fsName = 'node:fs';
+    async function rules(): Promise<{ media: string; sel: string; body: string }[]> {
+        const fs = (await import(/* @vite-ignore */ fsName)) as { readFileSync(p: URL, enc: 'utf8'): string };
+        const css = fs.readFileSync(new URL('../proto3d/src/ui/ui.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+        const out: { media: string; sel: string; body: string }[] = [];
+        const re = /@media([^{]+)\{((?:[^{}]*\{[^{}]*\})*)\s*\}|([^{}@]+)\{([^{}]*)\}/g;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(css))) {
+            if (m[1] !== undefined) {
+                const inner = /([^{}]+)\{([^{}]*)\}/g;
+                let n: RegExpExecArray | null;
+                while ((n = inner.exec(m[2]))) out.push({ media: m[1].trim(), sel: n[1].trim(), body: n[2] });
+            } else out.push({ media: '', sel: m[3].trim(), body: m[4] });
+        }
+        return out;
+    }
+    const prop = (body: string, name: string): string | null => {
+        const m = new RegExp(`(?:^|;)\\s*${name.replace(/[-]/g, '\\-')}\\s*:\\s*([^;]+)`).exec(body);
+        return m ? m[1].trim() : null;
+    };
+    it('幅 967px まで顔 52px（枠を左へ広げきれる）・幅 911px まで台詞 15px・スマホの縦（幅 480px まで）顔 44px。顔のある枠だけに掛かる（旧表示は Version 21 のまま）', async () => {
+        const all = await rules();
+        const tall = all.filter((r) => /min-height:\s*430\.02px/.test(r.media));
+        expect(tall.length).toBeGreaterThanOrEqual(5);
+        for (const r of tall) for (const sel of r.sel.split(',').map((x) => x.trim())) expect(['.g-dialog.has-face', '.g-dialog.has-face .text', '.g-dialog .g-face']).toContain(sel);
+        const find = (w: number, sel: string) => tall.find((r) => r.media.includes(`max-width: ${w}px`) && r.sel === sel)!;
+        expect(prop(find(967, '.g-dialog.has-face').body, '--g-face')).toBe('52px');
+        expect(prop(find(911, '.g-dialog.has-face .text').body, 'font-size')).toBe('15px');
+        expect(prop(find(480, '.g-dialog.has-face').body, '--g-face')).toBe('44px');
+        // 広げる幅（顔の空き − 元の左の余白 18px）が、幅 W の画面で右の端を動かさずに取れるか（.g-dialog.has-face の width の式と同じ）
+        const px = (r: { body: string }, n: string) => parseFloat(prop(r.body, n) ?? 'NaN');
+        const spread = (face: number, x: number, gap: number) => x + face + gap - 18;
+        const fits = (w: number, extra: number) => w / 2 - 14 - extra >= Math.min(w - 28, 780) / 2 - 0.01;
+        const narrow = find(967, '.g-dialog.has-face');
+        const e52 = spread(px(narrow, '--g-face'), px(narrow, '--g-face-x'), px(narrow, '--g-face-gap'));
+        expect(fits(912, e52)).toBe(true);
+        expect(fits(911, e52)).toBe(false);
+        expect(fits(968, spread(72, 12, 14))).toBe(true);
+        expect(fits(967, spread(72, 12, 14))).toBe(false);
+    });
+});
+
+describe('公開の素材の一覧（manifest.gen.json）は武将 6 人の顔だけ', () => {
+    it('人物画・軍議の背景・地面の素材は入れていない（画面での確かめの結果を待つ）。顔の画像は art/faces/ の WebP', () => {
+        const assets = (generated as { assets: Record<string, { file: string; kind?: string }> }).assets;
+        expect(Object.keys(assets).sort()).toEqual(['face.ieyasu', 'face.ishikawa', 'face.nagamasa', 'face.sakai', 'face.sakakibara', 'face.tadakatsu']);
+        for (const [id, a] of Object.entries(assets)) expect(a.file, id).toBe(`art/faces/${id.slice(5)}.webp`);
+    });
+});

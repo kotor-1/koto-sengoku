@@ -258,8 +258,8 @@ async function run(part, size, mode) {
                 check(shown === wantFace, `${L} 顔は今の話し手の物（無い人は空きだけ）`, { want: wantFace, shown });
                 if (p.face && !p.face.hidden) {
                     const f = p.face.rect;
-                    const small = p.vh <= 430;
-                    const want = small ? 52 : 72;
+                    // ui.css：PC 72px。スマホ横（高さ 430 以下）と、縦に長い画面の幅 967px まで（タブレットの縦・小さな窓）は 52px、スマホの縦（幅 480px まで）は 44px
+                    const want = p.vh <= 430 ? 52 : p.vw <= 480 ? 44 : p.vw <= 967 ? 52 : 72;
                     check(Math.abs(f.w - want) < 0.6 && Math.abs(f.h - want) < 0.6, `${L} 顔の大きさ ${want}px`, f);
                     const dpr = Math.min(2, Math.max(1, p.dpr));
                     check(p.face.px[0] === Math.round(want * dpr) && p.face.px[1] === Math.round(want * dpr), `${L} canvas の画素は端末の比 2 まで（${Math.round(want * dpr)}）`, p.face.px);

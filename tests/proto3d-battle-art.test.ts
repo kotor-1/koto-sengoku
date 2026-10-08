@@ -914,4 +914,20 @@ describe('能力の欄の顔は欄の高さ・能力の見出しの行の幅を�
         // 顔の規則は札そのもの・見出しの行の大きさを変えない
         for (const r of all.filter((x) => /b-face/.test(x.sel))) for (const sel of r.sel.split(',').map((x) => x.trim())) expect(sel, sel).not.toMatch(/\.b-card(-h)?$|\.b-card(-h)?\s*[,{]|\.b-cards$/);
     });
+    it('発動の知らせの顔：畳んだ時は Version 21 と同じ縦の並び（顔とのすき間を残さない）。スマホのすき間の規則は顔の並びの規則に負けない', () => {
+        const all = rules();
+        const find = (media: string, sel: string) => all.find((r) => (media ? r.media.includes(media) : r.media === '') && r.sel.split(',').map((x) => x.trim()).includes(sel));
+        const grid = find('', '.b-abnote.with-face:not([hidden])')!;
+        expect(prop(grid.body, 'display')).toBe('grid');
+        // 畳んだ時（data-fold="1"）：顔の並び（grid）より強い選ぶ側で、元の flex に戻す。隠した知らせ（[hidden]）には掛けない
+        const folded = find('', '.b-topmid[data-fold="1"] .b-abnote.with-face:not([hidden])')!;
+        expect(folded && prop(folded.body, 'display')).toBe('flex');
+        expect(all.indexOf(folded)).toBeGreaterThan(all.indexOf(grid));
+        expect(prop(find('', '.b-topmid[data-fold="1"] .b-abnote > .b-face')!.body, 'display')).toBe('none');
+        // 縦の狭い画面のすき間：顔の並びの規則と同じ選ぶ側（後に書いてあるので勝つ）
+        const gap = find('max-height: 520px', '.b-abnote.with-face:not([hidden])')!;
+        expect(gap && prop(gap.body, 'column-gap')).toBe('7px');
+        expect(all.indexOf(gap)).toBeGreaterThan(all.indexOf(grid));
+        expect(all.filter((r) => r.sel.split(',').map((x) => x.trim()).includes('.b-abnote.with-face'))).toEqual([]);
+    });
 });

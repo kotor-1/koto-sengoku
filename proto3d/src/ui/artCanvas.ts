@@ -626,7 +626,8 @@ export class PortraitSlot {
 // ================= 台詞の枠の顔（ui/view.ts の script() が作る） =================
 
 /**
- * 台詞の枠の顔の大きさ（CSS の px。ui.css の .g-dialog.has-face の --g-face と同じ：PC 72・スマホ横（高さ 430 以下）52）。
+ * 台詞の枠の顔の大きさ（CSS の px。ui.css の .g-dialog.has-face の --g-face と同じ：PC 72・スマホ横（高さ 430 以下）52。
+ * 縦に長い画面の幅 967 以下（タブレットの縦・小さな窓）も 52、スマホの縦（幅 480 以下）は 44）。
  * 実際の大きさは CSS が決め、DialogFace は canvas の画素の数だけを合わせる（測れないときの控え）。
  */
 export const DIALOG_FACE_PX = { pc: 72, phone: 52 } as const;

@@ -160,14 +160,25 @@ function worseNames(oldCards, newCards) {
 function wrongFaces(cards) {
     return cards.filter((c) => c.face !== (FACE_GENS.includes(c.gen) ? `face.${c.gen}` : null)).map((c) => `${c.id}(${c.gen}): ${c.face}`);
 }
-/** 発動の知らせ（文・顔・大きさ） */
+/** 発動の知らせ（文・顔・大きさ）。face は見えている顔だけ（畳んで CSS で隠した顔は数えない。置いてあるだけの顔は faceDom） */
 const noticeProbe = (page) =>
     page.evaluate(() => {
         const n = document.querySelector('.b-abnote');
         const f = n?.querySelector('.b-face');
+        const fw = f ? f.getBoundingClientRect().width : 0;
         const r = n?.getBoundingClientRect();
-        return n && !n.hidden ? { text: n.innerText.replace(/\s+/g, ' '), face: f?.dataset.artId ?? null, h: Math.round(r.height), w: Math.round(r.width), vw: innerWidth, vh: innerHeight, fold: Number(document.querySelector('.b-topmid')?.dataset.fold ?? 0) } : null;
+        return n && !n.hidden ? { text: n.innerText.replace(/\s+/g, ' '), face: f && fw > 0 ? (f.dataset.artId ?? null) : null, faceDom: f?.dataset.artId ?? null, faceW: Math.round(fw * 10) / 10, h: Math.round(r.height * 10) / 10, w: Math.round(r.width * 10) / 10, vw: innerWidth, vh: innerHeight, fold: Number(document.querySelector('.b-topmid')?.dataset.fold ?? 0) } : null;
     });
+/**
+ * 発動の知らせの顔と大きさを旧表示と比べる。顔を出すなら、高さは旧表示と同じ（顔の分だけ横に広い）。顔を出さない（畳んだ・顔で折り返しが
+ * 増える細い列）なら、幅・高さとも旧表示と同じ。返り：{ ok, face（顔を出したか） }
+ */
+function noticeVsOld(o, a, gen) {
+    if (!o || !a || o.face) return { ok: false, face: false };
+    const near = (x, y) => Math.abs(x - y) <= 0.6;
+    if (a.face === `face.${gen}`) return { ok: a.fold === 0 && near(a.h, o.h) && a.w > o.w, face: true };
+    return { ok: a.face === null && near(a.h, o.h) && near(a.w, o.w), face: false };
+}
 /** 上の真ん中（指揮中の印・発動の知らせ）だけを撮る（撮れなくても進める） */
 async function noticeShot(page, path) {
     await page.locator('.b-topmid').screenshot({ path, timeout: 8000 }).catch(() => {});
@@ -539,7 +550,9 @@ async function plainsPart(kind) {
             const o = old.abilities[id];
             const a = m.abilities[id];
             check(!!o && !!a && o.used && a.used && o.how === a.how && (o.target ?? null) === (a.target ?? null), `${tg}: ${id} の能力を ${a?.how} で使えた（旧表示と同じ押し方・対象 ${a?.target ?? 'なし'}）`, [o, a].map((x) => x && { how: x.how, used: x.used, target: x.target, why: x.why }));
-            check(a?.notice?.face === `face.${id.slice(2)}` && o?.notice && !o.notice.face, `${tg}: ${id} の発動の知らせにその武将の顔（旧表示は無し）`, [o?.notice, a?.notice]);
+            const nv = noticeVsOld(o?.notice, a?.notice, id.slice(2));
+            check(nv.ok, `${tg}: ${id} の発動の知らせ：${nv.face ? 'その武将の顔があり、高さは旧表示と同じ' : '顔を出さず（畳んだ・顔で折り返しが増える）、幅・高さとも旧表示と同じ'}（旧表示は顔無し）`, [o?.notice, a?.notice]);
+            if (!SIZES[kind][2]) check(nv.face || a?.notice?.fold > 0, `${tg}: ${id} の発動の知らせ：PC の幅の列では（畳まなければ）顔を出す`, a?.notice);
             check(!!a?.notice && a.notice.w < a.notice.vw * 0.6 && a.notice.h < 90 && a.paused === o?.paused && !a.modal, `${tg}: ${id} の発動の知らせは小さい（画面全体を覆わない・止め方を変えない）`, a?.notice && [a.notice.w, a.notice.h]);
             if (o?.notice && a?.notice) check(a.fold === o.fold, `${tg}: ${id} の発動の知らせの畳み方（名札を覆う時に畳む）が旧表示と同じ（${o.fold} → ${a.fold}）`);
         }
@@ -688,7 +701,12 @@ async function ch2Part(policy) {
             check(old[`can_${id}`] === actual[`can_${id}`] && JSON.stringify(old[`use_${id}`]) === JSON.stringify(actual[`use_${id}`]), `${k}: ${id} 能力の使える・使えない・使い方が同じ`, [old[`use_${id}`], actual[`use_${id}`]]);
             if (actual[`use_${id}`]?.used) {
                 const gen = actual.cards.find((c) => c.id === id).gen;
-                check(actual[`note_${id}`]?.face === `face.${gen}` && !old[`note_${id}`]?.face, `${k}: ${id} 発動の知らせにその武将の顔（旧表示は無し）`, [old[`note_${id}`], actual[`note_${id}`]]);
+                const on = old[`note_${id}`];
+                const an = actual[`note_${id}`];
+                if (on && an) {
+                    const nv = noticeVsOld(on, an, gen);
+                    check(nv.ok, `${k}: ${id} 発動の知らせ：${nv.face ? 'その武将の顔があり、高さは旧表示と同じ' : '顔を出さず、幅・高さとも旧表示と同じ'}（旧表示は顔無し）`, [on, an]);
+                } else check(!!an && (an.faceDom === null || an.faceDom === `face.${gen}`), `${k}: ${id} 発動の知らせの顔は出すならその武将の顔（旧表示の知らせは読み逃した）`, an);
                 // 畳み方は両方の知らせを読めた時だけ比べる（重い時は旧表示の側で 2.5 秒の知らせを読み逃すことがある）
                 if (old[`note_${id}`] && actual[`note_${id}`]) check(actual[`note_${id}`].fold === old[`note_${id}`].fold, `${k}: ${id} 発動の知らせの畳み方が旧表示と同じ`, [old[`note_${id}`].fold, actual[`note_${id}`].fold]);
                 else console.log(`     ${k}: ${id} 旧表示の発動の知らせは読み逃した（重い時の時間切れ。畳み方は比べていない）`);
@@ -843,7 +861,12 @@ async function nagamasaPart() {
         check(worseNames(old.cards, actual.cards).length === 0, `${k}: 札の名前が旧表示より短く切れない`, worseNames(old.cards, actual.cards));
         check(actual.panel.face?.id === 'face.nagamasa' && actual.panel.withFace && !old.panel.face && panelSame(old.panel, actual.panel), `${k}: 能力の欄の武将の行に長政の顔（欄の四角は旧表示と同じ。高さ ${hOf(old.panel.abil)} → ${hOf(actual.panel.abil)}）`, [old.panel.genText, actual.panel.genText]);
         check(old.use.used && actual.use.used && JSON.stringify(old.use) === JSON.stringify(actual.use), `${k}: 盟友への援護を「能力」→ 援護する味方（${actual.use.how}）で使えた（旧表示と同じ）`, [old.use, actual.use]);
-        check(actual.notice?.face === 'face.nagamasa' && !old.notice?.face && (!old.notice || actual.notice.fold === old.notice.fold), `${k}: 発動の知らせに長政の顔（旧表示は無し。畳み方は同じ）`, [old.notice, actual.notice]);
+        {
+            const nv = noticeVsOld(old.notice, actual.notice, 'nagamasa');
+            if (old.notice) check(nv.ok && actual.notice.fold === old.notice.fold, `${k}: 発動の知らせ：${nv.face ? '長政の顔があり、高さは旧表示と同じ' : '顔を出さず、幅・高さとも旧表示と同じ'}（旧表示は顔無し。畳み方は同じ）`, [old.notice, actual.notice]);
+            else check(!!actual.notice && (actual.notice.faceDom === null || actual.notice.faceDom === 'face.nagamasa'), `${k}: 発動の知らせの顔は出すなら長政の顔（旧表示の知らせは読み逃した）`, actual.notice);
+            if (H > 520 && actual.notice && actual.notice.fold === 0) check(actual.notice.face === 'face.nagamasa', `${k}: PC の幅の列では発動の知らせに長政の顔`, actual.notice);
+        }
         check(JSON.stringify(old.insetRects) === JSON.stringify(actual.insetRects) && JSON.stringify(old.camera) === JSON.stringify(actual.camera) && JSON.stringify(old.cards.map((c) => c.card)) === JSON.stringify(actual.cards.map((c) => c.card)), `${k}: 余白の部品・カメラ・札の四角が同じ`);
         check(old.stateHash.hash === actual.stateHash.hash && old.stateHash.tick === actual.stateHash.tick, `${k}: 同じ操作で状態の指紋が同じ`, [old.stateHash, actual.stateHash]);
         for (const m of [old, actual]) check(m.errors.length === 0, `${k} ${m.mode}: ページの誤り無し`, m.errors.slice(0, 3));
@@ -906,7 +929,12 @@ async function nagamasaPart() {
         check(actual.panel.face?.id === 'face.nagamasa' && !old.panel.face && panelSame(old.panel, actual.panel), `${k}: 能力の欄に長政の顔（欄の四角は旧表示と同じ。高さ ${hOf(old.panel.abil)} → ${hOf(actual.panel.abil)}）`, [old.panel.genText, actual.panel.genText]);
         check(actual.nagamasaWhy === old.nagamasaWhy, `${k}: 長政の能力の使える・使えない（理由）が旧表示と同じ：${actual.nagamasaWhy || '使える'}`, [old.nagamasaWhy, actual.nagamasaWhy]);
         check(old.use.used && actual.use.used, `${k}: 動いている間に、石川の能力を「能力」→ 対象の味方（${actual.use.how}）で使えた`, [old.use, actual.use]);
-        check(actual.notice?.face === 'face.ishikawa' && !old.notice?.face && actual.notice.w < actual.notice.vw * 0.6, `${k}: 発動の知らせに石川の顔（小さい。旧表示は無し）`, [old.notice, actual.notice]);
+        {
+            const nv = noticeVsOld(old.notice, actual.notice, 'ishikawa');
+            if (old.notice) check(nv.ok && actual.notice.w < actual.notice.vw * 0.6, `${k}: 発動の知らせ：${nv.face ? '石川の顔があり、高さは旧表示と同じ' : '顔を出さず、幅・高さとも旧表示と同じ'}（小さい。旧表示は顔無し）`, [old.notice, actual.notice]);
+            else check(!!actual.notice && (actual.notice.faceDom === null || actual.notice.faceDom === 'face.ishikawa') && actual.notice.w < actual.notice.vw * 0.6, `${k}: 発動の知らせの顔は出すなら石川の顔（旧表示の知らせは読み逃した）`, actual.notice);
+            if (H > 520 && actual.notice && actual.notice.fold === 0) check(actual.notice.face === 'face.ishikawa', `${k}: PC の幅の列では発動の知らせに石川の顔`, actual.notice);
+        }
         check(!actual.ui.paused && !actual.ui.modal && actual.advanced > 0 && !old.ui.paused, `${k}: 能力を使っても止まらない・全画面の演出が無い（1.5 秒の間に合戦の時刻が ${actual.advanced.toFixed(1)} 秒進む）`, actual.ui);
         for (const m of [old, actual]) check(m.errors.length === 0, `${k} ${m.mode}: ページの誤り無し`, m.errors.slice(0, 3));
     }

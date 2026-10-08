@@ -577,13 +577,14 @@ export class BattleUi {
 
     /**
      * 札の見出しの武将の顔（Version 22）：部隊の名前が切れるなら細い顔、それでも切れるなら出さない（faceArt.ts の fitFaceBeforeName。
-     * 名前を Version 21 より短く切らない。札の大きさ・押せる所は変えない）。札の幅・種類・状態の印・名前の文字が変わった時だけ測り直す。
+     * 名前を Version 21 より短く切らない。札の大きさ・押せる所は変えない）。札の幅・高さ・種類・状態の印・名前の文字が変わった時だけ測り直す
+     * （高さも見る：小さな札は幅の決まった 116px のまま、画面の高さ 520px の境で字・顔の大きさ・余白だけが変わる。窓の大きさを変えた・端末を回した時）。
      * 決めた大きさは札の data-face（full・narrow・off。e2e が読む。顔の無い札には付けない）
      */
     private fitCardFaces(): void {
         for (const c of this.cards.values()) {
             if (!c.face) continue;
-            const sig = `${c.root.clientWidth}|${c.kind.textContent}|${c.badge.textContent}|${c.name.textContent}`;
+            const sig = `${c.root.clientWidth}x${c.root.clientHeight}|${c.kind.textContent}|${c.badge.textContent}|${c.name.textContent}`;
             if (sig === c.faceSig) continue;
             c.faceSig = sig;
             c.root.dataset.face = fitFaceBeforeName(c.face, c.name);
@@ -1197,13 +1198,27 @@ export class BattleUi {
         const e = this.abNote;
         e.dataset.kind = kind;
         e.innerHTML = `<b>${escapeHtml(title)}</b>${sub ? `<span>${escapeHtml(sub)}</span>` : ''}`;
-        // 発動の知らせの顔（自軍の武将の発動だけ。つなぎが味方のときだけ generalId を渡す。その武将の顔が読めているときだけ。短く、全画面にしない）
-        const fid = kind === 'use' ? faceIdOf(generalId) : null;
-        const face = fid ? this.faceEl('note', fid) : null;
-        if (face) e.prepend(face);
-        setClass(e, 'with-face', !!face);
+        e.classList.remove('with-face');
         e.hidden = false;
         e.classList.remove('fade');
+        // 発動の知らせの顔（自軍の武将の発動だけ。つなぎが味方のときだけ generalId を渡す。その武将の顔が読めているときだけ。短く、全画面にしない）。
+        // 顔とすき間の分だけ文字の幅が狭くなって折り返しが増え、知らせが Version 21 より高くなる（縦の狭いスマホの細い列）ときは顔を出さない
+        // （下の知らせ・案内の帯へ押し出さない）。畳んだ見せ方（data-fold）の間も、畳まない時の高さで比べる（同じ処理の中で戻すので画面は変わらない）
+        const fid = kind === 'use' ? faceIdOf(generalId) : null;
+        const face = fid ? this.faceEl('note', fid) : null;
+        if (face) {
+            const tm = this.topmid;
+            const fold = tm.dataset.fold;
+            if (fold) delete tm.dataset.fold;
+            const h0 = e.getBoundingClientRect().height;
+            e.prepend(face);
+            e.classList.add('with-face');
+            if (e.getBoundingClientRect().height > h0 + 0.5) {
+                face.remove();
+                e.classList.remove('with-face');
+            }
+            if (fold) tm.dataset.fold = fold;
+        }
         if (this.abNoteTimer) {
             window.clearTimeout(this.abNoteTimer);
             this.timers.delete(this.abNoteTimer);

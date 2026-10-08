@@ -137,3 +137,101 @@ describe('発動の知らせの顔は、知らせの畳み方（名札を覆う�
         expect(both.face).toBe(true);
     });
 });
+
+/**
+ * 発動の知らせ（abilityNotice）：顔とすき間の分だけ文字の幅が狭くなり、折り返しが増えて知らせが高くなる（縦の狭いスマホの細い列）なら
+ * 顔を置かない。高さは畳まない時の見せ方で比べる（畳んでいる間も）。比べた後は畳み方を元に戻す
+ */
+function fakeAbNote(opts: { grows: boolean; fold?: string }) {
+    const classes = new Set<string>();
+    const st = { attached: false, html: '', measuredFold: [] as (string | undefined)[] };
+    const topmid = { dataset: {} as Record<string, string> };
+    if (opts.fold) topmid.dataset.fold = opts.fold;
+    const face = { remove: () => (st.attached = false) };
+    const e = {
+        dataset: {} as Record<string, string>,
+        hidden: true,
+        set innerHTML(v: string) {
+            st.html = v;
+            st.attached = false;
+        },
+        get innerHTML() {
+            return st.html;
+        },
+        classList: { add: (c: string) => classes.add(c), remove: (c: string) => classes.delete(c), contains: (c: string) => classes.has(c) },
+        prepend: (f: unknown) => {
+            if (f === face) st.attached = true;
+        },
+        getBoundingClientRect: () => {
+            st.measuredFold.push(topmid.dataset.fold);
+            // 畳んだ時は見出しだけ（顔は CSS で隠れて Version 21 と同じ 25 px）。畳まない時は 2 行の 45 px、顔で折り返しが増えれば 60 px
+            const h = topmid.dataset.fold ? 25 : st.attached && classes.has('with-face') && opts.grows ? 60 : 45;
+            return { left: 0, top: 0, right: 100, bottom: h, width: 100, height: h };
+        },
+    };
+    return { e, face, topmid, classes, st };
+}
+
+describe('発動の知らせの顔で知らせを Version 21 より高くしない', () => {
+    async function run(opts: { grows: boolean; fold?: string }) {
+        const w = globalThis as unknown as { window?: unknown };
+        w.window = { setTimeout: () => 1, clearTimeout: () => {} };
+        try {
+            const { BattleUi } = await import('../proto3d/src/battle/battleUi');
+            const n = fakeAbNote(opts);
+            const self = { abNote: n.e, topmid: n.topmid, abNoteTimer: 0, timers: new Set<number>(), faceEl: () => n.face };
+            (BattleUi.prototype as unknown as { abilityNotice: (...a: unknown[]) => void }).abilityNotice.call(self, 'use', '譜代の結束', '徳川家康隊（35 秒）', 2500, 'ieyasu');
+            return n;
+        } finally {
+            delete w.window;
+        }
+    }
+    it('顔を足しても高さが同じ（PC の広い列）：顔を置く', async () => {
+        const n = await run({ grows: false });
+        expect(n.st.attached).toBe(true);
+        expect(n.classes.has('with-face')).toBe(true);
+        expect(n.e.hidden).toBe(false);
+    });
+    it('顔で折り返しが増えて高くなる（667×375 の 103 px の列）：顔を置かない（Version 21 と同じ知らせ）', async () => {
+        const n = await run({ grows: true });
+        expect(n.st.attached).toBe(false);
+        expect(n.classes.has('with-face')).toBe(false);
+        expect(n.e.hidden).toBe(false);
+    });
+    it('畳んでいる間も、畳まない時の高さで比べる（畳み方は元に戻す）', async () => {
+        const n = await run({ grows: true, fold: '1' });
+        expect(n.st.measuredFold.length).toBeGreaterThanOrEqual(2);
+        expect(n.st.measuredFold.every((f) => f === undefined)).toBe(true);
+        expect(n.st.attached).toBe(false);
+        expect(n.topmid.dataset.fold).toBe('1');
+        const k = await run({ grows: false, fold: '2' });
+        expect(k.st.attached).toBe(true);
+        expect(k.topmid.dataset.fold).toBe('2');
+    });
+});
+
+describe('札の顔は、窓の高さの境（520 px）を越えて札の高さだけが変わった時も測り直す', () => {
+    it('小さな札（幅 114 px のまま）：高さが変わると測り直し、名前が切れるなら細い顔にする', async () => {
+        withRange();
+        const { BattleUi } = await import('../proto3d/src/battle/battleUi');
+        // 縦の狭い画面（札の高さ 64 px・字 11.5 px）では名前が顔と並んで収まる。広い画面（86 px・字 12 px）では名前の字が広く、今の顔では切れる
+        // 名前の枠は 60 px − 顔の分。名前の文字の幅は h.text
+        const h = fakeHead(60, 100);
+        h.text = 40;
+        const root = { clientWidth: 114, clientHeight: 64, dataset: {} as Record<string, string> };
+        const c = { face: h.face, name: h.name, root, kind: { textContent: '本陣' }, badge: { textContent: '' }, faceSig: '' };
+        const self = { cards: new Map([['a_ieyasu', c]]) };
+        const fit = (BattleUi.prototype as unknown as { fitCardFaces: () => void }).fitCardFaces;
+        fit.call(self);
+        expect(root.dataset.face).toBe('full');
+        // 窓を 1000×500 → 1000×640 にした：札の幅は同じ 114 px、高さと字の大きさだけが変わる
+        h.text = 48;
+        root.clientHeight = 86;
+        fit.call(self);
+        expect(root.dataset.face).toBe('narrow');
+        // 同じ大きさのままなら測り直さない（毎フレーム文字の幅を測らない）
+        h.text = 30;
+        fit.call(self);
+        expect(root.dataset.face).toBe('narrow');
+    });
+});
