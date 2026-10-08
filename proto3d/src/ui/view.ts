@@ -25,7 +25,7 @@ import { soundPanel } from './soundPanel';
 import { audio } from '../audio';
 import { deviceReducedMotion } from '../story/prefs';
 import type { ArtId } from '../art/ids';
-import { CouncilBackdrop, PortraitSlot, loadArt } from './artCanvas';
+import { AI_ART_NOTE, CouncilBackdrop, DialogFace, PortraitSlot, artInUse, loadArt } from './artCanvas';
 
 export type { ModalProbe } from './modal';
 
@@ -494,6 +494,9 @@ export class DomView implements GameView, LayerHost {
             const scroll = el('div', 'g-title-scroll g-scroll');
             const box = el('div', 'g-title-box multi');
             box.append(el('p', 'kicker', '戦国探索記 3D'), el('h1', undefined, 'シナリオを選ぶ'));
+            // 生成イラスト素材を使っているときだけ、見出しのすぐ下に小さく AI 生成の明示（スマホ横でも最初の画面に入る所。
+            // 旧表示 ?art=old・素材の一覧が空なら出さない＝Version 21 と同じタイトル）
+            if (artInUse()) box.append(el('p', 'g-note g-art-note', AI_ART_NOTE));
             const cards = el('div', 'g-scn-list');
             box.append(cards);
             const items: { id: string; label: string; sub?: string; disabled?: boolean; parent: HTMLElement }[] = [];
@@ -586,6 +589,9 @@ export class DomView implements GameView, LayerHost {
             const reduced = () => this.motionReduced();
             const portrait = opts.portraitOf ? new PortraitSlot(layer, head ?? choicesEl, box, opts.portraitOf, reduced, () => this.portraitAvoid()) : null;
             portrait?.preload(lines.map((l) => l.speaker));
+            // 台詞の枠の左の顔（台本のどこかの行の顔が読めたら、台本の終わりまで左を空ける。人物画が出ている人の行は顔を出さない）
+            const face = opts.faceOf ? new DialogFace(box, lines.map((l) => l.speaker), opts.faceOf, opts.portraitOf ?? null, () => portrait?.relayout()) : null;
+            if (face && portrait) portrait.onShown = (id) => face.portrait(id);
             const backdrop = council && opts.councilArt ? new CouncilBackdrop(layer, opts.councilArt, reduced, () => this.modals[this.modals.length - 1] === m) : null;
             const choices = sc.choices ?? [];
             let i = 0;
@@ -640,6 +646,8 @@ export class DomView implements GameView, LayerHost {
                 const atEnd = i === lines.length - 1;
                 more.hidden = atEnd && choices.length > 0;
                 if (atEnd && choices.length > 0 && choicesEl.hidden) showChoices();
+                // 顔：この行の話し手の顔（無い・人物画が出ている人の行は空きだけ）。人物画より先に（人物画が出れば、同じ行のうちに顔を下げる）
+                face?.set(line.speaker);
                 // 人物画：この行の話し手に絵があれば出す。絵の無い人物の行は前の人の絵を暗く残し、地の文・高札では下げる（選択肢が出た後の空きで大きさを決める）
                 portrait?.set(line.speaker);
                 // 声：表にある短い台詞だけ読む（前の行の声は止める。docs/audio.md）
@@ -708,11 +716,13 @@ export class DomView implements GameView, LayerHost {
                 dispose: () => {
                     audio()?.stopVoice();
                     portrait?.dispose();
+                    face?.dispose();
                     backdrop?.dispose();
                 },
             };
             this.push(m);
             backdrop?.start();
+            face?.start();
             render();
         });
     }

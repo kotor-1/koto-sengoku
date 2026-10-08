@@ -1,15 +1,15 @@
 /**
- * 生成イラスト素材（Version 22）を <canvas> に描く小道具と、会話の人物画（PortraitSlot）・軍議の背景（CouncilBackdrop）。
+ * 生成イラスト素材（Version 22）を <canvas> に描く小道具と、会話の人物画（PortraitSlot）・台詞の枠の顔（DialogFace）・軍議の背景（CouncilBackdrop）。
  *
  * - 画像は art/registry.ts の loadArtBitmap で読んだ ImageBitmap だけを描く（<img>・CSS の背景・data: の URL は使わない）。
  * - 合わせ方：contain（全部を見せる）／cover（箱を埋める。はみ出しは切る）。引き伸ばしはしない（縦横の比は保つ）。
  * - 描く細かさ：端末の画素の比（devicePixelRatio）は 2 まで。元の画像より細かくはしない（大きな画面で余計な画素を持たない）。
  * - 大きさが変わったら描き直す（watchResize）。
  * - 旧表示（?art=old）・一覧に無い・読めないときは、要素を一つも作らない（Version 21 と同じ画面）。
- * 前半の計算（fitArt・fitArtBleed・backingScale・portraitLayout・portraitStep）は DOM を使わない純粋な関数（Node のテストで確かめる）。
+ * 前半の計算（fitArt・fitArtBleed・backingScale・portraitLayout・portraitStep）と dialogFaceIds・dialogFaceFor は DOM を使わない純粋な関数（Node のテストで確かめる）。
  */
-import { artMode, loadArtBitmap } from '../art/registry';
-import type { ArtId } from '../art/ids';
+import { artAvailable, artMode, loadArtBitmap } from '../art/registry';
+import { ART_IDS, type ArtId } from '../art/ids';
 
 // ================= 純粋な計算 =================
 
@@ -418,6 +418,13 @@ export class PortraitSlot {
     private hideTimer = 0;
     private stopResize: (() => void) | null = null;
     private disposed = false;
+    /**
+     * 出ている人物画が変わった（出た人物画の ID。下げた・出ていないなら null）。台詞の枠の顔（DialogFace）が、
+     * その人の人物画が出ている行では顔を出さないために使う（同じ人を 2 つ並べない）
+     */
+    onShown: ((id: ArtId | null) => void) | null = null;
+    /** 最後に知らせた onShown の値（同じ値は知らせ直さない） */
+    private told: ArtId | null = null;
 
     constructor(
         private readonly layer: HTMLElement,
@@ -562,6 +569,14 @@ export class PortraitSlot {
             if (!reduced) void c.offsetWidth;
             c.classList.add('on');
         }
+        this.tell(id);
+    }
+
+    /** 出ている人物画を知らせる（変わったときだけ） */
+    private tell(id: ArtId | null): void {
+        if (id === this.told) return;
+        this.told = id;
+        this.onShown?.(id);
     }
 
     private hide(now = false): void {
@@ -570,6 +585,7 @@ export class PortraitSlot {
         this.key = '';
         cancelAnimationFrame(this.fadeRaf);
         this.fadeRaf = 0;
+        this.tell(null);
         if (!c || c.hidden) return;
         clearTimeout(this.hideTimer);
         const instant = now || this.reduced() || !c.classList.contains('on');
@@ -579,8 +595,11 @@ export class PortraitSlot {
         else this.hideTimer = window.setTimeout(() => (c.hidden = true), PORTRAIT_FADE_MS + 20);
     }
 
-    /** 画面の大きさが変わった：測り直して描き直す（重ね変わりはしない。暗さはそのまま。狭くて隠していた絵は、広がれば出す） */
-    private relayout(): void {
+    /**
+     * 画面の大きさが変わった・台詞の枠の幅が変わった（顔の空きを取った）：測り直して描き直す
+     * （重ね変わりはしない。暗さはそのまま。狭くて隠していた絵は、広がれば出す）
+     */
+    relayout(): void {
         if (this.disposed || !this.canvas) return;
         const id = this.want;
         const bmp = id ? peekArt(id) : null;
@@ -602,6 +621,164 @@ export class PortraitSlot {
         this.stopResize?.();
         this.stopResize = null;
     }
+}
+
+// ================= 台詞の枠の顔（ui/view.ts の script() が作る） =================
+
+/**
+ * 台詞の枠の顔の大きさ（CSS の px。ui.css の .g-dialog.has-face の --g-face と同じ：PC 72・スマホ横（高さ 430 以下）52）。
+ * 実際の大きさは CSS が決め、DialogFace は canvas の画素の数だけを合わせる（測れないときの控え）。
+ */
+export const DIALOG_FACE_PX = { pc: 72, phone: 52 } as const;
+
+/**
+ * この台本で使える顔の ID（話し手の順・重なり無し）。顔の無い話し手・一覧に無い ID・旧表示（?art=old）は入らない（available が false）。
+ * 空なら台詞の枠は Version 21 のまま（左の空きも要素も作らない）。
+ */
+export function dialogFaceIds(speakers: readonly string[], faceOf: (speaker: string) => ArtId | null, available: (id: ArtId) => boolean): ArtId[] {
+    const out: ArtId[] = [];
+    for (const sp of speakers) {
+        const id = faceOf(sp);
+        if (id && !out.includes(id) && available(id)) out.push(id);
+    }
+    return out;
+}
+
+/**
+ * 行の話し手に出す顔（無ければ null：左の空きはそのまま、顔だけ出さない）。
+ * - 顔の無い話し手（地の文・高札・使者・村の使い）：出さない。
+ * - その人の人物画（PortraitSlot）が出ている行：顔は出さない（同じ人を大きな絵と小さな顔の 2 つで並べない）。人物画が出ていなければ顔を出す。
+ */
+export function dialogFaceFor(faceId: ArtId | null, portraitId: ArtId | null, portraitShown: ArtId | null): ArtId | null {
+    if (!faceId) return null;
+    if (portraitId && portraitId === portraitShown) return null;
+    return faceId;
+}
+
+/**
+ * 台詞の枠の左の、今の話し手の顔（<canvas class="g-face" data-art-id> を枠の先頭に置く。aria-hidden・押せない・反転しない）。
+ * - 左の空き（枠の class "has-face"）：台本のどこかの行の顔が読めたら、台本の終わりまで取ったまま（顔の無い行も空けておく）。
+ *   名前・台詞の始まりの位置が行ごとに動かない。PC では枠を左へ広げて空きを作る（台詞の幅・折り返しは Version 21 と同じ）。
+ *   狭い画面では枠の幅は Version 21 のままで、台詞の幅が空きの分だけ狭くなる（ui.css）。
+ * - 開いた時に読めている顔があれば、すぐ空きを取る（城下で先に読んでおく：ChapterGame の preloadFaces）。まだなら読み始め、
+ *   最初の顔が読めた時に空きを取る（遅い端末で 1 回だけ字が右へ寄る）。どの顔も読めなければ空きも要素も作らない（Version 21 と同じ枠）。
+ * - 旧表示（?art=old）・一覧に無い・顔の無い台本（架空の章・使者だけの会話）：何もしない。
+ * - 描く細かさは端末の比 2 まで（元の 256 画素より細かくしない）。大きさが変わったら（向きの変更など）描き直す。
+ */
+export class DialogFace {
+    private canvas: HTMLCanvasElement | null = null;
+    /** この台本で使える顔（一覧にある物だけ） */
+    private readonly ids: ArtId[];
+    /** 今の行の話し手（まだ行を出していなければ null） */
+    private speaker: string | null = null;
+    /** 出ている人物画（PortraitSlot.onShown） */
+    private portraitShown: ArtId | null = null;
+    /** 描いた顔と canvas の画素の大きさ（同じなら描き直さない） */
+    private drawn = '';
+    private stopResize: (() => void) | null = null;
+    private disposed = false;
+
+    constructor(
+        /** 台詞の枠（.g-dialog） */
+        private readonly box: HTMLElement,
+        speakers: readonly string[],
+        private readonly resolve: (speaker: string) => ArtId | null,
+        /** 話し手の人物画（その人物画が出ている行は顔を出さない。省けば見ない） */
+        private readonly portraitOf: ((speaker: string) => ArtId | null) | null = null,
+        /** 左の空きを取った（台詞の枠の幅が変わった。人物画の測り直しに使う） */
+        private readonly onGutter: (() => void) | null = null,
+    ) {
+        this.ids = dialogFaceIds(speakers, resolve, artAvailable);
+    }
+
+    /** 左の空きを取っているか（確認用） */
+    get reserved(): boolean {
+        return this.canvas !== null;
+    }
+
+    /** 台本を開いた：読めている顔があれば同じフレームのうちに空きを取る。無い顔は読み始める */
+    start(): void {
+        if (this.disposed || !this.ids.length) return;
+        if (this.ids.some((id) => peekArt(id))) this.reserve();
+        for (const id of this.ids) {
+            if (peekArt(id)) continue;
+            void loadArt(id).then((b) => {
+                if (!b || this.disposed) return;
+                if (!this.canvas) this.reserve();
+                this.refresh();
+            });
+        }
+    }
+
+    /** 今の行の話し手 */
+    set(speaker: string): void {
+        if (this.disposed) return;
+        this.speaker = speaker;
+        this.refresh();
+    }
+
+    /** 出ている人物画が変わった（PortraitSlot.onShown） */
+    portrait(id: ArtId | null): void {
+        if (this.disposed || id === this.portraitShown) return;
+        this.portraitShown = id;
+        this.refresh();
+    }
+
+    private reserve(): void {
+        if (this.canvas || !this.ids[0]) return;
+        const c = artCanvasEl('g-face', this.ids[0]);
+        c.hidden = true;
+        this.box.insertBefore(c, this.box.firstChild);
+        this.box.classList.add('has-face');
+        this.canvas = c;
+        this.stopResize = watchResize(() => {
+            this.drawn = '';
+            this.refresh();
+        });
+        this.onGutter?.();
+    }
+
+    private refresh(): void {
+        const c = this.canvas;
+        if (this.disposed || !c || this.speaker === null) return;
+        const faceId = this.resolve(this.speaker);
+        const want = dialogFaceFor(faceId && this.ids.includes(faceId) ? faceId : null, this.portraitOf?.(this.speaker) ?? null, this.portraitShown);
+        const bmp = want ? peekArt(want) : null;
+        if (!want || !bmp) {
+            // 顔の無い行・まだ読めていない（読めた時にまだその人の行なら出す：start の読み込みの後の refresh）
+            c.hidden = true;
+            return;
+        }
+        c.hidden = false;
+        const r = c.getBoundingClientRect();
+        const css = r.width > 0 ? r.width : DIALOG_FACE_PX.pc;
+        // 元の画像より細かい canvas は持たない（端末の比は 2 まで）
+        const k = backingScale(typeof devicePixelRatio === 'number' ? devicePixelRatio : 1, Math.min(bmp.width, bmp.height) / css);
+        const px = Math.max(1, Math.round(css * k));
+        const key = `${want}|${px}`;
+        if (key === this.drawn) return;
+        this.drawn = key;
+        if (c.width !== px) c.width = px;
+        if (c.height !== px) c.height = px;
+        c.dataset.artId = want;
+        // 正方形の顔の素材を、そのまま箱いっぱいに（縦横の比は保つ。左右の反転はしない）
+        paintArt(c, css, css, [{ bitmap: bmp, fit: 'cover', opts: { alignY: 0.35 } }]);
+    }
+
+    dispose(): void {
+        this.disposed = true;
+        this.stopResize?.();
+        this.stopResize = null;
+    }
+}
+
+/** 生成イラスト素材を使っているときにタイトルに出す、AI 生成の明示（素材パックの利用条件・共有の決まりの求め） */
+export const AI_ART_NOTE = '一部の人物・背景画像はAI生成画像を加工して使用';
+
+/** 生成イラスト素材を使っているか（旧表示 ?art=old でなく、ゲームが読む素材の一覧に 1 つ以上ある）。タイトルの AI 生成の明示に使う */
+export function artInUse(): boolean {
+    if (artMode() === 'old') return false;
+    return Object.values(ART_IDS).some((id) => artAvailable(id));
 }
 
 /**

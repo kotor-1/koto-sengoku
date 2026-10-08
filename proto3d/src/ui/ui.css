@@ -744,6 +744,60 @@ body.touch .g-sit-tab .n { display: none; }
 @media (max-height: 430px) {
     .g-portrait { left: calc(var(--safe-l) + 8px); }
 }
+/* タイトルの AI 生成の明示（生成イラスト素材を使っているときだけ。見出し「シナリオを選ぶ」のすぐ下に小さく） */
+.g-title-box.multi .g-art-note { margin: -6px 0 10px; font-size: 11px !important; line-height: 1.4; letter-spacing: 0.04em; }
+@media (max-height: 430px) {
+    .g-title-box.multi .g-art-note { margin: -3px 0 6px; font-size: 10.5px !important; }
+}
+/* 台詞の枠の顔（ui/artCanvas.ts の DialogFace）：今の話し手の顔を枠の左に、上下の真ん中で。顔が読めたときだけ枠に has-face が付く
+   （旧表示 ?art=old・素材が無い・読めない・顔の無い台本では、枠は Version 21 のまま）。顔の無い行（地の文・使者・高札）も左は空けたまま。
+   枠の右端はそのままで、左へ空きの分だけ広げる（画面の端の余白 14px と安全域は守る）：PC では名前・台詞の始まり・台詞の幅・折り返しは
+   Version 21 と同じ。広げる余地が無い狭い画面（スマホ横）では、枠の幅は Version 21 のままで台詞の幅が空きの分だけ狭くなる（下の決まり）。 */
+.g-dialog.has-face {
+    --g-face: 72px;
+    --g-face-x: 12px;
+    --g-face-gap: 14px;
+    --g-pad-l: 18px;
+    /* Version 21 の枠の幅（.g-dialog の width と同じ式） */
+    --g-dw: min(calc(100vw - 28px - var(--safe-l) - var(--safe-r)), 780px);
+    --g-gutter: calc(var(--g-face-x) + var(--g-face) + var(--g-face-gap));
+    left: auto;
+    right: calc(50% - var(--g-dw) / 2);
+    transform: none;
+    width: min(calc(var(--g-dw) + var(--g-gutter) - var(--g-pad-l)), calc(50% + var(--g-dw) / 2 - 14px - var(--safe-l)));
+    padding-left: var(--g-gutter);
+}
+.g-dialog .g-face {
+    position: absolute;
+    left: var(--g-face-x);
+    top: 50%;
+    width: var(--g-face);
+    height: var(--g-face);
+    margin-top: calc(var(--g-face) / -2);
+    display: block;
+    border-radius: 11px;
+    background: radial-gradient(circle at 50% 38%, rgba(96, 80, 58, 0.55), rgba(30, 26, 20, 0.7) 72%);
+    box-shadow: 0 0 0 1px rgba(255, 246, 225, 0.26);
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-user-drag: none;
+}
+.g-dialog .g-face[hidden] { display: none; }
+/* スマホ横：枠の幅は画面の端まで使っているので、顔の空き（70px）の分だけ台詞の幅が狭くなる。折り返しが増えて枠が Version 21 より
+   高くならないよう、顔のある枠だけ台詞の字を 15 → 14px・字の間を 0.03 → 0.01em にし、上下の余白を 9/11 → 6/8px にする
+   （歴史分岐の台本の全部の行で測った：1〜2 行の台詞の枠の高さは Version 21 を超えない。568×320 の地の文 2 行だけ 2 → 3 行）。
+   顔の無い枠は Version 21 のまま */
+@media (max-height: 430px) {
+    .g-dialog.has-face { --g-face: 52px; --g-face-x: 8px; --g-face-gap: 10px; --g-pad-l: 16px; padding-top: 6px; padding-bottom: 8px; }
+    .g-dialog.has-face .text { font-size: 14px; letter-spacing: 0.01em; }
+    .g-dialog .g-face { border-radius: 10px; }
+}
+@media (max-height: 430px) and (max-width: 600px) {
+    .g-dialog.has-face { --g-face-x: 7px; --g-face-gap: 8px; }
+    .g-dialog.has-face .text { letter-spacing: 0; }
+}
 /* 軍議の背景：層のいちばん奥（下の 3D の陣幕の画は、そのまま後ろに残る） */
 .g-council-bg {
     position: absolute;

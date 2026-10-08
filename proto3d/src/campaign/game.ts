@@ -106,6 +106,11 @@ export interface ScriptOptions {
      * 省けば人物画を出さない（架空の章）。素材が無い・旧表示（?art=old）・読めないときは、画面が出さない。
      */
     portraitOf?: (speaker: string) => ArtId | null;
+    /**
+     * 話し手の、台詞の枠の左に出す顔の素材の ID（Version 22。シナリオの faceOf を、この会話を始めた時の状態で引く）。
+     * 省けば顔を出さない（架空の章）。素材が無い・旧表示（?art=old）・読めないときは、画面が出さない（Version 21 と同じ枠）。
+     */
+    faceOf?: (speaker: string) => ArtId | null;
     /** 軍議の背景（Version 22。シナリオの councilArt。軍議の画面だけ）。省けば今までの 3D の陣幕の画 */
     councilArt?: { base: ArtId; front?: ArtId };
 }
@@ -499,9 +504,11 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         if (Number.isFinite(dt) && dt > 0) this.playAcc += Math.min(dt, 1);
         if (this.busy) return;
         if (!this.portraitsAsked) {
-            // 操作できるようになった最初のフレーム（章の冒頭の演出の後）：主人公と城下の人物の人物画を先に読み始める
+            // 操作できるようになった最初のフレーム（章の冒頭の演出の後）：主人公と城下の人物の人物画と台詞の枠の顔を先に読み始める
             this.portraitsAsked = true;
-            this.preloadPortraits(['hero', ...this.cast.filter((c) => c.kind === 'person').map((c) => c.id)]);
+            const speakers = ['hero', ...this.cast.filter((c) => c.kind === 'person').map((c) => c.id)];
+            this.preloadPortraits(speakers);
+            this.preloadFaces(speakers);
         }
         const p = this.deps.world.heroPose();
         const gate = inGateZone(this.cast, p.x, p.z);
@@ -519,8 +526,11 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         if (c === this.prompted) return;
         this.prompted = c;
         this.deps.view.prompt(c ? { id: c.id, verb: c.verb, label: c.label } : null);
-        // 「話す」が出た：その相手と主人公の人物画を先に読み始める（もう読んでいれば何もしない）
-        if (c?.kind === 'person') this.preloadPortraits(['hero', c.id]);
+        // 「話す」が出た：その相手と主人公の人物画と顔を先に読み始める（もう読んでいれば何もしない）
+        if (c?.kind === 'person') {
+            this.preloadPortraits(['hero', c.id]);
+            this.preloadFaces(['hero', c.id]);
+        }
     }
 
     // ---------------- 話す ----------------
@@ -547,6 +557,7 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
             // 城下で話している間に、次に開く軍議の背景を読み始めておく（軍議の画面が開いてから絵が遅れて出ないように）
             if (this.st.phase === 'explore') this.preloadCouncilArt();
             const script = this.sc.talk(this.st, target);
+            this.preloadFaces(script.lines.map((l) => l.speaker));
             const choice = await this.deps.view.script(script, { mode: 'talk', chapter: this.chapterTitle(), label: this.sc.label, ...this.artOptions(false) });
             if (this.sc.isDeparture(target, choice)) {
                 await this.depart(target, choice!);
@@ -572,11 +583,12 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
      * 会話・軍議の画面に渡す生成イラスト素材の口（Version 22）。シナリオが持つ物だけ（架空の章は何も渡さない）。
      * 人物画は、この会話を始めた時の状態で引く（会話の途中で状態は変わらない）。
      */
-    private artOptions(council: boolean): Pick<ScriptOptions, 'portraitOf' | 'councilArt'> {
+    private artOptions(council: boolean): Pick<ScriptOptions, 'portraitOf' | 'faceOf' | 'councilArt'> {
         const sc = this.sc;
         const st = this.st;
         return {
             ...(sc.portraitOf ? { portraitOf: (speaker: string) => sc.portraitOf?.(st, speaker) ?? null } : {}),
+            ...(sc.faceOf ? { faceOf: (speaker: string) => sc.faceOf?.(st, speaker) ?? null } : {}),
             ...(council && sc.councilArt ? { councilArt: sc.councilArt } : {}),
         };
     }
@@ -603,6 +615,23 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         if (ids.size) this.deps.view.preloadArt([...ids]);
     }
 
+    /**
+     * 話し手の台詞の枠の顔を先に読み始める（待たない。シナリオの faceOf を今の状態で引く。顔の無い話し手は何もしない）。
+     * 人物画と同じ時（城下で操作できるようになった最初のフレーム・「話す」が出た時）と、会話・軍議の画面を開く直前（その台本の話し手）に呼ぶ。
+     * 同じ画像は 1 回だけ読む（画面の loadArt の約束を共有）。旧表示・一覧に無い ID は画面が読まない。
+     */
+    private preloadFaces(speakers: string[]): void {
+        const sc = this.sc;
+        if (!sc.faceOf || !this.deps.view.preloadArt) return;
+        const st = this.st;
+        const ids = new Set<ArtId>();
+        for (const sp of speakers) {
+            const id = sc.faceOf(st, sp);
+            if (id) ids.add(id);
+        }
+        if (ids.size) this.deps.view.preloadArt([...ids]);
+    }
+
     /** 軍議：方針を選び、確かめて決める（考え直すと選び直し）。決めたら出陣の支度（muster）へ */
     private async runCouncil(): Promise<void> {
         const { view, world } = this.deps;
@@ -621,6 +650,7 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
             while (this.st.phase === 'council') {
                 const script = this.sc.talk(this.st, 'council');
                 this.councilChoices = (script.choices ?? []).map((c) => ({ id: c.id, label: c.label }));
+                this.preloadFaces(script.lines.map((l) => l.speaker));
                 const choice = await view.script(script, {
                     mode: 'council',
                     chapter: this.chapterTitle(),

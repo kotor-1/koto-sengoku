@@ -450,6 +450,10 @@ describe('ChapterGame：会話・軍議の画面へ渡す人物画と背景の�
         expect(talk.opts.portraitOf?.('hero')).toBe(ART_IDS.portraitIeyasu);
         expect(talk.opts.portraitOf?.('tadakatsu')).toBe(ART_IDS.portraitTadakatsu);
         expect(talk.opts.portraitOf?.('narration')).toBeNull();
+        // 台詞の枠の顔：家康・忠勝（地の文は無し）
+        expect(talk.opts.faceOf?.('hero')).toBe(ART_IDS.faceIeyasu);
+        expect(talk.opts.faceOf?.('tadakatsu')).toBe(ART_IDS.faceTadakatsu);
+        expect(talk.opts.faceOf?.('narration')).toBeNull();
         expect(talk.opts.councilArt).toBeUndefined();
         // 話し手の id は台本の行のまま（地の文・忠勝・家康）
         expect(new Set(talk.script.lines.map((l) => l.speaker))).toEqual(new Set(['narration', 'tadakatsu', 'hero']));
@@ -460,11 +464,16 @@ describe('ChapterGame：会話・軍議の画面へ渡す人物画と背景の�
         expect(council.opts.portraitOf?.('sakai')).toBeNull();
         expect(council.opts.portraitOf?.('ishikawa')).toBeNull();
         expect(council.opts.portraitOf?.('tadakatsu')).toBe(ART_IDS.portraitTadakatsu);
+        // 軍議の顔：酒井・石川にもある（人物画は無い）
+        expect(council.opts.faceOf?.('sakai')).toBe(ART_IDS.faceSakai);
+        expect(council.opts.faceOf?.('ishikawa')).toBe(ART_IDS.faceIshikawa);
+        expect(council.opts.faceOf?.('oda_envoy')).toBeNull();
         // 考え直す → 確かめの台本・選び直しの軍議にも、同じ背景
         const policy = council.script.choices![0]!.id;
         council.answer(policy);
         const confirm = await next('script');
         expect(confirm.opts.councilArt).toEqual(council.opts.councilArt);
+        expect(confirm.opts.faceOf?.('sakai')).toBe(ART_IDS.faceSakai);
         const again = confirm.script.choices!.find((c) => c.id !== 'confirm_policy')!.id;
         confirm.answer(again);
         const council2 = await next('script');
@@ -485,6 +494,9 @@ describe('ChapterGame：会話・軍議の画面へ渡す人物画と背景の�
         expect(council.opts.mode).toBe('council');
         expect(council.opts.councilArt).toEqual({ base: ART_IDS.bgCouncil, front: ART_IDS.bgCouncilFront });
         expect(council.opts.portraitOf?.('village')).toBeNull();
+        expect(council.opts.faceOf?.('village')).toBeNull();
+        expect(council.opts.faceOf?.('ishikawa')).toBe(ART_IDS.faceIshikawa);
+        expect(talk.opts.faceOf?.('tadakatsu')).toBe(ART_IDS.faceTadakatsu);
     });
 
     it('架空の章：人物画・背景の口を渡さない（Version 21 と同じ画面）', async () => {
@@ -494,6 +506,7 @@ describe('ChapterGame：会話・軍議の画面へ渡す人物画と背景の�
         talkTo(key.id);
         const talk = await next('script');
         expect(talk.opts.portraitOf).toBeUndefined();
+        expect(talk.opts.faceOf).toBeUndefined();
         expect(talk.opts.councilArt).toBeUndefined();
     });
 
@@ -542,7 +555,8 @@ describe('ChapterGame：会話・軍議の画面へ渡す人物画と背景の�
         game.tick(1 / 30);
         await flush();
         expect(game.promptTarget).toBeNull();
-        expect(view.preloaded).toEqual([ART_IDS.portraitIeyasu, ART_IDS.portraitTadakatsu]);
+        // 人物画の後に、台詞の枠の顔（家康・忠勝。この一覧には顔が無いので読まない：urls は人物画だけ）
+        expect(view.preloaded).toEqual([ART_IDS.portraitIeyasu, ART_IDS.portraitTadakatsu, ART_IDS.faceIeyasu, ART_IDS.faceTadakatsu]);
         expect(urls).toEqual(['./art/portraits/ieyasu.webp', './art/portraits/tadakatsu.webp']);
         expect(peekArt(ART_IDS.portraitTadakatsu)).not.toBeNull();
         // 「話す」が出た：もう一度頼んでも読み直さない（同じ約束）
@@ -551,7 +565,7 @@ describe('ChapterGame：会話・軍議の画面へ渡す人物画と背景の�
         game.tick(1 / 30);
         await flush();
         expect(game.promptTarget).toBe('tadakatsu');
-        expect(view.preloaded.slice(2)).toEqual([ART_IDS.portraitIeyasu, ART_IDS.portraitTadakatsu]);
+        expect(view.preloaded.slice(4)).toEqual([ART_IDS.portraitIeyasu, ART_IDS.portraitTadakatsu, ART_IDS.faceIeyasu, ART_IDS.faceTadakatsu]);
         expect(urls).toEqual(['./art/portraits/ieyasu.webp', './art/portraits/tadakatsu.webp']);
     });
 
@@ -592,7 +606,9 @@ describe('ChapterGame：会話・軍議の画面へ渡す人物画と背景の�
         expect(await loadArt(ART_IDS.bgCouncil)).toBeNull();
     });
 
-    it('素材の一覧が空（今の公開版）：何も読まない', async () => {
+    it('素材の一覧が空（Version 21 の公開版）：何も読まない', async () => {
+        // ゲームが読む一覧（manifest.gen.json）には顔が入ったので、空の一覧を明示する
+        __setArtManifestForTest({ version: 1, assets: {} });
         const urls: string[] = [];
         vi.stubGlobal('fetch', async (url: string) => {
             urls.push(String(url));

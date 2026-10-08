@@ -142,6 +142,11 @@ export interface Scenario<S extends ScenarioStateCore = ScenarioStateCore> {
      * 架空の章は省く（話し手の id 'hero' が別の人物のため）。素材が無い・旧表示（?art=old）のときは画面が出さない。
      */
     portraitOf?(s: S, speaker: string): ArtId | null;
+    /**
+     * 会話・軍議で、台詞の枠の左に出す話し手の顔の素材の ID（Version 22。art/ids.ts の FACE_OF）。省くか null なら顔を出さない。
+     * 架空の章は省く（話し手の id 'hero' は宗真で、家康ではない）。素材が無い・旧表示（?art=old）・読めないときは画面が出さない。
+     */
+    faceOf?(s: S, speaker: string): ArtId | null;
     /** 軍議の画面の背景（Version 22）。省くと今までの 3D の陣幕の画。front は手前に重ねる幕・柱（無くてよい） */
     readonly councilArt?: { base: ArtId; front?: ArtId };
     addPlayTime(s: S, sec: number): S;
