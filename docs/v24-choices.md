@@ -146,3 +146,10 @@
   `proto3d/tools/check-dist.mjs` 問題なし（141 ファイル・61,410,027 バイト。Version 23 より 8,356 バイト増え、1 回の公開の上限 64MB まで残り 2.59MB）。
   `e2e/art-prod.mjs`（本番と同じ CSP の下で顔・地面の素材が読める・読み込みを止めても進める・`?art=old` で読まない）68 件、
   `e2e/ieyasu-prod.mjs`（CSP の下で歴史分岐の通しの遊び。CSP の違反・読めないファイル・ページの誤り 0）34 件、どれもすべて合った。
+
+## 公開
+
+- 公開先の Version 24（版 ID 1791567850-cdfd）＝コミット 70f9207 の本番ビルド（上の「本番ビルド」と同じファイル。その後の c57fcb6・3bc8639 は確かめと記録だけで、画面のコードは同じ）。
+  141 ファイル・61,410,027 バイト。Version 23 と違うのは `index.html` と `assets/` の 5 個（entry・faceArt・index の JS と CSS・practiceView）で、前の名前の 5 個は公開先から消した。
+- 送った 5 個は公開先から読み戻して sha256 が同じ。変えていない `assets/three-*.js`・`art/faces/ieyasu.webp`・`battle.css` も本番ビルドと同じ。
+- 比較の基準は Version 23（版 ID 1791537077-4f84）。公開先の版の履歴から戻せる。
