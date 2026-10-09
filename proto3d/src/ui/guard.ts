@@ -7,6 +7,8 @@
  *   - 指・マウス：押し始め（pointerdown）の時刻が、出た時刻より後。
  *   - キー：出た時に押さえていたキーは、一度離して押し直すまで受け付けない。キーの自動の繰り返し（repeat）は受け付けない。
  * - 上に重なった画面（メニューなど）が閉じて、また一番上に戻ったときも、出たばかりと同じに扱う（reset）。
+ * - 縦に動かせる並びの中の選択肢（狭い画面の会話・軍議。ui/choiceFit.ts）は、押した瞬間でなく離した時に決める（TapTracker・InputGate.tap）：
+ *   並びをなぞって動かした指・横へずらした指・ブラウザが動かし始めて取り消した押し（pointercancel）・動いている並びを止めた押しでは決まらない。
  */
 
 /** 出たばかりの選択肢・ボタンを押しても決まらない時間（ミリ秒） */
@@ -70,11 +72,59 @@ export class InputGate {
         return startedAt >= this.openedAt;
     }
 
+    /**
+     * 離した時に決める押し（動かせる並びのたたき。TapTracker）を受け付けるか：押し始め（startedAt）が出た後で、見張りの時間の後。
+     * 押している間に出直した（reset：メニューが閉じたなど）なら受け付けない。
+     */
+    tap(now: number, startedAt: number): boolean {
+        return this.pointer(startedAt, startedAt) && this.pointer(now, startedAt);
+    }
+
     /** キーを受け付けるか（出た時に押さえていたキーは、押し直すまで受け付けない） */
     key(code: string, repeat: boolean, now: number): boolean {
         if (repeat) return false;
         const was = this.blocked.get(code);
         if (was !== undefined && this.keys.pressOf(code) === was) return false;
         return !this.guarding(now);
+    }
+}
+
+/** なぞり（指・マウスを動かした）とみなす動きの大きさ（CSS の px）。押し始めからこれより動いた押しは、たたき（tap）にしない */
+export const TAP_SLOP_PX = 10;
+/** 並びが動いてからこの時間のうちに始まった押しは、動いている並びを止める押しとみなして、たたきにしない（ミリ秒） */
+export const SCROLL_SETTLE_MS = 150;
+
+/**
+ * 1 つのボタンの上の押しが、たたき（その場で押して離した）か、なぞり（並びを動かそうとした）かを見分ける（純粋。DOM を使わない）。
+ * - down：押し始め（pointerdown）。settled が false（並びが動いている途中・止まった直後）なら見ない。
+ * - move：押し始めから TAP_SLOP_PX より動けば、たたきでない。
+ * - cancel：ブラウザが並びを動かし始めた（pointercancel）など。たたきでない。
+ * - up：離した（pointerup）。同じ指で、動かず、並び（scroll）も動いていなければ true。
+ */
+export class TapTracker {
+    private cur: { id: number; x: number; y: number; scroll: number } | null = null;
+
+    constructor(private readonly slop: number = TAP_SLOP_PX) {}
+
+    /** 押している途中か */
+    get active(): boolean {
+        return this.cur !== null;
+    }
+
+    down(id: number, x: number, y: number, scroll: number, settled = true): void {
+        this.cur = settled ? { id, x, y, scroll } : null;
+    }
+    move(id: number, x: number, y: number): void {
+        const c = this.cur;
+        if (c && c.id === id && Math.hypot(x - c.x, y - c.y) > this.slop) this.cur = null;
+    }
+    cancel(id?: number): void {
+        if (!this.cur || id === undefined || this.cur.id === id) this.cur = null;
+    }
+    up(id: number, x: number, y: number, scroll: number): boolean {
+        const c = this.cur;
+        if (!c || c.id !== id) return false;
+        this.cur = null;
+        return Math.hypot(x - c.x, y - c.y) <= this.slop && Math.abs(scroll - c.scroll) <= 1;
     }
 }

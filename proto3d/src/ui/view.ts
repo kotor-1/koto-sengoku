@@ -26,6 +26,7 @@ import { audio } from '../audio';
 import { deviceReducedMotion } from '../story/prefs';
 import type { ArtId } from '../art/ids';
 import { AI_ART_NOTE, CouncilBackdrop, DialogFace, PortraitSlot, artInUse, loadArt } from './artCanvas';
+import { ChoiceFit } from './choiceFit';
 
 export type { ModalProbe } from './modal';
 
@@ -584,6 +585,17 @@ export class DomView implements GameView, LayerHost {
             const choicesEl = el('div', 'g-choices');
             choicesEl.hidden = true;
             layer.append(choicesEl, box);
+            // 選択肢の並びが台詞の枠・詳しく見る・メニューにかかる画面（縦長のスマホなど）だけ、並びを台詞の枠の上から上の部品の下までに収め、
+            // 入りきらなければ並びの中を縦に動かす（ui/choiceFit.ts。かからない画面は Version 23 のまま。台詞の字・顔の大きさは変えない）
+            const fitter = new ChoiceFit({
+                layer,
+                list: choicesEl,
+                box,
+                text,
+                covers: () => [layer.querySelector('.g-council-map'), this.menuBtn],
+                above: () => [head, this.hudEl],
+                onChange: () => face?.relayout(),
+            });
             const lines = sc.lines.length ? sc.lines : [{ speaker: 'narration', name: '', text: '……' }];
             // 生成イラスト素材（Version 22）：話し手の人物画（左下）と軍議の背景。素材が無い・旧表示（?art=old）・読めないときは何も作らない
             const reduced = () => this.motionReduced();
@@ -626,10 +638,15 @@ export class DomView implements GameView, LayerHost {
                     b.append(el('span', 'n', String(k + 1)), document.createTextNode(c.label));
                     if (c.detail) b.append(el('span', 'd', c.detail));
                     if (c.summary) b.append(el('span', 's', c.summary));
-                    // 出たばかり・出る前に始まった押し方では決まらない（選んだ印も動かさない）
-                    onPress(b, (e) => {
-                        if (choiceGate.pointer(nowMs(), startedAt(e))) pick(k);
-                    });
+                    // 出たばかり・出る前に始まった押し方では決まらない（選んだ印も動かさない）。
+                    // 並びが動かせる間は、離した時に、動かさずに離した押し（たたき）だけで決まる（なぞって並びを動かした指では選ばない。ui/dom.ts）
+                    onPress(
+                        b,
+                        (e, start) => {
+                            if (start ? choiceGate.tap(nowMs(), startedAt(start)) : choiceGate.pointer(nowMs(), startedAt(e))) pick(k);
+                        },
+                        { tapWhen: () => fitter.scrolls, scrollOf: () => choicesEl.scrollTop, scrolledAt: () => fitter.scrolledAt },
+                    );
                     choiceBtns.push(b);
                     choicesEl.append(b);
                 });
@@ -637,6 +654,9 @@ export class DomView implements GameView, LayerHost {
                 choicesEl.hidden = false;
                 choiceGate.reset(nowMs(), CHOICE_GUARD_MS);
                 mark();
+                // 台詞の枠・上の部品に届くなら収める（選ばれている物が見える所へ）。大きさが変わったら測り直す
+                fitter.fit(choiceBtns[sel]);
+                fitter.watch();
             };
             const render = () => {
                 const line = lines[i]!;
@@ -685,6 +705,8 @@ export class DomView implements GameView, LayerHost {
                             if (k < choices.length && choiceGate.key(e.code, e.repeat, nowMs())) pick(k);
                         } else return;
                         mark();
+                        // 低い画面では選ばれた物だけ説明を出す（高さが変わる）：測り直し、選ばれた物が並びの中で見える所へ
+                        if (!done) fitter.fit(choiceBtns[sel]);
                         e.preventDefault();
                         return;
                     }
@@ -714,6 +736,7 @@ export class DomView implements GameView, LayerHost {
                     mapGate?.reset(nowMs(), CHOICE_GUARD_MS);
                     // 上の画面（情勢・見直しの演出・メニュー）が閉じた：手前の幕の揺れを続ける。台詞の枠の顔は今の四角で測り直す
                     backdrop?.resume();
+                    fitter.fit();
                     face?.relayout();
                 },
                 // 会話を閉じた（選んだ・終わった・タイトルへ）：声を止める。人物画・背景の見張りと揺れも止める
@@ -722,6 +745,7 @@ export class DomView implements GameView, LayerHost {
                     portrait?.dispose();
                     face?.dispose();
                     backdrop?.dispose();
+                    fitter.dispose();
                 },
             };
             this.push(m);

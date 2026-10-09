@@ -8,6 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { PRESS_CLICK_PAIR_MS, onPress } from '../proto3d/src/ui/dom';
+import { SCROLL_SETTLE_MS, TAP_SLOP_PX } from '../proto3d/src/ui/guard';
 
 type Fake = { pointerType?: string; button?: number; detail?: number; timeStamp: number };
 
@@ -63,5 +64,91 @@ describe('onPress（1 回の押しで 1 回だけ）', () => {
         const q = setup();
         q.fire('click', { detail: 0, timeStamp: 50 });
         expect(q.count()).toBe(1);
+    });
+});
+
+type PFake = { pointerType?: string; button?: number; detail?: number; timeStamp: number; pointerId?: number; clientX?: number; clientY?: number };
+
+/** 動かせる並びの中のボタン（opts.tapWhen）。scroll：並びの scrollTop、scrolledAt：並びが最後に動いた時刻 */
+function setupTap(scrollable = true) {
+    const ls: Record<string, (e: Event) => void> = {};
+    const captured: number[] = [];
+    const target = {
+        addEventListener: (type: string, fn: (e: Event) => void) => void (ls[type] = fn),
+        setPointerCapture: (id: number) => void captured.push(id),
+    } as unknown as Pick<HTMLElement, 'addEventListener' | 'setPointerCapture'>;
+    const st = { scroll: 0, scrolledAt: Number.NEGATIVE_INFINITY, scrollable };
+    const calls: { type: string; start: number | null }[] = [];
+    onPress(target, (e, start) => calls.push({ type: e.type ?? '', start: start ? start.timeStamp : null }), {
+        tapWhen: () => st.scrollable,
+        scrollOf: () => st.scroll,
+        scrolledAt: () => st.scrolledAt,
+    });
+    const stopped: string[] = [];
+    const fire = (type: 'pointerdown' | 'pointermove' | 'pointerup' | 'pointercancel' | 'click', e: PFake) =>
+        ls[type]!({ type, pointerId: 1, clientX: 50, clientY: 50, ...e, preventDefault() {}, stopPropagation() { stopped.push(type); } } as unknown as Event);
+    return { fire, calls, st, captured, stopped };
+}
+
+describe('onPress（動かせる並びの中：離した時に、たたきだけで反応）', () => {
+    it('指でたたく：押した瞬間には反応せず、離した時に 1 回だけ（押し始めのイベントを渡す）。続く click は無視', () => {
+        const p = setupTap();
+        p.fire('pointerdown', { pointerType: 'touch', button: 0, timeStamp: 100 });
+        expect(p.calls.length).toBe(0);
+        expect(p.captured).toEqual([1]);
+        p.fire('pointerup', { pointerType: 'touch', button: 0, timeStamp: 180, clientX: 52, clientY: 53 });
+        expect(p.calls).toEqual([{ type: 'pointerup', start: 100 }]);
+        p.fire('click', { pointerType: 'touch', detail: 0, timeStamp: 190 });
+        expect(p.calls.length).toBe(1);
+        // 層の「どこを押しても進む」へは伝えない
+        expect(p.stopped).toContain('pointerdown');
+        expect(p.stopped).toContain('pointerup');
+    });
+    it('縦になぞった指（並びを動かした）では反応しない', () => {
+        const p = setupTap();
+        p.fire('pointerdown', { pointerType: 'touch', button: 0, timeStamp: 100 });
+        p.fire('pointermove', { timeStamp: 110, clientY: 50 - TAP_SLOP_PX - 2 });
+        p.st.scroll = 80;
+        p.fire('pointerup', { pointerType: 'touch', timeStamp: 300, clientY: 50 - TAP_SLOP_PX - 2 });
+        expect(p.calls.length).toBe(0);
+    });
+    it('ブラウザが並びを動かし始めた（pointercancel）押しでは反応しない', () => {
+        const p = setupTap();
+        p.fire('pointerdown', { pointerType: 'touch', button: 0, timeStamp: 100 });
+        p.fire('pointercancel', { timeStamp: 120 });
+        p.fire('pointerup', { pointerType: 'touch', timeStamp: 300 });
+        expect(p.calls.length).toBe(0);
+    });
+    it('動いている並びを止めた押し（並びが動いて SCROLL_SETTLE_MS のうち）では反応しない。止まってからのたたきは反応する', () => {
+        const p = setupTap();
+        p.st.scrolledAt = 90;
+        p.fire('pointerdown', { pointerType: 'touch', button: 0, timeStamp: 100 });
+        p.fire('pointerup', { pointerType: 'touch', timeStamp: 160 });
+        expect(p.calls.length).toBe(0);
+        p.fire('pointerdown', { pointerType: 'touch', button: 0, timeStamp: 90 + SCROLL_SETTLE_MS });
+        p.fire('pointerup', { pointerType: 'touch', timeStamp: 90 + SCROLL_SETTLE_MS + 60 });
+        expect(p.calls.length).toBe(1);
+    });
+    it('マウス：離した時にクリックとして反応。右ボタンでは反応しない', () => {
+        const p = setupTap();
+        p.fire('pointerdown', { pointerType: 'mouse', button: 2, timeStamp: 100 });
+        p.fire('pointerup', { pointerType: 'mouse', button: 2, timeStamp: 150 });
+        expect(p.calls.length).toBe(0);
+        p.fire('pointerdown', { pointerType: 'mouse', button: 0, timeStamp: 200 });
+        p.fire('pointerup', { pointerType: 'mouse', button: 0, timeStamp: 260 });
+        p.fire('click', { pointerType: 'mouse', detail: 1, timeStamp: 262 });
+        expect(p.calls.map((c) => c.type)).toEqual(['pointerup']);
+    });
+    it('並びが動かない間（tapWhen が false）は、今までどおり押した瞬間に反応する', () => {
+        const p = setupTap(false);
+        p.fire('pointerdown', { pointerType: 'touch', button: 0, timeStamp: 100 });
+        expect(p.calls).toEqual([{ type: 'pointerdown', start: null }]);
+        p.fire('pointerup', { pointerType: 'touch', timeStamp: 150 });
+        expect(p.calls.length).toBe(1);
+    });
+    it('キーボードの click（detail 0・pointerType 空）は、動かせる並びでも反応する', () => {
+        const p = setupTap();
+        p.fire('click', { pointerType: '', detail: 0, timeStamp: 100 });
+        expect(p.calls).toEqual([{ type: 'click', start: null }]);
     });
 });

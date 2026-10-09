@@ -215,6 +215,63 @@ body.touch .g-talk kbd { display: none; }
 .g-choice .n { color: var(--gold); margin-right: 8px; font-size: 12px; }
 body.touch .g-choice .n { display: none; }
 body.touch .g-choice { padding: 12px 16px; }
+/* 選択肢の並びが台詞の枠・詳しく見る・メニューにかかる画面だけ（縦長のスマホで 3 行の台詞の枠が軍議の選択肢 C を隠していた。Version 24）：
+   ui/choiceFit.ts が g-fit を付け、並びを台詞の枠の上（間 12px）から上の部品の下（間 8px）までに置く（本物の四角から求めた値を変数に入れる）。
+   かからない画面では何も付かない（Version 23 のまま）。選択肢・台詞の字、選択肢の幅、顔の大きさは変えない */
+.g-choices.g-fit {
+    bottom: var(--g-choices-bottom);
+    max-height: var(--g-choices-max);
+}
+/* 入りきらない時：並びの中だけを縦に動かす（なぞり・ホイール。ページ・3D の場面へは伝えない。g-scroll はほかの動く欄と同じ印で、main.ts の
+   ページ全体の touchmove の抑止から外れる）。選択肢は指を離した時に決まる（なぞった指では選ばない）。
+   選んだ印の外の輪（2px）は並びの端で切れるので、動く並びの間だけ内側の輪にする（並び・選択肢の位置・幅は変えない。顔の測りも今までの四角のまま）。
+   端の薄れは、その先にまだ選択肢があるしるし（more-above・more-below） */
+.g-choices.g-scroll {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+.g-choices.g-scroll::-webkit-scrollbar { display: none; }
+.g-choices.g-scroll > .g-choice { flex-shrink: 0; }
+.g-choices.g-scroll > .g-choice.sel { box-shadow: inset 0 0 0 2px rgba(200, 168, 106, 0.25); }
+.g-choices.g-scroll.more-below {
+    -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 24px), transparent);
+    mask-image: linear-gradient(180deg, #000 calc(100% - 24px), transparent);
+}
+.g-choices.g-scroll.more-above {
+    -webkit-mask-image: linear-gradient(0deg, #000 calc(100% - 24px), transparent);
+    mask-image: linear-gradient(0deg, #000 calc(100% - 24px), transparent);
+}
+.g-choices.g-scroll.more-above.more-below {
+    -webkit-mask-image: linear-gradient(180deg, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+    mask-image: linear-gradient(180deg, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+}
+/* 動く並びの見える所の上・下の端の真ん中の札（その先に選択肢がある時だけ。押せない：下の選択肢をそのまま押せる） */
+.g-choices-cue {
+    position: absolute;
+    transform: translateX(-50%);
+    padding: 1px 10px 2px;
+    border-radius: 999px;
+    background: rgba(20, 18, 15, 0.92);
+    border: 1px solid rgba(200, 168, 106, 0.6);
+    color: var(--gold);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+    pointer-events: none;
+}
+.g-choices-cue.down { transform: translate(-50%, -100%); }
+.g-choices-cue[hidden] { display: none; }
+/* それでも並びの高さが取れない、とても低い画面だけ：台詞の欄の高さを（2 行分は残して）縮め、台詞の中を動かす（字は小さくしない） */
+.g-dialog.g-text-fit .text {
+    max-height: var(--g-text-max);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+}
 
 /* 真ん中の板（確認・メニュー・合戦の仮の選択） */
 .g-panel {

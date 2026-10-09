@@ -3,7 +3,7 @@
  * 会話を進めた入力（タップ・クリック・Enter／Space／E、キーの自動の繰り返し、スマホの素早い二度押し）で、直後に出た選択肢が決まらないこと。
  */
 import { describe, expect, it } from 'vitest';
-import { ADVANCE_GUARD_MS, CHOICE_GUARD_MS, HeldKeys, InputGate } from '../proto3d/src/ui/guard';
+import { ADVANCE_GUARD_MS, CHOICE_GUARD_MS, HeldKeys, InputGate, TAP_SLOP_PX, TapTracker } from '../proto3d/src/ui/guard';
 
 describe('選択肢の見張り（時間）', () => {
     it('出てから CHOICE_GUARD_MS の間は、出た後に押し始めたタップでも決まらない', () => {
@@ -84,5 +84,78 @@ describe('上に重なった画面（メニュー）を閉じて戻ったとき'
         expect(g.pointer(6500, 5990)).toBe(false); // メニューを閉じる前に押し始めた
         expect(g.key('Escape', false, 7000)).toBe(false);
         expect(g.pointer(6400, 6400)).toBe(true);
+    });
+});
+
+describe('動かせる並びの選択肢：離した時に決める（InputGate.tap）', () => {
+    it('押し始めが見張りの時間の中なら、離したのが後でも決まらない（350 ms の見張りはそのまま）', () => {
+        const g = new InputGate(new HeldKeys(), 1000);
+        // 出た 300 ms 後に押し始め、500 ms 後に離した
+        expect(g.tap(1500, 1300)).toBe(false);
+        expect(g.tap(1000 + CHOICE_GUARD_MS + 200, 1000 + CHOICE_GUARD_MS)).toBe(true);
+    });
+    it('出る前に押し始めた指では決まらない', () => {
+        const g = new InputGate(new HeldKeys(), 1000);
+        expect(g.tap(3000, 990)).toBe(false);
+    });
+    it('押している間に出直した（メニューが閉じた・reset）なら、離しても決まらない', () => {
+        const g = new InputGate(new HeldKeys(), 0);
+        expect(g.tap(900, 800)).toBe(true);
+        g.reset(850);
+        expect(g.tap(1300, 800)).toBe(false);
+        expect(g.tap(1300, 1250)).toBe(true);
+    });
+});
+
+describe('たたきとなぞりの見分け（TapTracker）', () => {
+    it('その場で押して離せば、たたき', () => {
+        const t = new TapTracker();
+        t.down(1, 100, 200, 0);
+        expect(t.active).toBe(true);
+        t.move(1, 103, 204);
+        expect(t.up(1, 104, 203, 0)).toBe(true);
+        expect(t.active).toBe(false);
+    });
+    it('縦になぞった（TAP_SLOP_PX より動いた）押しは、離してもたたきにしない', () => {
+        const t = new TapTracker();
+        t.down(1, 100, 200, 0);
+        t.move(1, 100, 200 - TAP_SLOP_PX - 1);
+        expect(t.active).toBe(false);
+        // 元の所へ戻して離しても、たたきにしない
+        t.move(1, 100, 200);
+        expect(t.up(1, 100, 200, 0)).toBe(false);
+    });
+    it('動きの途中を見ずに離した所だけ遠い押し・横へずらした押しも、たたきにしない', () => {
+        const t = new TapTracker();
+        t.down(1, 100, 200, 0);
+        expect(t.up(1, 100 + TAP_SLOP_PX + 1, 200, 0)).toBe(false);
+        t.down(2, 100, 200, 0);
+        t.move(2, 160, 200);
+        expect(t.up(2, 160, 200, 0)).toBe(false);
+    });
+    it('ブラウザが並びを動かし始めた（pointercancel）押しは、たたきにしない', () => {
+        const t = new TapTracker();
+        t.down(5, 10, 10, 40);
+        t.cancel(5);
+        expect(t.up(5, 10, 10, 40)).toBe(false);
+    });
+    it('押している間に並びが動いた（指は動いていない）押しは、たたきにしない', () => {
+        const t = new TapTracker();
+        t.down(1, 10, 10, 40);
+        expect(t.up(1, 10, 10, 120)).toBe(false);
+    });
+    it('動いている並びを止めた押し（settled が false）は、たたきにしない', () => {
+        const t = new TapTracker();
+        t.down(1, 10, 10, 40, false);
+        expect(t.active).toBe(false);
+        expect(t.up(1, 10, 10, 40)).toBe(false);
+    });
+    it('別の指の動き・取り消し・離しでは、今の押しを変えない', () => {
+        const t = new TapTracker();
+        t.down(1, 10, 10, 0);
+        t.move(2, 300, 300);
+        t.cancel(2);
+        expect(t.up(2, 10, 10, 0)).toBe(false);
+        expect(t.up(1, 11, 11, 0)).toBe(true);
     });
 });
