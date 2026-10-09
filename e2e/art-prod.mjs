@@ -269,7 +269,9 @@ async function run(kind) {
       return {
         cards: [...document.querySelectorAll('.b-card')].map((c) => ({ id: c.dataset.id, text: c.innerText.replace(/\s+/g, ' ').trim().slice(0, 30), face: c.querySelector('.b-face')?.dataset.artId ?? null })),
         abil: vis(document.querySelector('.b-abil')) ? document.querySelector('.b-abil').innerText.replace(/\s+/g, ' ').slice(0, 60) : null,
-        genFace: document.querySelector('.b-gen .b-face')?.dataset.artId ?? null,
+        // 能力の欄の武将の顔（Version 23 から欄の先頭の大きな顔 .b-abil > .b-face。Version 22 は武将の行の中の小さな顔）
+        genFace: document.querySelector('.b-abil > .b-face, .b-gen .b-face')?.dataset.artId ?? null,
+        genFaceW: Math.round(document.querySelector('.b-abil > .b-face, .b-gen .b-face')?.getBoundingClientRect().width ?? 0),
         parts: Object.fromEntries(['.b-obj-head', '.b-goals', '.b-ctrl', '.b-zoom', '.b-bottom', '.b-allret', '.b-pause'].map((s) => [s, vis(document.querySelector(s))])),
         faces: document.querySelectorAll('.b-face').length,
       };
@@ -281,7 +283,7 @@ async function run(kind) {
       const want = PLAINS_GENERALS.filter((g) => has(`face.${g}`)).map((g) => `a_${g}:face.${g}`).sort();
       const got = bs.cards.filter((c) => c.face).map((c) => `${c.id}:${c.face}`).sort();
       check('art: 札の顔は、一覧に顔のある武将の部隊だけ・その武将の顔（弓隊・騎馬隊には無い）', JSON.stringify(got) === JSON.stringify(want), got);
-      if (has('face.tadakatsu')) check('art: 能力の欄の武将の行に忠勝の顔', bs.genFace === 'face.tadakatsu', bs.genFace);
+      if (has('face.tadakatsu')) check('art: 能力の欄に忠勝の顔（Version 23：欄の先頭の大きな顔。PC 48 px 以上）', bs.genFace === 'face.tadakatsu' && bs.genFaceW >= 48, [bs.genFace, bs.genFaceW]);
       const tex = ['tex.plains.grass', 'tex.plains.dirt', 'tex.plains.road', 'tex.plains.forest'].filter(has).map((id) => `/${assets[id].file}`);
       if (tex.length) check('art: 大平原の地面の素材を読んだ', tex.every((p) => artResp.some((r) => r.path === p && r.status === 200)), tex);
     } else check(`${kind}: 合戦に顔の canvas は無い`, bs.faces === 0, bs.faces);
