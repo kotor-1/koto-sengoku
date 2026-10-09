@@ -1910,7 +1910,7 @@
     {
       "id": "tex.plains.grass",
       "kind": "texture",
-      "status": "built",
+      "status": "approved",
       "required": true,
       "purpose": "大平原の合戦の地面（草地）の色の素材（繰り返して貼る）",
       "subject": "初夏の日本の平野の短い草地（真上から。約 8m 四方）",
@@ -2148,12 +2148,16 @@
             80452
           ]
         ]
+      },
+      "review": {
+        "outputSha256": "34811d3dd3199edcd58716eafd1ab1bf8af3d35380b63605699634ee0948dcc9",
+        "note": "合戦・大平原の演習で、旧表示（?art=old）・新表示・?artOff=grass・?artOff=ground・道の読み込み失敗を同じ手順で比べた（PC 1280x720・スマホ横 844x390、既定の画質と ?q=low、通常の倍率・一番寄った倍率・寄せて動かした後・中の倍率。scratchpad v23/g/shots/final）。合戦の状態は全部の表示で同じ。草地は 1 枚 4m（暫定）。色の寄せ 0.75 で地面と兵の明るさの比は Version 21 の 93〜94%（1280x720：味方 1.65・敵 1.80・馬 1.86・林 2.21）"
       }
     },
     {
       "id": "tex.plains.dirt",
       "kind": "texture",
-      "status": "built",
+      "status": "approved",
       "required": true,
       "purpose": "大平原の合戦の地面（裸の土。草地の中のむら・境目）の色の素材",
       "subject": "乾いて踏み固められた裸の土（真上から。約 8m 四方）",
@@ -2357,12 +2361,16 @@
             65852
           ]
         ]
+      },
+      "review": {
+        "outputSha256": "191b3ec77295d4873b620e0d372a984dc1592703c52847c0c7234516835d2e72",
+        "note": "合戦・大平原の演習で、旧表示（?art=old）・新表示・?artOff=grass・?artOff=ground・道の読み込み失敗を同じ手順で比べた（PC 1280x720・スマホ横 844x390、既定の画質と ?q=low、通常の倍率・一番寄った倍率・寄せて動かした後・中の倍率。scratchpad v23/g/shots/final）。合戦の状態は全部の表示で同じ。土は 1 枚 6m・草地の中の薄いむら（DIRT_MAX 0.35）だけ"
       }
     },
     {
       "id": "tex.plains.road",
       "kind": "texture",
-      "status": "built",
+      "status": "approved",
       "required": true,
       "purpose": "大平原の合戦の道の表面の色の素材（地形データの道の範囲だけに貼る）",
       "subject": "人や馬に踏み固められた土の道の表面（真上から。道の縁・形は描かない）",
@@ -2566,6 +2574,10 @@
             35450
           ]
         ]
+      },
+      "review": {
+        "outputSha256": "a056505d3e4b57088c2b051da0d9bbeef3e1f51c20024965edacbb8556c7c3bf",
+        "note": "合戦・大平原の演習で、旧表示（?art=old）・新表示・?artOff=grass・?artOff=ground・道の読み込み失敗を同じ手順で比べた（PC 1280x720・スマホ横 844x390、既定の画質と ?q=low、通常の倍率・一番寄った倍率・寄せて動かした後・中の倍率。scratchpad v23/g/shots/final）。合戦の状態は全部の表示で同じ。道は 1 枚 5m・2 通りのずらしで繰り返しを崩す。道の素材が読めない時は道だけ Version 21 の色"
       }
     },
     {
