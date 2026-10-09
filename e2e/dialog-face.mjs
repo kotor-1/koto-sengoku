@@ -101,7 +101,18 @@ function probeDialog() {
         count: R(d.querySelector('.count')),
         more: d.querySelector('.more').hidden ? null : R(d.querySelector('.more')),
         choices: ch && !ch.hidden ? R(ch) : null,
-        choiceRects: ch && !ch.hidden ? [...ch.querySelectorAll('.g-choice')].map((b) => ({ id: b.dataset.id, ...R(b) })) : [],
+        // 選択肢の四角。並びが縦に動く（Version 24。狭い画面で入りきらない）時は、並びの見える所に切り取った四角（見えない所は重なりにならない）
+        choiceRects:
+            ch && !ch.hidden
+                ? [...ch.querySelectorAll('.g-choice')].map((b) => {
+                      const r = R(b);
+                      if (!r || ch.scrollHeight <= ch.clientHeight + 1) return { id: b.dataset.id, ...r };
+                      const c = ch.getBoundingClientRect();
+                      const t = Math.max(r.t, c.top);
+                      const bt = Math.min(r.b, c.bottom);
+                      return { id: b.dataset.id, ...r, t, b: Math.max(t, bt), h: Math.max(0, bt - t), clipped: true };
+                  })
+                : [],
         head: R(L.querySelector('.g-council-head')),
         map: R(L.querySelector('.g-council-map')),
         hud: vis(document.querySelector('.g-hud')),
@@ -264,7 +275,8 @@ async function run(part, size, mode) {
                 }, null, { timeout: 3000, polling: 100 }).catch(() => {});
             }
             const p = await page.evaluate(probeDialog);
-            const line = { script: id, index: u.index, count: u.count, choices: u.choices, ...p };
+            // choices は probeDialog の並びの四角で上書きされるので、選択肢の id は choiceIds に残す（下の「同じ台本・行・台詞・選択肢」の比べ）
+            const line = { script: id, index: u.index, count: u.count, choices: u.choices, ...p, choiceIds: u.choices };
             delete line.layerHtml;
             line.html = p.layerHtml;
             rec.lines.push(line);
@@ -317,7 +329,7 @@ async function run(part, size, mode) {
                     for (const [k, r] of [['name', p.nameR], ['text', p.textR], ['count', p.count], ['more', p.more], ['choices', p.choices], ['head', p.head], ['map', p.map], ['hud', p.hud], ['menu', p.menu]]) {
                         if (r) check(!boxesOverlap(f, r), `${L} 顔が ${k} と重ならない`, { f, r });
                     }
-                    for (const c of p.choiceRects) check(!boxesOverlap(f, c), `${L} 顔が選択肢 ${c.id} と重ならない`);
+                    for (const c of p.choiceRects) check(c.h <= 0 || !boxesOverlap(f, c), `${L} 顔が選択肢 ${c.id} と重ならない`, c.clipped ? { f, c } : undefined);
                 }
                 if (textLeft === null) textLeft = { t: p.textR?.l ?? null, n: p.nameR?.l ?? null };
                 if (p.textR) check(Math.abs(p.textR.l - textLeft.t) < 0.5 && (!p.nameR || textLeft.n === null || Math.abs(p.nameR.l - textLeft.n) < 0.5), `${L} 名前・台詞の始まりが行ごとに動かない`, { textLeft, now: [p.textR.l, p.nameR?.l] });
@@ -454,7 +466,7 @@ for (const part of PARTS)
         check(moved.length === 0, `${part} ${size} 台詞の四角・字の大きさ・字の間・行の高さは旧表示と同じ`, moved.slice(0, 2));
         check(newOverlap.length === 0, `${part} ${size} 枠が選択肢と新しく重なる行は無い（旧表示でも重なる行 ${oldOverlap}）`, newOverlap);
         // 同じ入力で同じ台本・同じ行・同じ台詞・同じ選択肢を通った（物語は変わらない）
-        const seq = (r) => r.lines.map((l) => `${key(l)}|${l.name}|${l.text}|${(l.choices ?? []).join(',')}`).join('\n');
+        const seq = (r) => r.lines.map((l) => `${key(l)}|${l.name}|${l.text}|${(l.choiceIds ?? []).join(',')}`).join('\n');
         check(seq(a) === seq(b), `${part} ${size} 旧表示と同じ台本・行・台詞・選択肢を通った（${b.lines.length} 行）`);
         if (a.state || b.state) check(JSON.stringify(a.state) === JSON.stringify(b.state), `${part} ${size} 第二章の状態が旧表示と同じ`, { old: a.state, now: b.state });
         report[`compare.${part}.${size}`] = { lines: n, taller, moved: moved.length, oldOverlap, newOverlap, compact: b.compact ?? 0, blocked: b.blocked ?? 0 };
