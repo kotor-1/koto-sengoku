@@ -843,7 +843,7 @@ describe('地面の材質：背景の色（昼・夜）と低い画質', () => {
 
 // ---------------------------------------------------------------- 能力の欄の顔（battle.css）
 
-describe('能力の欄の顔は欄の高さ・能力の見出しの行の幅を変えない（第二章の忠勝の「信頼 40」の行でも）', () => {
+describe('合戦の顔の規則（battle.css）：能力の欄は顔を大きく・欄の幅と位置は変えない。札・発動の知らせは Version 22 のまま', () => {
     // テストは Node で動く。Node の型定義は入れていないので、使う関数だけ型を付ける
     const fsName = 'node:fs';
     const cssText = (async () => {
@@ -872,40 +872,79 @@ describe('能力の欄の顔は欄の高さ・能力の見出しの行の幅を�
         const m = new RegExp(`(?:^|;)\\s*${name}\\s*:\\s*([^;]+)`).exec(body);
         return m ? m[1].trim() : null;
     };
-    it('with-face の規則は武将の行（.b-gen）と顔だけに掛かる：能力の見出し（.b-ab-h）・ほかの行の幅・余白を変えない', () => {
+    it('能力の欄の with-face：欄の幅・余白・位置・最大の高さは変えない。顔の右に並べるのは武将の行と能力の見出しだけ（ほかの行は欄の幅いっぱい）', () => {
         const rs = rules().filter((r) => r.sel.includes('.b-abil.with-face'));
-        expect(rs.length).toBeGreaterThan(2);
+        expect(rs.length).toBeGreaterThan(4);
+        const sels = (r: { sel: string }) => r.sel.split(',').map((x) => x.trim());
         for (const r of rs) {
-            for (const sel of r.sel.split(',').map((x) => x.trim())) {
-                expect(sel, sel).not.toMatch(/\.b-ab-h|\.b-ab-r|\.b-ab-why|\.b-ab-long|\.b-ab-note/);
-                // 欄そのもの（.b-abil.with-face だけ）の大きさ・余白は変えない
-                if (sel === '.b-abil.with-face') for (const p of ['padding', 'height', 'min-height', 'margin', 'width']) expect(prop(r.body, p), `${sel} ${p}`).toBeNull();
+            for (const sel of sels(r)) {
+                // 使い方・残り・対象・範囲・効果・代償・回数・断りの行には、個別の規則を掛けない（文字の大きさ・折り返しは Version 22 と同じ）
+                expect(sel, sel).not.toMatch(/\.b-ab-r|\.b-ab-why|\.b-ab-long|\.b-ab-note|\.b-ab-st/);
+                // 欄そのものの大きさ・余白・位置は変えない。[hidden] の欄を出さない（display を変える規則は :not([hidden]) 付きだけ）
+                if (/^\.b-abil\.with-face(:not\(\[hidden\]\))?$/.test(sel)) {
+                    for (const p of ['padding', 'height', 'min-height', 'max-height', 'margin', 'width', 'position', 'left', 'top', 'overflow', 'font-size', 'line-height']) expect(prop(r.body, p), `${sel} ${p}`).toBeNull();
+                    if (prop(r.body, 'display') !== null) expect(sel).toBe('.b-abil.with-face:not([hidden])');
+                }
             }
         }
-        // 顔は流れの外（行の高さを押し広げない）。武将の行の「固有能力「…」」は省く（すぐ下の見出しと同じ名前）
-        const face = rs.find((r) => r.media === '' && r.sel === '.b-abil.with-face > .b-gen > .b-face')!;
-        expect(prop(face.body, 'position')).toBe('absolute');
-        const ab = rs.find((r) => r.media === '' && r.sel === '.b-abil.with-face > .b-gen > .b-gen-ab')!;
-        expect(prop(ab.body, 'display')).toBe('none');
+        const find = (media: string, sel: string) => rs.find((r) => (media ? r.media.includes(media) : r.media === '') && sels(r).includes(sel));
+        expect(prop(find('', '.b-abil.with-face:not([hidden])')!.body, 'display')).toBe('grid');
+        // ほかの行は 2 列をまたぐ（欄の幅いっぱい）。顔は 1 列目で武将の行と能力の見出しの 2 行をまたぐ
+        expect(prop(find('', '.b-abil.with-face > *')!.body, 'grid-column')).toBe('1 / -1');
+        const face = find('', '.b-abil.with-face > .b-face')!;
+        expect(prop(face.body, 'grid-column')).toBe('1');
+        expect(prop(face.body, 'grid-row')).toBe('1 / span 2');
+        const gen = find('', '.b-abil.with-face > .b-gen')!;
+        const head = find('', '.b-abil.with-face > .b-ab-h')!;
+        expect([prop(gen.body, 'grid-column'), prop(gen.body, 'grid-row')]).toEqual(['2', '1']);
+        expect([prop(head.body, 'grid-column'), prop(head.body, 'grid-row')]).toEqual(['2', '2']);
+        // 能力の見出しは並べる場所と、顔の右で折り返した時の行の間だけ（字・余白・区切り・横のすき間は今までどおり）
+        for (const p of head.body.split(';').map((x) => x.split(':')[0]!.trim()).filter(Boolean)) expect(['grid-column', 'grid-row', 'align-self', 'row-gap']).toContain(p);
+        // 武将の行の「固有能力「…」」は省く（すぐ下の見出しと同じ名前）
+        expect(prop(find('', '.b-abil.with-face > .b-gen > .b-gen-ab')!.body, 'display')).toBe('none');
+        // 顔の規則は地図の上の名札（.b-label）に掛けない（名札は大きくしない）
+        expect(rules().filter((r) => /b-face/.test(r.sel) && /\.b-label/.test(r.sel))).toEqual([]);
     });
-    it('武将の行は「固有能力「…」」を省いた分より少しだけ右へ寄せる（折り返しを増やさない）。顔は武将の行の上の余白と下の区切りの間に収まる', () => {
+    it('能力の欄の顔の大きさ：PC 48〜64 px（大きな画面も）・縦の狭い画面 40 px 以上（1 列目の幅＝顔の幅）。欄が高くなるのは顔が 2 行より高い分だけ（PC 16 px・大きな画面 24 px・縦の狭い画面 14 px まで）', () => {
         const all = rules();
         const px = (v: string | null) => (v === null ? NaN : parseFloat(v));
-        const find = (media: string, sel: string) => all.find((r) => r.media.includes(media) && r.sel.split(',').map((x) => x.trim()).includes(sel));
-        // PC（12 px・行の高さ 1.45）：上の余白 6 px・下の区切りまで 3 px
-        const genPad = px(prop(find('', '.b-abil.with-face > .b-gen')!.body, 'padding-left'));
-        const faceH = px(prop(find('', '.b-abil.with-face > .b-gen > .b-face')!.body, 'height'));
-        const lineH = 12 * 1.45;
-        expect(faceH).toBeLessThanOrEqual(lineH + 2 * 3);
-        // 省く「固有能力「X」」は 11 px の字で 7 字以上（固有能力「」の 6 字＋名前）＝ 77 px 以上。寄せる幅（顔＋すき間）はそれより狭い
-        expect(genPad).toBeLessThan(7 * 11 - 8);
-        // 縦の狭い画面（10.5 px・行の高さ 1.2）：上の余白 4 px・下の区切りまで 1＋1 px。武将の行の「固有能力」は元から省いている
-        const cGen = find('max-height: 520px', '.b-abil.with-face > .b-gen')!;
-        const cFace = find('max-height: 520px', '.b-abil.with-face > .b-gen > .b-face')!;
-        expect(px(prop(cFace.body, 'height'))).toBeLessThanOrEqual(10.5 * 1.2 + 2 * 2);
-        expect(px(prop(cGen.body, 'padding-left'))).toBeLessThan(7 * 10 - 6);
+        const find = (media: string, sel: string) => all.find((r) => (media ? r.media.includes(media) : r.media === '') && r.sel.split(',').map((x) => x.trim()).includes(sel));
+        const firstCol = (media: string) => px(prop(find(media, '.b-abil.with-face:not([hidden])')!.body, 'grid-template-columns')!.split(/\s+/)[0]!);
+        // PC（12 px・行の高さ 1.45）：武将の行 1 行＋能力の見出し（上の余白 3＋3・区切り 1 px）
+        const f = find('', '.b-abil.with-face > .b-face')!;
+        const w = px(prop(f.body, 'width'));
+        const mb = px(prop(f.body, 'margin-bottom') ?? '0');
+        expect(px(prop(f.body, 'height'))).toBe(w);
+        expect(w).toBeGreaterThanOrEqual(48);
+        expect(w).toBeLessThanOrEqual(64);
+        expect(firstCol('')).toBe(w);
+        expect(w + mb - (12 * 1.45 + 12 * 1.45 + 7)).toBeLessThanOrEqual(16);
+        // 大きな画面（1600×900 以上）：少し大きく。それでも 64 px まで
+        const wf = find('min-width: 1600px', '.b-abil.with-face > .b-face')!;
+        const ww = px(prop(wf.body, 'width'));
+        expect(px(prop(wf.body, 'height'))).toBe(ww);
+        expect(ww).toBeGreaterThanOrEqual(w);
+        expect(ww).toBeLessThanOrEqual(64);
+        expect(firstCol('min-width: 1600px')).toBe(ww);
+        expect(ww + mb - (12 * 1.45 + 12 * 1.45 + 7)).toBeLessThanOrEqual(24);
+        // 縦の狭い画面（武将の行 10.5 px・行の高さ 1.2、能力の見出し 11 px・1.35、すき間 1＋1 px）
+        const cf = find('max-height: 520px', '.b-abil.with-face > .b-face')!;
+        const cw = px(prop(cf.body, 'width'));
+        expect(px(prop(cf.body, 'height'))).toBe(cw);
+        expect(cw).toBeGreaterThanOrEqual(40);
+        expect(cw).toBeLessThan(w);
+        expect(firstCol('max-height: 520px')).toBe(cw);
+        expect(cw + mb - (10.5 * 1.2 + 11 * 1.35 + 2)).toBeLessThanOrEqual(14);
         const compactHide = find('max-height: 520px', '.b-gen:has(+ .b-ab-h) .b-gen-ab');
         expect(compactHide && prop(compactHide.body, 'display')).toBe('none');
+        // PC で目標の欄を開いたまま（左上の列の高さに上限）：顔は 40 px 以上で、2 行（武将の行・能力の見出し）の高さを超えない＝欄を高くしない
+        const go = find('min-height: 521px', '.b-root.goals-open .b-abil.with-face > .b-face')!;
+        const gw = px(prop(go.body, 'width'));
+        const gmb = px(prop(go.body, 'margin-bottom') ?? '0');
+        expect(px(prop(go.body, 'height'))).toBe(gw);
+        expect(gw).toBeGreaterThanOrEqual(40);
+        expect(gw + gmb).toBeLessThanOrEqual(12 * 1.45 + 12 * 1.45 + 7);
+        expect(px(prop(find('min-height: 521px', '.b-root.goals-open .b-abil.with-face:not([hidden])')!.body, 'grid-template-columns')!.split(/\s+/)[0]!)).toBe(gw);
     });
     it('札の見出しの顔：細い顔は高さを変えずに幅とすき間を詰め、出さない時は並びから外す（札・見出しの大きさの規則は足さない）', () => {
         const all = rules();

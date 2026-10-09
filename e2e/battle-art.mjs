@@ -26,6 +26,7 @@
  *   - カメラの「全体」（fit）と、余白を決める部品（.b-obj-head・.b-ctrl・.b-bottom・.b-zoom）の四角・札の四角（幅・高さ）が見せ方ごとに同じ。
  *   - 見えている兵士の数（troopStats().visibleSoldiers）が減らない（既定の寄りで 300 以上）。
  *   - 顔：札の見出し・能力の欄の武将の行・発動の知らせ・演習の編成の表で、その部隊の武将（generalId・leaderId）の顔だけ（data-art-id が face.<武将の id>）。
+ *     Version 23：能力の欄の顔は大きい（PC 52 px・縦の狭い画面 40 px。欄の位置・幅は旧表示と同じ、高くなるのは顔と見出しの折り返しの分だけ）。編成の表は顔・名前・役割。
  *     酒井忠次・本多忠勝・榊原康政を取り違えない。顔の無い部隊（弓隊・騎馬隊・織田援軍など）には無い。旧表示は 1 つも無い。
  *   - 札の名前：顔のせいで Version 21（old）より短く切れない（文字の幅と枠の幅を測る）。状態の印（「撤退済み」「到着待ち」）を入れた時も
  *     （DOM の印の文字を入れ替えて測るだけ。合戦の状態は変えない）。
@@ -73,9 +74,10 @@ function panelProbe() {
     const a = document.querySelector('.b-abil');
     const g = document.querySelector('.b-gen');
     const h = document.querySelector('.b-ab-h');
-    const f = document.querySelector('.b-gen .b-face');
+    const f = document.querySelector('.b-abil > .b-face');
     const tl = document.querySelector('.b-topleft');
     return {
+        vh: innerHeight,
         abil: a && !a.hidden ? box(a) : null,
         scroll: a ? [a.scrollHeight, a.clientHeight] : null,
         gen: box(g),
@@ -187,20 +189,21 @@ async function noticeShot(page, path) {
 /** 高さ（四角の下 − 上） */
 const hOf = (b) => (b ? Math.round((b[3] - b[1]) * 10) / 10 : null);
 /**
- * 能力の欄が旧表示と比べて変わっていないか。顔のある欄は武将の行の「固有能力「…」」（すぐ下の見出しと同じ名前）を省くので、
- * 旧表示で武将の行が折り返していた時（長い役割・信頼の行。例：浅井長政 同盟の大将 信頼 10）だけ、武将の行が 1 行になり、欄はその分だけ低くなる。
- * それ以外（左・右・幅・能力の見出しの幅・欄の上の端）は同じ。欄が高くなる・ほかの行が変わるのはだめ
+ * 能力の欄が旧表示と比べて変わっていないか（Version 23）。顔のある欄（with-face）は、顔（PC 52 px・大きな画面 60 px・縦の狭い画面 40 px）の右に
+ * 武将の行と能力の見出しを並べるので、顔が 2 行より高い分と、顔の右で能力の見出しが 1 行折り返す分だけ欄が高くなってよい（PC 22 px・
+ * 縦の狭い画面 18 px まで。武将の行の「固有能力「…」」を省き、折り返しの行の間を詰めるので、旧表示より低くなる時もある）。
+ * 欄の左・右・上の端（位置と幅）は同じで、顔は欄の中。顔の無い欄は旧表示と同じ四角
  */
 function panelSame(o, f) {
     if (!o?.abil || !f?.abil) return o?.abil === f?.abil;
-    if (JSON.stringify(o.abil) === JSON.stringify(f.abil) && JSON.stringify(o.abH) === JSON.stringify(f.abH)) return true;
-    const shrink = hOf(o.gen) - hOf(f.gen);
+    if (!f.withFace) return JSON.stringify(o.abil) === JSON.stringify(f.abil) && JSON.stringify(o.abH) === JSON.stringify(f.abH);
     const near = (a, b) => Math.abs(a - b) <= 0.2;
+    const grow = hOf(f.abil) - hOf(o.abil);
+    const fb = f.face?.box;
     return (
-        shrink > 0 &&
         near(o.abil[0], f.abil[0]) && near(o.abil[1], f.abil[1]) && near(o.abil[2], f.abil[2]) &&
-        near(hOf(o.abil) - hOf(f.abil), shrink) &&
-        !!o.abH && !!f.abH && near(o.abH[0], f.abH[0]) && near(o.abH[2], f.abH[2]) && near(hOf(o.abH), hOf(f.abH)) && near(o.abH[1] - f.abH[1], shrink)
+        grow <= (f.vh <= 520 ? 18 : 22) + 0.2 && grow >= -hOf(o.gen) - 8 &&
+        !!fb && fb[0] >= f.abil[0] && fb[2] <= f.abil[2] && fb[1] >= f.abil[1] && fb[3] <= f.abil[3] && fb[2] - fb[0] >= (f.vh <= 520 ? 40 : 48) - 0.2
     );
 }
 /** 状態の指紋（ページの中で使う。台本の中から呼べるよう window に置く） */
@@ -327,6 +330,15 @@ async function plainsRun(kind, mode) {
     await page.waitForTimeout(mode === 'old' ? 800 : 1500);
     rep.briefFaces = await page.evaluate(() => [...document.querySelectorAll('.g-pr-units .b-face')].map((c) => ({ id: c.dataset.artId, row: c.closest('tr')?.dataset.unit })));
     rep.briefRows = await page.evaluate(() => [...document.querySelectorAll('.g-pr-units tr[data-unit]')].map((tr) => Math.round(tr.getBoundingClientRect().height)));
+    rep.briefGen = await page.evaluate(() =>
+        [...document.querySelectorAll('.g-pr-units tr[data-unit]')].flatMap((tr, i) => {
+            const g = tr.querySelector('.g-pr-gen');
+            if (!g) return [];
+            const f = g.querySelector('.b-face');
+            const td = g.closest('td');
+            return [{ i, unit: tr.dataset.unit, face: f?.dataset.artId ?? null, faceW: f ? Math.round(f.getBoundingClientRect().width) : 0, name: g.querySelector('.g-pr-gname')?.textContent ?? '', role: g.querySelector('.g-pr-grole')?.textContent ?? '', over: Math.max(0, Math.round(g.getBoundingClientRect().right - td.getBoundingClientRect().right)) }];
+        }),
+    );
     rep.briefTable = await page.evaluate(() => {
         const t = document.querySelector('.g-pr-units')?.getBoundingClientRect();
         return t ? [Math.round(t.width), Math.round(t.height)] : null;
@@ -384,9 +396,9 @@ async function plainsRun(kind, mode) {
     rep.abilFaceStable = await page.evaluate(async () => {
         window.__battle.select('a_tadakatsu');
         await new Promise((r) => setTimeout(r, 400));
-        const a = document.querySelector('.b-gen .b-face');
+        const a = document.querySelector('.b-abil > .b-face');
         await new Promise((r) => setTimeout(r, 2200));
-        const c = document.querySelector('.b-gen .b-face');
+        const c = document.querySelector('.b-abil > .b-face');
         return a === null ? null : a === c;
     });
 
@@ -536,17 +548,18 @@ async function plainsPart(kind) {
         check(we.length === 0, `${tg}: 合戦の後（台本の後の印）でも名前が旧表示より短く切れない`, we.length ? we : old.cardsEnd.filter((c) => c.badge).map((c) => `${c.name}:${c.badge}`));
         const bf = m.briefFaces.map((f) => `${f.row}:${f.id}`).sort();
         check(JSON.stringify(bf) === JSON.stringify(['a_ieyasu:face.ieyasu', 'a_ishikawa:face.ishikawa', 'a_sakai:face.sakai', 'a_sakakibara:face.sakakibara', 'a_tadakatsu:face.tadakatsu']), `${tg}: 編成の表の顔は 5 武将の自分の顔`, bf);
-        check(JSON.stringify(old.briefRows) === JSON.stringify(m.briefRows) && JSON.stringify(old.briefTable) === JSON.stringify(m.briefTable), `${tg}: 編成の表の行の高さ・表の大きさが同じ`, [old.briefRows, m.briefRows, old.briefTable, m.briefTable]);
+        // Version 23：武将の行は顔・名前・役割で高くなる（表の幅・横のはみ出しは旧表示と同じ。武将のいない行の高さは同じ）
+        check(JSON.stringify(old.briefTable?.[0]) === JSON.stringify(m.briefTable?.[0]) && m.briefGen.length === 5 && m.briefGen.every((g) => g.face && g.role && g.faceW >= 30 && g.over === 0) && old.briefGen.length === 0 && m.briefRows.every((h, i) => (m.briefGen.some((g) => g.i === i) ? h >= old.briefRows[i] : h === old.briefRows[i])), `${tg}: 編成の表：5 武将の行に顔・名前・役割（表の幅・武将のいない行の高さは旧表示と同じ。はみ出さない）`, [old.briefRows, m.briefRows, old.briefTable, m.briefTable, m.briefGen]);
         for (const id of ['a_tadakatsu', 'a_ieyasu', 'a_sakai', 'a_sakakibara', 'a_ishikawa']) {
             const o = old[`sel_${id}`];
             const f = m[`sel_${id}`];
             check(f.face?.id === `face.${f.general}` && f.general === id.slice(2) && f.withFace && !o.face, `${tg}: 能力の欄の武将の行（${id}）にその武将の顔（旧表示は無し）`, [f.general, f.face]);
-            check(panelSame(o, f) && JSON.stringify(o.topleft) === JSON.stringify(f.topleft), `${tg}: 能力の欄（${id}）：顔があっても欄・能力の見出しの四角が同じ（高さ ${hOf(o.abil)} → ${hOf(f.abil)}）`, { old: [hOf(o.abil), o.abH, o.genText], new: [hOf(f.abil), f.abH, f.genText] });
+            check(panelSame(o, f) && JSON.stringify(o.topleft.slice(0, 3)) === JSON.stringify(f.topleft.slice(0, 3)), `${tg}: 能力の欄（${id}）：位置・幅は旧表示と同じ、高くなるのは顔と見出しの折り返しの分だけ（高さ ${hOf(o.abil)} → ${hOf(f.abil)}）`, { old: [hOf(o.abil), o.abH, o.genText], new: [hOf(f.abil), f.abH, f.genText] });
             check(hOf(f.gen) <= hOf(o.gen), `${tg}: 武将の行（${id}）が折り返さない（${hOf(o.gen)} → ${hOf(f.gen)}）`);
         }
         check(!m.sel_a_kiba.face && !m.sel_a_kiba.withFace, `${tg}: 武将のいない騎馬隊の欄には顔が無い`);
         check(m.abilFaceStable === true, `${tg}: 能力の欄の顔は同じ canvas を置き直す（毎秒作り直さない）`);
-        if (old.activeIeyasu && m.activeIeyasu) check(panelSame(old.activeIeyasu, m.activeIeyasu) && m.activeIeyasu.withFace, `${tg}: 能力の欄（家康・効果中）：顔があっても欄の四角が同じ`, [hOf(old.activeIeyasu.abil), hOf(m.activeIeyasu.abil)]);
+        if (old.activeIeyasu && m.activeIeyasu) check(panelSame(old.activeIeyasu, m.activeIeyasu) && m.activeIeyasu.withFace, `${tg}: 能力の欄（家康・効果中）：位置・幅は旧表示と同じ、高くなるのは顔と見出しの折り返しの分だけ`, [hOf(old.activeIeyasu.abil), hOf(m.activeIeyasu.abil)]);
         for (const id of ['a_ieyasu', 'a_sakai', 'a_sakakibara', 'a_ishikawa']) {
             const o = old.abilities[id];
             const a = m.abilities[id];
@@ -696,11 +709,11 @@ async function ch2Part(policy) {
             const o = old[`ready_${id}`];
             const f = actual[`ready_${id}`];
             check(f.face?.id === `face.${f.general}` && f.withFace && !o.face, `${k}: ${id} 能力の欄の武将の行にその武将の顔（旧表示は無し）`, f.face);
-            check(panelSame(o, f) && (JSON.stringify(o.scroll) === JSON.stringify(f.scroll) || hOf(f.gen) < hOf(o.gen)), `${k}: ${id} 使える時の能力の欄・見出しの四角が同じ（高さ ${hOf(o.abil)} → ${hOf(f.abil)}${hOf(f.gen) < hOf(o.gen) ? '。旧表示で折り返していた武将の行が 1 行になった分だけ低い' : ''}）`, { old: o.genText, actual: f.genText });
+            check(panelSame(o, f) && f.abil[3] <= f.vh, `${k}: ${id} 使える時の能力の欄：位置・幅は旧表示と同じ、高くなるのは顔と見出しの折り返しの分だけ・画面の中（高さ ${hOf(o.abil)} → ${hOf(f.abil)}）`, { old: o.genText, actual: f.genText });
             check(hOf(f.gen) <= hOf(o.gen), `${k}: ${id} 武将の行が折り返さない（${hOf(o.gen)} → ${hOf(f.gen)}）`);
             if (f.face) {
                 const fb = f.face.box;
-                check(fb[1] >= f.abil[1] && fb[3] <= f.abH[1] + 0.5, `${k}: ${id} 顔は欄の上の縁と能力の見出しの間に収まる`, { face: fb, abil: f.abil, abH: f.abH });
+                check(fb[1] >= f.abil[1] && fb[3] <= f.abil[3] && fb[2] <= f.abH[0] && fb[2] <= f.gen[0], `${k}: ${id} 顔は欄の中で、武将の行・能力の見出しの左`, { face: fb, abil: f.abil, abH: f.abH, gen: f.gen });
             }
             check(old[`can_${id}`] === actual[`can_${id}`] && JSON.stringify(old[`use_${id}`]) === JSON.stringify(actual[`use_${id}`]), `${k}: ${id} 能力の使える・使えない・使い方が同じ`, [old[`use_${id}`], actual[`use_${id}`]]);
             if (actual[`use_${id}`]?.used) {
@@ -717,7 +730,7 @@ async function ch2Part(policy) {
             }
             const oa = old[`active_${id}`];
             const fa = actual[`active_${id}`];
-            if (oa && fa) check(panelSame(oa, fa), `${k}: ${id} 効果中の能力の欄・見出しの四角が同じ（「${fa.abHText}」）`, { old: hOf(oa.abil), actual: hOf(fa.abil) });
+            if (oa && fa) check(panelSame(oa, fa), `${k}: ${id} 効果中の能力の欄の位置・幅が同じ、高くなるのは顔の分だけ（「${fa.abHText}」）`, { old: hOf(oa.abil), actual: hOf(fa.abil) });
         }
         if (policy === 'asai') {
             const nid = old.ids.find((i) => actual.cards.find((c) => c.id === i).gen === 'nagamasa');
@@ -802,7 +815,7 @@ async function nagamasaPart() {
         if (actual.start.seen) {
             check(actual.inspect.sel === 'e_nagamasa' && actual.inspect.gen === 'nagamasa' && old.inspect.gen === 'nagamasa', '第一章 A：見えている長政隊をクリックで調べると、敵の欄に長政の行（旧表示も同じ）', [old.inspect, actual.inspect]);
             check(actual.panel.face?.id === 'face.nagamasa' && !old.panel?.face, '第一章 A：見えている敵の欄の顔は長政（旧表示は無し）', [old.panel?.face, actual.panel.face]);
-            check(panelSame(old.panel, actual.panel), `第一章 A：敵の欄の四角が旧表示と同じ（高さ ${hOf(old.panel?.abil)} → ${hOf(actual.panel.abil)}）`, [old.panel?.genText, actual.panel.genText]);
+            check(panelSame(old.panel, actual.panel), `第一章 A：敵の欄の位置・幅は旧表示と同じ、高くなるのは顔と見出しの折り返しの分だけ（高さ ${hOf(old.panel?.abil)} → ${hOf(actual.panel.abil)}）`, [old.panel?.genText, actual.panel.genText]);
         } else console.log('     長政隊は開始の時に見えていなかった（見えている時の欄は確かめていない）');
         for (const [k, p] of [
             ['見えなくなった', 'hidden'],
@@ -863,7 +876,7 @@ async function nagamasaPart() {
         console.log(`== ${k}（長政は味方）`);
         check(wrongFaces(actual.cards).length === 0 && actual.cards.find((c) => c.id === 'a_nagamasa')?.face === 'face.nagamasa' && actual.cards.find((c) => c.id === 'a_nagamasa')?.fit !== 'off', `${k}: 浅井長政隊の札に長政の顔（家康・忠勝も自分の顔）`, actual.cards.map((c) => `${c.id}:${c.face}:${c.fit}`));
         check(worseNames(old.cards, actual.cards).length === 0, `${k}: 札の名前が旧表示より短く切れない`, worseNames(old.cards, actual.cards));
-        check(actual.panel.face?.id === 'face.nagamasa' && actual.panel.withFace && !old.panel.face && panelSame(old.panel, actual.panel), `${k}: 能力の欄の武将の行に長政の顔（欄の四角は旧表示と同じ。高さ ${hOf(old.panel.abil)} → ${hOf(actual.panel.abil)}）`, [old.panel.genText, actual.panel.genText]);
+        check(actual.panel.face?.id === 'face.nagamasa' && actual.panel.withFace && !old.panel.face && panelSame(old.panel, actual.panel), `${k}: 能力の欄の武将の行に長政の顔（欄の位置・幅は旧表示と同じ。高さ ${hOf(old.panel.abil)} → ${hOf(actual.panel.abil)}）`, [old.panel.genText, actual.panel.genText]);
         check(old.use.used && actual.use.used && JSON.stringify(old.use) === JSON.stringify(actual.use), `${k}: 盟友への援護を「能力」→ 援護する味方（${actual.use.how}）で使えた（旧表示と同じ）`, [old.use, actual.use]);
         {
             const nv = noticeVsOld(old.notice, actual.notice, 'nagamasa');
@@ -930,7 +943,7 @@ async function nagamasaPart() {
         check(worseNames(old.cards, actual.cards).length === 0, `${k}: 札の名前が旧表示より短く切れない`, worseNames(old.cards, actual.cards));
         check(worseNames(old.badgeCards, actual.badgeCards).length === 0, `${k}: 状態の印「撤退済み」でも名前が旧表示より短く切れない`, worseNames(old.badgeCards, actual.badgeCards));
         check(JSON.stringify(old.cards.map((c) => [c.card, c.head])) === JSON.stringify(actual.cards.map((c) => [c.card, c.head])), `${k}: 札・見出しの四角が同じ`);
-        check(actual.panel.face?.id === 'face.nagamasa' && !old.panel.face && panelSame(old.panel, actual.panel), `${k}: 能力の欄に長政の顔（欄の四角は旧表示と同じ。高さ ${hOf(old.panel.abil)} → ${hOf(actual.panel.abil)}）`, [old.panel.genText, actual.panel.genText]);
+        check(actual.panel.face?.id === 'face.nagamasa' && !old.panel.face && panelSame(old.panel, actual.panel), `${k}: 能力の欄に長政の顔（欄の位置・幅は旧表示と同じ。高さ ${hOf(old.panel.abil)} → ${hOf(actual.panel.abil)}）`, [old.panel.genText, actual.panel.genText]);
         check(actual.nagamasaWhy === old.nagamasaWhy, `${k}: 長政の能力の使える・使えない（理由）が旧表示と同じ：${actual.nagamasaWhy || '使える'}`, [old.nagamasaWhy, actual.nagamasaWhy]);
         check(old.use.used && actual.use.used, `${k}: 動いている間に、石川の能力を「能力」→ 対象の味方（${actual.use.how}）で使えた`, [old.use, actual.use]);
         {

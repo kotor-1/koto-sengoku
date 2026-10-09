@@ -1,5 +1,6 @@
 /**
  * 合戦の武将の顔（Version 22。art/ids.ts の FACE_OF：素材の届いた武将だけ。ほかの人の顔で代用しない）。部隊の札・能力の欄・発動の知らせ・演習の編成の表で使う。
+ * Version 23：能力の欄（選んだ武将）と演習の編成の表では顔を大きく（欄 40〜60 px・表 34〜38 px。大きさは battle.css）。地図の上の名札には顔を出さない。
  *
  * - 画像は art/registry.ts の loadArtBitmap（fetch → createImageBitmap）だけで読み、<canvas class="b-face" data-art-id> に描く
  *   （<img>・CSS の背景・data: の URL は使わない）。canvas は 1 度描けば、置き場所を移しても描き直さない（毎秒作り直す欄の中でもちらつかない）。
@@ -14,8 +15,8 @@ import { FACE_OF, type ArtId } from '../art/ids';
 import { artMode, loadArtBitmap } from '../art/registry';
 import type { GeneralId } from './generals';
 
-/** canvas の画素の大きさ（CSS では 14〜40 px で出す。端末の画素の比 2 まで細かく見える大きさ） */
-const FACE_PX = 96;
+/** canvas の画素の大きさ（CSS では 14〜60 px で出す。端末の画素の比 2 で 64 px まで細かく見える大きさ。素材は 256 px） */
+const FACE_PX = 128;
 
 /** その武将の顔の素材の ID（旧表示・顔の無い武将は null） */
 export function faceIdOf(generalId: string | null | undefined): ArtId | null {
@@ -54,15 +55,18 @@ export function faceCanvas(id: ArtId, bmp: ImageBitmap): HTMLCanvasElement {
     c.setAttribute('aria-hidden', 'true');
     c.draggable = false;
     c.width = c.height = FACE_PX;
-    const g = c.getContext('2d');
-    if (g) {
-        g.imageSmoothingEnabled = true;
-        g.imageSmoothingQuality = 'high';
-        // 正方形に切り出して描く（縦横の比は保つ。顔の素材は正方形）
-        const s = Math.min(bmp.width, bmp.height);
-        g.drawImage(bmp, (bmp.width - s) / 2, (bmp.height - s) / 2, s, s, 0, 0, FACE_PX, FACE_PX);
-    }
+    drawFace(c, bmp);
     return c;
+}
+
+/** 顔を canvas に描く（正方形に切り出す。縦横の比は保つ。顔の素材は正方形） */
+function drawFace(c: HTMLCanvasElement, bmp: ImageBitmap): void {
+    const g = c.getContext('2d');
+    if (!g) return;
+    g.imageSmoothingEnabled = true;
+    g.imageSmoothingQuality = 'high';
+    const s = Math.min(bmp.width, bmp.height);
+    g.drawImage(bmp, (bmp.width - s) / 2, (bmp.height - s) / 2, s, s, 0, 0, FACE_PX, FACE_PX);
 }
 
 /**
@@ -79,6 +83,34 @@ export function attachFaceWhenReady(generalId: string | null | undefined, parent
         parent.prepend(c);
         return c;
     });
+}
+
+/**
+ * 顔の置き場を先に取る（演習の編成の表。顔が後から届いて、表の行の高さ・列の幅が後から変わらないように）。
+ * 旧表示・顔の無い武将は null（何も置かない）。読めていればすぐ描いた canvas。まだなら空の canvas（class b-face-wait。data-art-id はまだ付けない）を返し、
+ * 読めたら描いて data-art-id を付ける。読めなかったら場所ごと外す（文字だけの並びに戻る。ほかの人の顔は描かない）。
+ * 画面を閉じた後に届いても、外れた canvas に描くだけ（何も表示しない）
+ */
+export function faceSlot(generalId: string | null | undefined): HTMLCanvasElement | null {
+    const id = faceIdOf(generalId);
+    if (!id) return null;
+    const bmp = peekFace(id);
+    if (bmp) return faceCanvas(id, bmp);
+    const c = document.createElement('canvas');
+    c.className = 'b-face b-face-wait';
+    c.setAttribute('aria-hidden', 'true');
+    c.draggable = false;
+    c.width = c.height = FACE_PX;
+    void loadFace(id).then((b) => {
+        if (!b) {
+            c.remove();
+            return;
+        }
+        drawFace(c, b);
+        c.dataset.artId = id;
+        c.classList.remove('b-face-wait');
+    });
+    return c;
 }
 
 /** 名前の文字が枠に収まっているか（文字の幅 ≦ 枠の幅。切れて「…」になっていない） */

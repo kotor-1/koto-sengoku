@@ -24,6 +24,8 @@
  *   能力の欄の武将の行・発動の知らせ（自軍だけ）に <canvas class="b-face" data-art-id> を置く（毎秒作り直す欄の文字列の外に持ち、作り直した後に置き直す）。
  *   読めない・旧表示では何も置かない（Version 21 と同じ）。札の高さ・下の列・左上の見出し（カメラの「全体」の余白 insets）は変えない。
  *   札の見出しで部隊の名前が切れるなら、顔を細く・それでも切れるなら出さない（.b-card[data-face]＝full・narrow・off。名前を Version 21 より短く切らない）。
+ *   Version 23：能力の欄（選んだ武将）の顔は大きく（PC 52 px・大きな画面 60 px・縦の狭い画面 40 px）、顔の右に武将の行と能力の見出しを並べる（syncAbilFace）。
+ *   地図の上の名札には顔を出さない（名札は名前・能力の印・押しやすさが先）。
  * ボタンは押した瞬間（pointerdown）に反応し、その後の click は無視する（キーボードの Enter／Space の click だけ受ける）。
  * 画面を押して地図を動かす面（input）は一番下に敷き、つなぎがそこへ指・マウスの処理を付ける。
  */
@@ -848,10 +850,12 @@ export class BattleUi {
     }
 
     /**
-     * 能力の欄の武将の行に顔を置く（欄の文字列は毎秒作り直すので、作り直した後に同じ canvas を置き直す。描き直さない）。
-     * 置くのは、武将の行のすぐ下に能力の見出し（.b-ab-h）がある時だけ。顔は武将の行の高さの中の小さな絵で、その分だけ武将の行の
-     * 「固有能力「…」」（すぐ下の見出しと同じ名前）を省く（battle.css の .with-face）。欄の高さ・能力の見出しの行の幅は変えない。
-     * 顔の無い武将・旧表示・まだ読めていない間・武将の行だけの欄では何もしない（with-face の印も付けない）
+     * 能力の欄（選んだ部隊の率いる武将）の顔（Version 23 で大きく：PC 52 px・大きな画面 60 px・縦の狭い画面 40 px。battle.css の .b-abil.with-face）。
+     * 欄の文字列は毎秒作り直すので、作り直した後に同じ canvas を欄の先頭に置き直す（描き直さない）。
+     * 置くのは、武将の行のすぐ下に能力の見出し（.b-ab-h）がある時だけ：顔を左に、その右に武将の行（名前・役割・信頼）と能力の見出し
+     * （能力名・使えるか）の 2 行を並べ、その下の行（使い方・対象・効果…）は今までどおり欄の幅いっぱい。武将の行の「固有能力「…」」
+     * （すぐ下の見出しと同じ名前）は省く。欄が高くなるのは、顔が 2 行より高い分だけ（PC 約 12 px・大きな画面 約 20 px・縦の狭い画面 約 13〜16 px）。
+     * 顔の無い武将・旧表示・まだ読めていない間・武将の行だけの欄では何もしない（with-face の印も付けない＝Version 21 と同じ欄）
      */
     private syncAbilFace(generalId: string | null): void {
         if (generalId !== this.abilFaceGen) {
@@ -860,10 +864,10 @@ export class BattleUi {
         }
         const id = this.abilFaceId;
         const cv = id ? this.faceEl('abil', id) : null;
-        const gen = cv ? (this.abil.querySelector('.b-gen') as HTMLElement | null) : null;
+        const gen = cv ? (this.abil.querySelector(':scope > .b-gen') as HTMLElement | null) : null;
         const fits = !!(gen && gen.nextElementSibling?.classList.contains('b-ab-h'));
         if (cv && gen && fits) {
-            if (cv.parentElement !== gen) gen.prepend(cv);
+            if (this.abil.firstElementChild !== cv) this.abil.prepend(cv);
         } else if (cv?.parentElement) cv.remove();
         setClass(this.abil, 'with-face', !!(cv && gen && fits));
     }

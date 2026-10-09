@@ -5,8 +5,10 @@
  * タイトルの「合戦場の演習」から ui/boot.ts が読み込む（別の塊。選んだときだけ読む）。
  * DOM の印（e2e 用）：層に data-sheet（practice-list／practice-briefing／practice-result）、戦場の札に data-field、
  * ボタンに data-id（'field:<戦場id>'／'back'／'go'／'list'）。目標の行に data-objective（primary／secondary）と data-achieved。
- * 編成の表の「率いる武将」には、その武将の顔（Version 22。素材の届いた家康・忠勝・酒井・石川・榊原・長政だけ。生成イラスト素材が読めたときだけ。
- * <canvas class="b-face">）を名前の前に小さく置く。
+ * 編成の表の「率いる武将」（Version 23）：生成イラスト素材を使う表示では、顔（素材の届いた家康・忠勝・酒井・石川・榊原・長政だけ。<canvas class="b-face">）・
+ * 名前・役割（総大将・前線の主将など。generals.ts の GENERAL_ROLE_LABELS＝合戦の能力の欄と同じ呼び方）を並べる（.g-pr-gen）。顔は先に場所を取り
+ * （faceSlot。後から届いて表の行が動かない）、読めなければ場所ごと外して名前・役割の文字だけにする（ほかの人の顔で代用しない）。
+ * 旧表示（?art=old）は Version 21 と同じ（名前の文字だけ。役割・顔の場所は足さない）。
  */
 import {
     PracticeMode,
@@ -21,7 +23,9 @@ import {
 import type { StorageLike } from '../campaign/save';
 import { el } from './dom';
 import type { DomView } from './view';
-import { attachFaceWhenReady } from '../battle/faceArt';
+import { faceSlot } from '../battle/faceArt';
+import { artMode } from '../art/registry';
+import { GENERAL_ROLE_LABELS, generalById } from '../battle/generals';
 
 /** 札（小さな枠の文字） */
 function tag(text: string): HTMLElement {
@@ -133,8 +137,19 @@ export class PracticeDomView implements PracticeView {
                 if (u.ability.provisional) ab.append(tag('仮'));
             } else ab.textContent = '—';
             const gen = el('td', undefined, u.general ?? '—');
-            // 武将の顔（その武将の素材が読めたときだけ。ほかの人の顔で代用しない。名前は文字のまま。表の行の高さは変えない）
-            if (u.general) void attachFaceWhenReady(u.generalId, gen, () => true);
+            // 率いる武将：顔・名前・役割（素材を使う表示だけ。名前・役割は文字のまま。顔はその武将の素材だけ）
+            const g = u.general && artMode() !== 'old' && u.generalId ? generalById(u.generalId) : undefined;
+            if (u.general && g) {
+                gen.textContent = '';
+                tr.classList.add('with-gen');
+                const box = el('div', 'g-pr-gen');
+                const face = faceSlot(g.id);
+                if (face) box.append(face);
+                const text = el('div', 'g-pr-gtext');
+                text.append(el('b', 'g-pr-gname', u.general), el('span', 'g-pr-grole', GENERAL_ROLE_LABELS[g.role]));
+                box.append(text);
+                gen.append(box);
+            }
             tr.append(name, el('td', undefined, u.kind), el('td', 'num', String(u.strength)), gen, ab);
             table.append(tr);
         }
