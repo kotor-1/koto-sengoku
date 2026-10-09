@@ -91,6 +91,13 @@ class FakeEl {
     get firstChild() {
         return this.children[0] ?? null;
     }
+    get parentElement() {
+        return this.parentNode;
+    }
+    contains(n: FakeEl | null) {
+        for (let p = n; p; p = p.parentNode) if (p === this) return true;
+        return false;
+    }
     get isConnected() {
         return true;
     }
@@ -596,6 +603,62 @@ describe('台詞の枠の顔（DialogFace）', () => {
         f.dispose();
     });
 
+    it('見直しの演出の下で層ごと隠れている間（visibility: hidden）に測り直しても、層の中の選択肢は避ける。層の外の隠れた物は数えない。会話に戻れば測り直す（relayout）', async () => {
+        art();
+        await loadArt(ART_IDS.faceTadakatsu);
+        await loadArt(ART_IDS.faceIeyasu);
+        // 568×320 の軍議の方針の行：いつもの顔（上 203〜239）は選択肢（下の端 209）に届く。縮めた顔（214〜）は届かない
+        const box = installDom({ dpr: 2, faceRect: (c) => (c.classes.has('compact') ? { left: 31, top: 214, width: 25, height: 25 } : { left: 31, top: 203, width: 36, height: 36 }) });
+        const layer = new FakeEl('div');
+        layer.className = 'g-layer';
+        const choices = new FakeEl('div');
+        choices.className = 'g-choices';
+        choices.rect = { left: 14, top: 40, width: 540, height: 169 };
+        layer.append(choices, box);
+        // 層の外の物（目的の札）：隠れている（visibility: hidden）間は数えない
+        const objective = new FakeEl('div');
+        objective.rect = { left: 0, top: 190, width: 120, height: 40 };
+        let objectiveHidden = true;
+        const hiddenByVisibility = (e: FakeEl) => {
+            if (e === objective) return objectiveHidden;
+            for (let p: FakeEl | null = e; p; p = p.parentNode) if (p.classes.has('g-under-cine')) return true;
+            return false;
+        };
+        vi.stubGlobal('getComputedStyle', (e: FakeEl) => ({ display: e.hidden ? 'none' : 'block', visibility: hiddenByVisibility(e) ? 'hidden' : 'visible', content: 'none' }));
+        const f = new DialogFace(box as unknown as HTMLElement, COUNCIL_SPEAKERS, faceOf, null, null, () => [choices as unknown as Element, objective as unknown as Element]);
+        f.start();
+        f.set('tadakatsu');
+        const c = faceEl(box)!;
+        const state = () => [c.hidden, c.classes.has('compact'), c.dataset.blocked ?? null];
+        expect(state()).toEqual([false, true, null]);
+        // 見直しの演出が上に出た（層ごと visibility: hidden）。その間に窓の大きさが変わって測り直す：選択肢は層の中なので、まだ避ける（いつもの大きさに戻さない）
+        layer.classes.add('g-under-cine');
+        resize();
+        expect(state()).toEqual([false, true, null]);
+        // 選択肢が枠の中まで来る大きさに変わった（演出の下で測り直し）：縮めても重なる → 出さない
+        choices.rect = { left: 14, top: 40, width: 540, height: 190 };
+        resize();
+        expect(state()).toEqual([true, false, '1']);
+        // 会話に戻った（層が見える）。大きさが戻っていれば、測り直して縮めた顔を出す
+        layer.classes.delete('g-under-cine');
+        choices.rect = { left: 14, top: 40, width: 540, height: 169 };
+        f.relayout();
+        expect(state()).toEqual([false, true, null]);
+        // 層の外の目的の札が見えるようになって縮めた顔にも届く：出さない（見えない間は数えない）
+        objective.rect = { left: 0, top: 200, width: 120, height: 40 };
+        objectiveHidden = false;
+        f.relayout();
+        expect(state()).toEqual([true, false, '1']);
+        objectiveHidden = true;
+        f.relayout();
+        expect(state()).toEqual([false, true, null]);
+        f.dispose();
+        // 片付けの後は測り直さない
+        objectiveHidden = false;
+        f.relayout();
+        expect(state()).toEqual([false, true, null]);
+    });
+
     it('画面の外へ出る顔（低い画面で枠が高い）も縮め、それでも出るなら出さない。窓の大きさが変われば測り直す', async () => {
         art();
         await loadArt(ART_IDS.faceTadakatsu);
@@ -679,6 +742,8 @@ describe('台詞の枠の顔の CSS（Version 23）：どの大きさでも台�
         for (const r of face) for (const sel of r.sel.split(',').map((x) => x.trim())) expect(FACE_SELS).toContain(sel);
         for (const r of face.filter((x) => x.sel.includes('has-face'))) {
             for (const n of ['font-size', 'letter-spacing', 'line-height', 'padding', 'padding-top', 'padding-bottom', 'min-height', 'height', 'bottom']) expect(prop(r.body, n), `${r.media} ${r.sel} ${n}`).toBeNull();
+            // PC（枠を左へ広げて左の中に顔を置く）以外では、枠の幅・位置・左の余白も変えない（狭い・低い画面の枠は Version 21 のまま。顔は角へはみ出す）
+            if (r.media !== PC && r.sel === '.g-dialog.has-face') for (const n of ['width', 'max-width', 'left', 'right', 'transform', 'padding-left', 'padding-right', 'margin', 'margin-left']) expect(prop(r.body, n), `${r.media} ${r.sel} ${n}`).toBeNull();
         }
         // Version 21 の台詞の字（PC・縦に長い画面 16px、高さ 430 以下 15px。字の間 0.03em）
         expect(prop(get(all, '', '.g-dialog .text').body, 'font-size')).toBe('16px');

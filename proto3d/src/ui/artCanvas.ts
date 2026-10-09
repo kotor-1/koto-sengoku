@@ -797,13 +797,23 @@ export class DialogFace {
         paintArt(c, css, css, [{ bitmap: bmp, fit: 'cover', opts: { alignY: 0.35 } }]);
     }
 
+    /** 測り直す（上の画面：情勢・見直しの演出・メニューが閉じて会話に戻った。隠れている間に窓の大きさが変わっていても、今の四角で決め直す） */
+    relayout(): void {
+        if (this.disposed) return;
+        this.drawn = '';
+        this.refresh();
+    }
+
     /** 出した顔の四角が、画面の中で avoid のどれとも重ならないか（測れない・大きさの無い顔は見ない） */
     private clear(r: { left: number; top: number; right: number; bottom: number; width: number; height: number }): boolean {
         if (!(r.width > 0 && r.height > 0)) return true;
         const zero = { left: 0, top: 0 };
         const avoid: Box[] = [];
+        // 台本の層の中の物（選択肢・見出し・詳しく見る・名前・台詞）は visibility を見ない：見直しの演出の下で層ごと隠れている間（g-under-cine）に
+        // 窓の大きさ・向きが変わって測り直しても、層が戻った時の選択肢などを避ける。層の外の物（目的の札・メニュー）は visibility: hidden なら無いとみなす
+        const layer = this.box.parentElement;
         for (const e of this.avoid?.() ?? []) {
-            const b = visibleBox(e, zero, true);
+            const b = visibleBox(e, zero, !(e && layer?.contains(e)));
             if (b) avoid.push(b);
         }
         const view = typeof innerWidth === 'number' && typeof innerHeight === 'number' && innerWidth > 0 && innerHeight > 0 ? { w: innerWidth, h: innerHeight } : null;

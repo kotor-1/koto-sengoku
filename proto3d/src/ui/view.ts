@@ -712,8 +712,9 @@ export class DomView implements GameView, LayerHost {
                     lineGate.reset(nowMs(), CHOICE_GUARD_MS);
                     if (!choicesEl.hidden) choiceGate.reset(nowMs(), CHOICE_GUARD_MS);
                     mapGate?.reset(nowMs(), CHOICE_GUARD_MS);
-                    // 上の画面（情勢・見直しの演出・メニュー）が閉じた：手前の幕の揺れを続ける
+                    // 上の画面（情勢・見直しの演出・メニュー）が閉じた：手前の幕の揺れを続ける。台詞の枠の顔は今の四角で測り直す
                     backdrop?.resume();
+                    face?.relayout();
                 },
                 // 会話を閉じた（選んだ・終わった・タイトルへ）：声を止める。人物画・背景の見張りと揺れも止める
                 dispose: () => {
