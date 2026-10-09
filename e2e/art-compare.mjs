@@ -883,7 +883,16 @@ for (const q of QUALITY) {
                     check(plain.length > 0 && plain.every((x) => Math.abs(x.b - x.t - (rowOf(d, x.unit).b - rowOf(d, x.unit).t)) < 0.6), `${scene} default ${tag}: rows without a general keep the old height (no squeezed columns)`, plain.map((x) => [x.unit, Math.round((x.b - x.t) * 10) / 10, Math.round((rowOf(d, x.unit).b - rowOf(d, x.unit).t) * 10) / 10]));
                 }
                 if (scene !== 'practice-briefing') {
-                    check(JSON.stringify(o.cards.map((c) => [c.id, c.l, c.t, c.r, c.b])) === JSON.stringify(d.cards.map((c) => [c.id, c.l, c.t, c.r, c.b])) && JSON.stringify(o.insets) === JSON.stringify(d.insets), `${scene} default ${tag}: card and HUD boxes identical to old`);
+                    // 左上の列（.b-topleft）は能力の欄を含むので、下の端だけ能力の欄が高くなった分だけ下がってよい（位置・幅・ほかの部品は同じ）
+                    const grewBy = o.abil && d.abil ? d.abil.b - o.abil.b : 0;
+                    const insetsSame = Object.keys({ ...o.insets, ...d.insets }).every((k) => {
+                        const a = o.insets[k];
+                        const b = d.insets[k];
+                        if (!a || !b) return a === b;
+                        if (k === '.b-topleft') return a.l === b.l && a.t === b.t && a.r === b.r && Math.abs(b.b - a.b - grewBy) < 0.6;
+                        return JSON.stringify(a) === JSON.stringify(b);
+                    });
+                    check(JSON.stringify(o.cards.map((c) => [c.id, c.l, c.t, c.r, c.b])) === JSON.stringify(d.cards.map((c) => [c.id, c.l, c.t, c.r, c.b])) && insetsSame, `${scene} default ${tag}: card and HUD boxes identical to old (the top-left column only grows with the ability panel: ${Math.round(grewBy * 10) / 10} px)`, insetsSame ? undefined : [o.insets, d.insets]);
                     // 能力の欄：位置・幅は同じ。高くなるのは顔の分だけ（PC 22 px・縦の狭い画面 18 px まで。高さ 370 以下は 2 px まで＝下の地図の名札を覆わない）
                     const maxGrow = d.vh <= 370 ? 2 : d.vh <= 520 ? 18 : 22;
                     const grow = o.abil && d.abil ? Math.round((d.abil.b - d.abil.t - (o.abil.b - o.abil.t)) * 10) / 10 : null;
