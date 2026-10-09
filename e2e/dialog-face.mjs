@@ -1,10 +1,12 @@
 /**
- * 台詞の枠の顔（Version 22。ui/artCanvas.ts の DialogFace）の確かめ（開発サーバー。本物の顔の素材 manifest.gen.json。?artFixture は使わない）。
+ * 台詞の枠の顔（Version 22・23。ui/artCanvas.ts の DialogFace）の確かめ（開発サーバー。本物の顔の素材 manifest.gen.json。?artFixture は使わない）。
  *
  *   BASE=http://localhost:8681 node e2e/dialog-face.mjs [出力先]
  *   変えられるもの（環境変数。カンマ区切り）：
- *     SIZES=1280x720,1920x1080,844x390,844x390-notch,667x375,568x320   高さ 430 以下はスマホ（タッチ・isMobile・端末の比 2）。-notch は左右 47px・下 21px の安全域
- *     MODES=default,old        default … 何も付けない（顔あり）、old … ?art=old（Version 21 の見た目）
+ *     SIZES=1280x720,1920x1080,844x390,844x390-notch,667x375,568x320,390x844,768x1024
+ *                              高さ 430 以下・幅 480 以下はスマホ（タッチ・isMobile・端末の比 2）。-notch は左右 47px・下 21px の安全域
+ *     MODES=default,old        default … 何も付けない（顔あり）、old … ?art=old（Version 21 の見た目）、
+ *                              fail … 何も付けないが、顔の画像（art/faces/）の読み込みをすべて失敗させる（台詞の枠は Version 21 のまま・文字と操作が残る）
  *     PARTS=ch1,ch2,fictional  ch1 … 織田の使者 → 城門の忠勝 → 軍議（方針 → 確かめ → 考え直す → 選び直し）、
  *                              ch2 … 第一章の結末の保存（tests/fixtures/ieyasu-ch1-v3/oda_defeat_broken_heavy：家康・忠勝が負傷）→ 第二章 → 忠勝 → 軍議、
  *                              fictional … 架空の章（主人公 hero は宗真：顔を付けない）
@@ -16,9 +18,14 @@
  *   開発用の操作（__game・__p3）：相手の前への teleport（WALK の大きさ以外）・保存の差し込み（ch2 の localStorage）・3D の手動の描画（render=manual の renderNow）・
  *   読むだけの数え上げ（ui・cast・prompt）。
  * 確かめ：顔は今の話し手（家康・忠勝・酒井・石川）だけ・使者／地の文／高札は空き・空きは台本の間ずっと同じ（名前・台詞の始まりが動かない）・
- *   顔が名前・台詞・行の数・▼・選択肢と重ならない・枠の中・画面の中・押せない・読み上げない・canvas は端末の比 2 まで・
- *   old と架空の章は has-face も g-face も無い・タイトルの AI 生成の明示は default だけ。
- *   old と default の同じ行の枠の高さ（default が高くなった行を数える）。
+ *   顔が名前・台詞・行の数・▼・選択肢・軍議の見出し・詳しく見る・目的の札・メニューと重ならない・画面の中・押せない・読み上げない・
+ *   canvas は端末の比 2 まで・old と架空の章は has-face も g-face も無い・タイトルの AI 生成の明示は default だけ。
+ *   顔の置き方（ui.css。Version 23）：PC（高さ 431 以上・幅 968 以上）は枠の左の中で上下の真ん中（72px）。それより狭い・低い画面は
+ *   枠の左上の角（左端は台詞の始まり、下端は台詞の 1 行目の上、上へはみ出す。名前は顔の右）：タブレットの縦 52px・スマホ横 44px・
+ *   スマホの縦（幅 540 まで）と幅 640 までのスマホ横 36px。重なる行（選択肢の出ている行だけのはず）は、名前の行の高さに縮めて枠の中に
+ *   収め（class "compact"：スマホ横 25px・それ以外 28px）、それでも重なれば出さない（data-blocked）。
+ *   old と default の同じ行：台詞の字の大きさ・字の間・台詞の四角（位置・幅・高さ）・枠の高さが同じ（顔のために字を小さくしない）。
+ *   枠が選択肢と重なる行は、old でも重なる行だけ（Version 21 からある重なり）。
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -27,7 +34,7 @@ import { boxesOverlap, launchBrowser, skipCinematic } from './lib.mjs';
 const BASE = process.env.BASE || 'http://localhost:8681';
 const OUT = resolve(process.argv[2] || 'e2e-out/dialog-face');
 const list = (v, d) => (v || d).split(',').map((s) => s.trim()).filter(Boolean);
-const SIZES = list(process.env.SIZES, '1280x720,1920x1080,844x390,844x390-notch,667x375,568x320');
+const SIZES = list(process.env.SIZES, '1280x720,1920x1080,844x390,844x390-notch,667x375,568x320,390x844,768x1024');
 const MODES = list(process.env.MODES, 'default,old');
 const PARTS = list(process.env.PARTS, 'ch1,ch2,fictional');
 const WALK = process.env.WALK || '1280x720';
@@ -57,6 +64,16 @@ function probeDialog() {
         if (b.width <= 0 || b.height <= 0) return null;
         return { l: b.left, t: b.top, r: b.right, b: b.bottom, w: b.width, h: b.height };
     };
+    const vis = (e) => (e && !e.hidden && getComputedStyle(e).display !== 'none' && getComputedStyle(e).visibility !== 'hidden' ? R(e) : null);
+    // 重なりで出さなかった顔（data-blocked）が出ていたらの四角：同じ CSS の canvas を枠の先頭に一瞬置いて測り、すぐ外す（描かない）
+    const wouldRect = (d) => {
+        const t = document.createElement('canvas');
+        t.className = 'g-face';
+        d.insertBefore(t, d.firstChild);
+        const r = R(t);
+        t.remove();
+        return r;
+    };
     const L = [...document.querySelectorAll('.g-layer[data-kind="script"]')].pop();
     if (!L) return null;
     const d = L.querySelector('.g-dialog');
@@ -73,18 +90,22 @@ function probeDialog() {
         hasFace: d.classList.contains('has-face'),
         faceEls: d.querySelectorAll('.g-face').length,
         face: f
-            ? { hidden: f.hidden, id: f.dataset.artId, rect: R(f), px: [f.width, f.height], first: d.firstElementChild === f, aria: f.getAttribute('aria-hidden'), pe: cs.pointerEvents, draggable: f.draggable, transform: cs.transform, radius: cs.borderRadius, shadow: cs.boxShadow }
+            ? { hidden: f.hidden, blocked: f.dataset.blocked === '1', compact: f.classList.contains('compact'), id: f.dataset.artId, rect: R(f), would: f.dataset.blocked === '1' || f.classList.contains('compact') ? wouldRect(d) : null, px: [f.width, f.height], first: d.firstElementChild === f, aria: f.getAttribute('aria-hidden'), pe: cs.pointerEvents, draggable: f.draggable, transform: cs.transform, radius: cs.borderRadius, shadow: cs.boxShadow }
             : null,
         dialog: R(d),
         nameR: R(d.querySelector('.name')),
         textR: R(d.querySelector('.text')),
         textFont: getComputedStyle(d.querySelector('.text')).fontSize,
+        textLs: getComputedStyle(d.querySelector('.text')).letterSpacing,
+        textLh: getComputedStyle(d.querySelector('.text')).lineHeight,
         count: R(d.querySelector('.count')),
         more: d.querySelector('.more').hidden ? null : R(d.querySelector('.more')),
         choices: ch && !ch.hidden ? R(ch) : null,
         choiceRects: ch && !ch.hidden ? [...ch.querySelectorAll('.g-choice')].map((b) => ({ id: b.dataset.id, ...R(b) })) : [],
         head: R(L.querySelector('.g-council-head')),
         map: R(L.querySelector('.g-council-map')),
+        hud: vis(document.querySelector('.g-hud')),
+        menu: vis(document.querySelector('.g-menu-btn')),
         portrait: !!L.querySelector('canvas.g-portrait'),
         artNote: !!document.querySelector('.g-art-note'),
         layerHtml: L.outerHTML.replace(/<canvas[^>]*>/g, (m) => m.replace(/ style="[^"]*"/, '')),
@@ -93,8 +114,10 @@ function probeDialog() {
 
 async function newPage(size, mode, extra = '') {
     const [w, h] = size.replace('-notch', '').split('x').map(Number);
-    const touch = h <= 430;
+    const touch = h <= 430 || w <= 480;
     const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: w >= 1900 ? 1 : 2, hasTouch: touch, isMobile: touch });
+    // 顔の画像の読み込みの失敗（fail）：ネットワークで切る（registry の fetch が失敗する）
+    if (mode === 'fail') await ctx.route('**/art/faces/**', (r) => r.abort('failed'));
     const page = await ctx.newPage();
     page.setDefaultTimeout(600000);
     const errors = [];
@@ -237,7 +260,7 @@ async function run(part, size, mode) {
             if (mode === 'default' && FACE_OF[await page.evaluate(() => [...document.querySelectorAll('.g-layer[data-kind="script"] .g-dialog')].pop()?.dataset.speaker)] && part !== 'fictional') {
                 await page.waitForFunction(() => {
                     const f = [...document.querySelectorAll('.g-layer[data-kind="script"] .g-dialog')].pop()?.querySelector('canvas.g-face');
-                    return f && !f.hidden;
+                    return f && (!f.hidden || f.dataset.blocked === '1');
                 }, null, { timeout: 3000, polling: 100 }).catch(() => {});
             }
             const p = await page.evaluate(probeDialog);
@@ -248,34 +271,60 @@ async function run(part, size, mode) {
             const L = `${tag} ${id}#${u.index + 1}(${p.speaker})`;
             // ---- 確かめ
             const wantFace = mode === 'default' && part !== 'fictional' ? FACE_OF[p.speaker] ?? null : null;
-            if (mode === 'old' || part === 'fictional') {
+            // 台詞の字は Version 21 のまま（高さ 430 以下 15px・それ以外 16px、字の間 0.03em）。顔のある枠でも小さくしない
+            const v21Font = p.vh <= 430 ? 15 : 16;
+            check(p.textFont === `${v21Font}px` && Math.abs(parseFloat(p.textLs) - v21Font * 0.03) < 0.01, `${L} 台詞の字は Version 21 と同じ（${v21Font}px・字の間 0.03em）`, { font: p.textFont, ls: p.textLs });
+            if (mode === 'old' || mode === 'fail' || part === 'fictional') {
                 check(!p.hasFace && p.faceEls === 0, `${L} 顔の空きも要素も無い（Version 21 と同じ枠）`, { hasFace: p.hasFace, n: p.faceEls });
             } else {
                 check(p.hasFace && p.faceEls === 1, `${L} 顔の空き（has-face）と canvas.g-face が 1 つ`, { hasFace: p.hasFace, n: p.faceEls });
                 if (gutter === null) gutter = p.hasFace;
                 check(gutter === p.hasFace, `${L} 空きは台本の間ずっと同じ`);
                 const shown = p.face && !p.face.hidden ? p.face.id : null;
-                check(shown === wantFace, `${L} 顔は今の話し手の物（無い人は空きだけ）`, { want: wantFace, shown });
+                const blocked = !!p.face?.blocked;
+                check(shown === (blocked ? null : wantFace), `${L} 顔は今の話し手の物（無い人は空きだけ）`, { want: wantFace, shown, blocked });
+                // ui.css：PC（高さ 431 以上・幅 968 以上）72px は枠の左の中。それ以外は枠の左上の角：タブレットの縦 52・スマホ横 44・
+                // スマホの縦（幅 540 まで）と幅 640 までのスマホ横 36
+                const pc = p.vh > 430 && p.vw >= 968;
+                const compact = !!p.face?.compact && !p.face.hidden;
+                const want = pc ? 72 : compact ? (p.vh <= 430 ? 25 : 28) : p.vh <= 430 ? (p.vw <= 640 ? 36 : 44) : p.vw <= 540 ? 36 : 52;
+                if (blocked || compact) {
+                    // 縮めた・出さなかった：選択肢の出ている行だけ。いつもの大きさで出していたら本当に何かに重なっていた（同じ CSS の canvas で測る）
+                    const w = p.face.would;
+                    const hits = w ? [['choices', p.choices], ['head', p.head], ['map', p.map], ['hud', p.hud], ['menu', p.menu]].filter(([, r]) => r && boxesOverlap(w, r)).map(([k]) => k) : [];
+                    const off = w && (w.l < -0.5 || w.t < -0.5 || w.r > p.vw + 0.5 || w.b > p.vh + 0.5);
+                    check(u.choices?.length > 0, `${L} 顔を縮める・出さないのは選択肢の出ている行だけ`, { hits, blocked, compact });
+                    check(hits.length > 0 || off, `${L} 縮めた・出さなかった顔は、いつもの大きさなら重なっていた`, { w, hits });
+                    if (blocked) rec.blocked = (rec.blocked ?? 0) + 1;
+                    if (compact) rec.compact = (rec.compact ?? 0) + 1;
+                }
                 if (p.face && !p.face.hidden) {
                     const f = p.face.rect;
-                    // ui.css：PC 72px。スマホ横（高さ 430 以下）と、縦に長い画面の幅 967px まで（タブレットの縦・小さな窓）は 52px、スマホの縦（幅 480px まで）は 44px
-                    const want = p.vh <= 430 ? 52 : p.vw <= 480 ? 44 : p.vw <= 967 ? 52 : 72;
                     check(Math.abs(f.w - want) < 0.6 && Math.abs(f.h - want) < 0.6, `${L} 顔の大きさ ${want}px`, f);
                     const dpr = Math.min(2, Math.max(1, p.dpr));
                     check(p.face.px[0] === Math.round(want * dpr) && p.face.px[1] === Math.round(want * dpr), `${L} canvas の画素は端末の比 2 まで（${Math.round(want * dpr)}）`, p.face.px);
                     check(p.face.first && p.face.aria === 'true' && p.face.pe === 'none' && p.face.draggable === false && p.face.transform === 'none', `${L} 先頭・aria-hidden・押せない・ドラッグ不可・反転なし`, p.face);
-                    check(f.l >= p.dialog.l && f.r <= p.dialog.r && f.t >= p.dialog.t && f.b <= p.dialog.b, `${L} 顔は枠の中`, { f, d: p.dialog });
-                    check(Math.abs((f.t + f.b) / 2 - (p.dialog.t + p.dialog.b) / 2) < 1, `${L} 顔は上下の真ん中`);
-                    for (const [k, r] of [['name', p.nameR], ['text', p.textR], ['count', p.count], ['more', p.more], ['choices', p.choices], ['head', p.head], ['map', p.map]]) {
+                    if (pc) {
+                        check(f.l >= p.dialog.l && f.r <= p.dialog.r && f.t >= p.dialog.t && f.b <= p.dialog.b, `${L} 顔は枠の中`, { f, d: p.dialog });
+                        check(Math.abs((f.t + f.b) / 2 - (p.dialog.t + p.dialog.b) / 2) < 1, `${L} 顔は上下の真ん中`);
+                    } else {
+                        check(Math.abs(f.l - p.textR.l) < 0.6 && f.r <= p.dialog.r, `${L} 顔の左端は台詞の始まり（枠の左上の角）`, { f, t: p.textR });
+                        if (compact) check(f.b <= p.textR.t + 0.5 && f.t >= p.dialog.t, `${L} 縮めた顔は枠の中・台詞の 1 行目の上`, { f, d: p.dialog, t: p.textR });
+                        else check(f.b <= p.textR.t + 0.5 && f.b > p.dialog.t && f.t < p.dialog.t, `${L} 顔の下端は台詞の 1 行目の上・枠の上へはみ出す`, { f, d: p.dialog, t: p.textR });
+                        check(p.nameR && p.nameR.l >= f.r - 0.5, `${L} 名前は顔の右`, { f, n: p.nameR });
+                    }
+                    check(f.l >= -0.5 && f.t >= -0.5 && f.r <= p.vw + 0.5 && f.b <= p.vh + 0.5, `${L} 顔は画面の中`, f);
+                    for (const [k, r] of [['name', p.nameR], ['text', p.textR], ['count', p.count], ['more', p.more], ['choices', p.choices], ['head', p.head], ['map', p.map], ['hud', p.hud], ['menu', p.menu]]) {
                         if (r) check(!boxesOverlap(f, r), `${L} 顔が ${k} と重ならない`, { f, r });
                     }
                     for (const c of p.choiceRects) check(!boxesOverlap(f, c), `${L} 顔が選択肢 ${c.id} と重ならない`);
                 }
-                if (textLeft === null) textLeft = p.textR?.l ?? null;
-                if (p.textR) check(Math.abs(p.textR.l - textLeft) < 0.5 && Math.abs((p.nameR?.l ?? p.textR.l) - textLeft) < 0.5, `${L} 名前・台詞の始まりが行ごとに動かない`, { textLeft, now: p.textR.l });
+                if (textLeft === null) textLeft = { t: p.textR?.l ?? null, n: p.nameR?.l ?? null };
+                if (p.textR) check(Math.abs(p.textR.l - textLeft.t) < 0.5 && (!p.nameR || textLeft.n === null || Math.abs(p.nameR.l - textLeft.n) < 0.5), `${L} 名前・台詞の始まりが行ごとに動かない`, { textLeft, now: [p.textR.l, p.nameR?.l] });
             }
             check(p.dialog.l >= -0.5 && p.dialog.r <= p.vw + 0.5 && p.dialog.b <= p.vh + 0.5, `${L} 枠は画面の中`, p.dialog);
-            if (p.choices) check(!boxesOverlap(p.dialog, p.choices), `${L} 枠が選択肢と重ならない`, { d: p.dialog, c: p.choices });
+            // 枠と選択肢の重なりは、旧表示と比べて数える（スマホの縦の軍議は Version 21 から重なる）
+            line.dlgOverChoices = !!(p.choices && boxesOverlap(p.dialog, p.choices));
             const sk = `${p.speaker}${u.choices?.length ? '+choices' : ''}`;
             if (shotAt[sk] && !seen.includes(sk)) {
                 seen.push(sk);
@@ -336,7 +385,7 @@ async function run(part, size, mode) {
         await talkTo(person.id);
         await readScript('fictional', { hero: 'fictional-hero', narration: 'fictional-narration', [person.id]: 'fictional-person' });
     }
-    rec.errors = errors.filter((e) => !/\[art\]/.test(e));
+    rec.errors = errors.filter((e) => !/\[art\]/.test(e) && !(mode === 'fail' && /Failed to load resource|ERR_FAILED/.test(e)));
     check(rec.errors.length === 0, `${tag} ページの誤りが無い`, rec.errors.slice(0, 3));
     await ctx.close();
     return rec;
@@ -345,7 +394,7 @@ async function run(part, size, mode) {
 for (const part of PARTS)
     for (const size of SIZES)
         for (const mode of MODES) {
-            if (part === 'ch2' && !['1280x720', '844x390', '568x320'].includes(size)) continue;
+            if (part === 'ch2' && !['1280x720', '844x390', '568x320', '390x844'].includes(size)) continue;
             if (part === 'fictional' && !['1280x720', '844x390'].includes(size)) continue;
             log(`== ${part} ${mode} ${size}`);
             try {
@@ -355,8 +404,30 @@ for (const part of PARTS)
             }
         }
 
-// ---- old と default の比べ（同じ部・大きさ・台本・行）
+// ---- fail（顔の画像が読めない）と old の比べ：会話の層の DOM と台詞の枠の四角が同じ（Version 21 と同じ枠のまま、文字と操作が残る）
+for (const part of PARTS)
+    for (const size of SIZES) {
+        const a = report.runs.find((r) => r.part === part && r.size === size && r.mode === 'old');
+        const f = report.runs.find((r) => r.part === part && r.size === size && r.mode === 'fail');
+        if (!a || !f) continue;
+        const A = new Map(a.lines.map((l) => [`${l.script}#${l.index}`, l]));
+        let n = 0;
+        const diff = [];
+        for (const l of f.lines) {
+            const o = A.get(`${l.script}#${l.index}`);
+            if (!o) continue;
+            n++;
+            if (l.html !== o.html || JSON.stringify(l.dialog) !== JSON.stringify(o.dialog) || JSON.stringify(l.choiceRects) !== JSON.stringify(o.choiceRects)) diff.push(`${l.script}#${l.index}`);
+        }
+        check(n > 0 && n === f.lines.length && n === a.lines.length, `${part} ${size} 顔が読めない：旧表示と同じ行を通った（${n} 行）`);
+        check(diff.length === 0, `${part} ${size} 顔が読めない：会話の層の DOM・枠・選択肢の四角が旧表示と同じ`, diff.slice(0, 5));
+        report[`fail.${part}.${size}`] = { lines: n, diff };
+        log(`  ${part} ${size}: 顔が読めない版と旧表示を比べた ${n} 行、違い ${diff.length}`);
+    }
+
+// ---- old と default の比べ（同じ部・大きさ・台本・行）：台詞の字・四角・枠の高さは同じ。枠と選択肢の重なりは old にもある物だけ
 const key = (l) => `${l.script}#${l.index}`;
+const same = (a, b) => !!a && !!b && ['l', 't', 'w', 'h'].every((k) => Math.abs(a[k] - b[k]) < 0.5);
 for (const part of PARTS)
     for (const size of SIZES) {
         const a = report.runs.find((r) => r.part === part && r.size === size && r.mode === 'old');
@@ -365,16 +436,29 @@ for (const part of PARTS)
         const A = new Map(a.lines.map((l) => [key(l), l]));
         let n = 0;
         const taller = [];
+        const moved = [];
+        const newOverlap = [];
+        let oldOverlap = 0;
         for (const l of b.lines) {
             const o = A.get(key(l));
             if (!o) continue;
             n++;
             if (l.dialog.h > o.dialog.h + 0.5) taller.push({ line: key(l), speaker: l.speaker, old: o.dialog.h, now: l.dialog.h, text: l.text.slice(0, 30) });
+            if (!same(l.textR, o.textR) || l.textFont !== o.textFont || l.textLs !== o.textLs || l.textLh !== o.textLh) moved.push({ line: key(l), old: [o.textR, o.textFont, o.textLs], now: [l.textR, l.textFont, l.textLs] });
+            if (o.dlgOverChoices) oldOverlap++;
+            if (l.dlgOverChoices && !o.dlgOverChoices) newOverlap.push(key(l));
             if (part === 'fictional') check(l.html === o.html, `fictional ${size} ${key(l)} 会話の層の DOM が旧表示と同じ`);
         }
         check(n > 0, `${part} ${size} 旧表示と同じ行を比べた（${n} 行）`);
-        report[`taller.${part}.${size}`] = taller;
-        log(`  ${part} ${size}: 比べた ${n} 行、default の枠が高くなった行 ${taller.length}`, taller.slice(0, 3));
+        check(taller.length === 0, `${part} ${size} 枠が旧表示より高くなった行は無い`, taller.slice(0, 3));
+        check(moved.length === 0, `${part} ${size} 台詞の四角・字の大きさ・字の間・行の高さは旧表示と同じ`, moved.slice(0, 2));
+        check(newOverlap.length === 0, `${part} ${size} 枠が選択肢と新しく重なる行は無い（旧表示でも重なる行 ${oldOverlap}）`, newOverlap);
+        // 同じ入力で同じ台本・同じ行・同じ台詞・同じ選択肢を通った（物語は変わらない）
+        const seq = (r) => r.lines.map((l) => `${key(l)}|${l.name}|${l.text}|${(l.choices ?? []).join(',')}`).join('\n');
+        check(seq(a) === seq(b), `${part} ${size} 旧表示と同じ台本・行・台詞・選択肢を通った（${b.lines.length} 行）`);
+        if (a.state || b.state) check(JSON.stringify(a.state) === JSON.stringify(b.state), `${part} ${size} 第二章の状態が旧表示と同じ`, { old: a.state, now: b.state });
+        report[`compare.${part}.${size}`] = { lines: n, taller, moved: moved.length, oldOverlap, newOverlap, compact: b.compact ?? 0, blocked: b.blocked ?? 0 };
+        log(`  ${part} ${size}: 比べた ${n} 行、高くなった ${taller.length}、台詞が動いた ${moved.length}、選択肢との重なり old ${oldOverlap}・新しく ${newOverlap.length}、重なりで顔を縮めた行 ${b.compact ?? 0}・出さなかった行 ${b.blocked ?? 0}`);
     }
 
 report.checks = checks;

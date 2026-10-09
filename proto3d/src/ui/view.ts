@@ -589,8 +589,11 @@ export class DomView implements GameView, LayerHost {
             const reduced = () => this.motionReduced();
             const portrait = opts.portraitOf ? new PortraitSlot(layer, head ?? choicesEl, box, opts.portraitOf, reduced, () => this.portraitAvoid()) : null;
             portrait?.preload(lines.map((l) => l.speaker));
-            // 台詞の枠の左の顔（台本のどこかの行の顔が読めたら、台本の終わりまで左を空ける。人物画が出ている人の行は顔を出さない）
-            const face = opts.faceOf ? new DialogFace(box, lines.map((l) => l.speaker), opts.faceOf, opts.portraitOf ?? null, () => portrait?.relayout()) : null;
+            // 台詞の枠の顔（台本のどこかの行の顔が読めたら、台本の終わりまで空きを取る。人物画が出ている人の行は顔を出さない）。
+            // 狭い画面では顔が枠の上へはみ出す（ui.css）：選択肢・軍議の見出し・詳しく見る・目的の札・メニュー・台詞に届く行は、顔を縮めて枠の中に収め、
+            // それでも重なれば出さない（DialogFace）
+            const faceAvoid = () => [choicesEl, head, layer.querySelector('.g-council-map'), name, text, count, more, ...this.portraitAvoid()];
+            const face = opts.faceOf ? new DialogFace(box, lines.map((l) => l.speaker), opts.faceOf, opts.portraitOf ?? null, () => portrait?.relayout(), faceAvoid) : null;
             if (face && portrait) portrait.onShown = (id) => face.portrait(id);
             const backdrop = council && opts.councilArt ? new CouncilBackdrop(layer, opts.councilArt, reduced, () => this.modals[this.modals.length - 1] === m) : null;
             const choices = sc.choices ?? [];

@@ -375,7 +375,7 @@ const COUNCIL_CROP: FitOptions = { maxCropY: 0.18 };
  * 出ている（hidden・display: none でない）物の四角。outside（層の外の物：目的の札・メニュー）は visibility: hidden も「無い」とみなす。
  * 層の中の物は visibility を見ない（見直しの演出の下で層ごと隠れている間に測っても、選択肢・台詞の枠を避ける）。
  */
-function visibleBox(e: Element | null, origin: DOMRect, outside = false): Box | null {
+function visibleBox(e: Element | null, origin: { left: number; top: number }, outside = false): Box | null {
     if (!e || (e as HTMLElement).hidden) return null;
     const cs = getComputedStyle(e);
     if (cs.display === 'none' || (outside && cs.visibility === 'hidden')) return null;
@@ -626,11 +626,23 @@ export class PortraitSlot {
 // ================= 台詞の枠の顔（ui/view.ts の script() が作る） =================
 
 /**
- * 台詞の枠の顔の大きさ（CSS の px。ui.css の .g-dialog.has-face の --g-face と同じ：PC 72・スマホ横（高さ 430 以下）52。
- * 縦に長い画面の幅 967 以下（タブレットの縦・小さな窓）も 52、スマホの縦（幅 480 以下）は 44）。
- * 実際の大きさは CSS が決め、DialogFace は canvas の画素の数だけを合わせる（測れないときの控え）。
+ * 台詞の枠の顔の大きさ（CSS の px。ui.css の .g-dialog.has-face の --g-face と同じ）。実際の大きさは CSS が決め、
+ * DialogFace は canvas の画素の数だけを合わせる（測れないときの控え）。
+ * - pc：高さ 431 以上・幅 968 以上。枠の左の中（上下の真ん中）。
+ * - tablet：タブレットの縦・小さな窓（高さ 431 以上・幅 541〜967）。phone：スマホ横（高さ 430 以下）。
+ *   small：スマホの縦（幅 540 まで）・幅 640 までのスマホ横。この 3 つは枠の左上の角（名前の行の左。上へはみ出す）。
  */
-export const DIALOG_FACE_PX = { pc: 72, phone: 52 } as const;
+export const DIALOG_FACE_PX = { pc: 72, tablet: 52, phone: 44, small: 36 } as const;
+
+/**
+ * 顔を出してよいか（純粋）：画面の中（view が null なら見ない）で、avoid のどれとも重ならない（0.5px までの接しは許す）。
+ * 狭い画面の顔は台詞の枠の上へはみ出すので、選択肢・軍議の見出し・詳しく見る・目的の札・メニューに届く行がある。その行は顔を出さない。
+ */
+export function faceClear(face: Box, avoid: readonly Box[], view: { w: number; h: number } | null): boolean {
+    const tol = 0.5;
+    if (view && (face.left < -tol || face.top < -tol || face.right > view.w + tol || face.bottom > view.h + tol)) return false;
+    return !avoid.some((o) => o.left < face.right - tol && face.left < o.right - tol && o.top < face.bottom - tol && face.top < o.bottom - tol);
+}
 
 /**
  * この台本で使える顔の ID（話し手の順・重なり無し）。顔の無い話し手・一覧に無い ID・旧表示（?art=old）は入らない（available が false）。
@@ -657,10 +669,12 @@ export function dialogFaceFor(faceId: ArtId | null, portraitId: ArtId | null, po
 }
 
 /**
- * 台詞の枠の左の、今の話し手の顔（<canvas class="g-face" data-art-id> を枠の先頭に置く。aria-hidden・押せない・反転しない）。
- * - 左の空き（枠の class "has-face"）：台本のどこかの行の顔が読めたら、台本の終わりまで取ったまま（顔の無い行も空けておく）。
- *   名前・台詞の始まりの位置が行ごとに動かない。PC では枠を左へ広げて空きを作る（台詞の幅・折り返しは Version 21 と同じ）。
- *   狭い画面では枠の幅は Version 21 のままで、台詞の幅が空きの分だけ狭くなる（ui.css）。
+ * 台詞の枠の、今の話し手の顔（<canvas class="g-face" data-art-id> を枠の先頭に置く。aria-hidden・押せない・反転しない）。
+ * - 顔の空き（枠の class "has-face"）：台本のどこかの行の顔が読めたら、台本の終わりまで取ったまま（顔の無い行も空けておく）。
+ *   名前・台詞の始まりの位置が行ごとに動かない。どの大きさでも台詞の字・幅・折り返しは Version 21 と同じ（ui.css）：
+ *   PC では枠を左へ広げて左の中に顔を置き、狭い・低い画面では枠は Version 21 のままで、顔は枠の左上の角（名前の左。上へはみ出す）。
+ * - 顔が画面の外へ出る・avoid（選択肢・軍議の見出し・詳しく見る・目的の札・メニュー・台詞）と重なる行（狭い画面の選択肢の出る行）は、
+ *   顔を名前の行の高さに縮めて枠の中に収める（class "compact"）。それでも重なれば顔を出さない（data-blocked。空きはそのまま。faceClear）。
  * - 開いた時に読めている顔があれば、すぐ空きを取る（城下で先に読んでおく：ChapterGame の preloadFaces）。まだなら読み始め、
  *   最初の顔が読めた時に空きを取る（遅い端末で 1 回だけ字が右へ寄る）。どの顔も読めなければ空きも要素も作らない（Version 21 と同じ枠）。
  * - 旧表示（?art=old）・一覧に無い・顔の無い台本（架空の章・使者だけの会話）：何もしない。
@@ -688,6 +702,8 @@ export class DialogFace {
         private readonly portraitOf: ((speaker: string) => ArtId | null) | null = null,
         /** 左の空きを取った（台詞の枠の幅が変わった。人物画の測り直しに使う） */
         private readonly onGutter: (() => void) | null = null,
+        /** 顔と重ねない物（行ごとに測る。出ていない物・大きさの無い物は数えない）。省けば画面の中かだけを見る */
+        private readonly avoid: (() => readonly (Element | null)[]) | null = null,
     ) {
         this.ids = dialogFaceIds(speakers, resolve, artAvailable);
     }
@@ -748,10 +764,25 @@ export class DialogFace {
         if (!want || !bmp) {
             // 顔の無い行・まだ読めていない（読めた時にまだその人の行なら出す：start の読み込みの後の refresh）
             c.hidden = true;
+            c.classList.remove('compact');
+            delete c.dataset.blocked;
             return;
         }
         c.hidden = false;
-        const r = c.getBoundingClientRect();
+        c.classList.remove('compact');
+        delete c.dataset.blocked;
+        let r = c.getBoundingClientRect();
+        if (!this.clear(r)) {
+            // 狭い画面で枠の上へはみ出した顔が、選択肢などに届く行（ui.css）：名前の行の高さに縮めて枠の中に収める。それでも重なれば出さない
+            c.classList.add('compact');
+            r = c.getBoundingClientRect();
+            if (!this.clear(r)) {
+                c.classList.remove('compact');
+                c.hidden = true;
+                c.dataset.blocked = '1';
+                return;
+            }
+        }
         const css = r.width > 0 ? r.width : DIALOG_FACE_PX.pc;
         // 元の画像より細かい canvas は持たない（端末の比は 2 まで）
         const k = backingScale(typeof devicePixelRatio === 'number' ? devicePixelRatio : 1, Math.min(bmp.width, bmp.height) / css);
@@ -764,6 +795,19 @@ export class DialogFace {
         c.dataset.artId = want;
         // 正方形の顔の素材を、そのまま箱いっぱいに（縦横の比は保つ。左右の反転はしない）
         paintArt(c, css, css, [{ bitmap: bmp, fit: 'cover', opts: { alignY: 0.35 } }]);
+    }
+
+    /** 出した顔の四角が、画面の中で avoid のどれとも重ならないか（測れない・大きさの無い顔は見ない） */
+    private clear(r: { left: number; top: number; right: number; bottom: number; width: number; height: number }): boolean {
+        if (!(r.width > 0 && r.height > 0)) return true;
+        const zero = { left: 0, top: 0 };
+        const avoid: Box[] = [];
+        for (const e of this.avoid?.() ?? []) {
+            const b = visibleBox(e, zero, true);
+            if (b) avoid.push(b);
+        }
+        const view = typeof innerWidth === 'number' && typeof innerHeight === 'number' && innerWidth > 0 && innerHeight > 0 ? { w: innerWidth, h: innerHeight } : null;
+        return faceClear({ left: r.left, top: r.top, right: r.right, bottom: r.bottom }, avoid, view);
     }
 
     dispose(): void {
