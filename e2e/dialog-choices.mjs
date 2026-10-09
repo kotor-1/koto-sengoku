@@ -475,6 +475,9 @@ async function run(part, size, mode) {
             const { w, h } = sizeOf(size);
             for (const [vw, vh] of [[h, w], [w, h]]) {
                 await page.setViewportSize({ width: vw, height: vh });
+                // 並べ直しは、大きさが変わった後の描画の手順（ResizeObserver。描く前）で行う。重い時は 700ms たっても次の描画が来ず、
+                // その前に四角を読むと（強制のレイアウト）、まだ描いていない古い並べ方が見える。2 フレーム待って、描いた後の並べ方を測る
+                await frames();
                 await sleep(700);
                 const q = await page.evaluate(probeScene);
                 const vr = q.items.map((it) => ({ id: it.id, r: { l: it.rect.l, r: it.rect.r, t: Math.max(it.rect.t, q.choices.t), b: Math.min(it.rect.b, q.choices.b) } }));
