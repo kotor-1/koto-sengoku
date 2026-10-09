@@ -5,8 +5,9 @@
  * - 円の林の木：決まりの区域の内側だけ（縁から 3 m 内側）。素材の地面を使わない間は Version 21 と同じ（円の林には植えない）。
  * - 素材の地面・足元の影・砂ぼこりを使って毎刻み更新しても、合戦の状態は表示なし・素材なしと 1 刻みも同じ。押す判定（pick）・名札の位置も同じ。
  * - 旧表示（?art=old）・素材の一覧に無い戦場では使わない。顔は絵の届いた武将の自分の顔だけ（ほかの人の顔で代用しない）。
- * - 読み込み（loadFieldArt）：4 枚とも読めたら使う（meta.tileMeters・低い画質の anisotropy 1）。1 枚でも読めない・旧表示・一覧に無いなら null
- *   （一覧に無ければ型紙も作らない）。型紙と雑音は戦場の形ごとに 1 度だけ作り（区切って作る・同じ中身）、覚えておく。
+ * - 読み込み（loadFieldArt）：素材ごとに読み、読めた種類だけ使う（Version 23 から。meta.tileMeters・低い画質の anisotropy 1）。読めない種類は null
+ *   （その種類だけ Version 21 の色）。旧表示・一覧に 1 種類も無い・全部読めないなら null（一覧に無ければ型紙も作らない）。
+ *   型紙と雑音は戦場の形ごとに 1 度だけ作り（区切って作る・同じ中身）、覚えておく。素材ごとの採用・?artOff は tests/proto3d-ground-art.test.ts。
  * - 開始のボタンの待ち（BriefingGate）：素材の無いときは Version 21 と同じ（木だけ・12 秒で打ち切り）。素材は木の後 ART_WAIT_MS まで。
  *   出した後・合戦が始まった後に届いた素材は使わずに捨てる（takeGroundArt。地面は今までのまま）。
  * - 能力の欄の顔（battle.css）：顔は流れの外の小さな絵で、能力の見出しの行の幅・欄の高さを変えない（第二章の忠勝の「信頼」の行でも）。
@@ -419,13 +420,15 @@ describe('素材の地面・足元の影・砂ぼこりは合戦の状態を変�
                 v.fit({ top: 60, bottom: 110, left: 10, right: 10 });
             }
             // 作っただけでは今までの地面（画像は読まない）。円の林には木を植えない（Version 21 と同じ）
-            expect(on.artProbe()).toEqual({ ground: 'vertex', trees: 0, shadows: 0, dust: 0 });
+            expect(on.artProbe()).toEqual({ ground: 'vertex', materials: [], trees: 0, shadows: 0, dust: 0 });
             expect(on.treeSpots()).toEqual([]);
             expect(on.setGroundArt(fakeSet(b.map))).toBe(true);
             expect(on.setGroundArt(fakeSet(b.map))).toBe(false);
             expect(on.groundArtActive).toBe(true);
             expect(off.groundArtActive).toBe(false);
             expect(on.artProbe().ground).toBe('textured');
+            expect(on.artProbe().materials).toEqual(['grass', 'dirt', 'road', 'forest']);
+            // 確かめ用の組は林床もあるので、円の林に木を植える（林床を使わない組は tests/proto3d-ground-art.test.ts）
             expect(on.artProbe().trees).toBeGreaterThan(10);
             let k = 0;
             let maxShadows = 0;
@@ -561,7 +564,7 @@ function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
 /** 4 枚の素材が捨てられたか（three の dispose の知らせを数える） */
 function watchDispose(set: GroundArtSet): () => number {
     let n = 0;
-    for (const t of [set.grass, set.dirt, set.road, set.forest]) t.texture.addEventListener('dispose', () => n++);
+    for (const t of [set.grass, set.dirt, set.road, set.forest]) t!.texture.addEventListener('dispose', () => n++);
     return () => n;
 }
 
@@ -571,15 +574,15 @@ describe('地面の素材の読み込み（loadFieldArt）と型紙・雑音の�
         __setArtManifestForTest(null);
         __clearGroundCacheForTest();
     });
-    it('4 枚とも読めたら使う：1 枚の大きさは meta.tileMeters（無い・数でない時は 8 m）。anisotropy は 4 まで、低い画質では 1。型紙と雑音は大平原の物', async () => {
+    it('一覧に載った素材を全部読めたら全部使う：1 枚の大きさは meta.tileMeters（無い・数でない時は 8 m）。anisotropy は 4 まで、低い画質では 1。型紙と雑音は大平原の物', async () => {
         const urls = fakeArt();
         const map = plains().map;
         expect(fieldArtWanted('plains')).toBe(true);
         const set = await loadFieldArt(map, { anisotropy: 16, low: false });
         expect(set).not.toBeNull();
         expect(urls.length).toBe(4);
-        expect([set!.grass.tileMeters, set!.dirt.tileMeters, set!.road.tileMeters, set!.forest.tileMeters]).toEqual([6, 8, 4, 8]);
-        expect(set!.grass.texture.anisotropy).toBe(4);
+        expect([set!.grass!.tileMeters, set!.dirt!.tileMeters, set!.road!.tileMeters, set!.forest!.tileMeters]).toEqual([6, 8, 4, 8]);
+        expect(set!.grass!.texture.anisotropy).toBe(4);
         expect(set!.low).toBe(false);
         // 型紙と雑音は一度に作った物と同じ中身（区切って作っても同じ）
         const mask = buildTerrainMask(map);
@@ -587,7 +590,7 @@ describe('地面の素材の読み込み（loadFieldArt）と型紙・雑音の�
         expect(sameBytes(set!.ground.noise.data, buildGroundNoise(mask).data)).toBe(true);
         // 低い画質：anisotropy 1。型紙は覚えている物をそのまま使う（作り直さない）
         const low = await loadFieldArt(map, { anisotropy: 16, low: true });
-        expect(low!.grass.texture.anisotropy).toBe(1);
+        expect(low!.grass!.texture.anisotropy).toBe(1);
         expect(low!.low).toBe(true);
         expect(low!.ground).toBe(set!.ground);
         // 画像は同じ ID を 2 度読まない（読み込みの登録が覚えている）
@@ -595,23 +598,26 @@ describe('地面の素材の読み込み（loadFieldArt）と型紙・雑音の�
         disposeGroundArtSet(set);
         disposeGroundArtSet(low);
     }, 30000);
-    it('1 枚でも読めないときは null（今までの地面）。作り始めた型紙は次の合戦のために覚えておく', async () => {
-        const urls = fakeArt({ fail: ['plains_road.webp'] });
+    it('読めない素材はその種類だけ null（Version 21 の色）・ほかの種類は使う。全部読めなければ null（今までの地面）。作り始めた型紙は次の合戦のために覚えておく', async () => {
+        // Version 22 は 1 枚でも読めなければ全部使わなかった（Version 23 から素材ごと）
+        let urls = fakeArt({ fail: ['plains_road.webp'] });
         const map = plains().map;
+        const set = await loadFieldArt(map, { anisotropy: 4, low: false });
+        expect(urls.length).toBe(4);
+        expect(set!.road).toBeNull();
+        expect([!!set!.grass, !!set!.dirt, !!set!.forest]).toEqual([true, true, true]);
+        disposeGroundArtSet(set);
+        __clearGroundCacheForTest();
+        urls = fakeArt({ fail: ['plains_grass.webp', 'plains_dirt.webp', 'plains_road.webp', 'plains_forest.webp'] });
         expect(await loadFieldArt(map, { anisotropy: 4, low: false })).toBeNull();
         expect(urls.length).toBe(4);
         expect(groundDataCached(map)).toBe(true);
     }, 30000);
-    it('一覧に 4 枚とも無い・旧表示・素材の無い戦場：画像を読みに行かず、型紙も作らない（Version 21 と同じ。開始のボタンも待たない）', async () => {
+    it('一覧に 1 枚も無い・旧表示・素材の無い戦場：画像を読みに行かず、型紙も作らない（Version 21 と同じ。開始のボタンも待たない）。一覧に 3 枚だけなら 3 枚を使う', async () => {
         const map = plains().map;
-        // 一覧が空（今の本番）
+        // 一覧が空（Version 22 の本番）
         __setArtManifestForTest(null);
         const urls = fakeArt({ assets: {} });
-        expect(fieldArtWanted('plains')).toBe(false);
-        expect(await loadFieldArt(map, { anisotropy: 4, low: false })).toBeNull();
-        // 一覧に 3 枚だけ
-        const { [ART_IDS.plainsForest]: _f, ...three } = GROUND_ASSETS;
-        fakeArt({ assets: three });
         expect(fieldArtWanted('plains')).toBe(false);
         expect(await loadFieldArt(map, { anisotropy: 4, low: false })).toBeNull();
         // 旧表示
@@ -624,7 +630,17 @@ describe('地面の素材の読み込み（loadFieldArt）と型紙・雑音の�
         expect(fieldArtWanted('forest')).toBe(false);
         expect(urls.length).toBe(0);
         expect(groundDataCached(map)).toBe(false);
-    });
+        // 一覧に 3 枚だけ（林床が無い＝Version 23 の本番と同じ形）：3 枚を使い、林床は null（林は Version 21 の色）。林床の画像は読みに行かない
+        const { [ART_IDS.plainsForest]: _f, ...three } = GROUND_ASSETS;
+        const urls3 = fakeArt({ assets: three });
+        expect(fieldArtWanted('plains')).toBe(true);
+        const set = await loadFieldArt(map, { anisotropy: 4, low: false });
+        expect(set!.forest).toBeNull();
+        expect([!!set!.grass, !!set!.dirt, !!set!.road]).toEqual([true, true, true]);
+        expect(urls3.some((u) => u.includes('forest'))).toBe(false);
+        expect(urls3.length).toBe(3);
+        disposeGroundArtSet(set);
+    }, 30000);
     it('型紙と雑音は戦場の形ごとに 1 度だけ作る（同時に呼んでも同じ約束）。区切って作る（間に他の処理が入る）。形が違えば別の物', async () => {
         const map = plains().map;
         let ticks = 0;
@@ -807,7 +823,7 @@ describe('地面の材質：背景の色（昼・夜）と低い画質', () => {
                 expect((c.uniforms.gaBg.value as THREE.Color).getHex()).toBe(bg.getHex());
                 expect(bg.getHex()).toBe(s === night ? 0x26301f : 0x56653f);
                 expect(!!mat.defines && 'GA_LOW' in mat.defines).toBe(low);
-                expect(mat.customProgramCacheKey()).toBe(low ? 'battle-ground-art-4-low' : 'battle-ground-art-4');
+                expect(mat.customProgramCacheKey()).toBe(low ? 'battle-ground-art-5-grass-dirt-road-forest-low' : 'battle-ground-art-5-grass-dirt-road-forest');
                 expect(c.frag).toContain('#ifdef GA_LOW');
                 v.dispose();
             }

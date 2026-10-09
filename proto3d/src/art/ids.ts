@@ -55,13 +55,19 @@ export const FACE_OF: Readonly<Partial<Record<GeneralId, ArtId>>> = {
     nagamasa: ART_IDS.faceNagamasa,
 };
 
-/** 戦場ごとの地面の素材（まだ大平原だけ。ほかの戦場は今までの色の地面） */
-export interface FieldArt {
-    grass: ArtId;
-    dirt: ArtId;
-    road: ArtId;
-    forest: ArtId;
-}
+/**
+ * 地面の素材の種類（Version 23 から素材ごとに採用・フォールバック）。grass＝草地・dirt＝草地の中の土のむら・road＝道・forest＝林の地面（林床）
+ */
+export type GroundMaterial = 'grass' | 'dirt' | 'road' | 'forest';
+export const GROUND_MATERIALS: readonly GroundMaterial[] = ['grass', 'dirt', 'road', 'forest'];
+
+/**
+ * 戦場ごとの地面の素材（まだ大平原だけ。ほかの戦場は今までの色の地面）。どの種類も無くてよい：
+ * 素材の一覧（manifest.gen.json）に無い・読めない・URL の ?artOff= で外した種類は、その種類だけ Version 21 の色で描く（battle/groundArt.ts）。
+ * 林床（forest）は 2026-10-09 の判断で不採用（素材パックの林床は焼き込まれた木漏れ日が縞に見える）。一覧に載らないので、林は Version 21 の色のまま。
+ * 新しい林床の原画が届いて確認済みになれば、ここは変えずに使われる
+ */
+export type FieldArt = Readonly<Partial<Record<GroundMaterial, ArtId>>>;
 export const FIELD_ART: Readonly<Record<string, FieldArt>> = {
     plains: { grass: ART_IDS.plainsGrass, dirt: ART_IDS.plainsDirt, road: ART_IDS.plainsRoad, forest: ART_IDS.plainsForest },
 };

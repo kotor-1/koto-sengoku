@@ -22,9 +22,10 @@
  *   援軍の出る所の小さな印、狭い正面の区域の縁。名札（短い名前）は battleUi.ts が control.ts の mapLabels で出す。
  * 描画命令は部隊の数では増えない（兵士・旗で 7〜10。のぼりは合戦に出る家の数 × 大きさ）。戦場の地形・印が増えると 10 ほど増える。影・画面の仕上げは使わない。
  * 状態は読むだけ（sim.ts の BattleState を書き換えない）。
- * - 生成イラスト素材の地面（Version 22。groundArt.ts）：旧表示（?art=old）でなく、その戦場の素材（art/ids.ts の FIELD_ART）が 4 枚とも読めたときだけ
- *   （つなぎ entry.ts が読んで setGroundArt を呼ぶ。作る時には画像を読まない）、地面の材質を素材を混ぜるものに差し替え、道の帯を隠し（道は型紙で決まりの幅に描く）、
- *   円・カプセルの林にも木を植え、足元の影と短い砂ぼこり（unitFx.ts）を足す。素材が無い・読めない間は Version 21 と同じ見た目のまま。
+ * - 生成イラスト素材の地面（Version 22 から。groundArt.ts）：旧表示（?art=old）でなく、その戦場の素材（art/ids.ts の FIELD_ART）が 1 種類でも読めたとき
+ *   （つなぎ entry.ts が読んで setGroundArt を呼ぶ。作る時には画像を読まない）、地面の材質を素材を混ぜるものに差し替え、道の帯を隠し（道は型紙で決まりの幅に描く。
+ *   道の素材が無ければ Version 21 の道の色）、足元の影と短い砂ぼこり（unitFx.ts）を足す。素材の無い種類は Version 21 の色（Version 23 から素材ごと）。
+ *   円・カプセルの林に木を植えるのは林床の素材を使うときだけ（林床は不採用なので今は植えない）。素材が 1 種類も無い・読めない間は Version 21 と同じ見た目のまま。
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -49,7 +50,7 @@ import { ABILITY_DATA, abilityInfo } from './abilities';
 import { troopTier } from './troops';
 import { POLE_H, TroopLayer, type TroopStats } from './troopsView';
 import { CLAN_CHAR, CLAN_COLOR, makeBannerTexture } from '../shared/figures';
-import { DAY_BG, makeGroundArtMaterial, roundWoodsSpots, type GroundArtSet } from './groundArt';
+import { DAY_BG, groundArtMaterials, makeGroundArtMaterial, roundWoodsSpots, type GroundArtSet } from './groundArt';
 import { UnitFx } from './unitFx';
 
 /** 特殊能力の範囲の輪の色（敵方の能力は赤みの色） */
@@ -163,8 +164,12 @@ export class BattleView {
     /** 地面（頂点の色の面）と道の帯（素材の地面では隠す） */
     private groundMesh: THREE.Mesh | null = null;
     private roadMesh: THREE.Mesh | null = null;
-    /** 生成イラスト素材の地面を使っている（Version 22。setGroundArt）。足元の影・砂ぼこりはこの時だけ */
+    /** 生成イラスト素材の地面を使っている（Version 22 から。setGroundArt。1 種類でも素材を使う）。足元の影・砂ぼこりはこの時だけ */
     private artOn = false;
+    /** 素材を使っている地面の種類（groundArt.ts の groundArtMaterials。開発用の数え上げ） */
+    private artMaterials: string[] = [];
+    /** 林床の素材を使っている（円・カプセルの林に木を植えるのはこの時だけ。林床は不採用なので今は false） */
+    private forestArt = false;
     private fx: UnitFx | null = null;
     private disposed = false;
     /** 特殊能力の範囲の輪（s.abilityList の順） */
@@ -564,24 +569,30 @@ export class BattleView {
     }
 
     /**
-     * 生成イラスト素材の地面（Version 22）。つなぎ（entry.ts）が素材を 4 枚とも読めたときだけ、合戦の前の説明の間に呼ぶ
-     * （読めなければ呼ばない＝今までの地面のまま。開始のボタンを出した後・合戦の途中には呼ばない）。
-     * 地面の材質を、決まりの地形の形の型紙で素材を混ぜるものに差し替え、道の帯を隠す（道は型紙で決まりの幅に描く）。型紙と雑音は作り済みの物
-     * （set.ground）を使う（ここで重い計算はしない）。戦場の外は背景の色（昼・夜）へ薄める。
-     * 円・カプセルの林にも木を植え直し、足元の影と砂ぼこりを足す。合戦の状態・押す判定・名札には関わらない。使い始めたら true
-     * （false のときは素材を受け取らない：呼んだ側が捨てる）
+     * 生成イラスト素材の地面（Version 22 から）。つなぎ（entry.ts）が素材を 1 種類でも読めたときだけ、合戦の前の説明の間に呼ぶ
+     * （1 種類も読めなければ呼ばない＝今までの地面のまま。開始のボタンを出した後・合戦の途中には呼ばない）。
+     * 地面の材質を、決まりの地形の形の型紙で素材を混ぜるものに差し替え、道の帯を隠す（道は型紙で決まりの幅に描く。道の素材が無ければ
+     * Version 21 の道の色）。素材の無い種類は Version 21 の色。型紙と雑音は作り済みの物（set.ground）を使う（ここで重い計算はしない）。
+     * 戦場の外は背景の色（昼・夜）へ薄める。足元の影と砂ぼこりを足す。林床の素材を使うときだけ円・カプセルの林にも木を植え直す。
+     * 合戦の状態・押す判定・名札には関わらない。使い始めたら true（false のときは素材を受け取らない：呼んだ側が捨てる）
      */
     setGroundArt(set: GroundArtSet | null): boolean {
         if (!set || this.artOn || this.disposed || !this.groundMesh) return false;
+        const mats = groundArtMaterials(set);
+        if (!mats.length) return false;
         const { material, mask, noise } = makeGroundArtMaterial(this.map, this.passable, set, this.bg);
-        this.own(material, mask, noise, set.grass.texture, set.dirt.texture, set.road.texture, set.forest.texture);
+        this.own(material, mask, noise, ...mats.map((m) => set[m]!.texture));
         this.groundMesh.material = material;
         if (this.roadMesh) this.roadMesh.visible = false;
         this.artOn = true;
+        this.artMaterials = mats;
         this.fx = new UnitFx(this.map, this.vis.length);
         this.scene.add(this.fx.group);
-        // 円の林（大平原の東の林）にも木を植える（読み込み済みの松。まだなら円すいの木で、松が届いたら setTrees で植え直す）
-        this.setTrees(this.treeSrc);
+        // 林床の素材を使うときだけ、円の林（大平原の東の林）にも木を植える（読み込み済みの松。まだなら円すいの木で、松が届いたら setTrees で植え直す）
+        if (set.forest) {
+            this.forestArt = true;
+            this.setTrees(this.treeSrc);
+        }
         return true;
     }
 
@@ -590,10 +601,10 @@ export class BattleView {
         return this.artOn;
     }
 
-    /** 開発用の確かめ（window.__battle.art）：地面の描き方・植えた木の数・直前のフレームで描いた影と砂ぼこりの数 */
-    artProbe(): { ground: 'textured' | 'vertex'; trees: number; shadows: number; dust: number } {
+    /** 開発用の確かめ（window.__battle.art）：地面の描き方・素材を使う種類・植えた木の数・直前のフレームで描いた影と砂ぼこりの数 */
+    artProbe(): { ground: 'textured' | 'vertex'; materials: string[]; trees: number; shadows: number; dust: number } {
         const c = this.fx?.counts() ?? { shadows: 0, dust: 0 };
-        return { ground: this.artOn ? 'textured' : 'vertex', trees: this.treeCount, shadows: c.shadows, dust: c.dust };
+        return { ground: this.artOn ? 'textured' : 'vertex', materials: [...this.artMaterials], trees: this.treeCount, shadows: c.shadows, dust: c.dust };
     }
 
     /**
@@ -1264,13 +1275,13 @@ export class BattleView {
 
     /**
      * 林の木の位置（決まった配置。格子を少しずらす）。四角の林は今までどおり。円・カプセルの林（大平原の東の林）は、
-     * 素材の地面を使うときだけ植える（groundArt.ts の roundWoodsSpots。決まりの区域の内側だけ）。それ以外は Version 21 と同じ（植えない）
+     * 林床の素材を使うときだけ植える（groundArt.ts の roundWoodsSpots。決まりの区域の内側だけ）。それ以外は Version 21 と同じ（植えない）
      */
     treeSpots(): { x: number; z: number; rot: number; scale: number }[] {
         const out: { x: number; z: number; rot: number; scale: number }[] = [];
         const sp = this.low ? 24 : 16;
         for (const a of this.map.terrain) {
-            if (a.kind === 'woods' && !a.rect && this.artOn) {
+            if (a.kind === 'woods' && !a.rect && this.forestArt) {
                 out.push(...roundWoodsSpots(a, sp, hash01));
                 continue;
             }

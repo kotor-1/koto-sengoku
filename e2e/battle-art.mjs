@@ -7,8 +7,8 @@
  * 見せ方：
  *   old     … ?art=old&artFixture=1（旧表示。素材を一つも使わない＝Version 21 の見た目）
  *   fixture … ?artFixture=1（開発用の TEST の模様の素材。proto3d/dev-art。配置・縮尺の確かめ用で、見た目の素材ではない）
- *   actual  … 何も付けない（ゲームが読む素材の一覧 manifest.gen.json のとおり＝素材パック sengoku_art_pack_v1 の武将 6 人の顔だけ。
- *             地面の素材・人物画・背景はまだ作っていないので、地面は今までのまま）
+ *   actual  … 何も付けない（ゲームが読む素材の一覧 manifest.gen.json のとおり＝素材パック sengoku_art_pack_v1 の武将 6 人の顔と、
+ *             大平原の地面の草地・土・道の 3 枚（Version 23。林床は不採用・人物画・背景は使わない））
  * 部：
  *   desktop（1280×720）・phone（844×390 タッチ）・phone-s（667×375 タッチ）・wide（1920×1080）：大平原の演習（徳川の七隊・武将 5 人）を、
  *     見せ方ごとに同じ手順・同じ命令の台本で進めて比べる。
@@ -21,7 +21,8 @@
  *   late：地面の素材の画像だけを 7 秒遅らせ、開始のボタンを出した後に届いた素材を合戦の途中で使わないこと（fixture）。
  * 確かめること：
  *   - 合戦の状態：同じ台本・同じ操作で、決めた刻みの状態の指紋が見せ方ごとに同じ（表示は合戦を変えない）。
- *   - 地面：fixture だけ textured・円の林に木・影あり。old・actual は vertex・影 0・砂ぼこり 0。
+ *   - 地面：fixture は textured（TEST の 4 枚）・円の林に木・影あり。actual は textured（草地・土・道。林床が無いので円の林に木は植えない）。
+ *     遅い端末で素材が開始のボタンに間に合わなかった時は、その合戦は vertex のまま（途中で差し替えない）。old は vertex・影 0・砂ぼこり 0。
  *   - カメラの「全体」（fit）と、余白を決める部品（.b-obj-head・.b-ctrl・.b-bottom・.b-zoom）の四角・札の四角（幅・高さ）が見せ方ごとに同じ。
  *   - 見えている兵士の数（troopStats().visibleSoldiers）が減らない（既定の寄りで 300 以上）。
  *   - 顔：札の見出し・能力の欄の武将の行・発動の知らせ・演習の編成の表で、その部隊の武将（generalId・leaderId）の顔だけ（data-art-id が face.<武将の id>）。
@@ -557,8 +558,11 @@ async function plainsPart(kind) {
             if (o?.notice && a?.notice) check(a.fold === o.fold, `${tg}: ${id} の発動の知らせの畳み方（名札を覆う時に畳む）が旧表示と同じ（${o.fold} → ${a.fold}）`);
         }
         if (m.mode === 'actual') {
-            check(m.art.ground === 'vertex' && m.art.trees === 0 && m.max.shadows === 0 && m.max.dust === 0, `${tg}: 実際の素材（顔だけ）：地面・木・影・砂ぼこりは今までどおり`, [m.art, m.max]);
-            check(m.artAtReady.ground === 'vertex', `${tg}: 開始のボタンの時も今までの地面`);
+            // Version 23：草地・土・道の 3 枚を使う（林床は不採用なので円の林に木は植えない）。開始のボタンに間に合わなければ、その合戦は今までの地面のまま
+            if (m.artAtReady.ground === 'textured') {
+                check(m.art.ground === 'textured' && JSON.stringify(m.art.materials) === '["grass","dirt","road"]' && m.art.trees === 0, `${tg}: 実際の素材：草地・土・道の地面（林床なし・円の林に木を植えない）`, [m.artAtReady, m.art]);
+                check(m.max.dust <= 24, `${tg}: 実際の素材：砂ぼこりは上限 24 まで`, m.max);
+            } else check(m.art.ground === 'vertex' && m.art.trees === 0 && m.max.shadows === 0, `${tg}: 実際の素材が開始のボタンに間に合わなかった：この合戦は今までの地面のまま（途中で差し替えない）`, [m.artAtReady, m.art, m.max]);
         }
         if (m.mode === 'fixture') {
             check(m.art.ground === 'textured' && m.art.trees > 0 && m.artAtReady.ground === 'textured', `${tg}: fixture：素材の地面・円の林の木（開始のボタンを出す前に使う）`, [m.artAtReady, m.art]);
