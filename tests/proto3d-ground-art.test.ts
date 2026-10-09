@@ -1,11 +1,13 @@
 /**
  * 合戦の地面の素材の、素材ごとの採用・フォールバック（Version 23。battle/groundArt.ts・view.ts の setGroundArt）の確かめ。
- * - URL の ?artOff=（#artOff=）：grass・dirt・road・forest をコンマで区切って、その種類だけ外す。ground は 4 種類とも。知らない語は無視。保存には書かない。
- * - 読みに行く種類（fieldArtIds）：一覧に載る・?artOff で外していない種類だけ。全部外す・旧表示・一覧に無いなら読まない（型紙も作らない・開始のボタンも待たない）。
- * - 読み込み（loadFieldArt）：1 枚だけ読めないときは、その種類だけ null（Version 21 の色）。
- * - 描き方（makeGroundArtMaterial）：素材のある種類だけ画像を読む（GA_GRASS など）。無い種類の色は Version 21 の色（view.ts の groundColor・道の帯と同じ）、
- *   むらの式も groundColor と同じ。
+ * - URL の ?artOff=（#artOff=）：grass・dirt・road・forest をコンマで区切って、その種類だけ外す。grass は土のむら（dirt）も外す（草地の上の斑なので、
+ *   Version 21 の緑に斑を出さない）。ground は 4 種類とも。知らない語は無視。保存には書かない。
+ * - 読みに行く種類（fieldArtIds）：一覧に載る・?artOff で外していない種類だけ（草地を読まないなら土も読まない）。全部外す・旧表示・一覧に無いなら読まない（型紙も作らない・開始のボタンも待たない）。
+ * - 読み込み（loadFieldArt）：1 枚だけ読めないときは、その種類だけ null（Version 21 の見た目）。草地が読めなければ土も null。
+ * - 描き方（makeGroundArtMaterial）：素材のある種類だけ画像を読む（GA_GRASS など）。無い種類の色は Version 21 の色（view.ts の groundColor と同じ）、
+ *   むらの式も groundColor と同じ。道の素材が無ければ道は描かず、Version 21 の道の帯（view.ts の roadMesh）を見せる。
  * - 表示（BattleView.setGroundArt）：林床の無い組では円の林に木を植えない（林の見た目は Version 21 の色のまま）。素材の無い組は受け取らない。
+ *   道の帯は道の素材があるときだけ隠す（無ければ Version 21 の道の帯をそのまま見せる）。
  *   素材ごとの組で毎刻み描いても、合戦の状態・押す判定・名札の位置・見えている兵士の数・カメラの「全体」は素材なしと同じ。
  * - 本物の一覧（manifest.gen.json）：大平原は草地・土・道の 3 枚（林床は不採用で載らない）。草地は 1 枚 4 m（暫定）。
  * 画像は WebGL なしで作れる DataTexture（確かめ用の 4×4 の色）か、fetch・createImageBitmap の偽物（本物の画像は読まない）。
@@ -96,29 +98,52 @@ describe('URL の ?artOff=（素材ごとに Version 21 の見た目へ戻す）
             return [...groundArtOff()].sort();
         };
         expect(off('')).toEqual([]);
-        expect(off('?artOff=grass')).toEqual(['grass']);
+        // grass は土のむら（dirt）も外す（草地の上の斑なので、Version 21 の緑に斑を出さない）。dirt だけ外すのはできる
+        expect(off('?artOff=grass')).toEqual(['dirt', 'grass']);
         expect(off('?artOff=grass,dirt')).toEqual(['dirt', 'grass']);
-        expect(off('?artOff=Grass,%20ROAD')).toEqual(['grass', 'road']);
+        expect(off('?artOff=Grass,%20ROAD')).toEqual(['dirt', 'grass', 'road']);
         expect(off('?artOff=grass+dirt')).toEqual(['dirt', 'grass']);
+        expect(off('?artOff=dirt,road')).toEqual(['dirt', 'road']);
         expect(off('?artOff=ground')).toEqual([...GROUND_MATERIALS].sort());
         expect(off('?artOff=face,tree,,')).toEqual([]);
         expect(off('', '#artOff=road')).toEqual(['road']);
         expect(off('?q=low', '#art=new&artOff=dirt')).toEqual(['dirt']);
         // ? と # の両方にあれば ? の方（art/registry.ts の ?art=old と同じ読み方）
-        expect(off('?artOff=grass', '#artOff=road')).toEqual(['grass']);
+        expect(off('?artOff=grass', '#artOff=road')).toEqual(['dirt', 'grass']);
         // 保存（localStorage）には触らない：node には localStorage が無いので、触れば例外になる
         expect(typeof (globalThis as { localStorage?: unknown }).localStorage).toBe('undefined');
     });
 
     it('外した種類は読みに行かない。全部外す（ground）・旧表示なら読みに行かず型紙も作らない（Version 21 と同じ・開始のボタンも待たない）', async () => {
         const map = plains().map;
-        let urls = fakeArt({ search: '?artOff=grass' });
-        expect(Object.keys(fieldArtIds('plains')).sort()).toEqual(['dirt', 'forest', 'road']);
+        let urls = fakeArt({ search: '?artOff=road' });
+        expect(Object.keys(fieldArtIds('plains')).sort()).toEqual(['dirt', 'forest', 'grass']);
         let set = await loadFieldArt(map, { anisotropy: 4, low: false });
-        expect(groundArtMaterials(set!)).toEqual(['dirt', 'road', 'forest']);
-        expect(set!.grass).toBeNull();
-        expect(urls.some((u) => u.includes('plains_grass'))).toBe(false);
+        expect(groundArtMaterials(set!)).toEqual(['grass', 'dirt', 'forest']);
+        expect(set!.road).toBeNull();
+        expect(urls.some((u) => u.includes('plains_road'))).toBe(false);
         disposeGroundArtSet(set);
+
+        // 草地を外す：土のむらも読まない（草地の上の斑なので）
+        urls = fakeArt({ search: '?artOff=grass' });
+        expect(Object.keys(fieldArtIds('plains')).sort()).toEqual(['forest', 'road']);
+        set = await loadFieldArt(map, { anisotropy: 4, low: false });
+        expect(groundArtMaterials(set!)).toEqual(['road', 'forest']);
+        expect(urls.some((u) => /plains_(grass|dirt)/.test(u))).toBe(false);
+        disposeGroundArtSet(set);
+
+        // 草地が一覧に無い（読めない種類と同じ）：土も読まない
+        urls = fakeArt({ assets: { [ART_IDS.plainsDirt]: ALL4[ART_IDS.plainsDirt], [ART_IDS.plainsRoad]: ALL4[ART_IDS.plainsRoad] } });
+        await loadFieldArt(map, { anisotropy: 4, low: false }).then((x) => {
+            expect(groundArtMaterials(x!)).toEqual(['road']);
+            disposeGroundArtSet(x);
+        });
+        expect(urls.map((u) => u.replace(/^.*\//, ''))).toEqual(['plains_road.webp']);
+        // 土だけが一覧にある：何も読まない（Version 21 の地面）
+        urls = fakeArt({ assets: { [ART_IDS.plainsDirt]: ALL4[ART_IDS.plainsDirt] } });
+        expect(fieldArtWanted('plains')).toBe(false);
+        expect(await loadFieldArt(map, { anisotropy: 4, low: false })).toBeNull();
+        expect(urls).toEqual([]);
 
         urls = fakeArt({ hash: '#artOff=grass,dirt' });
         set = await loadFieldArt(map, { anisotropy: 4, low: false });
@@ -138,12 +163,14 @@ describe('URL の ?artOff=（素材ごとに Version 21 の見た目へ戻す）
 });
 
 describe('読み込み：1 枚だけ読めないときは、その種類だけ Version 21 の色', () => {
-    it.each(GROUND_MATERIALS.map((m) => [m]))('%s だけ読めない：ほかの 3 種類は使う', async (bad) => {
+    it.each(GROUND_MATERIALS.map((m) => [m]))('%s だけ読めない：ほかの種類は使う（草地が読めなければ土のむらも使わない）', async (bad) => {
         const urls = fakeArt({ fail: [`plains_${bad}.webp`] });
         const set = await loadFieldArt(plains().map, { anisotropy: 4, low: false });
         expect(urls.length).toBe(4);
         expect(set![bad]).toBeNull();
-        expect(groundArtMaterials(set!)).toEqual(GROUND_MATERIALS.filter((m) => m !== bad));
+        // 土のむらは草地の素材の上の斑：草地が読めなければ土も使わない（Version 21 の緑に斑を出さない）
+        const lost: GroundMaterial[] = bad === 'grass' ? ['grass', 'dirt'] : [bad];
+        expect(groundArtMaterials(set!)).toEqual(GROUND_MATERIALS.filter((m) => !lost.includes(m)));
         // 1 枚の大きさは種類ごとの meta.tileMeters
         const tm: Record<GroundMaterial, number> = { grass: 4, dirt: 6, road: 5, forest: 4 };
         for (const m of groundArtMaterials(set!)) expect(set![m]!.tileMeters).toBe(tm[m]);
@@ -172,7 +199,8 @@ describe('描き方：素材のある種類だけ読み、無い種類は Versio
                 // 素材の無い種類の色（Version 21）
                 expect((c.uniforms.gaGrassC.value as THREE.Color).getHex()).toBe(new THREE.Color(V21_GRASS).getHex());
                 expect((c.uniforms.gaWoodsC.value as THREE.Color).getHex()).toBe(new THREE.Color(V21_WOODS).getHex());
-                expect((c.uniforms.gaRoadC.value as THREE.Color).getHex()).toBe(new THREE.Color(V21_ROAD).getHex());
+                // 道の素材が無いときは道を描かない（Version 21 の道の帯 roadMesh を見せる）ので、道の色の uniform は無い
+                expect('gaRoadC' in c.uniforms).toBe(false);
                 // 素材の無い種類の 1 枚の大きさの uniform は既定（使わない）。ある種類は 1 / tileMeters
                 const tile = c.uniforms.gaTile.value as THREE.Vector4;
                 expect([tile.x, tile.y, tile.z, tile.w].map((v, k) => (have.includes(GROUND_MATERIALS[k]) ? v : null))).toEqual(GROUND_MATERIALS.map((g) => (have.includes(g) ? 1 / 5 : null)));
@@ -185,7 +213,7 @@ describe('描き方：素材のある種類だけ読み、無い種類は Versio
         expect(keys.size).toBe(10);
     });
 
-    it('Version 21 の色とむらの式は view.ts（groundColor・道の帯）と同じ。素材の無い種類は #else の側で、その色とむらを使う', async () => {
+    it('Version 21 の色とむらの式は view.ts（groundColor・道の帯）と同じ。素材の無い種類は #else の側で、その色とむらを使う（道は Version 21 の道の帯を見せる）', async () => {
         const fsName = 'node:fs';
         const fs = (await import(/* @vite-ignore */ fsName)) as { readFileSync(p: URL, enc: 'utf8'): string };
         const view = fs.readFileSync(new URL('../proto3d/src/battle/view.ts', import.meta.url), 'utf8');
@@ -202,7 +230,9 @@ describe('描き方：素材のある種類だけ読み、無い種類は Versio
         expect(frag).toContain('float n21 = 1.0 + 0.05 * gaV21Noise(w);');
         expect(frag).toMatch(/#else\s+vec3 col = gaGrassC \* n21;/);
         expect(frag).toMatch(/#else\s+col = mix\(col, gaWoodsC \* n21, forestW\);/);
-        expect(frag).toMatch(/#else\s+col = mix\(col, gaRoadC, roadW\);/);
+        // 道の素材が無い：ここでは道を描かない（草地のまま・丘の色も草地と同じ。上に Version 21 の道の帯を見せる）
+        expect(frag).toMatch(/#else\s+\/\/[^\n]*\n\s+roadW = 0\.0;\s+#endif/);
+        expect(frag).not.toContain('gaRoadC');
         // 土の素材が無ければ土のむらは出さない（式ごと #ifdef GA_DIRT の中）
         expect(frag.indexOf('float dirtW')).toBeGreaterThan(frag.indexOf('#ifdef GA_DIRT'));
         // 大きな濃淡は草地の素材を使うときだけ（Version 21 の色の草地には掛けない）
@@ -243,7 +273,7 @@ function script(s: BattleState): void {
 }
 
 describe('表示：林床の無い組は円の林に木を植えない。素材ごとの組でも合戦の状態・押す判定・名札・兵士の数・カメラは同じ', () => {
-    it('草地・土・道（本番の形）・道だけ・草地だけの組：木 0・道の帯は隠す。素材の無い組は受け取らない', async () => {
+    it('草地・土・道（本番の形）・道だけ・草地だけの組：木 0・道の帯は道の素材があるときだけ隠す（無ければ Version 21 の道の帯）。素材の無い組は受け取らない', async () => {
         await withFakeDocument(async () => {
             const { BattleView } = await import('../proto3d/src/battle/view');
             for (const have of [['grass', 'dirt', 'road'], ['road'], ['grass']] as GroundMaterial[][]) {
@@ -252,10 +282,10 @@ describe('表示：林床の無い組は円の林に木を植えない。素材�
                 expect(v.setGroundArt(fakeSet(s.map, []))).toBe(false);
                 expect(v.artProbe().ground).toBe('vertex');
                 expect(v.setGroundArt(fakeSet(s.map, have))).toBe(true);
-                expect(v.artProbe()).toMatchObject({ ground: 'textured', materials: have, trees: 0 });
+                expect(v.artProbe()).toMatchObject({ ground: 'textured', materials: have, trees: 0, roadStrip: !have.includes('road') });
                 expect(v.treeSpots()).toEqual([]);
                 const road = (v as unknown as { roadMesh: THREE.Mesh | null }).roadMesh;
-                expect(road?.visible).toBe(false);
+                expect(road?.visible).toBe(!have.includes('road'));
                 v.dispose();
             }
         });

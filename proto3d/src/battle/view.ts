@@ -583,7 +583,8 @@ export class BattleView {
         const { material, mask, noise } = makeGroundArtMaterial(this.map, this.passable, set, this.bg);
         this.own(material, mask, noise, ...mats.map((m) => set[m]!.texture));
         this.groundMesh.material = material;
-        if (this.roadMesh) this.roadMesh.visible = false;
+        // 道の素材があれば道の帯を隠す（道は型紙で決まりの幅に描く）。無ければ Version 21 の道の帯をそのまま見せる
+        if (this.roadMesh) this.roadMesh.visible = !set.road;
         this.artOn = true;
         this.artMaterials = mats;
         this.fx = new UnitFx(this.map, this.vis.length);
@@ -601,10 +602,10 @@ export class BattleView {
         return this.artOn;
     }
 
-    /** 開発用の確かめ（window.__battle.art）：地面の描き方・素材を使う種類・植えた木の数・直前のフレームで描いた影と砂ぼこりの数 */
-    artProbe(): { ground: 'textured' | 'vertex'; materials: string[]; trees: number; shadows: number; dust: number } {
+    /** 開発用の確かめ（window.__battle.art）：地面の描き方・素材を使う種類・植えた木の数・直前のフレームで描いた影と砂ぼこりの数・Version 21 の道の帯を見せているか */
+    artProbe(): { ground: 'textured' | 'vertex'; materials: string[]; trees: number; shadows: number; dust: number; roadStrip: boolean } {
         const c = this.fx?.counts() ?? { shadows: 0, dust: 0 };
-        return { ground: this.artOn ? 'textured' : 'vertex', materials: [...this.artMaterials], trees: this.treeCount, shadows: c.shadows, dust: c.dust };
+        return { ground: this.artOn ? 'textured' : 'vertex', materials: [...this.artMaterials], trees: this.treeCount, shadows: c.shadows, dust: c.dust, roadStrip: !!this.roadMesh?.visible };
     }
 
     /**

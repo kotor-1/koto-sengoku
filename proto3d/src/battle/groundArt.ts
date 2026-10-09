@@ -3,10 +3,11 @@
  * 生成イラスト素材の草地・土・道・林床を、地形の決まりの形に合わせて混ぜる。
  *
  * - 素材ごとに使う・使わないを決める（Version 22 の「4 枚そろわないと使わない」はやめた）。素材の一覧（manifest.gen.json）に無い・
- *   読めない・URL の ?artOff=（#artOff=）で外した種類は、その種類だけ Version 21 の色で描く：草地 #7a8f4c・林 #465f33（どちらも
- *   view.ts の groundColor と同じゆるいむら）・道 #a48c63・土のむらは無し。縁は同じ型紙（決まりの形）で決める。
+ *   読めない・URL の ?artOff=（#artOff=）で外した種類は、その種類だけ Version 21 の見た目で描く：草地 #7a8f4c・林 #465f33（どちらも
+ *   view.ts の groundColor と同じゆるいむら。縁は同じ型紙＝決まりの形で決める）・道は Version 21 の道の帯（view.ts の roadMesh をそのまま見せる）・
+ *   土のむらは無し。土のむらは草地の素材の上の斑なので、草地を使わない（外した・読めない）ときは土のむらも使わない（Version 21 の緑に斑を出さない）。
  *   1 種類も使えないときは何もしない（Version 21 と同じ頂点の色の地面と道の帯のまま。材質も差し替えない）。
- *   ?artOff= の値は grass・dirt・road・forest をコンマで区切る（例 ?artOff=grass,dirt）。ground は 4 種類とも。保存には何も書かない。
+ *   ?artOff= の値は grass・dirt・road・forest をコンマで区切る（例 ?artOff=road）。grass は土のむらも外す。ground は 4 種類とも。保存には何も書かない。
  * - 林床（forest）は 2026-10-09 の判断で不採用（一覧に載らない）。林は Version 21 の色のまま、円の林に木も植えない
  *   （木を植えるのは林床の素材を使うときだけ）。違いは林の縁だけ：頂点の 4〜6 m の格子でぎざぎざだった縁が、決まりの円の縁になる。
  * - 混ぜ方の「型紙」（マスク）は、合戦の決まりの地形の区域（BattleMap.terrain の四角・円・カプセル。sim.ts の inTerrain と同じ形）から作る。
@@ -530,8 +531,8 @@ function urlParam(name: string): string | null {
 }
 
 /**
- * URL の ?artOff=（または #artOff=）で外した地面の素材の種類（その種類だけ Version 21 の色で描く。保存には何も書かない）。
- * 値は grass・dirt・road・forest をコンマ（または空白）で区切る（例 ?artOff=grass,dirt）。ground は 4 種類とも（Version 21 の地面）。知らない語は無視
+ * URL の ?artOff=（または #artOff=）で外した地面の素材の種類（その種類だけ Version 21 の見た目で描く。保存には何も書かない）。
+ * 値は grass・dirt・road・forest をコンマ（または空白）で区切る（例 ?artOff=road）。grass は土のむら（dirt）も外す。ground は 4 種類とも（Version 21 の地面）。知らない語は無視
  */
 export function groundArtOff(): ReadonlySet<GroundMaterial> {
     const out = new Set<GroundMaterial>();
@@ -542,6 +543,8 @@ export function groundArtOff(): ReadonlySet<GroundMaterial> {
         if (k === 'ground') for (const m of GROUND_MATERIALS) out.add(m);
         else if ((GROUND_MATERIALS as readonly string[]).includes(k)) out.add(k as GroundMaterial);
     }
+    // 土のむらは草地の素材の上の斑：草地を外せば土のむらも外す（Version 21 の緑の草地に斑を出さない）
+    if (out.has('grass')) out.add('dirt');
     return out;
 }
 
@@ -560,6 +563,8 @@ export function fieldArtIds(fieldId: string): Partial<Record<GroundMaterial, Art
         if (manifestSettled && !artAvailable(id)) continue;
         out[m] = id;
     }
+    // 土のむらは草地の素材の上の斑：草地を読まないなら土も読まない
+    if (!out.grass) delete out.dirt;
     return out;
 }
 
@@ -573,7 +578,8 @@ export function fieldArtWanted(fieldId: string): boolean {
 
 /**
  * その戦場の地面の素材を種類ごとに読み、型紙と雑音の画像（buildGroundData。区切って作る・覚えておく）もそろえる。
- * 読めた種類だけ組に入れる（読めない種類は null＝その種類だけ Version 21 の色）。旧表示・一覧に 1 種類も無い・全部読めないときは null
+ * 読めた種類だけ組に入れる（読めない種類は null＝その種類だけ Version 21 の見た目。草地が読めなければ土のむらも null）。
+ * 旧表示・一覧に 1 種類も無い・全部読めない（使える種類が残らない）ときは null
  * （今までの地面のまま。一覧に無ければ型紙も作らない）。
  * 画像は登録の読み込み（loadArtBitmap：fetch → createImageBitmap。CSP の connect-src 'self' の道）だけで読む。
  * 低い画質（low）では anisotropy 1。ほかは anisotropy（端末の上限。4 まで）
@@ -594,10 +600,12 @@ export async function loadFieldArt(map: BattleMap, opts: { anisotropy: number; l
     mats.forEach((m, k) => {
         const bmp = bmps[k];
         if (!bmp) return;
+        // 土のむらは草地の素材の上の斑：草地が読めなければ土も使わない（Version 21 の緑の草地に斑を出さない）
+        if (m === 'dirt' && !bmps[mats.indexOf('grass')]) return;
         const tm = Number(artEntry(ids[m]!)?.meta?.tileMeters);
         set[m] = { texture: textureFromBitmap(bmp, aniso), tileMeters: Number.isFinite(tm) && tm > 0 ? tm : DEFAULT_TILE_M };
     });
-    return set;
+    return groundArtMaterials(set).length ? set : null;
 }
 
 // ---------------------------------------------------------------- 開始のボタンの待ち（木と地面の素材）
@@ -682,6 +690,12 @@ const VERT_MAIN = /* glsl */ `
 vGaW = (modelMatrix * vec4(transformed, 1.0)).xyz;
 `;
 
+const glf = (v: number) => v.toFixed(3);
+/** 読む位置のゆがみ（gaWarp）：雑音の大きさ（素材の枚数）と、ずれの幅（素材の枚数。±半分）。同じ模様が 1 枚ごとに並ぶのを崩す（Version 23 の見直し） */
+export const GA_WARP_TILES = 3;
+export const GA_WARP_AMP = 0.5;
+export const GA_WARP_AMP2 = 0.2;
+
 const FRAG_PARS = /* glsl */ `
 varying vec3 vGaW;
 uniform sampler2D gaMask;
@@ -703,7 +717,6 @@ uniform sampler2D gaForest;
 uniform vec4 gaTile;
 uniform vec3 gaGrassC;
 uniform vec3 gaWoodsC;
-uniform vec3 gaRoadC;
 uniform vec2 gaField;
 uniform vec4 gaPass;
 uniform vec3 gaBg;
@@ -712,13 +725,33 @@ uniform vec3 gaHill;
 uniform float gaRange;
 uniform vec2 gaBand;
 
-// 同じ模様が並んで見えないように：ゆるい雑音 k で選んだ 2 通りのずらしを、境目の帯だけで混ぜる（帯の外は 1 回だけ読む。傾きは先に計算して渡す）。
-// 低い画質（GA_LOW）では 1 回だけ読む（ずらさない）
+// 素材の格子の決まった乱数（0〜1）と、なめらかな値の雑音（格子 1 の大きさ。0〜1）
+float gaHash(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+float gaVNoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(gaHash(i), gaHash(i + vec2(1.0, 0.0)), u.x), mix(gaHash(i + vec2(0.0, 1.0)), gaHash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+// 同じ模様が 1 枚ごとの格子に並んで見えないように、読む位置を雑音でゆるくゆがめる（素材 ${GA_WARP_TILES} 枚ほどの大きさで ±${GA_WARP_AMP / 2} 枚、
+// 1.25 枚ほどの大きさで ±${GA_WARP_AMP2 / 2} 枚。伸び縮みは 2〜3 割まで。素材の縁の少しぼやけた所も格子の線に並ばない）。uv は素材 1 枚 = 1 の座標
+vec2 gaWarp(vec2 uv) {
+    vec2 q = uv * ${glf(1 / GA_WARP_TILES)};
+    vec2 r = uv * 0.8;
+    return uv + (vec2(gaVNoise(q), gaVNoise(q + vec2(19.7, 7.3))) - 0.5) * ${glf(GA_WARP_AMP)} + (vec2(gaVNoise(r + vec2(3.1, 41.3)), gaVNoise(r + vec2(29.9, 13.7))) - 0.5) * ${glf(GA_WARP_AMP2)};
+}
+// 同じ模様が並んで見えないように：読む位置をゆがめ（gaWarp。低い画質でも）、さらに素材 2 枚ほどの大きさの雑音と、ゆるい雑音 k（23 m ほど）で選んだ
+// 2 通りのずらしを、境目の帯だけで混ぜる（帯の外は 1 回だけ読む。傾きは先に計算して渡す）。低い画質（GA_LOW）ではゆがめて 1 回だけ読む（ずらさない）
 vec3 gaTex(sampler2D t, vec2 uv, vec2 gx, vec2 gy, float k) {
+    uv = gaWarp(uv);
 #ifdef GA_LOW
     return textureGrad(t, uv, gx, gy).rgb;
 #else
-    float l = k * 7.0;
+    float l = (gaVNoise(uv * 0.5 + 11.0) + k) * 4.0;
     float i = floor(l);
     float w = smoothstep(0.35, 0.65, fract(l));
     vec3 c = vec3(0.0);
@@ -736,7 +769,6 @@ float gaV21Noise(vec2 p) {
 }
 `;
 
-const glf = (v: number) => v.toFixed(3);
 const FRAG_MAIN = /* glsl */ `
 {
     vec2 w = vGaW.xz;
@@ -778,7 +810,8 @@ const FRAG_MAIN = /* glsl */ `
     // 道は戦場の端から端まで続くので、草地と同じく 2 通りのずらしで繰り返しを崩す（低い画質では 1 回だけ）
     if (roadW > 0.002) col = mix(col, gaTex(gaRoad, r3 * w * gaTile.z, r3 * dwx * gaTile.z, r3 * dwy * gaTile.z, nz.a), roadW);
 #else
-    col = mix(col, gaRoadC, roadW);
+    // 道の素材が無い：道は Version 21 の道の帯（view.ts の roadMesh。決まりの幅の 0.8 倍・ゆるい揺れ）をそのまま上に描く。ここは草地のまま（丘の色も草地と同じ）
+    roadW = 0.0;
 #endif
     // ほかの地形（湿地・川など）は今までの頂点の色
     col = mix(col, vColor.rgb, otherW);
@@ -803,7 +836,7 @@ export interface GroundArtMaterial {
 
 /** 戦場の外を薄める色の既定（昼の背景。view.ts の背景と同じ） */
 export const DAY_BG = '#56653f';
-/** 素材の無い種類の色（Version 21 の頂点の色・道の帯の色。view.ts の groundColor・buildRoad と同じ） */
+/** 素材の無い種類の色（Version 21 の頂点の色・道の帯の色。view.ts の groundColor・buildRoad と同じ。道の素材が無いときは道の帯そのものを見せる） */
 export const V21_GRASS = '#7a8f4c';
 export const V21_WOODS = '#465f33';
 export const V21_ROAD = '#a48c63';
@@ -812,7 +845,8 @@ const V21_HILL = '#a2a462';
 /**
  * 地面の材質（今までの頂点の色の Lambert に、素材を混ぜる式を足したもの。光・霧は今までと同じ）。
  * 形（頂点の色の地面）はそのまま使い、材質だけを差し替える。型紙と雑音は set.ground（作り済み）を読むだけ。
- * 素材のある種類だけ画像を読む（GA_GRASS・GA_DIRT・GA_ROAD・GA_FOREST）。無い種類は Version 21 の色（V21_GRASS・V21_WOODS・V21_ROAD、土のむらは無し）。
+ * 素材のある種類だけ画像を読む（GA_GRASS・GA_DIRT・GA_ROAD・GA_FOREST）。無い種類は Version 21 の色（V21_GRASS・V21_WOODS、土のむらは無し）。
+ * 道の素材が無ければ道はここでは描かず、Version 21 の道の帯（view.ts の roadMesh。V21_ROAD）を上に見せる。
  * bg は表示の背景の色（昼・夜。戦場の外をこの色へ薄める）。set.low のときは草地を 1 回だけ読む
  */
 export function makeGroundArtMaterial(
@@ -837,7 +871,6 @@ export function makeGroundArtMaterial(
         gaTile: { value: new THREE.Vector4(tile(set.grass), tile(set.dirt), tile(set.road), tile(set.forest)) },
         gaGrassC: { value: grass.clone() },
         gaWoodsC: { value: new THREE.Color(V21_WOODS) },
-        gaRoadC: { value: new THREE.Color(V21_ROAD) },
         gaField: { value: new THREE.Vector2(map.width / 2, map.depth / 2) },
         gaPass: { value: new THREE.Vector4(p.x0, p.x1, p.z0, p.z1) },
         gaBg: { value: new THREE.Color(bg) },

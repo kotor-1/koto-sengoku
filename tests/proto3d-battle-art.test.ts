@@ -420,7 +420,7 @@ describe('素材の地面・足元の影・砂ぼこりは合戦の状態を変�
                 v.fit({ top: 60, bottom: 110, left: 10, right: 10 });
             }
             // 作っただけでは今までの地面（画像は読まない）。円の林には木を植えない（Version 21 と同じ）
-            expect(on.artProbe()).toEqual({ ground: 'vertex', materials: [], trees: 0, shadows: 0, dust: 0 });
+            expect(on.artProbe()).toEqual({ ground: 'vertex', materials: [], trees: 0, shadows: 0, dust: 0, roadStrip: true });
             expect(on.treeSpots()).toEqual([]);
             expect(on.setGroundArt(fakeSet(b.map))).toBe(true);
             expect(on.setGroundArt(fakeSet(b.map))).toBe(false);
@@ -428,6 +428,8 @@ describe('素材の地面・足元の影・砂ぼこりは合戦の状態を変�
             expect(off.groundArtActive).toBe(false);
             expect(on.artProbe().ground).toBe('textured');
             expect(on.artProbe().materials).toEqual(['grass', 'dirt', 'road', 'forest']);
+            // 道の素材を使う組では Version 21 の道の帯を隠す（道は型紙で決まりの幅に描く）
+            expect(on.artProbe().roadStrip).toBe(false);
             // 確かめ用の組は林床もあるので、円の林に木を植える（林床を使わない組は tests/proto3d-ground-art.test.ts）
             expect(on.artProbe().trees).toBeGreaterThan(10);
             let k = 0;
