@@ -608,6 +608,55 @@ async function run(part, size, mode) {
             await same('詳しく見るを開いて閉じた');
             step('real', `詳しく見る（${touch ? 'タップ' : 'クリック'}）→ 閉じる`);
         }
+        if (scrollable) {
+            // 選択肢を押したまま、上に画面を開いて（Esc・J・別の指でメニュー）から離す：離した時に決める押しが、開いた画面の下で決まらない
+            // （Version 24 の見直しで見つかった誤り。離すのは押したボタンに届くので、会話が一番上でない間は決めない）
+            const p = await page.evaluate(probeScene);
+            const it = p.items.find((x) => x.cover.hidden === 0) ?? p.items[0];
+            const x = it.rect.l + Math.min(40, it.rect.w / 2);
+            const y = it.rect.t + Math.min(it.rect.h / 2, 18);
+            const variants = [['Esc', 'menu']];
+            if (map) variants.push(['J', 'situation']);
+            if (touch) variants.push(['別の指でメニュー', 'menu']);
+            for (const [how, kind] of variants) {
+                await sleep(450);
+                if (touch) await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 0 }] });
+                else {
+                    await page.mouse.move(x, y);
+                    await page.mouse.down();
+                }
+                await sleep(200);
+                if (how === 'Esc') await page.keyboard.press('Escape');
+                else if (how === 'J') await page.keyboard.press('KeyJ');
+                else {
+                    const mb = await page.evaluate(() => {
+                        const b = document.querySelector('.g-menu-btn').getBoundingClientRect();
+                        return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+                    });
+                    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 0 }, { x: mb.x, y: mb.y, id: 1 }] });
+                    await sleep(80);
+                    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [{ x, y, id: 0 }] });
+                }
+                const opened = await page.waitForFunction((k) => window.__game.ui?.kind === k, kind, { timeout: 10000, polling: 100 }).then(() => true, () => false);
+                check(opened, `${T} 選択肢 ${it.id} を押したまま${how}で ${kind} が開く`);
+                await sleep(300);
+                if (touch) await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+                else await page.mouse.up();
+                await sleep(600);
+                const u = await ui();
+                check(u?.kind === kind, `${T} 選択肢 ${it.id} を押したまま${how}で ${kind} を開いて離しても、${kind} が一番上のまま（選ばれない）`, u);
+                const extra = await page.evaluate(() => document.querySelectorAll('.g-layer[data-kind="script"]').length);
+                check(extra === 1, `${T} ${how}：開いた画面の下で次の会話が始まっていない（会話の層 ${extra}）`);
+                // 選ばれてしまったら、この先の流れ（同じ会話に戻る）は待っても来ないので、ここで止める
+                if (u?.kind !== kind) throw new Error(`${T} 選択肢を押したまま${how}で開いた画面の下で選ばれた（${JSON.stringify(u)?.slice(0, 200)}）`);
+                if (kind === 'menu') await page.keyboard.press('Escape');
+                else await press(page.locator('.g-btn[data-id="close"]').last());
+                await page.waitForFunction(() => window.__game.ui?.kind === 'script', null, POLL);
+                await sleep(450);
+                await same(`選択肢 ${it.id} を押したまま${how}で ${kind} を開いて離し、閉じた`);
+            }
+            step('real', `選択肢 ${it.id} を${touch ? '指で' : 'マウスで'}押したまま ${variants.map((v) => v[0]).join('・')} で上に画面を開いて離した（どれも選ばれない）`);
+        }
         const lg = await page.evaluate(() => window.__dcLog);
         rec.pointerLog = rec.pointerLog ?? [];
         rec.pointerLog.push({ name, ...lg });

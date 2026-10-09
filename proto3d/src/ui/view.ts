@@ -640,9 +640,12 @@ export class DomView implements GameView, LayerHost {
                     if (c.summary) b.append(el('span', 's', c.summary));
                     // 出たばかり・出る前に始まった押し方では決まらない（選んだ印も動かさない）。
                     // 並びが動かせる間は、離した時に、動かさずに離した押し（たたき）だけで決まる（なぞって並びを動かした指では選ばない。ui/dom.ts）
+                    // 上に別の画面（メニュー・情勢・演出）が重なっている間は決めない（離した時に決める押しは、押したまま別の指・Esc・J で
+                    // 開いた画面の下でも、押したボタンに離すのが届くので）
                     onPress(
                         b,
                         (e, start) => {
+                            if (this.modals[this.modals.length - 1] !== m) return;
                             if (start ? choiceGate.tap(nowMs(), startedAt(start)) : choiceGate.pointer(nowMs(), startedAt(e))) pick(k);
                         },
                         { tapWhen: () => fitter.scrolls, scrollOf: () => choicesEl.scrollTop, scrolledAt: () => fitter.scrolledAt },
