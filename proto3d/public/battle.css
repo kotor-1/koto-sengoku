@@ -842,14 +842,16 @@ body.mode-battle #build { display: none !important; }
     .b-card-h > .b-face.b-face-narrow { width: 8px; margin-right: -2px; border-radius: 2px; }
     /* 能力の欄（幅 236 px）：顔の右の能力の見出しが折り返して欄が高くならないように（左の地図の名札を覆わない）、短い状態の印（使える・使用済み・
        使えない）は武将の行の右端（3 列目）へ移し、2 行目は能力名だけにする（見出しの箱 .b-ab-h を display: contents にして、中の 2 つを欄の格子に置く）。
-       長い状態（効果中 残り N 秒・敵方）は今までどおり能力名の後ろ（Version 21 でも折り返す長さ。顔の右の 2 行に収まる）。字の大きさ・色は変えない */
+       長い状態（効果中 残り N 秒・敵方）と、武将の行に信頼などの値がある時（第二章の忠勝の「信頼 40」：印を並べると武将の行が折り返す）は、
+       今までどおり能力名の後ろ（武将の行は 2・3 列目をまたぐ）。字の大きさ・色は変えない */
     .b-abil.with-face:not([hidden]) { grid-template-columns: 40px minmax(0, 1fr) auto; column-gap: 7px; }
     .b-abil.with-face > .b-face { width: 40px; height: 40px; margin-bottom: 0; border-radius: 5px; }
-    .b-abil.with-face > .b-gen { grid-column: 2; }
+    .b-abil.with-face > .b-gen { grid-column: 2 / -1; }
     .b-abil.with-face > .b-ab-h { grid-column: 2 / -1; }
-    .b-abil.with-face > .b-ab-h:not(:has(> .b-ab-st.active)):not(:has(> .b-ab-st.enemy)) { display: contents; }
-    .b-abil.with-face > .b-ab-h:not(:has(> .b-ab-st.active)):not(:has(> .b-ab-st.enemy)) > b { grid-column: 2 / -1; grid-row: 2; align-self: start; margin-top: 2px; }
-    .b-abil.with-face > .b-ab-h:not(:has(> .b-ab-st.active)):not(:has(> .b-ab-st.enemy)) > .b-ab-st { grid-column: 3; grid-row: 1; align-self: end; }
+    .b-abil.with-face:not(:has(> .b-gen .b-gen-rel)):has(> .b-ab-h > .b-ab-st:not(.active):not(.enemy)) > .b-gen { grid-column: 2; }
+    .b-abil.with-face:not(:has(> .b-gen .b-gen-rel)):has(> .b-ab-h > .b-ab-st:not(.active):not(.enemy)) > .b-ab-h { display: contents; }
+    .b-abil.with-face:not(:has(> .b-gen .b-gen-rel)):has(> .b-ab-h > .b-ab-st:not(.active):not(.enemy)) > .b-ab-h > b { grid-column: 2 / -1; grid-row: 2; align-self: start; margin-top: 2px; }
+    .b-abil.with-face:not(:has(> .b-gen .b-gen-rel)):has(> .b-ab-h > .b-ab-st:not(.active):not(.enemy)) > .b-ab-h > .b-ab-st { grid-column: 3; grid-row: 1; align-self: end; }
     .b-abnote.with-face:not([hidden]) { column-gap: 7px; }
     .b-abnote.with-face > .b-face { width: 28px; height: 28px; }
 }

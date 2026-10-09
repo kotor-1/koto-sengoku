@@ -874,6 +874,25 @@ describe('合戦の顔の規則（battle.css）：能力の欄は顔を大きく
         const m = new RegExp(`(?:^|;)\\s*${name}\\s*:\\s*([^;]+)`).exec(body);
         return m ? m[1].trim() : null;
     };
+    /** 選ぶ側から :has(…)（:not(:has(…)) も）を外す（中の条件の部品は「規則を掛ける相手」ではないので） */
+    const stripHas = (sel: string): string => {
+        let out = '';
+        for (let i = 0; i < sel.length; ) {
+            const at = sel.startsWith(':not(:has(', i) ? ':not(' : sel.startsWith(':has(', i) ? ':has(' : null;
+            if (!at) {
+                out += sel[i++];
+                continue;
+            }
+            let depth = 0;
+            let j = i + at.length - 1;
+            for (; j < sel.length; j++) {
+                if (sel[j] === '(') depth++;
+                else if (sel[j] === ')' && --depth === 0) break;
+            }
+            i = j + 1;
+        }
+        return out;
+    };
     it('能力の欄の with-face：欄の幅・余白・位置・最大の高さは変えない。顔の右に並べるのは武将の行と能力の見出しだけ（ほかの行は欄の幅いっぱい）', () => {
         const rs = rules().filter((r) => r.sel.includes('.b-abil.with-face'));
         expect(rs.length).toBeGreaterThan(4);
@@ -881,7 +900,7 @@ describe('合戦の顔の規則（battle.css）：能力の欄は顔を大きく
         for (const r of rs) {
             for (const sel of sels(r)) {
                 // 使い方・残り・対象・範囲・効果・代償・回数・断りの行には、個別の規則を掛けない（文字の大きさ・折り返しは Version 22 と同じ）
-                const bare = sel.replace(/:not\(:has\([^()]*\)\)/g, '');
+                const bare = stripHas(sel);
                 expect(bare, sel).not.toMatch(/\.b-ab-r|\.b-ab-why|\.b-ab-long|\.b-ab-note/);
                 // 状態の印（.b-ab-st）には、縦の狭い画面で武将の行の右端（3 列目）へ置く規則だけ（置く場所だけ。字の大きさ・色・余白は変えない）
                 if (/\.b-ab-st/.test(bare)) {
@@ -947,13 +966,16 @@ describe('合戦の顔の規則（battle.css）：能力の欄は顔を大きく
         const compactHide = find('max-height: 520px', '.b-gen:has(+ .b-ab-h) .b-gen-ab');
         expect(compactHide && prop(compactHide.body, 'display')).toBe('none');
         // 縦の狭い画面（欄の幅 236 px）：顔の右で能力の見出しが折り返さないように、短い状態の印（使える・使用済み・使えない）は武将の行の右端（3 列目）へ、
-        // 2 行目は能力名だけ（見出しの箱を display: contents）。長い状態（効果中・敵方）は見出しのまま（Version 21 でも折り返す長さ）
-        const SHORT = '.b-abil.with-face > .b-ab-h:not(:has(> .b-ab-st.active)):not(:has(> .b-ab-st.enemy))';
+        // 2 行目は能力名だけ（見出しの箱を display: contents）。長い状態（効果中・敵方）と、武将の行に信頼などの値がある時（並べると武将の行が折り返す）は見出しのまま
+        const SHORT = '.b-abil.with-face:not(:has(> .b-gen .b-gen-rel)):has(> .b-ab-h > .b-ab-st:not(.active):not(.enemy))';
         expect(prop(find('max-height: 520px', '.b-abil.with-face:not([hidden])')!.body, 'grid-template-columns')!.split(/\s+/)).toEqual([`${cw}px`, 'minmax(0,', '1fr)', 'auto']);
-        expect(prop(find('max-height: 520px', SHORT)!.body, 'display')).toBe('contents');
-        expect([prop(find('max-height: 520px', `${SHORT} > b`)!.body, 'grid-column'), prop(find('max-height: 520px', `${SHORT} > b`)!.body, 'grid-row')]).toEqual(['2 / -1', '2']);
-        expect([prop(find('max-height: 520px', `${SHORT} > .b-ab-st`)!.body, 'grid-column'), prop(find('max-height: 520px', `${SHORT} > .b-ab-st`)!.body, 'grid-row')]).toEqual(['3', '1']);
+        expect(prop(find('max-height: 520px', `${SHORT} > .b-ab-h`)!.body, 'display')).toBe('contents');
+        expect(prop(find('max-height: 520px', `${SHORT} > .b-gen`)!.body, 'grid-column')).toBe('2');
+        expect([prop(find('max-height: 520px', `${SHORT} > .b-ab-h > b`)!.body, 'grid-column'), prop(find('max-height: 520px', `${SHORT} > .b-ab-h > b`)!.body, 'grid-row')]).toEqual(['2 / -1', '2']);
+        expect([prop(find('max-height: 520px', `${SHORT} > .b-ab-h > .b-ab-st`)!.body, 'grid-column'), prop(find('max-height: 520px', `${SHORT} > .b-ab-h > .b-ab-st`)!.body, 'grid-row')]).toEqual(['3', '1']);
+        // 条件に合わない時（長い状態・信頼の値）は、武将の行と見出しが 2・3 列目をまたぐ（Version 23 の最初の並びと同じ）
         expect(prop(find('max-height: 520px', '.b-abil.with-face > .b-ab-h')!.body, 'grid-column')).toBe('2 / -1');
+        expect(prop(find('max-height: 520px', '.b-abil.with-face > .b-gen')!.body, 'grid-column')).toBe('2 / -1');
         // さらに縦の狭いスマホ（高さ 370 以下：640×360・568×320）：顔は 30 px で、武将の行と能力名の 2 行の高さ（＋1 px）を超えない＝欄を高くしない
         const sf = find('max-height: 370px', '.b-abil.with-face > .b-face')!;
         const sw = px(prop(sf.body, 'width'));
