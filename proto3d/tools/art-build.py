@@ -730,6 +730,28 @@ def crossfade_axis(f: np.ndarray, axis: int, band: float) -> np.ndarray:
     return np.clip(out, 0.0, 1.0)
 
 
+def color_match(rgb_u8: np.ndarray, cfg: dict) -> tuple[np.ndarray, dict]:
+    """色の寄せ：色ごとの倍率（線形の光の量で）を掛けて、平均の色を目標の色へ strength の割合だけ寄せる（倍率 = (目標 ÷ 平均) ^ strength）。
+    同じ倍率を全部の画素に掛けるので、模様（明暗・色のむら）の比は変わらない。0〜1 を超えた所は切り、その割合を記録する"""
+    lin = srgb_to_lin(rgb_u8)
+    mean = lin.reshape(-1, 3).mean(axis=0)
+    tgt = srgb_to_lin(np.array(cfg['targetRGB'], np.uint8))
+    s = float(cfg['strength'])
+    gain = (tgt / np.maximum(mean, 1e-9)) ** s
+    out = lin * gain
+    clipped = float((out > 1.0).any(axis=-1).mean())
+    res = to_u8(lin_to_srgb_f(out))
+    rep = {
+        'targetRGB': [int(v) for v in cfg['targetRGB']],
+        'strength': s,
+        'gain': [round(float(v), 4) for v in gain],
+        'meanRGBBefore': [int(round(v)) for v in rgb_u8.reshape(-1, 3).mean(axis=0)],
+        'meanRGBAfter': [int(round(v)) for v in res.reshape(-1, 3).mean(axis=0)],
+        'clippedShare': round(clipped, 5),
+    }
+    return res, rep
+
+
 def process_texture(rgb: np.ndarray, recipe: dict) -> tuple[Image.Image, dict, dict]:
     rep: dict = {'mapType': recipe.get('mapType', 'albedo')}
     h, w = rgb.shape[:2]
@@ -757,6 +779,9 @@ def process_texture(rgb: np.ndarray, recipe: dict) -> tuple[Image.Image, dict, d
         rep['flattenBlur'] = 'wrap' if wrap else 'reflect'
         cur = flatten_lighting(cur, recipe['flatten'], wrap)
         rep['lightingRangeAfter'] = lighting_range(cur, sigma)
+    if recipe.get('colorMatch'):
+        # 色の寄せ（記録の colorMatch がある素材だけ。模様の比は変えない）
+        cur, rep['colorMatch'] = color_match(cur, recipe['colorMatch'])
     seam_mid = seam_metrics(cur)
     rep['seamAfterFlatten'] = seam_mid
     fixed = []
@@ -1409,6 +1434,25 @@ def write_docs(ctx: Ctx, m: dict) -> bool:
             f'`{a["id"]}`', STATUS_JA.get(a['status'], a['status']), f'{KIND_JA[a["kind"]]}：{a["purpose"]}', a['subject'],
             orig, f'`{a["recipe"]["publicFile"]}`' + ('' if out else '（未作成）'), dims, size, how, terms_text(a.get('terms')),
         ]) + ' |')
+    tex = [a for a in A if a['kind'] == 'texture']
+    if tex:
+        used = [a for a in tex if a.get('outputs')]
+        unused = [a for a in tex if not a.get('outputs')]
+        L += [
+            '',
+            '## 合戦の地面（素材ごとの採用と、旧表示との比べ方。Version 23 から）',
+            '',
+            '- 地面の素材は **種類ごとに** 使う・使わないを決める（Version 22 の「4 枚そろわないと使わない」はやめた。`proto3d/src/battle/groundArt.ts`）。'
+            '一覧（manifest.gen.json）に無い・読めない・URL で外した種類は、その種類だけ Version 21 の色で描く：草地 #7a8f4c・林 #465f33（どちらも Version 21 と同じゆるいむら）・道 #a48c63・土のむらは無し。'
+            '縁は決まりの地形の形（型紙）で決めるので、地形の境界・通行・視界・合戦の判定は変わらない。1 種類も使えなければ Version 21 と同じ頂点の色の地面と道の帯のまま。',
+            '- 使っている種類：' + ('、'.join(f'`{a["id"]}`（1 枚 {(a["outputs"][0].get("meta") or {}).get("tileMeters", "?")}m 四方・{a["outputs"][0]["w"]}px）' for a in used) or 'なし') + '。'
+            + ('使っていない種類：' + '、'.join(f'`{a["id"]}`（{STATUS_JA.get(a["status"], a["status"])}' + (f'：{a["rejection"]["reason"]}' if a.get('rejection') else '') + '）' for a in unused) + '。' if unused else ''),
+            '- 林床を使わない間は、林は Version 21 の色のまま、円の林に木も植えない（木を植えるのは林床の素材を使うときだけ）。違いは林の縁だけ：頂点の 4〜6 m の格子でぎざぎざだった縁が、決まりの円の縁になる。',
+            '- 旧表示との比べ方（URL。保存には何も書かない。`#` の後ろに書いてもよい）：',
+            '  - `?art=old`：新しい素材を 1 つも使わない（Version 21 と同じ。顔も出さない）。',
+            '  - `?artOff=grass`：草地だけ Version 21 の色（土・道の素材は使う）。`?artOff=grass,dirt` のようにコンマで続けて書ける（grass・dirt・road・forest）。',
+            '  - `?artOff=ground`：地面の 4 種類とも外す（地面は Version 21 と同じ。顔は出る）。',
+        ]
     L += ['', '## 原画と加工版の対応', '', '| 加工版 | 元の原画 | 原画の sha256 | 加工版の sha256 | 展開後の大きさ |', '|---|---|---|---|---|']
     for a in A:
         out = (a.get('outputs') or [None])[0]
@@ -1469,6 +1513,9 @@ def write_docs(ctx: Ctx, m: dict) -> bool:
             p = a.get('processing') or {}
             if a['kind'] == 'texture' and p:
                 L.append(f'  - 明暗のむら：{p.get("lightingRangeBefore")} → {p.get("lightingRangeAfter")}。継ぎ目（1 前後なら目立たない）：{p["seamBefore"]["ratio"]} → {p["seamAfterFlatten"]["ratio"]} → {p["seamAfter"]["ratio"]}（直した向き：{"、".join(p.get("seamFixed") or []) or "なし"}）。平均の色 {p.get("meanRGB")}')
+                if p.get('colorMatch'):
+                    c = p['colorMatch']
+                    L.append(f'  - 色の寄せ：平均の色 {c["meanRGBBefore"]} → {c["meanRGBAfter"]}（目標 {c["targetRGB"]} へ {c["strength"]} の割合。色ごとの倍率 {c["gain"]}・切れた画素 {c["clippedShare"]}）')
                 L.append(f'  - 色の画像（アルベド）としてだけ使う。法線・粗さの画像ではない。1 枚 = {(out.get("meta") or {}).get("tileMeters", "?")}m 四方')
             elif p:
                 L.append(f'  - 処理の記録：{json.dumps({k: v for k, v in p.items() if k not in ("qualityTried", "warnings", "notes")}, ensure_ascii=False)}')
@@ -1534,6 +1581,11 @@ def _noise(rng, h, w, sigma, periodic=False) -> np.ndarray:
     else:
         out = blur_reflect(n, sigma)
     return out / max(1e-9, out.std())
+
+
+def td_has_color(g: dict) -> bool:
+    """selftest：土の素材に色の寄せが掛かったか"""
+    return bool((g['tex.plains.dirt'].get('processing') or {}).get('colorMatch'))
 
 
 def _make_inputs(dirpath: Path, variant: str) -> dict:
@@ -1960,7 +2012,17 @@ def cmd_selftest(ctx_real: Ctx, log=print) -> int:
         ok(tg['seamFixed'] and tg['seamAfter']['ratio'] < g['tex.plains.grass']['recipe']['seamless']['threshold'] < tg['seamBefore']['ratio'],
            f'継ぎ目を直す（{tg["seamBefore"]["ratio"]} → {tg["seamAfter"]["ratio"]}・{tg["seamFixed"]}）')
         orig = np.asarray(Image.open(ctx.root / g['tex.plains.grass']['original']['path']).convert('RGB')).reshape(-1, 3).mean(axis=0)
-        ok(np.abs(np.array(tg['meanRGB']) - orig).max() < 6, f'平均の色を保つ（{tg["meanRGB"]} ≒ {[int(v) for v in orig]}）')
+        # 明暗のならしと継ぎ目の直しは平均の色を保つ。色の寄せ（記録の colorMatch がある草地だけ）はその後で、平均を目標の色へ寄せる
+        cmg = tg.get('colorMatch')
+        kept = cmg['meanRGBBefore'] if cmg else tg['meanRGB']
+        ok(np.abs(np.array(kept) - orig).max() < 6, f'明暗のならし・継ぎ目の直しは平均の色を保つ（{kept} ≒ {[int(v) for v in orig]}）')
+        rcm = g['tex.plains.grass']['recipe'].get('colorMatch')
+        if rcm:
+            tgt = np.array(rcm['targetRGB'], np.float64)
+            ok(cmg is not None and np.abs(np.array(tg['meanRGB']) - tgt).max() < np.abs(np.array(cmg['meanRGBBefore']) - tgt).max(),
+               f'色の寄せは平均の色を目標 {rcm["targetRGB"]} へ寄せる（{cmg and cmg["meanRGBBefore"]} → {tg["meanRGB"]}）')
+            ok(cmg is not None and cmg['strength'] == rcm['strength'] and len(cmg['gain']) == 3 and cmg['clippedShare'] < 0.01, f'色の寄せの倍率・切れた画素を記録する（{cmg}）')
+        ok(not td_has_color(g), '色の寄せは記録に colorMatch がある素材だけ（土には掛けない）')
         def detail(path):
             L = np.asarray(Image.open(path).convert('L')).astype(np.float64)
             return float((L - blur_reflect(L, 4)).std())
@@ -1968,7 +2030,9 @@ def cmd_selftest(ctx_real: Ctx, log=print) -> int:
         ok(d1 > 0.75 * d0, f'直しても細かい模様のコントラストが消えない（{d0:.2f} → {d1:.2f}）')
         td = g['tex.plains.dirt']['processing']
         ok(td['seamFixed'] == [], f'初めから継ぎ目のない地面は継ぎ目を直さない（{td["seamBefore"]["ratio"]}）')
-        ok(gen['assets']['tex.plains.grass']['meta'] == {'tileMeters': 8} and g['tex.plains.grass']['recipe']['mapType'] == 'albedo', '地面の素材は 1 枚 8m 四方の色の画像（法線・粗さとは称さない）')
+        tmg = g['tex.plains.grass']['recipe']['meta']['tileMeters']
+        ok(gen['assets']['tex.plains.grass']['meta'] == {'tileMeters': tmg} and g['tex.plains.grass']['recipe']['mapType'] == 'albedo', f'地面の素材は 1 枚 {tmg}m 四方（記録の meta）の色の画像（法線・粗さとは称さない）')
+        ok(gen['assets']['tex.plains.grass']['w'] == min(g['tex.plains.grass']['recipe']['size'], 1024), f'地面の素材は記録の大きさ {g["tex.plains.grass"]["recipe"]["size"]}px に縮小する（拡大しない）')
         # check・同じ入力から同じ出力・壊れた加工版は check で見つかる
         ok(cmd_check(ctx, log=quiet.append) == 0, 'check が通る')
         ok(cmd_check(ctx, strict=True, log=quiet.append) == 1, 'check --strict は、見た目の確認と利用条件の確認が無いと通らない')

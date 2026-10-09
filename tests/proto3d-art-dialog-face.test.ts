@@ -592,10 +592,14 @@ describe('台詞の枠の顔の CSS：縦に長い画面で幅の狭い所（タ
     });
 });
 
-describe('公開の素材の一覧（manifest.gen.json）は武将 6 人の顔だけ', () => {
-    it('人物画・軍議の背景・地面の素材は入れていない（画面での確かめの結果を待つ）。顔の画像は art/faces/ の WebP', () => {
+describe('公開の素材の一覧（manifest.gen.json）は武将 6 人の顔と、大平原の地面の 3 枚（Version 23 から）だけ', () => {
+    it('人物画・軍議の背景・林床は入れていない（人物画・背景は新しい原画の到着待ち、林床は不採用）。顔の画像は art/faces/、地面は art/battle/ の WebP', () => {
         const assets = (generated as { assets: Record<string, { file: string; kind?: string }> }).assets;
-        expect(Object.keys(assets).sort()).toEqual(['face.ieyasu', 'face.ishikawa', 'face.nagamasa', 'face.sakai', 'face.sakakibara', 'face.tadakatsu']);
-        for (const [id, a] of Object.entries(assets)) expect(a.file, id).toBe(`art/faces/${id.slice(5)}.webp`);
+        const faces = ['face.ieyasu', 'face.ishikawa', 'face.nagamasa', 'face.sakai', 'face.sakakibara', 'face.tadakatsu'];
+        const ground = ['tex.plains.dirt', 'tex.plains.grass', 'tex.plains.road'];
+        expect(Object.keys(assets).sort()).toEqual([...faces, ...ground].sort());
+        for (const id of faces) expect(assets[id].file, id).toBe(`art/faces/${id.slice(5)}.webp`);
+        for (const id of ground) expect(assets[id].file, id).toBe(`art/battle/${id.slice(4).replace('.', '_')}.webp`);
+        expect(Object.keys(assets).some((id) => /^(portrait|bg)\.|forest/.test(id))).toBe(false);
     });
 });

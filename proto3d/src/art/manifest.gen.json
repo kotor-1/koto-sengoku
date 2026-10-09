@@ -48,6 +48,39 @@
             "kind": "face",
             "bytes": 14760,
             "sha256": "1e51b6b29b7cb3bfe113f644bd98cd39268f04a33563a94253edb514940f0eac"
+        },
+        "tex.plains.grass": {
+            "file": "art/battle/plains_grass.webp",
+            "w": 512,
+            "h": 512,
+            "kind": "texture",
+            "bytes": 80452,
+            "sha256": "34811d3dd3199edcd58716eafd1ab1bf8af3d35380b63605699634ee0948dcc9",
+            "meta": {
+                "tileMeters": 4
+            }
+        },
+        "tex.plains.dirt": {
+            "file": "art/battle/plains_dirt.webp",
+            "w": 512,
+            "h": 512,
+            "kind": "texture",
+            "bytes": 65852,
+            "sha256": "191b3ec77295d4873b620e0d372a984dc1592703c52847c0c7234516835d2e72",
+            "meta": {
+                "tileMeters": 6
+            }
+        },
+        "tex.plains.road": {
+            "file": "art/battle/plains_road.webp",
+            "w": 512,
+            "h": 512,
+            "kind": "texture",
+            "bytes": 35450,
+            "sha256": "a056505d3e4b57088c2b051da0d9bbeef3e1f51c20024965edacbb8556c7c3bf",
+            "meta": {
+                "tileMeters": 5
+            }
         }
     }
 }
