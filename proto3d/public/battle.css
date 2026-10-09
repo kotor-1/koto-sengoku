@@ -456,6 +456,13 @@ body.mode-battle #build { display: none !important; }
     .g-pr-gen > .b-face { width: 34px; height: 34px; border-radius: 5px; }
     .g-pr-grole { margin-top: 1px; font-size: 9.5px; padding: 0 5px; }
 }
+/* 表の入る欄が狭い時（スマホの縦・タブレットの縦の 2 列など。顔・名前・役割を横に並べると表が Version 21 より約 55 px 広くなり、ほかの列の部隊名・能力名が
+   途中で折り返す）：顔を名前の上に置く（列の幅は名前・役割の幅だけ。ほかの列は Version 21 と同じ幅で折り返さない）。顔のある表だけ（旧表示は掛からない） */
+.g-pr-sec.units:has(.g-pr-gen) { container-type: inline-size; }
+@container (max-width: 380px) {
+    .g-pr-gen { flex-direction: column; align-items: flex-start; gap: 3px; }
+    .g-pr-gen > .b-face { width: 34px; height: 34px; border-radius: 5px; }
+}
 
 /* ---- 右上：一時停止・速さ・全軍撤退 ---- */
 .b-ctrl {
@@ -830,11 +837,25 @@ body.mode-battle #build { display: none !important; }
     .b-bottom.many .b-cmd { padding: 7px 8px; font-size: 12.5px; }
     .b-bottom.many .b-cmds.with-ability .b-cmd { min-width: 58px; padding: 7px 6px; }
     .b-bottom.many ~ .b-hint { bottom: calc(var(--safe-b) + var(--card-h) + 14px); }
-    /* 武将の顔：縦の狭い画面では小さく（札・発動の知らせは Version 22 のまま。能力の欄は Version 23 で 40 px） */
+    /* 武将の顔：縦の狭い画面では小さく（札・発動の知らせは Version 22 のまま。能力の欄は Version 23 で 40 px。高さ 370 以下は 30 px：下の @media） */
     .b-card-h > .b-face { width: 14px; height: 14px; border-radius: 3px; }
     .b-card-h > .b-face.b-face-narrow { width: 8px; margin-right: -2px; border-radius: 2px; }
-    .b-abil.with-face:not([hidden]) { grid-template-columns: 40px minmax(0, 1fr); column-gap: 7px; }
+    /* 能力の欄（幅 236 px）：顔の右の能力の見出しが折り返して欄が高くならないように（左の地図の名札を覆わない）、短い状態の印（使える・使用済み・
+       使えない）は武将の行の右端（3 列目）へ移し、2 行目は能力名だけにする（見出しの箱 .b-ab-h を display: contents にして、中の 2 つを欄の格子に置く）。
+       長い状態（効果中 残り N 秒・敵方）は今までどおり能力名の後ろ（Version 21 でも折り返す長さ。顔の右の 2 行に収まる）。字の大きさ・色は変えない */
+    .b-abil.with-face:not([hidden]) { grid-template-columns: 40px minmax(0, 1fr) auto; column-gap: 7px; }
     .b-abil.with-face > .b-face { width: 40px; height: 40px; margin-bottom: 0; border-radius: 5px; }
+    .b-abil.with-face > .b-gen { grid-column: 2; }
+    .b-abil.with-face > .b-ab-h { grid-column: 2 / -1; }
+    .b-abil.with-face > .b-ab-h:not(:has(> .b-ab-st.active)):not(:has(> .b-ab-st.enemy)) { display: contents; }
+    .b-abil.with-face > .b-ab-h:not(:has(> .b-ab-st.active)):not(:has(> .b-ab-st.enemy)) > b { grid-column: 2 / -1; grid-row: 2; align-self: start; margin-top: 2px; }
+    .b-abil.with-face > .b-ab-h:not(:has(> .b-ab-st.active)):not(:has(> .b-ab-st.enemy)) > .b-ab-st { grid-column: 3; grid-row: 1; align-self: end; }
     .b-abnote.with-face:not([hidden]) { column-gap: 7px; }
     .b-abnote.with-face > .b-face { width: 28px; height: 28px; }
+}
+/* さらに縦の狭いスマホ（640×360・568×320 など）：能力の欄の顔は 30 px（武将の行と能力名の 2 行の高さ。欄を Version 21 より高くしない＝
+   すぐ下の地図の名札（大平原の徳川騎馬隊など）を覆わない） */
+@media (max-height: 370px) {
+    .b-abil.with-face:not([hidden]) { grid-template-columns: 30px minmax(0, 1fr) auto; column-gap: 6px; }
+    .b-abil.with-face > .b-face { width: 30px; height: 30px; border-radius: 4px; }
 }

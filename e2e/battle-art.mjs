@@ -70,7 +70,16 @@ const check = (ok, what, detail = '') => {
 
 /** 能力の欄の四角（欄・武将の行・能力の見出し・顔）。page.evaluate に渡す */
 function panelProbe() {
-    const box = (e) => (e ? (({ left, top, right, bottom }) => [left, top, right, bottom].map((v) => Math.round(v * 10) / 10))(e.getBoundingClientRect()) : null);
+    const box = (e) => {
+        if (!e) return null;
+        // 縦の狭い画面の能力の見出しは display: contents（中の能力名と状態の印を欄の格子に置く）：箱は中の 2 つを合わせた四角
+        if (getComputedStyle(e).display === 'contents') {
+            const rs = [...e.children].map((c) => c.getBoundingClientRect()).filter((r) => r.width > 0);
+            if (!rs.length) return null;
+            return [Math.min(...rs.map((r) => r.left)), Math.min(...rs.map((r) => r.top)), Math.max(...rs.map((r) => r.right)), Math.max(...rs.map((r) => r.bottom))].map((v) => Math.round(v * 10) / 10);
+        }
+        return (({ left, top, right, bottom }) => [left, top, right, bottom].map((v) => Math.round(v * 10) / 10))(e.getBoundingClientRect());
+    };
     const a = document.querySelector('.b-abil');
     const g = document.querySelector('.b-gen');
     const h = document.querySelector('.b-ab-h');
@@ -203,7 +212,9 @@ function panelSame(o, f) {
     return (
         near(o.abil[0], f.abil[0]) && near(o.abil[1], f.abil[1]) && near(o.abil[2], f.abil[2]) &&
         grow <= (f.vh <= 520 ? 18 : 22) + 0.2 && grow >= -hOf(o.gen) - 8 &&
-        !!fb && fb[0] >= f.abil[0] && fb[2] <= f.abil[2] && fb[1] >= f.abil[1] && fb[3] <= f.abil[3] && fb[2] - fb[0] >= (f.vh <= 520 ? 40 : 48) - 0.2
+        !!fb && fb[0] >= f.abil[0] && fb[2] <= f.abil[2] && fb[1] >= f.abil[1] && fb[3] <= f.abil[3] && fb[2] - fb[0] >= (f.vh <= 370 ? 30 : f.vh <= 520 ? 40 : 48) - 0.2 &&
+        // 欄の中で縦に流さない（欄の中の行が欄の高さに収まる）
+        (!f.scroll || f.scroll[0] <= f.scroll[1] + 1)
     );
 }
 /** 状態の指紋（ページの中で使う。台本の中から呼べるよう window に置く） */
@@ -319,7 +330,12 @@ async function plainsRun(kind, mode) {
     const bpress = pressers(page, touch);
     const waitSheet = (name) => page.waitForFunction((n) => window.__practice?.ui?.kind === 'sheet' && window.__practice.ui.sheet === n, name, POLL);
     const tag = `${mode}-${W}x${H}`;
-    const rep = { mode, kind };
+    const rep = { mode, kind, groundResp: [] };
+    // 地面の素材の応答（開始のボタンに間に合わなかった時も、素材の道が正しく読めることの証し）
+    page.on('response', (q) => {
+        const p = new URL(q.url()).pathname;
+        if (/\/art\/battle\/plains_[a-z]+\.webp$/.test(p)) rep.groundResp.push([p.replace(/^.*\//, ''), q.status()]);
+    });
     await page.goto(`${BASE}/?q=low${MODES[mode]}`);
     await page.waitForFunction(() => window.__game?.ui?.kind === 'title', null, POLL);
     await press('[data-id="practice"]');
@@ -573,9 +589,14 @@ async function plainsPart(kind) {
         if (m.mode === 'actual') {
             // Version 23：草地・土・道の 3 枚を使う（林床は不採用なので円の林に木は植えない）。開始のボタンに間に合わなければ、その合戦は今までの地面のまま
             if (m.artAtReady.ground === 'textured') {
-                check(m.art.ground === 'textured' && JSON.stringify(m.art.materials) === '["grass","dirt","road"]' && m.art.trees === 0, `${tg}: 実際の素材：草地・土・道の地面（林床なし・円の林に木を植えない）`, [m.artAtReady, m.art]);
+                check(m.art.ground === 'textured' && JSON.stringify(m.art.materials) === '["grass","dirt","road"]' && m.art.trees === 0 && !m.groundResp.some(([f]) => /forest/.test(f)), `${tg}: 実際の素材：草地・土・道の地面（林床なし・円の林に木を植えない）`, [m.artAtReady, m.art, m.groundResp]);
                 check(m.max.dust <= 24, `${tg}: 実際の素材：砂ぼこりは上限 24 まで`, m.max);
-            } else check(m.art.ground === 'vertex' && m.art.trees === 0 && m.max.shadows === 0, `${tg}: 実際の素材が開始のボタンに間に合わなかった：この合戦は今までの地面のまま（途中で差し替えない）`, [m.artAtReady, m.art, m.max]);
+            } else {
+                check(m.art.ground === 'vertex' && m.art.trees === 0 && m.max.shadows === 0, `${tg}: 実際の素材が開始のボタンに間に合わなかった：この合戦は今までの地面のまま（途中で差し替えない）`, [m.artAtReady, m.art, m.max]);
+                // 間に合わなかっただけで、読み込み自体は届いている（素材の道の誤りを「間に合わなかった」で見逃さない）
+                const ok = new Set(m.groundResp.filter(([, st]) => st === 200).map(([f]) => f));
+                check(['plains_grass.webp', 'plains_dirt.webp', 'plains_road.webp'].every((f) => ok.has(f)) && !m.groundResp.some(([f]) => /forest/.test(f)), `${tg}: 間に合わなかった素材も 3 枚とも読めている（200。林床は読まない）`, m.groundResp);
+            }
         }
         if (m.mode === 'fixture') {
             check(m.art.ground === 'textured' && m.art.trees > 0 && m.artAtReady.ground === 'textured', `${tg}: fixture：素材の地面・円の林の木（開始のボタンを出す前に使う）`, [m.artAtReady, m.art]);
@@ -709,7 +730,7 @@ async function ch2Part(policy) {
             const o = old[`ready_${id}`];
             const f = actual[`ready_${id}`];
             check(f.face?.id === `face.${f.general}` && f.withFace && !o.face, `${k}: ${id} 能力の欄の武将の行にその武将の顔（旧表示は無し）`, f.face);
-            check(panelSame(o, f) && f.abil[3] <= f.vh, `${k}: ${id} 使える時の能力の欄：位置・幅は旧表示と同じ、高くなるのは顔と見出しの折り返しの分だけ・画面の中（高さ ${hOf(o.abil)} → ${hOf(f.abil)}）`, { old: o.genText, actual: f.genText });
+            check(panelSame(o, f) && f.abil[3] <= f.vh && f.scroll[0] <= f.scroll[1] + 1, `${k}: ${id} 使える時の能力の欄：位置・幅は旧表示と同じ、高くなるのは顔と見出しの折り返しの分だけ・画面の中・欄の中で縦に流さない（高さ ${hOf(o.abil)} → ${hOf(f.abil)}）`, { old: o.genText, actual: f.genText, scroll: f.scroll });
             check(hOf(f.gen) <= hOf(o.gen), `${k}: ${id} 武将の行が折り返さない（${hOf(o.gen)} → ${hOf(f.gen)}）`);
             if (f.face) {
                 const fb = f.face.box;

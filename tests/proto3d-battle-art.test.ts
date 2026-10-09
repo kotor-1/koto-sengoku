@@ -879,7 +879,14 @@ describe('合戦の顔の規則（battle.css）：能力の欄は顔を大きく
         for (const r of rs) {
             for (const sel of sels(r)) {
                 // 使い方・残り・対象・範囲・効果・代償・回数・断りの行には、個別の規則を掛けない（文字の大きさ・折り返しは Version 22 と同じ）
-                expect(sel, sel).not.toMatch(/\.b-ab-r|\.b-ab-why|\.b-ab-long|\.b-ab-note|\.b-ab-st/);
+                const bare = sel.replace(/:not\(:has\([^()]*\)\)/g, '');
+                expect(bare, sel).not.toMatch(/\.b-ab-r|\.b-ab-why|\.b-ab-long|\.b-ab-note/);
+                // 状態の印（.b-ab-st）には、縦の狭い画面で武将の行の右端（3 列目）へ置く規則だけ（置く場所だけ。字の大きさ・色・余白は変えない）
+                if (/\.b-ab-st/.test(bare)) {
+                    expect(r.media, sel).toContain('max-height: 520px');
+                    expect(bare, sel).toMatch(/> \.b-ab-st$/);
+                    for (const p of r.body.split(';').map((x) => x.split(':')[0]!.trim()).filter(Boolean)) expect(['grid-column', 'grid-row', 'align-self'], sel).toContain(p);
+                }
                 // 欄そのものの大きさ・余白・位置は変えない。[hidden] の欄を出さない（display を変える規則は :not([hidden]) 付きだけ）
                 if (/^\.b-abil\.with-face(:not\(\[hidden\]\))?$/.test(sel)) {
                     for (const p of ['padding', 'height', 'min-height', 'max-height', 'margin', 'width', 'position', 'left', 'top', 'overflow', 'font-size', 'line-height']) expect(prop(r.body, p), `${sel} ${p}`).toBeNull();
@@ -905,7 +912,7 @@ describe('合戦の顔の規則（battle.css）：能力の欄は顔を大きく
         // 顔の規則は地図の上の名札（.b-label）に掛けない（名札は大きくしない）
         expect(rules().filter((r) => /b-face/.test(r.sel) && /\.b-label/.test(r.sel))).toEqual([]);
     });
-    it('能力の欄の顔の大きさ：PC 48〜64 px（大きな画面も）・縦の狭い画面 40 px 以上（1 列目の幅＝顔の幅）。欄が高くなるのは顔が 2 行より高い分だけ（PC 16 px・大きな画面 24 px・縦の狭い画面 14 px まで）', () => {
+    it('能力の欄の顔の大きさ：PC 48〜64 px（大きな画面も）・縦の狭い画面 40 px 以上・高さ 370 以下のスマホ 30 px（1 列目の幅＝顔の幅）。欄が高くなるのは顔が 2 行より高い分だけ（PC 16 px・大きな画面 24 px・縦の狭い画面 14 px・高さ 370 以下 1 px まで）', () => {
         const all = rules();
         const px = (v: string | null) => (v === null ? NaN : parseFloat(v));
         const find = (media: string, sel: string) => all.find((r) => (media ? r.media.includes(media) : r.media === '') && r.sel.split(',').map((x) => x.trim()).includes(sel));
@@ -937,6 +944,22 @@ describe('合戦の顔の規則（battle.css）：能力の欄は顔を大きく
         expect(cw + mb - (10.5 * 1.2 + 11 * 1.35 + 2)).toBeLessThanOrEqual(14);
         const compactHide = find('max-height: 520px', '.b-gen:has(+ .b-ab-h) .b-gen-ab');
         expect(compactHide && prop(compactHide.body, 'display')).toBe('none');
+        // 縦の狭い画面（欄の幅 236 px）：顔の右で能力の見出しが折り返さないように、短い状態の印（使える・使用済み・使えない）は武将の行の右端（3 列目）へ、
+        // 2 行目は能力名だけ（見出しの箱を display: contents）。長い状態（効果中・敵方）は見出しのまま（Version 21 でも折り返す長さ）
+        const SHORT = '.b-abil.with-face > .b-ab-h:not(:has(> .b-ab-st.active)):not(:has(> .b-ab-st.enemy))';
+        expect(prop(find('max-height: 520px', '.b-abil.with-face:not([hidden])')!.body, 'grid-template-columns')!.split(/\s+/)).toEqual([`${cw}px`, 'minmax(0,', '1fr)', 'auto']);
+        expect(prop(find('max-height: 520px', SHORT)!.body, 'display')).toBe('contents');
+        expect([prop(find('max-height: 520px', `${SHORT} > b`)!.body, 'grid-column'), prop(find('max-height: 520px', `${SHORT} > b`)!.body, 'grid-row')]).toEqual(['2 / -1', '2']);
+        expect([prop(find('max-height: 520px', `${SHORT} > .b-ab-st`)!.body, 'grid-column'), prop(find('max-height: 520px', `${SHORT} > .b-ab-st`)!.body, 'grid-row')]).toEqual(['3', '1']);
+        expect(prop(find('max-height: 520px', '.b-abil.with-face > .b-ab-h')!.body, 'grid-column')).toBe('2 / -1');
+        // さらに縦の狭いスマホ（高さ 370 以下：640×360・568×320）：顔は 30 px で、武将の行と能力名の 2 行の高さ（＋1 px）を超えない＝欄を高くしない
+        const sf = find('max-height: 370px', '.b-abil.with-face > .b-face')!;
+        const sw = px(prop(sf.body, 'width'));
+        expect(px(prop(sf.body, 'height'))).toBe(sw);
+        expect(sw).toBeGreaterThanOrEqual(30);
+        expect(sw).toBeLessThan(cw);
+        expect(firstCol('max-height: 370px')).toBe(sw);
+        expect(sw - (10.5 * 1.2 + 11 * 1.35 + 2)).toBeLessThanOrEqual(1);
         // PC で目標の欄を開いたまま（左上の列の高さに上限）：顔は 40 px 以上で、2 行（武将の行・能力の見出し）の高さを超えない＝欄を高くしない
         const go = find('min-height: 521px', '.b-root.goals-open .b-abil.with-face > .b-face')!;
         const gw = px(prop(go.body, 'width'));
