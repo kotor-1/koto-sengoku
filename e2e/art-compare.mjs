@@ -6,7 +6,7 @@
  *   変えられるもの（環境変数。カンマ区切り）：
  *     MODES=old,v24,default,fixture   old … ?art=old（新しい素材を一つも読まない＝Version 21 の見た目。比べの「前」）
  *                                 v24 … ?art=v24（Version 24 の見た目：第 1 版の顔 face.pack1.* と地面だけ。人物画・軍議の背景は無し。Version 25 から）
- *                                 default … 何も付けない（ゲームが読む素材の一覧 manifest.gen.json のとおり。Version 25 は第 2 版の人物画 6・顔 6・
+ *                                 default … 何も付けない（ゲームが読む素材の一覧 manifest.gen.json のとおり。Version 25 は第 2 版の人物画 4（話す人）・顔 6・
  *                                           軍議の背景（原寸以内の画面だけ）と、大平原の地面の草地・土・道の 3 枚。林床は入っていない）
  *                                 fixture … ?artFixture=1（開発時だけ。proto3d/dev-art の TEST の模様。配置・縮尺・動きの確かめ用で、見た目の素材ではない）
  *                                 v22 … 別の開発サーバー V22_BASE（Version 22 の 3fe5a7d を動かした物）の何も付けない見せ方（比べの「前」の 2 枚目）

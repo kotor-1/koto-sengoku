@@ -1,11 +1,11 @@
 /**
- * 会話・軍議の人物画（Version 25：素材パック sengoku_individual_art_v2 の半身の立ち絵 6 人）の確かめ（開発サーバー。本物の素材 manifest.gen.json）。
+ * 会話・軍議の人物画（Version 25：素材パック sengoku_individual_art_v2 の半身の立ち絵。話す 4 人）の確かめ（開発サーバー。本物の素材 manifest.gen.json）。
  *
  *   BASE=http://127.0.0.1:8734 node e2e/portrait-v25.mjs [出力先]
  *   変えられるもの（環境変数。カンマ区切り）：
  *     SIZES=1920x1080@1,1280x720@1,768x1024@2,844x390@2,667x375@2,568x320@2,390x844@2,360x640@2
  *                    幅x高さ@端末の画素の比。高さ 430 以下・幅 480 以下はタッチ（hasTouch・isMobile）。それ以外はマウスとキー
- *     MODES=default,v24,old   default … 何も付けない（人物画 6・新しい顔・原寸以内なら軍議の背景）、
+ *     MODES=default,v24,old   default … 何も付けない（人物画 4（話す人）・新しい顔・原寸以内なら軍議の背景）、
  *                             v24 … ?art=v24（Version 24 の見た目：第 1 版の顔だけ・人物画も背景も無し）、old … ?art=old（Version 21 の見た目）
  *     PARTS=ch1,ch2   ch1 … タイトル → はじめから → 織田の使者（使者の行・家康の行）→ 城門の忠勝（地の文・忠勝・家康・選択肢）→ 軍議（地の文・忠勝・
  *                           家康・酒井・石川・方針 A/B/C。PC は ↓ キーで B・C を選んだ所も撮る）→ A → 確かめ（それで決める／考え直す）→ 考え直す →
@@ -59,7 +59,9 @@ const manifest = JSON.parse(readFileSync(new URL('../proto3d/src/art/manifest.ge
 
 // 話し手 → 武将（proto3d/src/campaign/ieyasu1570/scenario.ts の IEYASU_SPEAKER_GENERAL と同じ。使者・村の使い・地の文・高札は無し）
 const SPEAKER_GENERAL = { hero: 'ieyasu', tadakatsu: 'tadakatsu', sakai: 'sakai', ishikawa: 'ishikawa', sakakibara: 'sakakibara', nagamasa: 'nagamasa' };
-const portraitOf = (sp) => (SPEAKER_GENERAL[sp] ? `portrait.${SPEAKER_GENERAL[sp]}` : null);
+// 人物画は会話・軍議で話す 4 人だけ（榊原・長政は立ち絵を公開しない：art/ids.ts の PORTRAIT_OF。その行は顔だけ）
+const PORTRAIT_GENERALS = new Set(['ieyasu', 'tadakatsu', 'sakai', 'ishikawa']);
+const portraitOf = (sp) => (PORTRAIT_GENERALS.has(SPEAKER_GENERAL[sp]) ? `portrait.${SPEAKER_GENERAL[sp]}` : null);
 const faceOf = (sp, mode) => (SPEAKER_GENERAL[sp] ? (mode === 'v24' ? `face.pack1.${SPEAKER_GENERAL[sp]}` : `face.${SPEAKER_GENERAL[sp]}`) : null);
 
 // ---- ui/artCanvas.ts の決まりと同じ計算（ここで期待する大きさを出す）

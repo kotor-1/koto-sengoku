@@ -7,7 +7,9 @@
  *                              高さ 430 以下・幅 480 以下はスマホ（タッチ・isMobile・端末の比 2）。-notch は左右 47px・下 21px の安全域
  *     MODES=default,old        default … 何も付けない（顔あり。Version 25 から人物画も出る：人物画の出ている行は、その人の顔を出さない）、
  *                              v24 … ?art=v24（Version 24 の見た目：第 1 版の顔だけ。人物画・軍議の背景は無し）、old … ?art=old（Version 21 の見た目）、
- *                              fail … 何も付けないが、素材の画像（art/ の下：顔・人物画・背景）の読み込みをすべて失敗させる（台詞の枠は Version 21 のまま・文字と操作が残る）
+ *                              fail … 何も付けないが、素材の画像（art/ の下：顔・人物画・背景）の読み込みをすべて失敗させる（台詞の枠は Version 21 のまま・文字と操作が残る）、
+ *                              failportrait … 何も付けないが、人物画（art/portraits/）だけ読めない（人物画は出ず、話し手の顔が台詞の枠に出る。Version 25）、
+ *                              failface … 何も付けないが、顔（art/faces/）だけ読めない（人物画は出る。台詞の枠は Version 21 のまま。Version 25）
  *     PARTS=ch1,ch2,fictional  ch1 … 織田の使者 → 城門の忠勝 → 軍議（方針 → 確かめ → 考え直す → 選び直し）、
  *                              ch2 … 第一章の結末の保存（tests/fixtures/ieyasu-ch1-v3/oda_defeat_broken_heavy：家康・忠勝が負傷）→ 第二章 → 忠勝 → 軍議、
  *                              fictional … 架空の章（主人公 hero は宗真：顔を付けない）
@@ -141,6 +143,9 @@ async function newPage(size, mode, extra = '') {
     // 顔の画像の読み込みの失敗（fail）：ネットワークで切る（registry の fetch が失敗する）
     // 置き場の /art/ で始まる物だけ（開発サーバーの部品 /src/art/*.ts・manifest.gen.json は止めない）
     if (mode === 'fail') await ctx.route((u) => u.pathname.startsWith('/art/'), (r) => r.abort('failed'));
+    // 片方だけ読めない（Version 25）：人物画だけ・顔だけ
+    if (mode === 'failportrait') await ctx.route((u) => u.pathname.startsWith('/art/portraits/'), (r) => r.abort('failed'));
+    if (mode === 'failface') await ctx.route((u) => u.pathname.startsWith('/art/faces/'), (r) => r.abort('failed'));
     const page = await ctx.newPage();
     page.setDefaultTimeout(600000);
     const errors = [];
@@ -280,7 +285,7 @@ async function run(part, size, mode) {
             const u = await page.evaluate(() => window.__game.ui);
             if (u?.kind !== 'script' || u.id !== id) break;
             // 顔・人物画の読み込み（非同期）を待つ（最大 3 秒。出ないのは記録に残る）。人物画が出た行は顔を出さない（Version 25）
-            if ((mode === 'default' || mode === 'v24') && FACE_OF[await page.evaluate(() => [...document.querySelectorAll('.g-layer[data-kind="script"] .g-dialog')].pop()?.dataset.speaker)] && part !== 'fictional') {
+            if (['default', 'v24', 'failportrait', 'failface'].includes(mode) && FACE_OF[await page.evaluate(() => [...document.querySelectorAll('.g-layer[data-kind="script"] .g-dialog')].pop()?.dataset.speaker)] && part !== 'fictional') {
                 await page.waitForFunction(() => {
                     const L = [...document.querySelectorAll('.g-layer[data-kind="script"]')].pop();
                     const f = L?.querySelector('.g-dialog canvas.g-face');
@@ -299,14 +304,16 @@ async function run(part, size, mode) {
             const L = `${tag} ${id}#${u.index + 1}(${p.speaker})`;
             // ---- 確かめ
             // 人物画（default）が出ている行は、その人の顔を出さない（同じ人を 2 つ並べない）
-            const portraitUp = mode === 'default' && !!p.portraitShown && p.portraitShown === PORTRAIT_OF[p.speaker];
-            const wantFace = part === 'fictional' || portraitUp ? null : mode === 'default' ? (FACE_OF[p.speaker] ?? null) : mode === 'v24' ? (FACE_OF_V24[p.speaker] ?? null) : null;
-            if (mode === 'default') check(!p.portraitShown || p.portraitShown === PORTRAIT_OF[p.speaker], `${L} 人物画は今の話し手本人の物だけ`, p.portraitShown);
-            if (mode !== 'default') check(!p.portrait, `${L} ${mode}：人物画の要素が無い`);
+            // failportrait（人物画が読めない）は顔が出る。failface（顔が読めない）は人物画だけ出て、顔は出ない
+            const withPortrait = mode === 'default' || mode === 'failface';
+            const portraitUp = withPortrait && !!p.portraitShown && p.portraitShown === PORTRAIT_OF[p.speaker];
+            const wantFace = part === 'fictional' || portraitUp ? null : mode === 'default' || mode === 'failportrait' ? (FACE_OF[p.speaker] ?? null) : mode === 'v24' ? (FACE_OF_V24[p.speaker] ?? null) : null;
+            if (withPortrait) check(!p.portraitShown || p.portraitShown === PORTRAIT_OF[p.speaker], `${L} 人物画は今の話し手本人の物だけ`, p.portraitShown);
+            if (!withPortrait) check(!p.portrait, `${L} ${mode}：人物画の要素が無い`);
             // 台詞の字は Version 21 のまま（高さ 430 以下 15px・それ以外 16px、字の間 0.03em）。顔のある枠でも小さくしない
             const v21Font = p.vh <= 430 ? 15 : 16;
             check(p.textFont === `${v21Font}px` && Math.abs(parseFloat(p.textLs) - v21Font * 0.03) < 0.01, `${L} 台詞の字は Version 21 と同じ（${v21Font}px・字の間 0.03em）`, { font: p.textFont, ls: p.textLs });
-            if (mode === 'old' || mode === 'fail' || part === 'fictional') {
+            if (mode === 'old' || mode === 'fail' || mode === 'failface' || part === 'fictional') {
                 check(!p.hasFace && p.faceEls === 0, `${L} 顔の空きも要素も無い（Version 21 と同じ枠）`, { hasFace: p.hasFace, n: p.faceEls });
             } else {
                 check(p.hasFace && p.faceEls === 1, `${L} 顔の空き（has-face）と canvas.g-face が 1 つ`, { hasFace: p.hasFace, n: p.faceEls });
@@ -417,7 +424,7 @@ async function run(part, size, mode) {
         await talkTo(person.id);
         await readScript('fictional', { hero: 'fictional-hero', narration: 'fictional-narration', [person.id]: 'fictional-person' });
     }
-    rec.errors = errors.filter((e) => !/\[art\]/.test(e) && !(mode === 'fail' && /Failed to load resource|ERR_FAILED/.test(e)));
+    rec.errors = errors.filter((e) => !/\[art\]/.test(e) && !(mode.startsWith('fail') && /Failed to load resource|ERR_FAILED/.test(e)));
     check(rec.errors.length === 0, `${tag} ページの誤りが無い`, rec.errors.slice(0, 3));
     await ctx.close();
     return rec;
@@ -457,41 +464,64 @@ for (const part of PARTS)
         log(`  ${part} ${size}: 顔が読めない版と旧表示を比べた ${n} 行、違い ${diff.length}`);
     }
 
-// ---- old と default の比べ（同じ部・大きさ・台本・行）：台詞の字・四角・枠の高さは同じ。枠と選択肢の重なりは old にもある物だけ
-const key = (l) => `${l.script}#${l.index}`;
-const same = (a, b) => !!a && !!b && ['l', 't', 'w', 'h'].every((k) => Math.abs(a[k] - b[k]) < 0.5);
+// ---- failface（顔だけ読めない）と old の比べ：台詞の枠・台詞・選択肢の四角が同じ（人物画の canvas が増えるだけ。Version 25）
 for (const part of PARTS)
     for (const size of SIZES) {
         const a = report.runs.find((r) => r.part === part && r.size === size && r.mode === 'old');
-        const b = report.runs.find((r) => r.part === part && r.size === size && r.mode === 'default');
-        if (!a || !b) continue;
-        const A = new Map(a.lines.map((l) => [key(l), l]));
+        const f = report.runs.find((r) => r.part === part && r.size === size && r.mode === 'failface');
+        if (!a || !f) continue;
+        const A = new Map(a.lines.map((l) => [`${l.script}#${l.index}`, l]));
         let n = 0;
-        const taller = [];
-        const moved = [];
-        const newOverlap = [];
-        let oldOverlap = 0;
-        for (const l of b.lines) {
-            const o = A.get(key(l));
+        const diff = [];
+        for (const l of f.lines) {
+            const o = A.get(`${l.script}#${l.index}`);
             if (!o) continue;
             n++;
-            if (l.dialog.h > o.dialog.h + 0.5) taller.push({ line: key(l), speaker: l.speaker, old: o.dialog.h, now: l.dialog.h, text: l.text.slice(0, 30) });
-            if (!same(l.textR, o.textR) || l.textFont !== o.textFont || l.textLs !== o.textLs || l.textLh !== o.textLh) moved.push({ line: key(l), old: [o.textR, o.textFont, o.textLs], now: [l.textR, l.textFont, l.textLs] });
-            if (o.dlgOverChoices) oldOverlap++;
-            if (l.dlgOverChoices && !o.dlgOverChoices) newOverlap.push(key(l));
-            if (part === 'fictional') check(l.html === o.html, `fictional ${size} ${key(l)} 会話の層の DOM が旧表示と同じ`);
+            if (JSON.stringify(l.dialog) !== JSON.stringify(o.dialog) || JSON.stringify(l.textR) !== JSON.stringify(o.textR) || JSON.stringify(l.choiceRects) !== JSON.stringify(o.choiceRects)) diff.push(`${l.script}#${l.index}`);
         }
-        check(n > 0, `${part} ${size} 旧表示と同じ行を比べた（${n} 行）`);
-        check(taller.length === 0, `${part} ${size} 枠が旧表示より高くなった行は無い`, taller.slice(0, 3));
-        check(moved.length === 0, `${part} ${size} 台詞の四角・字の大きさ・字の間・行の高さは旧表示と同じ`, moved.slice(0, 2));
-        check(newOverlap.length === 0, `${part} ${size} 枠が選択肢と新しく重なる行は無い（旧表示でも重なる行 ${oldOverlap}）`, newOverlap);
-        // 同じ入力で同じ台本・同じ行・同じ台詞・同じ選択肢を通った（物語は変わらない）
-        const seq = (r) => r.lines.map((l) => `${key(l)}|${l.name}|${l.text}|${(l.choiceIds ?? []).join(',')}`).join('\n');
-        check(seq(a) === seq(b), `${part} ${size} 旧表示と同じ台本・行・台詞・選択肢を通った（${b.lines.length} 行）`);
-        if (a.state || b.state) check(JSON.stringify(a.state) === JSON.stringify(b.state), `${part} ${size} 第二章の状態が旧表示と同じ`, { old: a.state, now: b.state });
-        report[`compare.${part}.${size}`] = { lines: n, taller, moved: moved.length, oldOverlap, newOverlap, compact: b.compact ?? 0, blocked: b.blocked ?? 0 };
-        log(`  ${part} ${size}: 比べた ${n} 行、高くなった ${taller.length}、台詞が動いた ${moved.length}、選択肢との重なり old ${oldOverlap}・新しく ${newOverlap.length}、重なりで顔を縮めた行 ${b.compact ?? 0}・出さなかった行 ${b.blocked ?? 0}`);
+        check(n > 0 && n === f.lines.length && n === a.lines.length, `${part} ${size} 顔だけ読めない：旧表示と同じ行を通った（${n} 行）`);
+        check(diff.length === 0, `${part} ${size} 顔だけ読めない：台詞の枠・台詞・選択肢の四角が旧表示と同じ`, diff.slice(0, 5));
+        report[`failface.${part}.${size}`] = { lines: n, diff };
+        log(`  ${part} ${size}: 顔だけ読めない版と旧表示を比べた ${n} 行、違い ${diff.length}`);
     }
+
+// ---- old と default（と failportrait・failface）の比べ（同じ部・大きさ・台本・行）：台詞の字・四角・枠の高さは同じ。枠と選択肢の重なりは old にもある物だけ
+const key = (l) => `${l.script}#${l.index}`;
+const same = (a, b) => !!a && !!b && ['l', 't', 'w', 'h'].every((k) => Math.abs(a[k] - b[k]) < 0.5);
+for (const part of PARTS)
+    for (const size of SIZES)
+        for (const bm of ['default', 'failportrait', 'failface']) {
+            const a = report.runs.find((r) => r.part === part && r.size === size && r.mode === 'old');
+            const b = report.runs.find((r) => r.part === part && r.size === size && r.mode === bm);
+            if (!a || !b) continue;
+            const T = `${part} ${size}${bm === 'default' ? '' : ` ${bm}`}`;
+            const A = new Map(a.lines.map((l) => [key(l), l]));
+            let n = 0;
+            const taller = [];
+            const moved = [];
+            const newOverlap = [];
+            let oldOverlap = 0;
+            for (const l of b.lines) {
+                const o = A.get(key(l));
+                if (!o) continue;
+                n++;
+                if (l.dialog.h > o.dialog.h + 0.5) taller.push({ line: key(l), speaker: l.speaker, old: o.dialog.h, now: l.dialog.h, text: l.text.slice(0, 30) });
+                if (!same(l.textR, o.textR) || l.textFont !== o.textFont || l.textLs !== o.textLs || l.textLh !== o.textLh) moved.push({ line: key(l), old: [o.textR, o.textFont, o.textLs], now: [l.textR, l.textFont, l.textLs] });
+                if (o.dlgOverChoices) oldOverlap++;
+                if (l.dlgOverChoices && !o.dlgOverChoices) newOverlap.push(key(l));
+                if (part === 'fictional') check(l.html === o.html, `fictional ${size} ${key(l)} 会話の層の DOM が旧表示と同じ`);
+            }
+            check(n > 0, `${T} 旧表示と同じ行を比べた（${n} 行）`);
+            check(taller.length === 0, `${T} 枠が旧表示より高くなった行は無い`, taller.slice(0, 3));
+            check(moved.length === 0, `${T} 台詞の四角・字の大きさ・字の間・行の高さは旧表示と同じ`, moved.slice(0, 2));
+            check(newOverlap.length === 0, `${T} 枠が選択肢と新しく重なる行は無い（旧表示でも重なる行 ${oldOverlap}）`, newOverlap);
+            // 同じ入力で同じ台本・同じ行・同じ台詞・同じ選択肢を通った（物語は変わらない）
+            const seq = (r) => r.lines.map((l) => `${key(l)}|${l.name}|${l.text}|${(l.choiceIds ?? []).join(',')}`).join('\n');
+            check(seq(a) === seq(b), `${T} 旧表示と同じ台本・行・台詞・選択肢を通った（${b.lines.length} 行）`);
+            if (a.state || b.state) check(JSON.stringify(a.state) === JSON.stringify(b.state), `${T} 第二章の状態が旧表示と同じ`, { old: a.state, now: b.state });
+            report[`compare.${bm === 'default' ? '' : `${bm}.`}${part}.${size}`] = { lines: n, taller, moved: moved.length, oldOverlap, newOverlap, compact: b.compact ?? 0, blocked: b.blocked ?? 0 };
+            log(`  ${T}: 比べた ${n} 行、高くなった ${taller.length}、台詞が動いた ${moved.length}、選択肢との重なり old ${oldOverlap}・新しく ${newOverlap.length}、重なりで顔を縮めた行 ${b.compact ?? 0}・出さなかった行 ${b.blocked ?? 0}`);
+        }
 
 report.checks = checks;
 const ng = checks.filter((c) => !c.ok);
