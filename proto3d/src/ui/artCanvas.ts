@@ -6,9 +6,9 @@
  * - 描く細かさ：端末の画素の比（devicePixelRatio）は 2 まで。元の画像より細かくはしない（大きな画面で余計な画素を持たない）。
  * - 大きさが変わったら描き直す（watchResize）。
  * - 旧表示（?art=old）・一覧に無い・読めないときは、要素を一つも作らない（Version 21 と同じ画面）。
- * 前半の計算（fitArt・fitArtBleed・backingScale・portraitLayout・portraitStep）と dialogFaceIds・dialogFaceFor は DOM を使わない純粋な関数（Node のテストで確かめる）。
+ * 前半の計算（fitArt・fitArtBleed・backingScale・portraitLayout・portraitStep・councilArtScale）と dialogFaceIds・dialogFaceFor は DOM を使わない純粋な関数（Node のテストで確かめる）。
  */
-import { artAvailable, artMode, loadArtBitmap } from '../art/registry';
+import { artAvailable, artEntry, artMode, loadArtBitmap } from '../art/registry';
 import { ART_IDS, type ArtId } from '../art/ids';
 
 // ================= 純粋な計算 =================
@@ -108,11 +108,12 @@ export function srcPerCssOf(r: ArtDrawRect): number {
 const MIN_BACKING = 0.25;
 
 /**
- * canvas の画素の細かさ（CSS の 1px あたりの画素）。端末の比は 1〜2 に収め、元の画像の細かさ（srcPerCss：CSS の 1px に入る元の画素）より細かくしない。
+ * canvas の画素の細かさ（CSS の 1px あたりの画素）。端末の比は 1〜maxDpr（既定 2）に収め、元の画像の細かさ（srcPerCss：CSS の 1px に入る元の画素）より細かくしない。
  * 元の画像が画面より粗い（1920 幅に 1536 の背景：0.8）ときは、CSS の 1px より粗い canvas にして、ブラウザが拡げて見せる（同じ見た目で画素を持たない）。
+ * 人物画は maxDpr 3（大きさを原寸÷端末の比までに抑えるので、端末の比 3 の画面でも原寸の画素で描ける：PortraitSlot）
  */
-export function backingScale(dpr: number, srcPerCss = Number.POSITIVE_INFINITY): number {
-    const d = Number.isFinite(dpr) && dpr > 0 ? Math.min(2, Math.max(1, dpr)) : 1;
+export function backingScale(dpr: number, srcPerCss = Number.POSITIVE_INFINITY, maxDpr = 2): number {
+    const d = Number.isFinite(dpr) && dpr > 0 ? Math.min(Math.max(1, maxDpr), Math.max(1, dpr)) : 1;
     if (!(srcPerCss > 0)) return d;
     return Math.max(MIN_BACKING, Math.min(d, srcPerCss));
 }
@@ -139,35 +140,51 @@ export interface PortraitLayoutInput {
     avoid: Box[];
     /** 避ける物との間（既定 8） */
     gap?: number;
+    /**
+     * 高さの上限（CSS の px）：人物画の画像の高さ ÷ 端末の画素の比。これより大きく出さない（元の画像を拡大しない）。省けば上限なし
+     */
+    maxH?: number;
+    /**
+     * 台詞の枠（人物画の、枠の後ろに入る所は描かない）。人物画と横に重なるなら、枠の上に肩まで（shoulderY）見えなければ出さない
+     */
+    dialog?: Box | null;
+    /** 肩が見え切る高さ（画像の上からの割合。art-build.py の set-anchor の shoulderY。省けば PORTRAIT_RULES.shoulderY） */
+    shoulderY?: number;
 }
 
-/** 人物画の大きさの決まり（docs：art-v22。測った所は Version 21 の会話・軍議の画面） */
+/** 人物画の大きさの決まり（docs：art-v22・art-v25-portraits。測った所は Version 21〜24 の会話・軍議の画面） */
 export const PORTRAIT_RULES = {
-    /** これより低い画面では出さない */
+    /** これより低い画面では出さない（顔だけ台詞の枠に出す） */
     minViewportH: 340,
-    /** スマホ横（高さ 430 以下）の目安の高さと、PC の上限 */
-    phoneH: 300,
-    pcH: 620,
-    /** 画面の高さに対する割合の上限（スマホ横・PC） */
+    /**
+     * 画面の高さに対する割合の上限（スマホ横＝高さ 430 以下・それより高い画面）。Version 25 から PC の 620px・スマホ横の 300px の上限を外し、
+     * 画面と元の画像の画素（maxH）が許すだけ大きくする
+     */
     phoneFrac: 0.8,
     pcFrac: 0.86,
     /** 左下の空き（人物画の左端から、その高さの範囲で一番近い避ける物まで）がこれより狭ければ出さない */
     minFreeW: 150,
     /** 人物画がこれより低くなるなら出さない（顔が小さすぎる） */
     minH: 210,
+    /** 肩が見え切る高さの既定（画像の上からの割合。素材の meta.shoulderY が無いとき。第 2 版の 6 枚は 0.40〜0.46） */
+    shoulderY: 0.46,
 } as const;
 
 /**
  * 人物画の大きさ（左下に置き、下端は画面の下の端）。避ける物と重ならない一番大きな大きさを返す。小さすぎれば null（出さない）。
  * 下から上・左から右へ広がる四角なので、避ける物ごとに「幅で避ける」か「高さで避ける」かの大きい方までは広げてよい。
- * 出さないのは：画面が低い（340 未満）・人物画が低くなりすぎる（210 未満）・その高さの範囲で左下の空きの幅が 150 未満。
+ * 出さないのは：画面が低い（340 未満）・人物画が低くなりすぎる（210 未満）・その高さの範囲で左下の空きの幅が 150 未満・
+ * 台詞の枠の上に肩まで見えない（頭・髷・肩を枠の後ろに隠さない。下の方＝腰から下だけが枠の後ろに入ってよい）。
+ * 元の画像の画素より大きくしない（maxH：画像の高さ ÷ 端末の画素の比）。
  */
 export function portraitLayout(p: PortraitLayoutInput): { w: number; h: number } | null {
     const R = PORTRAIT_RULES;
     if (!(p.vw > 0 && p.vh >= R.minViewportH && p.aspect > 0)) return null;
     const gap = p.gap ?? 8;
     const phone = p.vh <= 430;
-    let h = phone ? Math.min(R.phoneH, p.vh * R.phoneFrac) : Math.min(R.pcH, p.vh * R.pcFrac);
+    let h = p.vh * (phone ? R.phoneFrac : R.pcFrac);
+    // 元の画像を拡大しない（端末の画素で原寸まで）
+    if (p.maxH !== undefined && Number.isFinite(p.maxH)) h = Math.min(h, Math.max(0, p.maxH));
     // 画面の右へははみ出さない
     h = Math.min(h, (p.vw - p.left - gap) / p.aspect);
     const live = p.avoid.filter((o) => o.right > o.left && o.bottom > o.top && o.right > p.left && o.top < p.bottom);
@@ -184,7 +201,33 @@ export function portraitLayout(p: PortraitLayoutInput): { w: number; h: number }
     let free = p.vw - gap - p.left;
     for (const o of live) if (o.bottom > top) free = Math.min(free, o.left - gap - p.left);
     if (free < R.minFreeW) return null;
+    // 台詞の枠の後ろに入るのは腰から下だけ：枠が人物画と横に重なるなら、枠の上端より上に肩まで（shoulderY）見えていること
+    // （小さくすると上端が下がって見える割合が減るので、縮めずに出さない。顔は台詞の枠に出る）
+    const d = p.dialog;
+    if (d && d.right > d.left && d.bottom > d.top && d.left < p.left + w && d.right > p.left && d.top < p.bottom) {
+        const sy = p.shoulderY !== undefined && p.shoulderY > 0 && p.shoulderY < 1 ? p.shoulderY : R.shoulderY;
+        if (d.top - top < sy * h) return null;
+    }
     return { w, h };
+}
+
+/**
+ * 軍議の背景（cover で画面を埋め、上下 18% より内側は切らない：CouncilBackdrop）を描いた時の、元の画像の 1 画素あたりの端末の画素（拡大の倍率）。
+ * 1 以下なら原寸以内（元の画素より細かく見せない）。dpr は端末の画素の比（ブラウザの拡大を含む）
+ */
+export function councilArtScale(srcW: number, srcH: number, vw: number, vh: number, dpr: number): number {
+    if (!(srcW > 0 && srcH > 0 && vw > 0 && vh > 0)) return Number.POSITIVE_INFINITY;
+    const r = fitArt(srcW, srcH, Math.max(1, Math.round(vw)), Math.max(1, Math.round(vh)), 'cover', COUNCIL_CROP);
+    const d = Number.isFinite(dpr) && dpr > 0 ? dpr : 1;
+    return r.sw > 0 ? (r.dw / r.sw) * d : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * 軍議の背景を出してよいか：原寸以内（councilArtScale ≦ 1）の画面だけ。それより大きな画面（1920×1080・端末の比 2 の多くの画面）は
+ * 引き伸ばして見せず、Version 24 と同じ軍議の画面（3D の陣幕と暗い覆い）のまま（素材は 1664×936 で、1920 幅の原画ではない）
+ */
+export function councilArtFits(srcW: number, srcH: number, vw: number, vh: number, dpr: number): boolean {
+    return councilArtScale(srcW, srcH, vw, vh, dpr) <= 1 + 1e-9;
 }
 
 /** 軍議の背景の手前の幕・柱の、ゆっくりした横の揺れの幅（CSS の px。1280 で 7.5・844 で 5 まで） */
@@ -201,20 +244,21 @@ export function parallaxOffset(t: number, amp: number): number {
 }
 
 /** 行の話し手から、人物画をどうするか */
-export type PortraitStep = { kind: 'show'; id: ArtId } | { kind: 'dim' } | { kind: 'hide' };
+export type PortraitStep = { kind: 'show'; id: ArtId } | { kind: 'hide' };
 
 /** 人物でない話し手（地の文・高札）。この行では人物画を下げる */
 export const NON_PERSON_SPEAKERS: readonly string[] = ['narration', 'notice'];
 
 /**
- * 行の話し手から、人物画をどうするか（docs/art-v22：決めた見せ方）。
- * - 絵のある人（家康・忠勝）：その人の絵を明るく出す。
- * - 絵の無い人物（酒井・石川・使者・村の使い）：前の人の絵を、同じ位置のまま暗くして残す（出ていなければ何も出さない）。
- * - 地の文・高札：下げる（会話が終われば層ごと消える）。
+ * 行の話し手から、人物画をどうするか（docs/art-v25-portraits.md：決めた見せ方）。
+ * - 絵のある人（家康・忠勝・酒井・石川・榊原・長政）：その人の絵を出す。
+ * - 絵の無い話し手（使者・村の使い・知らない話し手）と、地の文・高札：下げる（前の人の絵を残さない）。
+ *   Version 22〜24 は「絵の無い人物の行は前の人の絵を暗く残す」だったが、使者の行に家康・忠勝の絵が話し手のように残るので、Version 25 で下げるに変えた
+ *   （暗く残っていた行は、ほとんど酒井・石川の行で、今は本人の絵が出る）。
  */
 export function portraitStep(speaker: string, id: ArtId | null): PortraitStep {
     if (NON_PERSON_SPEAKERS.includes(speaker)) return { kind: 'hide' };
-    return id ? { kind: 'show', id } : { kind: 'dim' };
+    return id ? { kind: 'show', id } : { kind: 'hide' };
 }
 
 // ================= 読み込み（同じ画像の約束を共有し、読めた物はすぐ描けるようにしておく） =================
@@ -262,8 +306,8 @@ export interface ArtLayer {
  * canvas の画素の大きさを CSS の大きさに合わせる（変わったときだけ。変えると中身は消える）。返りは CSS の 1px あたりの画素。
  * srcPerCss は「元の画像の画素 ÷ 描く CSS の px」（srcPerCssOf。元の画像より細かくしない。省けば端末の比のまま）。
  */
-export function sizeArtCanvas(canvas: HTMLCanvasElement, cssW: number, cssH: number, srcPerCss?: number): number {
-    const k = backingScale(typeof devicePixelRatio === 'number' ? devicePixelRatio : 1, srcPerCss);
+export function sizeArtCanvas(canvas: HTMLCanvasElement, cssW: number, cssH: number, srcPerCss?: number, maxDpr?: number): number {
+    const k = backingScale(typeof devicePixelRatio === 'number' ? devicePixelRatio : 1, srcPerCss, maxDpr);
     const w = Math.max(1, Math.round(cssW * k));
     const h = Math.max(1, Math.round(cssH * k));
     if (canvas.width !== w) canvas.width = w;
@@ -362,8 +406,16 @@ export function watchResize(fn: () => void): () => void {
 // どちらも、画像が読めてから初めて要素を作る（旧表示 ?art=old・一覧に無い・読めないときは何も作らない＝Version 21 と同じ画面）。
 // 押せない飾り（pointer-events: none。ui.css）。層の押し方（どこを押しても進む）・キー・声・見張りには触れない。
 
-/** 人物画の入れ替え（話し手が変わった）の重ね変わりの時間（ミリ秒。動きを減らすときは無し）。暗くする・戻すのも同じ長さ（ui.css） */
+/** 人物画の入れ替え（話し手が変わった）の重ね変わりの時間（ミリ秒。動きを減らすときは無し）。出る・下がるのも同じ長さ（ui.css） */
 export const PORTRAIT_FADE_MS = 140;
+
+/** 人物画の canvas の細かさの上限（端末の画素の比。大きさを原寸 ÷ 端末の比までにするので、3 の画面でも元の画素で描ける） */
+const PORTRAIT_MAX_DPR = 3;
+
+/** 端末の画素の比（ブラウザの拡大を含む。測れなければ 1） */
+function currentDpr(): number {
+    return typeof devicePixelRatio === 'number' && Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1;
+}
 
 /** 人物画は左下に寄せる（下端を画面の下の端に） */
 const PORTRAIT_FIT: FitOptions = { alignX: 0, alignY: 1 };
@@ -400,18 +452,18 @@ function withScrim(e: Element, b: Box): Box {
 
 /**
  * 会話・軍議の話し手の人物画（左下。<canvas class="g-portrait" data-art-id>）。選択肢・台詞の枠より下に重なる（DOM で前に置く）。
- * 大きさは、選択肢・軍議の見出し（後ろの薄い暗さを含む）・詳しく見る・メニュー・目的の札と重ならない一番大きな物（portraitLayout）。
- * 下の方は台詞の枠の後ろ（枠の中は描かない）。空きが小さすぎれば出さない。左右の反転はしない（着物の合わせが逆になる）。
- * 行ごとの出し方は portraitStep：絵の無い人物の行は、前の人の絵を同じ位置のまま暗く残す（class "dim"）。地の文・高札では下げる。
+ * 大きさは、選択肢・軍議の見出し（後ろの薄い暗さを含む）・詳しく見る・メニュー・目的の札と重ならない一番大きな物（portraitLayout）で、
+ * 元の画像の画素より大きくしない（画像の高さ ÷ 端末の画素の比まで）。下の方（腰から下）は台詞の枠の後ろ（枠の中は描かない）。
+ * 枠の上に肩まで見えない・空きが小さすぎるときは出さない（台詞の枠の顔がその人を示す）。左右の反転はしない（着物の合わせが逆になる）。
+ * 行ごとの出し方は portraitStep：絵のある人の行はその人の絵、絵の無い話し手・地の文・高札の行は下げる（前の人の絵を話し手のように残さない）。
+ * 位置は absolute で、出ても下がっても台詞・選択肢の位置は動かない（遅れて読めた絵も、押そうとしている選択肢をずらさない）。
  */
 export class PortraitSlot {
     private canvas: HTMLCanvasElement | null = null;
     /** 見せている人物画（出ている・出かけている。無ければ null） */
     private shown: ArtId | null = null;
-    /** 見せたい人物画（絵の無い人物の行では、前の人の絵のまま） */
+    /** 見せたい人物画（今の行の話し手の絵。絵の無い話し手・地の文の行は null） */
     private want: ArtId | null = null;
-    /** 絵の無い人物の行：前の人の絵を暗くしている */
-    private dimmed = false;
     /** 今の大きさと、台詞の枠で抜いた所（同じなら描き直さない） */
     private key = '';
     private fadeRaf = 0;
@@ -452,39 +504,23 @@ export class PortraitSlot {
         if (this.disposed) return;
         const step = portraitStep(speaker, this.resolve(speaker));
         if (step.kind === 'hide') {
+            // 絵の無い話し手（使者・村の使い）・地の文・高札：前の人の絵を下げる（話し手のように残さない）
             this.want = null;
-            this.dimmed = false;
             this.hide();
-            return;
-        }
-        if (step.kind === 'dim') {
-            // 前の人の絵が出ていれば、同じ位置のまま暗くする。出ていなければ何も出さない（後から読めても、この行では出さない）
-            if (this.shown) this.setDim(true);
-            else this.want = null;
             return;
         }
         const id = step.id;
         this.want = id;
-        this.dimmed = false;
         const bmp = peekArt(id);
         if (bmp) {
             this.show(id, bmp);
             return;
         }
-        // まだ読めていない：前の人の絵は下げ、読めたときにまだその人の行なら出す
+        // まだ読めていない：前の人の絵は下げ、読めたときにまだその人の行なら出す（読めなければ出さない。名前・台詞・操作はそのまま）
         if (this.shown !== id) this.hide();
         void loadArt(id).then((b) => {
-            if (b && !this.disposed && this.want === id && !this.dimmed) this.show(id, b);
+            if (b && !this.disposed && this.want === id) this.show(id, b);
         });
-    }
-
-    /** 暗くする・戻す（位置・大きさは変えない。動きを減らすときはすぐ） */
-    private setDim(on: boolean): void {
-        this.dimmed = on;
-        const c = this.canvas;
-        if (!c || c.classList.contains('dim') === on) return;
-        c.style.transition = this.reduced() ? 'none' : '';
-        c.classList.toggle('dim', on);
     }
 
     private ensureCanvas(id: ArtId): HTMLCanvasElement {
@@ -498,7 +534,7 @@ export class PortraitSlot {
     }
 
     /** 大きさと、台詞の枠の後ろで抜く所を測る（canvas は出ている前提。左端は CSS が決める：安全域を含む）。狭すぎれば null */
-    private measure(c: HTMLCanvasElement, bmp: ImageBitmap): { w: number; h: number; cut: ArtCut | null } | null {
+    private measure(c: HTMLCanvasElement, id: ArtId, bmp: ImageBitmap): { w: number; h: number; cut: ArtCut | null } | null {
         const origin = this.layer.getBoundingClientRect();
         const avoid: Box[] = [];
         for (const sel of ['.g-choices', '.g-council-head', '.g-council-map']) {
@@ -511,9 +547,21 @@ export class PortraitSlot {
             if (b) avoid.push(b);
         }
         const left = c.getBoundingClientRect().left - origin.left;
-        const size = portraitLayout({ vw: origin.width, vh: origin.height, left, bottom: origin.height, aspect: bmp.width / bmp.height, avoid });
-        if (!size) return null;
         const d = visibleBox(this.dialog, origin);
+        const sy = Number(artEntry(id)?.meta?.shoulderY);
+        const size = portraitLayout({
+            vw: origin.width,
+            vh: origin.height,
+            left,
+            bottom: origin.height,
+            aspect: bmp.width / bmp.height,
+            avoid,
+            // 元の画像を拡大しない（端末の画素で原寸まで）
+            maxH: bmp.height / currentDpr(),
+            dialog: d,
+            ...(Number.isFinite(sy) && sy > 0 && sy < 1 ? { shoulderY: sy } : {}),
+        });
+        if (!size) return null;
         const top = origin.height - size.h;
         const cut = d && d.left < left + size.w && d.right > left && d.bottom > top ? { x: d.left - left, y: d.top - top, w: d.right - d.left, h: d.bottom - d.top, r: 14 } : null;
         return { ...size, cut };
@@ -529,7 +577,7 @@ export class PortraitSlot {
         const wasShown = this.shown;
         const prev = wasShown && wasShown !== id ? peekArt(wasShown) : null;
         c.hidden = false;
-        const m = this.measure(c, bmp);
+        const m = this.measure(c, id, bmp);
         if (!m) {
             // 空きが小さすぎる（低い画面・選択肢が左まで来る）：出さない
             this.hide(true);
@@ -538,13 +586,12 @@ export class PortraitSlot {
         const key = `${m.w}x${m.h}|${m.cut ? `${Math.round(m.cut.x)},${Math.round(m.cut.y)},${Math.round(m.cut.w)},${Math.round(m.cut.h)}` : '-'}`;
         const changed = key !== this.key;
         this.key = key;
-        // 元の画像より細かい canvas は持たない（contain で合わせた大きさから）
-        sizeArtCanvas(c, m.w, m.h, srcPerCssOf(fitArt(bmp.width, bmp.height, m.w, m.h, 'contain', PORTRAIT_FIT)));
+        // 元の画像より細かい canvas は持たない（contain で合わせた大きさから）。端末の比 3 までは端末の画素で描く（大きさは原寸 ÷ 端末の比まで）
+        sizeArtCanvas(c, m.w, m.h, srcPerCssOf(fitArt(bmp.width, bmp.height, m.w, m.h, 'contain', PORTRAIT_FIT)), PORTRAIT_MAX_DPR);
         c.dataset.artId = id;
         this.shown = id;
         const reduced = this.reduced();
         c.style.transition = reduced ? 'none' : '';
-        c.classList.toggle('dim', this.dimmed);
         const visible = c.classList.contains('on');
         if (prev && !reduced && visible) {
             // 話し手が変わった：同じ枠の中で重ね変わる（後の絵は足し合わせで重ね、途中で薄くならない）
@@ -596,8 +643,8 @@ export class PortraitSlot {
     }
 
     /**
-     * 画面の大きさが変わった・台詞の枠の幅が変わった（顔の空きを取った）：測り直して描き直す
-     * （重ね変わりはしない。暗さはそのまま。狭くて隠していた絵は、広がれば出す）
+     * 画面の大きさが変わった・台詞の枠の幅が変わった（顔の空きを取った）・選択肢の並びを収め直した・軍議の背景が出入りした：測り直して描き直す
+     * （重ね変わりはしない。狭くて隠していた絵は、広がれば出す）
      */
     relayout(): void {
         if (this.disposed || !this.canvas) return;
@@ -838,6 +885,9 @@ export function artInUse(): boolean {
 
 /**
  * 軍議の背景（<div class="g-council-bg"> を軍議の層のいちばん前に置く。中に canvas.g-council-bg-base と、あれば canvas.g-council-bg-front）。
+ * - 出すのは、元の画像の画素より大きく見せない画面だけ（councilArtFits：cover で描いた倍率 × 端末の画素の比 ≦ 1）。
+ *   それより大きな画面では読みにも行かず、Version 24 と同じ軍議の画面（下の 3D の陣幕と層の暗い覆い）のまま。
+ *   窓の大きさ・向きが変わったら決め直す（出せる大きさになれば、その時に読んで出す。出せなくなれば外して Version 24 の画面に戻す）。
  * - 奥の画は箱を埋める（cover）。大事な物を置く上下 18%〜82% の内側は切らない（それ以上の横長では左右に暗い帯）。引き伸ばさない。
  * - 手前の幕・柱は、奥の画と同じ大きさ・位置で描き（fitArtBleed）、左右に揺れの幅だけ広く持つ。
  * - 揺れは CSS の animation（ui.css の g-council-sway。JS で毎フレーム動かさない）。動くのは body.g-council-art の間
@@ -845,6 +895,7 @@ export function artInUse(): boolean {
  *   ページが隠れている間はブラウザが止める。動きを減らすときは揺らさない（class "sway" を付けない・CSS の prefers-reduced-motion でも止める）。
  * - 背景が出ている間は、層の暗い覆いの代わりに弱い周辺の暗さ（CSS）。見出しには、その後ろだけ薄い暗さ（CSS の .g-art）。
  * - 下の 3D の陣幕の画（showCouncilHall）はそのまま（画像が読めなければ、今までの画面のまま）。
+ * - 出入りした（層の g-art が変わった：見出しの後ろの薄い暗さが出入りする）ら onChange を呼ぶ（人物画の測り直し）。
  */
 export class CouncilBackdrop {
     private root: HTMLDivElement | null = null;
@@ -856,6 +907,10 @@ export class CouncilBackdrop {
     private amp = 0;
     private stopResize: (() => void) | null = null;
     private disposed = false;
+    /** 読み始めた（出せる大きさになった時に 1 回だけ読む） */
+    private loading = false;
+    /** 今出している（原寸以内の画面で、層に g-art が付いている） */
+    private active = false;
 
     constructor(
         private readonly layer: HTMLElement,
@@ -863,9 +918,40 @@ export class CouncilBackdrop {
         private readonly reduced: () => boolean,
         /** 軍議がいちばん上か（情勢・メニュー・演出が重なっている間は、知らせを上げない・揺らさない） */
         private readonly isTop: () => boolean,
+        /** 背景が出た・外れた（人物画の測り直し） */
+        private readonly onChange: (() => void) | null = null,
     ) {}
 
+    /** 今の画面の大きさで、元の画像の画素より大きく見せずに描けるか（画像の大きさは一覧の記録から。読んでいなくても決められる） */
+    private fitsNow(): boolean {
+        const e = this.baseBmp ? { w: this.baseBmp.width, h: this.baseBmp.height } : artEntry(this.art.base);
+        if (!e) return false;
+        const r = this.layer.getBoundingClientRect();
+        return councilArtFits(e.w, e.h, r.width, r.height, currentDpr());
+    }
+
     start(): void {
+        // 旧表示・?art=v24・?artOff=council・一覧に無い：何もしない（見張りも付けない。Version 21／24 と同じ画面）
+        if (this.disposed || !artEntry(this.art.base)) return;
+        if (this.fitsNow()) this.begin();
+        // 今は原寸を超える大きさ：読まずに待ち、出せる大きさになったら読む
+        else this.watch();
+    }
+
+    /** 大きさ・向きが変わったら決め直す（出せる大きさになったら読む・出せなくなったら外す） */
+    private watch(): void {
+        if (!this.stopResize && !this.disposed) this.stopResize = watchResize(() => this.refit());
+    }
+
+    private unwatch(): void {
+        this.stopResize?.();
+        this.stopResize = null;
+    }
+
+    /** 読み始める（もう読めていれば同じフレームのうちに出す） */
+    private begin(): void {
+        if (this.loading || this.disposed) return;
+        this.loading = true;
         const b = peekArt(this.art.base);
         const f = this.art.front ? peekArt(this.art.front) : null;
         if (b) {
@@ -874,6 +960,8 @@ export class CouncilBackdrop {
         } else {
             void loadArt(this.art.base).then((bmp) => {
                 if (bmp && !this.disposed && this.layer.isConnected) this.build(bmp, this.art.front ? peekArt(this.art.front) : null, true);
+                // 読めない：この軍議の画面では出さない（見張りも外す。名前・台詞・選択肢はそのまま）
+                else if (!bmp) this.unwatch();
             });
         }
         if (this.art.front && !f) {
@@ -894,23 +982,19 @@ export class CouncilBackdrop {
         this.base = base;
         this.baseBmp = bmp;
         this.layer.insertBefore(root, this.layer.firstChild);
-        this.layer.classList.add('g-art');
-        // 軍議が一番上の間だけ（知らせを層の上へ・手前の幕を揺らす）。後で上に何か重なれば、view の syncUnder が外す
-        if (this.isTop()) document.body.classList.add('g-council-art');
         if (front && this.art.front) {
             const c = artCanvasEl('g-council-bg-front', this.art.front);
             root.append(c);
             this.front = c;
             this.frontBmp = front;
         }
-        this.draw();
-        this.stopResize = watchResize(() => this.draw());
         if (fade && !this.reduced()) {
             void root.offsetWidth;
         } else {
             root.style.transition = 'none';
         }
-        root.classList.add('on');
+        this.watch();
+        this.refit();
     }
 
     private addFront(bmp: ImageBitmap): void {
@@ -920,6 +1004,38 @@ export class CouncilBackdrop {
         this.front = c;
         this.frontBmp = bmp;
         this.draw();
+    }
+
+    /** 今の大きさで出すか外すかを決め直し、出すなら描く */
+    private refit(): void {
+        if (this.disposed) return;
+        const fits = this.fitsNow();
+        if (fits && !this.loading) {
+            this.begin();
+            return;
+        }
+        const root = this.root;
+        if (!root) return;
+        if (fits) {
+            this.draw();
+            if (!this.active) {
+                this.active = true;
+                root.hidden = false;
+                this.layer.classList.add('g-art');
+                // 軍議が一番上の間だけ（知らせを層の上へ・手前の幕を揺らす）。後で上に何か重なれば、view の syncUnder が外す
+                if (this.isTop()) document.body.classList.add('g-council-art');
+                root.classList.add('on');
+                this.onChange?.();
+            }
+        } else if (this.active || !root.hidden) {
+            // 原寸を超える大きさになった：外して Version 24 と同じ軍議の画面に戻す（引き伸ばして見せない）
+            this.active = false;
+            root.hidden = true;
+            root.classList.remove('on');
+            this.layer.classList.remove('g-art');
+            document.body.classList.remove('g-council-art');
+            this.onChange?.();
+        }
     }
 
     private draw(): void {
@@ -957,15 +1073,14 @@ export class CouncilBackdrop {
 
     /** 上の画面（情勢・見直しの演出・メニュー）が閉じて、また一番上になった：動きを減らす設定が変わっていれば描き直す（揺れの有無と幅） */
     resume(): void {
-        if (this.disposed || !this.front) return;
+        if (this.disposed || !this.front || !this.active) return;
         const swaying = this.amp > 0;
         if (swaying === this.reduced()) this.draw();
     }
 
     dispose(): void {
         this.disposed = true;
-        this.stopResize?.();
-        this.stopResize = null;
+        this.unwatch();
         if (this.root) document.body.classList.remove('g-council-art');
     }
 }

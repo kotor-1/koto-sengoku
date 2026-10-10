@@ -25,7 +25,8 @@ import { soundPanel } from './soundPanel';
 import { audio } from '../audio';
 import { deviceReducedMotion } from '../story/prefs';
 import type { ArtId } from '../art/ids';
-import { AI_ART_NOTE, CouncilBackdrop, DialogFace, PortraitSlot, artInUse, loadArt } from './artCanvas';
+import { artEntry } from '../art/registry';
+import { AI_ART_NOTE, CouncilBackdrop, DialogFace, PortraitSlot, artInUse, councilArtFits, loadArt } from './artCanvas';
 import { ChoiceFit } from './choiceFit';
 
 export type { ModalProbe } from './modal';
@@ -594,7 +595,11 @@ export class DomView implements GameView, LayerHost {
                 text,
                 covers: () => [layer.querySelector('.g-council-map'), this.menuBtn],
                 above: () => [head, this.hudEl],
-                onChange: () => face?.relayout(),
+                // 並びを収め直した（選択肢の四角が変わった）：顔と人物画を今の四角で決め直す（人物画は選択肢に重ねない）
+                onChange: () => {
+                    face?.relayout();
+                    portrait?.relayout();
+                },
             });
             const lines = sc.lines.length ? sc.lines : [{ speaker: 'narration', name: '', text: '……' }];
             // 生成イラスト素材（Version 22）：話し手の人物画（左下）と軍議の背景。素材が無い・旧表示（?art=old）・読めないときは何も作らない
@@ -607,7 +612,8 @@ export class DomView implements GameView, LayerHost {
             const faceAvoid = () => [choicesEl, head, layer.querySelector('.g-council-map'), name, text, count, more, ...this.portraitAvoid()];
             const face = opts.faceOf ? new DialogFace(box, lines.map((l) => l.speaker), opts.faceOf, opts.portraitOf ?? null, () => portrait?.relayout(), faceAvoid) : null;
             if (face && portrait) portrait.onShown = (id) => face.portrait(id);
-            const backdrop = council && opts.councilArt ? new CouncilBackdrop(layer, opts.councilArt, reduced, () => this.modals[this.modals.length - 1] === m) : null;
+            // 軍議の背景：元の画像の画素より大きく見せない画面だけ（CouncilBackdrop。ほかは Version 24 と同じ軍議の画面）。出入りしたら人物画を測り直す
+            const backdrop = council && opts.councilArt ? new CouncilBackdrop(layer, opts.councilArt, reduced, () => this.modals[this.modals.length - 1] === m, () => portrait?.relayout()) : null;
             const choices = sc.choices ?? [];
             let i = 0;
             let sel = Math.max(0, Math.min(choices.length - 1, sc.defaultChoice ?? 0));
@@ -674,7 +680,7 @@ export class DomView implements GameView, LayerHost {
                 if (atEnd && choices.length > 0 && choicesEl.hidden) showChoices();
                 // 顔：この行の話し手の顔（無い・人物画が出ている人の行は空きだけ）。人物画より先に（人物画が出れば、同じ行のうちに顔を下げる）
                 face?.set(line.speaker);
-                // 人物画：この行の話し手に絵があれば出す。絵の無い人物の行は前の人の絵を暗く残し、地の文・高札では下げる（選択肢が出た後の空きで大きさを決める）
+                // 人物画：この行の話し手に絵があれば出す。絵の無い話し手（使者・村の使い）・地の文・高札の行は下げる（選択肢が出た後の空きで大きさを決める）
                 portrait?.set(line.speaker);
                 // 声：表にある短い台詞だけ読む（前の行の声は止める。docs/audio.md）
                 audio()?.line(line.speaker, line.name, line.text);
@@ -741,6 +747,7 @@ export class DomView implements GameView, LayerHost {
                     backdrop?.resume();
                     fitter.fit();
                     face?.relayout();
+                    portrait?.relayout();
                 },
                 // 会話を閉じた（選んだ・終わった・タイトルへ）：声を止める。人物画・背景の見張りと揺れも止める
                 dispose: () => {
@@ -907,7 +914,12 @@ export class DomView implements GameView, LayerHost {
      * 読めた物は、会話・軍議の画面が開いた同じフレームのうちに出せる（artCanvas の peekArt）。旧表示・一覧に無いときは何も読まない。
      */
     preloadArt(ids: ArtId[]): void {
-        for (const id of new Set(ids)) void loadArt(id);
+        for (const id of new Set(ids)) {
+            // 背景は、今の画面で原寸以内に描けるときだけ（出さない画面では読みにも行かない。CouncilBackdrop が大きさの変わった時に読む）
+            const e = artEntry(id);
+            if (e?.kind === 'background' && !councilArtFits(e.w, e.h, innerWidth, innerHeight, typeof devicePixelRatio === 'number' && devicePixelRatio > 0 ? devicePixelRatio : 1)) continue;
+            void loadArt(id);
+        }
     }
 
     // ---------------- 演出・情勢 ----------------

@@ -511,9 +511,9 @@ export function takeGroundArt(set: GroundArtSet | null, open: boolean, apply: (s
     return false;
 }
 
-/** その戦場に地面の素材があるか（旧表示・一覧に無い戦場は false。画像はまだ読まない） */
+/** その戦場に地面の素材があるか（旧表示・一覧に無い戦場は false。Version 24 と比べる ?art=v24 は Version 24 と同じ地面を使う。画像はまだ読まない） */
 export function fieldHasArt(fieldId: string): boolean {
-    return artMode() === 'new' && !!FIELD_ART[fieldId];
+    return artMode() !== 'old' && !!FIELD_ART[fieldId];
 }
 
 /** 素材の一覧（開発用の仮の一覧は読み込みが後から終わる）を読み終えたか */
@@ -533,6 +533,7 @@ function urlParam(name: string): string | null {
 /**
  * URL の ?artOff=（または #artOff=）で外した地面の素材の種類（その種類だけ Version 21 の見た目で描く。保存には何も書かない）。
  * 値は grass・dirt・road・forest をコンマ（または空白）で区切る（例 ?artOff=road）。grass は土のむら（dirt）も外す。ground は 4 種類とも（Version 21 の地面）。知らない語は無視
+ * （人物画・軍議の背景・顔の portrait・council・face は art/registry.ts の artOff が読む。同じ ?artOff= に並べて書ける）
  */
 export function groundArtOff(): ReadonlySet<GroundMaterial> {
     const out = new Set<GroundMaterial>();

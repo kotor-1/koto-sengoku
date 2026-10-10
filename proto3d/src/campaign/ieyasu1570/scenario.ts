@@ -5,7 +5,9 @@
  */
 import { GATE_REACH, SPOTS, TALK_REACH, headingToward, type CastMember, type Spot } from '../../explore/cast';
 import { START, type Rect } from '../../layout';
-import { ART_IDS, FACE_OF, PORTRAIT_OF, type ArtId } from '../../art/ids';
+import { ART_IDS, PORTRAIT_OF, type ArtId } from '../../art/ids';
+import { faceArtIdOf } from '../../art/registry';
+import type { GeneralId } from '../../battle/generals';
 import type { Scenario, StatusLine } from '../scenario';
 import { formatSavedTime, signed } from '../scenario';
 import { IEYASU_LOOKS } from './looks';
@@ -192,37 +194,43 @@ export function ieyasuStatusLines(s: IeyasuState, extraPlaySec = 0): StatusLine[
     return lines;
 }
 
-// ================= 生成イラスト素材（Version 22） =================
+// ================= 生成イラスト素材（Version 22。Version 25 から人物画は 6 人） =================
 
 /**
- * 会話・軍議の話し手 → 人物画（第一章・第二章で同じ。話し手の id は両章の story.ts の Speaker）。
- * 絵があるのは家康（'hero'）と忠勝だけ。酒井・石川・使者・村の使い・高札・地の文は名前だけ（ほかの人の絵を代わりに使わない）。
- * 負傷している場面も同じ絵（表情・負傷の差分はまだ無い。負傷は台詞で伝える）。状態は見ない。
+ * 会話・軍議の話し手の id（両章の story.ts の Speaker）→ その人の武将の id（合戦の武将と同じ。人物画・顔はこの id で引く）。
+ * 表示名で確かめた対応：hero＝徳川家康（この章の主人公）・tadakatsu＝本多忠勝・sakai＝酒井忠次・ishikawa＝石川数正。
+ * sakakibara（榊原康政）・nagamasa（浅井長政）は今の台本では話さないが、話し手になったときに同じ人の絵を出すために載せる。
+ * 使者（oda_envoy・asai_envoy：主の信長・長政の言葉を伝える別人）・村の使い（village）・高札・地の文は載せない
+ * （ほかの人の絵を代わりに使わない。浅井家の使者に長政の絵を出さない）。状態（負傷など）は見ない
+ */
+export const IEYASU_SPEAKER_GENERAL: Readonly<Record<string, GeneralId>> = {
+    hero: 'ieyasu',
+    tadakatsu: 'tadakatsu',
+    sakai: 'sakai',
+    ishikawa: 'ishikawa',
+    sakakibara: 'sakakibara',
+    nagamasa: 'nagamasa',
+};
+
+const speakerGeneral = (speaker: string): GeneralId | null => (Object.prototype.hasOwnProperty.call(IEYASU_SPEAKER_GENERAL, speaker) ? IEYASU_SPEAKER_GENERAL[speaker]! : null);
+
+/**
+ * 会話・軍議の話し手 → 人物画（第一章・第二章で同じ）。Version 25 から家康・忠勝・酒井・石川（と榊原・長政）の 6 人
+ * （素材パック sengoku_individual_art_v2 の 1 人ずつの人物画）。使者・村の使い・高札・地の文は null（その行は人物画を下げる：ui/artCanvas.ts の portraitStep）。
+ * 負傷している場面も同じ絵（表情・負傷の差分は無い。負傷は台詞で伝える）。?art=v24・?art=old・?artOff=portrait では画面が読まない（art/registry.ts）
  */
 export function ieyasuPortraitOf(speaker: string): ArtId | null {
-    if (speaker === 'hero') return PORTRAIT_OF.ieyasu ?? null;
-    if (speaker === 'tadakatsu') return PORTRAIT_OF.tadakatsu ?? null;
-    return null;
+    const g = speakerGeneral(speaker);
+    return g ? (PORTRAIT_OF[g] ?? null) : null;
 }
 
 /**
- * 会話・軍議の話し手 → 台詞の枠の顔（第一章・第二章で同じ。話し手の id は両章の story.ts の Speaker）。
- * 顔があるのは家康（'hero'。この章の主人公は家康）・忠勝・酒井忠次・石川数正。使者・村の使い・高札・地の文は顔を出さない
- * （ほかの人の顔を代わりに使わない。酒井忠次・本多忠勝・榊原康政を取り違えない）。負傷している場面も同じ顔（差分はまだ無い）。状態は見ない。
+ * 会話・軍議の話し手 → 台詞の枠の顔（第一章・第二章で同じ）。顔があるのは人物画と同じ 6 人。使者・村の使い・高札・地の文は顔を出さない
+ * （ほかの人の顔を代わりに使わない。酒井忠次・本多忠勝・榊原康政を取り違えない）。既定は人物画と同じ原画の顔、?art=v24 は Version 24 の顔
+ * （art/registry.ts の faceArtIdOf）。負傷している場面も同じ顔。状態は見ない
  */
 export function ieyasuFaceOf(speaker: string): ArtId | null {
-    switch (speaker) {
-        case 'hero':
-            return FACE_OF.ieyasu ?? null;
-        case 'tadakatsu':
-            return FACE_OF.tadakatsu ?? null;
-        case 'sakai':
-            return FACE_OF.sakai ?? null;
-        case 'ishikawa':
-            return FACE_OF.ishikawa ?? null;
-        default:
-            return null;
-    }
+    return faceArtIdOf(speakerGeneral(speaker));
 }
 
 /** 軍議の背景（城内の陣幕の内。第一章・第二章の軍議で同じ。人のいない画で、状態で変わる物は描かない） */
@@ -281,7 +289,7 @@ export function ieyasuScenario(storage: StorageLike | null, store: IeyasuCampaig
         ambient: (s) => ieyasuAmbient(s),
         scoutPoints: (s) => ieyasuScoutPoints(s),
         scout: (s, pointId, marks) => ieyasuScout(s, pointId, marks),
-        // 生成イラスト素材（Version 22）：家康・忠勝の人物画、家康・忠勝・酒井・石川の台詞の枠の顔と、軍議の背景（素材が無い・旧表示なら画面は今までのまま）
+        // 生成イラスト素材（Version 22。Version 25 から）：家康・忠勝・酒井・石川（・榊原・長政）の人物画と台詞の枠の顔と、軍議の背景（素材が無い・旧表示なら画面は今までのまま）
         portraitOf: (_s, speaker) => ieyasuPortraitOf(speaker),
         faceOf: (_s, speaker) => ieyasuFaceOf(speaker),
         councilArt: IEYASU_COUNCIL_ART,

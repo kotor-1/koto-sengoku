@@ -7,7 +7,10 @@
             "h": 1532,
             "kind": "portrait",
             "bytes": 182574,
-            "sha256": "00bfc0b2bc2120f921d86cdf0949717737f54905d6a700d96a90a379b49feb4a"
+            "sha256": "00bfc0b2bc2120f921d86cdf0949717737f54905d6a700d96a90a379b49feb4a",
+            "meta": {
+                "shoulderY": 0.4308
+            }
         },
         "face.ieyasu": {
             "file": "art/faces/ieyasu_v2.webp",
@@ -23,7 +26,10 @@
             "h": 1526,
             "kind": "portrait",
             "bytes": 193960,
-            "sha256": "a6b14abc67fac5ddbddea38f02c65b80e9e783a66e37e332ca6cf74fdef1cbce"
+            "sha256": "a6b14abc67fac5ddbddea38f02c65b80e9e783a66e37e332ca6cf74fdef1cbce",
+            "meta": {
+                "shoulderY": 0.4515
+            }
         },
         "face.tadakatsu": {
             "file": "art/faces/tadakatsu_v2.webp",
@@ -39,7 +45,10 @@
             "h": 1485,
             "kind": "portrait",
             "bytes": 212364,
-            "sha256": "6c8848dadd64ebd86ceca0891c5113b8f19f93ee4aee7619de11123c065825d6"
+            "sha256": "6c8848dadd64ebd86ceca0891c5113b8f19f93ee4aee7619de11123c065825d6",
+            "meta": {
+                "shoulderY": 0.4209
+            }
         },
         "face.sakai": {
             "file": "art/faces/sakai_v2.webp",
@@ -55,7 +64,10 @@
             "h": 1523,
             "kind": "portrait",
             "bytes": 188908,
-            "sha256": "e3d19cac5e8fa730971edb89211782403f20c77e6ab1fd9346858cac1c726f1a"
+            "sha256": "e3d19cac5e8fa730971edb89211782403f20c77e6ab1fd9346858cac1c726f1a",
+            "meta": {
+                "shoulderY": 0.4097
+            }
         },
         "face.ishikawa": {
             "file": "art/faces/ishikawa_v2.webp",
@@ -71,7 +83,10 @@
             "h": 1526,
             "kind": "portrait",
             "bytes": 218478,
-            "sha256": "56f7114b2ade10ced2a5b623f1c80f696a14927945aa1a9ae492fd7104c96a7b"
+            "sha256": "56f7114b2ade10ced2a5b623f1c80f696a14927945aa1a9ae492fd7104c96a7b",
+            "meta": {
+                "shoulderY": 0.4594
+            }
         },
         "face.sakakibara": {
             "file": "art/faces/sakakibara_v2.webp",
@@ -87,7 +102,10 @@
             "h": 1522,
             "kind": "portrait",
             "bytes": 198598,
-            "sha256": "a850618a5442eea9392cb2e24be6d9a2f83afb5696b3861b6c8f49fca856a254"
+            "sha256": "a850618a5442eea9392cb2e24be6d9a2f83afb5696b3861b6c8f49fca856a254",
+            "meta": {
+                "shoulderY": 0.3968
+            }
         },
         "face.nagamasa": {
             "file": "art/faces/nagamasa_v2.webp",

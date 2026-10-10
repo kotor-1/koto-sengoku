@@ -141,6 +141,11 @@ describe('描く細かさ（backingScale）', () => {
         // 620 の高さに 1536 の人物画：2.48 → 端末の 2 まで
         expect(backingScale(2, 1536 / 620)).toBe(2);
         expect(backingScale(3, 1.5)).toBe(1.5);
+        // 人物画（maxDpr 3）：端末の比 3 までは端末の画素で描く。元の画像より細かくはしない
+        expect(backingScale(3, 3.2, 3)).toBe(3);
+        expect(backingScale(3, 2.5, 3)).toBe(2.5);
+        expect(backingScale(4, 9, 3)).toBe(3);
+        expect(backingScale(2, 9, 3)).toBe(2);
     });
 });
 
@@ -204,11 +209,14 @@ describe('軍議の手前の幕（fitArtBleed）：奥の画と同じ大きさ�
 
 describe('行の話し手と人物画（portraitStep）', () => {
     const IE = ART_IDS.portraitIeyasu as ArtId;
-    it('絵のある人は出す・絵の無い人物は前の絵を暗く残す・地の文と高札は下げる', () => {
+    it('絵のある人は出す。絵の無い話し手（使者・村の使い・知らない話し手）・地の文・高札は下げる（前の人の絵を暗く残さない：Version 25）', () => {
         expect(portraitStep('hero', IE)).toEqual({ kind: 'show', id: IE });
-        for (const sp of ['sakai', 'ishikawa', 'oda_envoy', 'asai_envoy', 'village']) expect(portraitStep(sp, null)).toEqual({ kind: 'dim' });
+        expect(portraitStep('sakai', ART_IDS.portraitSakai)).toEqual({ kind: 'show', id: ART_IDS.portraitSakai });
+        for (const sp of ['oda_envoy', 'asai_envoy', 'village', 'someone', '']) expect(portraitStep(sp, null)).toEqual({ kind: 'hide' });
         expect(portraitStep('narration', null)).toEqual({ kind: 'hide' });
         expect(portraitStep('notice', null)).toEqual({ kind: 'hide' });
+        // 地の文・高札は、id が渡っても下げる
+        expect(portraitStep('narration', IE)).toEqual({ kind: 'hide' });
     });
 });
 
@@ -230,9 +238,11 @@ describe('人物画の大きさ（portraitLayout）：Version 21 の画面で測
     const cases: { name: string; vw: number; vh: number; left: number; avoid: Box[]; expectH?: number; hidden?: boolean }[] = [
         { name: '1280×720 会話（選択肢あり）', vw: 1280, vh: 720, left: 24, avoid: [HUD, MENU_PC, box(610, 483, 420, 115)], expectH: 619 },
         { name: '1280×720 軍議（方針の選択肢）', vw: 1280, vh: 720, left: 24, avoid: [MAP_PC, HEAD_PC, MENU_PC, box(610, 246, 420, 352)], expectH: 619 },
-        { name: '1920×1080 軍議', vw: 1920, vh: 1080, left: 24, avoid: [MAP_PC, artHead(849, 18, 221, 51), box(1824, 10, 84, 41), box(1030, 600, 420, 352)], expectH: 620 },
+        // Version 25 から PC の 620 の上限を外した：1080 の 86%（元の画像の画素の上限は別の決まり：maxH）
+        { name: '1920×1080 軍議', vw: 1920, vh: 1080, left: 24, avoid: [MAP_PC, artHead(849, 18, 221, 51), box(1824, 10, 84, 41), box(1030, 600, 420, 352)], expectH: 928 },
         { name: '844×390 会話（選択肢あり）', vw: 844, vh: 390, left: 8, avoid: [HUD, MENU_PH, box(392, 159, 420, 121)], expectH: 298 },
-        { name: '844×390 軍議（方針の選択肢・要点）', vw: 844, vh: 390, left: 8, avoid: [MAP_PH, HEAD_PH, MENU_PH, box(272, 73, 540, 207)], expectH: 300 },
+        // Version 25 からスマホ横の 300 の上限を外した：390 の 80%
+        { name: '844×390 軍議（方針の選択肢・要点）', vw: 844, vh: 390, left: 8, avoid: [MAP_PH, HEAD_PH, MENU_PH, box(272, 73, 540, 207)], expectH: 312 },
         // 切り欠きのある端末（左右 47・下 21 の安全域）：選択肢が左へ寄るので小さく
         { name: '844×390 切り欠き 軍議', vw: 844, vh: 390, left: 55, avoid: [box(59, 12, 122, 45), HEAD_PH, box(677, 10, 108, 47), box(243, 52, 540, 207)], expectH: 270 },
         { name: '844×390 切り欠き 会話', vw: 844, vh: 390, left: 55, avoid: [box(59, 10, 466, 74), box(677, 10, 108, 47), box(363, 138, 420, 121)], expectH: 298 },
@@ -261,10 +271,38 @@ describe('人物画の大きさ（portraitLayout）：Version 21 の画面で測
             for (const o of c.avoid) expect(overlaps(rect, o), JSON.stringify(o)).toBe(false);
             expect(rect.right).toBeLessThanOrEqual(c.vw);
             expect(rect.top).toBeGreaterThanOrEqual(0);
-            // PC は 620 まで・スマホ横は 300 まで
-            expect(h).toBeLessThanOrEqual(c.vh <= 430 ? 300 : 620);
+            // 画面の高さの割合まで（スマホ横 80%・それより高い画面 86%）
+            expect(h).toBeLessThanOrEqual(Math.floor(c.vh * (c.vh <= 430 ? PORTRAIT_RULES.phoneFrac : PORTRAIT_RULES.pcFrac)));
         });
     }
+
+    it('元の画像を拡大しない（maxH：画像の高さ ÷ 端末の比）', () => {
+        const avoid = [MAP_PC, artHead(849, 18, 221, 51), box(1824, 10, 84, 41)];
+        // 1920×1080：端末の比 1 は 928（画面で決まる）。端末の比 2 は 1532÷2＝766
+        expect(portraitLayout({ vw: 1920, vh: 1080, left: 24, bottom: 1080, aspect: A, avoid, maxH: 1532 })!.h).toBe(928);
+        expect(portraitLayout({ vw: 1920, vh: 1080, left: 24, bottom: 1080, aspect: A, avoid, maxH: 1532 / 2 })!.h).toBe(766);
+        // スマホの縦 390×844（端末の比 3）：1532÷3＝510
+        expect(portraitLayout({ vw: 390, vh: 844, left: 24, bottom: 844, aspect: 968 / 1532, avoid: [], maxH: 1532 / 3 })!.h).toBe(510);
+        // 上限が小さすぎる（とても粗い画像）：210 未満なら出さない
+        expect(portraitLayout({ vw: 1280, vh: 720, left: 24, bottom: 720, aspect: A, avoid: [], maxH: 200 })).toBeNull();
+    });
+
+    it('台詞の枠の上に肩まで（shoulderY）見えなければ出さない（枠と横に重ならなければ見ない）', () => {
+        // 667×375：高さ 300（上端 75）。枠の上端 250 → 見える割合 58%
+        const dialog = (top: number, left = 14): Box => ({ left, top, right: 653, bottom: 361 });
+        const base = { vw: 667, vh: 375, left: 8, bottom: 375, aspect: A, avoid: [] as Box[] };
+        expect(portraitLayout({ ...base, dialog: dialog(250), shoulderY: 0.46 })).toEqual({ w: Math.floor(300 * A), h: 300 });
+        // 枠の上端 200 → 42%：肩が枠の後ろに入る → 出さない（既定の 0.46 でも）
+        expect(portraitLayout({ ...base, dialog: dialog(200), shoulderY: 0.46 })).toBeNull();
+        expect(portraitLayout({ ...base, dialog: dialog(200) })).toBeNull();
+        // 肩の高い絵（0.40）なら 42% でも出す
+        expect(portraitLayout({ ...base, dialog: dialog(200), shoulderY: 0.4 })).not.toBeNull();
+        // 枠が人物画の右にあって重ならない（PC の広い画面）：見ない
+        expect(portraitLayout({ ...base, dialog: dialog(200, 400), shoulderY: 0.46 })).not.toBeNull();
+        // 1280×720 の会話：枠の上端 614・人物画 619 の高さ（上端 101）→ 83% 見える
+        const pc = portraitLayout({ vw: 1280, vh: 720, left: 24, bottom: 720, aspect: A, avoid: [], dialog: { left: 168, top: 614, right: 1030, bottom: 706 }, shoulderY: 0.46 });
+        expect(pc).toEqual({ w: Math.floor(619 * A), h: 619 });
+    });
 });
 
 describe('人物画の大きさ：余白を切り詰めた細い人物画（加工版の縦横比 745×1453）', () => {
@@ -300,18 +338,28 @@ describe('手前の幕の揺れ', () => {
 // ================= シナリオ =================
 
 describe('シナリオの人物画と軍議の背景', () => {
-    it('歴史分岐：家康（hero）と忠勝だけ。地の文・高札・ほかの人物は出さない', () => {
+    it('歴史分岐：話し手本人の人物画（家康＝hero・忠勝・酒井・石川、話し手になれば榊原・長政）。使者・村の使い・地の文・高札・ほかの id は出さない', () => {
         expect(ieyasuPortraitOf('hero')).toBe(ART_IDS.portraitIeyasu);
         expect(ieyasuPortraitOf('tadakatsu')).toBe(ART_IDS.portraitTadakatsu);
-        for (const sp of ['narration', 'notice', 'sakai', 'ishikawa', 'oda_envoy', 'asai_envoy', 'village', '', 'ieyasu']) expect(ieyasuPortraitOf(sp)).toBeNull();
+        expect(ieyasuPortraitOf('sakai')).toBe(ART_IDS.portraitSakai);
+        expect(ieyasuPortraitOf('ishikawa')).toBe(ART_IDS.portraitIshikawa);
+        expect(ieyasuPortraitOf('sakakibara')).toBe(ART_IDS.portraitSakakibara);
+        expect(ieyasuPortraitOf('nagamasa')).toBe(ART_IDS.portraitNagamasa);
+        // 6 人それぞれ別の絵（酒井・忠勝・榊原を取り違えない）
+        expect(new Set(['hero', 'tadakatsu', 'sakai', 'ishikawa', 'sakakibara', 'nagamasa'].map(ieyasuPortraitOf)).size).toBe(6);
+        // 浅井家の使者に長政の絵・織田家の使者に信長の絵を出さない。信長・義景の絵は使わない（予約）
+        for (const sp of ['narration', 'notice', 'oda_envoy', 'asai_envoy', 'village', '', 'ieyasu', 'nobunaga', 'yoshikage', 'oda_nobunaga', 'toString', '__proto__']) expect(ieyasuPortraitOf(sp), sp).toBeNull();
         const sc = ieyasuScenario(new MemoryStorage());
         const s1 = devIeyasuState('explore');
         expect(sc.portraitOf?.(s1, 'hero')).toBe(ART_IDS.portraitIeyasu);
-        expect(sc.portraitOf?.(s1, 'sakai')).toBeNull();
+        expect(sc.portraitOf?.(s1, 'sakai')).toBe(ART_IDS.portraitSakai);
+        expect(sc.portraitOf?.(s1, 'oda_envoy')).toBeNull();
         // 第二章（同じシナリオの口。負傷していても同じ絵）
         const s2 = startChapter2(ch1Ending(ch1Aftermath('oda', 'defeat', 'kept', 'heavy')));
         expect(sc.portraitOf?.(s2, 'tadakatsu')).toBe(ART_IDS.portraitTadakatsu);
+        expect(sc.portraitOf?.(s2, 'ishikawa')).toBe(ART_IDS.portraitIshikawa);
         expect(sc.portraitOf?.(s2, 'village')).toBeNull();
+        expect(sc.portraitOf?.(s2, 'asai_envoy')).toBeNull();
         expect(sc.councilArt).toEqual({ base: ART_IDS.bgCouncil, front: ART_IDS.bgCouncilFront });
         expect(IEYASU_COUNCIL_ART.base).toBe('bg.council');
     });
@@ -461,10 +509,12 @@ describe('ChapterGame：会話・軍議の画面へ渡す人物画と背景の�
         const council = await next('script');
         expect(council.opts.mode).toBe('council');
         expect(council.opts.councilArt).toEqual({ base: ART_IDS.bgCouncil, front: ART_IDS.bgCouncilFront });
-        expect(council.opts.portraitOf?.('sakai')).toBeNull();
-        expect(council.opts.portraitOf?.('ishikawa')).toBeNull();
+        // Version 25 から酒井・石川にも本人の人物画
+        expect(council.opts.portraitOf?.('sakai')).toBe(ART_IDS.portraitSakai);
+        expect(council.opts.portraitOf?.('ishikawa')).toBe(ART_IDS.portraitIshikawa);
         expect(council.opts.portraitOf?.('tadakatsu')).toBe(ART_IDS.portraitTadakatsu);
-        // 軍議の顔：酒井・石川にもある（人物画は無い）
+        expect(council.opts.portraitOf?.('oda_envoy')).toBeNull();
+        // 軍議の顔：酒井・石川にもある
         expect(council.opts.faceOf?.('sakai')).toBe(ART_IDS.faceSakai);
         expect(council.opts.faceOf?.('ishikawa')).toBe(ART_IDS.faceIshikawa);
         expect(council.opts.faceOf?.('oda_envoy')).toBeNull();

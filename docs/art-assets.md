@@ -166,6 +166,7 @@
   - 元の生成結果との関係を ingest-pack が画素まで確かめた：{"type": "alpha-cleanup", "pixelExact": true, "upstreamAlphaMax": 254, "changedAlphaPx": 893949}
   - 透明：あり（本物の透明）
   - メタデータ：メタデータの塊は無い
+- アンカー（原画の画素の座標）：{"eyeY": null, "faceX": null, "shoulderY": 664.0}
 - 加工の手順：
   1. 素材パック sengoku_individual_art_v2 の portraits/ の PNG を ingest-pack で受け取る：記録の sha256・パックの一覧と一致し、元の生成結果（originals/portraits/）から説明どおりの透明の端の整理で作られた物だと画素まで確かめる
   1. 透過の確かめ：本物の透明（RGBA で、全体の 15% 以上がほぼ完全に透明）だけを受け取る。市松模様が描き込まれた物は受け取らない
@@ -173,7 +174,7 @@
   1. 不透明度 8 以下のかすかな所は完全に透明にする。透明な余白を切る（下端の体の切れ目は切らない。余白 8px を残す。頭・髷・肩は切らない）
   1. 拡大も縮小もしない（原寸のまま。PC の立ち絵の高さ 620 CSS px × 端末の画素の比 2 = 1240px より細かい原寸を残す）。左右反転しない
   1. WebP（品質 85 から、260KB に収まるまで 5 ずつ下げる。下限 60。透明は劣化させない（不透明度は元と同じ値）。メタデータは入れない）
-- 加工版：`proto3d/public/art/portraits/ieyasu_v2.webp` 968×1532・182,574 バイト（上限 266,240）・品質 85・sha256 `00bfc0b2bc2120f921d86cdf0949717737f54905d6a700d96a90a379b49feb4a`
+- 加工版：`proto3d/public/art/portraits/ieyasu_v2.webp` 968×1532・182,574 バイト（上限 266,240）・品質 85・sha256 `00bfc0b2bc2120f921d86cdf0949717737f54905d6a700d96a90a379b49feb4a`・meta {"shoulderY": 0.4308}
   - 処理の記録：{"trimBox": [54, 4, 1022, 1536], "scale": 1.0, "bottomRowOpaqueShare": 0.654}
 - 利用条件：確認済み。利用者が渡した素材パック sengoku_individual_art_v2 の docs/PROVENANCE_AND_USAGE.md（確認日 2026-10-10）。記録の sources.pack-v2.terms を見る。法的な保証ではない
 
@@ -212,6 +213,7 @@
   - 元の生成結果との関係を ingest-pack が画素まで確かめた：{"type": "alpha-cleanup", "pixelExact": true, "upstreamAlphaMax": 254, "changedAlphaPx": 867587}
   - 透明：あり（本物の透明）
   - メタデータ：メタデータの塊は無い
+- アンカー（原画の画素の座標）：{"eyeY": null, "faceX": null, "shoulderY": 699.0}
 - 加工の手順：
   1. 素材パック sengoku_individual_art_v2 の portraits/ の PNG を ingest-pack で受け取る：記録の sha256・パックの一覧と一致し、元の生成結果（originals/portraits/）から説明どおりの透明の端の整理で作られた物だと画素まで確かめる
   1. 透過の確かめ：本物の透明（RGBA で、全体の 15% 以上がほぼ完全に透明）だけを受け取る。市松模様が描き込まれた物は受け取らない
@@ -219,7 +221,7 @@
   1. 不透明度 8 以下のかすかな所は完全に透明にする。透明な余白を切る（下端の体の切れ目は切らない。余白 8px を残す。頭・髷・肩は切らない）
   1. 拡大も縮小もしない（原寸のまま。PC の立ち絵の高さ 620 CSS px × 端末の画素の比 2 = 1240px より細かい原寸を残す）。左右反転しない
   1. WebP（品質 85 から、260KB に収まるまで 5 ずつ下げる。下限 60。透明は劣化させない（不透明度は元と同じ値）。メタデータは入れない）
-- 加工版：`proto3d/public/art/portraits/tadakatsu_v2.webp` 926×1526・193,960 バイト（上限 266,240）・品質 85・sha256 `a6b14abc67fac5ddbddea38f02c65b80e9e783a66e37e332ca6cf74fdef1cbce`
+- 加工版：`proto3d/public/art/portraits/tadakatsu_v2.webp` 926×1526・193,960 バイト（上限 266,240）・品質 85・sha256 `a6b14abc67fac5ddbddea38f02c65b80e9e783a66e37e332ca6cf74fdef1cbce`・meta {"shoulderY": 0.4515}
   - 処理の記録：{"trimBox": [55, 10, 981, 1536], "scale": 1.0, "bottomRowOpaqueShare": 0.759}
 - 利用条件：確認済み。利用者が渡した素材パック sengoku_individual_art_v2 の docs/PROVENANCE_AND_USAGE.md（確認日 2026-10-10）。記録の sources.pack-v2.terms を見る。法的な保証ではない
 
@@ -258,6 +260,7 @@
   - 元の生成結果との関係を ingest-pack が画素まで確かめた：{"type": "alpha-cleanup", "pixelExact": true, "upstreamAlphaMax": 254, "changedAlphaPx": 934669}
   - 透明：あり（本物の透明）
   - メタデータ：メタデータの塊は無い
+- アンカー（原画の画素の座標）：{"eyeY": null, "faceX": null, "shoulderY": 676.0}
 - 加工の手順：
   1. 素材パック sengoku_individual_art_v2 の portraits/ の PNG を ingest-pack で受け取る：記録の sha256・パックの一覧と一致し、元の生成結果（originals/portraits/）から説明どおりの透明の端の整理で作られた物だと画素まで確かめる
   1. 透過の確かめ：本物の透明（RGBA で、全体の 15% 以上がほぼ完全に透明）だけを受け取る。市松模様が描き込まれた物は受け取らない
@@ -265,7 +268,7 @@
   1. 不透明度 8 以下のかすかな所は完全に透明にする。透明な余白を切る（下端の体の切れ目は切らない。余白 8px を残す。頭・髷・肩は切らない）
   1. 拡大も縮小もしない（原寸のまま。PC の立ち絵の高さ 620 CSS px × 端末の画素の比 2 = 1240px より細かい原寸を残す）。左右反転しない
   1. WebP（品質 85 から、260KB に収まるまで 5 ずつ下げる。下限 60。透明は劣化させない（不透明度は元と同じ値）。メタデータは入れない）
-- 加工版：`proto3d/public/art/portraits/sakai_v2.webp` 1003×1485・212,364 バイト（上限 266,240）・品質 85・sha256 `6c8848dadd64ebd86ceca0891c5113b8f19f93ee4aee7619de11123c065825d6`
+- 加工版：`proto3d/public/art/portraits/sakai_v2.webp` 1003×1485・212,364 バイト（上限 266,240）・品質 85・sha256 `6c8848dadd64ebd86ceca0891c5113b8f19f93ee4aee7619de11123c065825d6`・meta {"shoulderY": 0.4209}
   - 処理の記録：{"trimBox": [3, 51, 1006, 1536], "scale": 1.0, "bottomRowOpaqueShare": 0.778}
 - 利用条件：確認済み。利用者が渡した素材パック sengoku_individual_art_v2 の docs/PROVENANCE_AND_USAGE.md（確認日 2026-10-10）。記録の sources.pack-v2.terms を見る。法的な保証ではない
 
@@ -304,6 +307,7 @@
   - 元の生成結果との関係を ingest-pack が画素まで確かめた：{"type": "alpha-cleanup", "pixelExact": true, "upstreamAlphaMax": 254, "changedAlphaPx": 944846}
   - 透明：あり（本物の透明）
   - メタデータ：メタデータの塊は無い
+- アンカー（原画の画素の座標）：{"eyeY": null, "faceX": null, "shoulderY": 637.0}
 - 加工の手順：
   1. 素材パック sengoku_individual_art_v2 の portraits/ の PNG を ingest-pack で受け取る：記録の sha256・パックの一覧と一致し、元の生成結果（originals/portraits/）から説明どおりの透明の端の整理で作られた物だと画素まで確かめる
   1. 透過の確かめ：本物の透明（RGBA で、全体の 15% 以上がほぼ完全に透明）だけを受け取る。市松模様が描き込まれた物は受け取らない
@@ -311,7 +315,7 @@
   1. 不透明度 8 以下のかすかな所は完全に透明にする。透明な余白を切る（下端の体の切れ目は切らない。余白 8px を残す。頭・髷・肩は切らない）
   1. 拡大も縮小もしない（原寸のまま。PC の立ち絵の高さ 620 CSS px × 端末の画素の比 2 = 1240px より細かい原寸を残す）。左右反転しない
   1. WebP（品質 85 から、260KB に収まるまで 5 ずつ下げる。下限 60。透明は劣化させない（不透明度は元と同じ値）。メタデータは入れない）
-- 加工版：`proto3d/public/art/portraits/ishikawa_v2.webp` 978×1523・188,908 バイト（上限 266,240）・品質 85・sha256 `e3d19cac5e8fa730971edb89211782403f20c77e6ab1fd9346858cac1c726f1a`
+- 加工版：`proto3d/public/art/portraits/ishikawa_v2.webp` 978×1523・188,908 バイト（上限 266,240）・品質 85・sha256 `e3d19cac5e8fa730971edb89211782403f20c77e6ab1fd9346858cac1c726f1a`・meta {"shoulderY": 0.4097}
   - 処理の記録：{"trimBox": [46, 13, 1024, 1536], "scale": 1.0, "bottomRowOpaqueShare": 0.7}
 - 利用条件：確認済み。利用者が渡した素材パック sengoku_individual_art_v2 の docs/PROVENANCE_AND_USAGE.md（確認日 2026-10-10）。記録の sources.pack-v2.terms を見る。法的な保証ではない
 
@@ -351,6 +355,7 @@
   - 透明：あり（本物の透明）
   - メタデータ：メタデータの塊は無い
   - 右の袖の下の方（原画の y 1145〜1149、上から約 75%）の 5 画素だけが画像の右端に接している（不透明度 128 超。パックの image_validation.json の right_edge_opaque_pixels: 5 と同じ）。左下に置くと、その高さで袖の右の端がまっすぐに切れて見えうる（台詞の枠に隠れるかは画面で確かめる）
+- アンカー（原画の画素の座標）：{"eyeY": null, "faceX": null, "shoulderY": 711.0}
 - 加工の手順：
   1. 素材パック sengoku_individual_art_v2 の portraits/ の PNG を ingest-pack で受け取る：記録の sha256・パックの一覧と一致し、元の生成結果（originals/portraits/）から説明どおりの透明の端の整理で作られた物だと画素まで確かめる
   1. 透過の確かめ：本物の透明（RGBA で、全体の 15% 以上がほぼ完全に透明）だけを受け取る。市松模様が描き込まれた物は受け取らない
@@ -358,7 +363,7 @@
   1. 不透明度 8 以下のかすかな所は完全に透明にする。透明な余白を切る（下端の体の切れ目は切らない。余白 8px を残す。頭・髷・肩は切らない）
   1. 拡大も縮小もしない（原寸のまま。PC の立ち絵の高さ 620 CSS px × 端末の画素の比 2 = 1240px より細かい原寸を残す）。左右反転しない
   1. WebP（品質 85 から、260KB に収まるまで 5 ずつ下げる。下限 60。透明は劣化させない（不透明度は元と同じ値）。メタデータは入れない）
-- 加工版：`proto3d/public/art/portraits/sakakibara_v2.webp` 1022×1526・218,478 バイト（上限 266,240）・品質 85・sha256 `56f7114b2ade10ced2a5b623f1c80f696a14927945aa1a9ae492fd7104c96a7b`
+- 加工版：`proto3d/public/art/portraits/sakakibara_v2.webp` 1022×1526・218,478 バイト（上限 266,240）・品質 85・sha256 `56f7114b2ade10ced2a5b623f1c80f696a14927945aa1a9ae492fd7104c96a7b`・meta {"shoulderY": 0.4594}
   - 処理の記録：{"trimBox": [2, 10, 1024, 1536], "scale": 1.0, "bottomRowOpaqueShare": 0.633}
 - 利用条件：確認済み。利用者が渡した素材パック sengoku_individual_art_v2 の docs/PROVENANCE_AND_USAGE.md（確認日 2026-10-10）。記録の sources.pack-v2.terms を見る。法的な保証ではない
 
@@ -397,6 +402,7 @@
   - 元の生成結果との関係を ingest-pack が画素まで確かめた：{"type": "alpha-cleanup", "pixelExact": true, "upstreamAlphaMax": 254, "changedAlphaPx": 849889}
   - 透明：あり（本物の透明）
   - メタデータ：メタデータの塊は無い
+- アンカー（原画の画素の座標）：{"eyeY": null, "faceX": null, "shoulderY": 618.0}
 - 加工の手順：
   1. 素材パック sengoku_individual_art_v2 の portraits/ の PNG を ingest-pack で受け取る：記録の sha256・パックの一覧と一致し、元の生成結果（originals/portraits/）から説明どおりの透明の端の整理で作られた物だと画素まで確かめる
   1. 透過の確かめ：本物の透明（RGBA で、全体の 15% 以上がほぼ完全に透明）だけを受け取る。市松模様が描き込まれた物は受け取らない
@@ -404,7 +410,7 @@
   1. 不透明度 8 以下のかすかな所は完全に透明にする。透明な余白を切る（下端の体の切れ目は切らない。余白 8px を残す。頭・髷・肩は切らない）
   1. 拡大も縮小もしない（原寸のまま。PC の立ち絵の高さ 620 CSS px × 端末の画素の比 2 = 1240px より細かい原寸を残す）。左右反転しない
   1. WebP（品質 85 から、260KB に収まるまで 5 ずつ下げる。下限 60。透明は劣化させない（不透明度は元と同じ値）。メタデータは入れない）
-- 加工版：`proto3d/public/art/portraits/nagamasa_v2.webp` 877×1522・198,598 バイト（上限 266,240）・品質 85・sha256 `a850618a5442eea9392cb2e24be6d9a2f83afb5696b3861b6c8f49fca856a254`
+- 加工版：`proto3d/public/art/portraits/nagamasa_v2.webp` 877×1522・198,598 バイト（上限 266,240）・品質 85・sha256 `a850618a5442eea9392cb2e24be6d9a2f83afb5696b3861b6c8f49fca856a254`・meta {"shoulderY": 0.3968}
   - 処理の記録：{"trimBox": [107, 14, 984, 1536], "scale": 1.0, "bottomRowOpaqueShare": 0.784}
 - 利用条件：確認済み。利用者が渡した素材パック sengoku_individual_art_v2 の docs/PROVENANCE_AND_USAGE.md（確認日 2026-10-10）。記録の sources.pack-v2.terms を見る。法的な保証ではない
 

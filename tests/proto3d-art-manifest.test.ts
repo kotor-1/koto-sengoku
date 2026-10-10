@@ -6,11 +6,15 @@
  * - 開発用の TEST の模様（proto3d/dev-art/manifest.json）も同じ形で、全部の ID がそろい、ファイルがある。
  * - ゲームのコード（proto3d/src）は、正本の記録も dev-art も import しない（プロンプトの記録や TEST の模様を本番に入れない）。
  * - 読み込みの口（registry）：旧表示（?art=old）・一覧に無い・読めない は null で、例外を投げず、同じ ID を同時に重ねて読まない。
+ * - 見せ方（Version 25）：既定・?art=v24（Version 24 と同じ素材：第 1 版の顔・地面。人物画・軍議の背景なし）・?art=old と、
+ *   ?artOff=portrait,council,face（地面の grass・dirt・road・ground と並べて書ける）。URL だけで、保存には何も書かない。
  *   失敗は覚えたままにせず、前の失敗から 10 秒たった後の呼び出しで読み直す。時間切れ（30 秒）は通信の間だけ。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ART_IDS, FACE_OF, FIELD_ART, PORTRAIT_OF, V24_FACE_OF } from '../proto3d/src/art/ids';
-import { __setArtManifestForTest, artAvailable, artEntry, artMode, artUrl, loadArtBitmap, preloadArt, type ArtEntry } from '../proto3d/src/art/registry';
+import { __setArtManifestForTest, artAvailable, artBlocked, artEntry, artMode, artOff, artUrl, faceArtIdOf, loadArtBitmap, preloadArt, type ArtEntry } from '../proto3d/src/art/registry';
+import { fieldArtIds, fieldHasArt, groundArtOff } from '../proto3d/src/battle/groundArt';
+import { artInUse } from '../proto3d/src/ui/artCanvas';
 
 // テストは Node で動く。Node の型定義は入れていないので、使う関数だけ型を付ける
 interface Dirent {
@@ -633,5 +637,125 @@ describe('読み込みの口（registry）', () => {
     it('置き場はページからの相対（./art/…）。data: の URL は作らない', () => {
         expect(artUrl(entry)).toBe('./art/portraits/ieyasu.webp');
         expect(artUrl(entry).startsWith('data:')).toBe(false);
+    });
+});
+
+describe('見せ方（Version 25）：既定・?art=v24・?art=old・?artOff=（本物の一覧で）', () => {
+    const GENERALS = ['ieyasu', 'tadakatsu', 'sakai', 'ishikawa', 'sakakibara', 'nagamasa'] as const;
+    const at = (search: string, hash = '') => vi.stubGlobal('location', { search, hash });
+    let fetchMock: ReturnType<typeof vi.fn>;
+    beforeEach(() => {
+        __setArtManifestForTest(null);
+        fetchMock = vi.fn(async () => ({ ok: true, status: 200, blob: async () => new Blob([new Uint8Array([1])]) }));
+        vi.stubGlobal('fetch', fetchMock);
+        vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 256, height: 256, close() {} })));
+    });
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        __setArtManifestForTest(null);
+    });
+
+    it('既定：第 2 版の人物画 6・顔 6・軍議の背景・地面を使い、Version 24 の顔（face.pack1.*）は使わない', () => {
+        at('');
+        expect(artMode()).toBe('new');
+        for (const g of GENERALS) {
+            expect(artAvailable(PORTRAIT_OF[g]!), g).toBe(true);
+            expect(faceArtIdOf(g), g).toBe(FACE_OF[g]);
+            expect(artAvailable(FACE_OF[g]!), g).toBe(true);
+            expect(artAvailable(V24_FACE_OF[g]!), g).toBe(false);
+        }
+        expect(artAvailable(ART_IDS.bgCouncil)).toBe(true);
+        // 届いていない手前の幕・不採用の林床は一覧に無い
+        expect(artAvailable(ART_IDS.bgCouncilFront)).toBe(false);
+        expect(artAvailable(ART_IDS.plainsForest)).toBe(false);
+        expect(fieldHasArt('plains')).toBe(true);
+        expect(Object.keys(fieldArtIds('plains')).sort()).toEqual(['dirt', 'grass', 'road']);
+        // 顔の無い武将・知らない id は null（ほかの人の顔を代わりに使わない）
+        for (const g of ['nobunaga', 'yoshikage', 'oda', 'archer', '', null, undefined]) expect(faceArtIdOf(g as string)).toBeNull();
+        expect(artInUse()).toBe(true);
+    });
+
+    it('?art=v24（#art=v24）：Version 24 と同じ素材だけ（第 1 版の顔・地面）。人物画・軍議の背景・第 2 版の顔は使わない（読みにも行かない）', async () => {
+        for (const [q, h] of [
+            ['?art=v24', ''],
+            ['', '#art=v24'],
+        ] as const) {
+            at(q, h);
+            expect(artMode()).toBe('v24');
+            for (const g of GENERALS) {
+                expect(artEntry(PORTRAIT_OF[g]!), g).toBeNull();
+                expect(artEntry(FACE_OF[g]!), g).toBeNull();
+                expect(faceArtIdOf(g), g).toBe(V24_FACE_OF[g]);
+                expect(artEntry(V24_FACE_OF[g]!)?.file, g).toBe(`art/faces/${g}.webp`);
+            }
+            expect(artEntry(ART_IDS.bgCouncil)).toBeNull();
+            expect(fieldHasArt('plains')).toBe(true);
+            expect(Object.keys(fieldArtIds('plains')).sort()).toEqual(['dirt', 'grass', 'road']);
+            expect(artInUse()).toBe(true);
+            await expect(loadArtBitmap(ART_IDS.portraitTadakatsu)).resolves.toBeNull();
+            await expect(loadArtBitmap(ART_IDS.bgCouncil)).resolves.toBeNull();
+            await expect(loadArtBitmap(ART_IDS.faceSakai)).resolves.toBeNull();
+        }
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('?art=old：何も使わない（顔も地面も無い）', () => {
+        at('?art=old');
+        expect(artMode()).toBe('old');
+        for (const g of GENERALS) {
+            expect(faceArtIdOf(g)).toBeNull();
+            expect(artEntry(V24_FACE_OF[g]!)).toBeNull();
+        }
+        expect(fieldHasArt('plains')).toBe(false);
+        expect(artInUse()).toBe(false);
+    });
+
+    it('?artOff=portrait,council,face：種類ごとに外す。地面の語と並べて書ける（地面は groundArt が読む）。知らない語は無視', () => {
+        at('?artOff=portrait');
+        expect([...artOff()]).toEqual(['portrait']);
+        expect(artEntry(ART_IDS.portraitIeyasu)).toBeNull();
+        expect(artEntry(ART_IDS.faceIeyasu)).not.toBeNull();
+        expect(artEntry(ART_IDS.bgCouncil)).not.toBeNull();
+        at('?artOff=council,road');
+        expect(artEntry(ART_IDS.bgCouncil)).toBeNull();
+        expect(artEntry(ART_IDS.portraitIeyasu)).not.toBeNull();
+        expect([...groundArtOff()]).toEqual(['road']);
+        expect(Object.keys(fieldArtIds('plains')).sort()).toEqual(['dirt', 'grass']);
+        at('?artOff=Face ground xyz');
+        expect([...artOff()]).toEqual(['face']);
+        for (const g of GENERALS) {
+            expect(faceArtIdOf(g)).toBeNull();
+            expect(artEntry(FACE_OF[g]!)).toBeNull();
+        }
+        expect(fieldHasArt('plains')).toBe(true);
+        expect(fieldArtIds('plains')).toEqual({});
+        // Version 24 の見せ方でも顔を外せる
+        at('?art=v24&artOff=face');
+        for (const g of GENERALS) expect(faceArtIdOf(g)).toBeNull();
+        // 全部外す：人物画・背景・顔・地面のどれも使わない
+        at('?artOff=portrait,council,face,ground');
+        expect(Object.values(ART_IDS).filter((id) => artAvailable(id))).toEqual([]);
+        expect(artInUse()).toBe(false);
+        // 地面の語だけなら、人物画・背景・顔はそのまま
+        at('?artOff=grass,dirt');
+        expect(artOff().size).toBe(0);
+        expect(artBlocked(ART_IDS.portraitIeyasu)).toBe(false);
+    });
+
+    it('URL を読むだけで、保存（localStorage）には何も書かない', () => {
+        const store = new Map<string, string>();
+        vi.stubGlobal('localStorage', {
+            getItem: (k: string) => store.get(k) ?? null,
+            setItem: (k: string, v: string) => void store.set(k, v),
+            removeItem: (k: string) => void store.delete(k),
+        });
+        for (const q of ['?art=v24', '?art=old', '?artOff=portrait,council,face', '']) {
+            at(q);
+            artMode();
+            artOff();
+            for (const id of Object.values(ART_IDS)) artEntry(id);
+            for (const g of GENERALS) faceArtIdOf(g);
+        }
+        expect(store.size).toBe(0);
     });
 });

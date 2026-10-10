@@ -785,18 +785,18 @@ body.touch .g-sit-tab .n { display: none; }
     -webkit-touch-callout: none;
     -webkit-user-drag: none;
 }
-/* 人物画：左下。下端は画面の下の端（腰で切れた下端を画面の端に合わせる。台詞の枠の後ろに下の方が隠れる）。大きさは JS が決める */
+/* 人物画：左下。下端は画面の下の端（腰で切れた下端を画面の端に合わせる。台詞の枠の後ろに腰から下が隠れる）。大きさは JS が決める
+   （選択肢・見出し・ボタン・目的の札と重ねない・元の画像の画素より大きくしない・枠の上に肩まで見えなければ出さない）。
+   絵の無い話し手（使者・村の使い）・地の文・高札の行は下げる（Version 25 から。前の人の絵を暗く残さない） */
 .g-portrait {
     position: absolute;
     left: calc(var(--safe-l) + 24px);
     bottom: 0;
     display: block;
     opacity: 0;
-    transition: opacity 0.14s ease-out, filter 0.14s ease-out;
+    transition: opacity 0.14s ease-out;
 }
 .g-portrait.on { opacity: 1; }
-/* 絵の無い人物（酒井・石川・使者・村の使い）の行：前の人の絵を、同じ位置のまま暗く残す（消して出し直さない） */
-.g-portrait.dim { filter: brightness(0.55); }
 .g-portrait[hidden] { display: none; }
 @media (max-height: 430px) {
     .g-portrait { left: calc(var(--safe-l) + 8px); }
@@ -898,6 +898,8 @@ body.touch .g-sit-tab .n { display: none; }
     transition: opacity 0.22s ease-out;
 }
 .g-council-bg.on { opacity: 1; }
+/* 原寸を超える大きさの画面では外す（CouncilBackdrop。Version 24 と同じ軍議の画面） */
+.g-council-bg[hidden] { display: none; }
 .g-council-bg canvas { position: absolute; top: 0; left: 0; display: block; }
 /* 手前の幕・柱の、ゆっくりした横の揺れ（12 秒で 1 往復。幅は JS が --g-sway に入れる。JS で毎フレーム動かさない）。
    動くのは軍議の層が一番上の間（body.g-council-art）だけ。ほかの画面が重なれば、その位置で止まる */

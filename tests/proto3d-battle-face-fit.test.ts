@@ -5,7 +5,14 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../proto3d/src/art/registry', () => ({ artMode: () => 'new', loadArtBitmap: () => Promise.resolve(null) }));
+vi.mock('../proto3d/src/art/registry', async () => {
+    const ids = await import('../proto3d/src/art/ids');
+    return {
+        artMode: () => 'new',
+        faceArtIdOf: (g: string | null | undefined) => (g ? ((ids.FACE_OF as Record<string, string | undefined>)[g] ?? null) : null),
+        loadArtBitmap: () => Promise.resolve(null),
+    };
+});
 
 /** 札の見出し：名前に使える幅は avail − 顔の分（full 18 px・narrow 8 px・off 0 px）。名前の文字の幅は text */
 function fakeHead(avail: number, text: number) {

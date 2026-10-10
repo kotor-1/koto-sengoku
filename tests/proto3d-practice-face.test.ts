@@ -8,17 +8,22 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const art = vi.hoisted(() => ({ mode: 'new' as 'new' | 'old', fail: new Set<string>(), loads: [] as string[], resolvers: [] as (() => void)[], hold: false }));
-vi.mock('../proto3d/src/art/registry', () => ({
-    artMode: () => art.mode,
-    loadArtBitmap: (id: string) => {
-        if (art.mode === 'old') return Promise.resolve(null);
-        art.loads.push(id);
-        const bmp = art.fail.has(id) ? null : ({ width: 256, height: 256, id } as unknown as ImageBitmap);
-        if (!art.hold) return Promise.resolve(bmp);
-        return new Promise((r) => art.resolvers.push(() => r(bmp)));
-    },
-}));
+const art = vi.hoisted(() => ({ mode: 'new' as 'new' | 'v24' | 'old', fail: new Set<string>(), loads: [] as string[], resolvers: [] as (() => void)[], hold: false }));
+vi.mock('../proto3d/src/art/registry', async () => {
+    // 見せ方ごとの顔の選び方は本物の対応（art/ids.ts の FACE_OF・V24_FACE_OF）で引く（art/registry.ts の faceArtIdOf と同じ）
+    const ids = await import('../proto3d/src/art/ids');
+    return {
+        artMode: () => art.mode,
+        faceArtIdOf: (g: string | null | undefined) => (!g || art.mode === 'old' ? null : ((art.mode === 'v24' ? ids.V24_FACE_OF : ids.FACE_OF) as Record<string, string | undefined>)[g] ?? null),
+        loadArtBitmap: (id: string) => {
+            if (art.mode === 'old') return Promise.resolve(null);
+            art.loads.push(id);
+            const bmp = art.fail.has(id) ? null : ({ width: 256, height: 256, id } as unknown as ImageBitmap);
+            if (!art.hold) return Promise.resolve(bmp);
+            return new Promise((r) => art.resolvers.push(() => r(bmp)));
+        },
+    };
+});
 
 import { practiceBriefingInfo } from '../proto3d/src/campaign/practice';
 import { getField } from '../proto3d/src/battle/fields';

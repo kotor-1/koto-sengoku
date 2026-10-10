@@ -248,16 +248,20 @@ afterEach(() => {
 // ================= 口（純粋） =================
 
 describe('話し手 → 台詞の枠の顔（歴史分岐）', () => {
-    it('家康（hero）・忠勝・酒井・石川だけ。使者・村の使い・高札・地の文・ほかの id は出さない', () => {
+    it('家康（hero）・忠勝・酒井・石川（と、話し手になれば榊原・長政）は本人の顔。使者・村の使い・高札・地の文・ほかの id は出さない', () => {
         expect(ieyasuFaceOf('hero')).toBe(ART_IDS.faceIeyasu);
         expect(ieyasuFaceOf('tadakatsu')).toBe(ART_IDS.faceTadakatsu);
         expect(ieyasuFaceOf('sakai')).toBe(ART_IDS.faceSakai);
         expect(ieyasuFaceOf('ishikawa')).toBe(ART_IDS.faceIshikawa);
+        // 榊原・長政は今の台本では話さない。話し手の id になれば本人の顔（ほかの人の顔ではない）
+        expect(ieyasuFaceOf('sakakibara')).toBe(ART_IDS.faceSakakibara);
+        expect(ieyasuFaceOf('nagamasa')).toBe(ART_IDS.faceNagamasa);
         // 酒井忠次・本多忠勝・榊原康政を取り違えない（それぞれ別の顔）
-        expect(new Set(['hero', 'tadakatsu', 'sakai', 'ishikawa'].map(ieyasuFaceOf)).size).toBe(4);
+        expect(new Set(['hero', 'tadakatsu', 'sakai', 'ishikawa', 'sakakibara', 'nagamasa'].map(ieyasuFaceOf)).size).toBe(6);
         expect(ieyasuFaceOf('sakai')).not.toBe(FACE_OF.sakakibara);
         expect(ieyasuFaceOf('tadakatsu')).not.toBe(FACE_OF.sakakibara);
-        for (const sp of ['narration', 'notice', 'oda_envoy', 'asai_envoy', 'village', 'envoy', 'gate', 'council', '', 'ieyasu', 'sakakibara', 'nagamasa', 'nobunaga', 'yoshikage']) {
+        // 浅井家の使者は長政ではない（主の言葉を伝える別人）。織田家の使者も信長ではない
+        for (const sp of ['narration', 'notice', 'oda_envoy', 'asai_envoy', 'village', 'envoy', 'gate', 'council', '', 'ieyasu', 'nobunaga', 'yoshikage', 'toString', '__proto__']) {
             expect(ieyasuFaceOf(sp), sp).toBeNull();
         }
     });

@@ -139,7 +139,8 @@ export interface Scenario<S extends ScenarioStateCore = ScenarioStateCore> {
     startPose?(s: S): ExplorePose | null;
     /**
      * 会話・軍議で、話し手（台詞の speaker）に出す人物画の素材の ID（Version 22。art/ids.ts）。省くか null なら人物画を出さない。
-     * 架空の章は省く（話し手の id 'hero' が別の人物のため）。素材が無い・旧表示（?art=old）のときは画面が出さない。
+     * 架空の章は省く（話し手の id 'hero' が別の人物のため）。素材が無い・旧表示（?art=old）・Version 24 の見せ方（?art=v24）・?artOff=portrait のときは画面が出さない。
+     * 絵の無い話し手（null）の行は、画面が前の人の絵を下げる（Version 25。ui/artCanvas.ts の portraitStep）。
      */
     portraitOf?(s: S, speaker: string): ArtId | null;
     /**

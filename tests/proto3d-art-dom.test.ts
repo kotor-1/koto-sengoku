@@ -3,7 +3,9 @@
  * Node には DOM が無いので、部品が使う所だけの小さな偽の DOM（要素・canvas・getComputedStyle・窓の見張り・フレーム）で確かめる。
  * - 旧表示（?art=old）・素材の一覧が空・読めない：要素を一つも作らない（Version 21 と同じ画面）。
  * - 画像が読めたら作る（人物画は見出し・選択肢の前、背景は層のいちばん前）。手前の幕は奥の画と同じ大きさで、揺れの幅だけ広い。
- * - 絵の無い人物の行は、前の人の絵を同じ位置のまま暗く残す。地の文・高札では下げる。点滅させない。動きを減らすときは時間を掛けない。
+ * - 絵の無い話し手（使者・村の使い）・地の文・高札の行は下げる（Version 25 から。前の人の絵を暗く残さない）。動きを減らすときは時間を掛けない。
+ * - 人物画は元の画像の画素より大きくしない（端末の比で割った高さまで）。台詞の枠の上に肩まで見えなければ出さない。
+ * - 軍議の背景は原寸以内に描ける画面だけ（それ以外は読まず、Version 24 と同じ画面。大きさが変われば出し入れする）。?art=v24・?artOff=council は作らない。
  * - 後片付け：見張り・フレーム・時計・body の印を外す。片付けの後に読めた画像では何も作らない。
  * 本物のブラウザでの位置・重なりの確かめは、開発サーバーで ?artFixture=1（仮の確かめ用の画像。見た目の素材ではない）。
  */
@@ -463,65 +465,61 @@ describe('人物画（PortraitSlot）', () => {
         p2.dispose();
     });
 
-    it('絵の無い人物の行は、前の人の絵を同じ位置のまま暗く残す。地の文・高札で下げる。点滅させない', async () => {
+    it('絵の無い話し手（使者・村の使い）・地の文・高札の行は下げる（前の人の絵を話し手のように残さない）。同じ人の続く行は描き直さない', async () => {
         art();
         const l = councilLayer();
         const p = slot(l);
         p.set('narration');
         await flush();
         expect(portraitOf(l)).toBeNull();
-        // 絵の無い人物から始まる：何も出さない
-        p.set('sakai');
+        // 絵の無い話し手から始まる：何も出さない
+        p.set('oda_envoy');
         await flush();
         expect(portraitOf(l)).toBeNull();
         p.set('tadakatsu');
         await flush();
         const c = portraitOf(l)!;
-        const size = [c.style.width, c.style.height, c.width, c.height];
+        expect(c.classList.contains('on')).toBe(true);
+        expect(c.dataset.artId).toBe(ART_IDS.portraitTadakatsu);
         const draws = () => c.ctx!.draws().length;
         const n0 = draws();
-        // 酒井：忠勝の絵を暗く残す（同じ絵・同じ大きさ・描き直さない・消さない）
-        p.set('sakai');
-        await flush();
-        frames(3);
-        expect(c.classList.contains('on')).toBe(true);
-        expect(c.classList.contains('dim')).toBe(true);
-        expect(c.hidden).toBe(false);
-        expect(c.dataset.artId).toBe(ART_IDS.portraitTadakatsu);
-        expect([c.style.width, c.style.height, c.width, c.height]).toEqual(size);
-        expect(draws()).toBe(n0);
-        expect(c.style.transition).toBe('');
-        // 石川も続けて：暗いまま
-        p.set('ishikawa');
-        expect(c.classList.contains('dim')).toBe(true);
-        expect(draws()).toBe(n0);
-        // 忠勝に戻る：明るく（出し直さない）
+        // 同じ人の続く行：同じ絵・同じ大きさのまま（描き直さない）
         p.set('tadakatsu');
-        expect(c.classList.contains('dim')).toBe(false);
-        expect(c.classList.contains('on')).toBe(true);
         expect(draws()).toBe(n0);
-        // 家康（読めている）：重ね変わり。暗くはしない
-        await loadArt(ART_IDS.portraitIeyasu);
-        p.set('sakai');
-        p.set('hero');
+        // 使者：忠勝の絵を下げる（暗くして残さない）。薄くしてから隠す
+        p.set('asai_envoy');
+        expect(c.classList.contains('on')).toBe(false);
         expect(c.classList.contains('dim')).toBe(false);
+        expect(c.style.transition).toBe('');
+        await new Promise((r) => setTimeout(r, 200));
+        expect(c.hidden).toBe(true);
+        // 村の使い・知らない話し手も同じ（出さない）
+        for (const sp of ['village', 'someone']) {
+            p.set(sp);
+            await flush();
+            expect(c.hidden).toBe(true);
+            expect(c.classList.contains('on')).toBe(false);
+        }
+        // 忠勝に戻る：出し直す
+        p.set('tadakatsu');
+        expect(c.hidden).toBe(false);
+        expect(c.classList.contains('on')).toBe(true);
+        // 家康（読めている）：重ね変わり（後の絵は足し合わせ）
+        await loadArt(ART_IDS.portraitIeyasu);
+        p.set('hero');
         expect(c.dataset.artId).toBe(ART_IDS.portraitIeyasu);
         frames(20, 2e6);
         const last = c.ctx!.draws().slice(-1)[0]!;
         expect(last.op).toBe('lighter');
-        // 地の文：下げる（薄くしてから隠す）
+        // 地の文：下げる
         p.set('narration');
         expect(c.classList.contains('on')).toBe(false);
         await new Promise((r) => setTimeout(r, 200));
         expect(c.hidden).toBe(true);
-        // 地の文の後の絵の無い人物：出さない（暗い絵も出さない）
-        p.set('oda_envoy');
-        expect(c.hidden).toBe(true);
-        expect(c.classList.contains('on')).toBe(false);
         p.dispose();
     });
 
-    it('動きを減らす：暗くする・戻す・出す・下げるに時間を掛けない（transition none、すぐ隠す）', async () => {
+    it('動きを減らす：出す・下げるに時間を掛けない（transition none、すぐ隠す）', async () => {
         art();
         const l = councilLayer();
         const p = slot(l, true);
@@ -531,13 +529,75 @@ describe('人物画（PortraitSlot）', () => {
         expect(c.style.transition).toBe('none');
         expect(c.classList.contains('on')).toBe(true);
         p.set('asai_envoy');
-        expect(c.classList.contains('dim')).toBe(true);
+        expect(c.hidden).toBe(true);
         expect(c.style.transition).toBe('none');
         p.set('hero');
-        expect(c.classList.contains('dim')).toBe(false);
+        expect(c.hidden).toBe(false);
+        expect(c.classList.contains('on')).toBe(true);
         p.set('notice');
         expect(c.hidden).toBe(true);
         expect(dom.timers.size).toBe(0);
+        p.dispose();
+    });
+
+    it('元の画像を拡大しない：高さは画像の高さ ÷ 端末の比まで（端末の比 3 でも原寸の画素で描く）', async () => {
+        // 1280×720 で忠勝の画像（高さ 1453）：端末の比 1 は 619（画面で決まる）、2 は 619（1453÷2＝726 より小さい）、3 は 484（1453÷3）
+        for (const [dpr, want] of [
+            [1, 619],
+            [2, 619],
+            [3, Math.floor(1453 / 3)],
+        ] as const) {
+            art();
+            __clearArtReadyForTest();
+            const { layer } = installDom(1280, 720, dpr);
+            const head = new FakeEl('div');
+            head.className = 'g-council-head';
+            head.rect = box(529, 18, 221, 51);
+            const dialog = new FakeEl('div');
+            dialog.className = 'g-dialog';
+            dialog.rect = box(250, 614, 780, 92);
+            layer.append(head, dialog);
+            const p = new PortraitSlot(layer as unknown as HTMLElement, head as unknown as HTMLElement, dialog as unknown as HTMLElement, resolve, () => false, () => []);
+            p.set('tadakatsu');
+            await flush();
+            const c = layer.querySelector('.g-portrait')!;
+            const h = parseFloat(String(c.style.height));
+            expect(h).toBe(want);
+            // 端末の画素での高さ（CSS の高さ × 端末の比）は元の画像の高さ以下。canvas の画素は端末の比 3 まで
+            expect(h * dpr).toBeLessThanOrEqual(1453);
+            expect(c.height).toBeLessThanOrEqual(1453);
+            expect(c.height).toBe(Math.round(h * Math.min(dpr, 3, 1453 / h)));
+            p.dispose();
+        }
+    });
+
+    it('台詞の枠の上に肩まで見えない（枠が高い・人物画が低い）なら出さない。頭・髷・肩を枠の後ろに隠さない', async () => {
+        art({ assets: { ...ASSETS, [ART_IDS.portraitTadakatsu]: { file: 'art/portraits/tadakatsu.webp', w: 745, h: 1453, kind: 'portrait', meta: { shoulderY: 0.45 } } as never } });
+        // 667×375：人物画は 300 の高さ（上端 75）。枠の上端 250 → 見える割合 175/300＝58% ≧ 45% で出す
+        const { layer } = installDom(667, 375);
+        const head = new FakeEl('div');
+        head.className = 'g-council-head';
+        head.rect = box(222, 18, 222, 51);
+        const dialog = new FakeEl('div');
+        dialog.className = 'g-dialog';
+        dialog.rect = box(14, 250, 639, 111);
+        layer.append(head, dialog);
+        const p = new PortraitSlot(layer as unknown as HTMLElement, head as unknown as HTMLElement, dialog as unknown as HTMLElement, resolve, () => false, () => []);
+        p.set('tadakatsu');
+        await flush();
+        const c = layer.querySelector('.g-portrait')!;
+        expect(c.hidden).toBe(false);
+        const h = parseFloat(String(c.style.height));
+        expect((250 - (375 - h)) / h).toBeGreaterThanOrEqual(0.45);
+        // 枠が高くなった（3 行の台詞）：上端 200 → 見える割合 125/300＝42% < 45%：出さない（縮めると見える割合はもっと減る）
+        dialog.rect = box(14, 200, 639, 161);
+        p.set('tadakatsu');
+        expect(c.hidden).toBe(true);
+        expect(c.classList.contains('on')).toBe(false);
+        // 枠が元に戻った：出す
+        dialog.rect = box(14, 250, 639, 111);
+        p.set('tadakatsu');
+        expect(c.hidden).toBe(false);
         p.dispose();
     });
 
@@ -614,31 +674,95 @@ describe('軍議の背景（CouncilBackdrop）', () => {
         expect(dom.body.classList.contains('g-council-art')).toBe(false);
     });
 
-    it('canvas は元の画像より細かくしない（端末の比 2 のスマホ・元の画像より大きな画面）', async () => {
+    it('canvas は元の画像より細かくしない（端末の比 2 のスマホ横で原寸以内のとき）', async () => {
         art();
-        installDom(844, 390, 2);
+        installDom(667, 375, 2);
         const layer = dom.body.children[0]!.children[0]!;
         const b = new CouncilBackdrop(layer as unknown as HTMLElement, COUNCIL, () => false, () => true);
         b.start();
         await flush();
         const [base, front] = layer.firstChild!.children as [FakeEl, FakeEl];
-        const r = fitArt(1536, 1024, 844, 390, 'cover', { maxCropY: 0.18 });
+        const r = fitArt(1536, 1024, 667, 375, 'cover', { maxCropY: 0.18 });
         // 描く元の画像の幅（sw）より多い画素は持たない
         expect(base.width).toBeLessThanOrEqual(Math.ceil(r.sw));
-        expect(base.width).toBeGreaterThan(844);
+        expect(base.width).toBeGreaterThan(667);
         expect(base.height).toBeLessThanOrEqual(Math.ceil(r.sh));
         expect(front.height).toBe(base.height);
         b.dispose();
-        // 1920×1080（端末の比 1）：元の画像（1536）が画面より粗い → canvas も 1536（CSS の 1920 に拡げて見せる）
-        installDom(1920, 1080, 1);
-        const big = dom.body.children[0]!.children[0]!;
-        const b2 = new CouncilBackdrop(big as unknown as HTMLElement, COUNCIL, () => false, () => true);
-        b2.start();
-        await flush();
-        const [base2] = big.firstChild!.children as [FakeEl];
-        expect([base2.width, base2.height]).toEqual([1536, 864]);
-        expect(base2.style.width).toBe('1920px');
-        b2.dispose();
+    });
+
+    it('原寸を超える画面（1920×1080・端末の比 2 の 844×390）では読まずに Version 24 の軍議の画面のまま。大きさが変われば出し入れする', async () => {
+        for (const [W, H, dpr] of [
+            [1920, 1080, 1],
+            [844, 390, 2],
+        ] as const) {
+            const urls = art();
+            __clearArtReadyForTest();
+            installDom(W, H, dpr);
+            const layer = dom.body.children[0]!.children[0]!;
+            let changes = 0;
+            const b = new CouncilBackdrop(layer as unknown as HTMLElement, COUNCIL, () => false, () => true, () => changes++);
+            b.start();
+            await flush();
+            expect(layer.querySelector('.g-council-bg')).toBeNull();
+            expect(layer.className).toBe('g-layer council');
+            expect(dom.body.className).toBe('');
+            expect(urls).toEqual([]);
+            // 窓を原寸以内の大きさ（1280×720・端末の比 1）にした：読んで出す
+            layer.rect = { left: 0, top: 0, width: 1280, height: 720 };
+            vi.stubGlobal('devicePixelRatio', 1);
+            for (const f of dom.listeners.get('resize') ?? []) (f as () => void)();
+            frames(1);
+            await flush();
+            const root = layer.querySelector('.g-council-bg')!;
+            expect(root).not.toBeNull();
+            expect(root.hidden).toBe(false);
+            expect(layer.classList.contains('g-art')).toBe(true);
+            expect(dom.body.classList.contains('g-council-art')).toBe(true);
+            expect(urls.length).toBeGreaterThan(0);
+            expect(changes).toBe(1);
+            // また原寸を超える大きさへ：外して Version 24 の画面に戻す（引き伸ばさない）
+            layer.rect = { left: 0, top: 0, width: W, height: H };
+            vi.stubGlobal('devicePixelRatio', dpr);
+            for (const f of dom.listeners.get('resize') ?? []) (f as () => void)();
+            frames(1);
+            expect(root.hidden).toBe(true);
+            expect(root.classList.contains('on')).toBe(false);
+            expect(layer.classList.contains('g-art')).toBe(false);
+            expect(dom.body.classList.contains('g-council-art')).toBe(false);
+            expect(changes).toBe(2);
+            b.dispose();
+            expect(listenerCount()).toBe(0);
+        }
+    });
+
+    it('?art=v24・?artOff=council：作らない・読まない・見張りも付けない（人物画も ?art=v24・?artOff=portrait では作らない）', async () => {
+        for (const search of ['?art=v24', '?artOff=council,portrait', '?artOff=grass,council&x=1']) {
+            const urls = art();
+            __clearArtReadyForTest();
+            vi.stubGlobal('location', { search, hash: '' });
+            const l = councilLayer();
+            const b = backdrop(l);
+            b.start();
+            const p = slot(l);
+            p.preload(['hero', 'tadakatsu']);
+            p.set('tadakatsu');
+            await flush();
+            frames(2);
+            expect(l.layer.querySelector('.g-council-bg')).toBeNull();
+            expect(l.layer.className).toBe('g-layer council');
+            expect(urls.filter((u) => u.includes('/bg/'))).toEqual([]);
+            if (search !== '?artOff=grass,council&x=1') {
+                expect(portraitOf(l)).toBeNull();
+                expect(urls).toEqual([]);
+                expect(listenerCount()).toBe(0);
+            } else {
+                // 人物画は外していない：出る
+                expect(portraitOf(l)).not.toBeNull();
+            }
+            b.dispose();
+            p.dispose();
+        }
     });
 
     it('先に読めていれば（忠勝との会話の間に読んだ）、最初の軍議でも同じフレームのうちに出す（薄い所から出さない）', async () => {

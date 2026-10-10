@@ -4,6 +4,10 @@
  * - 一覧は manifest.gen.json（proto3d/tools/art-build.py が作る。原画の一覧・プロンプトは入れない）。
  *   一覧に無い ID は「無い」として扱い、画面は今までの見た目のまま（Version 21 と同じ）。
  * - 旧表示との比較：URL に ?art=old（または #art=old）を付けると、新しい素材を一つも読まない（保存には何も書かない）。
+ * - Version 24 との比較（Version 25 から）：?art=v24 は Version 24 と同じ素材だけを使う（顔は第 1 版の face.pack1.<武将>・人物画と軍議の背景は無し・
+ *   地面は同じ）。?artOff=portrait,council,face で、人物画・軍議の背景・顔を種類ごとに外せる（地面の grass・dirt・road・ground と並べて書ける。
+ *   地面の語は battle/groundArt.ts が読む）。どれも URL だけで、保存・localStorage には何も書かない。
+ *   外した物・その見せ方で使わない物は「一覧に無い」と同じに扱う（artEntry が null・読みに行かない）。
  * - 読み方：fetch → Blob → createImageBitmap。モデルの画像と同じ道（connect-src 'self'）で、<img> の img-src に頼らない。
  *   data: の URL は使わない（CSP で止まる）。読めない・時間切れ・壊れた画像は null を返し、呼んだ側は今までの表示のまま進める。
  * - 時間切れは通信（fetch と中身の受け取り）だけに掛ける（30 秒。画像の展開や、読み始める前の待ちは数えない）。
@@ -13,7 +17,8 @@
  *   仮の画像は配置と動作の確かめ用で、見た目の素材ではない。
  */
 import generated from './manifest.gen.json';
-import type { ArtId } from './ids';
+import { FACE_OF, V24_FACE_OF, type ArtId } from './ids';
+import type { GeneralId } from '../battle/generals';
 
 export type ArtKind = 'portrait' | 'face' | 'background' | 'overlay' | 'texture';
 
@@ -63,15 +68,90 @@ export const artReady: Promise<void> = (async () => {
     }
 })();
 
-/** 'old' のときは新しい素材を一つも使わない（Version 21 と同じ表示） */
-export function artMode(): 'new' | 'old' {
-    return readParam('art') === 'old' ? 'old' : 'new';
+/**
+ * 素材の見せ方（URL の ?art= か #art=。保存には書かない）。
+ * - 'new'（既定）：一覧の素材を使う（Version 25：素材パック第 2 版の人物画・顔・軍議の背景と、地面）。
+ * - 'v24'（?art=v24）：Version 24 と同じ見た目（顔は第 1 版の face.pack1.<武将>。人物画・軍議の背景は使わない。地面は同じ）。
+ * - 'old'（?art=old）：新しい素材を一つも使わない（Version 21 と同じ表示）。
+ */
+export type ArtMode = 'new' | 'v24' | 'old';
+export function artMode(): ArtMode {
+    const v = readParam('art');
+    return v === 'old' ? 'old' : v === 'v24' ? 'v24' : 'new';
 }
 
-/** 使える素材の記録（旧表示・一覧に無い ID は null） */
+/** ?artOff= で外せる、地面以外の種類（地面の grass・dirt・road・forest・ground は battle/groundArt.ts の groundArtOff） */
+export type ArtOffKind = 'portrait' | 'council' | 'face';
+const ART_OFF_KINDS: readonly ArtOffKind[] = ['portrait', 'council', 'face'];
+
+/** URL の ?artOff=（#artOff=）の語（コンマか空白で区切る。小文字にそろえる） */
+function artOffWords(): Set<string> {
+    const v = readParam('artOff');
+    return new Set(v ? v.split(/[,\s]+/).map((t) => t.trim().toLowerCase()).filter(Boolean) : []);
+}
+
+/** URL の ?artOff=（#artOff=）で外した種類（知らない語・地面の語はここでは無視） */
+export function artOff(): ReadonlySet<ArtOffKind> {
+    const out = new Set<ArtOffKind>();
+    for (const k of artOffWords()) if ((ART_OFF_KINDS as readonly string[]).includes(k)) out.add(k as ArtOffKind);
+    return out;
+}
+
+/**
+ * 地面の素材（tex.<戦場>.<種類>）が ?artOff= で外されているか（battle/groundArt.ts の groundArtOff と同じ読み方：
+ * ground は全部、grass は土のむら dirt も外す）。一覧の「使える」（artAvailable・タイトルの AI 生成の明示）を、外した物で数えないため
+ */
+function groundOff(id: string, words: ReadonlySet<string>): boolean {
+    const mat = id.slice(id.lastIndexOf('.') + 1);
+    return words.has('ground') || words.has(mat) || (mat === 'dirt' && words.has('grass'));
+}
+
+/** 軍議の背景（奥の画・手前の幕）の ID か */
+const isCouncilArt = (id: string) => id === 'bg.council' || id.startsWith('bg.council.');
+/** Version 24 までの顔（素材パック第 1 版） */
+const isPack1Face = (id: string) => id.startsWith('face.pack1.');
+
+/**
+ * 今の見せ方（?art=・?artOff=）で使わない素材か（一覧にあっても「無い」と同じに扱う）。kind は一覧の種類（無ければ ID から見る）。
+ * - 旧表示：全部。
+ * - Version 24 の見せ方：人物画・軍議の背景・第 2 版の顔（第 1 版の顔 face.pack1.* と地面は使う）。
+ * - 既定：第 1 版の顔（Version 24 と比べるときだけ使う）。
+ * - ?artOff=portrait は人物画、council は軍議の背景、face は顔（どの版も）。地面の語（grass・dirt・road・forest・ground）は地面の素材
+ *   （どの地面をどう描くかは battle/groundArt.ts）。
+ */
+export function artBlocked(id: ArtId, kind?: ArtKind): boolean {
+    const mode = artMode();
+    if (mode === 'old') return true;
+    const k = kind ?? manifest.assets[id]?.kind ?? (id.startsWith('portrait.') ? 'portrait' : id.startsWith('face.') ? 'face' : id.startsWith('tex.') ? 'texture' : undefined);
+    const words = artOffWords();
+    if (k === 'portrait' && (mode === 'v24' || words.has('portrait'))) return true;
+    if (isCouncilArt(id) && (mode === 'v24' || words.has('council'))) return true;
+    if (k === 'face' || id.startsWith('face.')) {
+        if (words.has('face')) return true;
+        if (mode === 'v24' ? !isPack1Face(id) : isPack1Face(id)) return true;
+    }
+    if (k === 'texture' && groundOff(id, words)) return true;
+    return false;
+}
+
+/** 使える素材の記録（旧表示・今の見せ方で使わない・一覧に無い ID は null） */
 export function artEntry(id: ArtId): ArtEntry | null {
-    if (artMode() === 'old') return null;
-    return manifest.assets[id] ?? null;
+    const e = manifest.assets[id] ?? null;
+    if (!e || artBlocked(id, e.kind)) return null;
+    return e;
+}
+
+/**
+ * 武将の顔の素材の ID（合戦の札・能力の欄・編成の表と、会話・軍議の台詞の枠）。見せ方で選ぶ：
+ * 既定は第 2 版（FACE_OF：人物画と同じ原画から切り出した顔）、?art=v24 は Version 24 の顔（V24_FACE_OF）。
+ * 旧表示・?artOff=face・顔の無い武将は null（ほかの人の顔を代わりに使わない）。一覧にあるかはここでは見ない（読む側が見る）
+ */
+export function faceArtIdOf(general: GeneralId | string | null | undefined): ArtId | null {
+    if (!general) return null;
+    const mode = artMode();
+    if (mode === 'old') return null;
+    const id = (mode === 'v24' ? V24_FACE_OF : FACE_OF)[general as GeneralId] ?? null;
+    return id && !artBlocked(id, 'face') ? id : null;
 }
 
 export function artAvailable(id: ArtId): boolean {
