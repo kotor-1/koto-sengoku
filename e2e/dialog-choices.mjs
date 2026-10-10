@@ -5,7 +5,8 @@
  *   変えられるもの（環境変数。カンマ区切り）：
  *     SIZES=360x640,360x780,375x667,390x844,412x915,768x1024,844x390,667x375,568x320,640x360,1280x720,1920x1080
  *                     縦長（高さ ＞ 幅）と高さ 430 以下はタッチ（hasTouch・isMobile・端末の比 2）。それ以外はマウスとキー
- *     MODES=default,old   default … 何も付けない、old … ?art=old
+ *     MODES=default,old   default … 何も付けない（Version 25 から人物画・軍議の背景も出る）、v24 … ?art=v24（Version 24 の見た目）、old … ?art=old
+ *                         （人物画は押せない飾り：elementFromPoint の隠れの数えには入らない。人物画と選択肢の重なりは e2e/portrait-v25.mjs が確かめる）
  *     PARTS=ch1,ch2       ch1 … 城門の忠勝（軍議を開く）→ 軍議（方針 A/B/C）→ 確かめ（それで決める／考え直す）→ 改めて → 確かめ → 決める →
  *                               約束（3 つ）→ 城門の出陣 → 戦後の忠勝（開発用の setIeyasuPhase。直接状態変更）
  *                         ch2 … 第一章の結末の保存（tests/fixtures/ieyasu-ch1-v3/oda_defeat_broken_heavy）を localStorage に入れる（直接状態変更）→
@@ -180,7 +181,7 @@ async function newPage(size, mode, extra = '') {
     page.on('console', (m) => {
         if (m.type() === 'error' && !state.reloading) errors.push(m.text());
     });
-    const q = ['q=low', 'render=manual', mode === 'old' ? 'art=old' : '', extra].filter(Boolean).join('&');
+    const q = ['q=low', 'render=manual', mode === 'old' ? 'art=old' : mode === 'v24' ? 'art=v24' : '', extra].filter(Boolean).join('&');
     await page.goto(`${BASE}/?${q}`);
     await page.waitForFunction(() => window.__game?.ui?.kind === 'title' && document.getElementById('loading')?.hidden === true, null, POLL);
     await page.evaluate(() => document.fonts.ready);

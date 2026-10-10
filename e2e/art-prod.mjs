@@ -5,12 +5,14 @@
 //   VITE_MODEL_EXT=.json npm run proto3d:build
 //   rm dist-proto3d/models/*.glb
 //   node proto3d/tools/glb-to-gltf.mjs proto3d/public/models dist-proto3d/models ground_v2 gate_v2 walls_v2 keep inner machiya_a machiya_b machiya_d tree_pine tree_sakura tree_pine_far hero_v3_mpfb hero_v2
-// 使い方：node e2e/art-prod.mjs [出力先]   （DIST=dist-proto3d PORT=8134 VIEW=960x540 RUNS=art,abort,old ART_MANIFEST=<manifest.gen.json> で変えられる。
+// 使い方：node e2e/art-prod.mjs [出力先]   （DIST=dist-proto3d PORT=8134 VIEW=960x540 RUNS=art,v24,abort,old ART_MANIFEST=<manifest.gen.json> で変えられる。
 //   ソフトウェア描画では歩きが遅い（1 コマ 0.1 秒までしか進まない）ので、既定の大きさは ieyasu-prod と同じ 960x540）
 // この中で、次のヘッダー付きの簡易サーバーを立てる（.webp は image/webp）：
 //   content-security-policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'
 // 3 回遊ぶ（それぞれ新しい端末の状態から）：
 //   art   … そのまま。/art/ の読み込みがすべて 200・image/webp・.webp で、素材の一覧（manifest.gen.json）にある物が画面に出ること
+//           （Version 25：話し手本人の人物画（家康・忠勝・酒井・石川）・第 2 版の顔・原寸以内の画面なら軍議の背景）
+//   v24   … ?art=v24（Version 24 の見た目）。人物画・軍議の背景を読まず、顔は第 1 版（face.pack1.*）だけ
 //   abort … /art/ への読み込みをすべて止める（読めない公開先・回線を真似る）。会話・軍議・合戦の文字と操作がすべて残り、遊びが進むこと（絵は出ない）
 //   old   … ?art=old。/art/ を 1 つも読まないこと
 // 経路（3 回とも同じ）：タイトル → 歴史分岐のはじめから（冒頭の演出はスキップ）→ W と Shift で歩いて本多忠勝と話す → 軍議を開く → C（自領の防衛）→ 決める
@@ -25,7 +27,11 @@ const OUT = outDir(process.argv[2] || 'e2e-out/art-prod');
 const DIST = resolve(process.env.DIST || 'dist-proto3d');
 const PORT = Number(process.env.PORT || 8134);
 const [VW, VH] = (process.env.VIEW || '960x540').split('x').map(Number);
-const RUNS = (process.env.RUNS || 'art,abort,old').split(',').filter(Boolean);
+const RUNS = (process.env.RUNS || 'art,v24,abort,old').split(',').filter(Boolean);
+/** 会話の話し手 → 人物画（Version 25。scenario.ts の IEYASU_SPEAKER_GENERAL と同じ。使者・地の文には無い） */
+const PORTRAIT_OF = { hero: 'portrait.ieyasu', tadakatsu: 'portrait.tadakatsu', sakai: 'portrait.sakai', ishikawa: 'portrait.ishikawa' };
+/** 見せ方ごとの武将の顔の ID（art は第 2 版、v24 は第 1 版） */
+const faceIdFor = (kind, g) => (kind === 'v24' ? `face.pack1.${g}` : `face.${g}`);
 /** 大平原の演習の武将のいる部隊（a_<武将の id>）。顔は一覧にある武将だけ（弓隊 a_yumi・騎馬隊 a_kiba には武将がいない） */
 const PLAINS_GENERALS = ['ieyasu', 'tadakatsu', 'sakai', 'ishikawa', 'sakakibara'];
 if (!existsSync(join(DIST, 'index.html'))) throw new Error(`${DIST}/index.html が無い（先に本番ビルド）`);
@@ -63,7 +69,7 @@ const browser = await launchBrowser();
 const summary = {};
 
 async function run(kind) {
-  console.log(`\n=== ${kind}${kind === 'abort' ? '（/art/ の読み込みをすべて止める）' : kind === 'old' ? '（?art=old）' : ''}`);
+  console.log(`\n=== ${kind}${kind === 'abort' ? '（/art/ の読み込みをすべて止める）' : kind === 'old' ? '（?art=old）' : kind === 'v24' ? '（?art=v24）' : ''}`);
   const ctx = await browser.newContext({ viewport: { width: VW, height: VH } });
   await ctx.addInitScript(() => {
     window.__cspViolations = [];
@@ -188,7 +194,7 @@ async function run(kind) {
   }
   const out = { kind };
   try {
-    const url = `http://localhost:${PORT}/?q=low${kind === 'old' ? '&art=old' : ''}`;
+    const url = `http://localhost:${PORT}/?q=low${kind === 'old' ? '&art=old' : kind === 'v24' ? '&art=v24' : ''}`;
     await page.goto(url);
     await page.locator('.g-btn[data-id="new:ieyasu1570"]').waitFor({ state: 'visible', timeout: 600000 });
     check(`${kind}: 本番ビルドのタイトル（開発用のフックは無い）`, (await page.textContent('#build')).includes('本番') && (await page.evaluate(() => !window.__game && !window.__battle && !window.__p3)), await page.textContent('#build'));
@@ -212,8 +218,8 @@ async function run(kind) {
       const shownOn = (sp, id) => talk.map((l, i) => (l.speaker === sp ? `${i}:${l.portrait?.artId === id && l.portrait.visible ? 'shown' : 'not yet'}` : null)).filter(Boolean).join(' ');
       if (has('portrait.tadakatsu')) check('art: 忠勝の台詞で忠勝の人物画が出る', talk.some((l) => l.speaker === 'tadakatsu' && l.portrait?.artId === 'portrait.tadakatsu' && l.portrait.visible), shownOn('tadakatsu', 'portrait.tadakatsu'));
       if (has('portrait.ieyasu')) check('art: 家康の台詞で家康の人物画が出る', talk.some((l) => l.speaker === 'hero' && l.portrait?.artId === 'portrait.ieyasu' && l.portrait.visible), shownOn('hero', 'portrait.ieyasu'));
-      check('art: 人物画は、人物画のある二人の台詞だけ（地の文などでは出ない）', talk.every((l) => !l.portrait?.visible || (l.speaker === 'tadakatsu' && l.portrait.artId === 'portrait.tadakatsu') || (l.speaker === 'hero' && l.portrait.artId === 'portrait.ieyasu')), out.talkPortraits);
-    } else check(`${kind}: 人物画の canvas は 1 つも無い（Version 21 と同じ）`, talk.every((l) => !l.portrait), out.talkPortraits);
+      check('art: 人物画は話し手本人の物だけ（地の文などでは出ない）', talk.every((l) => !l.portrait?.visible || l.portrait.artId === PORTRAIT_OF[l.speaker]), out.talkPortraits);
+    } else check(`${kind}: 人物画の canvas は 1 つも無い（Version ${kind === 'v24' ? '24' : '21'} と同じ）`, talk.every((l) => !l.portrait), out.talkPortraits);
     await choose('open_council');
     await page.locator('.g-layer.council').waitFor({ state: 'visible' });
     const council = await readThrough();
@@ -222,9 +228,12 @@ async function run(kind) {
     check(`${kind}: 軍議の見出し・台詞・3 つの方針・「詳しく見る」が出る`, !!cl?.head?.includes('軍議') && council.every((l) => l.text && (l.speaker === 'narration' || l.name)) && ['policy_oda', 'policy_asai', 'policy_home'].every((id) => cl.choices.some((c) => c.id === id && !c.disabled)) && cl.map, { head: cl?.head?.slice(0, 20), choices: cl?.choices.map((c) => c.id), map: cl?.map });
     out.councilBg = council.map((l) => l.councilBg);
     if (kind === 'art') {
-      if (has('bg.council')) check('art: 軍議の背景が出る', council.some((l) => l.councilBg === 'bg.council'), out.councilBg);
-      if (has('portrait.tadakatsu')) check('art: 軍議の忠勝の台詞で人物画', council.some((l) => l.speaker === 'tadakatsu' && l.portrait?.artId === 'portrait.tadakatsu' && l.portrait.visible));
-    } else check(`${kind}: 軍議の背景・人物画は無い（Version 21 と同じ）`, council.every((l) => !l.councilBg && !l.portrait), out.councilBg);
+      // 軍議の背景（1664×936）は原寸以内に描ける画面だけ（この大きさ VIEW・端末の比 1 では原寸以内）
+      const bgFits = Math.min(Math.max(VW / 1664, VH / 936), VH / (936 * 0.64)) <= 1;
+      if (has('bg.council')) check(`art: 軍議の背景は${bgFits ? '出る' : '出ない（原寸を超える画面）'}`, council.some((l) => l.councilBg === 'bg.council') === bgFits, out.councilBg);
+      for (const sp of ['tadakatsu', 'sakai', 'ishikawa']) if (has(PORTRAIT_OF[sp])) check(`art: 軍議の ${sp} の台詞で本人の人物画`, council.some((l) => l.speaker === sp && l.portrait?.artId === PORTRAIT_OF[sp] && l.portrait.visible), council.filter((l) => l.speaker === sp).map((l) => l.portrait));
+      check('art: 軍議の人物画は話し手本人の物だけ', council.every((l) => !l.portrait?.visible || l.portrait.artId === PORTRAIT_OF[l.speaker]), council.map((l) => `${l.speaker}:${l.portrait?.visible ? l.portrait.artId : '-'}`));
+    } else check(`${kind}: 軍議の背景・人物画は無い（Version ${kind === 'v24' ? '24' : '21'} と同じ）`, council.every((l) => !l.councilBg && !l.portrait), out.councilBg);
     await choose('policy_home');
     await sleep(600);
     await readThrough();
@@ -249,9 +258,9 @@ async function run(kind) {
     await shot('briefing');
     check(`${kind}: 演習の説明：編成の表の文字と「出陣」`, brief.rows.length >= 4 && brief.rows.every((r) => r.text) && brief.go, brief.rows.length);
     const faceRows = brief.rows.filter((r) => r.face).map((r) => `${r.unit}:${r.face}`).sort();
-    if (kind === 'art') {
-      const want = PLAINS_GENERALS.filter((g) => has(`face.${g}`)).map((g) => `a_${g}:face.${g}`).sort();
-      check('art: 編成の表の顔は、一覧に顔のある武将の部隊だけ・その武将の顔（弓隊・騎馬隊には無い）', JSON.stringify(faceRows) === JSON.stringify(want), faceRows);
+    if (kind === 'art' || kind === 'v24') {
+      const want = PLAINS_GENERALS.filter((g) => has(faceIdFor(kind, g))).map((g) => `a_${g}:${faceIdFor(kind, g)}`).sort();
+      check(`${kind}: 編成の表の顔は、一覧に顔のある武将の部隊だけ・その武将の${kind === 'v24' ? '第 1 版の' : ''}顔（弓隊・騎馬隊には無い）`, JSON.stringify(faceRows) === JSON.stringify(want), faceRows);
     } else check(`${kind}: 編成の表に顔は無い`, faceRows.length === 0, faceRows);
     await pressBtn('go', '.g-layer[data-sheet="practice-briefing"]');
     await page.locator('.b-root[data-field="plains"]').waitFor({ state: 'visible' });
@@ -279,11 +288,11 @@ async function run(kind) {
     await shot('battle-selected');
     check(`${kind}: 合戦の札（4 以上）の文字・目標・操作の部品が出る`, bs.cards.length >= 4 && bs.cards.every((c) => c.text) && Object.values(bs.parts).every(Boolean), bs.parts);
     check(`${kind}: 忠勝の札を選ぶと能力の欄が出る`, !!bs.abil, bs.abil);
-    if (kind === 'art') {
-      const want = PLAINS_GENERALS.filter((g) => has(`face.${g}`)).map((g) => `a_${g}:face.${g}`).sort();
+    if (kind === 'art' || kind === 'v24') {
+      const want = PLAINS_GENERALS.filter((g) => has(faceIdFor(kind, g))).map((g) => `a_${g}:${faceIdFor(kind, g)}`).sort();
       const got = bs.cards.filter((c) => c.face).map((c) => `${c.id}:${c.face}`).sort();
-      check('art: 札の顔は、一覧に顔のある武将の部隊だけ・その武将の顔（弓隊・騎馬隊には無い）', JSON.stringify(got) === JSON.stringify(want), got);
-      if (has('face.tadakatsu')) check('art: 能力の欄に忠勝の顔（Version 23：欄の先頭の大きな顔。PC 48 px 以上）', bs.genFace === 'face.tadakatsu' && bs.genFaceW >= 48, [bs.genFace, bs.genFaceW]);
+      check(`${kind}: 札の顔は、一覧に顔のある武将の部隊だけ・その武将の顔（弓隊・騎馬隊には無い）`, JSON.stringify(got) === JSON.stringify(want), got);
+      if (has(faceIdFor(kind, 'tadakatsu'))) check(`${kind}: 能力の欄に忠勝の顔（Version 23：欄の先頭の大きな顔。PC 48 px 以上）`, bs.genFace === faceIdFor(kind, 'tadakatsu') && bs.genFaceW >= 48, [bs.genFace, bs.genFaceW]);
       const tex = ['tex.plains.grass', 'tex.plains.dirt', 'tex.plains.road', 'tex.plains.forest'].filter(has).map((id) => `/${assets[id].file}`);
       if (tex.length) check('art: 大平原の地面の素材を読んだ', tex.every((p) => artResp.some((r) => r.path === p && r.status === 200)), tex);
     } else check(`${kind}: 合戦に顔の canvas は無い`, bs.faces === 0, bs.faces);
@@ -304,7 +313,9 @@ async function run(kind) {
   check(`${kind}: ページの誤り 0`, errors.length === 0, errors.slice(0, 3));
   check(`${kind}: 開発用の TEST の模様（dev-art）を 1 つも読まない`, devArt.length === 0, devArt);
   check(`${kind}: data: の URL を使わない`, dataUrls.length === 0, dataUrls);
+  if (kind === 'v24') check('v24: 読むのは第 1 版の顔と地面だけ（人物画・軍議の背景・第 2 版の顔を読まない）', artResp.every((r) => /^\/art\/(faces\/[a-z]+|battle\/plains_(grass|dirt|road))\.webp$/.test(r.path) && r.status === 200), artResp.map((r) => r.path));
   if (kind === 'art') {
+    check('art: 第 1 版の顔（Version 24 の比べ用）は読まない', !artResp.some((r) => /^\/art\/faces\/[a-z]+\.webp$/.test(r.path)), artResp.map((r) => r.path));
     check(`art: /art/ の読み込みはすべて 200・image/webp・.webp（${artResp.length} 件）`, artResp.every((r) => r.status === 200 && r.type.startsWith('image/webp') && r.path.endsWith('.webp')), artResp.filter((r) => !(r.status === 200 && r.type.startsWith('image/webp') && r.path.endsWith('.webp'))));
     if (!ids.length) check('art: 素材の一覧が空なので /art/ を 1 つも読まない', artResp.length === 0, artResp);
     else check('art: 読んだ /art/ はすべて一覧の物', artResp.every((r) => listed.includes(r.path.slice(1))), artResp.map((r) => r.path));

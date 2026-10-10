@@ -5,8 +5,9 @@
  *   変えられるもの（環境変数。カンマ区切り）：
  *     SIZES=1280x720,1920x1080,844x390,844x390-notch,667x375,568x320,390x844,768x1024
  *                              高さ 430 以下・幅 480 以下はスマホ（タッチ・isMobile・端末の比 2）。-notch は左右 47px・下 21px の安全域
- *     MODES=default,old        default … 何も付けない（顔あり）、old … ?art=old（Version 21 の見た目）、
- *                              fail … 何も付けないが、顔の画像（art/faces/）の読み込みをすべて失敗させる（台詞の枠は Version 21 のまま・文字と操作が残る）
+ *     MODES=default,old        default … 何も付けない（顔あり。Version 25 から人物画も出る：人物画の出ている行は、その人の顔を出さない）、
+ *                              v24 … ?art=v24（Version 24 の見た目：第 1 版の顔だけ。人物画・軍議の背景は無し）、old … ?art=old（Version 21 の見た目）、
+ *                              fail … 何も付けないが、素材の画像（art/ の下：顔・人物画・背景）の読み込みをすべて失敗させる（台詞の枠は Version 21 のまま・文字と操作が残る）
  *     PARTS=ch1,ch2,fictional  ch1 … 織田の使者 → 城門の忠勝 → 軍議（方針 → 確かめ → 考え直す → 選び直し）、
  *                              ch2 … 第一章の結末の保存（tests/fixtures/ieyasu-ch1-v3/oda_defeat_broken_heavy：家康・忠勝が負傷）→ 第二章 → 忠勝 → 軍議、
  *                              fictional … 架空の章（主人公 hero は宗真：顔を付けない）
@@ -17,7 +18,8 @@
  * 入力の記録：タイトルのボタン・演出のスキップ・話す（E／「話す」のタップ）・会話を進める（Enter／枠のタップ）・選択肢（クリック／タップ）は本物の入力。
  *   開発用の操作（__game・__p3）：相手の前への teleport（WALK の大きさ以外）・保存の差し込み（ch2 の localStorage）・3D の手動の描画（render=manual の renderNow）・
  *   読むだけの数え上げ（ui・cast・prompt）。
- * 確かめ：顔は今の話し手（家康・忠勝・酒井・石川）だけ・使者／地の文／高札は空き・空きは台本の間ずっと同じ（名前・台詞の始まりが動かない）・
+ * 確かめ：顔は今の話し手（家康・忠勝・酒井・石川）だけ（v24 は第 1 版の顔）・その人の人物画が出ている行は顔を出さない（default）・
+ *   使者／地の文／高札は空き・空きは台本の間ずっと同じ（名前・台詞の始まりが動かない）・
  *   顔が名前・台詞・行の数・▼・選択肢・軍議の見出し・詳しく見る・目的の札・メニューと重ならない・画面の中・押せない・読み上げない・
  *   canvas は端末の比 2 まで・old と架空の章は has-face も g-face も無い・タイトルの AI 生成の明示は default だけ。
  *   顔の置き方（ui.css。Version 23）：PC（高さ 431 以上・幅 968 以上）は枠の左の中で上下の真ん中（72px）。それより狭い・低い画面は
@@ -50,6 +52,10 @@ const check = (ok, what, detail) => {
     if (!ok) console.log(`  NG ${what}${detail !== undefined ? ` — ${typeof detail === 'string' ? detail : JSON.stringify(detail)}` : ''}`);
 };
 const FACE_OF = { hero: 'face.ieyasu', tadakatsu: 'face.tadakatsu', sakai: 'face.sakai', ishikawa: 'face.ishikawa' };
+/** Version 24 の見せ方（?art=v24）の顔（第 1 版） */
+const FACE_OF_V24 = Object.fromEntries(Object.entries(FACE_OF).map(([k, v]) => [k, v.replace('face.', 'face.pack1.')]));
+/** 話し手の人物画（default だけ。Version 25） */
+const PORTRAIT_OF = Object.fromEntries(Object.entries(FACE_OF).map(([k, v]) => [k, v.replace('face.', 'portrait.')]));
 const KEY = 'koto-sengoku/3d-ieyasu1570';
 const CH2_FIXTURE = readFileSync(new URL('../tests/fixtures/ieyasu-ch1-v3/oda_defeat_broken_heavy.json', import.meta.url), 'utf8');
 
@@ -118,6 +124,11 @@ function probeDialog() {
         hud: vis(document.querySelector('.g-hud')),
         menu: vis(document.querySelector('.g-menu-btn')),
         portrait: !!L.querySelector('canvas.g-portrait'),
+        // 出ている人物画（Version 25。薄くなりかけ・隠した物は数えない）
+        portraitShown: (() => {
+            const pc = L.querySelector('canvas.g-portrait');
+            return pc && !pc.hidden && pc.classList.contains('on') ? pc.dataset.artId : null;
+        })(),
         artNote: !!document.querySelector('.g-art-note'),
         layerHtml: L.outerHTML.replace(/<canvas[^>]*>/g, (m) => m.replace(/ style="[^"]*"/, '')),
     };
@@ -128,7 +139,7 @@ async function newPage(size, mode, extra = '') {
     const touch = h <= 430 || w <= 480;
     const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: w >= 1900 ? 1 : 2, hasTouch: touch, isMobile: touch });
     // 顔の画像の読み込みの失敗（fail）：ネットワークで切る（registry の fetch が失敗する）
-    if (mode === 'fail') await ctx.route('**/art/faces/**', (r) => r.abort('failed'));
+    if (mode === 'fail') await ctx.route('**/art/**', (r) => r.abort('failed'));
     const page = await ctx.newPage();
     page.setDefaultTimeout(600000);
     const errors = [];
@@ -140,7 +151,7 @@ async function newPage(size, mode, extra = '') {
     page.on('console', (m) => {
         if (m.type() === 'error' && !state.reloading) errors.push(m.text());
     });
-    const q = ['render=manual', mode === 'old' ? 'art=old' : '', extra].filter(Boolean).join('&');
+    const q = ['render=manual', mode === 'old' ? 'art=old' : mode === 'v24' ? 'art=v24' : '', extra].filter(Boolean).join('&');
     await page.goto(`${BASE}/?${q}`);
     await page.waitForFunction(() => window.__game?.ui?.kind === 'title' && document.getElementById('loading')?.hidden === true, null, POLL);
     if (size.endsWith('-notch')) await page.addStyleTag({ content: ':root{--safe-l:47px;--safe-r:47px;--safe-b:21px;}' });
@@ -267,12 +278,16 @@ async function run(part, size, mode) {
             await sleep(380);
             const u = await page.evaluate(() => window.__game.ui);
             if (u?.kind !== 'script' || u.id !== id) break;
-            // 顔の読み込み（非同期）を待つ（最大 3 秒。出ないのは記録に残る）
-            if (mode === 'default' && FACE_OF[await page.evaluate(() => [...document.querySelectorAll('.g-layer[data-kind="script"] .g-dialog')].pop()?.dataset.speaker)] && part !== 'fictional') {
+            // 顔・人物画の読み込み（非同期）を待つ（最大 3 秒。出ないのは記録に残る）。人物画が出た行は顔を出さない（Version 25）
+            if ((mode === 'default' || mode === 'v24') && FACE_OF[await page.evaluate(() => [...document.querySelectorAll('.g-layer[data-kind="script"] .g-dialog')].pop()?.dataset.speaker)] && part !== 'fictional') {
                 await page.waitForFunction(() => {
-                    const f = [...document.querySelectorAll('.g-layer[data-kind="script"] .g-dialog')].pop()?.querySelector('canvas.g-face');
-                    return f && (!f.hidden || f.dataset.blocked === '1');
+                    const L = [...document.querySelectorAll('.g-layer[data-kind="script"]')].pop();
+                    const f = L?.querySelector('.g-dialog canvas.g-face');
+                    const pc = L?.querySelector('canvas.g-portrait');
+                    return (f && (!f.hidden || f.dataset.blocked === '1')) || (pc && !pc.hidden && pc.classList.contains('on'));
                 }, null, { timeout: 3000, polling: 100 }).catch(() => {});
+                // 人物画の出入り（重ね変わり 140ms）・顔の出し直しが済むまで
+                await sleep(260);
             }
             const p = await page.evaluate(probeDialog);
             // choices は probeDialog の並びの四角で上書きされるので、選択肢の id は choiceIds に残す（下の「同じ台本・行・台詞・選択肢」の比べ）
@@ -282,7 +297,11 @@ async function run(part, size, mode) {
             rec.lines.push(line);
             const L = `${tag} ${id}#${u.index + 1}(${p.speaker})`;
             // ---- 確かめ
-            const wantFace = mode === 'default' && part !== 'fictional' ? FACE_OF[p.speaker] ?? null : null;
+            // 人物画（default）が出ている行は、その人の顔を出さない（同じ人を 2 つ並べない）
+            const portraitUp = mode === 'default' && !!p.portraitShown && p.portraitShown === PORTRAIT_OF[p.speaker];
+            const wantFace = part === 'fictional' || portraitUp ? null : mode === 'default' ? (FACE_OF[p.speaker] ?? null) : mode === 'v24' ? (FACE_OF_V24[p.speaker] ?? null) : null;
+            if (mode === 'default') check(!p.portraitShown || p.portraitShown === PORTRAIT_OF[p.speaker], `${L} 人物画は今の話し手本人の物だけ`, p.portraitShown);
+            if (mode !== 'default') check(!p.portrait, `${L} ${mode}：人物画の要素が無い`);
             // 台詞の字は Version 21 のまま（高さ 430 以下 15px・それ以外 16px、字の間 0.03em）。顔のある枠でも小さくしない
             const v21Font = p.vh <= 430 ? 15 : 16;
             check(p.textFont === `${v21Font}px` && Math.abs(parseFloat(p.textLs) - v21Font * 0.03) < 0.01, `${L} 台詞の字は Version 21 と同じ（${v21Font}px・字の間 0.03em）`, { font: p.textFont, ls: p.textLs });

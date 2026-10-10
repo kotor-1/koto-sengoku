@@ -4,9 +4,10 @@
  *
  *   BASE=http://localhost:8633 node e2e/art-compare.mjs [出力先]
  *   変えられるもの（環境変数。カンマ区切り）：
- *     MODES=old,default,fixture   old … ?art=old（新しい素材を一つも読まない＝Version 21 の見た目。比べの「前」）
- *                                 default … 何も付けない（ゲームが読む素材の一覧 manifest.gen.json のとおり。Version 23 は武将 6 人の顔と、
- *                                           大平原の地面の草地・土・道の 3 枚。人物画・軍議の背景・林床は入っていない）
+ *     MODES=old,v24,default,fixture   old … ?art=old（新しい素材を一つも読まない＝Version 21 の見た目。比べの「前」）
+ *                                 v24 … ?art=v24（Version 24 の見た目：第 1 版の顔 face.pack1.* と地面だけ。人物画・軍議の背景は無し。Version 25 から）
+ *                                 default … 何も付けない（ゲームが読む素材の一覧 manifest.gen.json のとおり。Version 25 は第 2 版の人物画 6・顔 6・
+ *                                           軍議の背景（原寸以内の画面だけ）と、大平原の地面の草地・土・道の 3 枚。林床は入っていない）
  *                                 fixture … ?artFixture=1（開発時だけ。proto3d/dev-art の TEST の模様。配置・縮尺・動きの確かめ用で、見た目の素材ではない）
  *                                 v22 … 別の開発サーバー V22_BASE（Version 22 の 3fe5a7d を動かした物）の何も付けない見せ方（比べの「前」の 2 枚目）
  *                                 abort … default の画面で、素材の画像（/art/ の下）を全部読めなくする（読み込みの失敗：文字と操作が残る・Version 21 の見た目）
@@ -44,9 +45,9 @@ import { boxesOverlap, launchBrowser, skipCinematic } from './lib.mjs';
 const BASE = process.env.BASE || 'http://localhost:8633';
 const OUT = resolve(process.argv[2] || 'e2e-out/art-compare');
 const list = (v, d) => (v || d).split(',').map((s) => s.trim()).filter(Boolean);
-const MODES = list(process.env.MODES, 'old,default,fixture');
+const MODES = list(process.env.MODES, 'old,v24,default,fixture');
 const V22_BASE = process.env.V22_BASE || 'http://localhost:8715';
-const MONTAGE_MODES = list(process.env.MONTAGE_MODES, 'old,v22,default,fixture');
+const MONTAGE_MODES = list(process.env.MONTAGE_MODES, 'old,v22,v24,default,fixture');
 const FAIL_MODES = ['old', 'abort', 'abortroad'];
 const SIZES = list(process.env.SIZES, '1280x720,844x390');
 const QUALITY = list(process.env.QUALITY, 'low,default');
@@ -55,10 +56,11 @@ const IDENTITY = process.env.IDENTITY !== '0';
 const WALK = process.env.WALK === '1';
 const CAM_LOCK = process.env.CAM_LOCK !== '0';
 const V21_DIR = process.env.V21_DIR || '';
-const MODE_Q = { old: 'art=old', default: '', fixture: 'artFixture=1', v22: '', abort: '', abortroad: '' };
+const MODE_Q = { old: 'art=old', v24: 'art=v24', default: '', fixture: 'artFixture=1', v22: '', abort: '', abortroad: '' };
 const MODE_LABEL = {
     old: 'BEFORE  ?art=old (V21 look)',
     v22: 'BEFORE  V22 3fe5a7d (published)',
+    v24: 'BEFORE  ?art=v24 (V24 look: pack-v1 faces, no portraits)',
     default: 'AFTER  default build',
     fixture: 'AFTER  ?artFixture=1  [TEST fixture - placement only, NOT art]',
     abort: 'AFTER  all /art/ images fail to load',
@@ -191,7 +193,7 @@ function probeStory() {
     const dlg = layer?.querySelector('.g-dialog') ?? null;
     const tx = layer?.querySelector('.g-dialog .text') ?? null;
     const font = tx ? { size: getComputedStyle(tx).fontSize, spacing: getComputedStyle(tx).letterSpacing, line: getComputedStyle(tx).lineHeight } : null;
-    return { vw: innerWidth, vh: innerHeight, speaker: dlg?.dataset.speaker ?? null, hasFace: !!dlg?.classList.contains('has-face'), probe: window.__game?.ui ?? null, body: document.body.className, rects, portrait, background, face, font };
+    return { vw: innerWidth, vh: innerHeight, dpr: devicePixelRatio, speaker: dlg?.dataset.speaker ?? null, hasFace: !!dlg?.classList.contains('has-face'), probe: window.__game?.ui ?? null, body: document.body.className, rects, portrait, background, face, font };
 }
 
 /** 合戦の画面の部品の四角と、顔（canvas.b-face）とそのまわりの文字の重なり（読むだけ） */
@@ -378,16 +380,19 @@ async function runStory(mode, W, H, q) {
                 .waitForFunction(
                     ([p, bg]) => {
                         const L = [...document.querySelectorAll('.g-layer[data-kind="script"]')].pop();
-                        const okP = !p || !!L?.querySelector(`canvas.g-portrait[data-art-id="${p}"].on`) || !!L?.querySelector(`canvas.g-portrait[data-art-id="${p}"]`);
-                        const okB = !bg || !!L?.querySelector('.g-council-bg canvas.g-council-bg-base');
-                        // 台詞の枠の顔：今の話し手の顔がある話し手なら、その顔が出るまで（読み込みは非同期）
+                        // 人物画：今の話し手の物が出るまで（v24・old には無い。入りきらない画面では出ない＝4 秒で先へ）
+                        const okP = !p || !!L?.querySelector(`canvas.g-portrait[data-art-id="${p}"].on`);
+                        // 軍議の背景：原寸以内の画面だけ出る（それ以外は出ないので待たない）
+                        const okB = !bg || !!L?.querySelector('.g-council-bg canvas.g-council-bg-base') || window.devicePixelRatio * Math.min(Math.max(innerWidth / 1664, innerHeight / 936), innerHeight / (936 * 0.64)) > 1;
+                        // 台詞の枠の顔：今の話し手の顔がある話し手なら、その顔が出るまで（読み込みは非同期）。その人の人物画が出ていれば顔は出ない
                         const sp = L?.querySelector('.g-dialog')?.dataset.speaker;
-                        const want = { hero: 'face.ieyasu', tadakatsu: 'face.tadakatsu', sakai: 'face.sakai', ishikawa: 'face.ishikawa' }[sp];
+                        const want = { hero: 'ieyasu', tadakatsu: 'tadakatsu', sakai: 'sakai', ishikawa: 'ishikawa' }[sp];
                         const fc = L?.querySelector('.g-dialog canvas.g-face');
-                        const okF = !want || (!!fc && !fc.hidden && fc.dataset.artId === want);
+                        const pc = L?.querySelector('canvas.g-portrait.on');
+                        const okF = !want || (!!fc && !fc.hidden && fc.dataset.artId?.endsWith(`.${want}`)) || (!!pc && pc.dataset.artId === `portrait.${want}`);
                         return okP && okB && okF;
                     },
-                    [portraitOf, councilBg],
+                    [mode === 'default' || mode === 'fixture' ? portraitOf : null, mode === 'default' || mode === 'fixture' ? councilBg : false],
                     { timeout: 4000, polling: 100 },
                 )
                 .catch(() => {});
@@ -418,9 +423,9 @@ async function runStory(mode, W, H, q) {
     await advanceUntil(async () => (await speaker()) === 'tadakatsu', 'council tadakatsu line');
     await shot('conv-council-line', { portraitOf: 'portrait.tadakatsu', councilBg: true });
     await advanceUntil(async () => (await speaker()) === 'sakai', 'council sakai line');
-    await shot('conv-council-sakai-line', { councilBg: true });
+    await shot('conv-council-sakai-line', { portraitOf: 'portrait.sakai', councilBg: true });
     await advanceUntil(async () => (await speaker()) === 'ishikawa', 'council ishikawa line');
-    await shot('conv-council-ishikawa-line', { councilBg: true });
+    await shot('conv-council-ishikawa-line', { portraitOf: 'portrait.ishikawa', councilBg: true });
     await advanceUntil(async (u) => u.choices?.length > 0, 'policy choices');
     await sleep(700); // 導入の帯が消えるまで
     await shot('conv-council-choice', { councilBg: true });
@@ -740,19 +745,21 @@ for (const q of QUALITY) {
             }
             // 顔のある素材の一覧（default・読み込みの失敗の abort／abortroad）：DOM の違いは素材の部品だけ（名前・台詞・ボタン・札の文字は同じ）。
             // 演習の編成の表（Version 23）は「率いる武将」の欄の名前を、顔・名前・役割の箱（g-pr-gen）に入れる：名前の文字は同じで、役割の文字が増える
-            for (const am of ['default', 'abort', 'abortroad']) {
+            for (const am of ['v24', 'default', 'abort', 'abortroad']) {
                 if (!R.old || !R[am] || genCount === 0) continue;
                 for (const scene of Object.keys(R.old.dom ?? {})) {
-                    const strip = (l) => l.trim().replace(/\.(has-face|with-face|with-gen)(?=[.\[ (]|$)/g, '').replace(/,?face=(full|narrow|off)/, '').replace(/\[\]/, '');
+                    const strip = (l) => l.trim().replace(/\.(has-face|with-face|with-gen|g-art)(?=[.\[ (]|$)/g, '').replace(/,?face=(full|narrow|off)/, '').replace(/\[\]/, '');
                     const a = new Set(R.old.dom[scene].map(strip));
                     const added = (R[am].dom?.[scene] ?? []).map(strip).filter((l) => !a.has(l));
                     const b = new Set((R[am].dom?.[scene] ?? []).map(strip));
                     const genNames = new Set(added.map((l) => /^b\.g-pr-gname "(.+)"$/.exec(l)?.[1]).filter(Boolean));
                     const removed = R.old.dom[scene].map(strip).filter((l) => !b.has(l)).filter((l) => !(/^td "(.+)"$/.test(l) && genNames.has(/^td "(.+)"$/.exec(l)[1])));
-                    const unexpected = added.filter((l) => !/canvas\.(g-face|b-face)|g-art-note|^div\.g-pr-gen$|^div\.g-pr-gtext$|^b\.g-pr-gname |^span\.g-pr-grole |^td$/.test(l));
+                    // Version 25：会話・軍議の人物画（canvas.g-portrait）と軍議の背景（div.g-council-bg とその canvas）も素材の部品
+                    const unexpected = added.filter((l) => !/canvas\.(g-face|b-face|g-portrait|g-council-bg-base|g-council-bg-front)|^div\.g-council-bg|g-art-note|^div\.g-pr-gen$|^div\.g-pr-gtext$|^b\.g-pr-gname |^span\.g-pr-grole |^td$/.test(l));
                     const faces = added.filter((l) => /canvas\.(g-face|b-face)/.test(l));
                     layout[`dom-diff|${scene}|${am}|${tag}`] = { added: added.slice(0, 40), removed: removed.slice(0, 40) };
-                    check(unexpected.length === 0 && removed.length === 0, `${scene} ${tag}: ${am} adds only face canvases, has-face/with-face/data-face marks and the briefing general box (name + role text) to the DOM; nothing removed`, unexpected.length || removed.length ? { unexpected: unexpected.slice(0, 4), removed: removed.slice(0, 4) } : `+${added.length} lines (${faces.length} face canvases)`);
+                    check(unexpected.length === 0 && removed.length === 0, `${scene} ${tag}: ${am} adds only face/portrait/council-background canvases, has-face/with-face/data-face/g-art marks and the briefing general box (name + role text) to the DOM; nothing removed`, unexpected.length || removed.length ? { unexpected: unexpected.slice(0, 4), removed: removed.slice(0, 4) } : `+${added.length} lines (${faces.length} face canvases)`);
+                    if (am === 'v24') check(!added.some((l) => /g-portrait|g-council-bg/.test(l)), `${scene} ${tag}: v24 adds no portrait / council background (V24 had none)`);
                     if (am === 'abort') check(faces.length === 0, `${scene} ${tag}: abort (all art images fail): no face canvas left in the DOM`, faces.slice(0, 3));
                 }
             }
@@ -805,7 +812,7 @@ for (const q of QUALITY) {
             check(ok(r.art) && ok(r.artAtReady), `battle ${mode} ${tag}: ground ${mode === 'default' ? 'grass + dirt + road textures (no forest floor, no trees, road strip hidden)' : mode === 'abort' ? 'V21 vertex ground and road strip (all images failed)' : 'grass + dirt textures, road = V21 road strip (road image failed)'} (battle #${r.battleNo})`, { atReady: r.artAtReady, art: r.art });
             const imgs = r.artRequests.filter((p) => /\.(webp|png|jpg)$/.test(p));
             const ground = imgs.filter((p) => p.startsWith('/art/battle/'));
-            check(ground.every((p) => /^\/art\/battle\/plains_(grass|dirt|road)\.webp$/.test(p)) && imgs.every((p) => /^\/art\/(faces\/[a-z]+|battle\/plains_(grass|dirt|road))\.webp$/.test(p)), `battle ${mode} ${tag}: only face and plains grass/dirt/road images requested (no forest floor, portraits or backgrounds)`, imgs);
+            check(ground.every((p) => /^\/art\/battle\/plains_(grass|dirt|road)\.webp$/.test(p)) && imgs.every((p) => /^\/art\/(faces\/[a-z]+_v2|battle\/plains_(grass|dirt|road))\.webp$/.test(p)), `battle ${mode} ${tag}: only v2 face and plains grass/dirt/road images requested (no forest floor, portraits, backgrounds or V24 faces)`, imgs);
             if (mode === 'default') check(['plains_grass.webp', 'plains_dirt.webp', 'plains_road.webp'].every((f) => r.groundResp.some(([g, st]) => g === f && st === 200)), `battle default ${tag}: the 3 ground images loaded (200)`, r.groundResp);
             if (mode !== 'default') check((r.aborted ?? []).length > 0 && r.groundResp.every(([g]) => mode === 'abort' || g !== 'plains_road.webp'), `battle ${mode} ${tag}: the aborted images really failed (${(r.aborted ?? []).length} aborted)`, r.aborted);
         }
@@ -824,63 +831,80 @@ for (const q of QUALITY) {
             }
         }
         if (B.fixture) check(B.fixture.art.ground === 'textured' && B.fixture.art.trees > 0, `battle fixture ${tag}: textured ground + plains woods trees (TEST pattern)`, B.fixture.art);
-        // 本物の顔（default・manifest に顔がある）：会話・軍議は今の話し手の顔、合戦はその部隊の武将の顔。人物画・軍議の背景は使わない（新しい原画の到着待ち）。地面は大平原の草地・土・道（上の確かめ）
+        // 本物の素材（default・v24）：会話・軍議は今の話し手本人の人物画（default。Version 25）か、その人の顔（人物画が出ない行・v24 は第 1 版の顔）。
+        // 軍議の背景は default の原寸以内の画面だけ（1664×936 を cover で描いて、元の 1 画素が端末の 1 画素以下）。合戦はその部隊の武将の顔。地面は大平原の草地・土・道（上の確かめ）
         const S = runsOf('story', size, q);
-        if (S.old && S.default && genCount > 0) {
-            const WANT = { 'conv-tadakatsu-line': 'face.tadakatsu', 'conv-ieyasu-line': 'face.ieyasu', 'conv-talk-choice': 'face.tadakatsu', 'conv-council-line': 'face.tadakatsu', 'conv-council-sakai-line': 'face.sakai', 'conv-council-ishikawa-line': 'face.ishikawa', 'conv-council-choice': 'face.tadakatsu' };
+        const SPEAKER = { 'conv-tadakatsu-line': 'tadakatsu', 'conv-ieyasu-line': 'ieyasu', 'conv-talk-choice': 'tadakatsu', 'conv-council-line': 'tadakatsu', 'conv-council-sakai-line': 'sakai', 'conv-council-ishikawa-line': 'ishikawa', 'conv-council-choice': 'tadakatsu' };
+        for (const am of ['default', 'v24']) {
+            if (!S.old || !S[am] || genCount === 0) continue;
             const pc = size.split('x').map(Number)[1] > 430;
-            for (const [scene, want] of Object.entries(WANT)) {
+            for (const [scene, who] of Object.entries(SPEAKER)) {
                 const o = layout[`${scene}|old|${tag}`];
-                const d = layout[`${scene}|default|${tag}`];
+                const d = layout[`${scene}|${am}|${tag}`];
                 if (!o || !d) {
-                    check(false, `${scene} ${tag}: shot in both modes`);
+                    check(false, `${scene} ${tag}: shot in old and ${am}`);
                     continue;
                 }
                 check(!o.face && !o.hasFace && !o.portrait && !o.background, `${scene} old ${tag}: no face / portrait / background (V21)`);
-                check(d.face?.visible && d.face.artId === want && d.hasFace, `${scene} default ${tag}: dialog face is the speaker's own face (${want})`, d.face);
-                check(!d.portrait?.visible && !d.background?.base, `${scene} default ${tag}: no portrait / council background (not adopted)`, [d.portrait, d.background]);
+                const faceId = am === 'v24' ? `face.pack1.${who}` : `face.${who}`;
+                if (am === 'default') {
+                    const up = !!d.portrait?.visible;
+                    check(!up || d.portrait.artId === `portrait.${who}`, `${scene} default ${tag}: the portrait shown is the speaker's own (portrait.${who})`, d.portrait);
+                    check(up ? !d.face?.visible : d.face?.visible && d.face.artId === faceId, `${scene} default ${tag}: ${up ? 'portrait shown, so the same person\'s dialog face is hidden' : `no portrait on this line, dialog face is the speaker's own (${faceId})`}`, { portrait: d.portrait?.artId ?? null, face: d.face });
+                    if (scene.startsWith('conv-council')) {
+                        const sc = Math.min(Math.max(d.vw / 1664, d.vh / 936), d.vh / (936 * 0.64)) * (d.dpr ?? 1);
+                        check(!!d.background?.base === sc <= 1 + 1e-9, `${scene} default ${tag}: council background ${sc <= 1 ? 'shown (scale ' : 'not shown, V24 council view (scale '}${sc.toFixed(3)} device px per source px)`, d.background);
+                    }
+                } else {
+                    check(d.face?.visible && d.face.artId === faceId && d.hasFace, `${scene} v24 ${tag}: dialog face is the speaker's own V24 face (${faceId})`, d.face);
+                    check(!d.portrait && !d.background, `${scene} v24 ${tag}: no portrait / council background (V24 had none)`, [d.portrait, d.background]);
+                }
                 const dh = d.rects.dialog && o.rects.dialog ? Math.round((d.rects.dialog.b - d.rects.dialog.t - (o.rects.dialog.b - o.rects.dialog.t)) * 10) / 10 : null;
-                check(dh !== null && dh <= 0.5 && Math.abs(d.rects.dialog.r - o.rects.dialog.r) < 0.6 && Math.abs(d.rects.dialog.b - o.rects.dialog.b) < 0.6, `${scene} default ${tag}: dialog not taller than old, same right/bottom edge (height ${dh >= 0 ? '+' : ''}${dh})`, [o.rects.dialog, d.rects.dialog]);
-                if (pc) check(JSON.stringify(o.rects.text) === JSON.stringify(d.rects.text) && JSON.stringify(o.rects.name) === JSON.stringify(d.rects.name), `${scene} default ${tag}: PC: name and text boxes identical to old (dialog widened to the left)`, [o.rects.text, d.rects.text]);
+                check(dh !== null && dh <= 0.5 && Math.abs(d.rects.dialog.r - o.rects.dialog.r) < 0.6 && Math.abs(d.rects.dialog.b - o.rects.dialog.b) < 0.6, `${scene} ${am} ${tag}: dialog not taller than old, same right/bottom edge (height ${dh >= 0 ? '+' : ''}${dh})`, [o.rects.dialog, d.rects.dialog]);
+                if (pc) check(JSON.stringify(o.rects.text) === JSON.stringify(d.rects.text) && JSON.stringify(o.rects.name) === JSON.stringify(d.rects.name), `${scene} ${am} ${tag}: PC: name and text boxes identical to old (dialog widened to the left)`, [o.rects.text, d.rects.text]);
                 // Version 23：スマホ・狭い画面でも台詞の四角（字の大きさ・幅・折り返し）は Version 21 と同じ（顔のために台詞を小さくしない）。枠も同じ
-                else check(JSON.stringify(o.rects.text) === JSON.stringify(d.rects.text) && JSON.stringify(o.rects.dialog) === JSON.stringify(d.rects.dialog) && d.font?.size === o.font?.size && d.font?.spacing === o.font?.spacing, `${scene} default ${tag}: phone/narrow: text box, dialog box and text font (${d.font?.size}) identical to old`, { old: [o.rects.text, o.font], new: [d.rects.text, d.font] });
-                check(JSON.stringify(o.rects.choice) === JSON.stringify(d.rects.choice) && JSON.stringify(o.rects.head) === JSON.stringify(d.rects.head), `${scene} default ${tag}: choices and council header boxes identical to old`);
-                // 読み込みの失敗（abort：素材の画像が全部読めない）：顔は出ず、台詞の枠・名前・台詞・選択肢は Version 21 と同じ
+                else check(JSON.stringify(o.rects.text) === JSON.stringify(d.rects.text) && JSON.stringify(o.rects.dialog) === JSON.stringify(d.rects.dialog) && d.font?.size === o.font?.size && d.font?.spacing === o.font?.spacing, `${scene} ${am} ${tag}: phone/narrow: text box, dialog box and text font (${d.font?.size}) identical to old`, { old: [o.rects.text, o.font], new: [d.rects.text, d.font] });
+                check(JSON.stringify(o.rects.choice) === JSON.stringify(d.rects.choice) && JSON.stringify(o.rects.head) === JSON.stringify(d.rects.head), `${scene} ${am} ${tag}: choices and council header boxes identical to old`);
+                if (am !== 'default') continue;
+                // 読み込みの失敗（abort：素材の画像が全部読めない）：顔・人物画・背景は出ず、台詞の枠・名前・台詞・選択肢は Version 21 と同じ
                 const f = layout[`${scene}|abort|${tag}`];
-                if (f) check(!f.face && !f.hasFace && JSON.stringify(['dialog', 'name', 'text', 'head', 'choices'].map((k) => o.rects[k])) === JSON.stringify(['dialog', 'name', 'text', 'head', 'choices'].map((k) => f.rects[k])) && JSON.stringify(o.rects.choice) === JSON.stringify(f.rects.choice) && f.font?.size === o.font?.size, `${scene} abort ${tag}: all images failed: no face, dialog/name/text/choices identical to old`, { face: f.face, dialog: [o.rects.dialog, f.rects.dialog] });
+                if (f) check(!f.face && !f.hasFace && !f.portrait && !f.background && JSON.stringify(['dialog', 'name', 'text', 'head', 'choices'].map((k) => o.rects[k])) === JSON.stringify(['dialog', 'name', 'text', 'head', 'choices'].map((k) => f.rects[k])) && JSON.stringify(o.rects.choice) === JSON.stringify(f.rects.choice) && f.font?.size === o.font?.size, `${scene} abort ${tag}: all images failed: no face/portrait/background, dialog/name/text/choices identical to old`, { face: f.face, dialog: [o.rects.dialog, f.rects.dialog] });
                 // Version 22（比べの「前」の 2 枚目）：台詞の字の大きさを記録する（Version 22 はスマホで 14〜15 px に縮めていた）
                 const v = layout[`${scene}|v22|${tag}`];
                 if (v) layout[`font|${scene}|${tag}`] = { old: o.font, v22: v.font, v23: d.font };
             }
         }
-        if (B.old && B.default && genCount > 0) {
-            const own = (f) => (f.where.startsWith('card:') ? `face.${f.where.slice(7)}` : f.where.startsWith('brief:') ? `face.${f.where.slice(8)}` : null);
+        for (const am of ['default', 'v24']) {
+            if (!B.old || !B[am] || genCount === 0) continue;
+            // 札・編成の表・能力の欄の顔：default は第 2 版（face.<武将>）、v24 は第 1 版（face.pack1.<武将>）
+            const fid = (g) => (am === 'v24' ? `face.pack1.${g}` : `face.${g}`);
+            const own = (f) => (f.where.startsWith('card:') ? fid(f.where.slice(7)) : f.where.startsWith('brief:') ? fid(f.where.slice(8)) : null);
             for (const scene of ['practice-briefing', 'battle-wide', 'battle-selected', 'battle-selected-ieyasu', 'battle-ishikawa-target']) {
                 const o = layout[`${scene}|old|${tag}`];
-                const d = layout[`${scene}|default|${tag}`];
+                const d = layout[`${scene}|${am}|${tag}`];
                 if (!o || !d) {
                     if (scene !== 'battle-ishikawa-target' || B.old.ishikawaTarget) check(false, `${scene} ${tag}: shot in both modes`);
                     continue;
                 }
                 check(o.faces.length === 0, `${scene} old ${tag}: no face canvases (V21)`);
                 const wrong = d.faces.filter((f) => own(f) !== null && own(f) !== f.artId).map((f) => `${f.where}:${f.artId}`);
-                check(wrong.length === 0, `${scene} default ${tag}: every card / briefing-row face is that unit's own general (${d.faces.map((f) => `${f.where}:${f.artId}`).join(' ')})`, wrong);
-                const abil = { 'battle-selected': 'face.tadakatsu', 'battle-selected-ieyasu': 'face.ieyasu', 'battle-ishikawa-target': 'face.ishikawa' }[scene];
+                check(wrong.length === 0, `${scene} ${am} ${tag}: every card / briefing-row face is that unit's own general (${d.faces.map((f) => `${f.where}:${f.artId}`).join(' ')})`, wrong);
+                const abil = { 'battle-selected': fid('tadakatsu'), 'battle-selected-ieyasu': fid('ieyasu'), 'battle-ishikawa-target': fid('ishikawa') }[scene];
                 if (abil) {
                     const af = d.faces.filter((f) => f.where === 'abil-row');
                     // Version 23：能力の欄の顔は大きく（PC 52〜60 px・縦の狭い画面 40 px・高さ 370 以下 30 px）
                     const minW = d.vh <= 370 ? 30 : d.vh <= 520 ? 40 : 48;
-                    check(af.length === 1 && af[0].artId === abil && af[0].rect.r - af[0].rect.l >= minW - 0.2, `${scene} default ${tag}: ability panel shows ${abil} at ${af[0] ? Math.round(af[0].rect.r - af[0].rect.l) : '-'} px (>= ${minW})`, af);
+                    check(af.length === 1 && af[0].artId === abil && af[0].rect.r - af[0].rect.l >= minW - 0.2, `${scene} ${am} ${tag}: ability panel shows ${abil} at ${af[0] ? Math.round(af[0].rect.r - af[0].rect.l) : '-'} px (>= ${minW})`, af);
                 }
                 if (scene === 'practice-briefing') {
                     const gens = ['brief:a_ieyasu', 'brief:a_ishikawa', 'brief:a_sakai', 'brief:a_sakakibara', 'brief:a_tadakatsu'];
-                    check(JSON.stringify(d.faces.map((f) => f.where).sort()) === JSON.stringify(gens), `${scene} default ${tag}: briefing table faces for the 5 generals`, d.faces.map((f) => f.where));
+                    check(JSON.stringify(d.faces.map((f) => f.where).sort()) === JSON.stringify(gens), `${scene} ${am} ${tag}: briefing table faces for the 5 generals`, d.faces.map((f) => f.where));
                     // 顔・名前・役割（Version 23）。武将のいない行の高さは Version 21 と同じ（ほかの列の部隊名・能力名を折り返させない）
                     const rowOf = (L, u) => L.briefRows.find((x) => x.unit === u);
                     const genRows = d.briefRows.filter((x) => x.gen);
                     const plain = o.briefRows.filter((x) => !d.briefRows.find((y) => y.unit === x.unit)?.gen);
-                    check(genRows.length === 5 && genRows.every((x) => x.role && x.gen === rowOf(o, x.unit)?.text), `${scene} default ${tag}: briefing general cells show name (same text as old) + role`, genRows.map((x) => [x.unit, x.gen, x.role]));
-                    check(plain.length > 0 && plain.every((x) => Math.abs(x.b - x.t - (rowOf(d, x.unit).b - rowOf(d, x.unit).t)) < 0.6), `${scene} default ${tag}: rows without a general keep the old height (no squeezed columns)`, plain.map((x) => [x.unit, Math.round((x.b - x.t) * 10) / 10, Math.round((rowOf(d, x.unit).b - rowOf(d, x.unit).t) * 10) / 10]));
+                    check(genRows.length === 5 && genRows.every((x) => x.role && x.gen === rowOf(o, x.unit)?.text), `${scene} ${am} ${tag}: briefing general cells show name (same text as old) + role`, genRows.map((x) => [x.unit, x.gen, x.role]));
+                    check(plain.length > 0 && plain.every((x) => Math.abs(x.b - x.t - (rowOf(d, x.unit).b - rowOf(d, x.unit).t)) < 0.6), `${scene} ${am} ${tag}: rows without a general keep the old height (no squeezed columns)`, plain.map((x) => [x.unit, Math.round((x.b - x.t) * 10) / 10, Math.round((rowOf(d, x.unit).b - rowOf(d, x.unit).t) * 10) / 10]));
                 }
                 if (scene !== 'practice-briefing') {
                     // 左上の列（.b-topleft）は能力の欄を含むので、下の端だけ能力の欄が高くなった分だけ下がってよい（位置・幅・ほかの部品は同じ）
@@ -892,22 +916,26 @@ for (const q of QUALITY) {
                         if (k === '.b-topleft') return a.l === b.l && a.t === b.t && a.r === b.r && Math.abs(b.b - a.b - grewBy) < 0.6;
                         return JSON.stringify(a) === JSON.stringify(b);
                     });
-                    check(JSON.stringify(o.cards.map((c) => [c.id, c.l, c.t, c.r, c.b])) === JSON.stringify(d.cards.map((c) => [c.id, c.l, c.t, c.r, c.b])) && insetsSame, `${scene} default ${tag}: card and HUD boxes identical to old (the top-left column only grows with the ability panel: ${Math.round(grewBy * 10) / 10} px)`, insetsSame ? undefined : [o.insets, d.insets]);
+                    check(JSON.stringify(o.cards.map((c) => [c.id, c.l, c.t, c.r, c.b])) === JSON.stringify(d.cards.map((c) => [c.id, c.l, c.t, c.r, c.b])) && insetsSame, `${scene} ${am} ${tag}: card and HUD boxes identical to old (the top-left column only grows with the ability panel: ${Math.round(grewBy * 10) / 10} px)`, insetsSame ? undefined : [o.insets, d.insets]);
                     // 能力の欄：位置・幅は同じ。高くなるのは顔の分だけ（PC 22 px・縦の狭い画面 18 px まで。高さ 370 以下は 2 px まで＝下の地図の名札を覆わない）
                     const maxGrow = d.vh <= 370 ? 2 : d.vh <= 520 ? 18 : 22;
                     const grow = o.abil && d.abil ? Math.round((d.abil.b - d.abil.t - (o.abil.b - o.abil.t)) * 10) / 10 : null;
-                    check(!!o.abil === !!d.abil && (!o.abil || (Math.abs(o.abil.t - d.abil.t) < 0.6 && Math.abs(o.abil.l - d.abil.l) < 0.6 && Math.abs(o.abil.r - d.abil.r) < 0.6 && grow <= maxGrow + 0.2)), `${scene} default ${tag}: ability panel: same position and width as old, ${grow === null ? 'no panel' : `${grow >= 0 ? '+' : ''}${grow} px taller`} (<= ${maxGrow})`, [o.abil, d.abil]);
+                    check(!!o.abil === !!d.abil && (!o.abil || (Math.abs(o.abil.t - d.abil.t) < 0.6 && Math.abs(o.abil.l - d.abil.l) < 0.6 && Math.abs(o.abil.r - d.abil.r) < 0.6 && grow <= maxGrow + 0.2)), `${scene} ${am} ${tag}: ability panel: same position and width as old, ${grow === null ? 'no panel' : `${grow >= 0 ? '+' : ''}${grow} px taller`} (<= ${maxGrow})`, [o.abil, d.abil]);
                 }
             }
-            if (B.old.ishikawaTarget || B.default.ishikawaTarget) {
-                check(B.old.ishikawaTarget && B.default.ishikawaTarget && B.old.ishikawaUsed === null && B.default.ishikawaUsed === null && JSON.stringify(B.old.targetLabels) === JSON.stringify(B.default.targetLabels), `battle ${tag}: Ishikawa target selection opened in both modes, same target labels, cancelled without using the ability`, [B.old.targetLabels, B.default.targetLabels]);
-                check(JSON.stringify(B.old.targetCamera) === JSON.stringify(B.default.targetCamera), `battle ${tag}: camera after auto-framing the Ishikawa targets identical to old`, [B.old.targetCamera, B.default.targetCamera]);
+            if (B.old.ishikawaTarget || B[am].ishikawaTarget) {
+                check(B.old.ishikawaTarget && B[am].ishikawaTarget && B.old.ishikawaUsed === null && B[am].ishikawaUsed === null && JSON.stringify(B.old.targetLabels) === JSON.stringify(B[am].targetLabels), `battle ${tag}: Ishikawa target selection opened in both modes, same target labels, cancelled without using the ability`, [B.old.targetLabels, B[am].targetLabels]);
+                check(JSON.stringify(B.old.targetCamera) === JSON.stringify(B[am].targetCamera), `battle ${tag}: camera after auto-framing the Ishikawa targets identical to old`, [B.old.targetCamera, B[am].targetCamera]);
             }
             // 読む画像の種類は上の地面の確かめ（顔と大平原の草地・土・道だけ）
         }
         if (S.default && genCount > 0) {
             const imgs = S.default.artRequests.filter((p) => /\.(webp|png|jpg)$/.test(p));
-            check(imgs.length > 0 && imgs.every((p) => /^\/art\/faces\/[a-z]+\.webp$/.test(p)), `story default ${tag}: loads only face WebPs (no portraits/backgrounds)`, imgs);
+            check(imgs.length > 0 && imgs.every((p) => /^\/art\/(faces\/[a-z]+_v2|portraits\/[a-z]+_v2|story\/council_day)\.webp$/.test(p)), `story default ${tag}: loads only v2 portraits, v2 faces and (where it fits) the council background`, imgs);
+        }
+        if (S.v24 && genCount > 0) {
+            const imgs = S.v24.artRequests.filter((p) => /\.(webp|png|jpg)$/.test(p));
+            check(imgs.length > 0 && imgs.every((p) => /^\/art\/faces\/[a-z]+\.webp$/.test(p)), `story v24 ${tag}: loads only the V24 (pack v1) face WebPs`, imgs);
         }
         if (B.fixture && devCount) {
             for (const scene of ['battle-wide', 'battle-selected', 'battle-selected-ieyasu', 'practice-briefing']) {
