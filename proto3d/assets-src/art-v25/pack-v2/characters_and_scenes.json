@@ -1,0 +1,221 @@
+[
+  {
+    "key": "tokugawa_ieyasu",
+    "display_name": "徳川家康",
+    "generation_id": "61a12f96-3a0f-4907-ac23-5e8ffcb36efd",
+    "appearance": "藍色の小袖、口髭と短い顎髭",
+    "face_crop_xyxy": [
+      310,
+      110,
+      750,
+      550
+    ],
+    "pose": "画面右寄りの三四分向き、通常表情",
+    "historical_accuracy": "ゲーム用の創作外見。肖像の復元・衣装考証の保証ではない。",
+    "portrait": "portraits/tokugawa_ieyasu.png",
+    "web_portrait": "web/portraits/tokugawa_ieyasu.webp",
+    "faces": {
+      "256": "faces/256/tokugawa_ieyasu.png",
+      "128": "faces/128/tokugawa_ieyasu.png"
+    }
+  },
+  {
+    "key": "honda_tadakatsu",
+    "display_name": "本多忠勝",
+    "generation_id": "c812c25e-4f72-4b38-be8e-06029dcc279b",
+    "appearance": "松葉色の小袖、髭なし、幅のある肩",
+    "face_crop_xyxy": [
+      310,
+      130,
+      750,
+      570
+    ],
+    "pose": "画面右寄りの三四分向き、通常表情",
+    "historical_accuracy": "ゲーム用の創作外見。肖像の復元・衣装考証の保証ではない。",
+    "portrait": "portraits/honda_tadakatsu.png",
+    "web_portrait": "web/portraits/honda_tadakatsu.webp",
+    "faces": {
+      "256": "faces/256/honda_tadakatsu.png",
+      "128": "faces/128/honda_tadakatsu.png"
+    }
+  },
+  {
+    "key": "sakai_tadatsugu",
+    "display_name": "酒井忠次",
+    "generation_id": "533a2ee6-8b75-4afc-9a4e-9dbab65309dc",
+    "appearance": "焦茶の小袖、白髪交じりの髪、短い髭",
+    "face_crop_xyxy": [
+      315,
+      145,
+      755,
+      585
+    ],
+    "pose": "画面右寄りの三四分向き、通常表情",
+    "historical_accuracy": "ゲーム用の創作外見。肖像の復元・衣装考証の保証ではない。",
+    "portrait": "portraits/sakai_tadatsugu.png",
+    "web_portrait": "web/portraits/sakai_tadatsugu.webp",
+    "faces": {
+      "256": "faces/256/sakai_tadatsugu.png",
+      "128": "faces/128/sakai_tadatsugu.png"
+    }
+  },
+  {
+    "key": "ishikawa_kazumasa",
+    "display_name": "石川数正",
+    "generation_id": "44a365a1-722d-4f07-82fd-a492543ee8cc",
+    "appearance": "灰紫の小袖、細い口髭、手に白い書状",
+    "face_crop_xyxy": [
+      300,
+      100,
+      740,
+      540
+    ],
+    "pose": "画面右寄りの三四分向き、通常表情",
+    "historical_accuracy": "ゲーム用の創作外見。肖像の復元・衣装考証の保証ではない。",
+    "portrait": "portraits/ishikawa_kazumasa.png",
+    "web_portrait": "web/portraits/ishikawa_kazumasa.webp",
+    "faces": {
+      "256": "faces/256/ishikawa_kazumasa.png",
+      "128": "faces/128/ishikawa_kazumasa.png"
+    }
+  },
+  {
+    "key": "sakakibara_yasumasa",
+    "display_name": "榊原康政",
+    "generation_id": "f01c4cc2-7968-45dd-a479-5228ab5b3c47",
+    "appearance": "青灰の小袖、髭なし、細めの輪郭",
+    "face_crop_xyxy": [
+      325,
+      105,
+      765,
+      545
+    ],
+    "pose": "画面右寄りの三四分向き、通常表情",
+    "historical_accuracy": "ゲーム用の創作外見。肖像の復元・衣装考証の保証ではない。",
+    "portrait": "portraits/sakakibara_yasumasa.png",
+    "web_portrait": "web/portraits/sakakibara_yasumasa.webp",
+    "faces": {
+      "256": "faces/256/sakakibara_yasumasa.png",
+      "128": "faces/128/sakakibara_yasumasa.png"
+    }
+  },
+  {
+    "key": "oda_nobunaga",
+    "display_name": "織田信長",
+    "generation_id": "d5549fc0-612f-40d6-8a28-c5b909c13e57",
+    "appearance": "黒い小袖、赤茶の内襟、細い顎髭",
+    "face_crop_xyxy": [
+      345,
+      130,
+      785,
+      570
+    ],
+    "pose": "画面右寄りの三四分向き、通常表情",
+    "historical_accuracy": "ゲーム用の創作外見。肖像の復元・衣装考証の保証ではない。",
+    "portrait": "portraits/oda_nobunaga.png",
+    "web_portrait": "web/portraits/oda_nobunaga.webp",
+    "faces": {
+      "256": "faces/256/oda_nobunaga.png",
+      "128": "faces/128/oda_nobunaga.png"
+    }
+  },
+  {
+    "key": "azai_nagamasa",
+    "display_name": "浅井長政",
+    "generation_id": "773217f4-6948-4622-ad4a-688588109c95",
+    "appearance": "淡い青の小袖、髭なし、両手を帯へ",
+    "face_crop_xyxy": [
+      300,
+      110,
+      740,
+      550
+    ],
+    "pose": "画面右寄りの三四分向き、通常表情",
+    "historical_accuracy": "ゲーム用の創作外見。肖像の復元・衣装考証の保証ではない。",
+    "portrait": "portraits/azai_nagamasa.png",
+    "web_portrait": "web/portraits/azai_nagamasa.webp",
+    "faces": {
+      "256": "faces/256/azai_nagamasa.png",
+      "128": "faces/128/azai_nagamasa.png"
+    }
+  },
+  {
+    "key": "asakura_yoshikage",
+    "display_name": "朝倉義景",
+    "generation_id": "d6cfa3b0-2100-4b6b-b156-5d120cc99d0e",
+    "appearance": "薄茶の小袖、短い髭、閉じた扇",
+    "face_crop_xyxy": [
+      295,
+      95,
+      735,
+      535
+    ],
+    "pose": "画面右寄りの三四分向き、通常表情",
+    "historical_accuracy": "ゲーム用の創作外見。肖像の復元・衣装考証の保証ではない。",
+    "portrait": "portraits/asakura_yoshikage.png",
+    "web_portrait": "web/portraits/asakura_yoshikage.webp",
+    "faces": {
+      "256": "faces/256/asakura_yoshikage.png",
+      "128": "faces/128/asakura_yoshikage.png"
+    }
+  },
+  {
+    "key": "council_day",
+    "display_name": "昼の軍議所",
+    "generation_id": "1465b957-1dcc-45d0-bfbf-867f4eb4177f",
+    "native_size": [
+      1672,
+      941
+    ],
+    "display_size": [
+      1664,
+      936
+    ],
+    "notes": "城内の木造屋根と無地の陣幕。左側に人物を重ねる余白。",
+    "ready_for_full_hd_requirement": false,
+    "status": "比較用。全画面1920px原画の要件には未達。",
+    "background": "backgrounds/council_day.png",
+    "web_background": "web/backgrounds/council_day.webp"
+  },
+  {
+    "key": "castle_town_day",
+    "display_name": "昼の城下町",
+    "generation_id": "32a16594-874a-4a51-81fd-9a70d8a30960",
+    "native_size": [
+      1672,
+      941
+    ],
+    "display_size": [
+      1664,
+      936
+    ],
+    "notes": "人物なしの町並み。物語用背景であり、歩ける3D地形ではない。",
+    "ready_for_full_hd_requirement": false,
+    "status": "比較用。全画面1920px原画の要件には未達。",
+    "background": "backgrounds/castle_town_day.png",
+    "web_background": "web/backgrounds/castle_town_day.webp"
+  },
+  {
+    "key": "plains_vista_day",
+    "display_name": "大平原の遠景",
+    "generation_id": "f0413c35-e6f4-4443-acad-29b787a2220b",
+    "native_size": [
+      1672,
+      941
+    ],
+    "display_size": [
+      1664,
+      936
+    ],
+    "notes": "物語・出陣の遠景。戦場の通行可能な地図そのものとしては使わない。",
+    "ready_for_full_hd_requirement": false,
+    "status": "比較用。全画面1920px原画の要件には未達。",
+    "background": "backgrounds/plains_vista_day.png",
+    "web_background": "web/backgrounds/plains_vista_day.webp"
+  },
+  {
+    "key": "forest_floor",
+    "generation_id": "a2f44eb7-0729-47d0-b963-32775383f26b",
+    "status": "任意の比較候補。継ぎ目・色・縮尺・視界境界をゲームで確認するまで未採用。"
+  }
+]

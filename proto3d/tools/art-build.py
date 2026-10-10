@@ -3,6 +3,7 @@
 生成イラスト素材（Version 22〜）の受け取り・検査・加工（ゲーム用の WebP を作る）・確かめ。
 
     python3 -I proto3d/tools/art-build.py ingest   [--id ID ...] [--replace]
+    python3 -I proto3d/tools/art-build.py ingest-pack PACK_DIR [--id ID ...] [--replace]
     python3 -I proto3d/tools/art-build.py build    [--id ID ...] [--prune]
     python3 -I proto3d/tools/art-build.py check    [--strict]
     python3 -I proto3d/tools/art-build.py docs
@@ -15,6 +16,13 @@
 - ingest：incoming/ の PNG の透明の検査をし（人物画・手前の幕は本物の透明が要る。市松模様の描き込みは、透明の画像の中の物も
   受け取らない。単色マゼンタの背景だけは色を抜く。構図・下端の切れ目は注意として記録する）、通った物を受け取ったままの中身で
   <id>/original.png へ移し（incoming/ には README.md だけが残る）、寸法・容量・sha256・メタデータを記録する。
+- ingest-pack（Version 25 から）：展開した素材パック（記録の sources にあるパック。例 sengoku_individual_art_v2）から、記録の pack.file を
+  読む。sha256 が記録・パックの一覧と一致し、元の生成結果（pack.upstream）との関係（透明の端の整理・端の切り詰め）が画素まで一致する物だけを、
+  ingest と同じ透明・不透明の検査に通して、git に入れない手元の置き場（proto3d/assets-src/art-v25/originals/。.gitignore）へ写す。
+  公開リポジトリには原画を置かず、記録（sha256・寸法・関係）だけを入れる。
+- 原画が手元に無い（original.inRepo が false で、新しく clone した所など）ときは、build はその素材を作り直さず加工版をそのまま残し、
+  check は原画の sha256 の確かめを飛ばしたことを表示する（加工版の sha256・寸法・上限は確かめる）。
+- sourceOnly の記録（Version 24 までの低解像度の人物画など）は原画の記録だけで、加工版を作らない（そこから切り出す顔だけを作る）。
 - build：作り方（recipe）どおりに、同じ入力からは同じ出力になるように加工し、proto3d/public/art/ に WebP を書き、
   proto3d/src/art/manifest.gen.json（ゲームが読む一覧）と正本の outputs、docs/art-assets.md を書き直す。
 - check：加工版が一覧どおりか（ある・sha256・上限・合計）。--strict は利用条件の確認と見た目の確認も求める（公開の前）。
@@ -58,6 +66,8 @@ class Ctx:
         self.public = self.root / 'proto3d/public'
         self.gen = self.root / 'proto3d/src/art/manifest.gen.json'
         self.docs = self.root / 'docs/art-assets.md'
+        # Version 25 から：素材パックの原画を写す、git に入れない手元の置き場（.gitignore）
+        self.local = self.root / 'proto3d/assets-src/art-v25/originals'
 
     def rel(self, p: Path) -> str:
         return Path(p).resolve().relative_to(self.root.resolve()).as_posix()
@@ -99,6 +109,17 @@ def sha256_bytes(b: bytes) -> str:
 def original_path(ctx: Ctx, a: dict) -> Path | None:
     o = a.get('original')
     return ctx.root / o['path'] if o else None
+
+
+def original_in_repo(a: dict) -> bool:
+    """原画をリポジトリに入れる素材か（素材パック sengoku_individual_art_v2 から受け取った物は false：手元の置き場だけ）"""
+    return (a.get('original') or {}).get('inRepo', True) is not False
+
+
+def original_absent_outside_repo(ctx: Ctx, a: dict) -> bool:
+    """原画をリポジトリに入れない素材で、手元にその原画が無い（新しく clone した所など）。作り直せないが、誤りではない"""
+    p = original_path(ctx, a)
+    return bool(p) and not original_in_repo(a) and not p.exists()
 
 
 # ---------------------------------------------------------------- メタデータ（PNG の塊）
@@ -1042,6 +1063,238 @@ def cmd_ingest(ctx: Ctx, ids=None, replace=False, log=print) -> int:
     return 1 if bad else 0
 
 
+# ---------------------------------------------------------------- ingest-pack（Version 25：素材パックから、原画をリポジトリに入れずに受け取る）
+
+def pack_file(pack_dir: Path, rel: str) -> Path:
+    """パックの中のファイルの場所（パックの外・リンク・.. を指す物は断る。読むのはデータだけで、パックの中の物は実行しない）"""
+    parts = Path(rel).parts if rel else ()
+    if not parts or Path(rel).is_absolute() or '..' in parts or '\\' in rel:
+        raise ArtError(f'パックの中の場所が正しくない：{rel!r}')
+    p = pack_dir
+    for part in parts:
+        p = p / part
+        if p.is_symlink():
+            raise ArtError(f'パックの中のリンクは読まない：{rel}')
+    if not p.resolve().is_relative_to(pack_dir.resolve()):
+        raise ArtError(f'パックの外を指している：{rel}')
+    return p
+
+
+def clean_alpha_like_pack(rgba: np.ndarray, zero_max: int, one_min: int) -> np.ndarray:
+    """パックの説明どおりの透明の端の整理（不透明度 zero_max 以下を 0、one_min 以上を 255、完全に透明な所の色を 0）"""
+    out = rgba.copy()
+    a = out[..., 3]
+    a[a <= zero_max] = 0
+    a[a >= one_min] = 255
+    out[a == 0, :3] = 0
+    return out
+
+
+def verify_upstream(data: bytes, up_data: bytes, rel: dict) -> dict:
+    """受け取る物（data）が、元の生成結果（up_data）から記録どおりの関係で作られたかを、画素まで確かめる"""
+    img = Image.open(io.BytesIO(data))
+    up = Image.open(io.BytesIO(up_data))
+    img.load()
+    up.load()
+    t = rel.get('type')
+    if t == 'alpha-cleanup':
+        if img.size != up.size:
+            raise ArtError(f'元の生成結果と大きさが違う（{up.size} → {img.size}）')
+        want = clean_alpha_like_pack(np.asarray(up.convert('RGBA')), int(rel['zeroMax']), int(rel['oneMin']))
+        got = np.asarray(img.convert('RGBA'))
+        diff = int((want != got).any(axis=-1).sum())
+        if diff:
+            raise ArtError(f'元の生成結果から説明どおり（不透明度 {rel["zeroMax"]} 以下→0・{rel["oneMin"]} 以上→255・透明の所の色→0）に作った物と {diff} 画素違う')
+        ua = np.asarray(up.convert('RGBA'))[..., 3]
+        return {'type': t, 'pixelExact': True, 'upstreamAlphaMax': int(ua.max()),
+                'changedAlphaPx': int(((ua <= int(rel['zeroMax'])) & (ua > 0)).sum() + ((ua >= int(rel['oneMin'])) & (ua < 255)).sum())}
+    if t == 'crop':
+        x, y = int(rel['x']), int(rel['y'])
+        w, h = img.size
+        if x < 0 or y < 0 or x + w > up.width or y + h > up.height:
+            raise ArtError(f'切り詰めの範囲 {x},{y} {w}×{h} が元の生成結果 {up.size} の外')
+        want = np.asarray(up.convert('RGB'))[y:y + h, x:x + w]
+        got = np.asarray(img.convert('RGB'))
+        if not np.array_equal(want, got):
+            raise ArtError(f'元の生成結果の {x},{y} から {w}×{h} を切り詰めた物と一致しない')
+        return {'type': t, 'pixelExact': True, 'rect': [x, y, w, h], 'upstreamSize': list(up.size)}
+    raise ArtError(f'知らない関係 {t!r}')
+
+
+def ingest_pack_one(ctx: Ctx, m: dict, a: dict, pack_dir: Path, pack_list: dict, replace: bool, log) -> str:
+    """戻り値：'received'|'replaced'|'restored'|'unchanged'|'rejected'|'conflict'"""
+    pk = a['pack']
+    src = m['sources'][pk['source']]
+    rel = pk['file']
+    try:
+        p = pack_file(pack_dir, rel)
+        if not p.is_file():
+            raise ArtError(f'パックに {rel} が無い')
+        data = p.read_bytes()
+    except ArtError as e:
+        log(f'  {a["id"]:<20} 断る：{e}')
+        return 'rejected'
+    sha = sha256_bytes(data)
+    # 記録の sha256（受け取る前に決めた物）と、パックの一覧（asset_manifest.json）の両方と一致する物だけ
+    listed = pack_list.get(rel)
+    why = None
+    if sha != pk['sha256'] or len(data) != pk['bytes']:
+        why = f'sha256・容量が記録と違う（{sha[:12]}・{len(data)} バイト。記録 {pk["sha256"][:12]}・{pk["bytes"]} バイト）'
+    elif not listed or listed.get('sha256') != sha or listed.get('bytes') != len(data):
+        why = 'パックの一覧（asset_manifest.json）の sha256・容量と一致しない'
+    if why:
+        log(f'  {a["id"]:<20} 断る：{rel} の{why}。受け取らない（記録は変えない）')
+        return 'rejected'
+    prev = a.get('original')
+    dst = ctx.local / f'{a["id"]}.png'
+    if prev and prev['sha256'] == sha:
+        kept = original_path(ctx, a)
+        if kept.exists() and sha256_bytes(kept.read_bytes()) == sha:
+            log(f'  {a["id"]:<20} 受け取り済みと同じ（{sha[:12]}）')
+            return 'unchanged'
+        kept.parent.mkdir(parents=True, exist_ok=True)
+        kept.write_bytes(data)
+        log(f'  {a["id"]:<20} 受け取り済みと同じ（{sha[:12]}）。手元に原画が無かったので {ctx.rel(kept)} に写し直した（記録は変えない）')
+        return 'restored'
+    if prev and not replace:
+        log(f'  {a["id"]:<20} 断る：受け取り済みの原画（{prev["sha256"][:12]}）と違う。差し替えるなら --replace')
+        return 'conflict'
+    img = Image.open(io.BytesIO(data))
+    img.load()
+    fmt = img.format or 'UNKNOWN'
+    meta = inspect_metadata(data, fmt)
+    meta.pop('_details', None)
+    w, h = img.size
+    rec = {
+        'path': None,
+        'inRepo': False,
+        'receivedAs': f'{src["name"]}/{rel}',
+        'w': w, 'h': h, 'bytes': len(data), 'sha256': sha,
+        'format': fmt, 'mode': img.mode,
+        'hasAlpha': None, 'alphaSource': None,
+        'metadata': meta,
+        'checks': {},
+        'notes': [],
+        'warnings': [],
+    }
+    if (w, h) != (pk['w'], pk['h']):
+        log(f'  {a["id"]:<20} 断る：{rel} の寸法 {w}×{h} が記録 {pk["w"]}×{pk["h"]} と違う')
+        return 'rejected'
+    if listed and (listed.get('width'), listed.get('height')) != (w, h):
+        log(f'  {a["id"]:<20} 断る：{rel} の寸法 {w}×{h} がパックの一覧と違う')
+        return 'rejected'
+    up = pk.get('upstream')
+    if up:
+        try:
+            q = pack_file(pack_dir, up['file'])
+            up_data = q.read_bytes() if q.is_file() else None
+            if up_data is None:
+                raise ArtError(f'パックに元の生成結果 {up["file"]} が無い')
+            if sha256_bytes(up_data) != up['sha256'] or len(up_data) != up['bytes']:
+                raise ArtError(f'元の生成結果 {up["file"]} の sha256・容量が記録と違う')
+            ul = pack_list.get(up['file'])
+            if not ul or ul.get('sha256') != up['sha256']:
+                raise ArtError(f'元の生成結果 {up["file"]} がパックの一覧と一致しない')
+            relrep = verify_upstream(data, up_data, up['relation'])
+        except ArtError as e:
+            log(f'  {a["id"]:<20} 断る：{e}')
+            return 'rejected'
+        rec['upstream'] = {'receivedAs': f'{src["name"]}/{up["file"]}', 'bytes': up['bytes'], 'sha256': up['sha256'], 'verified': relrep}
+    kind = a['kind']
+    refuse = None
+    if kind in ('portrait', 'overlay'):
+        decision, rep, rgba = classify_alpha(img, a['recipe'])
+        rec['checks']['alpha'] = rep
+        if decision != 'alpha':
+            refuse = rep.get('message') or f'本物の透明ではない（{decision}）'
+        else:
+            rec['hasAlpha'] = True
+            rec['alphaSource'] = 'alpha'
+            rec['warnings'] += rep.get('warnings') or []
+            if kind == 'portrait':
+                share, warn = bottom_cut_check(rgba[..., 3], a['recipe']['trim'])
+                rec['checks']['bottomRowOpaqueShare'] = share
+                if warn:
+                    rec['warnings'].append(warn)
+    else:
+        ok, rep = check_opaque(img)
+        rec['checks']['opaque'] = rep
+        rec['hasAlpha'] = False
+        if not ok:
+            refuse = f'透ける所がある（{rep["seeThroughShare"]:.2%}）。背景・地面の素材は不透明でなければ使えない'
+    if refuse:
+        log(f'  {a["id"]:<20} 断る：{refuse}（記録は変えない）')
+        return 'rejected'
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    part = dst.with_name(dst.name + '.part')
+    part.write_bytes(data)
+    if sha256_bytes(part.read_bytes()) != sha:
+        part.unlink()
+        raise ArtError(f'{ctx.rel(dst)} に写した中身が違う')
+    part.replace(dst)
+    rec['path'] = ctx.rel(dst)
+    if prev:
+        rec['replaced'] = {'sha256': prev['sha256'], 'receivedAs': prev.get('receivedAs')}
+        if any(v is not None for v in (a.get('anchors') or {}).values()):
+            a['anchors'] = {k: None for k in a['anchors']}
+            rec['warnings'].append({'reason': 'anchors-cleared', 'message': '原画を差し替えたので、前の原画の座標のアンカーを消した'})
+    a['original'] = rec
+    a['rejection'] = None
+    a['status'] = 'received'
+    a['outputs'] = []
+    for k in ('processing', 'buildError', 'review'):
+        a.pop(k, None)
+    log(f'  {a["id"]:<20} {"差し替え" if prev else "受け取り"}：{rec["receivedAs"]} {w}×{h} {fmt} {img.mode} {len(data)} バイト sha256 {sha[:12]}'
+        + (f'・元の生成結果との関係を画素まで確かめた（{rec["upstream"]["verified"]["type"]}）' if rec.get('upstream') else '')
+        + f'（{rec["path"]} へ写した。git には入れない）')
+    for wn in rec['warnings']:
+        log(f'      注意（{wn["reason"]}）：{wn["message"]}')
+    return 'replaced' if prev else 'received'
+
+
+def cmd_ingest_pack(ctx: Ctx, pack_dir, ids=None, replace=False, log=print) -> int:
+    pack_dir = Path(pack_dir)
+    m = load_master(ctx)
+    log(f'受け取り（ingest-pack {pack_dir}）')
+    try:
+        # パックの一覧はデータとして読むだけ（パックの中のスクリプトは実行しない）
+        listing = json.loads(pack_file(pack_dir, 'asset_manifest.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError, ArtError) as e:
+        raise ArtError(f'パックの一覧 asset_manifest.json を読めない：{e}') from None
+    keys = [k for k, s in (m.get('sources') or {}).items() if s.get('packId') and s['packId'] == listing.get('pack_id')]
+    if not keys:
+        raise ArtError(f'記録の sources に、このパック（pack_id {listing.get("pack_id")!r}）が無い')
+    pack_list = {e['path']: e for e in listing.get('assets') or [] if isinstance(e, dict) and 'path' in e}
+    bad = 0
+    n = 0
+    for a in m['assets']:
+        if (a.get('pack') or {}).get('source') not in keys or (ids and a['id'] not in ids):
+            continue
+        n += 1
+        r = ingest_pack_one(ctx, m, a, pack_dir, pack_list, replace, log)
+        if r in ('rejected', 'conflict'):
+            bad += 1
+        if r in ('received', 'replaced'):
+            for f in m['assets']:
+                if f.get('derivedFrom') != a['id']:
+                    continue
+                f['outputs'] = []
+                for k in ('processing', 'buildError', 'review'):
+                    f.pop(k, None)
+                if f['status'] in ('built', 'approved'):
+                    f['status'] = 'requested'
+                if r == 'replaced' and f.get('faceRect'):
+                    f['faceRect'] = None
+                    log(f'      注意（faceRect-cleared）：{a["id"]} を差し替えたので、{f["id"]} の faceRect を消した')
+            save_master(ctx, m)
+    if not n:
+        log('  このパックから受け取る記録が無い')
+    save_master(ctx, m)
+    write_gen(ctx, m)
+    write_docs(ctx, m)
+    return 1 if bad else 0
+
+
 # ---------------------------------------------------------------- build
 
 def build_one(ctx: Ctx, m: dict, a: dict) -> tuple[Image.Image, dict, dict, str]:
@@ -1049,6 +1302,8 @@ def build_one(ctx: Ctx, m: dict, a: dict) -> tuple[Image.Image, dict, dict, str]
     r = a['recipe']
     if a['status'] == 'rejected':
         raise SkipBuild('作り直し待ち（rejected）。前に受け取った原画からも作らない')
+    if a.get('sourceOnly'):
+        raise SkipBuild('原画の記録だけ（sourceOnly。加工版は作らない。この原画からは顔だけを切り出す）')
     if kind == 'face':
         src = asset_by_id(m, a['derivedFrom'])
         if src['status'] == 'rejected':
@@ -1057,12 +1312,16 @@ def build_one(ctx: Ctx, m: dict, a: dict) -> tuple[Image.Image, dict, dict, str]
             raise SkipBuild(f'元の人物画 {src["id"]} をまだ受け取っていない')
         if not a.get('faceRect'):
             raise SkipBuild('faceRect が未設定（受け取った人物画を見てから set-face-rect で決める）')
+        if original_absent_outside_repo(ctx, src):
+            raise KeepBuild(f'元の人物画 {src["id"]} の原画が手元に無い（{src["original"]["path"]}。公開リポジトリに入れない原画）')
         img, rep = crop_face(source_rgba(ctx, src), a['faceRect'], r)
         if rep['opaque']:
             rep.setdefault('notes', []).append('切り出した範囲が全部不透明なので、透明の層の無い WebP になる（顔はそれでよい）')
         return img, rep, {}, src['original']['sha256']
     if not a.get('original'):
         raise SkipBuild('原画をまだ受け取っていない')
+    if original_absent_outside_repo(ctx, a):
+        raise KeepBuild(f'原画が手元に無い（{a["original"]["path"]}。公開リポジトリに入れない原画）')
     sha = a['original']['sha256']
     if kind == 'portrait':
         img, rep, meta = process_portrait(source_rgba(ctx, a), r, a.get('anchors'))
@@ -1087,6 +1346,10 @@ def build_one(ctx: Ctx, m: dict, a: dict) -> tuple[Image.Image, dict, dict, str]
 
 class SkipBuild(Exception):
     pass
+
+
+class KeepBuild(Exception):
+    """原画が手元に無いので作り直せない（リポジトリに入れない原画）。加工版の記録はそのまま残す"""
 
 
 def unbuilt_status(a: dict) -> str:
@@ -1147,6 +1410,18 @@ def cmd_build(ctx: Ctx, ids=None, prune=False, log=print) -> int:
                 log(f'  {a["id"]:<20} 作らない：{e}')
             drop_outputs(a)
             a.pop('buildError', None)
+            continue
+        except KeepBuild as e:
+            o = (a.get('outputs') or [None])[0]
+            if not o:
+                log(f'  {a["id"]:<20} 作れない：{e}。加工版の記録も無い（原画のある所で ingest-pack・build する）')
+                continue
+            p = ctx.root / o['path']
+            if p.exists() and sha256_bytes(p.read_bytes()) == o['sha256']:
+                log(f'  {a["id"]:<20} 作り直さない：{e}。加工版 {o["path"]} は記録どおりなので、そのまま使う')
+            else:
+                log(f'  {a["id"]:<20} 失敗：{e}。加工版 {o["path"]} が無い・記録と違うが、作り直せない（原画のある所で build する）')
+                bad += 1
             continue
         except ArtError as e:
             log(f'  {a["id"]:<20} 失敗：{e}')
@@ -1232,18 +1507,24 @@ def cmd_check(ctx: Ctx, strict=False, log=print) -> int:
         errs.append('manifest.gen.json が正本の加工版の記録と一致しない（build をやり直す）')
     rows = []
     total = 0
+    absent: list[str] = []
     for a in m['assets']:
         o = (a.get('outputs') or [None])[0]
         if o and a['status'] not in ('built', 'approved'):
             errs.append(f'{a["id"]}: 加工版の記録があるのに状態が {a["status"]}（build をやり直す）')
         if not o and a['status'] in ('built', 'approved'):
             errs.append(f'{a["id"]}: 状態が {a["status"]} なのに加工版の記録が無い（build をやり直す）')
+        if o and a.get('sourceOnly'):
+            errs.append(f'{a["id"]}: 原画の記録だけ（sourceOnly）の素材に加工版の記録がある')
         for k, v in ((o or {}).get('meta') or {}).items():
             if (k.endswith('X') or k.endswith('Y')) and not (isinstance(v, (int, float)) and 0 < v < 1):
                 errs.append(f'{a["id"]}: meta.{k} = {v} が 0〜1 の割合ではない（set-anchor の値を確かめる）')
         if a.get('original'):
             p = ctx.root / a['original']['path']
-            if not p.exists():
+            if original_absent_outside_repo(ctx, a):
+                # 公開リポジトリに入れない原画（素材パック v2）：手元に無くても誤りではない。sha256 の記録だけが残る
+                absent.append(a['id'])
+            elif not p.exists():
                 errs.append(f'{a["id"]}: 原画が無い {a["original"]["path"]}')
             elif sha256_bytes(p.read_bytes()) != a['original']['sha256']:
                 errs.append(f'{a["id"]}: 原画の sha256 が記録と違う')
@@ -1284,6 +1565,8 @@ def cmd_check(ctx: Ctx, strict=False, log=print) -> int:
     for r in rows:
         log(f'{r[0]:<20} {r[1]:<10} {r[2]:<28} {r[3]:>10} {str(r[4]):>8} {r[5]:>8} {r[6]:<10} {r[7]}')
     log(f'加工版の合計：{total} バイト（{len(gen["assets"])} 件）')
+    if absent:
+        log(f'原画が手元に無いので sha256 の確かめを飛ばした（公開リポジトリに入れない原画。記録の sha256 だけ）：{len(absent)} 件 {", ".join(absent)}')
     for e in errs:
         log(f'NG {e}')
     if not errs:
@@ -1380,6 +1663,8 @@ def write_docs(ctx: Ctx, m: dict) -> bool:
     A = m['assets']
     received = [a for a in A if a.get('incoming') and a.get('original')]
     asked = [a for a in A if a.get('incoming')]
+    from_pack = [a for a in A if a.get('pack')]
+    pack_got = [a for a in from_pack if a.get('original')]
     built = [a for a in A if a.get('outputs')]
     total = sum(a['outputs'][0]['bytes'] for a in built)
     decoded = sum(a['outputs'][0]['decodedBytes'] for a in built)
@@ -1394,10 +1679,13 @@ def write_docs(ctx: Ctx, m: dict) -> bool:
         '- ゲームが読むのは `proto3d/src/art/manifest.gen.json`（file・w・h・kind・bytes・sha256・meta だけ）。正本（プロンプトの参照・原画の記録）はゲームに入れません。',
         '- 原画は `proto3d/assets-src/art-v22/<id>/original.png` に、受け取ったままの中身で保管し、公開版には入れません。公開版に入るのは `proto3d/public/art/` の加工版（WebP）だけです。',
         '- ingest は受け取った原画を `incoming/` から `<id>/original.png` へ **移します**（同じ原画を 2 か所に置かない。`incoming/` には README.md だけが残る）。断った物は `incoming/` に残ります。',
+        f'- **Version 25 から：** 素材パック（下の「素材パックごとの出どころ」）の原画は **公開リポジトリに入れません。** `ingest-pack` が、展開したパックから記録の sha256・パックの一覧・元の生成結果との関係（画素まで）を確かめて、git に入れない手元の置き場 `{ctx.rel(ctx.local)}/` に写します。リポジトリに入るのは記録（sha256・寸法・切り出しの範囲・作り方）と加工版だけです。原画が手元に無い所（新しく clone した所）では、build はその素材を作り直さずに加工版をそのまま使い、check は原画の sha256 の確かめを飛ばしたと表示します。',
+        '- **sourceOnly**（原画の記録だけ）の素材は加工版を作りません（Version 24 までの低解像度の人物画：そこから切り出した顔だけを、Version 24 との比べ用に残す）。',
         '',
         '## 状況のまとめ',
         '',
-        f'- 受け取り：{len(received)} / {len(asked)} 枚（任意の 1 枚を含む）',
+        f'- 受け取り（依頼リスト・パック第 1 版の incoming/）：{len(received)} / {len(asked)} 枚（任意の 1 枚を含む）',
+        f'- 受け取り（素材パックから ingest-pack）：{len(pack_got)} / {len(from_pack)} 枚（原画は手元の置き場だけ）',
         f'- 加工版：{len(built)} / {len(A)} 件、合計 {fmt_bytes(total)} バイト（展開後 {fmt_bytes(decoded)} バイト）',
         f'- 利用条件：{terms_text(m.get("terms"))}（{m["terms"]["questions"]}）',
         '',
@@ -1411,6 +1699,10 @@ def write_docs(ctx: Ctx, m: dict) -> bool:
         out = (a.get('outputs') or [None])[0]
         if a['kind'] == 'face':
             orig = f'{a["derivedFrom"]} の原画から切り出し'
+        elif o and not original_in_repo(a):
+            orig = f'`{o["receivedAs"]}` → 手元の `{o["path"]}`（git に入れない）'
+        elif a.get('pack') and not o:
+            orig = f'`{a["pack"]["file"]}`（素材パック {a["pack"]["source"]}。未受け取り）'
         elif o:
             orig = f'`{a["incoming"]}` → `{o["path"]}`'
         elif a.get('rejection'):
@@ -1431,7 +1723,7 @@ def write_docs(ctx: Ctx, m: dict) -> bool:
         refs = meth.get('referenceImages')
         how += '。参考画像：' + ('報告待ち' if refs is None else ('なし' if not refs else '、'.join(refs)))
         L.append('| ' + ' | '.join(md_cell(c) for c in [
-            f'`{a["id"]}`', STATUS_JA.get(a['status'], a['status']), f'{KIND_JA[a["kind"]]}：{a["purpose"]}', a['subject'],
+            f'`{a["id"]}`', STATUS_JA.get(a['status'], a['status']) + ('（原画の記録だけ）' if a.get('sourceOnly') else ''), f'{KIND_JA[a["kind"]]}：{a["purpose"]}', a['subject'],
             orig, f'`{a["recipe"]["publicFile"]}`' + ('' if out else '（未作成）'), dims, size, how, terms_text(a.get('terms')),
         ]) + ' |')
     tex = [a for a in A if a['kind'] == 'texture']
@@ -1464,11 +1756,34 @@ def write_docs(ctx: Ctx, m: dict) -> bool:
         so = src.get('original')
         L.append('| ' + ' | '.join(md_cell(c) for c in [
             f'`{a["recipe"]["publicFile"]}`',
-            f'`{so["path"]}`' if so else f'（{src["id"]} 未着）',
+            (f'`{so["path"]}`' + ('（手元だけ・git に入れない）' if not original_in_repo(src) else '')) if so else f'（{src["id"]} 未着）',
             so['sha256'][:16] + '…' if so else '—',
             out['sha256'][:16] + '…' if out else '—',
             fmt_bytes(out['decodedBytes']) + (f'（GPU・ミップマップ込み {fmt_bytes(out["gpuBytesWithMips"])}）' if out and out.get('gpuBytesWithMips') else '') if out else '—',
         ]) + ' |')
+    srcs = m.get('sources') or {}
+    if srcs:
+        L += ['', '## 素材パックごとの出どころ（Version 25 から）', '']
+        for key, sd in srcs.items():
+            L.append(f'### `{key}`：{sd.get("name") or sd.get("what") or key}')
+            L.append('')
+            for label, k in (('受け取った日', 'receivedOn'), ('パックの作成日', 'createdAt'), ('説明', 'what'), ('判断', 'decision'), ('写した文書', 'docs'),
+                             ('原画の置き場', 'originals'), ('検査', 'verify')):
+                if sd.get(k):
+                    L.append(f'- {label}：{sd[k]}')
+            if 'originalsInRepo' in sd:
+                L.append(f'- 原画をリポジトリに入れるか：{"入れる" if sd["originalsInRepo"] else "**入れない**（記録の sha256 だけ。手元の置き場は .gitignore）"}')
+            for z in sd.get('zipParts') or []:
+                L.append(f'- ZIP `{z["name"]}`：{fmt_bytes(z["bytes"])} バイト・sha256 `{z["sha256"]}`（{z.get("contains", "")}）')
+            for f in sd.get('textFiles') or []:
+                L.append(f'- 文書 `{f["path"]}`：{fmt_bytes(f["bytes"])} バイト・sha256 `{f["sha256"]}`' + (f'（{f["note"]}）' if f.get('note') else ''))
+            for label, k in (('使う物', 'used'), ('予約（保管だけ。公開しない）', 'reserved'), ('使わない物（公開しない）', 'unused')):
+                if sd.get(k):
+                    L.append(f'- {label}：' + '、'.join(sd[k]))
+            t = sd.get('terms')
+            if t:
+                L.append(f'- 利用条件の記録（利用者の記録。法的な保証ではない）：{t.get("summary")}（確認日 {t.get("checkedOn")}・{t.get("source")}）')
+            L.append('')
     L += ['', '## 素材ごとの記録', '']
     for a in A:
         L.append(f'### `{a["id"]}`（{KIND_JA[a["kind"]]}・{STATUS_JA.get(a["status"], a["status"])}）')
@@ -1489,9 +1804,29 @@ def write_docs(ctx: Ctx, m: dict) -> bool:
             L.append(f'  - {meth["styleNotes"]}')
         if a.get('derivedFrom'):
             L.append(f'- 元：`{a["derivedFrom"]}` の原画（同じ原画から切り出す）。faceRect：{a.get("faceRect") or "未設定（受け取った人物画を見てから決める）"}')
+        if a.get('sourceOnly'):
+            L.append(f'- **原画の記録だけ（sourceOnly）**：{a["sourceOnly"] if isinstance(a["sourceOnly"], str) else "加工版を作らない"}')
+        pk = a.get('pack')
+        if pk:
+            srcd = (m.get('sources') or {}).get(pk['source']) or {}
+            L.append(f'- 素材パック：{srcd.get("name", pk["source"])} の `{pk["file"]}`（{pk["w"]}×{pk["h"]}・{fmt_bytes(pk["bytes"])} バイト・sha256 `{pk["sha256"]}`'
+                     + (f'・ZIP `{pk["zipPart"]}`' if pk.get('zipPart') else '') + '）')
+            info = [f'{k}：{v}' for k, v in (('パックの名前（key）', pk.get('key')), ('表示名', pk.get('displayName')), ('生成 ID', pk.get('generationId')),
+                                               ('外見の記録', pk.get('appearance')), ('向き・表情', pk.get('pose')), ('パックの顔の範囲 xyxy', pk.get('faceCropXyxy'))) if v]
+            if info:
+                L.append('  - ' + '。'.join(str(x) for x in info))
+            up = pk.get('upstream')
+            if up:
+                L.append(f'  - 元の生成結果：`{up["file"]}`（{fmt_bytes(up["bytes"])} バイト・sha256 `{up["sha256"]}`）。関係：{up["relation"].get("note") or up["relation"]["type"]}')
         o = a.get('original')
-        if o:
+        if o and not original_in_repo(a):
+            L.append(f'- 原画：手元の `{o["path"]}`（**git に入れない**。受け取りの名前 `{o["receivedAs"]}`）{o["w"]}×{o["h"]}・{o["format"]} {o["mode"]}・{fmt_bytes(o["bytes"])} バイト・sha256 `{o["sha256"]}`')
+            v = (o.get('upstream') or {}).get('verified')
+            if v:
+                L.append(f'  - 元の生成結果との関係を ingest-pack が画素まで確かめた：{json.dumps(v, ensure_ascii=False)}')
+        if o and original_in_repo(a):
             L.append(f'- 原画：`{o["path"]}`（受け取りの名前 `{o["receivedAs"]}`）{o["w"]}×{o["h"]}・{o["format"]} {o["mode"]}・{fmt_bytes(o["bytes"])} バイト・sha256 `{o["sha256"]}`')
+        if o:
             L.append(f'  - 透明：{"あり（本物の透明）" if o.get("alphaSource") == "alpha" else ("マゼンタの背景を抜いた" if o.get("alphaSource") == "magenta-key" else "なし（不透明）")}')
             L.append(f'  - メタデータ：{o["metadata"]["note"]}')
             for n in o.get('notes') or []:
@@ -1540,6 +1875,7 @@ def write_docs(ctx: Ctx, m: dict) -> bool:
         '   - 全体の透明（不透明度 8 以下）が足りない物は断る。全体ははっきり透明なのに外側の確かめの範囲（上端・左右）に人物がかかる物は、断らずに **構図の注意（composition）** として記録する。人物画の下端がまっすぐな体の切れ目でない（下端の行の不透明が 2 割未満）物は **下端の注意（bottom-cut）** を記録する。注意は ingest・build の画面とこのファイルに出る。画面で確かめてから approve する。',
         '   - 差し替えは `ingest --replace --id <id>`。前の原画の画素の座標で決めた faceRect・アンカーは消える（set-… をやり直すまで顔は作らない）。差し替えを断った物は作り直し待ち（rejected）になり、前の原画からも作らない。',
         '   - 確かめ用の画像（色を抜いた結果・灰色の上に置いた物・地面を 2×2 に並べた物）は `<id>/_work/` に出る（リポジトリには入れない）。',
+        f'2b. 素材パック（Version 25 から。記録の sources・各素材の pack）：展開したパックを置いた場所を渡して `python3 -I proto3d/tools/art-build.py ingest-pack <パックのフォルダ>`。記録の sha256・パックの一覧（asset_manifest.json。データとして読むだけで、パックの中のスクリプトは実行しない）・元の生成結果との関係（透明の端の整理・端の切り詰め）を画素まで確かめ、ingest と同じ透明・不透明の検査に通った物を `{ctx.rel(ctx.local)}/<id>.png`（git に入れない）へ写す。原画は公開リポジトリに入れない。',
         '3. 受け取った人物画を見て、顔の範囲と目の高さを決める：`set-face-rect face.ieyasu X Y W H`、`set-anchor portrait.ieyasu eyeY 310`（どちらも原画の画素の座標。割合や原画の外の値は断る）。顔は切り出した範囲が全部不透明なら、透明の層の無い WebP になる（それでよい。build が記録する）。',
         '4. `python3 -I proto3d/tools/art-build.py build`：作り方どおりに加工し、`proto3d/public/art/` と `manifest.gen.json` とこのファイルを書き直す。作れない物（未着・作り直し待ち・faceRect が未設定・失敗）は加工版の記録を外し、状態を受け取り済み／依頼済みに戻す。',
         '5. `python3 -I proto3d/tools/art-build.py check`：加工版が一覧どおりか。公開の前は `check --strict`（見た目の確認 approved と、利用条件の確認が要る）。',
@@ -1680,14 +2016,28 @@ def _fresh_master(real: dict) -> dict:
     return m
 
 
-def _setup_root(base: Path, real_master: dict) -> Ctx:
+def _selftest_master(real: dict) -> dict:
+    """selftest の incoming/ の流れの正本：本物の記録（作り方・ID）を使い、素材パックから受け取る記録（pack）は
+    Version 22 の依頼リストと同じ incoming/ の名前（portrait_<武将>.png・bg_council.png）で受け取る形にする。
+    第 1 版の人物画（sourceOnly）は incoming を外す（同じ名前を取り合わない）。素材パックからの受け取りは _selftest_d で確かめる"""
+    m = _fresh_master(real)
+    for a in m['assets']:
+        if a.get('pack'):
+            a.pop('pack')
+            a['incoming'] = 'bg_council.png' if a['id'] == 'bg.council' else (f'portrait_{a["id"].split(".", 1)[1]}.png' if a['kind'] == 'portrait' else None)
+        elif a.get('sourceOnly'):
+            a['incoming'] = None
+    return m
+
+
+def _setup_root(base: Path, real_master: dict, master: dict | None = None) -> Ctx:
     ctx = Ctx(base)
     ctx.incoming.mkdir(parents=True)
     (ctx.root / 'proto3d/public').mkdir(parents=True)
     ctx.gen.parent.mkdir(parents=True)
     ctx.docs.parent.mkdir(parents=True)
     (ctx.incoming / 'README.md').write_text('受け取り口（selftest）\n', encoding='utf-8')
-    ctx.master.write_text(dump_json(_fresh_master(real_master)), encoding='utf-8')
+    ctx.master.write_text(dump_json(master if master is not None else _selftest_master(real_master)), encoding='utf-8')
     ctx.gen.write_text(dump_json({'version': 1, 'assets': {}}, indent=4), encoding='utf-8')
     return ctx
 
@@ -1917,6 +2267,184 @@ def _selftest_c(root: Path, real: dict, ok, quiet: list) -> None:
        '止まった後の ingest のやり直しで残りを受け取り、check が通る')
 
 
+def _selftest_d(root: Path, real: dict, ok, quiet: list) -> None:
+    """素材パックからの受け取り（ingest-pack）・原画をリポジトリに入れない素材・原画が手元に無い所（新しい clone）・sourceOnly"""
+    import os
+    rng = np.random.default_rng(25)
+    m = _fresh_master(real)  # 素材パックの記録（pack）をそのまま使う
+    ctx = _setup_root(root, real, m)
+    src_key = asset_by_id(m, 'portrait.ieyasu')['pack']['source']
+    pack_id = m['sources'][src_key]['packId']
+    pack = root.with_name(root.name + '-pack')
+    (pack / 'portraits').mkdir(parents=True)
+    (pack / 'originals/portraits').mkdir(parents=True)
+    (pack / 'backgrounds').mkdir(parents=True)
+    (pack / 'originals/backgrounds').mkdir(parents=True)
+    # 人物画：元の生成結果（不透明度 254 まで・かすかな 1〜3 がある）と、説明どおりに整理した物
+    W, H = 512, 768
+    fa = _figure_alpha(W, H)
+    body = np.clip(np.full((H, W, 3), (95, 105, 120), np.float64) + _noise(rng, H, W, 2)[..., None] * 12, 0, 255)
+    raw = _rgba_u8(fa * 254 / 255, body)
+    raw[..., 3][(raw[..., 3] == 0) & (rng.random((H, W)) < 0.05)] = 2
+    cleaned = clean_alpha_like_pack(raw, 3, 250)
+    Image.fromarray(raw, 'RGBA').save(pack / 'originals/portraits/p.png')
+    Image.fromarray(cleaned, 'RGBA').save(pack / 'portraits/p.png')
+    # 背景：元の生成結果の (4, 2) から切り詰めた物
+    up_bg = np.clip(np.full((300, 520, 3), (120, 110, 95), np.float64) + _noise(rng, 300, 520, 3)[..., None] * 18, 0, 255).astype(np.uint8)
+    Image.fromarray(up_bg, 'RGB').save(pack / 'originals/backgrounds/b.png')
+    Image.fromarray(np.ascontiguousarray(up_bg[2:298, 4:516]), 'RGB').save(pack / 'backgrounds/b.png')
+
+    def entry(rel):
+        b = (pack / rel).read_bytes()
+        im = Image.open(io.BytesIO(b))
+        return {'path': rel, 'bytes': len(b), 'sha256': sha256_bytes(b), 'width': im.width, 'height': im.height}
+
+    def write_list(extra=None):
+        assets = [entry(r) for r in ('portraits/p.png', 'originals/portraits/p.png', 'backgrounds/b.png', 'originals/backgrounds/b.png')]
+        for e in assets:
+            e.update((extra or {}).get(e['path'], {}))
+        (pack / 'asset_manifest.json').write_text(json.dumps({'pack_id': pack_id, 'assets': assets}), encoding='utf-8')
+
+    write_list()
+    mm = load_master(ctx)
+    for aid, rel, up in (('portrait.ieyasu', 'portraits/p.png', 'originals/portraits/p.png'), ('bg.council', 'backgrounds/b.png', 'originals/backgrounds/b.png')):
+        pk = asset_by_id(mm, aid)['pack']
+        e, u = entry(rel), entry(up)
+        pk.update({'file': rel, 'bytes': e['bytes'], 'sha256': e['sha256'], 'w': e['width'], 'h': e['height']})
+        pk['upstream'].update({'file': up, 'bytes': u['bytes'], 'sha256': u['sha256']})
+    # 使わない素材パックの記録（ほかの武将）は、この確かめでは外す
+    mm['assets'] = [a for a in mm['assets'] if not a.get('pack') or a['id'] in ('portrait.ieyasu', 'bg.council')]
+    mm['assets'] = [a for a in mm['assets'] if a['kind'] != 'face' or any(b['id'] == a['derivedFrom'] for b in mm['assets'])]
+    save_master(ctx, mm)
+    rc = cmd_ingest_pack(ctx, pack, log=quiet.append)
+    g = {a['id']: a for a in load_master(ctx)['assets']}
+    pi, bg = g['portrait.ieyasu'], g['bg.council']
+    ok(rc == 0 and pi['status'] == 'received' and bg['status'] == 'received', 'ingest-pack：素材パックの人物画と背景を受け取る')
+    ok(pi['original']['inRepo'] is False and pi['original']['path'].startswith('proto3d/assets-src/art-v25/originals/')
+       and (ctx.root / pi['original']['path']).read_bytes() == (pack / 'portraits/p.png').read_bytes()
+       and not list(ctx.src.glob('portrait.ieyasu/original.*')),
+       '原画はリポジトリの外の手元の置き場（git に入れない）に、受け取ったままの中身で写す（art-v22/<id>/ には置かない）')
+    ok(pi['original']['upstream']['verified']['type'] == 'alpha-cleanup' and bg['original']['upstream']['verified']['rect'] == [4, 2, 512, 296],
+       '元の生成結果との関係（透明の端の整理・端の切り詰め）を画素まで確かめて記録する')
+    ok(cmd_ingest_pack(ctx, pack, log=quiet.append) == 0 and asset_by_id(load_master(ctx), 'portrait.ieyasu')['original']['sha256'] == pi['original']['sha256'],
+       '同じパックをもう一度 ingest-pack しても変わらない')
+
+    def refused(what, mutate, restore):
+        # 初めて受け取る所（受け取り済みの記録を外す）で確かめる。断ったら記録は受け取る前のまま
+        keep_master = ctx.master.read_text(encoding='utf-8')
+        mx = load_master(ctx)
+        a_ = asset_by_id(mx, 'portrait.ieyasu')
+        a_['original'], a_['status'] = None, 'requested'
+        save_master(ctx, mx)
+        before = ctx.master.read_text(encoding='utf-8')
+        mutate()
+        q2: list[str] = []
+        try:
+            r = cmd_ingest_pack(ctx, pack, ids=['portrait.ieyasu'], log=q2.append)
+        except ArtError as e:
+            r = f'ArtError {e}'
+        after = asset_by_id(load_master(ctx), 'portrait.ieyasu')
+        same = after['original'] is None and after['status'] == 'requested' and after['outputs'] == asset_by_id(json.loads(before), 'portrait.ieyasu')['outputs']
+        restore()
+        ctx.master.write_text(keep_master, encoding='utf-8')
+        ok(r == 1 and same and any('断る' in x for x in q2), f'{what}は断り、記録は変えない（{r}）')
+
+    good = (pack / 'portraits/p.png').read_bytes()
+    bad = bytearray(good)
+    bad[-20] ^= 1
+    refused('記録の sha256 と違う人物画', lambda: (pack / 'portraits/p.png').write_bytes(bytes(bad)), lambda: (pack / 'portraits/p.png').write_bytes(good))
+    refused('パックの一覧（asset_manifest.json）の sha256 と違う物', lambda: write_list({'portraits/p.png': {'sha256': '0' * 64}}), lambda: write_list())
+    up_good = (pack / 'originals/portraits/p.png').read_bytes()
+
+    def alter_upstream():
+        r2 = raw.copy()
+        r2[400, 250, 0] ^= 8
+        Image.fromarray(r2, 'RGBA').save(pack / 'originals/portraits/p.png')
+        mx = load_master(ctx)
+        u = entry('originals/portraits/p.png')
+        asset_by_id(mx, 'portrait.ieyasu')['pack']['upstream'].update({'sha256': u['sha256'], 'bytes': u['bytes']})
+        save_master(ctx, mx)
+        write_list()
+
+    def restore_upstream():
+        (pack / 'originals/portraits/p.png').write_bytes(up_good)
+        mx = load_master(ctx)
+        u = entry('originals/portraits/p.png')
+        asset_by_id(mx, 'portrait.ieyasu')['pack']['upstream'].update({'sha256': u['sha256'], 'bytes': u['bytes']})
+        save_master(ctx, mx)
+        write_list()
+    refused('元の生成結果から説明どおりに作った物と画素が違う人物画', alter_upstream, restore_upstream)
+    for rel in ('../outside.png', '/etc/passwd', 'portraits/../../x.png'):
+        try:
+            pack_file(pack, rel)
+            ok(False, f'パックの外を指す場所 {rel} は断る')
+        except ArtError:
+            ok(True, f'パックの外を指す場所 {rel} は断る')
+    try:
+        os.symlink(pack / 'portraits/p.png', pack / 'link.png')
+        try:
+            pack_file(pack, 'link.png')
+            ok(False, 'パックの中のリンクは読まない')
+        except ArtError:
+            ok(True, 'パックの中のリンクは読まない')
+    except OSError:
+        ok(True, 'リンクを作れない環境（確かめを飛ばした）')
+
+    # 作る → 原画を手元から消す（新しく clone した所）→ build は作り直さずに加工版を残し、check は通る
+    a0 = asset_by_id(load_master(ctx), 'portrait.ieyasu')
+    cmd_set_face_rect(ctx, 'face.ieyasu', [180, 40, 160, 160], log=quiet.append)
+    rcb = cmd_build(ctx, log=quiet.append)
+    g = {a['id']: a for a in load_master(ctx)['assets']}
+    ok(rcb == 0 and g['portrait.ieyasu']['status'] == 'built' and g['face.ieyasu']['status'] == 'built' and g['bg.council']['status'] == 'built',
+       '素材パックの原画から人物画・顔・背景を作る')
+    ok(g['bg.council']['outputs'][0]['w'] == 512 and g['bg.council']['outputs'][0]['h'] == 296, '背景は原寸のまま（拡大しない）')
+    gen_before = ctx.gen.read_text(encoding='utf-8')
+    shas = {k: g[k]['outputs'][0]['sha256'] for k in ('portrait.ieyasu', 'face.ieyasu', 'bg.council')}
+    for k in ('portrait.ieyasu', 'bg.council'):
+        (ctx.root / g[k]['original']['path']).unlink()
+    quiet.clear()
+    rcb = cmd_build(ctx, log=quiet.append)
+    g2 = {a['id']: a for a in load_master(ctx)['assets']}
+    ok(rcb == 0 and {k: g2[k]['outputs'][0]['sha256'] for k in shas} == shas and all(g2[k]['status'] == 'built' for k in shas)
+       and ctx.gen.read_text(encoding='utf-8') == gen_before and sum('作り直さない' in x for x in quiet) == 3,
+       '原画が手元に無い所の build は、その素材を作り直さず加工版と一覧をそのまま残す（顔も）')
+    quiet.clear()
+    ok(cmd_check(ctx, log=quiet.append) == 0 and any('飛ばした' in x for x in quiet), '原画が手元に無い所の check は通り、原画の確かめを飛ばしたと表示する')
+    pub = ctx.root / g2['face.ieyasu']['outputs'][0]['path']
+    keep = pub.read_bytes()
+    pub.write_bytes(keep[:-1] + bytes([keep[-1] ^ 0xFF]))
+    ok(cmd_check(ctx, log=quiet.append) == 1, '原画が無くても、加工版が記録と違えば check が止まる')
+    rcb = cmd_build(ctx, log=quiet.append)
+    ok(rcb == 1 and asset_by_id(load_master(ctx), 'face.ieyasu')['outputs'], '原画が無くて作り直せない壊れた加工版は build が失敗を返し、記録は消さない')
+    pub.write_bytes(keep)
+    # 同じパックをもう一度 ingest-pack すれば手元の原画が戻り、build は同じ加工版を作る
+    rc = cmd_ingest_pack(ctx, pack, log=quiet.append)
+    g3 = {a['id']: a for a in load_master(ctx)['assets']}
+    ok(rc == 0 and g3['portrait.ieyasu']['status'] == 'built' and (ctx.root / g3['portrait.ieyasu']['original']['path']).exists(),
+       'ingest-pack は手元に無くなった原画を写し直し、状態は変えない')
+    cmd_build(ctx, log=quiet.append)
+    g4 = {a['id']: a for a in load_master(ctx)['assets']}
+    ok({k: g4[k]['outputs'][0]['sha256'] for k in shas} == shas, '原画を戻して作り直すと同じ加工版になる')
+    # sourceOnly：加工版を作らず、そこから切り出す顔だけを作る
+    so = next((a for a in real['assets'] if a.get('sourceOnly')), None)
+    ok(so is not None and so['kind'] == 'portrait' and any(f.get('derivedFrom') == so['id'] for f in real['assets']),
+       '本物の記録に sourceOnly の人物画（Version 24 の顔の元）がある')
+    if so:
+        mo = load_master(ctx)
+        a1 = asset_by_id(mo, 'portrait.ieyasu')
+        a1['sourceOnly'] = 'selftest'
+        save_master(ctx, mo)
+        cmd_build(ctx, log=quiet.append)
+        g5 = {a['id']: a for a in load_master(ctx)['assets']}
+        ok(g5['portrait.ieyasu']['outputs'] == [] and g5['portrait.ieyasu']['status'] == 'received' and g5['face.ieyasu']['status'] == 'built'
+           and 'portrait.ieyasu' not in json.loads(ctx.gen.read_text(encoding='utf-8'))['assets'],
+           'sourceOnly の人物画は加工版を作らず一覧に載らない。そこから切り出す顔は作る')
+        mo = load_master(ctx)
+        asset_by_id(mo, 'portrait.ieyasu')['outputs'] = [dict(asset_by_id(mo, 'face.ieyasu')['outputs'][0])]
+        save_master(ctx, mo)
+        ok(cmd_check(ctx, log=quiet.append) == 1, 'sourceOnly の素材に加工版の記録があれば check が止まる')
+
+
 def cmd_selftest(ctx_real: Ctx, log=print) -> int:
     real = load_master(ctx_real)
     fails: list[str] = []
@@ -2112,6 +2640,10 @@ def cmd_selftest(ctx_real: Ctx, log=print) -> int:
         # ---- C：透明の画像の中の市松模様・構図の注意・下端の切れ目・差し替え・状態のそろい（小さい画像で）
         quiet.clear()
         _selftest_c(tmp / 'C', real, ok, quiet)
+
+        # ---- D：素材パックからの受け取り（Version 25）・原画が手元に無い所・sourceOnly
+        quiet.clear()
+        _selftest_d(tmp / 'D', real, ok, quiet)
     if fails:
         log(f'selftest：{len(fails)} 件の失敗')
         return 1
@@ -2126,6 +2658,10 @@ def main(argv=None) -> int:
     ap.add_argument('--repo', default=str(REPO), help=argparse.SUPPRESS)
     sub = ap.add_subparsers(dest='cmd', required=True)
     p = sub.add_parser('ingest', help='incoming/ の原画を検査して保管する')
+    p.add_argument('--id', action='append')
+    p.add_argument('--replace', action='store_true', help='受け取り済みの原画を差し替える')
+    p = sub.add_parser('ingest-pack', help='展開した素材パックから原画を検査して手元の置き場（git に入れない）に写す')
+    p.add_argument('pack_dir')
     p.add_argument('--id', action='append')
     p.add_argument('--replace', action='store_true', help='受け取り済みの原画を差し替える')
     p = sub.add_parser('build', help='作り方どおりに加工版を作る')
@@ -2150,6 +2686,8 @@ def main(argv=None) -> int:
     try:
         if args.cmd == 'ingest':
             return cmd_ingest(ctx, args.id, args.replace)
+        if args.cmd == 'ingest-pack':
+            return cmd_ingest_pack(ctx, args.pack_dir, args.id, args.replace)
         if args.cmd == 'build':
             return cmd_build(ctx, args.id, args.prune)
         if args.cmd == 'check':

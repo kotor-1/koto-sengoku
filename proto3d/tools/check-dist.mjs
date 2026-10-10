@@ -10,6 +10,7 @@
 //   MB は控えめに 1,000,000 バイトで数える（MiB なら少し余裕が増える）。
 // - .glb は置けない（公開先が受け付けない）。dev-art（開発用の TEST の模様）は、ファイルも、JS の中の読む口の文字列も入れない。
 // - 正本の記録（proto3d/assets-src/art-v22/manifest.json）の中身（プロンプトの参照など）が JS に入っていないこと。
+// - Version 25：素材パック第 2 版の、公開しない物（織田信長・朝倉義景・城下町・大平原の遠景・林床・パックそのもの）の名前のファイルが無いこと。
 // - --baseline を付けると、前回にあって今回に無いファイル（公開の道具は、明示して消さない限り残す）も一覧にする。
 // - --budget は、遊ぶ人の読み込み量の自分の目安（例 63000000）。超えたら違反にする。
 import { createHash } from 'node:crypto';
@@ -29,7 +30,9 @@ const TEXT_EXT = new Set(['.html', '.js', '.mjs', '.css', '.json', '.txt', '.svg
 const WEB_EXT = new Set([...TEXT_EXT, '.png', '.jpg', '.jpeg', '.webp', '.avif', '.gif', '.ico', '.mp3', '.ogg', '.m4a', '.wav', '.opus', '.woff', '.woff2', '.mp4', '.webm']);
 const ART_EXT = new Set(['.webp', '.png', '.jpg', '.jpeg']);
 // 正本の記録・依頼の文がバンドルに入った印（ゲームは manifest.gen.json だけを読む決まり）
-const LEAK_MARKS = ['promptRef', 'ChatGPT で利用者が生成', '【画風】', 'assets-src/art-v22/manifest'];
+const LEAK_MARKS = ['promptRef', 'ChatGPT で利用者が生成', '【画風】', 'assets-src/art-v22/manifest', 'assets-src/art-v25'];
+// 素材パック第 2 版（Version 25）で公開しない物（予約の信長・義景、使っていない背景・林床、パックそのもの）の名前
+const UNSHIPPED_ART = /nobunaga|yoshikage|oda_|asakura|castle_town|plains_vista|forest_floor|sengoku_individual/i;
 
 function walk(dir) {
     const out = [];
@@ -107,6 +110,7 @@ export function checkDist(distDir, { baseline = null, budget = null } = {}) {
     }
     const art = files.filter((f) => f.rel.startsWith('art/'));
     for (const f of art) if (!ART_EXT.has(f.ext)) errors.push(`/art に画像でないファイル: ${f.rel}`);
+    for (const f of files) if (UNSHIPPED_ART.test(f.rel)) errors.push(`公開しない素材（予約・未使用・素材パックそのもの）の名前のファイル: ${f.rel}`);
     const artBytes = art.reduce((s, f) => s + f.bytes, 0);
     const byTop = new Map();
     for (const f of files) {

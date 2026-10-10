@@ -4,7 +4,7 @@
 
     python3 -I proto3d/tools/make-dev-art.py
 
-- 本物と同じ ID・種類・原画の大きさ（人物画 1024×1536 RGBA・背景 1536×1024・手前の幕 1536×1024 RGBA・地面 1024×1024）の
+- 本物と同じ ID・種類・原画の大きさ（人物画 1024×1536 RGBA・背景と手前の幕は bg.council の原画の大きさ（Version 25 から 1664×936）・地面 1024×1024）の
   模様を一時フォルダの incoming/ に置き、art-build.py の ingest → build をそのまま通す（透明の検査・余白の切り詰め・
   同じ原画からの顔の切り出し・地面の処理・WebP の上限）。できた加工版と一覧（manifest.gen.json と同じ形）を dev-art/ に写す。
 - 模様は単純な灰色の形・格子・「TEST」の文字・目印の線だけ。顔や風景は描かない（生成画像の代わりにしない）。
@@ -97,8 +97,7 @@ def face_rect() -> list[int]:
 
 # ---------------------------------------------------------------- 背景の TEST（安全な範囲の線）
 
-def background_fixture() -> Image.Image:
-    W, H = 1536, 1024
+def background_fixture(W: int = 1536, H: int = 1024) -> Image.Image:
     im = Image.new('RGB', (W, H), (88, 94, 104))
     d = ImageDraw.Draw(im)
     d.rectangle([0, 0, W // 3, H], fill=(98, 92, 112))
@@ -122,14 +121,13 @@ def background_fixture() -> Image.Image:
     d.rectangle(bx, outline=yel, width=4)
     text_c(d, ((bx[0] + bx[2]) / 2, (bx[1] + bx[3]) / 2), 'RIGHT CENTRE: choices', 30, yel, (30, 30, 30))
     text_c(d, (W * 0.48, H * 0.5), 'TEST', 220, (255, 255, 255), (30, 30, 30))
-    text_c(d, (W * 0.48, H * 0.66), 'bg.council 1536x1024 - fixture only, not art', 30, (235, 235, 235), (30, 30, 30))
+    text_c(d, (W * 0.48, H * 0.66), f'bg.council {W}x{H} - fixture only, not art', 30, (235, 235, 235), (30, 30, 30))
     for (x, y, s) in ((70, 30, '(0,0)'), (W - 110, 30, f'({W},0)'), (90, H - 30, f'(0,{H})'), (W - 130, H - 30, f'({W},{H})')):
         text_c(d, (x, y), s, 24, (235, 235, 235), (30, 30, 30))
     return im
 
 
-def overlay_fixture() -> Image.Image:
-    W, H = 1536, 1024
+def overlay_fixture(W: int = 1536, H: int = 1024) -> Image.Image:
     rgb = Image.new('RGB', (W, H), (70, 52, 40))
     d = ImageDraw.Draw(rgb)
     bar = int(0.10 * W)
@@ -194,9 +192,12 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix='dev-art-') as tmp:
         ctx = ab._setup_root(Path(tmp), real)
         m = ab.load_master(ctx)
+        # 背景と手前の幕は、本物の bg.council の原画の大きさ（受け取っていれば原画の、無ければ依頼の大きさ）
+        bgr = ab.asset_by_id(real, 'bg.council')
+        bw, bh = ((bgr.get('original') or {}).get('w') or bgr['expected']['w'], (bgr.get('original') or {}).get('h') or bgr['expected']['h'])
         src = {
-            'bg.council': background_fixture(),
-            'bg.council.front': overlay_fixture(),
+            'bg.council': background_fixture(bw, bh),
+            'bg.council.front': overlay_fixture(bw, bh),
         }
         # 人物画：正本の記録にある人物ごとに 1 枚（名前の文字と色だけ違う同じ模様。人の顔は描かない）
         for a in m['assets']:
@@ -207,6 +208,8 @@ def main() -> int:
             src[aid] = texture_fixture(p, tint)
         for a in m['assets']:
             if a['id'] in src:
+                # 素材パックから受け取る記録・原画の記録だけの人物画（sourceOnly）も、ここでは incoming/ の名前で受け取る
+                a['incoming'] = a.get('incoming') or f'{a["id"]}.png'
                 src[a['id']].save(ctx.incoming / a['incoming'])
             if a['kind'] == 'face':
                 a['faceRect'] = face_rect()
@@ -220,7 +223,7 @@ def main() -> int:
             print('make-dev-art：ingest/build が通らなかった', file=sys.stderr)
             return 1
         gen = json.loads(ctx.gen.read_text(encoding='utf-8'))
-        if set(gen['assets']) != {a['id'] for a in m['assets']}:
+        if set(gen['assets']) != {a['id'] for a in m['assets'] if not a.get('sourceOnly')}:
             print(f'make-dev-art：全部の ID がそろわない {sorted(gen["assets"])}', file=sys.stderr)
             return 1
         if (OUT / 'art').exists():
@@ -239,7 +242,7 @@ def main() -> int:
     readme = '\n'.join([
         '# 開発用の仮の画像（TEST FIXTURES ONLY — not art）',
         '',
-        'このフォルダの画像は、生成イラスト素材（Version 22）の **配置と動作の確かめだけ** に使う、格子と「TEST」の文字の模様です。',
+        'このフォルダの画像は、生成イラスト素材（Version 22 から）の **配置と動作の確かめだけ** に使う、格子と「TEST」の文字の模様です。',
         '',
         '- **見た目の素材ではありません。** 見た目の改善の確認・比較・報告には使いません。顔や風景は描いていません（生成画像の代わりにしない）。',
         '- **公開版に入りません。** `proto3d/public/` の外にあり、`vite build` は `public/` だけを写します。`node proto3d/tools/check-dist.mjs` が dist に dev-art が無いことを確かめます。',
@@ -258,7 +261,8 @@ def main() -> int:
         '- 人物画：灰色の単純な形（頭・首・胴。下端まで続く）＋64px の格子＋赤い線 = 目の高さ（原画の上から 20%）＋黄色の点線 = 下から 20%（台詞の欄に隠れてよい所）＋「→」= 向き（画面の右）。',
         '  透明な余白は本物と同じく切り詰めるので、加工版は 1024×1536 より小さい。`meta.eyeY`・`meta.faceX` は加工版の高さ・幅に対する割合。',
         '- 顔：人物画の頭の範囲（faceRect）を、本物と同じ加工の道で同じ原画から切り出した物（名前と TEST の文字が入る）。',
-        '- 背景：黄色の線 = 上下 18%（画面の形で切れうる所）と左 3 分の 1（人物画）、水色の線 = 上 20%（見出しの文字）、黄色の枠 = 右の中央（選択肢）。',
+        f'- 背景：本物の bg.council の原画と同じ {bw}×{bh}。黄色の線 = 上下 18%（画面の形で切れうる所）と左 3 分の 1（人物画）、水色の線 = 上 20%（見出しの文字）、黄色の枠 = 右の中央（選択肢）。',
+        '- 原画の記録だけの人物画（sourceOnly。Version 24 の顔の元）は加工版を作らないので、ここにも無い（そこから切り出した顔 face.pack1.* だけがある）。',
         '- 手前の幕：左右の端の棒だけ（中央は透明。内側の縁は 14px でなめらかに透明へ）。',
         '- 地面：1 枚 = `meta.tileMeters` m 四方を 8×8 のます（1 ます = 1/8）に分け、左上から 1〜64 の番号（G = 草地・D = 土・R = 道・F = 林床）。左上のますの「↑」が画像の上。',
         f'  継ぎ目の値（1 前後なら目立たない）：草地 {tg["seamBefore"]["ratio"]} → {tg["seamAfter"]["ratio"]}。',

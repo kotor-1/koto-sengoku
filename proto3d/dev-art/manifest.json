@@ -2,7 +2,7 @@
     "version": 1,
     "assets": {
         "portrait.ieyasu": {
-            "file": "art/portraits/ieyasu.webp",
+            "file": "art/portraits/ieyasu_v2.webp",
             "w": 745,
             "h": 1453,
             "kind": "portrait",
@@ -14,7 +14,7 @@
             }
         },
         "face.ieyasu": {
-            "file": "art/faces/ieyasu.webp",
+            "file": "art/faces/ieyasu_v2.webp",
             "w": 256,
             "h": 256,
             "kind": "face",
@@ -22,7 +22,7 @@
             "sha256": "cbf579da17116796fe7cc3c6db3c6d9c4034cb2e1579bc61ce996364f512899b"
         },
         "portrait.tadakatsu": {
-            "file": "art/portraits/tadakatsu.webp",
+            "file": "art/portraits/tadakatsu_v2.webp",
             "w": 745,
             "h": 1453,
             "kind": "portrait",
@@ -34,7 +34,7 @@
             }
         },
         "face.tadakatsu": {
-            "file": "art/faces/tadakatsu.webp",
+            "file": "art/faces/tadakatsu_v2.webp",
             "w": 256,
             "h": 256,
             "kind": "face",
@@ -42,7 +42,7 @@
             "sha256": "68fe4edb8fec6320ff5a2edf15771836dee31eaabfde5f000f4d9d607c95d0b8"
         },
         "portrait.sakai": {
-            "file": "art/portraits/sakai.webp",
+            "file": "art/portraits/sakai_v2.webp",
             "w": 745,
             "h": 1453,
             "kind": "portrait",
@@ -54,7 +54,7 @@
             }
         },
         "face.sakai": {
-            "file": "art/faces/sakai.webp",
+            "file": "art/faces/sakai_v2.webp",
             "w": 256,
             "h": 256,
             "kind": "face",
@@ -62,7 +62,7 @@
             "sha256": "a77527a0fc9a12d9b5d09899a89adadcca9da12694135c4033528dba38687d0f"
         },
         "portrait.ishikawa": {
-            "file": "art/portraits/ishikawa.webp",
+            "file": "art/portraits/ishikawa_v2.webp",
             "w": 745,
             "h": 1453,
             "kind": "portrait",
@@ -74,7 +74,7 @@
             }
         },
         "face.ishikawa": {
-            "file": "art/faces/ishikawa.webp",
+            "file": "art/faces/ishikawa_v2.webp",
             "w": 256,
             "h": 256,
             "kind": "face",
@@ -82,7 +82,7 @@
             "sha256": "100f912f93a1a534c41fc6def982ddaea8481261eda0e6dd40e745b10c13e12f"
         },
         "portrait.sakakibara": {
-            "file": "art/portraits/sakakibara.webp",
+            "file": "art/portraits/sakakibara_v2.webp",
             "w": 745,
             "h": 1453,
             "kind": "portrait",
@@ -94,7 +94,7 @@
             }
         },
         "face.sakakibara": {
-            "file": "art/faces/sakakibara.webp",
+            "file": "art/faces/sakakibara_v2.webp",
             "w": 256,
             "h": 256,
             "kind": "face",
@@ -102,7 +102,7 @@
             "sha256": "0049ed1fee2c51b799a1749da1cd3f396894222df662ffc61e43a782deb60c8c"
         },
         "portrait.nagamasa": {
-            "file": "art/portraits/nagamasa.webp",
+            "file": "art/portraits/nagamasa_v2.webp",
             "w": 745,
             "h": 1453,
             "kind": "portrait",
@@ -114,7 +114,7 @@
             }
         },
         "face.nagamasa": {
-            "file": "art/faces/nagamasa.webp",
+            "file": "art/faces/nagamasa_v2.webp",
             "w": 256,
             "h": 256,
             "kind": "face",
@@ -122,52 +122,52 @@
             "sha256": "daa3dbe52787f38b750c2b0ad9c68e73acc71207a7fa1d3e84af18f5ca52d2b5"
         },
         "bg.council": {
-            "file": "art/story/council.webp",
-            "w": 1536,
-            "h": 1024,
+            "file": "art/story/council_day.webp",
+            "w": 1664,
+            "h": 936,
             "kind": "background",
-            "bytes": 50350,
-            "sha256": "fcdc803c20720fdaecf6666adfc092556d00582554cf1dd70b4f13ae947de25b"
+            "bytes": 49578,
+            "sha256": "877a60da1bea4f52858798dafb07abbbf43d20b465172403754897e062e56d30"
         },
         "bg.council.front": {
             "file": "art/story/council_front.webp",
-            "w": 1536,
-            "h": 1024,
+            "w": 1664,
+            "h": 936,
             "kind": "overlay",
-            "bytes": 7802,
-            "sha256": "da9fc9de0fa1b3b0f1272306094da0bf4c5255e4c1c0dc1465a63639e6c1e57f"
+            "bytes": 7508,
+            "sha256": "aed815394ca07238b1fd5b1cd1abcacc52dc5256f71e1a083fac7568f5341489"
         },
         "tex.plains.grass": {
             "file": "art/battle/plains_grass.webp",
-            "w": 1024,
-            "h": 1024,
+            "w": 512,
+            "h": 512,
             "kind": "texture",
-            "bytes": 38858,
-            "sha256": "1f2909efa08f3fd65c43b28727a5ec87493054b8cf20cc1c1ebca9e6d5fcdca7",
+            "bytes": 19450,
+            "sha256": "d38daece0bde2a13a1870eeb53d7cdac4c554fec162deb94ee873150921447f0",
             "meta": {
-                "tileMeters": 8
+                "tileMeters": 4
             }
         },
         "tex.plains.dirt": {
             "file": "art/battle/plains_dirt.webp",
-            "w": 1024,
-            "h": 1024,
+            "w": 512,
+            "h": 512,
             "kind": "texture",
-            "bytes": 38212,
-            "sha256": "dbfb1b2b92fd84f1fe1e0e203ff77b0b4445a5191463312eaadda75eb9d98b21",
+            "bytes": 17062,
+            "sha256": "15ad0c4f7b32edf9f746605dfb9873aab79dd2b9a86f5c5da48ff8e2608ff930",
             "meta": {
-                "tileMeters": 8
+                "tileMeters": 6
             }
         },
         "tex.plains.road": {
             "file": "art/battle/plains_road.webp",
-            "w": 1024,
-            "h": 1024,
+            "w": 512,
+            "h": 512,
             "kind": "texture",
-            "bytes": 38134,
-            "sha256": "d2b92d6fad7b93c68e8bc85ba8dde93c874de30ee1f63310c413bdb55b328057",
+            "bytes": 17428,
+            "sha256": "8c90310d1679d112b2a61d46785f3d2416e8caf70e655341bd7fddacaee72769",
             "meta": {
-                "tileMeters": 8
+                "tileMeters": 5
             }
         },
         "tex.plains.forest": {
@@ -180,6 +180,54 @@
             "meta": {
                 "tileMeters": 8
             }
+        },
+        "face.pack1.ieyasu": {
+            "file": "art/faces/ieyasu.webp",
+            "w": 256,
+            "h": 256,
+            "kind": "face",
+            "bytes": 7976,
+            "sha256": "a3faba844eb5e9a7091bce468bd8bc9fd4436b3f84c5839038c31c1989ac4078"
+        },
+        "face.pack1.tadakatsu": {
+            "file": "art/faces/tadakatsu.webp",
+            "w": 256,
+            "h": 256,
+            "kind": "face",
+            "bytes": 8042,
+            "sha256": "cd117293e2fe9658de5b9ed3a37826ec62e715fe6333d01f3254cd75b5727b37"
+        },
+        "face.pack1.sakai": {
+            "file": "art/faces/sakai.webp",
+            "w": 256,
+            "h": 256,
+            "kind": "face",
+            "bytes": 7942,
+            "sha256": "56317fa7a4f904b5c3e1db71c291f2c442e05b83eb88baf157cb97f6ee12a6c3"
+        },
+        "face.pack1.ishikawa": {
+            "file": "art/faces/ishikawa.webp",
+            "w": 256,
+            "h": 256,
+            "kind": "face",
+            "bytes": 8022,
+            "sha256": "42c75a934eba2e32c50bdb6c634c4b68f204521300b9ff25071e483a5f44bde4"
+        },
+        "face.pack1.sakakibara": {
+            "file": "art/faces/sakakibara.webp",
+            "w": 256,
+            "h": 256,
+            "kind": "face",
+            "bytes": 8030,
+            "sha256": "1ad3d4dba99f71d64ad1d31b5cb62465414d0e159a6e4b95fca76840f8119bff"
+        },
+        "face.pack1.nagamasa": {
+            "file": "art/faces/nagamasa.webp",
+            "w": 256,
+            "h": 256,
+            "kind": "face",
+            "bytes": 8086,
+            "sha256": "caac011b9d39b93ed9ec08c8c442bc2e01371eafa81fdff1914d47ae52d8cc34"
         }
     }
 }

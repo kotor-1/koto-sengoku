@@ -5,7 +5,7 @@
  * - 画像は art/registry.ts の loadArtBitmap（fetch → createImageBitmap）だけで読み、<canvas class="b-face" data-art-id> に描く
  *   （<img>・CSS の背景・data: の URL は使わない）。canvas は 1 度描けば、置き場所を移しても描き直さない（毎秒作り直す欄の中でもちらつかない）。
  * - 旧表示（?art=old）・一覧に無い・読めないときは何も作らない（Version 21 と同じ画面。代わりの絵は描かない）。
- * - 顔があるのは素材パック sengoku_art_pack_v1 の 6 人（家康・忠勝・酒井・石川・榊原・長政）だけ。顔の ID は武将の id から引く
+ * - 顔があるのは 6 人（家康・忠勝・酒井・石川・榊原・長政）だけ（Version 25 から素材パック sengoku_individual_art_v2 の人物画から切り出した顔。Version 24 までは sengoku_art_pack_v1）。顔の ID は武将の id から引く
  *   （酒井忠次・本多忠勝・榊原康政を取り違えない）。ほかの武将・部隊（弓隊・騎馬隊・織田援軍など）・主人公・架空の人物には顔を出さない。
  * - 部隊の札の見出しでは、顔のせいで部隊の名前が切れるなら、細い顔（両脇を切った縦長）にし、それでも切れるなら顔を出さない
  *   （fitFaceBeforeName。名前を Version 21 より短く切らない。札の大きさ・押せる所は変えない）。

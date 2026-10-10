@@ -9,7 +9,7 @@
  *   失敗は覚えたままにせず、前の失敗から 10 秒たった後の呼び出しで読み直す。時間切れ（30 秒）は通信の間だけ。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ART_IDS, FACE_OF, FIELD_ART, PORTRAIT_OF } from '../proto3d/src/art/ids';
+import { ART_IDS, FACE_OF, FIELD_ART, PORTRAIT_OF, V24_FACE_OF } from '../proto3d/src/art/ids';
 import { __setArtManifestForTest, artAvailable, artEntry, artMode, artUrl, loadArtBitmap, preloadArt, type ArtEntry } from '../proto3d/src/art/registry';
 
 // テストは Node で動く。Node の型定義は入れていないので、使う関数だけ型を付ける
@@ -110,7 +110,8 @@ function problems(m: unknown, base: string): string[] {
         if (!Number.isInteger(w) || !Number.isInteger(h) || w <= 0 || h <= 0) out.push(`${id}: 寸法が正しくない ${w}×${h}`);
         if (kind === 'portrait' && (w > 1024 || h > 1536)) out.push(`${id}: 人物画は 1024×1536 以下 ${w}×${h}`);
         if (kind === 'face' && (w !== 256 || h !== 256)) out.push(`${id}: 顔は 256×256 ${w}×${h}`);
-        if ((kind === 'background' || kind === 'overlay') && (w > 1536 || h > 1024)) out.push(`${id}: 背景は 1536×1024 以下 ${w}×${h}`);
+        // 背景は画面の大きさ（1920×1080）までで、原画より大きくしない（拡大しない：正本の記録の原画の寸法と比べるのは下の正本のテスト）
+        if ((kind === 'background' || kind === 'overlay') && (w > 1920 || h > 1080)) out.push(`${id}: 背景は 1920×1080 以下 ${w}×${h}`);
         if (kind === 'texture' && (w !== h || w > 1024 || (w & (w - 1)) !== 0)) out.push(`${id}: 地面の素材は 1024 以下の 2 の累乗の正方形 ${w}×${h}`);
         const bytes = e.bytes as number;
         if (!Number.isInteger(bytes) || bytes <= 0) out.push(`${id}: bytes が正しくない`);
@@ -176,7 +177,12 @@ describe('正本の記録（proto3d/assets-src/art-v22/manifest.json）', () => 
             derivedFrom: string | null;
             faceRect?: number[] | null;
             method: { how: string; promptRef: string | null; referenceImages: string[] | null };
-            original: { path: string; sha256: string } | null;
+            original: { path: string; sha256: string; w: number; h: number; inRepo?: boolean; receivedAs: string } | null;
+            sourceOnly?: string | boolean;
+            source?: string;
+            pack?: { source: string; file: string; sha256: string; bytes: number; w: number; h: number; upstream?: { file: string; sha256: string; bytes: number } };
+            processing?: { upscaled?: boolean };
+            history?: { incoming: string | null }[];
             recipe: { publicFile: string; capBytes: number; mapType?: string; meta?: Record<string, number> };
             outputs: { path: string; w: number; h: number; bytes: number; sha256: string; decodedBytes: number; meta?: Record<string, number | string> }[];
             terms: { confirmedByUser: boolean | null; notes: string };
@@ -185,7 +191,18 @@ describe('正本の記録（proto3d/assets-src/art-v22/manifest.json）', () => 
     const gen = readJson(GEN_PATH) as { assets: Record<string, ArtEntry> };
 
     it('素材の ID が ids.ts とそろい、種類・置き場・上限が決まりどおり', () => {
-        expect(master.assets.map((a) => a.id).sort()).toEqual([...ALL_IDS].sort());
+        // ids.ts に無いのは、原画の記録だけ（sourceOnly）の人物画だけ（Version 24 の顔の元。加工版を作らず、ゲームからは引けない）
+        expect(master.assets.filter((a) => !a.sourceOnly).map((a) => a.id).sort()).toEqual([...ALL_IDS].sort());
+        const sourceOnly = master.assets.filter((a) => a.sourceOnly);
+        expect(sourceOnly.map((a) => a.id).sort()).toEqual(['ieyasu', 'ishikawa', 'nagamasa', 'sakai', 'sakakibara', 'tadakatsu'].map((g) => `portrait.pack1.${g}`));
+        for (const a of sourceOnly) {
+            expect(ALL_IDS, a.id).not.toContain(a.id);
+            expect(a.kind, a.id).toBe('portrait');
+            expect(a.outputs, a.id).toEqual([]);
+            expect(gen.assets[a.id], a.id).toBeUndefined();
+            // その原画から切り出した顔（face.pack1.*）が ids.ts にある
+            expect(master.assets.some((f) => f.derivedFrom === a.id && ALL_IDS.includes(f.id)), a.id).toBe(true);
+        }
         for (const a of master.assets) {
             expect(a.kind, a.id).toBe(kindOfId(a.id));
             expect(a.recipe.publicFile.startsWith(DIR[a.kind]), a.id).toBe(true);
@@ -193,7 +210,11 @@ describe('正本の記録（proto3d/assets-src/art-v22/manifest.json）', () => 
             expect(Object.keys(master.statusValues), a.id).toContain(a.status);
             expect(a.purpose.length > 0 && a.subject.length > 0 && a.method.how.length > 0, a.id).toBe(true);
             expect([null, true, false], a.id).toContain(a.terms.confirmedByUser);
-            if (a.original) expect(a.original.path.startsWith('proto3d/assets-src/art-v22/'), a.id).toBe(true);
+            if (a.original && a.original.inRepo === false) {
+                // 素材パック第 2 版の原画は公開リポジトリに入れない（手元の置き場は .gitignore）
+                expect(a.original.path.startsWith('proto3d/assets-src/art-v25/originals/'), a.id).toBe(true);
+                expect(a.pack, a.id).toBeTruthy();
+            } else if (a.original) expect(a.original.path.startsWith('proto3d/assets-src/art-v22/'), a.id).toBe(true);
             if (a.kind === 'texture') {
                 expect(a.recipe.mapType, a.id).toBe('albedo'); // 色の画像を法線・粗さとは称さない
                 expect(a.recipe.meta?.tileMeters, a.id).toBeGreaterThan(0);
@@ -212,8 +233,13 @@ describe('正本の記録（proto3d/assets-src/art-v22/manifest.json）', () => 
             }
         }
         const names = master.assets.map((a) => a.incoming).filter((n): n is string => !!n).sort();
-        // 依頼リスト（利用者に送った物）の 8 枚と、素材パック sengoku_art_pack_v1 で届いた武将 4 人の人物画
-        const requested = ['bg_council.png', 'bg_council_front.png', 'portrait_ieyasu.png', 'portrait_tadakatsu.png', 'tex_plains_dirt.png', 'tex_plains_forest.png', 'tex_plains_road.png', 'tex_plains_grass.png'];
+        // 依頼リスト（利用者に送った物）の 8 枚のうち 7 枚と、素材パック sengoku_art_pack_v1 で届いた武将 4 人の人物画。
+        // 軍議の背景（bg_council.png）は届かないまま、Version 25 で素材パック第 2 版の council_day に切り替えた（記録の history に残す）
+        const requested = ['bg_council_front.png', 'portrait_ieyasu.png', 'portrait_tadakatsu.png', 'tex_plains_dirt.png', 'tex_plains_forest.png', 'tex_plains_road.png', 'tex_plains_grass.png'];
+        const bg = master.assets.find((a) => a.id === 'bg.council');
+        expect(bg?.incoming).toBeNull();
+        expect(bg?.history?.map((h) => h.incoming)).toEqual(['bg_council.png']);
+        expect(readText(`${ROOT}docs/art-v22-asset-request.md`)).toContain('bg_council.png');
         const fromPack = ['portrait_ishikawa.png', 'portrait_nagamasa.png', 'portrait_sakai.png', 'portrait_sakakibara.png'];
         expect(names).toEqual([...requested, ...fromPack].sort());
         const req = readText(`${ROOT}docs/art-v22-asset-request.md`);
@@ -245,8 +271,13 @@ describe('正本の記録（proto3d/assets-src/art-v22/manifest.json）', () => 
             if (a.kind === 'face') {
                 const src = master.assets.find((s) => s.id === a.derivedFrom);
                 expect(src?.original, a.id).toBeTruthy();
+                // 顔は原画から縮めるだけ（拡大しない）。Version 24 の顔（face.pack1.*）は、Version 22 で低解像度の原画から作った物
+                // （一部は拡大：記録の processing.upscaled）を、比べる表示のために中身を変えずに残している
+                if (!a.id.startsWith('face.pack1.')) expect(a.processing?.upscaled, a.id).toBe(false);
             } else {
                 expect(a.original, a.id).toBeTruthy();
+                // 拡大しない：加工版は原画の寸法以下
+                expect(o.w <= (a.original?.w ?? 0) && o.h <= (a.original?.h ?? 0), `${a.id} ${o.w}×${o.h}`).toBe(true);
             }
         }
     });
@@ -266,8 +297,8 @@ describe('開発用の TEST の模様（proto3d/dev-art）', () => {
 
     it('全部の ID がそろい（本物と同じ ID・種類）、file は本物と同じ置き場の名前', () => {
         expect(Object.keys(dev.assets).sort()).toEqual([...ALL_IDS].sort());
-        const master = readJson(MASTER_PATH) as { assets: { id: string; recipe: { publicFile: string } }[] };
-        for (const a of master.assets) expect(dev.assets[a.id].file, a.id).toBe(a.recipe.publicFile);
+        const master = readJson(MASTER_PATH) as { assets: { id: string; sourceOnly?: unknown; recipe: { publicFile: string } }[] };
+        for (const a of master.assets) if (!a.sourceOnly) expect(dev.assets[a.id].file, a.id).toBe(a.recipe.publicFile);
     });
 
     it('一覧に無いファイルを置かず、全体が小さい（約 600KB 以下）。TEST の物だと README に書いてある', () => {
@@ -311,13 +342,118 @@ describe('ゲームのコードは正本の記録も dev-art も読み込まな�
 
     it('人物画・顔・地面の対応は ids.ts の ID だけを指す（武将ごとに自分の顔。ほかの人の顔を代わりに使わない）', () => {
         for (const v of [...Object.values(PORTRAIT_OF), ...Object.values(FACE_OF)]) expect(ALL_IDS).toContain(v);
-        // 素材パック sengoku_art_pack_v1 で絵が届いた 6 人だけ（信長・義景は画面に出ないので対応させない）
+        // 画面に出る 6 人だけ（素材パックの信長・義景は画面に出ないので対応させない：予約）
         expect(Object.keys(FACE_OF).sort()).toEqual(['ieyasu', 'ishikawa', 'nagamasa', 'sakai', 'sakakibara', 'tadakatsu']);
+        expect(Object.keys(PORTRAIT_OF).sort()).toEqual(Object.keys(FACE_OF).sort());
+        // Version 24 の顔（比べる表示だけ）：同じ 6 人・face.pack1.<武将>
+        expect(Object.keys(V24_FACE_OF).sort()).toEqual(Object.keys(FACE_OF).sort());
+        for (const [g, v] of Object.entries(V24_FACE_OF)) expect(v).toBe(`face.pack1.${g}`);
         // 武将 id と素材の ID の名前が一致する（酒井・本多・榊原を取り違えない）
         for (const [g, v] of Object.entries(FACE_OF)) expect(v).toBe(`face.${g}`);
         for (const [g, v] of Object.entries(PORTRAIT_OF)) expect(v).toBe(`portrait.${g}`);
         expect(new Set(Object.values(FACE_OF)).size).toBe(Object.keys(FACE_OF).length);
         for (const f of Object.values(FIELD_ART)) for (const v of Object.values(f)) expect(kindOfId(v)).toBe('texture');
+    });
+});
+
+describe('素材パック第 2 版（sengoku_individual_art_v2。Version 25）と Version 24 の顔', () => {
+    const master = readJson(MASTER_PATH) as {
+        sources: Record<string, { packId?: string; originalsInRepo?: boolean; textFiles?: { path: string; sha256: string; bytes: number }[]; reserved?: string[]; unused?: string[]; zipParts?: { name: string; sha256: string }[] }>;
+        assets: { id: string; kind: Kind; status: string; source?: string; pack?: { source: string; file: string; sha256: string; bytes: number; w: number; h: number; upstream?: { file: string; sha256: string; bytes: number } }; original: { path: string; sha256: string; inRepo?: boolean } | null; outputs: { sha256: string }[]; faceRect?: number[] | null; derivedFrom: string | null }[];
+    };
+    const gen = readJson(GEN_PATH) as { assets: Record<string, ArtEntry> };
+    const PACK_DOCS = `${ROOT}proto3d/assets-src/art-v25/pack-v2/`;
+    const packList = readJson(`${PACK_DOCS}asset_manifest.json`) as { pack_id: string; assets: { path: string; sha256: string; bytes: number; width: number; height: number }[] };
+    const chars = readJson(`${PACK_DOCS}characters_and_scenes.json`) as { key: string; display_name: string; face_crop_xyxy?: number[] }[];
+    /** 表示名で武将 id に対応させる（パックの key と武将 id を同じとみなさない） */
+    const NAME_OF: Record<string, string> = { ieyasu: '徳川家康', tadakatsu: '本多忠勝', sakai: '酒井忠次', ishikawa: '石川数正', sakakibara: '榊原康政', nagamasa: '浅井長政' };
+
+    it('人物画 6 枚と軍議の背景は、パックの一覧（写し）の sha256・寸法と一致するファイルから受け取り、元の生成結果も一覧にある', () => {
+        const src = master.sources['pack-v2'];
+        expect(src.packId).toBe(packList.pack_id);
+        expect(src.originalsInRepo).toBe(false);
+        expect(src.zipParts?.map((z) => z.name)).toEqual(['sengoku_art_v2_under30MB_1_of_3.zip', 'sengoku_art_v2_under30MB_2_of_3.zip', 'sengoku_art_v2_under30MB_3_of_3.zip']);
+        const fromPack = master.assets.filter((a) => a.pack);
+        expect(fromPack.map((a) => a.id).sort()).toEqual(['bg.council', ...Object.keys(NAME_OF).map((g) => `portrait.${g}`)].sort());
+        for (const a of fromPack) {
+            const pk = a.pack!;
+            const e = packList.assets.find((x) => x.path === pk.file);
+            expect(e, a.id).toBeTruthy();
+            expect([e?.sha256, e?.bytes, e?.width, e?.height], a.id).toEqual([pk.sha256, pk.bytes, pk.w, pk.h]);
+            const u = packList.assets.find((x) => x.path === pk.upstream?.file);
+            expect(u?.sha256, a.id).toBe(pk.upstream?.sha256);
+            expect(a.original?.sha256, a.id).toBe(pk.sha256);
+            expect(a.original?.inRepo, a.id).toBe(false);
+        }
+    });
+
+    it('武将とパックの人物の対応は表示名どおり。顔の範囲はパックの face_crop_xyxy と同じ', () => {
+        for (const [g, name] of Object.entries(NAME_OF)) {
+            const p = master.assets.find((a) => a.id === `portrait.${g}`)!;
+            const c = chars.find((x) => x.display_name === name);
+            expect(c, g).toBeTruthy();
+            expect(p.pack?.file, g).toBe(`portraits/${c?.key}.png`);
+            const f = master.assets.find((a) => a.id === `face.${g}`)!;
+            const [x0, y0, x1, y1] = c?.face_crop_xyxy ?? [];
+            expect(f.faceRect, g).toEqual([x0, y0, x1 - x0, y1 - y0]);
+            expect(f.derivedFrom, g).toBe(`portrait.${g}`);
+        }
+        const bg = master.assets.find((a) => a.id === 'bg.council')!;
+        expect(bg.pack?.file).toBe('backgrounds/council_day.png');
+    });
+
+    it('公開するのは人物画 6・顔 6（新）・軍議の背景 1・地面 3・Version 24 の顔 6 だけ。信長・義景・ほかの背景・林床・原画は公開しない', () => {
+        const files = Object.values(gen.assets).map((e) => e.file).sort();
+        const want = [
+            ...Object.keys(NAME_OF).flatMap((g) => [`art/portraits/${g}_v2.webp`, `art/faces/${g}_v2.webp`, `art/faces/${g}.webp`]),
+            'art/story/council_day.webp',
+            'art/battle/plains_grass.webp',
+            'art/battle/plains_dirt.webp',
+            'art/battle/plains_road.webp',
+        ].sort();
+        expect(files).toEqual(want);
+        const all = walk(PUBLIC).map((p) => p.slice(PUBLIC.length));
+        expect(all.filter((p) => /nobunaga|yoshikage|oda_|asakura|castle_town|plains_vista|forest_floor|sengoku_individual/i.test(p))).toEqual([]);
+        expect(all.filter((p) => p.startsWith('art/') && !p.endsWith('.webp'))).toEqual([]);
+        const src = master.sources['pack-v2'];
+        expect((src.reserved ?? []).join()).toMatch(/織田信長.*朝倉義景/);
+        expect((src.unused ?? []).join()).toMatch(/castle_town_day[\s\S]*plains_vista_day[\s\S]*forest_floor/);
+    });
+
+    it('リポジトリの assets-src/art-v25 には画像を置かない（原画は .gitignore の手元の置き場だけ）。写した文書は記録の sha256 と一致', () => {
+        const ignore = readText(`${ROOT}.gitignore`);
+        expect(ignore).toMatch(/^proto3d\/assets-src\/art-v25\/originals\/$/m);
+        const files = walk(`${ROOT}proto3d/assets-src/art-v25`).map((p) => p.slice(ROOT.length));
+        expect(files.filter((p) => /\.(png|jpe?g|webp)$/i.test(p) && !p.startsWith('proto3d/assets-src/art-v25/originals/'))).toEqual([]);
+        const docs = files.filter((p) => p.startsWith('proto3d/assets-src/art-v25/pack-v2/')).map((p) => p.slice('proto3d/assets-src/art-v25/pack-v2/'.length)).sort();
+        expect(docs).toEqual(['asset_manifest.json', 'characters_and_scenes.json', 'docs/PROVENANCE_AND_USAGE.md', 'docs/image_validation.json']);
+        for (const d of docs) {
+            const rec = master.sources['pack-v2'].textFiles?.find((t) => t.path === d);
+            const b = fs.readFileSync(`${PACK_DOCS}${d}`);
+            expect([b.length, sha256(b)], d).toEqual([rec?.bytes, rec?.sha256]);
+        }
+    });
+
+    it('Version 24 の顔（face.pack1.*）は Version 24 と同じファイル・同じ中身で残す（比べる表示が Version 24 を再現できる）', () => {
+        // Version 24（修正 70f9207）の manifest.gen.json の face.<武将> の sha256
+        const V24: Record<string, string> = {
+            ieyasu: 'ca0d186e84412692d0374a54f493d897c2f2d12b2c645f6d9a26a487b9dc0cce',
+            tadakatsu: 'b4e754ae51888928a062975406aec932cc8820f97516c7dae1a9443da6c1034c',
+            sakai: '9575e69559c1985b111597c61973b6f112b7f98e9c46942f968b0304cc7e96be',
+            ishikawa: '4f9a154cb0d1db076887cfbb9eef24672ac8c3eb69773766f1cedbe987228d6e',
+            sakakibara: 'acded0f8d4c907cce623a0efe882804fed749bd3aa718d88f67a2594407ec37e',
+            nagamasa: '1e51b6b29b7cb3bfe113f644bd98cd39268f04a33563a94253edb514940f0eac',
+        };
+        for (const [g, sha] of Object.entries(V24)) {
+            const id = V24_FACE_OF[g as keyof typeof V24_FACE_OF]!;
+            expect(gen.assets[id]?.file, g).toBe(`art/faces/${g}.webp`);
+            expect(gen.assets[id]?.sha256, g).toBe(sha);
+            expect(sha256(fs.readFileSync(`${PUBLIC}art/faces/${g}.webp`)), g).toBe(sha);
+            // 新しい顔は別のファイル（同じ URL で中身を替えない：古い控えが出ないように）・別の中身
+            const now = gen.assets[FACE_OF[g as keyof typeof FACE_OF]!];
+            expect(now.file, g).toBe(`art/faces/${g}_v2.webp`);
+            expect(now.sha256, g).not.toBe(sha);
+        }
     });
 });
 

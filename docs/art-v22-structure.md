@@ -6,6 +6,12 @@
 - 素材パックの出どころ・使っている物・利用条件：docs/third-party-assets.md の「生成イラスト素材パック sengoku_art_pack_v1」
 - 会話・軍議の台詞の枠の顔の作り：docs/art-v22-dialog-face.md
 
+**Version 25 の素材の取り込み（2026-10-10。会話・軍議・合戦の画面への組み込みは、この後の作業で書き足す）**
+- 素材パック第 2 版 `sengoku_individual_art_v2`（1 人・1 場面ずつ単独に生成した個別の原画。ZIP 3 つ）を `art-build.py ingest-pack` で受け取った。原画は公開リポジトリに入れず、git に入れない手元の置き場（`proto3d/assets-src/art-v25/originals/`）と、記録の sha256 だけ（`proto3d/assets-src/art-v25/README.md`）。
+- 素材の ID：`portrait.<武将>`（6 人の人物画。原寸の WebP `art/portraits/<武将>_v2.webp`）・`face.<武将>`（同じ原画からパックの範囲で切り出した 256×256 `art/faces/<武将>_v2.webp`）・`bg.council`（昼の軍議所。原寸 1664×936 の `art/story/council_day.webp`。1920px の要件には届かない比べる候補）。
+- Version 24 までの顔は `face.pack1.<武将>`（ファイル `art/faces/<武将>.webp` も中身も Version 24 と同じ）に名前を変えて残し、Version 24 と比べる表示だけで使う（`proto3d/src/art/ids.ts` の `V24_FACE_OF`）。第 1 版の低解像度の人物画は不採用のまま（`portrait.pack1.<武将>` は原画の記録だけ・sourceOnly）。
+- 織田信長・朝倉義景（予約）・城下町・大平原の遠景・林床は公開しない。地面（草地・土・道）は変えていない。出どころ・利用条件は docs/third-party-assets.md、素材ごとの記録は docs/art-assets.md。
+
 **今の状態（2026-10-09・Version 23 の比較版。依頼の原文：docs/art-v23-request.md）**
 - ゲームに入れた素材：**武将 6 人の顔アイコン**と、**大平原の合戦の地面の素材 3 種（草地・土・道）**（`proto3d/public/art/faces/*.webp` 6 枚・`proto3d/public/art/battle/plains_{grass,dirt,road}.webp` 3 枚）。
   - 地面は素材ごとに採用・フォールバック（1 種類が読めなくても、ほかの種類は使う。読めない種類だけ Version 21 の見た目：草地・林は Version 21 の色、道は Version 21 の道の帯、土のむらは無し）。

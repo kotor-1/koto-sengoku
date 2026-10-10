@@ -38,3 +38,6 @@ __pycache__/
 
 # 生成イラスト素材の作業用（art-build.py の確かめ用の途中の画像）
 proto3d/assets-src/**/_work/
+
+# 素材パック第 2 版（sengoku_individual_art_v2。Version 25 から）の原画の手元の写し。公開リポジトリに入れない（art-build.py ingest-pack が写す）
+proto3d/assets-src/art-v25/originals/

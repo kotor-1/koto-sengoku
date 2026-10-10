@@ -1,10 +1,15 @@
 /**
- * 生成イラスト素材（Version 22）の素材の ID と、どこで何を使うかの対応（差し替え先はここ 1 か所）。
+ * 生成イラスト素材（Version 22 から）の素材の ID と、どこで何を使うかの対応（差し替え先はここ 1 か所）。
  * 素材の中身・寸法・作り方の記録は proto3d/assets-src/art-v22/manifest.json（原画の一覧）と、
  * そこから proto3d/tools/art-build.py が作る manifest.gen.json（ゲームが読む一覧）にある。
  *
  * 人物画は「登場人物の id」で引く（3D の見た目の id では引かない：同じ見た目を別の人物が使い回しているため）。
  * 絵の無い人物には、ほかの人の顔を代わりに使わない（酒井忠次・本多忠勝・榊原康政を取り違えない）。
+ *
+ * Version 25 から：portrait.<武将>・face.<武将> は素材パック sengoku_individual_art_v2（1 人ずつ単独に生成した 1024×1536 の人物画）の物で、
+ * 顔は立ち絵と同じ原画から切り出す。bg.council は同じパックの昼の軍議所（原寸 1664×936）。
+ * Version 24 までの顔（素材パック sengoku_art_pack_v1 から切り出した物）は face.pack1.<武将> に名前を変えて残し、
+ * Version 24 と比べる表示でだけ使う（V24_FACE_OF）。第 1 版の人物画は低解像度のため不採用のままで、ID も無い（原画の記録だけ）。
  */
 import type { GeneralId } from '../battle/generals';
 
@@ -21,6 +26,13 @@ export const ART_IDS = {
     faceIshikawa: 'face.ishikawa',
     faceSakakibara: 'face.sakakibara',
     faceNagamasa: 'face.nagamasa',
+    // Version 24 までの顔（素材パック第 1 版から切り出し。ファイルも中身も Version 24 と同じ）。Version 24 と比べる表示だけで使う
+    facePack1Ieyasu: 'face.pack1.ieyasu',
+    facePack1Tadakatsu: 'face.pack1.tadakatsu',
+    facePack1Sakai: 'face.pack1.sakai',
+    facePack1Ishikawa: 'face.pack1.ishikawa',
+    facePack1Sakakibara: 'face.pack1.sakakibara',
+    facePack1Nagamasa: 'face.pack1.nagamasa',
     bgCouncil: 'bg.council',
     bgCouncilFront: 'bg.council.front',
     plainsGrass: 'tex.plains.grass',
@@ -43,8 +55,8 @@ export const PORTRAIT_OF: Readonly<Partial<Record<GeneralId, ArtId>>> = {
 
 /**
  * 武将 → 顔（会話・軍議の台詞の枠、合戦の部隊情報・能力表示・編成）。無い武将は顔を出さない。
- * 素材パック sengoku_art_pack_v1 の織田信長・朝倉義景の絵は、画面に登場する人物・部隊が無いので使わない
- * （画像のために部隊や出来事を足さない）
+ * 素材パックの織田信長・朝倉義景の絵は、画面に登場する人物・部隊が無いので使わない（予約。画像のために部隊や出来事を足さない）。
+ * Version 25 から、顔は立ち絵（PORTRAIT_OF）と同じ原画（素材パック sengoku_individual_art_v2）から切り出した物
  */
 export const FACE_OF: Readonly<Partial<Record<GeneralId, ArtId>>> = {
     ieyasu: ART_IDS.faceIeyasu,
@@ -53,6 +65,20 @@ export const FACE_OF: Readonly<Partial<Record<GeneralId, ArtId>>> = {
     ishikawa: ART_IDS.faceIshikawa,
     sakakibara: ART_IDS.faceSakakibara,
     nagamasa: ART_IDS.faceNagamasa,
+};
+
+/**
+ * Version 24 の顔（素材パック sengoku_art_pack_v1 から切り出した物。ファイル art/faces/<武将>.webp も中身も Version 24 と同じ）。
+ * Version 24 の表示を再現して比べるときだけ使う（そのときは人物画・軍議の背景は使わない：Version 24 には無かった）。
+ * キーは FACE_OF と同じ 6 人。ほかの人の顔を代わりに使わない
+ */
+export const V24_FACE_OF: Readonly<Partial<Record<GeneralId, ArtId>>> = {
+    ieyasu: ART_IDS.facePack1Ieyasu,
+    tadakatsu: ART_IDS.facePack1Tadakatsu,
+    sakai: ART_IDS.facePack1Sakai,
+    ishikawa: ART_IDS.facePack1Ishikawa,
+    sakakibara: ART_IDS.facePack1Sakakibara,
+    nagamasa: ART_IDS.facePack1Nagamasa,
 };
 
 /**

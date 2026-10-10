@@ -1,0 +1,152 @@
+{
+  "method": "Pillow decode; PNG dimensions; actual alpha statistics; SHA256; visual inspection of returned independent images. No OCR.",
+  "images": [
+    {
+      "id": "tokugawa_ieyasu",
+      "name": "徳川家康",
+      "native_size": [
+        1024,
+        1536
+      ],
+      "alpha_bbox_ge128": [
+        63,
+        20,
+        1013,
+        1536
+      ],
+      "top_edge_opaque_pixels": 0,
+      "left_edge_opaque_pixels": 0,
+      "right_edge_opaque_pixels": 0,
+      "bottom_crop": "腰下・大腿部で意図的に終わる半身画。全身ではない。"
+    },
+    {
+      "id": "honda_tadakatsu",
+      "name": "本多忠勝",
+      "native_size": [
+        1024,
+        1536
+      ],
+      "alpha_bbox_ge128": [
+        64,
+        25,
+        972,
+        1536
+      ],
+      "top_edge_opaque_pixels": 0,
+      "left_edge_opaque_pixels": 0,
+      "right_edge_opaque_pixels": 0,
+      "bottom_crop": "腰下・大腿部で意図的に終わる半身画。全身ではない。"
+    },
+    {
+      "id": "sakai_tadatsugu",
+      "name": "酒井忠次",
+      "native_size": [
+        1024,
+        1536
+      ],
+      "alpha_bbox_ge128": [
+        12,
+        67,
+        997,
+        1536
+      ],
+      "top_edge_opaque_pixels": 0,
+      "left_edge_opaque_pixels": 0,
+      "right_edge_opaque_pixels": 0,
+      "bottom_crop": "腰下・大腿部で意図的に終わる半身画。全身ではない。"
+    },
+    {
+      "id": "ishikawa_kazumasa",
+      "name": "石川数正",
+      "native_size": [
+        1024,
+        1536
+      ],
+      "alpha_bbox_ge128": [
+        55,
+        26,
+        1023,
+        1536
+      ],
+      "top_edge_opaque_pixels": 0,
+      "left_edge_opaque_pixels": 0,
+      "right_edge_opaque_pixels": 0,
+      "bottom_crop": "腰下・大腿部で意図的に終わる半身画。全身ではない。"
+    },
+    {
+      "id": "sakakibara_yasumasa",
+      "name": "榊原康政",
+      "native_size": [
+        1024,
+        1536
+      ],
+      "alpha_bbox_ge128": [
+        11,
+        25,
+        1024,
+        1536
+      ],
+      "top_edge_opaque_pixels": 0,
+      "left_edge_opaque_pixels": 0,
+      "right_edge_opaque_pixels": 5,
+      "bottom_crop": "腰下・大腿部で意図的に終わる半身画。全身ではない。"
+    },
+    {
+      "id": "oda_nobunaga",
+      "name": "織田信長",
+      "native_size": [
+        1024,
+        1536
+      ],
+      "alpha_bbox_ge128": [
+        113,
+        46,
+        960,
+        1536
+      ],
+      "top_edge_opaque_pixels": 0,
+      "left_edge_opaque_pixels": 0,
+      "right_edge_opaque_pixels": 0,
+      "bottom_crop": "腰下・大腿部で意図的に終わる半身画。全身ではない。"
+    },
+    {
+      "id": "azai_nagamasa",
+      "name": "浅井長政",
+      "native_size": [
+        1024,
+        1536
+      ],
+      "alpha_bbox_ge128": [
+        116,
+        27,
+        975,
+        1536
+      ],
+      "top_edge_opaque_pixels": 0,
+      "left_edge_opaque_pixels": 0,
+      "right_edge_opaque_pixels": 0,
+      "bottom_crop": "腰下・大腿部で意図的に終わる半身画。全身ではない。"
+    },
+    {
+      "id": "asakura_yoshikage",
+      "name": "朝倉義景",
+      "native_size": [
+        1024,
+        1536
+      ],
+      "alpha_bbox_ge128": [
+        61,
+        26,
+        1018,
+        1536
+      ],
+      "top_edge_opaque_pixels": 0,
+      "left_edge_opaque_pixels": 0,
+      "right_edge_opaque_pixels": 0,
+      "bottom_crop": "腰下・大腿部で意図的に終わる半身画。全身ではない。"
+    }
+  ],
+  "background_resolution_note": "Generated backgrounds are 1672×941; cropped native deliverables are 1664×936. Not 1920×1080 originals.",
+  "game_integration_tested": false,
+  "seamless_terrain_tested": false
+}
