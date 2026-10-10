@@ -8,6 +8,8 @@
  *
  * Version 25 から：portrait.<武将>・face.<武将> は素材パック sengoku_individual_art_v2（1 人ずつ単独に生成した 1024×1536 の人物画）の物で、
  * 顔は立ち絵と同じ原画から切り出す。bg.council は同じパックの昼の軍議所（原寸 1664×936）。
+ * 立ち絵（portrait.<武将>）は会話・軍議で話す 4 人（家康・忠勝・酒井・石川）だけ。榊原康政・浅井長政は今の台本で話さないので、
+ * 立ち絵は公開しない（原画は顔の元としてだけ記録：正本の記録の sourceOnly）。顔は 6 人とも（合戦の札・能力の欄・編成の表）。
  * Version 24 までの顔（素材パック sengoku_art_pack_v1 から切り出した物）は face.pack1.<武将> に名前を変えて残し、
  * Version 24 と比べる表示でだけ使う（V24_FACE_OF）。第 1 版の人物画は低解像度のため不採用のままで、ID も無い（原画の記録だけ）。
  */
@@ -18,8 +20,6 @@ export const ART_IDS = {
     portraitTadakatsu: 'portrait.tadakatsu',
     portraitSakai: 'portrait.sakai',
     portraitIshikawa: 'portrait.ishikawa',
-    portraitSakakibara: 'portrait.sakakibara',
-    portraitNagamasa: 'portrait.nagamasa',
     faceIeyasu: 'face.ieyasu',
     faceTadakatsu: 'face.tadakatsu',
     faceSakai: 'face.sakai',
@@ -43,14 +43,15 @@ export const ART_IDS = {
 
 export type ArtId = (typeof ART_IDS)[keyof typeof ART_IDS];
 
-/** 歴史分岐の登場人物 → 人物画（無い人物は名前だけ）。キーは合戦の武将の id と同じ */
+/**
+ * 歴史分岐の登場人物 → 人物画（無い人物は名前だけ）。キーは合戦の武将の id と同じ。
+ * 会話・軍議で話す 4 人だけ（榊原康政・浅井長政は話さないので公開しない。話し手になった行は人物画を出さず、本人の顔だけ。ほかの人の絵を代わりに使わない）
+ */
 export const PORTRAIT_OF: Readonly<Partial<Record<GeneralId, ArtId>>> = {
     ieyasu: ART_IDS.portraitIeyasu,
     tadakatsu: ART_IDS.portraitTadakatsu,
     sakai: ART_IDS.portraitSakai,
     ishikawa: ART_IDS.portraitIshikawa,
-    sakakibara: ART_IDS.portraitSakakibara,
-    nagamasa: ART_IDS.portraitNagamasa,
 };
 
 /**

@@ -195,16 +195,19 @@ describe('正本の記録（proto3d/assets-src/art-v22/manifest.json）', () => 
     const gen = readJson(GEN_PATH) as { assets: Record<string, ArtEntry> };
 
     it('素材の ID が ids.ts とそろい、種類・置き場・上限が決まりどおり', () => {
-        // ids.ts に無いのは、原画の記録だけ（sourceOnly）の人物画だけ（Version 24 の顔の元。加工版を作らず、ゲームからは引けない）
+        // ids.ts に無いのは、原画の記録だけ（sourceOnly）の人物画だけ（加工版を作らず、ゲームからは引けない）：
+        // Version 24 の顔の元（第 1 版の 6 人）と、会話・軍議で話さない榊原・長政の第 2 版（顔の元。立ち絵は公開しない。Version 25 の最後の見直し）
         expect(master.assets.filter((a) => !a.sourceOnly).map((a) => a.id).sort()).toEqual([...ALL_IDS].sort());
         const sourceOnly = master.assets.filter((a) => a.sourceOnly);
-        expect(sourceOnly.map((a) => a.id).sort()).toEqual(['ieyasu', 'ishikawa', 'nagamasa', 'sakai', 'sakakibara', 'tadakatsu'].map((g) => `portrait.pack1.${g}`));
+        expect(sourceOnly.map((a) => a.id).sort()).toEqual(
+            [...['ieyasu', 'ishikawa', 'nagamasa', 'sakai', 'sakakibara', 'tadakatsu'].map((g) => `portrait.pack1.${g}`), 'portrait.nagamasa', 'portrait.sakakibara'].sort(),
+        );
         for (const a of sourceOnly) {
             expect(ALL_IDS, a.id).not.toContain(a.id);
             expect(a.kind, a.id).toBe('portrait');
             expect(a.outputs, a.id).toEqual([]);
             expect(gen.assets[a.id], a.id).toBeUndefined();
-            // その原画から切り出した顔（face.pack1.*）が ids.ts にある
+            // その原画から切り出した顔（face.pack1.*・face.sakakibara・face.nagamasa）が ids.ts にある
             expect(master.assets.some((f) => f.derivedFrom === a.id && ALL_IDS.includes(f.id)), a.id).toBe(true);
         }
         for (const a of master.assets) {
@@ -348,7 +351,8 @@ describe('ゲームのコードは正本の記録も dev-art も読み込まな�
         for (const v of [...Object.values(PORTRAIT_OF), ...Object.values(FACE_OF)]) expect(ALL_IDS).toContain(v);
         // 画面に出る 6 人だけ（素材パックの信長・義景は画面に出ないので対応させない：予約）
         expect(Object.keys(FACE_OF).sort()).toEqual(['ieyasu', 'ishikawa', 'nagamasa', 'sakai', 'sakakibara', 'tadakatsu']);
-        expect(Object.keys(PORTRAIT_OF).sort()).toEqual(Object.keys(FACE_OF).sort());
+        // 人物画は会話・軍議で話す 4 人だけ（榊原・長政は話さないので公開しない：必要な画像だけ）
+        expect(Object.keys(PORTRAIT_OF).sort()).toEqual(['ieyasu', 'ishikawa', 'sakai', 'tadakatsu']);
         // Version 24 の顔（比べる表示だけ）：同じ 6 人・face.pack1.<武将>
         expect(Object.keys(V24_FACE_OF).sort()).toEqual(Object.keys(FACE_OF).sort());
         for (const [g, v] of Object.entries(V24_FACE_OF)) expect(v).toBe(`face.pack1.${g}`);
@@ -406,10 +410,12 @@ describe('素材パック第 2 版（sengoku_individual_art_v2。Version 25）�
         expect(bg.pack?.file).toBe('backgrounds/council_day.png');
     });
 
-    it('公開するのは人物画 6・顔 6（新）・軍議の背景 1・地面 3・Version 24 の顔 6 だけ。信長・義景・ほかの背景・林床・原画は公開しない', () => {
+    it('公開するのは人物画 4（話す人）・顔 6（新）・軍議の背景 1・地面 3・Version 24 の顔 6 だけ。榊原・長政の立ち絵・信長・義景・ほかの背景・林床・原画は公開しない', () => {
         const files = Object.values(gen.assets).map((e) => e.file).sort();
+        const talkers = ['ieyasu', 'tadakatsu', 'sakai', 'ishikawa'];
         const want = [
-            ...Object.keys(NAME_OF).flatMap((g) => [`art/portraits/${g}_v2.webp`, `art/faces/${g}_v2.webp`, `art/faces/${g}.webp`]),
+            ...talkers.map((g) => `art/portraits/${g}_v2.webp`),
+            ...Object.keys(NAME_OF).flatMap((g) => [`art/faces/${g}_v2.webp`, `art/faces/${g}.webp`]),
             'art/story/council_day.webp',
             'art/battle/plains_grass.webp',
             'art/battle/plains_dirt.webp',
@@ -419,6 +425,10 @@ describe('素材パック第 2 版（sengoku_individual_art_v2。Version 25）�
         const all = walk(PUBLIC).map((p) => p.slice(PUBLIC.length));
         expect(all.filter((p) => /nobunaga|yoshikage|oda_|asakura|castle_town|plains_vista|forest_floor|sengoku_individual/i.test(p))).toEqual([]);
         expect(all.filter((p) => p.startsWith('art/') && !p.endsWith('.webp'))).toEqual([]);
+        // 話さない 2 人の立ち絵は、公開の置き場にも一覧にも無い（顔だけ）
+        expect(all.filter((p) => /portraits\/(sakakibara|nagamasa)/.test(p))).toEqual([]);
+        expect(gen.assets['portrait.sakakibara']).toBeUndefined();
+        expect(gen.assets['portrait.nagamasa']).toBeUndefined();
         const src = master.sources['pack-v2'];
         expect((src.reserved ?? []).join()).toMatch(/織田信長.*朝倉義景/);
         expect((src.unused ?? []).join()).toMatch(/castle_town_day[\s\S]*plains_vista_day[\s\S]*forest_floor/);
@@ -655,11 +665,13 @@ describe('見せ方（Version 25）：既定・?art=v24・?art=old・?artOff=（
         __setArtManifestForTest(null);
     });
 
-    it('既定：第 2 版の人物画 6・顔 6・軍議の背景・地面を使い、Version 24 の顔（face.pack1.*）は使わない', () => {
+    it('既定：第 2 版の人物画 4（話す人）・顔 6・軍議の背景・地面を使い、Version 24 の顔（face.pack1.*）は使わない', () => {
         at('');
         expect(artMode()).toBe('new');
         for (const g of GENERALS) {
-            expect(artAvailable(PORTRAIT_OF[g]!), g).toBe(true);
+            // 人物画は話す 4 人だけ（榊原・長政は対応も無い：ほかの人の絵を代わりに出さない）
+            if (g === 'sakakibara' || g === 'nagamasa') expect(PORTRAIT_OF[g], g).toBeUndefined();
+            else expect(artAvailable(PORTRAIT_OF[g]!), g).toBe(true);
             expect(faceArtIdOf(g), g).toBe(FACE_OF[g]);
             expect(artAvailable(FACE_OF[g]!), g).toBe(true);
             expect(artAvailable(V24_FACE_OF[g]!), g).toBe(false);
@@ -672,6 +684,8 @@ describe('見せ方（Version 25）：既定・?art=v24・?art=old・?artOff=（
         expect(Object.keys(fieldArtIds('plains')).sort()).toEqual(['dirt', 'grass', 'road']);
         // 顔の無い武将・知らない id は null（ほかの人の顔を代わりに使わない）
         for (const g of ['nobunaga', 'yoshikage', 'oda', 'archer', '', null, undefined]) expect(faceArtIdOf(g as string)).toBeNull();
+        // 組み込みの名前（constructor・toString・__proto__ など）でも、関数を素材の ID と取り違えず null（例外も出さない）
+        for (const g of ['constructor', 'toString', 'hasOwnProperty', '__proto__', 'valueOf']) expect(faceArtIdOf(g), g).toBeNull();
         expect(artInUse()).toBe(true);
     });
 

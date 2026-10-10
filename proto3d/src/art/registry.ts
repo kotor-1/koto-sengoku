@@ -150,7 +150,9 @@ export function faceArtIdOf(general: GeneralId | string | null | undefined): Art
     if (!general) return null;
     const mode = artMode();
     if (mode === 'old') return null;
-    const id = (mode === 'v24' ? V24_FACE_OF : FACE_OF)[general as GeneralId] ?? null;
+    const table = mode === 'v24' ? V24_FACE_OF : FACE_OF;
+    // 自分の持ち物の名前だけを引く（'constructor'・'toString' などの組み込みの名前で、関数を素材の ID と取り違えない）
+    const id = Object.prototype.hasOwnProperty.call(table, general) ? (table[general as GeneralId] ?? null) : null;
     return id && !artBlocked(id, 'face') ? id : null;
 }
 

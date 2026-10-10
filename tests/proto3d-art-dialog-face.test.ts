@@ -822,18 +822,20 @@ describe('台詞の枠の顔の CSS（Version 23）：どの大きさでも台�
     });
 });
 
-describe('公開の素材の一覧（manifest.gen.json）：Version 25 から武将 6 人の人物画と顔（素材パック第 2 版）・軍議の背景・大平原の地面 3 枚・Version 24 の顔 6 枚', () => {
-    it('顔と人物画は同じ 6 人の art/faces/<武将>_v2.webp・art/portraits/<武将>_v2.webp、Version 24 の顔は art/faces/<武将>.webp、林床・手前の幕は入れていない', () => {
+describe('公開の素材の一覧（manifest.gen.json）：Version 25 から武将 6 人の顔と話す 4 人の人物画（素材パック第 2 版）・軍議の背景・大平原の地面 3 枚・Version 24 の顔 6 枚', () => {
+    it('顔は 6 人の art/faces/<武将>_v2.webp、人物画は話す 4 人の art/portraits/<武将>_v2.webp（榊原・長政は無し）、Version 24 の顔は art/faces/<武将>.webp、林床・手前の幕は入れていない', () => {
         const assets = (generated as { assets: Record<string, { file: string; kind?: string }> }).assets;
         const gens = ['ieyasu', 'ishikawa', 'nagamasa', 'sakai', 'sakakibara', 'tadakatsu'];
+        const talkers = ['ieyasu', 'ishikawa', 'sakai', 'tadakatsu'];
         const faces = gens.map((g) => `face.${g}`);
-        const portraits = gens.map((g) => `portrait.${g}`);
+        const portraits = talkers.map((g) => `portrait.${g}`);
         const v24 = gens.map((g) => `face.pack1.${g}`);
         const ground = ['tex.plains.dirt', 'tex.plains.grass', 'tex.plains.road'];
         expect(Object.keys(assets).sort()).toEqual([...faces, ...portraits, ...v24, 'bg.council', ...ground].sort());
         for (const g of gens) {
             expect(assets[`face.${g}`].file, g).toBe(`art/faces/${g}_v2.webp`);
-            expect(assets[`portrait.${g}`].file, g).toBe(`art/portraits/${g}_v2.webp`);
+            if (talkers.includes(g)) expect(assets[`portrait.${g}`].file, g).toBe(`art/portraits/${g}_v2.webp`);
+            else expect(assets[`portrait.${g}`], g).toBeUndefined();
             expect(assets[`face.pack1.${g}`].file, g).toBe(`art/faces/${g}.webp`);
         }
         expect(assets['bg.council'].file).toBe('art/story/council_day.webp');

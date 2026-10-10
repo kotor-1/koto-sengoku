@@ -11,11 +11,14 @@
 // - .glb は置けない（公開先が受け付けない）。dev-art（開発用の TEST の模様）は、ファイルも、JS の中の読む口の文字列も入れない。
 // - 正本の記録（proto3d/assets-src/art-v22/manifest.json）の中身（プロンプトの参照など）が JS に入っていないこと。
 // - Version 25：素材パック第 2 版の、公開しない物（織田信長・朝倉義景・城下町・大平原の遠景・林床・パックそのもの）の名前のファイルが無いこと。
+//   名前を変えた写しも止める：パックの一覧（proto3d/assets-src/art-v25/pack-v2/asset_manifest.json の写し）の sha256 と同じ中身のファイルが無いこと
+//   （公開するのは作り直した WebP だけで、パックのファイルそのもの（原画・パックの web 版・顔の PNG）は入れない）。
 // - --baseline を付けると、前回にあって今回に無いファイル（公開の道具は、明示して消さない限り残す）も一覧にする。
 // - --budget は、遊ぶ人の読み込み量の自分の目安（例 63000000）。超えたら違反にする。
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, relative, resolve, sep } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export const LIMITS = {
     publishBytes: 64_000_000,
@@ -33,6 +36,14 @@ const ART_EXT = new Set(['.webp', '.png', '.jpg', '.jpeg']);
 const LEAK_MARKS = ['promptRef', 'ChatGPT で利用者が生成', '【画風】', 'assets-src/art-v22/manifest', 'assets-src/art-v25'];
 // 素材パック第 2 版（Version 25）で公開しない物（予約の信長・義景、使っていない背景・林床、パックそのもの）の名前
 const UNSHIPPED_ART = /nobunaga|yoshikage|oda_|asakura|castle_town|plains_vista|forest_floor|sengoku_individual/i;
+// 素材パック第 2 版の一覧の写し（リポジトリにある。パックの全ファイルの sha256）。無ければ（古い checkout）この確かめは飛ばして注意にする
+const PACK_V2_LIST = resolve(dirname(fileURLToPath(import.meta.url)), '../assets-src/art-v25/pack-v2/asset_manifest.json');
+
+function packV2Hashes() {
+    if (!existsSync(PACK_V2_LIST)) return null;
+    const list = JSON.parse(readFileSync(PACK_V2_LIST, 'utf8'));
+    return new Map((list.assets ?? []).filter((a) => typeof a.sha256 === 'string').map((a) => [a.sha256.toLowerCase(), a.path]));
+}
 
 function walk(dir) {
     const out = [];
@@ -111,6 +122,13 @@ export function checkDist(distDir, { baseline = null, budget = null } = {}) {
     const art = files.filter((f) => f.rel.startsWith('art/'));
     for (const f of art) if (!ART_EXT.has(f.ext)) errors.push(`/art に画像でないファイル: ${f.rel}`);
     for (const f of files) if (UNSHIPPED_ART.test(f.rel)) errors.push(`公開しない素材（予約・未使用・素材パックそのもの）の名前のファイル: ${f.rel}`);
+    const pack = packV2Hashes();
+    if (!pack) warnings.push(`素材パック第 2 版の一覧の写しが無いので、パックのファイルそのものが入っていないかの確かめ（sha256）を飛ばした: ${PACK_V2_LIST}`);
+    else
+        for (const f of files) {
+            const hit = pack.get(sha(f.abs));
+            if (hit) errors.push(`素材パック第 2 版のファイルそのもの（${hit}）と同じ中身のファイル: ${f.rel}`);
+        }
     const artBytes = art.reduce((s, f) => s + f.bytes, 0);
     const byTop = new Map();
     for (const f of files) {

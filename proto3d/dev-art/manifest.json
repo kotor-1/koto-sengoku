@@ -81,18 +81,6 @@
             "bytes": 7780,
             "sha256": "100f912f93a1a534c41fc6def982ddaea8481261eda0e6dd40e745b10c13e12f"
         },
-        "portrait.sakakibara": {
-            "file": "art/portraits/sakakibara_v2.webp",
-            "w": 745,
-            "h": 1453,
-            "kind": "portrait",
-            "bytes": 39360,
-            "sha256": "395007b9de7400c0af21b24e9f59af518553f1868957cbf5d9c99280a4f390b1",
-            "meta": {
-                "eyeY": 0.1543,
-                "faceX": 0.507
-            }
-        },
         "face.sakakibara": {
             "file": "art/faces/sakakibara_v2.webp",
             "w": 256,
@@ -100,18 +88,6 @@
             "kind": "face",
             "bytes": 8162,
             "sha256": "0049ed1fee2c51b799a1749da1cd3f396894222df662ffc61e43a782deb60c8c"
-        },
-        "portrait.nagamasa": {
-            "file": "art/portraits/nagamasa_v2.webp",
-            "w": 745,
-            "h": 1453,
-            "kind": "portrait",
-            "bytes": 38296,
-            "sha256": "9f6d87457147a4502e20d0ad089d236e0d8f7321d3fd505d670c084f21b529b1",
-            "meta": {
-                "eyeY": 0.1543,
-                "faceX": 0.507
-            }
         },
         "face.nagamasa": {
             "file": "art/faces/nagamasa_v2.webp",

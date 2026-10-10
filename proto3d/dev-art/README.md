@@ -8,7 +8,7 @@
 - 作り方：`python3 -I proto3d/tools/make-dev-art.py`。本物と同じ ID・種類・原画の大きさの模様を作り、`proto3d/tools/art-build.py` の ingest → build をそのまま通します（透明の検査・余白の切り詰め・同じ原画からの顔の切り出し・地面の処理・WebP の上限）。手で直さないでください。
 - `manifest.json` は `proto3d/src/art/manifest.gen.json` と同じ形です（file はこのフォルダからの相対）。
 
-合計 470,306 バイト（24 件）。
+合計 392,650 バイト（22 件）。
 
 | ID | 種類 | ファイル | 寸法 | 容量（バイト） | meta |
 |---|---|---|---|---|---|
@@ -20,9 +20,7 @@
 | `face.sakai` | face | `art/faces/sakai_v2.webp` | 256×256 | 7,522 | {} |
 | `portrait.ishikawa` | portrait | `art/portraits/ishikawa_v2.webp` | 745×1453 | 38,090 | {"eyeY": 0.1543, "faceX": 0.507} |
 | `face.ishikawa` | face | `art/faces/ishikawa_v2.webp` | 256×256 | 7,780 | {} |
-| `portrait.sakakibara` | portrait | `art/portraits/sakakibara_v2.webp` | 745×1453 | 39,360 | {"eyeY": 0.1543, "faceX": 0.507} |
 | `face.sakakibara` | face | `art/faces/sakakibara_v2.webp` | 256×256 | 8,162 | {} |
-| `portrait.nagamasa` | portrait | `art/portraits/nagamasa_v2.webp` | 745×1453 | 38,296 | {"eyeY": 0.1543, "faceX": 0.507} |
 | `face.nagamasa` | face | `art/faces/nagamasa_v2.webp` | 256×256 | 7,952 | {} |
 | `bg.council` | background | `art/story/council_day.webp` | 1664×936 | 49,578 | {} |
 | `bg.council.front` | overlay | `art/story/council_front.webp` | 1664×936 | 7,508 | {} |

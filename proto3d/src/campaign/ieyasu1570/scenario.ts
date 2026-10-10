@@ -194,12 +194,13 @@ export function ieyasuStatusLines(s: IeyasuState, extraPlaySec = 0): StatusLine[
     return lines;
 }
 
-// ================= 生成イラスト素材（Version 22。Version 25 から人物画は 6 人） =================
+// ================= 生成イラスト素材（Version 22。Version 25 から人物画は話す 4 人） =================
 
 /**
  * 会話・軍議の話し手の id（両章の story.ts の Speaker）→ その人の武将の id（合戦の武将と同じ。人物画・顔はこの id で引く）。
  * 表示名で確かめた対応：hero＝徳川家康（この章の主人公）・tadakatsu＝本多忠勝・sakai＝酒井忠次・ishikawa＝石川数正。
- * sakakibara（榊原康政）・nagamasa（浅井長政）は今の台本では話さないが、話し手になったときに同じ人の絵を出すために載せる。
+ * sakakibara（榊原康政）・nagamasa（浅井長政）は今の台本では話さないが、話し手になったときに本人の顔を出すために載せる
+ * （この 2 人の立ち絵は公開していない：art/ids.ts の PORTRAIT_OF に無いので、その行は人物画を出さず顔だけ）。
  * 使者（oda_envoy・asai_envoy：主の信長・長政の言葉を伝える別人）・村の使い（village）・高札・地の文は載せない
  * （ほかの人の絵を代わりに使わない。浅井家の使者に長政の絵を出さない）。状態（負傷など）は見ない
  */
@@ -215,8 +216,9 @@ export const IEYASU_SPEAKER_GENERAL: Readonly<Record<string, GeneralId>> = {
 const speakerGeneral = (speaker: string): GeneralId | null => (Object.prototype.hasOwnProperty.call(IEYASU_SPEAKER_GENERAL, speaker) ? IEYASU_SPEAKER_GENERAL[speaker]! : null);
 
 /**
- * 会話・軍議の話し手 → 人物画（第一章・第二章で同じ）。Version 25 から家康・忠勝・酒井・石川（と榊原・長政）の 6 人
- * （素材パック sengoku_individual_art_v2 の 1 人ずつの人物画）。使者・村の使い・高札・地の文は null（その行は人物画を下げる：ui/artCanvas.ts の portraitStep）。
+ * 会話・軍議の話し手 → 人物画（第一章・第二章で同じ）。Version 25 から家康・忠勝・酒井・石川の 4 人（話す人だけ。
+ * 素材パック sengoku_individual_art_v2 の 1 人ずつの人物画）。榊原・長政（立ち絵を公開していない）・使者・村の使い・高札・地の文は null
+ * （その行は人物画を下げる：ui/artCanvas.ts の portraitStep）。
  * 負傷している場面も同じ絵（表情・負傷の差分は無い。負傷は台詞で伝える）。?art=v24・?art=old・?artOff=portrait では画面が読まない（art/registry.ts）
  */
 export function ieyasuPortraitOf(speaker: string): ArtId | null {

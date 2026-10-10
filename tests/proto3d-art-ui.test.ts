@@ -25,7 +25,7 @@ import {
     type TitleInfo,
 } from '../proto3d/src/campaign/game';
 import { devIeyasuState } from '../proto3d/src/campaign/ieyasu1570/flow';
-import { IEYASU_COUNCIL_ART, ieyasuPortraitOf, ieyasuScenario } from '../proto3d/src/campaign/ieyasu1570/scenario';
+import { IEYASU_COUNCIL_ART, ieyasuFaceOf, ieyasuPortraitOf, ieyasuScenario } from '../proto3d/src/campaign/ieyasu1570/scenario';
 import { startChapter2 } from '../proto3d/src/campaign/ieyasu1570/chapter2/flow';
 import { fictionalScenario } from '../proto3d/src/campaign/fictional';
 import { CampaignSaveStore } from '../proto3d/src/campaign/save';
@@ -338,15 +338,18 @@ describe('手前の幕の揺れ', () => {
 // ================= シナリオ =================
 
 describe('シナリオの人物画と軍議の背景', () => {
-    it('歴史分岐：話し手本人の人物画（家康＝hero・忠勝・酒井・石川、話し手になれば榊原・長政）。使者・村の使い・地の文・高札・ほかの id は出さない', () => {
+    it('歴史分岐：話し手本人の人物画（話す 4 人：家康＝hero・忠勝・酒井・石川）。榊原・長政（立ち絵を公開しない）・使者・村の使い・地の文・高札・ほかの id は出さない', () => {
         expect(ieyasuPortraitOf('hero')).toBe(ART_IDS.portraitIeyasu);
         expect(ieyasuPortraitOf('tadakatsu')).toBe(ART_IDS.portraitTadakatsu);
         expect(ieyasuPortraitOf('sakai')).toBe(ART_IDS.portraitSakai);
         expect(ieyasuPortraitOf('ishikawa')).toBe(ART_IDS.portraitIshikawa);
-        expect(ieyasuPortraitOf('sakakibara')).toBe(ART_IDS.portraitSakakibara);
-        expect(ieyasuPortraitOf('nagamasa')).toBe(ART_IDS.portraitNagamasa);
-        // 6 人それぞれ別の絵（酒井・忠勝・榊原を取り違えない）
-        expect(new Set(['hero', 'tadakatsu', 'sakai', 'ishikawa', 'sakakibara', 'nagamasa'].map(ieyasuPortraitOf)).size).toBe(6);
+        // 榊原・長政は今の台本で話さないので立ち絵を公開しない。話し手になっても人物画は出さず（ほかの人の絵を代わりに使わない）、本人の顔だけ
+        expect(ieyasuPortraitOf('sakakibara')).toBeNull();
+        expect(ieyasuPortraitOf('nagamasa')).toBeNull();
+        expect(ieyasuFaceOf('sakakibara')).toBe(ART_IDS.faceSakakibara);
+        expect(ieyasuFaceOf('nagamasa')).toBe(ART_IDS.faceNagamasa);
+        // 4 人それぞれ別の絵（酒井・忠勝を取り違えない）
+        expect(new Set(['hero', 'tadakatsu', 'sakai', 'ishikawa'].map(ieyasuPortraitOf)).size).toBe(4);
         // 浅井家の使者に長政の絵・織田家の使者に信長の絵を出さない。信長・義景の絵は使わない（予約）
         for (const sp of ['narration', 'notice', 'oda_envoy', 'asai_envoy', 'village', '', 'ieyasu', 'nobunaga', 'yoshikage', 'oda_nobunaga', 'toString', '__proto__']) expect(ieyasuPortraitOf(sp), sp).toBeNull();
         const sc = ieyasuScenario(new MemoryStorage());
