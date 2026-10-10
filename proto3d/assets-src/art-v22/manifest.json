@@ -43,7 +43,7 @@
     {
       "id": "portrait.ieyasu",
       "kind": "portrait",
-      "status": "built",
+      "status": "approved",
       "required": true,
       "source": "pack-v2",
       "purpose": "会話・軍議の立ち絵（腰より下までの半身。Version 25 から）。同じ原画から顔 face.ieyasu を切り出す",
@@ -268,12 +268,16 @@
             182574
           ]
         ]
+      },
+      "review": {
+        "outputSha256": "00bfc0b2bc2120f921d86cdf0949717737f54905d6a700d96a90a379b49feb4a",
+        "note": "2026-10-10 Version 25：会話・軍議の人物画として、開発サーバーの画面で本物の入力のまま 8 つの大きさ（1920×1080〜360×640・端末の比 1〜2）を確かめた（話し手本人の絵だけ・選択肢・見出し・ボタン・目的の札と重ならない・元の画素より拡大しない・台詞の枠の上に肩まで見える・反転なし。e2e/portrait-v25.mjs）。見た目の好みの最終判断は利用者"
       }
     },
     {
       "id": "face.ieyasu",
       "kind": "face",
-      "status": "built",
+      "status": "approved",
       "required": true,
       "source": "pack-v2",
       "purpose": "顔（会話・軍議の台詞の枠、合戦の部隊の札・能力の欄・能力の知らせ・演習の編成）。Version 25 から、立ち絵と同じ原画（素材パック第 2 版）から切り出す",
@@ -367,12 +371,16 @@
             15120
           ]
         ]
+      },
+      "review": {
+        "outputSha256": "47c84481d4ff03b65e92dc55f5353cc5ca4a253ae95b1a252fadf267326dfff3",
+        "note": "2026-10-10 Version 25：台詞の枠の顔（e2e/dialog-face.mjs・portrait-v25.mjs）と合戦の札・能力の欄・編成の表（e2e/art-compare.mjs、1280×720・844×390）で、本人の顔・大きさは Version 24 と同じ・文字に重ならないことを開発サーバーの画面で確かめた。見た目の好みの最終判断は利用者"
       }
     },
     {
       "id": "portrait.tadakatsu",
       "kind": "portrait",
-      "status": "built",
+      "status": "approved",
       "required": true,
       "source": "pack-v2",
       "purpose": "会話・軍議の立ち絵（腰より下までの半身。Version 25 から）。同じ原画から顔 face.tadakatsu を切り出す",
@@ -597,12 +605,16 @@
             193960
           ]
         ]
+      },
+      "review": {
+        "outputSha256": "a6b14abc67fac5ddbddea38f02c65b80e9e783a66e37e332ca6cf74fdef1cbce",
+        "note": "2026-10-10 Version 25：会話・軍議の人物画として、開発サーバーの画面で本物の入力のまま 8 つの大きさ（1920×1080〜360×640・端末の比 1〜2）を確かめた（話し手本人の絵だけ・選択肢・見出し・ボタン・目的の札と重ならない・元の画素より拡大しない・台詞の枠の上に肩まで見える・反転なし。e2e/portrait-v25.mjs）。見た目の好みの最終判断は利用者"
       }
     },
     {
       "id": "face.tadakatsu",
       "kind": "face",
-      "status": "built",
+      "status": "approved",
       "required": true,
       "source": "pack-v2",
       "purpose": "顔（会話・軍議の台詞の枠、合戦の部隊の札・能力の欄・能力の知らせ・演習の編成）。Version 25 から、立ち絵と同じ原画（素材パック第 2 版）から切り出す",
@@ -696,12 +708,16 @@
             16898
           ]
         ]
+      },
+      "review": {
+        "outputSha256": "8c244c8aee0860de4d8c6ba0204ab1becce3b87214159ac03085dcf9d266e4bc",
+        "note": "2026-10-10 Version 25：台詞の枠の顔（e2e/dialog-face.mjs・portrait-v25.mjs）と合戦の札・能力の欄・編成の表（e2e/art-compare.mjs、1280×720・844×390）で、本人の顔・大きさは Version 24 と同じ・文字に重ならないことを開発サーバーの画面で確かめた。見た目の好みの最終判断は利用者"
       }
     },
     {
       "id": "portrait.sakai",
       "kind": "portrait",
-      "status": "built",
+      "status": "approved",
       "required": true,
       "source": "pack-v2",
       "purpose": "会話・軍議の立ち絵（腰より下までの半身。Version 25 から）。同じ原画から顔 face.sakai を切り出す",
@@ -926,12 +942,16 @@
             212364
           ]
         ]
+      },
+      "review": {
+        "outputSha256": "6c8848dadd64ebd86ceca0891c5113b8f19f93ee4aee7619de11123c065825d6",
+        "note": "2026-10-10 Version 25：会話・軍議の人物画として、開発サーバーの画面で本物の入力のまま 8 つの大きさ（1920×1080〜360×640・端末の比 1〜2）を確かめた（話し手本人の絵だけ・選択肢・見出し・ボタン・目的の札と重ならない・元の画素より拡大しない・台詞の枠の上に肩まで見える・反転なし。e2e/portrait-v25.mjs）。見た目の好みの最終判断は利用者"
       }
     },
     {
       "id": "face.sakai",
       "kind": "face",
-      "status": "built",
+      "status": "approved",
       "required": true,
       "source": "pack-v2",
       "purpose": "顔（会話・軍議の台詞の枠、合戦の部隊の札・能力の欄・能力の知らせ・演習の編成）。Version 25 から、立ち絵と同じ原画（素材パック第 2 版）から切り出す",
@@ -1025,12 +1045,16 @@
             17244
           ]
         ]
+      },
+      "review": {
+        "outputSha256": "272ad403eaa0e88ff5033e8b25aa962f119543b8c6bde0b7fbec8bbb57e9e0ed",
+        "note": "2026-10-10 Version 25：台詞の枠の顔（e2e/dialog-face.mjs・portrait-v25.mjs）と合戦の札・能力の欄・編成の表（e2e/art-compare.mjs、1280×720・844×390）で、本人の顔・大きさは Version 24 と同じ・文字に重ならないことを開発サーバーの画面で確かめた。見た目の好みの最終判断は利用者"
       }
     },
     {
       "id": "portrait.ishikawa",
       "kind": "portrait",
-      "status": "built",
+      "status": "approved",
       "required": true,
       "source": "pack-v2",
       "purpose": "会話・軍議の立ち絵（腰より下までの半身。Version 25 から）。同じ原画から顔 face.ishikawa を切り出す",
@@ -1255,12 +1279,16 @@
             188908
           ]
         ]
+      },
+      "review": {
+        "outputSha256": "e3d19cac5e8fa730971edb89211782403f20c77e6ab1fd9346858cac1c726f1a",
+        "note": "2026-10-10 Version 25：会話・軍議の人物画として、開発サーバーの画面で本物の入力のまま 8 つの大きさ（1920×1080〜360×640・端末の比 1〜2）を確かめた（話し手本人の絵だけ・選択肢・見出し・ボタン・目的の札と重ならない・元の画素より拡大しない・台詞の枠の上に肩まで見える・反転なし。e2e/portrait-v25.mjs）。見た目の好みの最終判断は利用者"
       }
     },
     {
       "id": "face.ishikawa",
       "kind": "face",
-      "status": "built",
+      "status": "approved",
       "required": true,
       "source": "pack-v2",
       "purpose": "顔（会話・軍議の台詞の枠、合戦の部隊の札・能力の欄・能力の知らせ・演習の編成）。Version 25 から、立ち絵と同じ原画（素材パック第 2 版）から切り出す",
@@ -1354,12 +1382,16 @@
             15826
           ]
         ]
+      },
+      "review": {
+        "outputSha256": "e66d7776db76653105a4ab17853fc73abc06d3a3011d42ff8111b89b00e92d00",
+        "note": "2026-10-10 Version 25：台詞の枠の顔（e2e/dialog-face.mjs・portrait-v25.mjs）と合戦の札・能力の欄・編成の表（e2e/art-compare.mjs、1280×720・844×390）で、本人の顔・大きさは Version 24 と同じ・文字に重ならないことを開発サーバーの画面で確かめた。見た目の好みの最終判断は利用者"
       }
     },
     {
       "id": "portrait.sakakibara",
       "kind": "portrait",
-      "status": "built",
+      "status": "approved",
       "required": true,
       "source": "pack-v2",
       "purpose": "会話・軍議の立ち絵（腰より下までの半身。Version 25 から）。同じ原画から顔 face.sakakibara を切り出す",
@@ -1586,12 +1618,16 @@
             218478
           ]
         ]
+      },
+      "review": {
+        "outputSha256": "56f7114b2ade10ced2a5b623f1c80f696a14927945aa1a9ae492fd7104c96a7b",
+        "note": "2026-10-10 Version 25：会話・軍議の人物画として、開発サーバーの画面で本物の入力のまま 8 つの大きさ（1920×1080〜360×640・端末の比 1〜2）を確かめた（話し手本人の絵だけ・選択肢・見出し・ボタン・目的の札と重ならない・元の画素より拡大しない・台詞の枠の上に肩まで見える・反転なし。e2e/portrait-v25.mjs）。見た目の好みの最終判断は利用者"
       }
     },
     {
       "id": "face.sakakibara",
       "kind": "face",
-      "status": "built",
+      "status": "approved",
       "required": true,
       "source": "pack-v2",
       "purpose": "顔（会話・軍議の台詞の枠、合戦の部隊の札・能力の欄・能力の知らせ・演習の編成）。Version 25 から、立ち絵と同じ原画（素材パック第 2 版）から切り出す",
@@ -1685,12 +1721,16 @@
             18404
           ]
         ]
+      },
+      "review": {
+        "outputSha256": "ea06061d940da137337e95ae7b967f0f2064b33f6773fc31735b4174e564e915",
+        "note": "2026-10-10 Version 25：台詞の枠の顔（e2e/dialog-face.mjs・portrait-v25.mjs）と合戦の札・能力の欄・編成の表（e2e/art-compare.mjs、1280×720・844×390）で、本人の顔・大きさは Version 24 と同じ・文字に重ならないことを開発サーバーの画面で確かめた。見た目の好みの最終判断は利用者"
       }
     },
     {
       "id": "portrait.nagamasa",
       "kind": "portrait",
-      "status": "built",
+      "status": "approved",
       "required": true,
       "source": "pack-v2",
       "purpose": "会話・軍議の立ち絵（腰より下までの半身。Version 25 から）。同じ原画から顔 face.nagamasa を切り出す",
@@ -1915,12 +1955,16 @@
             198598
           ]
         ]
+      },
+      "review": {
+        "outputSha256": "a850618a5442eea9392cb2e24be6d9a2f83afb5696b3861b6c8f49fca856a254",
+        "note": "2026-10-10 Version 25：会話・軍議の人物画として、開発サーバーの画面で本物の入力のまま 8 つの大きさ（1920×1080〜360×640・端末の比 1〜2）を確かめた（話し手本人の絵だけ・選択肢・見出し・ボタン・目的の札と重ならない・元の画素より拡大しない・台詞の枠の上に肩まで見える・反転なし。e2e/portrait-v25.mjs）。見た目の好みの最終判断は利用者"
       }
     },
     {
       "id": "face.nagamasa",
       "kind": "face",
-      "status": "built",
+      "status": "approved",
       "required": true,
       "source": "pack-v2",
       "purpose": "顔（会話・軍議の台詞の枠、合戦の部隊の札・能力の欄・能力の知らせ・演習の編成）。Version 25 から、立ち絵と同じ原画（素材パック第 2 版）から切り出す",
@@ -2014,12 +2058,16 @@
             16252
           ]
         ]
+      },
+      "review": {
+        "outputSha256": "a1961d1ff3fd87f39eaaecc229edeaec466f576d304bb21017ab9960ee96f641",
+        "note": "2026-10-10 Version 25：台詞の枠の顔（e2e/dialog-face.mjs・portrait-v25.mjs）と合戦の札・能力の欄・編成の表（e2e/art-compare.mjs、1280×720・844×390）で、本人の顔・大きさは Version 24 と同じ・文字に重ならないことを開発サーバーの画面で確かめた。見た目の好みの最終判断は利用者"
       }
     },
     {
       "id": "bg.council",
       "kind": "background",
-      "status": "built",
+      "status": "approved",
       "required": true,
       "purpose": "軍議の画面の背景（昼の軍議所）。人物画と選択肢をこの上に重ねる。Version 25 から素材パック第 2 版の council_day を比べる候補として使う（原寸 1664×936 で、1920px の原画の要件には届かない。原寸以内で表示できる所だけで比べる）",
       "subject": "昼の軍議所（城内の木造屋根と無地の陣幕。人物・旗・家紋・文字なし。左側に人物を重ねる余白：パックの記録）",
@@ -2184,6 +2232,10 @@
             220696
           ]
         ]
+      },
+      "review": {
+        "outputSha256": "d11090122bbf3dbbd36d6c599d0f1678ac6637d9a996ce4c861a747c263e0a9e",
+        "note": "2026-10-10 Version 25：軍議の背景として、原寸以内に描ける画面（1280×720@1・667×375@2・568×320@2 など）だけ出し、それより大きく見える画面（1920×1080・端末の比 2 の多く）では出さない・読まないことを開発サーバーの画面で確かめた（1920px の要件には届かない原寸 1664×936）。見た目の好みの最終判断は利用者"
       }
     },
     {

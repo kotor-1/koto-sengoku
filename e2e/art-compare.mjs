@@ -541,7 +541,7 @@ async function runBattle(mode, W, H, q, withIdentity) {
     rec.battleNo = 1;
     // 地面の素材を使う見せ方（default・abortroad）で、素材が開始のボタンに間に合わなかった（遅いソフトウェア描画。設計どおり、その合戦は今までの地面）：
     // 一度その合戦を終えて（全軍撤退・時間送り）演習の一覧へ戻り、もう一度入る（読んだ素材と型紙は覚えているので、次の合戦では間に合う）
-    if ((mode === 'default' || mode === 'abortroad') && rec.artAtReady.ground !== 'textured') {
+    if ((mode === 'default' || mode === 'v24' || mode === 'abortroad') && rec.artAtReady.ground !== 'textured') {
         step('real', `ground art missed the start button (${JSON.stringify(rec.artAtReady)}); finishing this battle and entering again`);
         await bpress('.b-primary');
         await page.waitForFunction(() => window.__battle.ui.started, null, POLL);
@@ -803,18 +803,21 @@ for (const q of QUALITY) {
         // 道だけ読めない（abortroad）は道だけ Version 21 の道の帯（草地・土は素材のまま）
         const groundOk = {
             default: (a) => a.ground === 'textured' && JSON.stringify(a.materials) === '["grass","dirt","road"]' && a.trees === 0 && a.roadStrip === false,
+            // Version 24 の見せ方（?art=v24）も同じ地面（草地・土・道）
+            v24: (a) => a.ground === 'textured' && JSON.stringify(a.materials) === '["grass","dirt","road"]' && a.trees === 0 && a.roadStrip === false,
             abort: (a) => a.ground === 'vertex' && a.materials.length === 0 && a.trees === 0 && a.shadows === 0 && a.roadStrip === true,
             abortroad: (a) => a.ground === 'textured' && JSON.stringify(a.materials) === '["grass","dirt"]' && a.trees === 0 && a.roadStrip === true,
         };
         for (const [mode, ok] of Object.entries(groundOk)) {
             const r = B[mode];
             if (!r || genCount === 0) continue;
-            check(ok(r.art) && ok(r.artAtReady), `battle ${mode} ${tag}: ground ${mode === 'default' ? 'grass + dirt + road textures (no forest floor, no trees, road strip hidden)' : mode === 'abort' ? 'V21 vertex ground and road strip (all images failed)' : 'grass + dirt textures, road = V21 road strip (road image failed)'} (battle #${r.battleNo})`, { atReady: r.artAtReady, art: r.art });
+            check(ok(r.art) && ok(r.artAtReady), `battle ${mode} ${tag}: ground ${mode === 'default' || mode === 'v24' ? 'grass + dirt + road textures (no forest floor, no trees, road strip hidden)' : mode === 'abort' ? 'V21 vertex ground and road strip (all images failed)' : 'grass + dirt textures, road = V21 road strip (road image failed)'} (battle #${r.battleNo})`, { atReady: r.artAtReady, art: r.art });
             const imgs = r.artRequests.filter((p) => /\.(webp|png|jpg)$/.test(p));
             const ground = imgs.filter((p) => p.startsWith('/art/battle/'));
-            check(ground.every((p) => /^\/art\/battle\/plains_(grass|dirt|road)\.webp$/.test(p)) && imgs.every((p) => /^\/art\/(faces\/[a-z]+_v2|battle\/plains_(grass|dirt|road))\.webp$/.test(p)), `battle ${mode} ${tag}: only v2 face and plains grass/dirt/road images requested (no forest floor, portraits, backgrounds or V24 faces)`, imgs);
-            if (mode === 'default') check(['plains_grass.webp', 'plains_dirt.webp', 'plains_road.webp'].every((f) => r.groundResp.some(([g, st]) => g === f && st === 200)), `battle default ${tag}: the 3 ground images loaded (200)`, r.groundResp);
-            if (mode !== 'default') check((r.aborted ?? []).length > 0 && r.groundResp.every(([g]) => mode === 'abort' || g !== 'plains_road.webp'), `battle ${mode} ${tag}: the aborted images really failed (${(r.aborted ?? []).length} aborted)`, r.aborted);
+            const faceRe = mode === 'v24' ? /^\/art\/(faces\/[a-z]+|battle\/plains_(grass|dirt|road))\.webp$/ : /^\/art\/(faces\/[a-z]+_v2|battle\/plains_(grass|dirt|road))\.webp$/;
+            check(ground.every((p) => /^\/art\/battle\/plains_(grass|dirt|road)\.webp$/.test(p)) && imgs.every((p) => faceRe.test(p)), `battle ${mode} ${tag}: only ${mode === 'v24' ? 'V24 (pack v1)' : 'v2'} face and plains grass/dirt/road images requested (no forest floor, portraits or backgrounds)`, imgs);
+            if (mode === 'default' || mode === 'v24') check(['plains_grass.webp', 'plains_dirt.webp', 'plains_road.webp'].every((f) => r.groundResp.some(([g, st]) => g === f && st === 200)), `battle ${mode} ${tag}: the 3 ground images loaded (200)`, r.groundResp);
+            if (mode !== 'default' && mode !== 'v24') check((r.aborted ?? []).length > 0 && r.groundResp.every(([g]) => mode === 'abort' || g !== 'plains_road.webp'), `battle ${mode} ${tag}: the aborted images really failed (${(r.aborted ?? []).length} aborted)`, r.aborted);
         }
         // 画面の外へはみ出さない：能力の欄・札・右上の部品・編成の表（どの見せ方でも）
         for (const [mode, r] of Object.entries(B)) {

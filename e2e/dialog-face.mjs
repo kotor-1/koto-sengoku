@@ -139,7 +139,8 @@ async function newPage(size, mode, extra = '') {
     const touch = h <= 430 || w <= 480;
     const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: w >= 1900 ? 1 : 2, hasTouch: touch, isMobile: touch });
     // 顔の画像の読み込みの失敗（fail）：ネットワークで切る（registry の fetch が失敗する）
-    if (mode === 'fail') await ctx.route('**/art/**', (r) => r.abort('failed'));
+    // 置き場の /art/ で始まる物だけ（開発サーバーの部品 /src/art/*.ts・manifest.gen.json は止めない）
+    if (mode === 'fail') await ctx.route((u) => u.pathname.startsWith('/art/'), (r) => r.abort('failed'));
     const page = await ctx.newPage();
     page.setDefaultTimeout(600000);
     const errors = [];
