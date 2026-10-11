@@ -17,6 +17,11 @@
  *                         メニュー（タップ／クリック・Esc）と「詳しく見る」を開いて閉じると同じ選択肢に戻る
  *     PAR=3               同時に動かすブラウザの数
  *     ROTATE=390x844,360x640  verify で軍議の方針の場面の窓を横長に変えて戻す大きさ（setViewportSize。開発の操作）
+ *     HOLD=360x640,568x320,390x844  verify で軍議の方針の選択肢を押したまま、画面を回す・窓の高さを変える・並びを収め直す（Version 26）大きさ。
+ *                         離しても決まらない（同じ会話・同じ行・同じ選択肢・同じ選んだ印）こと、戻した後も選んだ物が見えること、回した向きで
+ *                         改めてたたけば決まることを確かめる（その後は方針 C の確かめから元の大きさで続ける）。並びが動かない大きさでは、
+ *                         Version 24 のまま押した瞬間に決まる（待っている押しが無い）ので、押したままの確かめはせず記録だけ残す
+ *     STOP=council        その場面（scene の名前）の確かめの後で、その部を止める（短く回す時。省けば最後まで）
  *
  * 出力：<出力先>/shots/<部>-<見せ方>-<大きさ>-<場面>.png、<出力先>/report.json（場面ごとの四角・隠れ・確かめの一覧）。
  * 入力の記録（report.json の steps）：タイトル・演出のスキップ・話す（E／「話す」のタップ）・行送り（Enter／枠のタップ）・選択肢・メニュー・
@@ -40,6 +45,9 @@ const ACT = process.env.ACT || 'verify';
 const PAR = Math.max(1, Number(process.env.PAR || 3));
 /** verify：軍議の方針の場面で向きを変えて測り直す大きさ */
 const ROTATE = list(process.env.ROTATE, '390x844,360x640');
+/** verify：軍議の方針の選択肢を押したまま向き・窓の高さ・並べ方を変える大きさ（Version 26） */
+const HOLD = list(process.env.HOLD, '360x640,568x320,390x844');
+const STOP = process.env.STOP || '';
 const SHOTS = `${OUT}/shots`;
 mkdirSync(SHOTS, { recursive: true });
 const POLL = { timeout: 600000, polling: 200 };
@@ -666,6 +674,128 @@ async function run(part, size, mode) {
         rec.pointerLog.push({ name, ...lg });
     };
 
+    /**
+     * verify（Version 26）：動く並びの選択肢を押したまま、画面を回す・窓の高さを変える・並びを収め直す → 離す。
+     * 離しても決まらない（同じ会話・同じ行・同じ選択肢・同じ選んだ印）。戻した後も選ばれている物が見える。
+     * 最後に、回した向きで改めて pickId をたたくと決まる（返り：true。HOLD に無い大きさ・並びが動かない大きさは false：
+     * 動かない並びは Version 24 のまま押した瞬間に決まるので、押したままの確かめはしない）。
+     * 窓の大きさの変更（setViewportSize。isMobile の文脈では画面の向きも変わる）・台詞の枠の余白（並びの収め直し）は開発の操作。押す・離すは本物の入力
+     */
+    const holdChecks = async (name, pickId) => {
+        if (ACT !== 'verify' || !HOLD.includes(size)) return false;
+        const T = `${tag} ${name}`;
+        const { w, h } = sizeOf(size);
+        const p0 = await page.evaluate(probeScene);
+        const u0 = await ui();
+        rec.hold = { size, scrollable: !!(p0.choicesBox && p0.choicesBox.sh > p0.choicesBox.ch + 1), cases: [] };
+        if (!rec.hold.scrollable) {
+            step('real', `${name}：並びが動かない大きさ（押した瞬間に決まる Version 24 のまま。待っている押しが無いので、押したままの確かめはしない）`);
+            return false;
+        }
+        // 画面の出来事と押しの出来事の記録（読むだけ）
+        await page.evaluate(() => {
+            window.__holdEv = [];
+            const L = [...document.querySelectorAll('.g-layer[data-kind="script"]')].pop();
+            const t0 = performance.now();
+            const log = (k) => window.__holdEv.push(`${k}@${Math.round(performance.now() - t0)}`);
+            for (const t of ['pointerdown', 'pointerup', 'pointercancel']) L.addEventListener(t, () => log(t), { capture: true, passive: true });
+            addEventListener('resize', () => log('resize'));
+            addEventListener('orientationchange', () => log('orientationchange'));
+            screen.orientation?.addEventListener('change', () => log('screen.orientation'));
+            visualViewport?.addEventListener('resize', () => log('vv.resize'));
+        });
+        // 並べ直しは大きさが変わった後の描画の手順で行う（重い時は遅れる）：描いた後まで待つ
+        const settleLayout = async () => {
+            await frames();
+            await sleep(700);
+            await frames();
+        };
+        const target = async () => {
+            const p = await page.evaluate(probeScene);
+            const it = p.items.find((x) => x.cover.hidden === 0) ?? p.items[0];
+            return { p, id: it.id, x: it.rect.l + Math.min(40, it.rect.w / 2), y: it.rect.t + Math.min(it.rect.h / 2, 18) };
+        };
+        const down = async (x, y) => {
+            if (touch) await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+            else {
+                await page.mouse.move(x, y);
+                await page.mouse.down();
+            }
+        };
+        const up = async () => {
+            if (touch) await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+            else await page.mouse.up();
+        };
+        const dialogSel = '.g-layer[data-kind="script"] .g-dialog';
+        const cases = [
+            ['画面を回す', `${h}x${w}`, () => page.setViewportSize({ width: h, height: w }), () => page.setViewportSize({ width: w, height: h })],
+            ['窓の高さを変える（向きはそのまま）', `${w}x${h - 64}`, () => page.setViewportSize({ width: w, height: h - 64 }), () => page.setViewportSize({ width: w, height: h })],
+            [
+                // ResizeObserver は枠の中身の四角を見るので、余白でなく min-height で中身を高くする
+                '並びを収め直す（dev：台詞の枠を 44px 高くする。字の読み込みなどで枠の大きさが変わった時の代わり）',
+                'refit',
+                () =>
+                    page.evaluate((q) => {
+                        const d = [...document.querySelectorAll(q)].pop();
+                        d.style.minHeight = `${d.getBoundingClientRect().height + 44}px`;
+                    }, dialogSel),
+                () => page.evaluate((q) => void [...document.querySelectorAll(q)].pop().style.removeProperty('min-height'), dialogSel),
+            ],
+        ];
+        for (const [how, to, change, restore] of cases) {
+            await sleep(450);
+            const t = await target();
+            await page.evaluate(() => (window.__holdEv.length = 0));
+            await down(t.x, t.y);
+            await sleep(200);
+            const atPress = await ui();
+            check(atPress?.id === u0.id, `${T} 動く並びの ${t.id} は押した瞬間には決まらない（離した時に決める）`, atPress?.id);
+            await change();
+            await settleLayout();
+            const q = await page.evaluate(probeScene);
+            const under = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest('.g-choice')?.dataset.id ?? null, [t.x, t.y]);
+            await shot(`${name}-hold-${to}`);
+            await up();
+            await sleep(700);
+            const u = await ui();
+            const ev = await page.evaluate(() => window.__holdEv.slice());
+            const kept = u?.kind === 'script' && u.id === u0.id && u.index === u0.index && JSON.stringify(u.choices) === JSON.stringify(u0.choices) && u.selected === u0.selected;
+            check(kept, `${T} ${t.id} を押したまま${how}（${size}→${to}）、離しても決まらない（同じ会話・同じ行・同じ選択肢・同じ選んだ印）`, { now: u, events: ev });
+            rec.hold.cases.push({ how, to, target: t.id, underFingerAfter: under, list: q.choicesBox?.cls, scrollTop: [t.p.choicesBox.st, q.choicesBox?.st], events: ev, decided: !kept, now: u?.id });
+            step('real', `${t.id} を${touch ? '指で' : 'マウスで'}押したまま${how}（${to}。大きさ・余白の変更は dev）→ 離した：${kept ? '決まらない' : `決まった（${u?.id}）`}・出来事 ${ev.join(' ')}`);
+            // 決まってしまったら、この先の流れ（同じ会話に戻る）は来ないので止める
+            if (!kept) throw new Error(`${T} 押したまま${how}（${to}）、離すと決まった（${JSON.stringify(u)?.slice(0, 200)}）`);
+            await restore();
+            await settleLayout();
+            const r = await page.evaluate(probeScene);
+            const sel = r.items.find((x) => x.sel);
+            check(!!sel && sel.cover.hidden === 0, `${T} ${how}を戻した後も、選ばれている ${sel?.id} が見える`, sel?.cover.by);
+            const u2 = await ui();
+            check(u2?.id === u0.id && u2.index === u0.index && u2.selected === u0.selected, `${T} ${how}を戻した後も同じ会話・同じ行・同じ選んだ印`, u2);
+        }
+        // 改めて押す：回した向きで、本物のたたき（並びが動くならなぞって見せてから）で決まる
+        await page.setViewportSize({ width: h, height: w });
+        await settleLayout();
+        step('dev', `窓の大きさを ${h}×${w} に変えた（回した向きで改めて押す）`);
+        await choose(pickId);
+        const decided = await page.waitForFunction((id0) => window.__game.ui?.kind === 'script' && window.__game.ui.id !== id0, u0.id, { timeout: 20000, polling: 100 }).then(() => true, () => false);
+        const u3 = await ui();
+        check(decided, `${T} 回した向き（${h}×${w}）で改めて ${pickId} をたたくと決まる`, u3);
+        rec.hold.newPress = { size: `${h}x${w}`, pick: pickId, now: u3?.id };
+        await page.setViewportSize({ width: w, height: h });
+        await settleLayout();
+        step('dev', `窓の大きさを ${w}×${h} に戻した`);
+        return true;
+    };
+    const stopAfter = async (name) => {
+        if (STOP !== name) return false;
+        step('stop', `STOP=${name}：ここで止める`);
+        rec.errors = errors.filter((e) => !/\[art\]/.test(e));
+        check(rec.errors.length === 0, `${tag} ページの誤りが無い`, rec.errors.slice(0, 3));
+        await ctx.close();
+        return true;
+    };
+
     if (part === 'ch1') {
         await talkTo('tadakatsu');
         await scene('gate');
@@ -676,8 +806,10 @@ async function run(part, size, mode) {
         await inputChecks('council', { map: true, keys: true, rotate: true });
         // verify は最後の選択肢 C（自領を守る）を、measure は隠れない A を選ぶ
         const pick1 = ACT === 'verify' ? 'policy_home' : 'policy_oda';
-        await choose(pick1);
+        // 押したまま回す・窓を変える・収め直すと決まらない。最後に回した向きで改めて C をたたいて決める（HOLD の大きさ・動く並びだけ）
+        if (!(await holdChecks('council', pick1))) await choose(pick1);
         await page.waitForFunction(() => window.__game.ui?.kind === 'script' && window.__game.ui.id.startsWith('council.confirm.'), null, POLL);
+        if (await stopAfter('council')) return rec;
         await scene('confirm');
         await inputChecks('confirm', { menu: true });
         await choose('reconsider');

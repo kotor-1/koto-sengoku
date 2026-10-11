@@ -19,6 +19,7 @@
  *
  * 前半（fitChoices・revealScrollTop）は DOM を使わない純粋な計算（tests/proto3d-ui-choice-fit.test.ts）。後半の ChoiceFit が DOM に当てる。
  */
+import { samePlace } from './guard';
 
 /** 並べ方の決まりの数（CSS の px） */
 export const CHOICE_FIT = {
@@ -143,6 +144,8 @@ export interface ChoiceFitParts {
     above: () => readonly (Element | null)[];
     /** 並べ方が変わった（顔の測り直しなど） */
     onChange?: () => void;
+    /** 選ばれている選択肢（Version 26。画面の大きさ・向きが変わって並べ直した後も、見えていた選ばれている物が見えるように動かす） */
+    selected?: () => HTMLElement | null | undefined;
 }
 
 /**
@@ -152,6 +155,9 @@ export interface ChoiceFitParts {
  *   画面の大きさ・向きが変わった時は ResizeObserver の中で（同じフレームのうちに）、台詞の枠・選択肢の大きさが変わった時（字の読み込み）は
  *   次のフレームで測り直す。
  * - 動く並びでは、端の薄れ（class "more-above"・"more-below"）を今の位置に合わせる。
+ * - Version 26：並べ直しで並びの形（収める・動かす・高さ・位置）か並びの四角が変わるたびに、並べ方の通し番号（layouts）を増やす。
+ *   選択肢を押している間に変われば、離しても決めない（ui/dom.ts の onPress の layoutOf）。見張りからの並べ直し（画面の大きさ・向き・
+ *   枠の大きさの変化）では、並びの位置（scrollTop）を保ち、その前に見えていた選ばれている物が隠れるときだけ、見える所まで動かす。
  */
 export class ChoiceFit {
     private result: ChoiceFitResult = NATURAL;
@@ -164,6 +170,12 @@ export class ChoiceFit {
     scrolledAt = Number.NEGATIVE_INFINITY;
     /** こちらで動かした先（↑↓で選んだ物を見せる・測り直しで戻す）。その scroll は人の手の動きに数えない */
     private selfTop: number | null = null;
+    /** 並べ方の通し番号（Version 26）：並べ直しで並びの形か四角が変わるたびに増える（押している間に変われば、離しても決めない） */
+    layouts = 0;
+    /** 最後に並べた時の並びの四角（並べ直しで動いたかを見る） */
+    private lastRect: Rect | null = null;
+    /** 選ばれている物が、最後に並べた・動かした時に並びの見える所にあったか（見張りからの並べ直しの後も見せるか） */
+    private selSeen = true;
 
     constructor(private readonly p: ChoiceFitParts) {
         p.list.addEventListener(
@@ -196,7 +208,7 @@ export class ChoiceFit {
         // 画面の大きさ・向きが変わった（層の大きさ）：同じフレームのうちに並べ直す（古い並べ方を 1 フレームも見せない。層は見張る物の中で
         // 一番浅いので、並べ直しで台詞の枠の大きさが変わっても ResizeObserver の繰り返しの誤りにならない）。それ以外は次のフレームで
         this.ro = new ResizeObserver((entries) => {
-            if (entries.some((e) => e.target === this.p.layer)) this.fit();
+            if (entries.some((e) => e.target === this.p.layer)) this.refit();
             else this.later();
         });
         this.ro.observe(this.p.layer);
@@ -208,8 +220,13 @@ export class ChoiceFit {
         if (this.raf || this.disposed) return;
         this.raf = requestAnimationFrame(() => {
             this.raf = 0;
-            this.fit();
+            this.refit();
         });
+    }
+
+    /** 見張りからの並べ直し：位置を保ち、見えていた選ばれている物は並べ直した後も見えるようにする */
+    private refit(): void {
+        this.fit(this.selSeen ? this.p.selected?.() : null);
     }
 
     /** 測って並べ直す。sel：見えるようにする選択肢（省けば今の位置を保つ） */
@@ -263,6 +280,11 @@ export class ChoiceFit {
         }
         this.edges();
         const changed = before.fit !== r.fit || before.scroll !== r.scroll || Math.abs(before.bottom - r.bottom) > 0.5 || Math.abs(before.maxH - r.maxH) > 0.5 || before.textMax !== r.textMax;
+        // 並べ方の通し番号：形が変わった、または並びの四角が動いた（CSS のままの並びでも、画面の大きさで動く）
+        const lr = list.getBoundingClientRect();
+        const rect = { left: lr.left, top: lr.top, right: lr.right, bottom: lr.bottom, width: lr.width, height: lr.height };
+        if (changed || !samePlace({ layout: 0, rect: this.lastRect }, { layout: 0, rect })) this.layouts++;
+        this.lastRect = rect;
         if (changed) this.p.onChange?.();
     }
 
@@ -291,6 +313,13 @@ export class ChoiceFit {
             if (this.cues.up.hidden === above) this.cues.up.hidden = !above;
             if (this.cues.down.hidden === below) this.cues.down.hidden = !below;
         }
+        // 選ばれている物が見える所にあるか（動かない並びなら見えている）。見張りからの並べ直しの後も見せるかに使う
+        const sel = on ? this.p.selected?.() : null;
+        if (sel) {
+            const lr = list.getBoundingClientRect();
+            const br = sel.getBoundingClientRect();
+            this.selSeen = br.top >= lr.top - 1 && br.bottom <= lr.bottom + 1;
+        } else this.selSeen = true;
     }
 
     /**

@@ -5,6 +5,8 @@
  *   その click は pointerType 'touch' なので無視する（前は detail だけを見ていて 2 回反応し、演出の「一時停止」がすぐ戻り、「次の場面」が 2 つ進んだ）。
  * - キーボード（Enter／Space）：pointerdown は無く、click は detail 0・pointerType ''。反応する。
  * - pointerType の無い click（PointerEvent でないブラウザ）：直前の pointerdown の続きなら無視、離れていれば反応する。
+ * - 動かせる並びの中（離した時に決める）で、押している間に画面が回った・並べ方が変わった・押したボタンが動いた押しは、離しても決めない
+ *   （Version 26。改めて押せば決まる。並べ方が変わらなければ今までどおり）。窓・向き・見える所の出来事の数え上げは tests/proto3d-ui-press-screen.test.ts。
  */
 import { describe, expect, it } from 'vitest';
 import { PRESS_CLICK_PAIR_MS, onPress } from '../proto3d/src/ui/dom';
@@ -73,16 +75,19 @@ type PFake = { pointerType?: string; button?: number; detail?: number; timeStamp
 function setupTap(scrollable = true) {
     const ls: Record<string, (e: Event) => void> = {};
     const captured: number[] = [];
+    // layout：並べ方の通し番号（回転・窓の大きさ・並びの収め直しで増える）、rect：押したボタンの四角
+    const st = { scroll: 0, scrolledAt: Number.NEGATIVE_INFINITY, scrollable, layout: 0, rect: { left: 14, top: 300, width: 332, height: 64 } };
     const target = {
         addEventListener: (type: string, fn: (e: Event) => void) => void (ls[type] = fn),
         setPointerCapture: (id: number) => void captured.push(id),
-    } as unknown as Pick<HTMLElement, 'addEventListener' | 'setPointerCapture'>;
-    const st = { scroll: 0, scrolledAt: Number.NEGATIVE_INFINITY, scrollable };
+        getBoundingClientRect: () => ({ ...st.rect, right: st.rect.left + st.rect.width, bottom: st.rect.top + st.rect.height, x: st.rect.left, y: st.rect.top }),
+    } as unknown as Pick<HTMLElement, 'addEventListener' | 'setPointerCapture' | 'getBoundingClientRect'>;
     const calls: { type: string; start: number | null }[] = [];
     onPress(target, (e, start) => calls.push({ type: e.type ?? '', start: start ? start.timeStamp : null }), {
         tapWhen: () => st.scrollable,
         scrollOf: () => st.scroll,
         scrolledAt: () => st.scrolledAt,
+        layoutOf: () => st.layout,
     });
     const stopped: string[] = [];
     const fire = (type: 'pointerdown' | 'pointermove' | 'pointerup' | 'pointercancel' | 'click', e: PFake) =>
@@ -148,6 +153,79 @@ describe('onPress（動かせる並びの中：離した時に、たたきだけ
     });
     it('キーボードの click（detail 0・pointerType 空）は、動かせる並びでも反応する', () => {
         const p = setupTap();
+        p.fire('click', { pointerType: '', detail: 0, timeStamp: 100 });
+        expect(p.calls).toEqual([{ type: 'click', start: null }]);
+    });
+});
+
+describe('onPress（動かせる並びの中：押している間に画面が回った・並べ方が変わった。Version 26）', () => {
+    it('押している間に並べ方が変わった（回転・窓の大きさ・並びの収め直し）押しは、同じ所で離しても反応しない。改めて押せば反応する', () => {
+        const p = setupTap();
+        p.fire('pointerdown', { pointerType: 'touch', button: 0, timeStamp: 100 });
+        p.st.layout++;
+        p.fire('pointerup', { pointerType: 'touch', timeStamp: 900 });
+        p.fire('click', { pointerType: 'touch', detail: 0, timeStamp: 905 });
+        expect(p.calls.length).toBe(0);
+        // 回した後の新しい押し（今の並べ方のまま離す）は、いつもどおり
+        p.fire('pointerdown', { pointerType: 'touch', button: 0, timeStamp: 1500 });
+        p.fire('pointerup', { pointerType: 'touch', timeStamp: 1580 });
+        expect(p.calls).toEqual([{ type: 'pointerup', start: 1500 }]);
+    });
+    it('押したボタンが動いた（回転で別の所へ。通し番号がまだ増えていなくても）押しは反応しない', () => {
+        const p = setupTap();
+        p.fire('pointerdown', { pointerType: 'touch', button: 0, timeStamp: 100 });
+        p.st.rect = { left: 140, top: 120, width: 420, height: 48 };
+        p.fire('pointerup', { pointerType: 'touch', timeStamp: 700 });
+        expect(p.calls.length).toBe(0);
+        p.fire('pointerdown', { pointerType: 'touch', button: 0, timeStamp: 1200 });
+        p.fire('pointerup', { pointerType: 'touch', timeStamp: 1260 });
+        expect(p.calls.length).toBe(1);
+    });
+    it('回して戻した（通し番号は増え、ボタンは元の所）押しも反応しない', () => {
+        const p = setupTap();
+        p.fire('pointerdown', { pointerType: 'touch', button: 0, timeStamp: 100 });
+        p.st.layout += 2;
+        p.fire('pointerup', { pointerType: 'touch', timeStamp: 2400 });
+        expect(p.calls.length).toBe(0);
+    });
+    it('並べ方が変わらなければ今までどおり（長く押していても、離した時に 1 回）', () => {
+        const p = setupTap();
+        p.fire('pointerdown', { pointerType: 'touch', button: 0, timeStamp: 100 });
+        p.st.rect = { ...p.st.rect, top: p.st.rect.top + 0.4 };
+        p.fire('pointerup', { pointerType: 'touch', timeStamp: 3100 });
+        expect(p.calls).toEqual([{ type: 'pointerup', start: 100 }]);
+    });
+    it('マウスでも同じ（押したまま窓の大きさを変えて離しても反応しない）', () => {
+        const p = setupTap();
+        p.fire('pointerdown', { pointerType: 'mouse', button: 0, timeStamp: 100 });
+        p.st.layout++;
+        p.fire('pointerup', { pointerType: 'mouse', button: 0, timeStamp: 600 });
+        p.fire('click', { pointerType: 'mouse', detail: 1, timeStamp: 602 });
+        expect(p.calls.length).toBe(0);
+    });
+    it('押している間に、動く並びが動かない並びに変わった（回転で入りきるようになった）：離しても反応しない', () => {
+        const p = setupTap(true);
+        p.fire('pointerdown', { pointerType: 'touch', button: 0, timeStamp: 100 });
+        p.st.scrollable = false;
+        p.st.layout++;
+        p.fire('pointerup', { pointerType: 'touch', timeStamp: 800 });
+        expect(p.calls.length).toBe(0);
+        // 動かない並びになった後の押しは、Version 24 と同じく押した瞬間に反応する
+        p.fire('pointerdown', { pointerType: 'touch', button: 0, timeStamp: 1300 });
+        expect(p.calls).toEqual([{ type: 'pointerdown', start: null }]);
+    });
+    it('動かない並び（押した瞬間に決める）は Version 24 のまま。押している間に動く並びに変わっても、離した時にもう一度反応しない', () => {
+        const p = setupTap(false);
+        p.fire('pointerdown', { pointerType: 'touch', button: 0, timeStamp: 100 });
+        expect(p.calls).toEqual([{ type: 'pointerdown', start: null }]);
+        p.st.scrollable = true;
+        p.st.layout++;
+        p.fire('pointerup', { pointerType: 'touch', timeStamp: 700 });
+        expect(p.calls.length).toBe(1);
+    });
+    it('キーボードの click は、並べ方が変わっても今までどおり反応する', () => {
+        const p = setupTap();
+        p.st.layout += 5;
         p.fire('click', { pointerType: '', detail: 0, timeStamp: 100 });
         expect(p.calls).toEqual([{ type: 'click', start: null }]);
     });

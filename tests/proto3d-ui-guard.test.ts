@@ -3,7 +3,7 @@
  * 会話を進めた入力（タップ・クリック・Enter／Space／E、キーの自動の繰り返し、スマホの素早い二度押し）で、直後に出た選択肢が決まらないこと。
  */
 import { describe, expect, it } from 'vitest';
-import { ADVANCE_GUARD_MS, CHOICE_GUARD_MS, HeldKeys, InputGate, TAP_SLOP_PX, TapTracker } from '../proto3d/src/ui/guard';
+import { ADVANCE_GUARD_MS, CHOICE_GUARD_MS, HeldKeys, InputGate, PRESS_SHIFT_PX, TAP_SLOP_PX, TapTracker, samePlace } from '../proto3d/src/ui/guard';
 
 describe('選択肢の見張り（時間）', () => {
     it('出てから CHOICE_GUARD_MS の間は、出た後に押し始めたタップでも決まらない', () => {
@@ -157,5 +157,44 @@ describe('たたきとなぞりの見分け（TapTracker）', () => {
         t.cancel(2);
         expect(t.up(2, 10, 10, 0)).toBe(false);
         expect(t.up(1, 11, 11, 0)).toBe(true);
+    });
+});
+
+describe('押している間に画面が回った・並べ方が変わった押し（TapTracker の PressPlace。Version 26）', () => {
+    const rect = (left: number, top: number, width = 300, height = 52) => ({ left, top, width, height });
+    it('並べ方の通し番号が変わった（回転・窓の大きさ・並びの収め直し）押しは、指が動かず同じ所で離しても、たたきにしない', () => {
+        const t = new TapTracker();
+        t.down(1, 100, 200, 0, true, { layout: 3, rect: rect(20, 180) });
+        expect(t.up(1, 100, 200, 0, { layout: 4, rect: rect(20, 180) })).toBe(false);
+        expect(t.active).toBe(false);
+    });
+    it('押したボタンが動いた・大きさが変わった（PRESS_SHIFT_PX より）押しは、たたきにしない', () => {
+        const t = new TapTracker();
+        t.down(1, 100, 200, 0, true, { layout: 0, rect: rect(20, 180) });
+        expect(t.up(1, 100, 200, 0, { layout: 0, rect: rect(20, 180 + PRESS_SHIFT_PX + 0.5) })).toBe(false);
+        t.down(1, 100, 200, 0, true, { layout: 0, rect: rect(20, 180) });
+        expect(t.up(1, 100, 200, 0, { layout: 0, rect: rect(20 + 40, 180) })).toBe(false);
+        t.down(1, 100, 200, 0, true, { layout: 0, rect: rect(20, 180) });
+        expect(t.up(1, 100, 200, 0, { layout: 0, rect: rect(20, 180, 300, 70) })).toBe(false);
+    });
+    it('所が変わっていなければ今までどおり（端数の丸めの 1px までは同じ所）', () => {
+        const t = new TapTracker();
+        t.down(1, 100, 200, 0, true, { layout: 7, rect: rect(20, 180) });
+        expect(t.up(1, 102, 203, 0, { layout: 7, rect: rect(20.4, 180.6) })).toBe(true);
+    });
+    it('取り消された後の新しい押しは、今の所で見る（改めて押せば決まる）', () => {
+        const t = new TapTracker();
+        t.down(1, 100, 200, 0, true, { layout: 1, rect: rect(20, 180) });
+        expect(t.up(1, 100, 200, 0, { layout: 2, rect: rect(160, 90) })).toBe(false);
+        t.down(2, 300, 110, 0, true, { layout: 2, rect: rect(160, 90) });
+        expect(t.up(2, 300, 110, 0, { layout: 2, rect: rect(160, 90) })).toBe(true);
+    });
+    it('samePlace：片方だけ所が無ければ同じとみなさない（両方無ければ今までどおり比べない）', () => {
+        expect(samePlace(undefined, undefined)).toBe(true);
+        expect(samePlace({ layout: 0 }, undefined)).toBe(false);
+        expect(samePlace(undefined, { layout: 0 })).toBe(false);
+        expect(samePlace({ layout: 0 }, { layout: 0 })).toBe(true);
+        expect(samePlace({ layout: 0, rect: rect(0, 0) }, { layout: 0 })).toBe(false);
+        expect(samePlace({ layout: 0, rect: rect(0, 0) }, { layout: 0, rect: rect(PRESS_SHIFT_PX, -PRESS_SHIFT_PX) })).toBe(true);
     });
 });

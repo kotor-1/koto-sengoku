@@ -600,6 +600,8 @@ export class DomView implements GameView, LayerHost {
                     face?.relayout();
                     portrait?.relayout();
                 },
+                // 画面の大きさ・向きが変わって並べ直した後も、見えていた選ばれている物は見える所に（Version 26）
+                selected: () => choiceBtns[sel],
             });
             const lines = sc.lines.length ? sc.lines : [{ speaker: 'narration', name: '', text: '……' }];
             // 生成イラスト素材（Version 22）：話し手の人物画（左下）と軍議の背景。素材が無い・旧表示（?art=old）・読めないときは何も作らない
@@ -648,13 +650,14 @@ export class DomView implements GameView, LayerHost {
                     // 並びが動かせる間は、離した時に、動かさずに離した押し（たたき）だけで決まる（なぞって並びを動かした指では選ばない。ui/dom.ts）
                     // 上に別の画面（メニュー・情勢・演出）が重なっている間は決めない（離した時に決める押しは、押したまま別の指・Esc・J で
                     // 開いた画面の下でも、押したボタンに離すのが届くので）
+                    // 押している間に画面を回した・窓の大きさが変わった・並びを収め直した押しも、離した時に決めない（改めて押せば決まる。Version 26）
                     onPress(
                         b,
                         (e, start) => {
                             if (this.modals[this.modals.length - 1] !== m) return;
                             if (start ? choiceGate.tap(nowMs(), startedAt(start)) : choiceGate.pointer(nowMs(), startedAt(e))) pick(k);
                         },
-                        { tapWhen: () => fitter.scrolls, scrollOf: () => choicesEl.scrollTop, scrolledAt: () => fitter.scrolledAt },
+                        { tapWhen: () => fitter.scrolls, scrollOf: () => choicesEl.scrollTop, scrolledAt: () => fitter.scrolledAt, layoutOf: () => fitter.layouts },
                     );
                     choiceBtns.push(b);
                     choicesEl.append(b);

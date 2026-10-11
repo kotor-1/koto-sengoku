@@ -9,6 +9,7 @@
  * - 上に重なった画面（メニューなど）が閉じて、また一番上に戻ったときも、出たばかりと同じに扱う（reset）。
  * - 縦に動かせる並びの中の選択肢（狭い画面の会話・軍議。ui/choiceFit.ts）は、押した瞬間でなく離した時に決める（TapTracker・InputGate.tap）：
  *   並びをなぞって動かした指・横へずらした指・ブラウザが動かし始めて取り消した押し（pointercancel）・動いている並びを止めた押しでは決まらない。
+ *   押している間に画面を回した・窓や見える所の大きさが変わった・並びを収め直した・押したボタンが動いた押しでも決まらない（Version 26。PressPlace）。
  */
 
 /** 出たばかりの選択肢・ボタンを押しても決まらない時間（ミリ秒） */
@@ -93,16 +94,39 @@ export class InputGate {
 export const TAP_SLOP_PX = 10;
 /** 並びが動いてからこの時間のうちに始まった押しは、動いている並びを止める押しとみなして、たたきにしない（ミリ秒） */
 export const SCROLL_SETTLE_MS = 150;
+/** 押している間に、押したボタンの四角がこれより動いた・大きさが変わった押しは、たたきにしない（CSS の px。端数の丸めの分だけ許す） */
+export const PRESS_SHIFT_PX = 1;
+
+/**
+ * 押したボタンの所（Version 26）：並べ方の通し番号と、ボタンの四角（画面の中の座標）。
+ * 押し始めと離した時で違えば、押している間に画面が回った・並べ方が変わったので、離しても決めない。
+ */
+export interface PressPlace {
+    /** 並べ方の通し番号（画面の向き・窓の大きさ・見える所（visualViewport）の変化、選択肢の並びの収め直しで増える） */
+    layout: number;
+    /** ボタンの四角（省けば比べない） */
+    rect?: { left: number; top: number; width: number; height: number } | null;
+}
+
+/** 押し始めと離した時の所が同じか（並べ方の通し番号が同じで、四角が PRESS_SHIFT_PX より動いていない。片方だけ無ければ同じとみなさない） */
+export function samePlace(a: PressPlace | undefined, b: PressPlace | undefined): boolean {
+    if (!a || !b) return !a && !b;
+    if (a.layout !== b.layout) return false;
+    if (!a.rect || !b.rect) return !a.rect && !b.rect;
+    const s = PRESS_SHIFT_PX;
+    return Math.abs(a.rect.left - b.rect.left) <= s && Math.abs(a.rect.top - b.rect.top) <= s && Math.abs(a.rect.width - b.rect.width) <= s && Math.abs(a.rect.height - b.rect.height) <= s;
+}
 
 /**
  * 1 つのボタンの上の押しが、たたき（その場で押して離した）か、なぞり（並びを動かそうとした）かを見分ける（純粋。DOM を使わない）。
- * - down：押し始め（pointerdown）。settled が false（並びが動いている途中・止まった直後）なら見ない。
+ * - down：押し始め（pointerdown）。settled が false（並びが動いている途中・止まった直後）なら見ない。place は押したボタンの所（PressPlace）。
  * - move：押し始めから TAP_SLOP_PX より動けば、たたきでない。
  * - cancel：ブラウザが並びを動かし始めた（pointercancel）など。たたきでない。
- * - up：離した（pointerup）。同じ指で、動かず、並び（scroll）も動いていなければ true。
+ * - up：離した（pointerup）。同じ指で、動かず、並び（scroll）も動かず、押したボタンの所（画面の向き・並べ方・四角。Version 26）も
+ *   変わっていなければ true。押している間に画面を回した・並べ方が変わった押しは、離した所が同じボタンの上でも決めない（改めて押せば決まる）。
  */
 export class TapTracker {
-    private cur: { id: number; x: number; y: number; scroll: number } | null = null;
+    private cur: { id: number; x: number; y: number; scroll: number; place?: PressPlace } | null = null;
 
     constructor(private readonly slop: number = TAP_SLOP_PX) {}
 
@@ -111,8 +135,8 @@ export class TapTracker {
         return this.cur !== null;
     }
 
-    down(id: number, x: number, y: number, scroll: number, settled = true): void {
-        this.cur = settled ? { id, x, y, scroll } : null;
+    down(id: number, x: number, y: number, scroll: number, settled = true, place?: PressPlace): void {
+        this.cur = settled ? { id, x, y, scroll, place } : null;
     }
     move(id: number, x: number, y: number): void {
         const c = this.cur;
@@ -121,10 +145,10 @@ export class TapTracker {
     cancel(id?: number): void {
         if (!this.cur || id === undefined || this.cur.id === id) this.cur = null;
     }
-    up(id: number, x: number, y: number, scroll: number): boolean {
+    up(id: number, x: number, y: number, scroll: number, place?: PressPlace): boolean {
         const c = this.cur;
         if (!c || c.id !== id) return false;
         this.cur = null;
-        return Math.hypot(x - c.x, y - c.y) <= this.slop && Math.abs(scroll - c.scroll) <= 1;
+        return Math.hypot(x - c.x, y - c.y) <= this.slop && Math.abs(scroll - c.scroll) <= 1 && samePlace(c.place, place);
     }
 }
