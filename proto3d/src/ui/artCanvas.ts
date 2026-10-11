@@ -152,7 +152,7 @@ export interface PortraitLayoutInput {
     shoulderY?: number;
 }
 
-/** 人物画の大きさの決まり（docs：art-v22・art-v25-portraits。測った所は Version 21〜24 の会話・軍議の画面） */
+/** 人物画の大きさの決まり（docs：art-v22・v25-portraits。測った所は Version 21〜24 の会話・軍議の画面） */
 export const PORTRAIT_RULES = {
     /** これより低い画面では出さない（顔だけ台詞の枠に出す） */
     minViewportH: 340,
@@ -250,7 +250,7 @@ export type PortraitStep = { kind: 'show'; id: ArtId } | { kind: 'hide' };
 export const NON_PERSON_SPEAKERS: readonly string[] = ['narration', 'notice'];
 
 /**
- * 行の話し手から、人物画をどうするか（docs/art-v25-portraits.md：決めた見せ方）。
+ * 行の話し手から、人物画をどうするか（docs/v25-portraits.md：決めた見せ方）。
  * - 絵のある人（家康・忠勝・酒井・石川・榊原・長政）：その人の絵を出す。
  * - 絵の無い話し手（使者・村の使い・知らない話し手）と、地の文・高札：下げる（前の人の絵を残さない）。
  *   Version 22〜24 は「絵の無い人物の行は前の人の絵を暗く残す」だったが、使者の行に家康・忠勝の絵が話し手のように残るので、Version 25 で下げるに変えた

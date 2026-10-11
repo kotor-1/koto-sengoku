@@ -10,7 +10,9 @@
  *   外した物・その見せ方で使わない物は「一覧に無い」と同じに扱う（artEntry が null・読みに行かない）。
  * - 読み方：fetch → Blob → createImageBitmap。モデルの画像と同じ道（connect-src 'self'）で、<img> の img-src に頼らない。
  *   data: の URL は使わない（CSP で止まる）。読めない・時間切れ・壊れた画像は null を返し、呼んだ側は今までの表示のまま進める。
- * - 時間切れは通信（fetch と中身の受け取り）だけに掛ける（30 秒。画像の展開や、読み始める前の待ちは数えない）。
+ * - 時間切れは「通信が進まない時間」に掛ける（30 秒）：返事・中身の一切れが届くたびに数え直すので、遅い回線でも届き続けている読み込みは止めない。
+ *   見張りの時計が遅れて鳴った（ページが 3D の組み立てなどで塞がっていた）ときは、すぐ止めず、届いている中身を受け取る 1 秒をおいて決め直す。
+ *   画像の展開や、読み始める前の待ちは数えない。
  * - 失敗はずっと覚えない：失敗した ID は、前の失敗から 10 秒たった後に呼ばれたら読み直す（10 秒のうちは読みに行かず null）。
  *   同じ ID を同時に 2 回は読まない。警告（console.warn）は ID ごとに 1 回だけ。
  * - 開発時だけ：?artFixture=1 で proto3d/dev-art/manifest.json（確かめ用の仮の画像。本番のビルドに入らない）に差し替える。
@@ -39,8 +41,13 @@ interface Manifest {
     assets: Record<string, ArtEntry>;
 }
 
-/** 通信（fetch と中身の受け取り）の時間切れ。重い端末・同時に動く物があっても待てるように長め */
-const FETCH_TIMEOUT_MS = 30000;
+/**
+ * 通信が止まったとみなす時間（返事も中身の一切れも、この間まったく届かなければ止める）。届き続けている間は、全体で何秒かかっても止めない
+ * （Version 25 の最後の確かめ：全体の時間で切っていた頃は、中身が届き終わっていても、ページが塞がっていて受け取りが遅れた読み込みを止めていた）
+ */
+const STALL_TIMEOUT_MS = 30000;
+/** 見張りの時計がこれより遅れて鳴ったら、ページが塞がっていたとみなし、この間だけ待って（届いた中身を受け取らせて）から決め直す */
+const LATE_GRACE_MS = 1000;
 /** 失敗した ID を読み直すまでの最短の間（同じ物を何度も読みに行かない） */
 const RETRY_AFTER_MS = 10000;
 
@@ -179,23 +186,77 @@ function warnOnce(id: string, why: unknown): void {
     console.warn(`[art] ${id} を読めませんでした。今までの表示で続けます`, why);
 }
 
+/**
+ * 通信の見張り：progress() から STALL_TIMEOUT_MS の間、次の progress() が無ければ onStall を呼ぶ（1 回だけ）。
+ * 時計が LATE_GRACE_MS より遅れて鳴った（ページの処理が長く続いて、時計も届いた中身の受け取りも待たされていた）ときは、
+ * LATE_GRACE_MS だけ待って決め直す（先に届いていた中身の受け取りが進めば、止めない）。時刻は Date.now（読み直しの間と同じ時計）
+ */
+function stallWatch(onStall: () => void): { progress(): void; stop(): void } {
+    let last = Date.now();
+    let due = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let stopped = false;
+    const arm = (ms: number) => {
+        due = Date.now() + ms;
+        timer = setTimeout(check, ms);
+    };
+    const check = () => {
+        if (stopped) return;
+        const now = Date.now();
+        // 時計が戻ったとき（idle < 0）は、そこから数え直す
+        if (now < last) last = now;
+        const idle = now - last;
+        if (idle < STALL_TIMEOUT_MS) return arm(STALL_TIMEOUT_MS - idle);
+        if (now - due > LATE_GRACE_MS) return arm(LATE_GRACE_MS);
+        stopped = true;
+        onStall();
+    };
+    arm(STALL_TIMEOUT_MS);
+    return {
+        progress: () => {
+            last = Date.now();
+        },
+        stop: () => {
+            stopped = true;
+            clearTimeout(timer);
+        },
+    };
+}
+
+/**
+ * 通信（fetch と中身の受け取り）。止めるのは「進まない」とき（stallWatch）：返事が届いた時と、中身の一切れを受け取るたびに数え直す。
+ * 中身を少しずつ受け取れない環境（body の無い返事）は、まとめて受け取る（返事が届いた時に数え直すだけ）
+ */
+async function fetchBlob(url: string): Promise<Blob> {
+    const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const watch = stallWatch(() => ctl?.abort());
+    try {
+        const r = await fetch(url, ctl ? { signal: ctl.signal } : undefined);
+        watch.progress();
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const reader = typeof r.body?.getReader === 'function' ? r.body.getReader() : null;
+        if (!reader) return await r.blob();
+        const parts: Uint8Array[] = [];
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value) parts.push(value);
+            watch.progress();
+        }
+        return new Blob(parts as BlobPart[], { type: r.headers?.get('content-type') ?? '' });
+    } finally {
+        watch.stop();
+    }
+}
+
 /** 失敗（通信の失敗・HTTP の誤り・時間切れ・壊れた画像）は例外で返す。旧表示・一覧に無い・道具が無いは null（失敗ではない） */
 async function fetchBitmap(id: ArtId): Promise<ImageBitmap | null> {
     await artReady;
     const entry = artEntry(id);
     if (!entry) return null;
     if (typeof fetch === 'undefined' || typeof createImageBitmap === 'undefined') return null;
-    const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    // 時間切れは通信の間だけ（fetch の直前から中身を受け取り終えるまで）。展開（createImageBitmap）は数えない
-    const timer = setTimeout(() => ctl?.abort(), FETCH_TIMEOUT_MS);
-    let blob: Blob;
-    try {
-        const r = await fetch(artUrl(entry), ctl ? { signal: ctl.signal } : undefined);
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        blob = await r.blob();
-    } finally {
-        clearTimeout(timer);
-    }
+    // 時間切れは通信の間だけ（fetchBlob）。展開（createImageBitmap）は数えない
+    const blob = await fetchBlob(artUrl(entry));
     return await createImageBitmap(blob);
 }
 

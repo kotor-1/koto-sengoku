@@ -158,9 +158,13 @@ async function run(kind) {
     for (const k of [...keys].reverse()) await page.keyboard.up(k);
     return ok;
   };
-  // 会話の 1 行の様子（話し手・名前・文・選択肢・人物画・軍議の背景）。読むだけ
+  // 会話の 1 行の様子（話し手・名前・文・選択肢・人物画・軍議の背景）。読むだけ。
+  // 読む前に描画のコマを 2 つ待つ（上限 20 秒）：人物画の出る薄い所からの重ね（140ms の transition）は次のコマで始まるので、
+  // ページがとても重い（ソフトウェア描画で 1 コマに数十秒かかる）と、出し始めた絵を「まだ透明」と読んでしまう（Version 25 の最後の確かめで見た）
   const lineState = () =>
-    page.evaluate(() => {
+    page.evaluate(async () => {
+      await Promise.race([new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))), new Promise((r) => setTimeout(r, 20000))]);
+      await new Promise((r) => setTimeout(r, 200));
       const L = [...document.querySelectorAll('.g-layer[data-kind="script"]')].pop();
       if (!L) return null;
       const vis = (e) => !!e && e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden' && !e.closest('[hidden]');

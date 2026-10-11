@@ -8,7 +8,8 @@
  * - 読み込みの口（registry）：旧表示（?art=old）・一覧に無い・読めない は null で、例外を投げず、同じ ID を同時に重ねて読まない。
  * - 見せ方（Version 25）：既定・?art=v24（Version 24 と同じ素材：第 1 版の顔・地面。人物画・軍議の背景なし）・?art=old と、
  *   ?artOff=portrait,council,face（地面の grass・dirt・road・ground と並べて書ける）。URL だけで、保存には何も書かない。
- *   失敗は覚えたままにせず、前の失敗から 10 秒たった後の呼び出しで読み直す。時間切れ（30 秒）は通信の間だけ。
+ *   失敗は覚えたままにせず、前の失敗から 10 秒たった後の呼び出しで読み直す。時間切れ（30 秒）は通信の間だけで、通信が進まない時間に掛ける
+ *   （返事・中身の一切れが届くたびに数え直す。時計が遅れて鳴ったときは 1 秒待って決め直す）。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ART_IDS, FACE_OF, FIELD_ART, PORTRAIT_OF, V24_FACE_OF } from '../proto3d/src/art/ids';
@@ -630,6 +631,135 @@ describe('読み込みの口（registry）', () => {
             await expect(p).resolves.toBe(bmp);
             expect(signal?.aborted).toBe(false);
             expect(warn).not.toHaveBeenCalled();
+        });
+
+        /**
+         * 中身を少しずつ渡す返事（本物の fetch の body と同じく、止めた（abort）ら読みかけの read は AbortError で終わる）。
+         * at[i] は i 切れ目を渡す時刻（読み始めからのミリ秒。前の切れ目の後に数える）。null は渡さない（止まった通信）。
+         * 最後の切れ目の後は done。deliverNow() は、待っている read をすぐ渡す（時計の遅れの後に、届いていた中身を受け取る所）
+         */
+        function slowResponse(at: (number | null)[], getSignal: () => AbortSignal | undefined) {
+            let i = 0;
+            let pending: (() => void) | null = null;
+            const reads = { count: 0 };
+            const body = {
+                getReader: () => ({
+                    read: () =>
+                        new Promise<{ done: boolean; value?: Uint8Array }>((res, rej) => {
+                            reads.count++;
+                            if (i >= at.length) return res({ done: true });
+                            const give = () => {
+                                clearTimeout(t);
+                                pending = null;
+                                res({ done: false, value: new Uint8Array([i++, 7, 7]) });
+                            };
+                            const wait = at[i];
+                            const t = wait === null ? undefined : setTimeout(give, wait);
+                            pending = give;
+                            getSignal()?.addEventListener('abort', () => {
+                                clearTimeout(t);
+                                pending = null;
+                                rej(new DOMException('aborted', 'AbortError'));
+                            });
+                        }),
+                }),
+            };
+            const r = { ok: true, status: 200, body, headers: { get: (k: string) => (k.toLowerCase() === 'content-type' ? 'image/webp' : null) }, blob: async () => new Blob([]) };
+            return { r, reads, deliverNow: () => pending?.() };
+        }
+
+        it('届き続けている通信は、全体で 30 秒を超えても止めない（返事・中身の一切れごとに数え直す。遅い回線で読みかけを捨てない）', async () => {
+            let signal: AbortSignal | undefined;
+            const slow = slowResponse([20000, 20000, 20000], () => signal);
+            fetchMock.mockImplementationOnce(async (_url: string, init?: { signal?: AbortSignal }) => {
+                signal = init?.signal;
+                return slow.r;
+            });
+            let done: ImageBitmap | null | 'pending' = 'pending';
+            void loadArtBitmap(ART_IDS.portraitIeyasu).then((b) => (done = b));
+            await vi.advanceTimersByTimeAsync(59000);
+            expect(done).toBe('pending');
+            expect(signal?.aborted).toBe(false);
+            await vi.advanceTimersByTimeAsync(1000);
+            expect(done).not.toBeNull();
+            expect(done).not.toBe('pending');
+            expect(signal?.aborted).toBe(false);
+            expect(fetchMock).toHaveBeenCalledTimes(1);
+            // 受け取った中身をすべて、返事の種類のまま展開に渡す
+            const blob = bitmapMock.mock.calls[0][0] as Blob;
+            expect(blob.size).toBe(9);
+            expect(blob.type).toBe('image/webp');
+            expect(warn).not.toHaveBeenCalled();
+        });
+
+        it('最後に届いてから 30 秒なにも届かなければ止めて null（読みかけの read も終わる）。10 秒たてば読み直せる', async () => {
+            let signal: AbortSignal | undefined;
+            const slow = slowResponse([5000, null], () => signal);
+            fetchMock.mockImplementationOnce(async (_url: string, init?: { signal?: AbortSignal }) => {
+                signal = init?.signal;
+                return slow.r;
+            });
+            let done: ImageBitmap | null | 'pending' = 'pending';
+            void loadArtBitmap(ART_IDS.portraitIeyasu).then((b) => (done = b));
+            // 5 秒に 1 切れ目が届いたので、止めるのは 35 秒（全体の 30 秒ではない）
+            await vi.advanceTimersByTimeAsync(34900);
+            expect(done).toBe('pending');
+            expect(signal?.aborted).toBe(false);
+            await vi.advanceTimersByTimeAsync(100);
+            expect(signal?.aborted).toBe(true);
+            expect(done).toBeNull();
+            expect(warn).toHaveBeenCalledTimes(1);
+            await vi.advanceTimersByTimeAsync(10000);
+            await expect(loadArtBitmap(ART_IDS.portraitIeyasu)).resolves.not.toBeNull();
+            expect(fetchMock).toHaveBeenCalledTimes(2);
+        });
+
+        it('見張りの時計が遅れて鳴った（ページが 3D の組み立てなどで塞がっていた）ときは、すぐ止めず 1 秒待つ：その間に届いていた中身を受け取れば止めない', async () => {
+            let signal: AbortSignal | undefined;
+            const slow = slowResponse([null], () => signal);
+            fetchMock.mockImplementationOnce(async (_url: string, init?: { signal?: AbortSignal }) => {
+                signal = init?.signal;
+                return slow.r;
+            });
+            let done: ImageBitmap | null | 'pending' = 'pending';
+            void loadArtBitmap(ART_IDS.portraitIeyasu).then((b) => (done = b));
+            await vi.advanceTimersByTimeAsync(0);
+            expect(slow.reads.count).toBe(1);
+            // ページが 44 秒塞がっていた：時刻だけ進み、時計（setTimeout）はまだ鳴っていない
+            vi.setSystemTime(Date.now() + 44000);
+            // 塞がりが解けて、30 秒の時計が（44 秒遅れで）先に鳴る。届いていた中身の受け取りはその後ろに並んでいる
+            await vi.advanceTimersByTimeAsync(30000);
+            expect(signal?.aborted).toBe(false);
+            expect(done).toBe('pending');
+            // 並んでいた中身を受け取る（その後は終わり）
+            slow.deliverNow();
+            await vi.advanceTimersByTimeAsync(0);
+            expect(done).not.toBe('pending');
+            expect(done).not.toBeNull();
+            await vi.advanceTimersByTimeAsync(5000);
+            expect(signal?.aborted).toBe(false);
+            expect(warn).not.toHaveBeenCalled();
+        });
+
+        it('時計が遅れて鳴った後の 1 秒にも何も届かなければ止める（本当に止まった通信は待ち続けない）', async () => {
+            let signal: AbortSignal | undefined;
+            const slow = slowResponse([null], () => signal);
+            fetchMock.mockImplementationOnce(async (_url: string, init?: { signal?: AbortSignal }) => {
+                signal = init?.signal;
+                return slow.r;
+            });
+            let done: ImageBitmap | null | 'pending' = 'pending';
+            void loadArtBitmap(ART_IDS.portraitIeyasu).then((b) => (done = b));
+            await vi.advanceTimersByTimeAsync(0);
+            vi.setSystemTime(Date.now() + 44000);
+            await vi.advanceTimersByTimeAsync(30000);
+            expect(signal?.aborted).toBe(false);
+            await vi.advanceTimersByTimeAsync(999);
+            expect(signal?.aborted).toBe(false);
+            await vi.advanceTimersByTimeAsync(1);
+            expect(signal?.aborted).toBe(true);
+            expect(done).toBeNull();
+            expect(warn).toHaveBeenCalledTimes(1);
         });
 
         it('旧表示では失敗の後も読みに行かない', async () => {
