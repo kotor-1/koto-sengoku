@@ -2,10 +2,12 @@
  * 生成イラスト素材（Version 22）の会話の人物画（PortraitSlot）・軍議の背景（CouncilBackdrop）の DOM の部品（ui/artCanvas.ts）。
  * Node には DOM が無いので、部品が使う所だけの小さな偽の DOM（要素・canvas・getComputedStyle・窓の見張り・フレーム）で確かめる。
  * - 旧表示（?art=old）・素材の一覧が空・読めない：要素を一つも作らない（Version 21 と同じ画面）。
- * - 画像が読めたら作る（人物画は見出し・選択肢の前、背景は層のいちばん前）。手前の幕は奥の画と同じ大きさで、揺れの幅だけ広い。
+ * - 画像が読めたら作る（人物画は選択肢の前＝軍議の見出しとその後ろの暗さより手前、背景は層のいちばん前）。手前の幕は奥の画と同じ大きさで、揺れの幅だけ広い。
+ * - 見出しの後ろの暗さ（背景が出ている間）は人物画の大きさを変えない（Version 26。背景の有無で立ち絵の大きさが変わらない）。
  * - 絵の無い話し手（使者・村の使い）・地の文・高札の行は下げる（Version 25 から。前の人の絵を暗く残さない）。動きを減らすときは時間を掛けない。
  * - 人物画は元の画像の画素より大きくしない（端末の比で割った高さまで）。台詞の枠の上に肩まで見えなければ出さない。
- * - 軍議の背景は原寸以内に描ける画面だけ（それ以外は読まず、Version 24 と同じ画面。大きさが変われば出し入れする）。?art=v24・?artOff=council は作らない。
+ * - 軍議の背景は Version 26 からどの画面でも出す（端末の比で外さない）。表示の倍率が 1.25 倍を超える画面は 1.25 倍で真ん中に描き、縁を暗い地へなじませる。
+ *   層の大きさが測れない間は読まずに待つ。?art=v24・?artOff=council は作らない。
  * - 後片付け：見張り・フレーム・時計・body の印を外す。片付けの後に読めた画像では何も作らない。
  * 本物のブラウザでの位置・重なりの確かめは、開発サーバーで ?artFixture=1（仮の確かめ用の画像。見た目の素材ではない）。
  */
@@ -13,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ART_IDS } from '../proto3d/src/art/ids';
 import type { ArtId } from '../proto3d/src/art/ids';
 import { __setArtManifestForTest } from '../proto3d/src/art/registry';
-import { CouncilBackdrop, PortraitSlot, __clearArtReadyForTest, fitArt, loadArt, parallaxAmp, type Box } from '../proto3d/src/ui/artCanvas';
+import { COUNCIL_ART, CouncilBackdrop, PortraitSlot, __clearArtReadyForTest, councilArtLayout, councilFeatherPx, fitArt, loadArt, parallaxAmp, type Box } from '../proto3d/src/ui/artCanvas';
 
 // ================= 偽の DOM =================
 
@@ -23,7 +25,7 @@ class FakeCtx {
     calls: Call[] = [];
     globalAlpha = 1;
     globalCompositeOperation = 'source-over';
-    fillStyle = '';
+    fillStyle: unknown = '';
     imageSmoothingEnabled = true;
     imageSmoothingQuality = 'low';
     private rec(fn: string, args: unknown[]) {
@@ -50,6 +52,11 @@ class FakeCtx {
     }
     fill() {
         this.rec('fill', []);
+    }
+    createLinearGradient(...a: unknown[]) {
+        this.rec('createLinearGradient', a);
+        const stops: [number, string][] = [];
+        return { stops, addColorStop: (o: number, c: string) => void stops.push([o, c]) };
     }
     draws() {
         return this.calls.filter((c) => c.fn === 'drawImage');
@@ -321,8 +328,9 @@ function art(o: { assets?: Record<string, (typeof ASSETS)[keyof typeof ASSETS]>;
 const resolve = (sp: string): ArtId | null => (sp === 'hero' ? ART_IDS.portraitIeyasu : sp === 'tadakatsu' ? ART_IDS.portraitTadakatsu : null);
 const COUNCIL = { base: ART_IDS.bgCouncil, front: ART_IDS.bgCouncilFront };
 
+/** ui/view.ts と同じく、人物画は選択肢の前に置く（Version 26：軍議の見出しとその後ろの薄い暗さより手前） */
 function slot(l: ReturnType<typeof councilLayer>, reduced = false) {
-    return new PortraitSlot(l.layer as unknown as HTMLElement, l.head as unknown as HTMLElement, l.dialog as unknown as HTMLElement, resolve, () => reduced, () => []);
+    return new PortraitSlot(l.layer as unknown as HTMLElement, l.choices as unknown as HTMLElement, l.dialog as unknown as HTMLElement, resolve, () => reduced, () => []);
 }
 function backdrop(l: ReturnType<typeof councilLayer>, o: { reduced?: boolean; top?: boolean } = {}) {
     return new CouncilBackdrop(
@@ -401,7 +409,7 @@ describe('素材が無い・旧表示（?art=old）・読めない：要素を�
 // ================= 画像が読めたとき =================
 
 describe('人物画（PortraitSlot）', () => {
-    it('読めたら canvas.g-portrait を見出しの前に作る。台詞の枠の後ろは透明に抜く。見出しの後ろの暗さも避ける', async () => {
+    it('読めたら canvas.g-portrait を選択肢の前（見出しの後ろ）に作る。台詞の枠の後ろは透明に抜く。見出しの文字の箱を避ける', async () => {
         art();
         const l = councilLayer();
         const p = slot(l);
@@ -410,7 +418,7 @@ describe('人物画（PortraitSlot）', () => {
         await flush();
         const c = portraitOf(l)!;
         expect(c).not.toBeNull();
-        expect(l.layer.tree()).toEqual(['div.g-council-head', 'button.g-council-map', 'div.g-choices[hidden]', 'div.g-dialog'].flatMap((x, i) => (i === 0 ? ['canvas.g-portrait on', x] : [x])));
+        expect(l.layer.tree()).toEqual(['div.g-council-head', 'button.g-council-map', 'canvas.g-portrait on', 'div.g-choices[hidden]', 'div.g-dialog']);
         expect(c.dataset.artId).toBe(ART_IDS.portraitTadakatsu);
         expect(c.attrs.get('aria-hidden')).toBe('true');
         expect(c.draggable).toBe(false);
@@ -422,8 +430,8 @@ describe('人物画（PortraitSlot）', () => {
         expect(h).toBe(619);
         expect(w).toBe(Math.floor(619 * (745 / 1453)));
         const r: Box = { left: 24, top: 720 - h, right: 24 + w, bottom: 720 };
-        const headArt: Box = { left: 529 - 34, top: 18 - 8, right: 750 + 34, bottom: 69 + 10 };
-        expect(r.right <= headArt.left || r.top >= headArt.bottom).toBe(true);
+        const headBox: Box = { left: 529, top: 18, right: 750, bottom: 69 };
+        expect(r.right <= headBox.left || r.top >= headBox.bottom).toBe(true);
         // 元の画像より細かくしない（端末の比 1 → 1 倍）
         expect(c.width).toBe(w);
         // 台詞の枠の後ろは抜く（destination-out の角の丸い四角が枠の所）
@@ -433,10 +441,11 @@ describe('人物画（PortraitSlot）', () => {
         p.dispose();
     });
 
-    it('見出しの後ろの暗さ（::before）が人物画にかかる画面では、その分だけ人物画を小さくする', async () => {
+    it('Version 26：見出しの後ろの暗さ（背景が出ている間の ::before）は、人物画の大きさを変えない（背景の有無で立ち絵の大きさが変わらない）', async () => {
         // 縦横の比 2:3 の人物画（余白を切り詰める前の形）
         art({ assets: { ...ASSETS, [ART_IDS.portraitTadakatsu]: { file: 'art/portraits/tadakatsu.webp', w: 1024, h: 1536, kind: 'portrait' } } });
         // 667×375 の軍議の台詞の行：見出しの箱は 222〜444（Version 21 と同じ）。後ろの暗さは 188〜478・10〜79
+        // （Version 25 は暗さも避けて 288 だった。背景を出さない画面・?artOff=council は 300 で、Version 26 はどちらも 300）
         const { layer } = installDom(667, 375);
         const head = new FakeEl('div');
         head.className = 'g-council-head';
@@ -445,24 +454,31 @@ describe('人物画（PortraitSlot）', () => {
         const map = new FakeEl('button');
         map.className = 'g-council-map';
         map.rect = box(12, 12, 122, 45);
+        const choices = new FakeEl('div');
+        choices.className = 'g-choices';
+        choices.hidden = true;
         const dialog = new FakeEl('div');
         dialog.className = 'g-dialog';
         dialog.rect = box(14, 270, 639, 92);
-        layer.append(head, map, dialog);
-        const p = new PortraitSlot(layer as unknown as HTMLElement, head as unknown as HTMLElement, dialog as unknown as HTMLElement, resolve, () => false, () => []);
-        p.set('tadakatsu');
-        await flush();
-        const c = layer.querySelector('.g-portrait')!;
-        // 暗さの下端 79＋8 → 375−87＝288（暗さを数えなければ 300）
-        expect(parseFloat(String(c.style.height))).toBe(288);
-        p.dispose();
-        // 同じ画面で暗さが無い（::before が無い）なら 300
-        head.scrim = null;
-        const p2 = new PortraitSlot(layer as unknown as HTMLElement, head as unknown as HTMLElement, dialog as unknown as HTMLElement, resolve, () => false, () => []);
-        layer.querySelector('.g-portrait')!.remove();
-        p2.set('tadakatsu');
-        expect(parseFloat(String(layer.querySelector('.g-portrait')!.style.height))).toBe(300);
-        p2.dispose();
+        layer.append(head, map, choices, dialog);
+        const heights: number[] = [];
+        for (const scrim of [[-8, -34, -10, -34] as [number, number, number, number], null]) {
+            head.scrim = scrim;
+            layer.querySelector('.g-portrait')?.remove();
+            const p = new PortraitSlot(layer as unknown as HTMLElement, choices as unknown as HTMLElement, dialog as unknown as HTMLElement, resolve, () => false, () => []);
+            p.set('tadakatsu');
+            await flush();
+            const c = layer.querySelector('.g-portrait')!;
+            heights.push(parseFloat(String(c.style.height)));
+            // 人物画は見出し（とその後ろの暗さ）より後ろの DOM：暗さの上に描かれる。選択肢・台詞の枠より前（その下に重なる）
+            expect(layer.tree()).toEqual(['div.g-council-head', 'button.g-council-map', 'canvas.g-portrait on', 'div.g-choices[hidden]', 'div.g-dialog']);
+            // 見出しの文字の箱（222〜444・18〜69）とは重ならない
+            const top = 375 - heights[heights.length - 1]!;
+            const right = 24 + parseFloat(String(c.style.width));
+            expect(right <= 222 || top >= 69).toBe(true);
+            p.dispose();
+        }
+        expect(heights).toEqual([300, 300]);
     });
 
     it('絵の無い話し手（使者・村の使い）・地の文・高札の行は下げる（前の人の絵を話し手のように残さない）。同じ人の続く行は描き直さない', async () => {
@@ -691,49 +707,155 @@ describe('軍議の背景（CouncilBackdrop）', () => {
         b.dispose();
     });
 
-    it('原寸を超える画面（1920×1080・端末の比 2 の 844×390）では読まずに Version 24 の軍議の画面のまま。大きさが変われば出し入れする', async () => {
+    /** 公開している素材と同じ寸法（art/story/council_day.webp：1664×936。手前の幕はまだ届いていない） */
+    const V25 = { [ART_IDS.bgCouncil]: { file: 'art/story/council_day.webp', w: 1664, h: 936, kind: 'background' as const } };
+    const resize = (layer: FakeEl, W: number, H: number, dpr: number) => {
+        layer.rect = { left: 0, top: 0, width: W, height: H };
+        vi.stubGlobal('devicePixelRatio', dpr);
+        for (const f of dom.listeners.get('resize') ?? []) (f as () => void)();
+        frames(1);
+    };
+
+    it('Version 26：端末の画素の比では外さない（1920×1080 の比 1・2、844×390・390×844 の比 2・3 でも出す）。倍率は CSS の px ÷ 元の画素で、比に依らない', async () => {
         for (const [W, H, dpr] of [
             [1920, 1080, 1],
+            [1920, 1080, 2],
             [844, 390, 2],
+            [844, 390, 3],
+            [390, 844, 2],
+            [390, 844, 3],
         ] as const) {
-            const urls = art();
+            const urls = art({ assets: V25 });
             __clearArtReadyForTest();
             installDom(W, H, dpr);
             const layer = dom.body.children[0]!.children[0]!;
-            let changes = 0;
-            const b = new CouncilBackdrop(layer as unknown as HTMLElement, COUNCIL, () => false, () => true, () => changes++);
+            const b = new CouncilBackdrop(layer as unknown as HTMLElement, { base: ART_IDS.bgCouncil }, () => false, () => true);
             b.start();
             await flush();
-            expect(layer.querySelector('.g-council-bg')).toBeNull();
-            expect(layer.className).toBe('g-layer council');
-            expect(dom.body.className).toBe('');
-            expect(urls).toEqual([]);
-            // 窓を原寸以内の大きさ（1280×720・端末の比 1）にした：読んで出す
-            layer.rect = { left: 0, top: 0, width: 1280, height: 720 };
-            vi.stubGlobal('devicePixelRatio', 1);
-            for (const f of dom.listeners.get('resize') ?? []) (f as () => void)();
-            frames(1);
-            await flush();
             const root = layer.querySelector('.g-council-bg')!;
-            expect(root).not.toBeNull();
+            expect(root, `${W}x${H}@${dpr}`).not.toBeNull();
             expect(root.hidden).toBe(false);
             expect(layer.classList.contains('g-art')).toBe(true);
-            expect(dom.body.classList.contains('g-council-art')).toBe(true);
-            expect(urls.length).toBeGreaterThan(0);
-            expect(changes).toBe(1);
-            // また原寸を超える大きさへ：外して Version 24 の画面に戻す（引き伸ばさない）
-            layer.rect = { left: 0, top: 0, width: W, height: H };
-            vi.stubGlobal('devicePixelRatio', dpr);
-            for (const f of dom.listeners.get('resize') ?? []) (f as () => void)();
-            frames(1);
-            expect(root.hidden).toBe(true);
-            expect(root.classList.contains('on')).toBe(false);
-            expect(layer.classList.contains('g-art')).toBe(false);
-            expect(dom.body.classList.contains('g-council-art')).toBe(false);
-            expect(changes).toBe(2);
+            expect(urls).toEqual(['./art/story/council_day.webp']);
+            const base = root.children[0]!;
+            const lay = councilArtLayout(1664, 936, W, H)!;
+            expect(lay.limited).toBe(false);
+            // 画面いっぱい・縦横同じ倍率（drawImage の 4 つ目〜：sw・sh と dw・dh）
+            expect([base.style.left, base.style.top, base.style.width, base.style.height]).toEqual(['0px', '0px', `${W}px`, `${H}px`]);
+            const [d] = base.ctx!.draws();
+            const [, sx, sy, sw, sh, dx, dy, dw, dh] = d!.args as number[];
+            expect([dx, dy]).toEqual([0, 0]);
+            expect(dw / sw).toBeCloseTo(dh / sh, 9);
+            expect(dw / sw).toBeCloseTo(lay.scale, 9);
+            expect([sx, sy, sw, sh]).toEqual([lay.rect.sx, lay.rect.sy, lay.rect.sw, lay.rect.sh]);
+            // canvas の画素は元の画像の切り出しより多くしない（端末の比 3 でも）。縁は抜かない（画面いっぱい）
+            expect(base.width).toBeLessThanOrEqual(Math.ceil(sw));
+            expect(base.height).toBeLessThanOrEqual(Math.ceil(sh));
+            expect(base.ctx!.calls.some((c) => c.fn === 'createLinearGradient')).toBe(false);
+            // 開発用の記録：元の寸法と表示の寸法（CSS の px・端末の画素）
+            const pr = JSON.parse(root.dataset.probe!);
+            expect(pr.file).toEqual([1664, 936]);
+            expect(pr.view).toEqual([W, H]);
+            expect(pr.dpr).toBe(dpr);
+            expect(pr.limited).toBe(false);
+            expect(pr.feather).toEqual([0, 0]);
+            expect(pr.scale).toBeCloseTo(lay.scale, 3);
+            expect(pr.css).toEqual([0, 0, W, H]);
+            expect(pr.device).toEqual([W * dpr, H * dpr]);
+            expect(pr.canvas).toEqual([base.width, base.height]);
             b.dispose();
-            expect(listenerCount()).toBe(0);
         }
+    });
+
+    it('1.25 倍を超える画面（2560×1440 は 1.538 倍が要る）：外さず、引き伸ばさず、1.25 倍で真ん中に描いて縁を暗い地へなじませる。大きさが変われば描き直す', async () => {
+        art({ assets: V25 });
+        installDom(2560, 1440, 1);
+        const layer = dom.body.children[0]!.children[0]!;
+        let changes = 0;
+        const b = new CouncilBackdrop(layer as unknown as HTMLElement, { base: ART_IDS.bgCouncil }, () => false, () => true, () => changes++);
+        b.start();
+        await flush();
+        const root = layer.querySelector('.g-council-bg')!;
+        expect(root.hidden).toBe(false);
+        expect(changes).toBe(1);
+        const base = root.children[0]!;
+        // canvas は描く所だけ（2080×1170。画素は元の 1664×936 まで）を (240, 135) に
+        expect([base.style.left, base.style.top, base.style.width, base.style.height]).toEqual(['240px', '135px', '2080px', '1170px']);
+        expect([base.width, base.height]).toEqual([1664, 936]);
+        const [d] = base.ctx!.draws();
+        expect(d!.args.slice(1)).toEqual([0, 0, 1664, 936, 0, 0, 2080, 1170]);
+        // 縁：上下左右の 4 本を destination-out で抜く（幅は短い辺の 7%）
+        const grads = base.ctx!.calls.filter((c) => c.fn === 'createLinearGradient');
+        expect(grads).toHaveLength(4);
+        const fw = councilFeatherPx(2080, 1170);
+        expect(fw).toBe(82);
+        const outs = base.ctx!.calls.filter((c) => c.fn === 'fillRect' && c.op === 'destination-out');
+        expect(outs.map((c) => c.args)).toEqual([
+            [0, 0, fw, 1170],
+            [2080 - fw, 0, fw, 1170],
+            [0, 0, 2080, fw],
+            [0, 1170 - fw, 2080, fw],
+        ]);
+        const pr = JSON.parse(root.dataset.probe!);
+        expect(pr).toMatchObject({ file: [1664, 936], view: [2560, 1440], limited: true, scale: COUNCIL_ART.maxScale, css: [240, 135, 2080, 1170], device: [2080, 1170], feather: [fw, fw] });
+        expect(pr.need).toBeCloseTo(1.538, 3);
+        // 1280×720 へ（1.25 倍以内）：画面いっぱいに描き直し、縁は抜かない。出したまま（出し入れの知らせは無い）
+        base.ctx!.calls.length = 0;
+        resize(layer, 1280, 720, 1);
+        expect([base.style.left, base.style.top, base.style.width, base.style.height]).toEqual(['0px', '0px', '1280px', '720px']);
+        expect(base.ctx!.calls.some((c) => c.fn === 'createLinearGradient')).toBe(false);
+        expect(root.hidden).toBe(false);
+        expect(changes).toBe(1);
+        b.dispose();
+        expect(listenerCount()).toBe(0);
+    });
+
+    it('手前の幕は、範囲を限った時も奥の画と同じ所・同じ倍率で描き、同じ縁をなじませる', async () => {
+        const both = { ...V25, [ART_IDS.bgCouncilFront]: { file: 'art/story/council_front.webp', w: 1664, h: 936, kind: 'overlay' as const } };
+        art({ assets: both });
+        installDom(2560, 1440, 1);
+        const layer = dom.body.children[0]!.children[0]!;
+        const b = new CouncilBackdrop(layer as unknown as HTMLElement, COUNCIL, () => false, () => true);
+        b.start();
+        await flush();
+        const [base, front] = layer.querySelector('.g-council-bg')!.children as [FakeEl, FakeEl];
+        const m = Math.ceil(parallaxAmp(2560));
+        expect([front.style.left, front.style.top, front.style.width]).toEqual([`${240 - m}px`, '135px', `${2080 + 2 * m}px`]);
+        const [db] = base.ctx!.draws();
+        const [df] = front.ctx!.draws();
+        // 画面の上の位置：奥の画は canvas の左端 240、手前は 240 − m。元の画像の同じ点が同じ画面の位置に来る
+        const scr = (d: Call, left: number, sx: number) => left + (d.args[5] as number) + (sx - (d.args[1] as number)) * ((d.args[7] as number) / (d.args[3] as number));
+        expect(scr(df!, 240 - m, 800)).toBeCloseTo(scr(db!, 240, 800), 6);
+        expect(front.ctx!.calls.filter((c) => c.fn === 'createLinearGradient')).toHaveLength(4);
+        b.dispose();
+    });
+
+    it('層の大きさが測れない（0）間は読まずに待ち、大きさが付いたら読んで出す。0 に戻れば外して Version 24 の画面に戻す', async () => {
+        const urls = art({ assets: V25 });
+        installDom(0, 0, 2);
+        const layer = dom.body.children[0]!.children[0]!;
+        let changes = 0;
+        const b = new CouncilBackdrop(layer as unknown as HTMLElement, { base: ART_IDS.bgCouncil }, () => false, () => true, () => changes++);
+        b.start();
+        await flush();
+        expect(layer.querySelector('.g-council-bg')).toBeNull();
+        expect(layer.className).toBe('g-layer council');
+        expect(urls).toEqual([]);
+        resize(layer, 844, 390, 2);
+        await flush();
+        const root = layer.querySelector('.g-council-bg')!;
+        expect(root.hidden).toBe(false);
+        expect(layer.classList.contains('g-art')).toBe(true);
+        expect(dom.body.classList.contains('g-council-art')).toBe(true);
+        expect(urls).toEqual(['./art/story/council_day.webp']);
+        expect(changes).toBe(1);
+        resize(layer, 0, 0, 2);
+        expect(root.hidden).toBe(true);
+        expect(layer.classList.contains('g-art')).toBe(false);
+        expect(dom.body.classList.contains('g-council-art')).toBe(false);
+        expect(changes).toBe(2);
+        b.dispose();
+        expect(listenerCount()).toBe(0);
     });
 
     it('?art=v24・?artOff=council：作らない・読まない・見張りも付けない（人物画も ?art=v24・?artOff=portrait では作らない）', async () => {

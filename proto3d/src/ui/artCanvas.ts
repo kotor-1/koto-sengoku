@@ -6,7 +6,7 @@
  * - 描く細かさ：端末の画素の比（devicePixelRatio）は 2 まで。元の画像より細かくはしない（大きな画面で余計な画素を持たない）。
  * - 大きさが変わったら描き直す（watchResize）。
  * - 旧表示（?art=old）・一覧に無い・読めないときは、要素を一つも作らない（Version 21 と同じ画面）。
- * 前半の計算（fitArt・fitArtBleed・backingScale・portraitLayout・portraitStep・councilArtScale）と dialogFaceIds・dialogFaceFor は DOM を使わない純粋な関数（Node のテストで確かめる）。
+ * 前半の計算（fitArt・fitArtBleed・backingScale・portraitLayout・portraitStep・councilArtLayout）と dialogFaceIds・dialogFaceFor は DOM を使わない純粋な関数（Node のテストで確かめる）。
  */
 import { artAvailable, artEntry, artMode, loadArtBitmap } from '../art/registry';
 import { ART_IDS, type ArtId } from '../art/ids';
@@ -80,7 +80,11 @@ export function fitArt(srcW: number, srcH: number, boxW: number, boxH: number, f
  * 広げた分には、元の画像に続きがあればそれを描く（無ければ透明のまま）。軍議の手前の幕を左右に揺らしても、奥の画と大きさ・位置がずれない。
  */
 export function fitArtBleed(srcW: number, srcH: number, boxW: number, boxH: number, fit: ArtFit, opts: FitOptions, bleed: number): ArtDrawRect {
-    const r = fitArt(srcW, srcH, boxW, boxH, fit, opts);
+    return bleedArtRect(fitArt(srcW, srcH, boxW, boxH, fit, opts), srcW, bleed);
+}
+
+/** 先に決めた描く所 r（箱の中）を、左右に bleed ずつ広い canvas へ同じ大きさ・同じ位置で描く所に直す（fitArtBleed と同じ。軍議の背景の councilArtLayout から使う） */
+export function bleedArtRect(r: ArtDrawRect, srcW: number, bleed: number): ArtDrawRect {
     const b = Number.isFinite(bleed) ? Math.max(0, bleed) : 0;
     if (!(r.dw > 0 && r.sw > 0) || b === 0) return { ...r, dx: r.dx + b };
     // CSS の 1px あたりの元の画素（箱に合わせた大きさのまま。広げた分も同じ大きさで描く）
@@ -212,22 +216,80 @@ export function portraitLayout(p: PortraitLayoutInput): { w: number; h: number }
 }
 
 /**
- * 軍議の背景（cover で画面を埋め、上下 18% より内側は切らない：CouncilBackdrop）を描いた時の、元の画像の 1 画素あたりの端末の画素（拡大の倍率）。
- * 1 以下なら原寸以内（元の画素より細かく見せない）。dpr は端末の画素の比（ブラウザの拡大を含む）
+ * 軍議の背景の見せ方の決まり（Version 26。docs/v25-portraits.md の 5・5a）。倍率はどれも「描く CSS の px ÷ 元の画像の画素」（表示の倍率）で、
+ * 端末の画素の比（devicePixelRatio）は見ない（端末の画素の密度だけを理由に、背景を外したり小さくしたりしない）。
  */
-export function councilArtScale(srcW: number, srcH: number, vw: number, vh: number, dpr: number): number {
-    if (!(srcW > 0 && srcH > 0 && vw > 0 && vh > 0)) return Number.POSITIVE_INFINITY;
-    const r = fitArt(srcW, srcH, Math.max(1, Math.round(vw)), Math.max(1, Math.round(vh)), 'cover', COUNCIL_CROP);
-    const d = Number.isFinite(dpr) && dpr > 0 ? dpr : 1;
-    return r.sw > 0 ? (r.dw / r.sw) * d : Number.POSITIVE_INFINITY;
+export const COUNCIL_ART = {
+    /**
+     * 表示の倍率の上限（S_MAX）。1664×936 の素材を 1920×1080 に描く 1.154 倍は利用者が認めた（Version 26 の依頼）。
+     * 1.15・1.25・1.35・1.5 倍を同じ画面の画素で並べて比べ（docs 5a）、1.25 までは 1.15 倍と見分けにくく、1.35 から城の屋根・幕の織り目の甘さが目に付き、
+     * 1.5 では明らかにぼやけるので 1.25 にした。これを超える画面（2560×1440 の 1.54 倍など）は、この倍率で描いて周りを暗くする（引き伸ばさない・外さない）
+     */
+    maxScale: 1.25,
+    /** 上下で切ってよい割合（それより内側の大事な物は切らない。それ以上の横長の画面は左右に暗い帯） */
+    maxCropY: 0.18,
+    /**
+     * 画面より縦長・横長で素材を切る時に、見せる所の真ん中（元の画像の幅・高さに対する割合）。縦向きのスマホは素材の幅の 25〜32% しか見えない。
+     * 0.42・0.5・0.58・0.66 を 390×844 で比べ（docs 5a）、真ん中（0.5：柱・陣幕・梁。見出しの後ろが一番暗い）にした。
+     * 0.58 から右の明るい空と天守がメニュー・見出しの横に入り、0.42 は明るい陣幕が広い
+     */
+    focusX: 0.5,
+    focusY: 0.5,
+    /** 倍率を抑えて画面より小さく描いた時、絵の縁を周りの暗い色へなじませる幅（描いた絵の短い辺に対する割合と、その上限・下限の CSS の px） */
+    feather: 0.07,
+    featherMinPx: 24,
+    featherMaxPx: 110,
+} as const;
+
+/** 軍議の背景をこの画面にどう描くか（councilArtLayout） */
+export interface CouncilArtLayout {
+    /** 画面を埋める（cover。上下は maxCropY まで切る）のに要る表示の倍率（CSS の px ÷ 元の画素） */
+    need: number;
+    /** 描く表示の倍率（need と maxScale の小さい方。縦横同じ倍率） */
+    scale: number;
+    /** 倍率を抑えた（need > maxScale）：画面より小さく真ん中に描き、周りは暗い色（表示の範囲を限る） */
+    limited: boolean;
+    /** 元の画像の切り出し（sx..sw）と、画面（層）の中の描く所（dx..dw。CSS の px）。dw÷sw ＝ dh÷sh ＝ scale */
+    rect: ArtDrawRect;
 }
 
 /**
- * 軍議の背景を出してよいか：原寸以内（councilArtScale ≦ 1）の画面だけ。それより大きな画面（1920×1080・端末の比 2 の多くの画面）は
- * 引き伸ばして見せず、Version 24 と同じ軍議の画面（3D の陣幕と暗い覆い）のまま（素材は 1664×936 で、1920 幅の原画ではない）
+ * 軍議の背景の描き方（純粋）。画面（vw×vh。CSS の px）を cover で埋め（上下は maxCropY まで切る）、その倍率が maxScale を超えるなら maxScale で描く。
+ * 縦横は同じ倍率（引き伸ばさない・形を変えない）。切る所は focusX・focusY を真ん中に（画像の外へは出ない）。画面より小さい向きは真ん中に置く。
+ * 端末の画素の比は使わない。大きさのおかしな値は null（描かない）。
  */
-export function councilArtFits(srcW: number, srcH: number, vw: number, vh: number, dpr: number): boolean {
-    return councilArtScale(srcW, srcH, vw, vh, dpr) <= 1 + 1e-9;
+export function councilArtLayout(srcW: number, srcH: number, vw: number, vh: number, rules: { maxScale: number; maxCropY: number; focusX: number; focusY: number } = COUNCIL_ART): CouncilArtLayout | null {
+    if (!(srcW > 0 && srcH > 0 && vw > 0 && vh > 0 && Number.isFinite(vw) && Number.isFinite(vh))) return null;
+    const W = Math.max(1, Math.round(vw));
+    const H = Math.max(1, Math.round(vh));
+    const keep = Math.max(0.05, 1 - 2 * clamp01(rules.maxCropY));
+    const need = Math.min(Math.max(W / srcW, H / srcH), H / (srcH * keep));
+    const cap = rules.maxScale > 0 ? rules.maxScale : need;
+    const scale = Math.min(need, cap);
+    // 画面いっぱい（丸めの誤差で 1px の 1 億分の 1 だけ足りない時も）は、画面の幅・高さちょうどに
+    const dw = srcW * scale >= W - 1e-6 ? W : srcW * scale;
+    const dh = srcH * scale >= H - 1e-6 ? H : srcH * scale;
+    const sw = dw / scale;
+    const sh = dh / scale;
+    const sx = Math.min(srcW - sw, Math.max(0, clamp01(rules.focusX) * srcW - sw / 2));
+    const sy = Math.min(srcH - sh, Math.max(0, clamp01(rules.focusY) * srcH - sh / 2));
+    return { need, scale, limited: need > cap + 1e-9, rect: { sx, sy, sw, sh, dx: (W - dw) / 2, dy: (H - dh) / 2, dw, dh } };
+}
+
+/** 画面を埋めるのに要る表示の倍率（councilArtLayout の need。記録・確かめ用。大きさのおかしな値は Infinity） */
+export function councilArtScale(srcW: number, srcH: number, vw: number, vh: number): number {
+    return councilArtLayout(srcW, srcH, vw, vh)?.need ?? Number.POSITIVE_INFINITY;
+}
+
+/**
+ * 画面より小さく描いた絵の縁をなじませる幅（CSS の px）。描いた絵の短い辺の 7%（24〜110px）で、周りの暗い帯（band：片側の幅）が細いときは
+ * その 2 倍まで（1920×1200 の上下 15px の帯で、絵の上下 80px を暗くしない）。帯が無い向き（band ≦ 0.5）は 0
+ */
+export function councilFeatherPx(dw: number, dh: number, band = Number.POSITIVE_INFINITY): number {
+    if (!(band > 0.5)) return 0;
+    const r = COUNCIL_ART;
+    const base = Math.min(r.featherMaxPx, Math.max(r.featherMinPx, r.feather * Math.min(dw, dh)));
+    return Math.round(Math.max(1, Math.min(base, 2 * band)));
 }
 
 /** 軍議の背景の手前の幕・柱の、ゆっくりした横の揺れの幅（CSS の px。1280 で 7.5・844 で 5 まで） */
@@ -366,6 +428,41 @@ export function paintArt(canvas: HTMLCanvasElement, cssW: number, cssH: number, 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 
+/**
+ * 描いた絵（img：canvas の CSS の px）の縁を透明へ抜いて、後ろの暗い地になじませる（軍議の背景の、倍率を抑えて画面より小さく描いた時）。
+ * 左右の縁を幅 fx、上下の縁を幅 fy（CSS の px。0 ならその向きは抜かない）で 1→0 へ抜く。canvas の画素の大きさは sizeArtCanvas で合わせてある前提。
+ */
+export function featherArt(canvas: HTMLCanvasElement, cssW: number, cssH: number, img: { x: number; y: number; w: number; h: number }, fx: number, fy: number): void {
+    const x = fx > 0;
+    const y = fy > 0;
+    if (!x && !y) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const ax = Math.min(fx, img.w / 2);
+    const ay = Math.min(fy, img.h / 2);
+    ctx.setTransform(canvas.width / Math.max(1, cssW), 0, 0, canvas.height / Math.max(1, cssH), 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'destination-out';
+    const band = (x0: number, y0: number, x1: number, y1: number, rx: number, ry: number, rw: number, rh: number) => {
+        const g = ctx.createLinearGradient(x0, y0, x1, y1);
+        g.addColorStop(0, 'rgba(0,0,0,1)');
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(rx, ry, rw, rh);
+    };
+    const { x: l, y: t, w, h } = img;
+    if (x) {
+        band(l, 0, l + ax, 0, l, t, ax, h);
+        band(l + w, 0, l + w - ax, 0, l + w - ax, t, ax, h);
+    }
+    if (y) {
+        band(0, t, 0, t + ay, l, t, w, ay);
+        band(0, t + h, 0, t + h - ay, l, t + h - ay, w, ay);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+}
+
 /** 押せない・選べない・長押しで画像の menu を出さない、飾りの canvas を作る */
 export function artCanvasEl(cls: string, id: ArtId): HTMLCanvasElement {
     const c = document.createElement('canvas');
@@ -420,8 +517,6 @@ function currentDpr(): number {
 /** 人物画は左下に寄せる（下端を画面の下の端に） */
 const PORTRAIT_FIT: FitOptions = { alignX: 0, alignY: 1 };
 
-/** 軍議の背景：上下 18% より内側は切らない */
-const COUNCIL_CROP: FitOptions = { maxCropY: 0.18 };
 
 /**
  * 出ている（hidden・display: none でない）物の四角。outside（層の外の物：目的の札・メニュー）は visibility: hidden も「無い」とみなす。
@@ -437,22 +532,8 @@ function visibleBox(e: Element | null, origin: { left: number; top: number }, ou
 }
 
 /**
- * 箱の外へ広がる飾りの ::before（背景が出ている間の軍議の見出しの後ろの薄い暗さ。ui.css）の分だけ広げた四角。
- * 負の top・right・bottom・left だけを数える（::before が無ければそのまま）。
- */
-function withScrim(e: Element, b: Box): Box {
-    const ps = getComputedStyle(e, '::before');
-    if (!ps || !ps.content || ps.content === 'none' || ps.content === 'normal' || ps.display === 'none') return b;
-    const out = (v: string) => {
-        const n = parseFloat(v);
-        return Number.isFinite(n) && n < 0 ? -n : 0;
-    };
-    return { left: b.left - out(ps.left), top: b.top - out(ps.top), right: b.right + out(ps.right), bottom: b.bottom + out(ps.bottom) };
-}
-
-/**
  * 会話・軍議の話し手の人物画（左下。<canvas class="g-portrait" data-art-id>）。選択肢・台詞の枠より下に重なる（DOM で前に置く）。
- * 大きさは、選択肢・軍議の見出し（後ろの薄い暗さを含む）・詳しく見る・メニュー・目的の札と重ならない一番大きな物（portraitLayout）で、
+ * 大きさは、選択肢・軍議の見出し・詳しく見る・メニュー・目的の札と重ならない一番大きな物（portraitLayout）で、
  * 元の画像の画素より大きくしない（画像の高さ ÷ 端末の画素の比まで）。下の方（腰から下）は台詞の枠の後ろ（枠の中は描かない）。
  * 枠の上に肩まで見えない・空きが小さすぎるときは出さない（台詞の枠の顔がその人を示す）。左右の反転はしない（着物の合わせが逆になる）。
  * 行ごとの出し方は portraitStep：絵のある人の行はその人の絵、絵の無い話し手・地の文・高札の行は下げる（前の人の絵を話し手のように残さない）。
@@ -480,7 +561,7 @@ export class PortraitSlot {
 
     constructor(
         private readonly layer: HTMLElement,
-        /** この要素の前に置く（軍議は見出し、会話は選択肢） */
+        /** この要素の前に置く（会話・軍議とも選択肢：選択肢・台詞の枠より後ろ、軍議の見出しとその後ろの薄い暗さより手前。Version 26） */
         private readonly anchor: HTMLElement,
         /** 台詞の枠（人物画の、この枠の後ろに入る所は描かない：枠の半透明の地から透けて字の後ろに出ないように） */
         private readonly dialog: HTMLElement,
@@ -540,7 +621,9 @@ export class PortraitSlot {
         for (const sel of ['.g-choices', '.g-council-head', '.g-council-map']) {
             const e = this.layer.querySelector(sel);
             const b = visibleBox(e, origin);
-            if (b && e) avoid.push(sel === '.g-council-head' ? withScrim(e, b) : b);
+            // 軍議の見出しは文字の箱だけ（Version 26）。背景が出ている間の見出しの後ろの薄い暗さ（ui.css の ::before）は数えない：
+            // 背景の有無で立ち絵の大きさを変えない。人物画は見出しより後ろの DOM（ui/view.ts の anchor が選択肢）なので、暗さの上に描かれ、暗くならない
+            if (b) avoid.push(b);
         }
         for (const e of this.outside()) {
             const b = visibleBox(e, origin, true);
@@ -885,17 +968,22 @@ export function artInUse(): boolean {
 
 /**
  * 軍議の背景（<div class="g-council-bg"> を軍議の層のいちばん前に置く。中に canvas.g-council-bg-base と、あれば canvas.g-council-bg-front）。
- * - 出すのは、元の画像の画素より大きく見せない画面だけ（councilArtFits：cover で描いた倍率 × 端末の画素の比 ≦ 1）。
- *   それより大きな画面では読みにも行かず、Version 24 と同じ軍議の画面（下の 3D の陣幕と層の暗い覆い）のまま。
- *   窓の大きさ・向きが変わったら決め直す（出せる大きさになれば、その時に読んで出す。出せなくなれば外して Version 24 の画面に戻す）。
- * - 奥の画は箱を埋める（cover）。大事な物を置く上下 18%〜82% の内側は切らない（それ以上の横長では左右に暗い帯）。引き伸ばさない。
- * - 手前の幕・柱は、奥の画と同じ大きさ・位置で描き（fitArtBleed）、左右に揺れの幅だけ広く持つ。
+ * - Version 26 から、どの大きさの画面でも出す（端末の画素の比では外さない）。描き方は councilArtLayout：画面を cover で埋め（上下は 18% まで切る）、
+ *   その表示の倍率（CSS の px ÷ 元の画素）が COUNCIL_ART.maxScale（1.25）を超える画面（2560×1440 など）は 1.25 倍で真ん中に描き、
+ *   周りは暗い色（.g-council-bg の地の色）にして、絵の縁をなじませる（表示の範囲を限る。引き伸ばさない・形を変えない）。
+ *   Version 25 までは「cover の倍率 × 端末の画素の比 ≦ 1」の画面だけで、1920×1080・端末の比 2 の多くの画面では出さなかった。
+ * - canvas は描く所（倍率を抑えた時は画面より小さい）だけの大きさで、画素は元の画像の画素まで（端末の比 2 まで。sizeArtCanvas）。
+ *   展開した画像のほかに持つのは、多くても元の画像と同じ画素の数（1664×936）。
+ * - 窓の大きさ・向きが変わったら描き直す。画面の大きさが測れない（0）間は出さない。
+ * - 横を切る縦向きのスマホでは、見せる所の真ん中を COUNCIL_ART.focusX・focusY に合わせる。文字・ボタンは絵に描き込まない（DOM のまま）。
+ * - 手前の幕・柱は、奥の画と同じ大きさ・位置で描き（bleedArtRect）、左右に揺れの幅だけ広く持つ。
  * - 揺れは CSS の animation（ui.css の g-council-sway。JS で毎フレーム動かさない）。動くのは body.g-council-art の間
  *   （軍議の層が一番上：ui/view.ts の syncUnder が付け外す）だけで、それ以外（情勢・メニュー・演出・確認が重なる）は止まる。
  *   ページが隠れている間はブラウザが止める。動きを減らすときは揺らさない（class "sway" を付けない・CSS の prefers-reduced-motion でも止める）。
  * - 背景が出ている間は、層の暗い覆いの代わりに弱い周辺の暗さ（CSS）。見出しには、その後ろだけ薄い暗さ（CSS の .g-art）。
  * - 下の 3D の陣幕の画（showCouncilHall）はそのまま（画像が読めなければ、今までの画面のまま）。
- * - 出入りした（層の g-art が変わった：見出しの後ろの薄い暗さが出入りする）ら onChange を呼ぶ（人物画の測り直し）。
+ * - 出入りした（層の g-art が変わった）ら onChange を呼ぶ（人物画の測り直し）。背景と見出しの後ろの薄い暗さは、立ち絵の大きさを変えない
+ *   （PortraitSlot は見出しの文字の箱だけを避け、暗さより手前に描く。Version 26）。
  */
 export class CouncilBackdrop {
     private root: HTMLDivElement | null = null;
@@ -909,7 +997,7 @@ export class CouncilBackdrop {
     private disposed = false;
     /** 読み始めた（出せる大きさになった時に 1 回だけ読む） */
     private loading = false;
-    /** 今出している（原寸以内の画面で、層に g-art が付いている） */
+    /** 今出している（層に g-art が付いている） */
     private active = false;
 
     constructor(
@@ -922,23 +1010,23 @@ export class CouncilBackdrop {
         private readonly onChange: (() => void) | null = null,
     ) {}
 
-    /** 今の画面の大きさで、元の画像の画素より大きく見せずに描けるか（画像の大きさは一覧の記録から。読んでいなくても決められる） */
+    /** 今の画面の大きさで描けるか（画像の大きさは一覧の記録から。読んでいなくても決められる）。Version 26 からは、層の大きさが測れれば描ける */
     private fitsNow(): boolean {
         const e = this.baseBmp ? { w: this.baseBmp.width, h: this.baseBmp.height } : artEntry(this.art.base);
         if (!e) return false;
         const r = this.layer.getBoundingClientRect();
-        return councilArtFits(e.w, e.h, r.width, r.height, currentDpr());
+        return councilArtLayout(e.w, e.h, r.width, r.height) !== null;
     }
 
     start(): void {
         // 旧表示・?art=v24・?artOff=council・一覧に無い：何もしない（見張りも付けない。Version 21／24 と同じ画面）
         if (this.disposed || !artEntry(this.art.base)) return;
         if (this.fitsNow()) this.begin();
-        // 今は原寸を超える大きさ：読まずに待ち、出せる大きさになったら読む
+        // 層の大きさが測れない（0）：読まずに待ち、測れる大きさになったら読む
         else this.watch();
     }
 
-    /** 大きさ・向きが変わったら決め直す（出せる大きさになったら読む・出せなくなったら外す） */
+    /** 大きさ・向きが変わったら決め直す（描ける大きさになったら読む・描き直す・測れなくなったら外す） */
     private watch(): void {
         if (!this.stopResize && !this.disposed) this.stopResize = watchResize(() => this.refit());
     }
@@ -1028,7 +1116,7 @@ export class CouncilBackdrop {
                 this.onChange?.();
             }
         } else if (this.active || !root.hidden) {
-            // 原寸を超える大きさになった：外して Version 24 と同じ軍議の画面に戻す（引き伸ばして見せない）
+            // 層の大きさが測れなくなった（0）：外して Version 24 と同じ軍議の画面に戻す
             this.active = false;
             root.hidden = true;
             root.classList.remove('on');
@@ -1044,20 +1132,53 @@ export class CouncilBackdrop {
         const w = Math.max(1, Math.round(r.width));
         const h = Math.max(1, Math.round(r.height));
         const b = this.baseBmp;
-        const rb = fitArt(b.width, b.height, w, h, 'cover', COUNCIL_CROP);
-        sizeArtCanvas(this.base, w, h, srcPerCssOf(rb));
-        // 横に余りが出る（とても横長の画面）ときの帯は、今までの軍議の覆いに近い暗い色
-        paintArt(this.base, w, h, [{ bitmap: b, fit: 'cover', rect: rb }], '#0e0c0a');
+        const lay = councilArtLayout(b.width, b.height, w, h);
+        if (!lay) return;
+        const rb = lay.rect;
+        // canvas は描く所だけ（倍率を抑えた・とても横長の画面では画面より小さい。周りは .g-council-bg の地の暗い色）
+        const inner: ArtDrawRect = { ...rb, dx: 0, dy: 0 };
+        // 画面の中にある縁（周りが暗い向き）だけ、暗い色へなじませる（幅は向きごと。帯が細ければ細く）
+        const fx = councilFeatherPx(rb.dw, rb.dh, rb.dx);
+        const fy = councilFeatherPx(rb.dw, rb.dh, rb.dy);
+        sizeArtCanvas(this.base, rb.dw, rb.dh, srcPerCssOf(rb));
+        this.base.style.left = `${rb.dx}px`;
+        this.base.style.top = `${rb.dy}px`;
+        paintArt(this.base, rb.dw, rb.dh, [{ bitmap: b, fit: 'cover', rect: inner }]);
+        featherArt(this.base, rb.dw, rb.dh, { x: 0, y: 0, w: rb.dw, h: rb.dh }, fx, fy);
         if (this.front && this.frontBmp) {
             const f = this.frontBmp;
             this.amp = this.reduced() ? 0 : parallaxAmp(w);
             // 揺らしても端に隙間が出ないよう、左右に揺れの幅ずつ広い canvas に、奥の画と同じ大きさで描く（はみ出しの分は左へずらして置く）
             const m = Math.ceil(this.amp);
-            const rf = fitArtBleed(f.width, f.height, w, h, 'cover', COUNCIL_CROP, m);
-            sizeArtCanvas(this.front, w + 2 * m, h, srcPerCssOf(rf));
-            this.front.style.left = `${-m}px`;
-            paintArt(this.front, w + 2 * m, h, [{ bitmap: f, fit: 'cover', rect: rf }]);
+            const lf = councilArtLayout(f.width, f.height, w, h);
+            if (lf) {
+                const rf = bleedArtRect({ ...lf.rect, dx: 0, dy: 0 }, f.width, m);
+                sizeArtCanvas(this.front, lf.rect.dw + 2 * m, lf.rect.dh, srcPerCssOf(rf));
+                this.front.style.left = `${lf.rect.dx - m}px`;
+                this.front.style.top = `${lf.rect.dy}px`;
+                paintArt(this.front, lf.rect.dw + 2 * m, lf.rect.dh, [{ bitmap: f, fit: 'cover', rect: rf }]);
+                featherArt(this.front, lf.rect.dw + 2 * m, lf.rect.dh, { x: rf.dx, y: 0, w: rf.dw, h: lf.rect.dh }, fx, fy);
+            }
             this.sway();
+        }
+        if (import.meta.env?.DEV) {
+            // 開発用の確かめ（本番には出ない）：元の画像の寸法と、この画面での表示の寸法（CSS の px・端末の画素）・倍率
+            const dpr = currentDpr();
+            const n = (v: number) => Math.round(v * 1000) / 1000;
+            this.root.dataset.probe = JSON.stringify({
+                file: [b.width, b.height],
+                view: [w, h],
+                dpr,
+                need: n(lay.need),
+                scale: n(lay.scale),
+                limited: lay.limited,
+                src: [rb.sx, rb.sy, rb.sw, rb.sh].map(n),
+                css: [rb.dx, rb.dy, rb.dw, rb.dh].map(n),
+                device: [rb.dw * dpr, rb.dh * dpr].map(n),
+                deviceScale: n(lay.scale * dpr),
+                canvas: [this.base.width, this.base.height],
+                feather: [fx, fy],
+            });
         }
     }
 

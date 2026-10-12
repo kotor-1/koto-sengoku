@@ -38,9 +38,14 @@ import { START, colliders, type Rect } from '../proto3d/src/layout';
 import { ART_IDS } from '../proto3d/src/art/ids';
 import { __setArtManifestForTest } from '../proto3d/src/art/registry';
 import {
+    COUNCIL_ART,
     PORTRAIT_RULES,
     __clearArtReadyForTest,
     backingScale,
+    bleedArtRect,
+    councilArtLayout,
+    councilArtScale,
+    councilFeatherPx,
     fitArt,
     fitArtBleed,
     loadArt,
@@ -320,6 +325,146 @@ describe('人物画の大きさ：余白を切り詰めた細い人物画（加�
         expect(portraitLayout({ vw: 667, vh: 375, left: 8, bottom: 375, aspect: A, avoid: [box(12, 12, 122, 45), box(113, 58, 540, 207)] })).toBeNull();
         // 選択肢が左の 150 まで来て、高さで避けると 210 未満
         expect(portraitLayout({ vw: 800, vh: 400, left: 8, bottom: 400, aspect: A, avoid: [box(150, 150, 600, 120)] })).toBeNull();
+    });
+});
+
+describe('軍議の背景の描き方（councilArtLayout。Version 26：表示の倍率で決め、1.25 倍を超える画面は範囲を限る）', () => {
+    // 公開している素材（art/story/council_day.webp。パックの原寸 1672×941 を 16:9 に切り詰めた 1664×936。1920 幅の原画ではない）
+    const W = 1664;
+    const H = 936;
+    const lay = (vw: number, vh: number) => councilArtLayout(W, H, vw, vh)!;
+
+    it('決まりの値：上限 1.25 倍・上下 18% まで切る', () => {
+        expect(COUNCIL_ART.maxScale).toBe(1.25);
+        expect(COUNCIL_ART.maxCropY).toBe(0.18);
+    });
+
+    it('表示の倍率は CSS の px ÷ 元の画素（端末の画素の比を取らない）：1920×1080 は 1.154 倍で画面を埋める（利用者が認めた拡大）', () => {
+        const l = lay(1920, 1080);
+        expect(l.need).toBeCloseTo(1920 / 1664, 9);
+        expect(l.scale).toBeCloseTo(1920 / 1664, 9);
+        expect(l.limited).toBe(false);
+        expect(l.rect).toMatchObject({ dx: 0, dy: 0 });
+        expect(l.rect.dw).toBeCloseTo(1920, 6);
+        expect(l.rect.dh).toBeCloseTo(1080, 6);
+        expect(councilArtScale(W, H, 1920, 1080)).toBeCloseTo(1.1538, 4);
+        // 引数に端末の比は無い（councilArtLayout も councilArtScale も 4 つ）。端末の比 2 の 1920×1080 も同じ描き方
+        expect(councilArtLayout.length).toBeGreaterThanOrEqual(4);
+        expect(councilArtScale.length).toBe(4);
+    });
+
+    it('表の画面：倍率・抑えたか（Version 25 で出さなかった 1920×1080・スマホも出す）', () => {
+        const rows: [number, number, number, boolean][] = [
+            [1920, 1080, 1.154, false],
+            [2560, 1440, 1.25, true],
+            [3840, 2160, 1.25, true],
+            [1366, 768, 0.821, false],
+            [1280, 720, 0.769, false],
+            [1024, 1366, 1.25, true],
+            [768, 1024, 1.094, false],
+            [844, 390, 0.507, false],
+            [667, 375, 0.401, false],
+            [568, 320, 0.342, false],
+            [390, 844, 0.902, false],
+            [412, 915, 0.978, false],
+            [360, 640, 0.684, false],
+        ];
+        for (const [vw, vh, s, limited] of rows) {
+            const l = lay(vw, vh);
+            expect(l.scale, `${vw}x${vh}`).toBeCloseTo(s, 3);
+            expect(l.limited, `${vw}x${vh}`).toBe(limited);
+            expect(l.scale).toBeLessThanOrEqual(COUNCIL_ART.maxScale + 1e-9);
+        }
+    });
+
+    it('どの画面も縦横同じ倍率（引き伸ばさない・形を変えない）。切り出しは画像の中、描く所は画面の中', () => {
+        for (let vw = 240; vw <= 4000; vw += 137) {
+            for (let vh = 240; vh <= 2400; vh += 113) {
+                const l = lay(vw, vh);
+                const r = l.rect;
+                expect(r.dw / r.sw).toBeCloseTo(l.scale, 9);
+                expect(r.dh / r.sh).toBeCloseTo(l.scale, 9);
+                expect(r.sx).toBeGreaterThanOrEqual(-1e-9);
+                expect(r.sy).toBeGreaterThanOrEqual(-1e-9);
+                expect(r.sx + r.sw).toBeLessThanOrEqual(W + 1e-6);
+                expect(r.sy + r.sh).toBeLessThanOrEqual(H + 1e-6);
+                expect(r.dx).toBeGreaterThanOrEqual(-1e-9);
+                expect(r.dy).toBeGreaterThanOrEqual(-1e-9);
+                expect(r.dx + r.dw).toBeLessThanOrEqual(vw + 1e-6);
+                expect(r.dy + r.dh).toBeLessThanOrEqual(vh + 1e-6);
+                expect(l.scale).toBeLessThanOrEqual(COUNCIL_ART.maxScale + 1e-9);
+                // 上下は 18% より内側を切らない
+                expect(r.sh).toBeGreaterThanOrEqual(H * (1 - 2 * COUNCIL_ART.maxCropY) - 1e-6);
+                if (!l.limited) {
+                    // 抑えていない：高さは画面いっぱい（とても横長の画面だけ左右に帯）
+                    expect(r.dh).toBeCloseTo(vh, 6);
+                }
+            }
+        }
+    });
+
+    it('1.25 倍を超える画面（2560×1440 は 1.538 倍が要る）：外さず、1.25 倍で真ん中に描く（周りは暗い地）', () => {
+        const l = lay(2560, 1440);
+        expect(l.need).toBeCloseTo(2560 / 1664, 9);
+        expect(l.scale).toBe(1.25);
+        expect(l.limited).toBe(true);
+        expect(l.rect).toEqual({ sx: 0, sy: 0, sw: W, sh: H, dx: 240, dy: 135, dw: 2080, dh: 1170 });
+        // 縦長の大きな画面（1024×1366 は高さで 1.459 倍が要る）：横は切り、縦は真ん中に
+        const t = lay(1024, 1366);
+        expect(t.limited).toBe(true);
+        expect(t.rect.dw).toBe(1024);
+        expect(t.rect.dh).toBe(1170);
+        expect(t.rect.dy).toBe(98);
+        expect(t.rect.sw).toBeCloseTo(1024 / 1.25, 9);
+    });
+
+    it('縦向きのスマホ（素材の幅の一部しか見えない）：見せる所の真ん中は focusX（画像の外へは出さない）', () => {
+        for (const [vw, vh] of [
+            [390, 844],
+            [360, 640],
+            [412, 915],
+        ] as const) {
+            const r = lay(vw, vh).rect;
+            expect(r.dw).toBe(vw);
+            expect(r.dh).toBe(vh);
+            expect(r.sw).toBeLessThan(W * 0.35);
+            expect(r.sx + r.sw / 2).toBeCloseTo(COUNCIL_ART.focusX * W, 6);
+        }
+        // 真ん中を端に寄せても、切り出しは画像の中で止まる
+        const edge = councilArtLayout(W, H, 390, 844, { ...COUNCIL_ART, focusX: 1 })!.rect;
+        expect(edge.sx + edge.sw).toBeCloseTo(W, 9);
+    });
+
+    it('大きさのおかしな値は描かない（null）。倍率の記録は Infinity', () => {
+        expect(councilArtLayout(W, H, 0, 720)).toBeNull();
+        expect(councilArtLayout(W, H, 1280, Number.NaN)).toBeNull();
+        expect(councilArtLayout(0, H, 1280, 720)).toBeNull();
+        expect(councilArtScale(W, H, 0, 0)).toBe(Number.POSITIVE_INFINITY);
+    });
+
+    it('縁をなじませる幅：描いた絵の短い辺の 7%（24〜110px）。周りの帯が細ければその 2 倍まで、帯の無い向きは 0', () => {
+        expect(councilFeatherPx(2080, 1170)).toBe(82);
+        expect(councilFeatherPx(300, 200)).toBe(24);
+        expect(councilFeatherPx(4000, 3000)).toBe(110);
+        // 2560×1440：左右の帯 240・上下の帯 135
+        expect(councilFeatherPx(2080, 1170, 240)).toBe(82);
+        expect(councilFeatherPx(2080, 1170, 135)).toBe(82);
+        // 1920×1200（1.282 倍が要る）：上下の帯 15px → 30px だけ。左右は帯が無い（画面いっぱい）
+        const l = lay(1920, 1200);
+        expect(l.limited).toBe(true);
+        expect(l.rect.dx).toBe(0);
+        expect(l.rect.dy).toBe(15);
+        expect(councilFeatherPx(l.rect.dw, l.rect.dh, l.rect.dy)).toBe(30);
+        expect(councilFeatherPx(l.rect.dw, l.rect.dh, l.rect.dx)).toBe(0);
+    });
+
+    it('手前の幕（bleedArtRect）は、奥の画と同じ所に同じ倍率で描く（fitArtBleed と同じ直し方）', () => {
+        const r = lay(390, 844).rect;
+        const b = bleedArtRect({ ...r, dx: 0, dy: 0 }, W, 5);
+        expect(b.dw / b.sw).toBeCloseTo(r.dw / r.sw, 9);
+        // 箱の左端（canvas の 5px 右）での元の画像の位置が同じ
+        expect(b.sx + (5 - b.dx) * (b.sw / b.dw)).toBeCloseTo(r.sx, 6);
+        expect(fitArtBleed(1536, 1024, 1280, 720, 'cover', { maxCropY: 0.18 }, 7)).toEqual(bleedArtRect(fitArt(1536, 1024, 1280, 720, 'cover', { maxCropY: 0.18 }), 1536, 7));
     });
 });
 

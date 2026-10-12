@@ -889,16 +889,19 @@ body.touch .g-sit-tab .n { display: none; }
         border-radius: 11px;
     }
 }
-/* 軍議の背景：層のいちばん奥（下の 3D の陣幕の画は、そのまま後ろに残る） */
+/* 軍議の背景：層のいちばん奥（下の 3D の陣幕の画は、そのまま後ろに残る）。
+   地の暗い色は、絵を画面より小さく描いた所（表示の倍率を 1.25 倍までに抑えた大きな画面・とても横長の画面）の周り。
+   絵の canvas は描く所だけの大きさで、位置（left・top）は JS が決める（CouncilBackdrop・councilArtLayout）。縁は canvas の中で暗い地へなじませる */
 .g-council-bg {
     position: absolute;
     inset: 0;
     overflow: hidden;
+    background: #0e0c0a;
     opacity: 0;
     transition: opacity 0.22s ease-out;
 }
 .g-council-bg.on { opacity: 1; }
-/* 原寸を超える大きさの画面では外す（CouncilBackdrop。Version 24 と同じ軍議の画面） */
+/* 層の大きさが測れない間は外す（CouncilBackdrop。Version 24 と同じ軍議の画面） */
 .g-council-bg[hidden] { display: none; }
 .g-council-bg canvas { position: absolute; top: 0; left: 0; display: block; }
 /* 手前の幕・柱の、ゆっくりした横の揺れ（12 秒で 1 往復。幅は JS が --g-sway に入れる。JS で毎フレーム動かさない）。
@@ -922,7 +925,8 @@ body.g-council-art .g-council-bg .g-council-bg-front.sway { animation-play-state
     background: radial-gradient(ellipse 72% 68% at 50% 48%, rgba(10, 8, 6, 0) 46%, rgba(10, 8, 6, 0.32) 100%);
 }
 /* 背景が出ている間の見出し：文字の後ろだけ薄く暗くし、縁取りの影を付ける。
-   暗さは見出しの箱の外へ広げた ::before（見出しの位置・大きさ・折り返しは今までと同じ。人物画はこの暗さも避ける） */
+   暗さは見出しの箱の外へ広げた ::before（見出しの位置・大きさ・折り返しは今までと同じ）。
+   人物画は見出しの文字の箱だけを避け、この暗さより手前（DOM で見出しの後ろ）に描く：背景の有無で立ち絵の大きさを変えない（Version 26） */
 .g-layer.council.g-art .g-council-head::before {
     content: '';
     position: absolute;
