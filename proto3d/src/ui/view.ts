@@ -25,8 +25,7 @@ import { soundPanel } from './soundPanel';
 import { audio } from '../audio';
 import { deviceReducedMotion } from '../story/prefs';
 import type { ArtId } from '../art/ids';
-import { artEntry } from '../art/registry';
-import { AI_ART_NOTE, CouncilBackdrop, DialogFace, PortraitSlot, artInUse, councilArtFits, loadArt } from './artCanvas';
+import { AI_ART_NOTE, CouncilBackdrop, DialogFace, PortraitSlot, artInUse, loadArt } from './artCanvas';
 import { ChoiceFit } from './choiceFit';
 
 export type { ModalProbe } from './modal';
@@ -606,7 +605,8 @@ export class DomView implements GameView, LayerHost {
             const lines = sc.lines.length ? sc.lines : [{ speaker: 'narration', name: '', text: '……' }];
             // 生成イラスト素材（Version 22）：話し手の人物画（左下）と軍議の背景。素材が無い・旧表示（?art=old）・読めないときは何も作らない
             const reduced = () => this.motionReduced();
-            const portrait = opts.portraitOf ? new PortraitSlot(layer, head ?? choicesEl, box, opts.portraitOf, reduced, () => this.portraitAvoid()) : null;
+            // 人物画は選択肢の前に置く（軍議の見出しとその後ろの薄い暗さより手前に描く：背景の有無で立ち絵の大きさも暗さも変えない。Version 26）
+            const portrait = opts.portraitOf ? new PortraitSlot(layer, choicesEl, box, opts.portraitOf, reduced, () => this.portraitAvoid()) : null;
             portrait?.preload(lines.map((l) => l.speaker));
             // 台詞の枠の顔（台本のどこかの行の顔が読めたら、台本の終わりまで空きを取る。人物画が出ている人の行は顔を出さない）。
             // 狭い画面では顔が枠の上へはみ出す（ui.css）：選択肢・軍議の見出し・詳しく見る・目的の札・メニュー・台詞に届く行は、顔を縮めて枠の中に収め、
@@ -614,7 +614,7 @@ export class DomView implements GameView, LayerHost {
             const faceAvoid = () => [choicesEl, head, layer.querySelector('.g-council-map'), name, text, count, more, ...this.portraitAvoid()];
             const face = opts.faceOf ? new DialogFace(box, lines.map((l) => l.speaker), opts.faceOf, opts.portraitOf ?? null, () => portrait?.relayout(), faceAvoid) : null;
             if (face && portrait) portrait.onShown = (id) => face.portrait(id);
-            // 軍議の背景：元の画像の画素より大きく見せない画面だけ（CouncilBackdrop。ほかは Version 24 と同じ軍議の画面）。出入りしたら人物画を測り直す
+            // 軍議の背景（CouncilBackdrop。表示の倍率は 1.25 倍まで：それより大きな画面は範囲を限って描く）。出入りしたら人物画を測り直す
             const backdrop = council && opts.councilArt ? new CouncilBackdrop(layer, opts.councilArt, reduced, () => this.modals[this.modals.length - 1] === m, () => portrait?.relayout()) : null;
             const choices = sc.choices ?? [];
             let i = 0;
@@ -917,12 +917,8 @@ export class DomView implements GameView, LayerHost {
      * 読めた物は、会話・軍議の画面が開いた同じフレームのうちに出せる（artCanvas の peekArt）。旧表示・一覧に無いときは何も読まない。
      */
     preloadArt(ids: ArtId[]): void {
-        for (const id of new Set(ids)) {
-            // 背景は、今の画面で原寸以内に描けるときだけ（出さない画面では読みにも行かない。CouncilBackdrop が大きさの変わった時に読む）
-            const e = artEntry(id);
-            if (e?.kind === 'background' && !councilArtFits(e.w, e.h, innerWidth, innerHeight, typeof devicePixelRatio === 'number' && devicePixelRatio > 0 ? devicePixelRatio : 1)) continue;
-            void loadArt(id);
-        }
+        // 軍議の背景も、Version 26 からはどの大きさの画面でも出す（倍率を抑えて描く：CouncilBackdrop）ので、画面の大きさで読み分けない
+        for (const id of new Set(ids)) void loadArt(id);
     }
 
     // ---------------- 演出・情勢 ----------------
