@@ -235,9 +235,9 @@ describe('人物画の大きさ（portraitLayout）：Version 21 の画面で測
     const MAP_PC = box(12, 12, 142, 39);
     const MENU_PH = box(724, 10, 108, 47);
     const MAP_PH = box(12, 12, 122, 45);
-    // 軍議の見出しは、背景が出ている間の形（見出しの箱は Version 21 と同じ。後ろの薄い暗さ ::before が左右 34・上 8・下 10 だけ外へ広がる。
-    // 人物画はその暗さも避ける：artCanvas の withScrim）。Version 21 の見出しの箱 → 背景が出ている間に避ける四角
-    const artHead = (x: number, y: number, w: number, h: number): Box => box(x - 34, y - 8, w + 68, h + 18);
+    // 軍議の見出しは文字の箱（Version 21 と同じ）。Version 26 から、背景が出ている間の後ろの薄い暗さ（::before。左右 34・上 8・下 10 だけ外へ広がる）は
+    // 避けない（人物画はその暗さより手前に描く：背景の有無で立ち絵の大きさを変えない）。Version 25 は暗さも避けていた（667×375 の台詞の行で 288）
+    const artHead = (x: number, y: number, w: number, h: number): Box => box(x, y, w, h);
     const HEAD_PC = artHead(529, 18, 221, 51);
     const HEAD_PH = artHead(311, 18, 222, 51);
     const cases: { name: string; vw: number; vh: number; left: number; avoid: Box[]; expectH?: number; hidden?: boolean }[] = [
@@ -253,7 +253,7 @@ describe('人物画の大きさ（portraitLayout）：Version 21 の画面で測
         { name: '844×390 切り欠き 会話', vw: 844, vh: 390, left: 55, avoid: [box(59, 10, 466, 74), box(677, 10, 108, 47), box(363, 138, 420, 121)], expectH: 298 },
         // 667×375：軍議の方針の選択肢は左の 113 まで来る → 空きが狭いので出さない。会話の行（選択肢なし）は出す
         { name: '667×375 軍議（方針の選択肢）', vw: 667, vh: 375, left: 8, avoid: [MAP_PH, artHead(222, 18, 222, 51), box(547, 10, 108, 47), box(113, 58, 540, 207)], hidden: true },
-        { name: '667×375 軍議（台詞の行）', vw: 667, vh: 375, left: 8, avoid: [MAP_PH, artHead(222, 18, 222, 51), box(547, 10, 108, 47)], expectH: 288 },
+        { name: '667×375 軍議（台詞の行）', vw: 667, vh: 375, left: 8, avoid: [MAP_PH, artHead(222, 18, 222, 51), box(547, 10, 108, 47)], expectH: 300 },
         { name: '667×375 会話（選択肢あり）', vw: 667, vh: 375, left: 8, avoid: [HUD, box(547, 10, 108, 47), box(233, 144, 420, 121)], expectH: 283 },
         { name: '低すぎる画面（高さ 320）', vw: 700, vh: 320, left: 8, avoid: [], hidden: true },
     ];

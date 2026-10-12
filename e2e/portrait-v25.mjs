@@ -5,7 +5,7 @@
  *   変えられるもの（環境変数。カンマ区切り）：
  *     SIZES=1920x1080@1,1280x720@1,768x1024@2,844x390@2,667x375@2,568x320@2,390x844@2,360x640@2
  *                    幅x高さ@端末の画素の比。高さ 430 以下・幅 480 以下はタッチ（hasTouch・isMobile）。それ以外はマウスとキー
- *     MODES=default,v24,old   default … 何も付けない（人物画 4（話す人）・新しい顔・原寸以内なら軍議の背景）、
+ *     MODES=default,v24,old   default … 何も付けない（人物画 4（話す人）・新しい顔・軍議の背景（Version 26 からどの画面でも。表示の倍率 1.25 まで））、
  *                             v24 … ?art=v24（Version 24 の見た目：第 1 版の顔だけ・人物画も背景も無し）、old … ?art=old（Version 21 の見た目）
  *     PARTS=ch1,ch2   ch1 … タイトル → はじめから → 織田の使者（使者の行・家康の行）→ 城門の忠勝（地の文・忠勝・家康・選択肢）→ 軍議（地の文・忠勝・
  *                           家康・酒井・石川・方針 A/B/C。PC は ↓ キーで B・C を選んだ所も撮る）→ A → 確かめ（それで決める／考え直す）→ 考え直す →
@@ -22,10 +22,11 @@
  *   3D の手動の描画（render=manual の renderNow）・読むだけの数え上げ（ui・cast・prompt・state）。
  * 確かめ（行ごと）：
  *   - default：人物画は今の話し手本人の物だけ（使者・村の使い・地の文・高札の行は出さない。前の人の絵を残さない）。出す・出さないと大きさは
- *     決まり（ui/artCanvas.ts の portraitLayout と同じ計算をここで行う）どおり：選択肢・軍議の見出し（後ろの暗さ込み）・詳しく見る・目的の札・
+ *     決まり（ui/artCanvas.ts の portraitLayout と同じ計算をここで行う）どおり：選択肢・軍議の見出し（文字の箱。Version 26 から後ろの暗さは数えない）・詳しく見る・目的の札・
  *     メニュー・情勢と重ならない・元の画像の画素より大きくしない（高さ × 端末の比 ≦ 画像の高さ）・台詞の枠の上に肩まで見える・枠の中は透明・
  *     下端は画面の下の端・押せない・反転しない。人物画が出ている行は、その人の台詞の枠の顔を出さない（同じ人を 2 つ並べない）。
- *     軍議の背景は、原寸以内に描ける画面（cover の倍率 × 端末の比 ≦ 1）だけ出し、それ以外は読まない（Version 24 の軍議の画面）。
+ *     軍議の背景は、Version 26 からどの画面でも出す（端末の比で外さない）。表示の倍率（CSS の px ÷ 元の画素）は min(画面を埋める倍率, 1.25)
+ *     （e2e/council-bg-v26.mjs が描く所・範囲を限った画面・背景の有無で四角が変わらないことを詳しく確かめる）。
  *   - v24：人物画・軍議の背景の要素も読み込みも無い。顔は第 1 版（face.pack1.<武将>）。old：素材の要素も読み込みも無い。
  *   - どの見せ方も：台詞の字は Version 24 と同じ（高さ 430 以下 15px・それ以外 16px）。old と同じ台本・行・台詞・選択肢を通る。
  *     選択肢・台詞の四角は old と同じ（人物画・顔で動かない）。ページの誤りが無い。
@@ -85,14 +86,16 @@ function portraitLayout(p) {
     if (d && d.right > d.left && d.bottom > d.top && d.left < p.left + w && d.right > p.left && d.top < p.bottom && d.top - top < (p.shoulderY ?? R.shoulderY) * h) return null;
     return { w, h };
 }
-/** 軍議の背景（1664×936・cover・上下 18% まで切る）の、元の 1 画素あたりの端末の画素 */
-function councilScale(vw, vh, dpr) {
+/** 軍議の背景（1664×936・cover・上下 18% まで切る）で画面を埋めるのに要る表示の倍率（CSS の px ÷ 元の画素。端末の比は掛けない。Version 26） */
+function councilScale(vw, vh) {
     const e = manifest['bg.council'];
     const keep = 1 - 2 * 0.18;
     let s = Math.max(vw / e.w, vh / e.h);
     s = Math.min(s, vh / (e.h * keep));
-    return s * dpr;
+    return s;
 }
+/** 表示の倍率の上限（ui/artCanvas.ts の COUNCIL_ART.maxScale） */
+const COUNCIL_MAX_SCALE = 1.25;
 
 /** 一番上の会話の層：台詞の枠・人物画・顔・背景・避ける物（artCanvas の測り方と同じ）の四角（読むだけ） */
 function probe() {
@@ -113,15 +116,8 @@ function probe() {
     if (!L) return null;
     const d = L.querySelector('.g-dialog');
     const head = L.querySelector('.g-council-head');
-    let headBox = vbox(head);
-    if (headBox && L.classList.contains('g-art')) {
-        const ps = getComputedStyle(head, '::before');
-        const out = (v) => {
-            const n = parseFloat(v);
-            return Number.isFinite(n) && n < 0 ? -n : 0;
-        };
-        if (ps && ps.content && ps.content !== 'none' && ps.content !== 'normal') headBox = { ...headBox, l: headBox.l - out(ps.left), t: headBox.t - out(ps.top), r: headBox.r + out(ps.right), b: headBox.b + out(ps.bottom) };
-    }
+    // 見出しは文字の箱だけ（Version 26：背景が出ている間の後ろの薄い暗さ ::before は数えない。人物画はその暗さより手前に描く）
+    const headBox = vbox(head);
     const ch = L.querySelector('.g-choices');
     const pc = L.querySelector('canvas.g-portrait');
     let portrait = null;
@@ -151,7 +147,10 @@ function probe() {
             const yTop = Math.min(dr.top, cr.bottom);
             for (let y = cr.top + 3; y < yTop - 3; y += 10) for (let x = cr.left + 3; x < cr.right - 3; x += 10) if (a(x, y) > 200) opaqueAbove++;
         }
-        portrait = { shown, id: pc.dataset.artId ?? null, rect: shown ? R(pc) : null, px: [pc.width, pc.height], left: cr.left, pe: cs.pointerEvents, transform: cs.transform, aria: pc.getAttribute('aria-hidden'), alphaInDialog, opaqueAbove };
+        // DOM の順：見出し（とその後ろの暗さ）より後ろ・選択肢と台詞の枠より前（Version 26：暗さの上に描き、選択肢・枠の下に重なる）
+        const follows = (a, b) => !!a && !!b && !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+        const order = { afterHead: head ? follows(head, pc) : null, beforeChoices: ch ? follows(pc, ch) : null, beforeDialog: follows(pc, d) };
+        portrait = { shown, id: pc.dataset.artId ?? null, rect: shown ? R(pc) : null, px: [pc.width, pc.height], left: cr.left, pe: cs.pointerEvents, transform: cs.transform, aria: pc.getAttribute('aria-hidden'), alphaInDialog, opaqueAbove, order };
     }
     const f = d.querySelector('canvas.g-face');
     const bg = L.querySelector('.g-council-bg');
@@ -414,6 +413,7 @@ async function run(part, size, mode) {
             if (pr.alphaInDialog !== null) check(pr.alphaInDialog === 0, `${L} 台詞の枠の中は人物画を描かない（透明）`, pr.alphaInDialog);
             check(pr.opaqueAbove > 0, `${L} 枠の上に人物画が描かれている`, pr.opaqueAbove);
             check(pr.pe === 'none' && pr.aria === 'true' && (pr.transform === 'none' || !/^matrix\(-/.test(pr.transform)), `${L} 押せない・読み上げない・反転しない`, pr);
+            check(pr.order.beforeDialog && pr.order.beforeChoices !== false && pr.order.afterHead !== false, `${L} 人物画は選択肢・台詞の枠の下、軍議の見出しとその後ろの暗さの上に重なる（DOM の順）`, pr.order);
             // 同じ人の顔は出さない
             check(!(p.face?.shown && p.face.id === faceOf(p.speaker, mode)), `${L} 人物画の出ている人の台詞の枠の顔は出さない`, p.face);
         } else {
@@ -421,13 +421,12 @@ async function run(part, size, mode) {
             if (fw && p.face && !p.face.blocked) check(p.face.shown && p.face.id === fw, `${L} 人物画が出ない行は、本人の顔 ${fw} を台詞の枠に出す`, p.face);
         }
         if (p.face?.shown) check(p.face.id === faceOf(p.speaker, mode), `${L} 台詞の枠の顔は本人の物`, p.face);
-        // 軍議の背景：原寸以内の画面だけ
+        // 軍議の背景：Version 26 からどの画面でも出す（表示の倍率は 1.25 まで。超える画面は範囲を限って描く）
         if (p.council) {
-            const s = councilScale(p.vw, p.vh, p.dpr);
-            const fits = s <= 1 + 1e-9;
-            rec.councilScale = Math.round(s * 1000) / 1000;
+            const s = councilScale(p.vw, p.vh);
+            rec.councilScale = Math.round(Math.min(s, COUNCIL_MAX_SCALE) * 1000) / 1000;
             const showing = !!p.bg && !p.bg.hidden && p.gArt;
-            check(showing === fits, `${L} 軍議の背景は原寸以内（倍率 ${s.toFixed(3)}）の画面だけ（${fits ? '出す' : '出さない：Version 24 の軍議の画面'}）`, p.bg);
+            check(showing, `${L} 軍議の背景を出す（表示の倍率 ${Math.min(s, COUNCIL_MAX_SCALE).toFixed(3)}${s > COUNCIL_MAX_SCALE ? `・埋めるには ${s.toFixed(3)} が要るので範囲を限る` : ''}。端末の比 ${p.dpr} でも外さない）`, p.bg);
             if (showing) check(p.bg.first && p.bg.base === 'bg.council', `${L} 背景は層のいちばん奥・昼の軍議所`, p.bg);
         }
     }
@@ -522,7 +521,7 @@ async function run(part, size, mode) {
     if (mode === 'default') {
         check(imgs.every((p) => /^\/art\/(portraits\/[a-z]+_v2|faces\/[a-z]+_v2|story\/council_day)\.webp$/.test(p)), `${tag} default：読むのは第 2 版の人物画・顔・軍議の背景だけ（第 1 版の顔・dev-art は読まない）`, imgs);
         const s = rec.councilScale;
-        if (s !== undefined) check(imgs.includes('/art/story/council_day.webp') === s <= 1 + 1e-9, `${tag} default：軍議の背景の画像は、原寸以内の画面でだけ読む（倍率 ${s}）`, imgs.filter((p) => p.includes('story')));
+        if (s !== undefined) check(imgs.includes('/art/story/council_day.webp'), `${tag} default：軍議の背景の画像を読む（表示の倍率 ${s}）`, imgs.filter((p) => p.includes('story')));
         check(!imgs.some((p) => /nobunaga|yoshikage/.test(p)), `${tag} 信長・義景の絵を読まない`);
     }
     rec.errors = errors.filter((e) => !/\[art\]/.test(e));
@@ -587,6 +586,6 @@ const ng = checks.filter((c) => !c.ok);
 report.result = { checks: checks.length, ng: ng.length };
 writeFileSync(`${OUT}/report.json`, JSON.stringify(report, null, 1));
 log(`checks ${checks.length}, NG ${ng.length}`);
-for (const [k, v] of Object.entries(summary)) log(`  ${k}: 人物画の行 ${v.shown}/${v.lines}（出さない ${v.hidden}）大きさ ${v.sizes.join(' ')}${v.councilScale !== null ? ` 軍議の背景の倍率 ${v.councilScale}` : ''}`);
+for (const [k, v] of Object.entries(summary)) log(`  ${k}: 人物画の行 ${v.shown}/${v.lines}（出さない ${v.hidden}）大きさ ${v.sizes.join(' ')}${v.councilScale !== null ? ` 軍議の背景の表示の倍率 ${v.councilScale}` : ''}`);
 for (const c of ng.slice(0, 40)) log('NG', c.what, JSON.stringify(c.detail ?? '').slice(0, 300));
 process.exit(ng.length ? 1 : 0);
