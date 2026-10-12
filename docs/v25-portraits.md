@@ -432,14 +432,14 @@ proto3d/assets-src/art-v25/README.md、台詞の枠の顔は docs/art-v22-dialog
 - **押せる大きさ**：スマホ横の合戦の操作のボタン 58×33px（12.2）。
 - **後回しにした物**（依頼のとおり）：話し手交代の縮みの演出・頭の高さの小さな差・顔の髷の切れ・林床・3D の人物。
 
-## 公開
+## 公開（Version 25）
 
 - 公開先の Version 25（版 ID 1791693561-2429）＝コミット ca69007 の本番ビルド（その後の d495263 は記録だけで、画面のコードは同じ）。152 ファイル・62,513,888 バイト。
 - Version 24 と違うのは 17 個（2,248,467 バイト）：`art/` の 11 個（顔 6・立ち絵 4・軍議の背景 1）、`assets/` の 5 個（entry・faceArt・index の JS と CSS・practiceView）、`index.html`。前の名前の `assets/` の 5 個は公開先から消した。
 - 送った 16 個（`index.html` 以外）は公開先から読み戻して中身が同じ。変えていない `art/faces/ieyasu.webp`（Version 24 の顔）・`assets/three-*.js` も本番ビルドと同じ。
 - 比べの元の Version 24（版 ID 1791567850-cdfd）は、公開先の版の履歴から戻せる。URL の `?art=v24` でも Version 24 の見た目になる。
 
-### 12.x Version 26 の公開
+## 公開（Version 26）
 
 - 公開先の Version 26（版 ID 1791830283-5a2b）＝コミット 431f5e2 の本番ビルド（その後の 212636f と、この記録は文書だけで、画面のコードは同じ）。152 ファイル・62,516,498 バイト。
 - Version 25 と違うのは 6 個（1,152,831 バイト）：`assets/` の 5 個（entry・faceArt・index の JS と CSS・practiceView）と `index.html`。前の名前の `assets/` の 5 個は公開先から消した。`art/`（20 個。`council_day.webp` も同じファイル）と `models/` は Version 25 のまま。
