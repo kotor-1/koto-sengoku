@@ -939,6 +939,13 @@ body.g-council-art .g-council-bg .g-council-bg-front.sway { animation-play-state
     background: radial-gradient(ellipse 60% 62% at 50% 50%, rgba(14, 12, 10, 0.66), rgba(14, 12, 10, 0.4) 62%, rgba(14, 12, 10, 0) 100%);
     pointer-events: none;
 }
+/* 低い横向きの画面（高さ 430 以下）：背景を縦に切るので、明るい陣幕が見出しの後ろに来る。暗さを少し強くする（形・大きさは同じ。Version 26。
+   844×390 で、見出しの小さな字の後ろの明るい側（95% 点）とのコントラスト比 4.4 → 5.6） */
+@media (max-height: 430px) {
+    .g-layer.council.g-art .g-council-head::before {
+        background: radial-gradient(ellipse 60% 62% at 50% 50%, rgba(14, 12, 10, 0.74), rgba(14, 12, 10, 0.52) 62%, rgba(14, 12, 10, 0) 100%);
+    }
+}
 .g-layer.council.g-art .g-council-head h2,
 .g-layer.council.g-art .g-council-head p { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9), 0 0 8px rgba(0, 0, 0, 0.7); }
 .g-layer.council.g-art .g-council-head p { color: #d9cdb6; }
