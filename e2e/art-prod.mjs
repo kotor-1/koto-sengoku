@@ -18,6 +18,9 @@
 // 経路（3 回とも同じ）：タイトル → 歴史分岐のはじめから（冒頭の演出はスキップ）→ W と Shift で歩いて本多忠勝と話す → 軍議を開く → C（自領の防衛）→ 決める
 //   → 支度（目的：約束）→ 開き直してタイトル →「合戦場の演習」→ 大平原 → 出陣 → 合戦を始める → ×2 → 忠勝の札 → 全軍撤退 → 結果 → 続ける → 演習の結果。
 // どの回も：CSP の違反 0・ページの誤り 0（abort の回の、止めた /art/ の読み込みの失敗の知らせは数えない）・dev-art の読み込み 0・data: の URL 0。
+// 合戦の能力の欄（忠勝を選んだ時。Version 26）：顔の大きさは画面ごとの採用仕様（abilFaceSpec：PC 52・大きな画面 60・高さ 520 以下 40・370 以下 30 px。
+//   Version 25 までは PC の 48 px 以上をスマホの大きさにも当てていた）。欄は画面の中・顔と文字は欄の中・名前と能力名が読める（省略・切れ 0、
+//   字 9.5 px 以上）・操作のボタンと選んだ札は今のゲームの大きさ以上（cmdMin）で画面の中。VIEW=844x390・1280x720 などで回す。
 // 素材の一覧が空のとき（今）は「素材の一覧が空」と書き、素材の確かめは飛ばして、ほかの確かめはそのまま行う。
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
@@ -32,6 +35,28 @@ const RUNS = (process.env.RUNS || 'art,v24,abort,old').split(',').filter(Boolean
 const PORTRAIT_OF = { hero: 'portrait.ieyasu', tadakatsu: 'portrait.tadakatsu', sakai: 'portrait.sakai', ishikawa: 'portrait.ishikawa' };
 /** 見せ方ごとの武将の顔の ID（art は第 2 版、v24 は第 1 版） */
 const faceIdFor = (kind, g) => (kind === 'v24' ? `face.pack1.${g}` : `face.${g}`);
+/**
+ * 合戦の能力の欄の顔の大きさ（採用した仕様。Version 23 から。proto3d/public/battle.css の .b-abil.with-face > .b-face。画面ごとに違う）：
+ *   - 既定（PC）：52 px
+ *   - 幅 1600 以上かつ高さ 900 以上（大きな画面）：60 px                          … @media (min-width: 1600px) and (min-height: 900px)
+ *   - 高さ 521 以上で、目標の欄を開き直したまま部隊を選んだ（.b-root.goals-open）：40 px … @media (min-height: 521px)
+ *   - 高さ 520 以下（スマホの横向き 844×390 など）：40 px                         … @media (max-height: 520px)
+ *   - 高さ 370 以下（640×360・568×320 など）：30 px                               … @media (max-height: 370px)
+ * Version 26：Version 25 までのこの確かめは、どの大きさの画面でも「PC の 48 px 以上」で見ていたので、844×390 では採用仕様の 40 px のままで
+ * NG になっていた（art・v24 の 2 件）。画面ごとの採用仕様（±1 px）で見る。ゲームの顔の大きさは変えない。
+ */
+const abilFaceSpec = (vw, vh, goalsOpen) => (vh <= 370 ? 30 : vh <= 520 ? 40 : goalsOpen ? 40 : vw >= 1600 && vh >= 900 ? 60 : 52);
+/**
+ * 合戦の操作のボタン（.b-cmd：移動・攻撃・防衛・撤退・向き・能力）の押せる大きさの下限（今のゲームの CSS の大きさ。battle.css の .b-btn・.b-cmd）：
+ *   - 高さ 521 以上：上下の余白 11 px ×2 ＋ 14 px の字（札が 5 部隊以上の .b-bottom.many は 9 px ×2 ＋ 13 px。大平原の演習は 7 部隊でこちら）
+ *     ＋ 枠 1 px ×2。行の高さは字の normal（1.2 倍以上）→ 高さ 36 px 以上（±0.5。この環境の 1280×720 は 52×38 px）
+ *   - 高さ 520 以下：上下 7 px ×2 ＋ 12.5 px の字 ＋ 枠 → 高さ 30 px 以上、幅は min-width（66 px。能力のある並びは 58 px）→ 幅 58 px 以上
+ *     （この環境の 844×390 は 58×33 px）
+ * 指の押しやすさの目安（44 px 前後）より小さい所がある（スマホの横向きは約 33 px）。今回は変えないので、今の大きさを下限として見張る
+ */
+const cmdMin = (vh) => (vh <= 520 ? { h: 30, w: 58 } : { h: 36, w: 40 });
+/** 能力の欄の字の大きさの下限（battle.css の欄の中の一番小さな字：縦の狭い画面の役割・信頼の 9.5 px） */
+const ABIL_MIN_FONT = 9.5;
 /** 大平原の演習の武将のいる部隊（a_<武将の id>）。顔は一覧にある武将だけ（弓隊 a_yumi・騎馬隊 a_kiba には武将がいない） */
 const PLAINS_GENERALS = ['ieyasu', 'tadakatsu', 'sakai', 'ishikawa', 'sakakibara'];
 if (!existsSync(join(DIST, 'index.html'))) throw new Error(`${DIST}/index.html が無い（先に本番ビルド）`);
@@ -287,6 +312,39 @@ async function run(kind) {
         genFaceW: Math.round(document.querySelector('.b-abil > .b-face, .b-gen .b-face')?.getBoundingClientRect().width ?? 0),
         parts: Object.fromEntries(['.b-obj-head', '.b-goals', '.b-ctrl', '.b-zoom', '.b-bottom', '.b-allret', '.b-pause'].map((s) => [s, vis(document.querySelector(s))])),
         faces: document.querySelectorAll('.b-face').length,
+        // 能力の欄の読みやすさ・はみ出し・押せる大きさ（Version 26 の確かめ。読むだけ）
+        panel: (() => {
+          const R = (e) => {
+            const r = e.getBoundingClientRect();
+            return { l: +r.left.toFixed(1), t: +r.top.toFixed(1), r: +r.right.toFixed(1), b: +r.bottom.toFixed(1), w: +r.width.toFixed(1), h: +r.height.toFixed(1) };
+          };
+          const a = document.querySelector('.b-abil');
+          if (!vis(a)) return null;
+          const f = a.querySelector(':scope > .b-face');
+          // 欄の中の、文字を直に持つ見えている要素：字の大きさ・四角・省略（…）・横の切れ
+          const texts = [...a.querySelectorAll('*')]
+            .filter((e) => vis(e) && [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()))
+            .map((e) => {
+              const cs = getComputedStyle(e);
+              const cut = cs.display !== 'inline' && cs.overflowX !== 'visible' && e.scrollWidth > e.clientWidth + 1;
+              return { sel: `${e.tagName.toLowerCase()}${e.className ? '.' + String(e.className).split(' ').join('.') : ''}`, text: e.textContent.trim().slice(0, 24), fs: parseFloat(cs.fontSize), box: R(e), ell: cut && cs.textOverflow === 'ellipsis', cut };
+            });
+          const cmds = [...document.querySelectorAll('.b-cmds .b-cmd')].filter(vis).map((b) => ({ text: b.textContent.trim(), box: R(b) }));
+          const card = document.querySelector('.b-card.sel');
+          return {
+            vw: innerWidth,
+            vh: innerHeight,
+            goalsOpen: !!document.querySelector('.b-root.goals-open'),
+            box: R(a),
+            scroll: [a.scrollHeight, a.clientHeight],
+            face: f ? R(f) : null,
+            name: a.querySelector('.b-gen b')?.textContent.trim() ?? null,
+            ability: a.querySelector('.b-ab-h b')?.textContent.trim() ?? null,
+            texts,
+            cmds,
+            card: card ? R(card) : null,
+          };
+        })(),
       };
     });
     await shot('battle-selected');
@@ -296,10 +354,30 @@ async function run(kind) {
       const want = PLAINS_GENERALS.filter((g) => has(faceIdFor(kind, g))).map((g) => `a_${g}:${faceIdFor(kind, g)}`).sort();
       const got = bs.cards.filter((c) => c.face).map((c) => `${c.id}:${c.face}`).sort();
       check(`${kind}: 札の顔は、一覧に顔のある武将の部隊だけ・その武将の顔（弓隊・騎馬隊には無い）`, JSON.stringify(got) === JSON.stringify(want), got);
-      if (has(faceIdFor(kind, 'tadakatsu'))) check(`${kind}: 能力の欄に忠勝の顔（Version 23：欄の先頭の大きな顔。PC 48 px 以上）`, bs.genFace === faceIdFor(kind, 'tadakatsu') && bs.genFaceW >= 48, [bs.genFace, bs.genFaceW]);
+      if (has(faceIdFor(kind, 'tadakatsu'))) {
+        // 顔の大きさは画面ごとの採用仕様（abilFaceSpec。Version 25 までは PC の 48 px をスマホにも当てていた）
+        const p = bs.panel;
+        const want = p ? abilFaceSpec(p.vw, p.vh, p.goalsOpen) : null;
+        check(`${kind}: 能力の欄に忠勝の顔（Version 23：欄の先頭の大きな顔。この画面 ${VW}×${VH} の採用仕様 ${want} px）`, bs.genFace === faceIdFor(kind, 'tadakatsu') && !!p?.face && Math.abs(p.face.w - want) <= 1 && Math.abs(p.face.h - want) <= 1, [bs.genFace, p?.face?.w, p?.face?.h, want]);
+      }
       const tex = ['tex.plains.grass', 'tex.plains.dirt', 'tex.plains.road', 'tex.plains.forest'].filter(has).map((id) => `/${assets[id].file}`);
       if (tex.length) check('art: 大平原の地面の素材を読んだ', tex.every((p) => artResp.some((r) => r.path === p && r.status === 200)), tex);
     } else check(`${kind}: 合戦に顔の canvas は無い`, bs.faces === 0, bs.faces);
+    // 能力の欄の読みやすさ・はみ出し・押せる大きさ（どの回も。顔の無い旧表示・読めない回も同じ）
+    if (bs.panel) {
+      const p = bs.panel;
+      const inside = (b, o, tol = 0.5) => b.l >= o.l - tol && b.t >= o.t - tol && b.r <= o.r + tol && b.b <= o.b + tol;
+      const view = { l: 0, t: 0, r: p.vw, b: p.vh };
+      // はみ出し：欄は画面の中、顔・文字は欄の中、欄の中で縦に流れない（行が欄の高さに収まる）
+      check(`${kind}: 能力の欄は画面の中・顔と文字は欄の中・欄の中で縦に流れない`, inside(p.box, view) && (!p.face || inside(p.face, p.box)) && p.texts.every((t) => inside(t.box, p.box)) && p.scroll[0] <= p.scroll[1] + 1, { box: p.box, face: p.face, scroll: p.scroll, out: p.texts.filter((t) => !inside(t.box, p.box)) });
+      // 読みやすさ：武将の名前・能力名が出て、欄の中の文字は省略（…）・横の切れが無く、字は ABIL_MIN_FONT px 以上
+      check(`${kind}: 能力の欄の名前「${p.name}」・能力名「${p.ability}」が読める（省略・切れ 0、字 ${ABIL_MIN_FONT} px 以上）`, !!p.name && !!p.ability && p.texts.every((t) => !t.ell && !t.cut) && p.texts.every((t) => t.fs >= ABIL_MIN_FONT), { min: Math.min(...p.texts.map((t) => t.fs)), cut: p.texts.filter((t) => t.ell || t.cut) });
+      // 押せる大きさ：操作のボタン（能力を含む）と選んだ札は、今のゲームの CSS の大きさ以上で、画面の中
+      const m = cmdMin(p.vh);
+      check(`${kind}: 操作のボタン ${p.cmds.length} 個（能力を含む）は ${m.w}×${m.h} px 以上で画面の中、選んだ札は 44 px 以上`, p.cmds.length >= 4 && p.cmds.some((c) => c.text === '能力') && p.cmds.every((c) => c.box.w >= m.w - 0.5 && c.box.h >= m.h - 0.5 && inside(c.box, view)) && !!p.card && p.card.w >= 44 && p.card.h >= 44 && inside(p.card, view), { cmds: p.cmds.map((c) => `${c.text} ${c.box.w}×${c.box.h}`), card: p.card && `${p.card.w}×${p.card.h}` });
+      out.abilPanel = { view: `${p.vw}x${p.vh}`, face: p.face && `${p.face.w}x${p.face.h}`, faceSpec: abilFaceSpec(p.vw, p.vh, p.goalsOpen), minFont: Math.min(...p.texts.map((t) => t.fs)), cmds: p.cmds.map((c) => `${c.text} ${c.box.w}x${c.box.h}`), card: p.card && `${p.card.w}x${p.card.h}`, box: p.box };
+      console.log(`   能力の欄（${p.vw}×${p.vh}）：顔 ${out.abilPanel.face}（採用仕様 ${out.abilPanel.faceSpec}）・字の最小 ${out.abilPanel.minFont} px・ボタン ${out.abilPanel.cmds.join(' / ')}・札 ${out.abilPanel.card}`);
+    }
     await page.locator('.b-allret').click();
     await page.locator('.b-modal .b-primary').click();
     await page.locator('.b-result').waitFor({ state: 'visible', timeout: 600000 });
