@@ -11,7 +11,9 @@
 //   content-security-policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'
 // 3 回遊ぶ（それぞれ新しい端末の状態から）：
 //   art   … そのまま。/art/ の読み込みがすべて 200・image/webp・.webp で、素材の一覧（manifest.gen.json）にある物が画面に出ること
-//           （Version 25：話し手本人の人物画（家康・忠勝・酒井・石川）・第 2 版の顔・原寸以内の画面なら軍議の背景）
+//           （Version 25：話し手本人の人物画（家康・忠勝・酒井・石川）・第 2 版の顔。軍議の背景は Version 26 からどの画面でも出て、
+//           表示の倍率 ＝ min(画面を埋める倍率, 1.25)・描く所・canvas の画素が決まりどおり（lib.mjs の councilBgExpect）。VIEW=1920x1080 で 1.154 倍、
+//           2560x1440 で範囲を限る画面を見られる）
 //   v24   … ?art=v24（Version 24 の見た目）。人物画・軍議の背景を読まず、顔は第 1 版（face.pack1.*）だけ
 //   abort … /art/ への読み込みをすべて止める（読めない公開先・回線を真似る）。会話・軍議・合戦の文字と操作がすべて残り、遊びが進むこと（絵は出ない）
 //   old   … ?art=old。/art/ を 1 つも読まないこと
@@ -24,7 +26,7 @@
 // 素材の一覧が空のとき（今）は「素材の一覧が空」と書き、素材の確かめは飛ばして、ほかの確かめはそのまま行う。
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
-import { launchBrowser, outDir, serveDist, skipCinematic } from './lib.mjs';
+import { councilBgExpect, councilBgMatches, COUNCIL_BG_MAX_SCALE, launchBrowser, outDir, serveDist, skipCinematic } from './lib.mjs';
 
 const OUT = outDir(process.argv[2] || 'e2e-out/art-prod');
 const DIST = resolve(process.env.DIST || 'dist-proto3d');
@@ -203,6 +205,14 @@ async function run(kind) {
         choices: [...L.querySelectorAll('.g-choice')].filter(vis).map((c) => ({ id: c.dataset.id, text: c.textContent.trim().slice(0, 30), disabled: c.disabled === true })),
         portrait: pc ? { artId: pc.dataset.artId, visible: vis(pc) && getComputedStyle(pc).opacity !== '0' } : null,
         councilBg: L.querySelector('.g-council-bg canvas.g-council-bg-base')?.dataset.artId ?? null,
+        // 軍議の背景の canvas の四角（CSS の px）と画素の数・層の大きさ・端末の比（本番には寸法の記録 data-probe が無いので、ここで測る）
+        councilBgBox: (() => {
+          const c = L.querySelector('.g-council-bg canvas.g-council-bg-base');
+          if (!c) return null;
+          const b = c.getBoundingClientRect();
+          const lb = L.getBoundingClientRect();
+          return { l: b.left - lb.left, t: b.top - lb.top, w: b.width, h: b.height, px: [c.width, c.height], layer: [lb.width, lb.height], dpr: devicePixelRatio, on: !!c.closest('.g-council-bg.on') };
+        })(),
         head: L.querySelector('.g-council-head')?.textContent.trim() ?? null,
         map: vis(L.querySelector('.g-council-map')),
       };
@@ -257,9 +267,20 @@ async function run(kind) {
     check(`${kind}: 軍議の見出し・台詞・3 つの方針・「詳しく見る」が出る`, !!cl?.head?.includes('軍議') && council.every((l) => l.text && (l.speaker === 'narration' || l.name)) && ['policy_oda', 'policy_asai', 'policy_home'].every((id) => cl.choices.some((c) => c.id === id && !c.disabled)) && cl.map, { head: cl?.head?.slice(0, 20), choices: cl?.choices.map((c) => c.id), map: cl?.map });
     out.councilBg = council.map((l) => l.councilBg);
     if (kind === 'art') {
-      // 軍議の背景（1664×936）は原寸以内に描ける画面だけ（この大きさ VIEW・端末の比 1 では原寸以内）
-      const bgFits = Math.min(Math.max(VW / 1664, VH / 936), VH / (936 * 0.64)) <= 1;
-      if (has('bg.council')) check(`art: 軍議の背景は${bgFits ? '出る' : '出ない（原寸を超える画面）'}`, council.some((l) => l.councilBg === 'bg.council') === bgFits, out.councilBg);
+      // 軍議の背景（ファイルは 1664×936）：Version 26 からどの画面でも出る（Version 25 は原寸以内に描ける画面だけ）。表示の倍率 ＝ min(画面を埋める倍率, 1.25)。
+      // 1.25 を超える画面は画面より小さく真ん中に描く（範囲を限る）。縦横同じ倍率・canvas の画素は元の画像の細かさまで（lib.mjs の councilBgExpect）
+      if (has('bg.council')) {
+        const e = assets['bg.council'];
+        check('art: 軍議の背景が出る（Version 26：どの画面でも。端末の比・原寸を理由に外さない）', council.some((l) => l.councilBg === 'bg.council'), out.councilBg);
+        const g = [...council].reverse().find((l) => l.councilBgBox)?.councilBgBox ?? null;
+        const want = g ? councilBgExpect(e.w, e.h, g.layer[0], g.layer[1], g.dpr) : councilBgExpect(e.w, e.h, VW, VH, 1);
+        out.councilBgGeom = { file: [e.w, e.h], need: +want.need.toFixed(3), scale: +want.scale.toFixed(3), limited: want.limited, want: [want.dx, want.dy, want.dw, want.dh].map((v) => +v.toFixed(1)), wantCanvas: want.canvas, got: g };
+        check(
+          `art: 軍議の背景の表示の倍率 ${want.scale.toFixed(3)}（埋める倍率 ${want.need.toFixed(3)}・上限 ${COUNCIL_BG_MAX_SCALE}${want.limited ? '・範囲を限る' : ''}）：描く所 ${[want.dx, want.dy, want.dw, want.dh].map((v) => Math.round(v)).join(',')}・canvas ${want.canvas.join('×')} が決まりどおり（縦横同じ倍率）`,
+          !!g && g.on && councilBgMatches(g, g.px, want),
+          out.councilBgGeom,
+        );
+      }
       for (const sp of ['tadakatsu', 'sakai', 'ishikawa']) if (has(PORTRAIT_OF[sp])) check(`art: 軍議の ${sp} の台詞で本人の人物画`, council.some((l) => l.speaker === sp && l.portrait?.artId === PORTRAIT_OF[sp] && l.portrait.visible), council.filter((l) => l.speaker === sp).map((l) => l.portrait));
       check('art: 軍議の人物画は話し手本人の物だけ', council.every((l) => !l.portrait?.visible || l.portrait.artId === PORTRAIT_OF[l.speaker]), council.map((l) => `${l.speaker}:${l.portrait?.visible ? l.portrait.artId : '-'}`));
     } else check(`${kind}: 軍議の背景・人物画は無い（Version ${kind === 'v24' ? '24' : '21'} と同じ）`, council.every((l) => !l.councilBg && !l.portrait), out.councilBg);

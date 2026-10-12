@@ -130,3 +130,28 @@ export async function serveDist(dist, port, { csp = PROD_CSP, mime = PROD_MIME }
 export function boxesOverlap(a, b, tol = 0.5) {
     return !!a && !!b && a.l < b.r - tol && b.l < a.r - tol && a.t < b.b - tol && b.t < a.b - tol;
 }
+
+/**
+ * 軍議の背景の描き方の決まり（Version 26。docs/v25-portraits.md の 5）を e2e の側で別に計算する（ui/artCanvas.ts の councilArtLayout・backingScale と同じ式）。
+ * 表示の倍率（描く CSS の px ÷ 元の画素）＝ min(画面を埋める倍率（cover・上下は 18% まで切る）, 1.25)。端末の画素の比（dpr）では外さない・縮めない
+ * （dpr は canvas の画素の数にだけ効く：CSS の 1px あたり 1〜2 の画素と、元の画像の細かさ 1÷表示の倍率 の小さい方）。縦横はいつも同じ倍率。
+ * 返り：need（埋める倍率）・scale（表示の倍率）・limited（1.25 を超える画面：画面より小さく真ん中に描く）・描く所 dx,dy,dw,dh（CSS の px）・canvas の画素 [幅, 高さ]
+ */
+export const COUNCIL_BG_MAX_SCALE = 1.25;
+export function councilBgExpect(srcW, srcH, vw, vh, dpr = 1, { maxScale = COUNCIL_BG_MAX_SCALE, maxCropY = 0.18 } = {}) {
+    const W = Math.max(1, Math.round(vw));
+    const H = Math.max(1, Math.round(vh));
+    const need = Math.min(Math.max(W / srcW, H / srcH), H / (srcH * (1 - 2 * maxCropY)));
+    const scale = Math.min(need, maxScale);
+    const dw = srcW * scale >= W - 1e-6 ? W : srcW * scale;
+    const dh = srcH * scale >= H - 1e-6 ? H : srcH * scale;
+    const k = Math.max(0.25, Math.min(Math.min(2, Math.max(1, dpr || 1)), 1 / scale));
+    return { need, scale, limited: need > maxScale + 1e-9, dx: (W - dw) / 2, dy: (H - dh) / 2, dw, dh, canvas: [Math.max(1, Math.round(dw * k)), Math.max(1, Math.round(dh * k))] };
+}
+
+/** 測った軍議の背景の canvas（box：{l,t,w,h} CSS の px、px：[canvas の幅, 高さ]）が councilBgExpect の決まりどおりか（四角は 1px、画素は 1 まで） */
+export function councilBgMatches(box, px, want) {
+    if (!box || !want) return false;
+    const near = (a, b, tol) => Math.abs(a - b) <= tol;
+    return near(box.l, want.dx, 1) && near(box.t, want.dy, 1) && near(box.w, want.dw, 1) && near(box.h, want.dh, 1) && (!px || (near(px[0], want.canvas[0], 1) && near(px[1], want.canvas[1], 1)));
+}

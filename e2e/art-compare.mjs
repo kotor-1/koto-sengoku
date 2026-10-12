@@ -7,7 +7,7 @@
  *     MODES=old,v24,default,fixture   old … ?art=old（新しい素材を一つも読まない＝Version 21 の見た目。比べの「前」）
  *                                 v24 … ?art=v24（Version 24 の見た目：第 1 版の顔 face.pack1.* と地面だけ。人物画・軍議の背景は無し。Version 25 から）
  *                                 default … 何も付けない（ゲームが読む素材の一覧 manifest.gen.json のとおり。Version 25 は第 2 版の人物画 4（話す人）・顔 6・
- *                                           軍議の背景（原寸以内の画面だけ）と、大平原の地面の草地・土・道の 3 枚。林床は入っていない）
+ *                                           軍議の背景（Version 26 からどの画面でも。表示の倍率 min(埋める倍率, 1.25)）と、大平原の地面の草地・土・道の 3 枚。林床は入っていない）
  *                                 fixture … ?artFixture=1（開発時だけ。proto3d/dev-art の TEST の模様。配置・縮尺・動きの確かめ用で、見た目の素材ではない）
  *                                 v22 … 別の開発サーバー V22_BASE（Version 22 の 3fe5a7d を動かした物）の何も付けない見せ方（比べの「前」の 2 枚目）
  *                                 abort … default の画面で、素材の画像（/art/ の下）を全部読めなくする（読み込みの失敗：文字と操作が残る・Version 21 の見た目）
@@ -40,7 +40,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { boxesOverlap, launchBrowser, skipCinematic } from './lib.mjs';
+import { boxesOverlap, councilBgExpect, councilBgMatches, COUNCIL_BG_MAX_SCALE, launchBrowser, skipCinematic } from './lib.mjs';
 
 const BASE = process.env.BASE || 'http://localhost:8633';
 const OUT = resolve(process.argv[2] || 'e2e-out/art-compare');
@@ -184,7 +184,8 @@ function probeStory() {
         ? {
               first: layer.firstElementChild === bg,
               visible: vis(bg),
-              base: bg.querySelector('canvas.g-council-bg-base') ? { artId: bg.querySelector('canvas.g-council-bg-base').dataset.artId, ...R(bg.querySelector('canvas.g-council-bg-base')) } : null,
+              base: bg.querySelector('canvas.g-council-bg-base') ? { artId: bg.querySelector('canvas.g-council-bg-base').dataset.artId, ...R(bg.querySelector('canvas.g-council-bg-base')), px: [bg.querySelector('canvas.g-council-bg-base').width, bg.querySelector('canvas.g-council-bg-base').height] } : null,
+              on: bg.classList.contains('on'),
               front: bg.querySelector('canvas.g-council-bg-front') ? { artId: bg.querySelector('canvas.g-council-bg-front').dataset.artId, ...R(bg.querySelector('canvas.g-council-bg-front')) } : null,
           }
         : null;
@@ -382,8 +383,8 @@ async function runStory(mode, W, H, q) {
                         const L = [...document.querySelectorAll('.g-layer[data-kind="script"]')].pop();
                         // 人物画：今の話し手の物が出るまで（v24・old には無い。入りきらない画面では出ない＝4 秒で先へ）
                         const okP = !p || !!L?.querySelector(`canvas.g-portrait[data-art-id="${p}"].on`);
-                        // 軍議の背景：原寸以内の画面だけ出る（それ以外は出ないので待たない）
-                        const okB = !bg || !!L?.querySelector('.g-council-bg canvas.g-council-bg-base') || window.devicePixelRatio * Math.min(Math.max(innerWidth / 1664, innerHeight / 936), innerHeight / (936 * 0.64)) > 1;
+                        // 軍議の背景：Version 26 からどの画面でも出るので、出る（.on。この後の 300ms で 0.22 秒の重ねも済む）まで待つ
+                        const okB = !bg || !!L?.querySelector('.g-council-bg.on canvas.g-council-bg-base');
                         // 台詞の枠の顔：今の話し手の顔がある話し手なら、その顔が出るまで（読み込みは非同期）。その人の人物画が出ていれば顔は出ない
                         const sp = L?.querySelector('.g-dialog')?.dataset.speaker;
                         const want = { hero: 'ieyasu', tadakatsu: 'tadakatsu', sakai: 'sakai', ishikawa: 'ishikawa' }[sp];
@@ -835,7 +836,8 @@ for (const q of QUALITY) {
         }
         if (B.fixture) check(B.fixture.art.ground === 'textured' && B.fixture.art.trees > 0, `battle fixture ${tag}: textured ground + plains woods trees (TEST pattern)`, B.fixture.art);
         // 本物の素材（default・v24）：会話・軍議は今の話し手本人の人物画（default。Version 25）か、その人の顔（人物画が出ない行・v24 は第 1 版の顔）。
-        // 軍議の背景は default の原寸以内の画面だけ（1664×936 を cover で描いて、元の 1 画素が端末の 1 画素以下）。合戦はその部隊の武将の顔。地面は大平原の草地・土・道（上の確かめ）
+        // 軍議の背景は default のどの画面でも（Version 26：表示の倍率 ＝ min(画面を埋める倍率, 1.25)・端末の比では外さない。lib.mjs の councilBgExpect）。
+        // 合戦はその部隊の武将の顔。地面は大平原の草地・土・道（上の確かめ）
         const S = runsOf('story', size, q);
         const SPEAKER = { 'conv-tadakatsu-line': 'tadakatsu', 'conv-ieyasu-line': 'ieyasu', 'conv-talk-choice': 'tadakatsu', 'conv-council-line': 'tadakatsu', 'conv-council-sakai-line': 'sakai', 'conv-council-ishikawa-line': 'ishikawa', 'conv-council-choice': 'tadakatsu' };
         for (const am of ['default', 'v24']) {
@@ -855,8 +857,17 @@ for (const q of QUALITY) {
                     check(!up || d.portrait.artId === `portrait.${who}`, `${scene} default ${tag}: the portrait shown is the speaker's own (portrait.${who})`, d.portrait);
                     check(up ? !d.face?.visible : d.face?.visible && d.face.artId === faceId, `${scene} default ${tag}: ${up ? 'portrait shown, so the same person\'s dialog face is hidden' : `no portrait on this line, dialog face is the speaker's own (${faceId})`}`, { portrait: d.portrait?.artId ?? null, face: d.face });
                     if (scene.startsWith('conv-council')) {
-                        const sc = Math.min(Math.max(d.vw / 1664, d.vh / 936), d.vh / (936 * 0.64)) * (d.dpr ?? 1);
-                        check(!!d.background?.base === sc <= 1 + 1e-9, `${scene} default ${tag}: council background ${sc <= 1 ? 'shown (scale ' : 'not shown, V24 council view (scale '}${sc.toFixed(3)} device px per source px)`, d.background);
+                        const e = genManifest?.assets?.['bg.council'];
+                        const x = e ? councilBgExpect(e.w, e.h, d.vw, d.vh, d.dpr ?? 1) : null;
+                        const b = d.background?.base;
+                        const box = b ? { l: b.l, t: b.t, w: b.r - b.l, h: b.b - b.t } : null;
+                        check(
+                            !!x && !!b && d.background.on && councilBgMatches(box, b.px, x),
+                            x
+                                ? `${scene} default ${tag}: council background shown (V26: display scale ${x.scale.toFixed(3)} CSS px per source px, need ${x.need.toFixed(3)}, max ${COUNCIL_BG_MAX_SCALE}${x.limited ? ', limited range' : ''}); drawn rect ${[x.dx, x.dy, x.dw, x.dh].map((v) => Math.round(v)).join(',')} and canvas ${x.canvas.join('x')} as the rule`
+                                : `${scene} default ${tag}: bg.council in the manifest`,
+                            { want: x, got: d.background },
+                        );
                     }
                 } else {
                     check(d.face?.visible && d.face.artId === faceId && d.hasFace, `${scene} v24 ${tag}: dialog face is the speaker's own V24 face (${faceId})`, d.face);
@@ -934,7 +945,7 @@ for (const q of QUALITY) {
         }
         if (S.default && genCount > 0) {
             const imgs = S.default.artRequests.filter((p) => /\.(webp|png|jpg)$/.test(p));
-            check(imgs.length > 0 && imgs.every((p) => /^\/art\/(faces\/[a-z]+_v2|portraits\/[a-z]+_v2|story\/council_day)\.webp$/.test(p)), `story default ${tag}: loads only v2 portraits, v2 faces and (where it fits) the council background`, imgs);
+            check(imgs.length > 0 && imgs.every((p) => /^\/art\/(faces\/[a-z]+_v2|portraits\/[a-z]+_v2|story\/council_day)\.webp$/.test(p)), `story default ${tag}: loads only v2 portraits, v2 faces and the council background`, imgs);
         }
         if (S.v24 && genCount > 0) {
             const imgs = S.v24.artRequests.filter((p) => /\.(webp|png|jpg)$/.test(p));

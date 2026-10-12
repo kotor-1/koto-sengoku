@@ -18,9 +18,11 @@
  *     PAR=3               同時に動かすブラウザの数
  *     ROTATE=390x844,360x640  verify で軍議の方針の場面の窓を横長に変えて戻す大きさ（setViewportSize。開発の操作）
  *     HOLD=360x640,568x320,390x844  verify で軍議の方針の選択肢を押したまま、画面を回す・窓の高さを変える・並びを収め直す（Version 26）大きさ。
- *                         離しても決まらない（同じ会話・同じ行・同じ選択肢・同じ選んだ印）こと、戻した後も選んだ物が見えること、回した向きで
- *                         改めてたたけば決まることを確かめる（その後は方針 C の確かめから元の大きさで続ける）。並びが動かない大きさでは、
- *                         Version 24 のまま押した瞬間に決まる（待っている押しが無い）ので、押したままの確かめはせず記録だけ残す
+ *                         離しても決まらない（同じ会話・同じ行・同じ選択肢・同じ選んだ印）こと、戻した後も選んだ物が見えることを確かめる。
+ *                         その後の改めての押しは、REPRESS の大きさでは回した向きで（たたけば決まる）、ほかの大きさでは元の大きさで
+ *                         並びをなぞって C をたたく（Version 24 の狭い画面の確かめの道。その後は方針 C の確かめから元の大きさで続ける）。
+ *                         並びが動かない大きさでは、Version 24 のまま押した瞬間に決まる（待っている押しが無い）ので、押したままの確かめはせず記録だけ残す
+ *     REPRESS=568x320     HOLD のうち、押したままの確かめの後に「回した向き」で改めてたたく大きさ（ほかの HOLD の大きさは元の大きさでなぞってたたく）
  *     STOP=council        その場面（scene の名前）の確かめの後で、その部を止める（短く回す時。省けば最後まで）
  *
  * 出力：<出力先>/shots/<部>-<見せ方>-<大きさ>-<場面>.png、<出力先>/report.json（場面ごとの四角・隠れ・確かめの一覧）。
@@ -47,6 +49,8 @@ const PAR = Math.max(1, Number(process.env.PAR || 3));
 const ROTATE = list(process.env.ROTATE, '390x844,360x640');
 /** verify：軍議の方針の選択肢を押したまま向き・窓の高さ・並べ方を変える大きさ（Version 26） */
 const HOLD = list(process.env.HOLD, '360x640,568x320,390x844');
+/** verify：押したままの確かめの後、回した向きで改めてたたく大きさ（ほかの HOLD の大きさは元の大きさで並びをなぞってたたく） */
+const REPRESS = list(process.env.REPRESS, '568x320');
 const STOP = process.env.STOP || '';
 const SHOTS = `${OUT}/shots`;
 mkdirSync(SHOTS, { recursive: true });
@@ -677,8 +681,8 @@ async function run(part, size, mode) {
     /**
      * verify（Version 26）：動く並びの選択肢を押したまま、画面を回す・窓の高さを変える・並びを収め直す → 離す。
      * 離しても決まらない（同じ会話・同じ行・同じ選択肢・同じ選んだ印）。戻した後も選ばれている物が見える。
-     * 最後に、回した向きで改めて pickId をたたくと決まる（返り：true。HOLD に無い大きさ・並びが動かない大きさは false：
-     * 動かない並びは Version 24 のまま押した瞬間に決まるので、押したままの確かめはしない）。
+     * 最後に改めて pickId をたたくと決まる：REPRESS の大きさは回した向きで、ほかは元の大きさで並びをなぞって（Version 24 の狭い画面の道を残す）
+     * （返り：true。HOLD に無い大きさ・並びが動かない大きさは false：動かない並びは Version 24 のまま押した瞬間に決まるので、押したままの確かめはしない）。
      * 窓の大きさの変更（setViewportSize。isMobile の文脈では画面の向きも変わる）・台詞の枠の余白（並びの収め直し）は開発の操作。押す・離すは本物の入力
      */
     const holdChecks = async (name, pickId) => {
@@ -773,18 +777,25 @@ async function run(part, size, mode) {
             const u2 = await ui();
             check(u2?.id === u0.id && u2.index === u0.index && u2.selected === u0.selected, `${T} ${how}を戻した後も同じ会話・同じ行・同じ選んだ印`, u2);
         }
-        // 改めて押す：回した向きで、本物のたたき（並びが動くならなぞって見せてから）で決まる
-        await page.setViewportSize({ width: h, height: w });
-        await settleLayout();
-        step('dev', `窓の大きさを ${h}×${w} に変えた（回した向きで改めて押す）`);
+        // 改めて押す：本物のたたき（並びが動くならなぞって見せてから）で決まる。REPRESS の大きさは回した向きで、
+        // ほかは元の大きさで（押したままの確かめの前と同じ、Version 24 の狭い画面の「なぞって C をたたく」道）
+        const rotated = REPRESS.includes(size);
+        const [pw, ph] = rotated ? [h, w] : [w, h];
+        if (rotated) {
+            await page.setViewportSize({ width: h, height: w });
+            await settleLayout();
+            step('dev', `窓の大きさを ${h}×${w} に変えた（回した向きで改めて押す）`);
+        }
         await choose(pickId);
         const decided = await page.waitForFunction((id0) => window.__game.ui?.kind === 'script' && window.__game.ui.id !== id0, u0.id, { timeout: 20000, polling: 100 }).then(() => true, () => false);
         const u3 = await ui();
-        check(decided, `${T} 回した向き（${h}×${w}）で改めて ${pickId} をたたくと決まる`, u3);
-        rec.hold.newPress = { size: `${h}x${w}`, pick: pickId, now: u3?.id };
-        await page.setViewportSize({ width: w, height: h });
-        await settleLayout();
-        step('dev', `窓の大きさを ${w}×${h} に戻した`);
+        check(decided, `${T} ${rotated ? '回した向き' : '元の向き'}（${pw}×${ph}）で改めて ${pickId} をたたくと決まる`, u3);
+        rec.hold.newPress = { size: `${pw}x${ph}`, rotated, pick: pickId, now: u3?.id };
+        if (rotated) {
+            await page.setViewportSize({ width: w, height: h });
+            await settleLayout();
+            step('dev', `窓の大きさを ${w}×${h} に戻した`);
+        }
         return true;
     };
     const stopAfter = async (name) => {
@@ -806,7 +817,7 @@ async function run(part, size, mode) {
         await inputChecks('council', { map: true, keys: true, rotate: true });
         // verify は最後の選択肢 C（自領を守る）を、measure は隠れない A を選ぶ
         const pick1 = ACT === 'verify' ? 'policy_home' : 'policy_oda';
-        // 押したまま回す・窓を変える・収め直すと決まらない。最後に回した向きで改めて C をたたいて決める（HOLD の大きさ・動く並びだけ）
+        // 押したまま回す・窓を変える・収め直すと決まらない。最後に改めて C をたたいて決める（HOLD の大きさ・動く並びだけ。REPRESS は回した向き、ほかは元の大きさ）
         if (!(await holdChecks('council', pick1))) await choose(pick1);
         await page.waitForFunction(() => window.__game.ui?.kind === 'script' && window.__game.ui.id.startsWith('council.confirm.'), null, POLL);
         if (await stopAfter('council')) return rec;
