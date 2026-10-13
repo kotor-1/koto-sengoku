@@ -2,7 +2,7 @@
 // 公開する dist（3D 比較版のビルド出力）の容量・ファイル数・種類を確かめる（Version 22〜）。違反があれば 1 で終わる。
 //
 //   node proto3d/tools/check-dist.mjs [dist-proto3d] [--baseline <前回公開した dist>] [--budget <バイト>] [--json]
-//                                     [--sha256 <ビルドの直後の sha256 の一覧>] [--write-sha256 <書く先>]
+//                                     [--sha256 <ビルドの直後の sha256 の一覧>] [--write-sha256 <書く先> [--overwrite-sha256]]
 //
 // - 全体の合計とファイル数、/art（生成イラスト素材の加工版）のファイルと容量を表にする。
 // - 上限（下の LIMITS）を守るか：1 回の公開で送るファイル（--baseline があれば、前回と中身が違う・新しいファイルだけ。無ければ全部）は
@@ -24,7 +24,8 @@
 //     JS・CSS・HTML・SVG などの文字のファイルは UTF-8 として読めて NUL が無いこと）。glTF の画像の mimeType と拡張子も合うこと。
 //   - --sha256 <一覧>：ビルドの直後に取った sha256 の一覧（`sha256sum` の形「<64 桁>  ./パス」）と、ファイルの組と中身がすべて同じこと。
 //   - --write-sha256 <ファイル>：違反が無いときだけ、今の dist の sha256 の一覧を書く（dist の中には書かない）。ビルドの直後に書き、
-//     公開の直前に --sha256 で照らす。
+//     公開の直前に --sha256 で照らす。既にある一覧は上書きしない（壊れた後にもう一度走らせて、壊れた中身を「正しい」と書き直さない）。
+//     ビルドを作り直したときだけ --overwrite-sha256 を付ける。
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, posix, relative, resolve, sep } from 'node:path';
@@ -360,10 +361,15 @@ export function checkDist(distDir, { baseline = null, budget = null, sha256 = nu
     };
 }
 
-/** 違反が無いときだけ、dist の sha256 の一覧を out に書く（dist の中には書かない）。書いたら true */
-export function writeSha256List(result, out) {
+/**
+ * 違反が無いときだけ、dist の sha256 の一覧を out に書く（dist の中には書かない）。書いたら true。
+ * 既にある一覧は上書きしない（overwrite のときだけ）：ビルドの直後の一覧を、後で壊れた dist の一覧で上書きして「同じ」にしない。
+ */
+export function writeSha256List(result, out, { overwrite = false } = {}) {
     const dest = resolve(out);
     if (dest === result.dist || dest.startsWith(result.dist + sep)) throw new Error(`sha256 の一覧を dist の中には書かない: ${dest}`);
+    if (!overwrite && existsSync(dest))
+        throw new Error(`sha256 の一覧が既にあるので上書きしない（ビルドの直後の一覧を残す。作り直したビルドなら --overwrite-sha256）: ${dest}`);
     if (result.errors.length) return false;
     writeFileSync(dest, result.sha256List());
     return true;
@@ -371,7 +377,7 @@ export function writeSha256List(result, out) {
 
 function main(argv) {
     const args = [...argv];
-    const opt = { baseline: null, budget: null, json: false, sha256: null, writeSha256: null };
+    const opt = { baseline: null, budget: null, json: false, sha256: null, writeSha256: null, overwriteSha256: false };
     let dist = null;
     const value = (a) => {
         const v = args.shift();
@@ -385,16 +391,18 @@ function main(argv) {
         else if (a === '--json') opt.json = true;
         else if (a === '--sha256') opt.sha256 = value(a);
         else if (a === '--write-sha256') opt.writeSha256 = value(a);
+        else if (a === '--overwrite-sha256') opt.overwriteSha256 = true;
         else if (a === '-h' || a === '--help') {
             console.log(
-                'node proto3d/tools/check-dist.mjs [dist-proto3d] [--baseline <前回の dist>] [--budget <バイト>] [--json] [--sha256 <一覧>] [--write-sha256 <書く先>]',
+                'node proto3d/tools/check-dist.mjs [dist-proto3d] [--baseline <前回の dist>] [--budget <バイト>] [--json] [--sha256 <一覧>] [--write-sha256 <書く先> [--overwrite-sha256]]',
             );
             return 0;
         } else if (a.startsWith('--')) throw new Error(`知らないオプション: ${a}`);
         else dist = a;
     }
+    if (opt.overwriteSha256 && !opt.writeSha256) throw new Error('--overwrite-sha256 は --write-sha256 と一緒に使う');
     const r = checkDist(dist ?? 'dist-proto3d', opt);
-    const wrote = opt.writeSha256 ? writeSha256List(r, opt.writeSha256) : null;
+    const wrote = opt.writeSha256 ? writeSha256List(r, opt.writeSha256, { overwrite: opt.overwriteSha256 }) : null;
     if (opt.json) {
         console.log(JSON.stringify({ ...r, wroteSha256: wrote === null ? null : wrote ? resolve(opt.writeSha256) : false }, null, 2));
         return r.errors.length ? 1 : 0;

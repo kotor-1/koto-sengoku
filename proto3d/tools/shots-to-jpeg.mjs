@@ -8,7 +8,7 @@
 // この道具は、その形の事故が起きないように次を守る：
 // - 変えるのは、引数で名指しした置き場の「すぐ下」の .png だけ（下の階層には降りない。親の置き場を渡す・ワイルドカードで集める使い方はできない）。
 // - 置き場の名前（最後の部分）は shots・montage・prod-shots だけ（--allow-name で足せる）。
-// - パスのどこかに dist・models・public・assets-src・dev-art・node_modules を含む物は断る（--allow-name でも外せない）。
+// - パスのどこかに dist・models・texture・public・assets-src・dev-art・node_modules を含む物は断る（--allow-name でも外せない）。
 //   シンボリックリンクの置き場は断り、実際の場所（realpath）も同じく調べる。
 // - 置き場の中に index.html・sha256 の一覧（*.sha256）・3D の素材（*.glb・*.gltf）がある物は断る（dist や公開の控えの印）。
 // - git で管理しているファイル（リポジトリの原画・素材・説明の画像）が 1 つでもあれば断る。
@@ -23,7 +23,7 @@ import { basename, join, resolve, sep } from 'node:path';
 
 export const DEFAULT_NAMES = ['shots', 'montage', 'prod-shots'];
 /** パスのどこかに含むと断る言葉（小文字で比べる。部分一致） */
-export const FORBIDDEN_WORDS = ['dist', 'models', 'public', 'assets-src', 'dev-art', 'node_modules'];
+export const FORBIDDEN_WORDS = ['dist', 'models', 'texture', 'public', 'assets-src', 'dev-art', 'node_modules'];
 /** 置き場の中にあると断るファイル（dist・公開の控え・3D の素材の印） */
 const FORBIDDEN_FILE = (name) => name === 'index.html' || /\.(sha256|glb|gltf)$/i.test(name);
 const PNG_SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -59,6 +59,7 @@ function trackedNames(dir) {
  */
 export function planShots(dirs, { allowNames = [] } = {}) {
     const names = new Set([...DEFAULT_NAMES, ...allowNames]);
+    const seen = new Set();
     return dirs.map((arg) => {
         const dir = resolve(arg);
         const out = { dir, refused: null, convert: [], skipped: [] };
@@ -68,6 +69,12 @@ export function planShots(dirs, { allowNames = [] } = {}) {
         if (st.isSymbolicLink()) return refuse('シンボリックリンクの置き場は扱わない（実際の置き場を渡す）');
         if (!st.isDirectory()) return refuse('置き場（ディレクトリ）ではない');
         const real = realpathSync(dir);
+        // 同じ置き場を 2 度名指ししても、1 度だけ扱う（2 度目に消えた PNG を読みに行かない）
+        if (seen.has(real)) {
+            out.skipped.push('同じ置き場をもう名指ししている（1 度だけ扱う）');
+            return out;
+        }
+        seen.add(real);
         if (!names.has(basename(dir)) || !names.has(basename(real)))
             return refuse(`置き場の名前が ${[...names].join('・')} のどれでもない（親の置き場をまとめて変えない）`);
         for (const p of [dir, real]) {
@@ -113,8 +120,9 @@ print(json.dumps(done))
 
 /** 計画のとおりに変える（Pillow）。変えたファイルの [png, jpg, バイト] */
 export function applyShots(files, { quality = 85, keepPng = false } = {}) {
-    if (!files.length) return [];
-    const r = spawnSync('python3', ['-I', '-c', PY, String(quality), keepPng ? '1' : '0', ...files], { encoding: 'utf8' });
+    const uniq = [...new Set(files)];
+    if (!uniq.length) return [];
+    const r = spawnSync('python3', ['-I', '-c', PY, String(quality), keepPng ? '1' : '0', ...uniq], { encoding: 'utf8' });
     if (r.status !== 0) throw new Error(`JPEG にできなかった（python3 と Pillow が要る）: ${(r.stderr || r.error?.message || '').trim().slice(-400)}`);
     return JSON.parse(r.stdout);
 }
@@ -146,19 +154,16 @@ function main(argv) {
     if (!dirs.length) throw new Error('置き場を 1 つ以上名指しする（例 e2e-out/art-compare/shots）');
     const plans = planShots(dirs, { allowNames });
     const refused = plans.filter((p) => p.refused);
+    // 1 つでも断ったら、ほかの置き場も変えない（指定の誤りを先に直す）。そのときは「変える」と書かない
+    if (refused.length) {
+        for (const p of refused) console.log(`断った: ${p.dir}（${p.refused}）`);
+        console.log(`shots-to-jpeg: ${refused.length} 個の置き場を断ったので、何も変えていない（ほかの ${plans.length - refused.length} 個の置き場も）`);
+        return 2;
+    }
     for (const p of plans) {
-        if (p.refused) {
-            console.log(`断った: ${p.dir}（${p.refused}）`);
-            continue;
-        }
         console.log(`${apply ? '変える' : '変える予定（--apply なし：何もしない）'}: ${p.dir} の PNG ${p.convert.length} 個`);
         for (const f of p.convert) console.log(`  ${basename(f)}`);
         for (const s of p.skipped) console.log(`  変えない: ${s}`);
-    }
-    // 1 つでも断ったら、ほかの置き場も変えない（指定の誤りを先に直す）
-    if (refused.length) {
-        console.log(`shots-to-jpeg: ${refused.length} 個の置き場を断ったので、何も変えていない`);
-        return 2;
     }
     if (!apply) {
         console.log('shots-to-jpeg: 並べただけ（変えるには --apply）');

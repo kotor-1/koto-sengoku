@@ -69,6 +69,7 @@ describe('shots-to-jpeg：断る決まり', () => {
         ['dist-431f5e2/shots'],
         ['v26/final/dist-proto3d/montage'],
         ['models/shots'],
+        ['work/textures/hero/shots'],
         ['proto3d/public/art/shots'],
         ['proto3d/assets-src/art-v25/shots'],
         ['proto3d/dev-art/montage'],
@@ -78,7 +79,7 @@ describe('shots-to-jpeg：断る決まり', () => {
         const before = snapshot(dir);
         const r = run(dir, '--apply');
         expect(r.status).toBe(2);
-        expect(r.out).toMatch(/断った: .*パスの「[^」]+」に (dist|models|public|assets-src|dev-art|node_modules) を含む/);
+        expect(r.out).toMatch(/断った: .*パスの「[^」]+」に (dist|models|texture|public|assets-src|dev-art|node_modules) を含む/);
         expect(snapshot(dir)).toEqual(before);
     });
 
@@ -107,6 +108,13 @@ describe('shots-to-jpeg：断る決まり', () => {
         const r = run(models, '--allow-name', 'models', '--apply');
         expect(r.status).toBe(2);
         expect(r.out).toContain('に models を含む');
+        // git で管理していない質感の置き場も、名前を足しても断る（見直しの LOW-4）
+        const tex = shotsDir('fake/textures/hero');
+        const before = snapshot(tex);
+        const t = run(tex, '--allow-name', 'hero', '--apply');
+        expect(t.status).toBe(2);
+        expect(t.out).toContain('に texture を含む');
+        expect(snapshot(tex)).toEqual(before);
     });
 
     it('シンボリックリンクの置き場は断る（名前が shots でも、先が dist かもしれない）', () => {
@@ -128,6 +136,8 @@ describe('shots-to-jpeg：断る決まり', () => {
         const r = run(good, bad, '--apply');
         expect(r.status).toBe(2);
         expect(r.out).toContain('何も変えていない');
+        // 断ったときは、断らなかった置き場も「変える」と書かない（見直しの LOW-5）
+        expect(r.out).not.toMatch(/^変える/m);
         expect([snapshot(good), snapshot(bad)]).toEqual(before);
     });
 
@@ -171,5 +181,14 @@ describe('shots-to-jpeg：--apply で変える', () => {
         expect(run(keep, '--apply', '--keep-png').status).toBe(0);
         expect(sameBytes(readFileSync(join(keep, 'a.png')), PNG)).toBe(true);
         expect(existsSync(join(keep, 'a.jpg'))).toBe(true);
+    });
+
+    it.runIf(hasPillow)('同じ置き場を 2 度名指ししても 1 度だけ変える（2 度目で落ちない）', () => {
+        const dir = shotsDir('shots');
+        const r = run(dir, dir, '--apply');
+        expect(r.status).toBe(0);
+        expect(r.out).toContain('同じ置き場をもう名指ししている');
+        expect(r.out).toContain('2 個を JPEG にした');
+        expect(Object.keys(snapshot(dir)).sort()).toEqual(['a.jpg', 'b.jpg']);
     });
 });

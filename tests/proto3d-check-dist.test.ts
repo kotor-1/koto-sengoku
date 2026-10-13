@@ -182,4 +182,24 @@ describe('check-dist：ビルドの直後の sha256 の一覧（--write-sha256�
         expect(inside.stderr).toContain('dist の中には書かない');
         expect(existsSync(join(clean, 'list.sha256'))).toBe(false);
     });
+
+    it('既にある一覧は上書きしない（壊れた後に走らせ直しても、ビルドの直後の一覧が残り --sha256 で止まる）。--overwrite-sha256 のときだけ書き直す', () => {
+        const root = fakeDist();
+        const list = join(work, `keep-${n}.sha256`);
+        expect(run(root, '--write-sha256', list).status).toBe(0);
+        const first = readText(list);
+        // 形式の正しいまま中身が変わる壊れ方（参照・先頭の印の確かめでは止まらない）
+        writeFileSync(join(root, 'models/hero_v2-0.png'), new Uint8Array([...PNG, 1, 2, 3]));
+        const again = run(root, '--write-sha256', list);
+        expect(again.status).toBe(2);
+        expect(again.stderr).toContain('既にあるので上書きしない');
+        expect(readText(list)).toBe(first);
+        const r = run(root, '--sha256', list);
+        expect(r.status).toBe(1);
+        expect(r.json.errors).toContain('sha256 の一覧と中身が違う: models/hero_v2-0.png');
+        const over = run(root, '--write-sha256', list, '--overwrite-sha256');
+        expect(over.status).toBe(0);
+        expect(readText(list)).not.toBe(first);
+        expect(run(root, '--overwrite-sha256').status).toBe(2);
+    });
 });
