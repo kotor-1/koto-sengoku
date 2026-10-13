@@ -577,3 +577,11 @@ proto3d/assets-src/art-v25/README.md、台詞の枠の顔は docs/art-v22-dialog
 - 送った 5 個（`index.html` 以外）と、変えていない `favicon.png`・`models/hero_v2-0.png`・`art/story/council_day.webp` は、公開先から読み戻して本番ビルドと中身が同じ。
 - 確かめの後の片付けで、作業場所の本番ビルドの PNG 13 個（`favicon.png`・`models/*.png`）が画面写真と一緒に JPEG へ変えられていた。公開では送らないファイルだが、Version 25 の本番ビルドの同じファイル（組み立てた時の sha256 の一覧と一致）で戻し、152 個すべてが一覧と一致することを確かめてから公開した。原因（作業用の片付けの一括変換が dist の置き場まで及んだ）と、Version 27 からの止め方（check-dist の参照・中身・sha256 の確かめ。手で戻すことは手順にしない）は [build-image-safety.md](build-image-safety.md)。
 - 比べの元の Version 25（版 ID 1791693561-2429）は、公開先の版の履歴から戻せる。URL の `?artOff=council` で Version 25 までの軍議の画面、`?art=v24` で Version 24、`?art=old` で Version 21 の見た目。
+
+## 公開（Version 27）
+
+- 公開先の Version 27（版 ID 1791892405-be84）＝コミット 924c56f の本番ビルド（その後の 313a68d と、この記録は文書だけで、画面のコードは同じ）。152 ファイル・62,518,481 バイト。
+- 通常の手順で新しく組み立てた版をそのまま公開した（画像を手で戻す手順は無し）。公開の直前に、新しい check-dist でビルド直後の sha256 の一覧（152 件すべて一致）・参照の先・中身と拡張子を確かめた。
+- Version 26 と違うのは 5 個（1,121,511 バイト）：`index.html` と `assets/` の JS 4 個（entry・faceArt・index・practiceView）。前の名前の JS 4 個は公開先から消した。画像 130 個（`art/` 20・モデルの質感 109・`favicon.png`）と CSS は Version 26 と同じ中身。
+- 送った 4 個（`index.html` 以外）と、変えていない `assets/index-*.css`・`favicon.png`・`models/hero_v2-0.png`・`models/tree_pine-2.png`・`art/story/council_day.webp`・`art/portraits/sakai_v2.webp` は、公開先から読み戻して本番ビルドと中身が同じ。
+- 比べの元の Version 26（版 ID 1791830283-5a2b）は、公開先の版の履歴から戻せる。URL の `?artOff=council` で背景なしの軍議（立ち絵は画面を元にした大きさ）、`?art=v24`・`?art=old` で前の版の見た目。
