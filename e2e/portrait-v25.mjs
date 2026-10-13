@@ -25,6 +25,8 @@
  *     決まり（ui/artCanvas.ts の portraitLayout と同じ計算をここで行う）どおり：選択肢・軍議の見出し（文字の箱。Version 26 から後ろの暗さは数えない）・詳しく見る・目的の札・
  *     メニュー・情勢と重ならない・元の画像の画素より大きくしない（高さ × 端末の比 ≦ 画像の高さ）・台詞の枠の上に肩まで見える・枠の中は透明・
  *     下端は画面の下の端・押せない・反転しない。人物画が出ている行は、その人の台詞の枠の顔を出さない（同じ人を 2 つ並べない）。
+ *     Version 27：軍議の背景を画面より小さく描いている画面（2560×1440・1920×1200・1024×1366 など）は、描いた所が元（高さは描いた所の高さの 86% まで・
+ *     下端は描いた所の下端・左端は描いた所の左端＋max(24, 背景の左の縁をなじませる幅)。e2e/council-bg-v26.mjs が詳しく確かめる）。
  *     軍議の背景は、Version 26 からどの画面でも出す（端末の比で外さない）。表示の倍率（CSS の px ÷ 元の画素）は min(画面を埋める倍率, 1.25)
  *     （e2e/council-bg-v26.mjs が描く所・範囲を限った画面・背景の有無で四角が変わらないことを詳しく確かめる）。
  *   - v24：人物画・軍議の背景の要素も読み込みも無い。顔は第 1 版（face.pack1.<武将>）。old：素材の要素も読み込みも無い。
@@ -70,16 +72,19 @@ const R = { minViewportH: 340, phoneFrac: 0.8, pcFrac: 0.86, minFreeW: 150, minH
 function portraitLayout(p) {
     if (!(p.vw > 0 && p.vh >= R.minViewportH && p.aspect > 0)) return null;
     const gap = 8;
-    let h = p.vh * (p.vh <= 430 ? R.phoneFrac : R.pcFrac);
+    // Version 27：範囲を限って描いた軍議の背景（frame：{left,top,right,bottom}）があれば、その高さの割合・右の端まで
+    const f = p.frame ?? null;
+    const right = f ? Math.min(p.vw, f.right) : p.vw;
+    let h = (f ? Math.min(p.vh, f.bottom - f.top) : p.vh) * (p.vh <= 430 ? R.phoneFrac : R.pcFrac);
     h = Math.min(h, Math.max(0, p.maxH));
-    h = Math.min(h, (p.vw - p.left - gap) / p.aspect);
+    h = Math.min(h, (right - p.left - gap) / p.aspect);
     const live = p.avoid.filter((o) => o.right > o.left && o.bottom > o.top && o.right > p.left && o.top < p.bottom);
     for (const o of live) h = Math.min(h, Math.max((o.left - gap - p.left) / p.aspect, p.bottom - (o.bottom + gap)));
     h = Math.floor(h);
     const w = Math.floor(h * p.aspect);
     if (h < R.minH) return null;
     const top = p.bottom - h;
-    let free = p.vw - gap - p.left;
+    let free = right - gap - p.left;
     for (const o of live) if (o.bottom > top) free = Math.min(free, o.left - gap - p.left);
     if (free < R.minFreeW) return null;
     const d = p.dialog;
@@ -96,6 +101,14 @@ function councilScale(vw, vh) {
 }
 /** 表示の倍率の上限（ui/artCanvas.ts の COUNCIL_ART.maxScale） */
 const COUNCIL_MAX_SCALE = 1.25;
+/** 軍議の背景を画面より小さく描いている時の、描いた所のうち画面に見えている所（画面いっぱい・出ていない時は null。Version 27 の立ち絵の元） */
+function bgFrame(p) {
+    const b = p.council && p.bg && !p.bg.hidden && p.bg.on ? p.bg.rect : null;
+    if (!b) return null;
+    const f = { left: Math.max(0, b.l), top: Math.max(0, b.t), right: Math.min(p.vw, b.r), bottom: Math.min(p.vh, b.b) };
+    if (f.left <= 0.5 && f.top <= 0.5 && f.right >= p.vw - 0.5 && f.bottom >= p.vh - 0.5) return null;
+    return { ...f, fadeLeft: f.left > 0.5 ? (p.bg.feather?.[0] ?? 0) : 0 };
+}
 
 /** 一番上の会話の層：台詞の枠・人物画・顔・背景・避ける物（artCanvas の測り方と同じ）の四角（読むだけ） */
 function probe() {
@@ -192,7 +205,18 @@ function probe() {
         portraitEls: L.querySelectorAll('canvas.g-portrait').length,
         hasFace: d.classList.contains('has-face'),
         face: f ? { shown: !f.hidden && getComputedStyle(f).display !== 'none', id: f.dataset.artId ?? null, blocked: f.dataset.blocked === '1', compact: f.classList.contains('compact'), rect: R(f) } : null,
-        bg: bg ? { hidden: bg.hidden, on: bg.classList.contains('on'), first: L.firstElementChild === bg, base: bg.querySelector('canvas.g-council-bg-base')?.dataset.artId ?? null, px: [bg.querySelector('canvas')?.width, bg.querySelector('canvas')?.height] } : null,
+        bg: bg
+            ? {
+                  hidden: bg.hidden,
+                  on: bg.classList.contains('on'),
+                  first: L.firstElementChild === bg,
+                  base: bg.querySelector('canvas.g-council-bg-base')?.dataset.artId ?? null,
+                  px: [bg.querySelector('canvas')?.width, bg.querySelector('canvas')?.height],
+                  // 描いた所（canvas の四角）と縁をなじませる幅（開発用の data-probe の feather）。Version 27 の立ち絵の元
+                  rect: R(bg.querySelector('canvas.g-council-bg-base')),
+                  feather: bg.dataset.probe ? JSON.parse(bg.dataset.probe).feather : null,
+              }
+            : null,
         gArt: L.classList.contains('g-art'),
         bodyArt: document.body.classList.contains('g-council-art'),
     };
@@ -391,10 +415,12 @@ async function run(part, size, mode) {
         // 決まりどおりの大きさ（同じ計算）
         if (want) {
             const e = manifest[want];
-            const left = pr ? pr.left : p.vh <= 430 ? 8 : 24;
+            const frame = bgFrame(p);
+            const css = p.vh <= 430 ? 8 : 24;
+            const left = frame ? frame.left + Math.max(css, frame.fadeLeft) : pr ? pr.left : css;
             const avoid = [p.choices, p.head, p.map, p.hud, p.menu, p.sit].filter(Boolean).map((b) => ({ left: b.l, top: b.t, right: b.r, bottom: b.b }));
             const dlg = p.dialog ? { left: p.dialog.l, top: p.dialog.t, right: p.dialog.r, bottom: p.dialog.b } : null;
-            const exp = portraitLayout({ vw: p.vw, vh: p.vh, left, bottom: p.vh, aspect: e.w / e.h, avoid, maxH: e.h / p.dpr, dialog: dlg, shoulderY: e.meta?.shoulderY });
+            const exp = portraitLayout({ vw: p.vw, vh: p.vh, left, bottom: frame ? frame.bottom : p.vh, aspect: e.w / e.h, avoid, maxH: e.h / p.dpr, dialog: dlg, shoulderY: e.meta?.shoulderY, frame });
             recordLayout(L, p, exp);
             if (exp) check(shown === want && Math.abs(pr.rect.h - exp.h) < 0.6 && Math.abs(pr.rect.w - exp.w) < 0.6, `${L} 人物画は決まりどおりの大きさ ${exp.w}×${exp.h}`, { exp, got: pr?.rect, shown });
             else check(shown === null, `${L} 入りきらない画面では人物画を出さない（顔は台詞の枠に出る）`, pr?.rect);
@@ -407,7 +433,9 @@ async function run(part, size, mode) {
             if (p.face?.shown && p.face.rect) check(!boxesOverlap(r, p.face.rect) || p.face.id !== faceOf(p.speaker, mode), `${L} 人物画と同じ人の顔を並べない`, p.face);
             check(r.h * p.dpr <= e.h + 0.5, `${L} 元の画像を拡大しない（${Math.round(r.h)} × ${p.dpr} ≦ ${e.h}）`, r);
             check(pr.px[1] <= e.h && pr.px[0] <= e.w, `${L} canvas の画素は元の画像以下`, pr.px);
-            check(Math.abs(r.b - p.vh) < 1 && r.l >= -0.5 && r.t >= -0.5 && r.r <= p.vw + 0.5, `${L} 下端は画面の下の端・画面の中`, r);
+            const frame = bgFrame(p);
+            if (frame) check(Math.abs(r.b - frame.bottom) < 1 && r.l >= frame.left - 0.5 && r.t >= frame.top - 0.5 && r.r <= frame.right + 0.5, `${L} 範囲を限った軍議の背景：下端は描いた所の下端・描いた所の中（Version 27）`, { r, frame });
+            else check(Math.abs(r.b - p.vh) < 1 && r.l >= -0.5 && r.t >= -0.5 && r.r <= p.vw + 0.5, `${L} 下端は画面の下の端・画面の中`, r);
             const sy = e.meta?.shoulderY ?? R.shoulderY;
             if (p.dialog && p.dialog.l < r.r && p.dialog.r > r.l) check(p.dialog.t - r.t >= sy * r.h - 0.6, `${L} 台詞の枠の上に肩まで見える（頭・髷・肩を隠さない）`, { top: r.t, dialogTop: p.dialog.t, need: sy * r.h });
             if (pr.alphaInDialog !== null) check(pr.alphaInDialog === 0, `${L} 台詞の枠の中は人物画を描かない（透明）`, pr.alphaInDialog);

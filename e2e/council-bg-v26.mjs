@@ -19,6 +19,17 @@
  *     1.25 を超える画面は、画面より小さく真ん中に描く（周りは暗い地）。canvas の画素は元の画像の画素まで。canvas の四角は記録どおり。
  *   - default と artoff で、台詞の枠・名前・台詞・選択肢・軍議の見出し・立ち絵・台詞の枠の顔の四角が同じ（背景で立ち絵・顔・文字の大きさが変わらない）。
  *   - artoff：背景の要素が無い・画像を読まない。どちらもページの誤りが無い。
+ *   Version 27（docs/v25-portraits.md の 13）：
+ *   - 背景を画面より小さく描いている画面（2560×1440・1920×1200・1024×1366 など。描いた所が画面の幅・高さに足りない）では、立ち絵はその描いた所が元：
+ *     描いた所の中（左・上・右）で下端は描いた所の下端、左端は描いた所の左端＋max(CSS の左の空き 24, 背景の左の縁をなじませる幅)、
+ *     高さは描いた所の高さの 86% まで（元の画像の画素の上限・避ける物で小さくなるのは今までどおり）、縦横の比はそのまま（切らない）、
+ *     頭の上に描いた所の高さの 10% 以上の空き、肩（shoulderY）は台詞の枠の上・なじませる所より上、腰の切り口（canvas の下の端）は透明までなじませる。
+ *     artoff（背景なし）の立ち絵は Version 26 と同じ決まり（画面が元：下端は画面の下の端）なので、default と artoff で立ち絵だけが違う。
+ *   - 背景が画面いっぱいの画面（1920×1080・1280×720・スマホ）は、立ち絵も今までどおり（default と artoff で同じ。BASELINE を渡せば Version 26 の記録とも同じ）。
+ *   - 文字・選択肢・顔・見出し・ボタンの四角は、どの画面でも default と artoff で同じ（背景・立ち絵の決まりで動かない）。
+ *   - RESIZE=1：2560×1440 は 1920×1080 へ、1024×1366 は 1366×1024 へ窓を変えて（開発用の操作 setViewportSize）戻し、立ち絵が今の画面の決まりで
+ *     測り直され、戻した後は元の四角と同じ（古い大きさを残さない）。
+ *   BASELINE=<Version 26 の report.json>：同じ大きさの同じ行の四角を比べる（背景を画面より小さく描く画面の軍議の立ち絵だけ違ってよい。ほかは同じ）。
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -27,10 +38,14 @@ import { launchBrowser, skipCinematic } from './lib.mjs';
 const BASE = process.env.BASE || 'http://127.0.0.1:8743';
 const OUT = resolve(process.argv[2] || 'e2e-out/council-bg-v26');
 const list = (v, d) => (v || d).split(',').map((s) => s.trim()).filter(Boolean);
-const SIZES = list(process.env.SIZES, '1920x1080@1,1920x1080@2,2560x1440@1,1366x768@1,1280x720@1,1024x1366@2,844x390@2,844x390@3,667x375@2,568x320@2,390x844@2,390x844@3,412x915@3,360x640@2');
+const SIZES = list(process.env.SIZES, '1920x1080@1,1920x1080@2,2560x1440@1,1920x1200@1,1366x768@1,1280x720@1,1024x1366@2,844x390@2,844x390@3,667x375@2,568x320@2,390x844@2,390x844@3,412x915@3,360x640@2');
 const MODES = list(process.env.MODES, 'default,artoff');
 const PAR = Math.max(1, Number(process.env.PAR || 3));
 const CONTRAST = process.env.CONTRAST === '1';
+const RESIZE = process.env.RESIZE === '1';
+const BASELINE = process.env.BASELINE ? JSON.parse(readFileSync(resolve(process.env.BASELINE), 'utf8')) : null;
+/** RESIZE=1 で窓を変えて戻す大きさ（元 → 変える先） */
+const RESIZE_TO = { '2560x1440@1': [1920, 1080], '1024x1366@2': [1366, 1024] };
 const SHOTS = `${OUT}/shots`;
 mkdirSync(SHOTS, { recursive: true });
 const POLL = { timeout: 600000, polling: 200 };
@@ -46,6 +61,23 @@ const manifest = JSON.parse(readFileSync(new URL('../proto3d/src/art/manifest.ge
 /** ui/artCanvas.ts の COUNCIL_ART と同じ値（ここで別に計算して比べる） */
 const S_MAX = 1.25;
 const MAX_CROP_Y = 0.18;
+
+/** 立ち絵の決まり（ui/artCanvas.ts の PORTRAIT_RULES と同じ値） */
+const PC_FRAC = 0.86;
+const PHONE_FRAC = 0.8;
+/** 頭の上の空きの下限（描いた背景の高さに対する割合。Version 27 の確かめの目安） */
+const HEAD_ROOM = 0.1;
+
+/**
+ * 描いた背景の四角（canvas の四角 {l,t,r,b}）のうち画面に見えている所。画面いっぱい（0.5px まで）なら null（立ち絵は画面が元：Version 26 と同じ）
+ */
+function bgFrame(p) {
+    const b = p.bg?.base?.rect;
+    if (!b || !p.bg?.on || p.bg.hidden) return null;
+    const f = { l: Math.max(0, b.l), t: Math.max(0, b.t), r: Math.min(p.vw, b.r), b: Math.min(p.vh, b.b) };
+    if (f.l <= 0.5 && f.t <= 0.5 && f.r >= p.vw - 0.5 && f.b >= p.vh - 0.5) return null;
+    return { ...f, w: f.r - f.l, h: f.b - f.t, fadeLeft: p.bg.probe?.feather?.[0] ?? 0, fadeBottom: p.bg.probe?.feather?.[1] ?? 0 };
+}
 
 /** 画面を埋める（cover・上下 18% まで切る）のに要る表示の倍率（councilArtLayout の need と同じ式） */
 function needScale(vw, vh) {
@@ -67,6 +99,20 @@ function probe() {
         const cs = getComputedStyle(e);
         if (cs.display === 'none') return null;
         return R(e);
+    };
+    // 立ち絵の canvas の、体の真ん中あたり（幅の 45%）の縦の列の不透明さ（下の端からの CSS の px → 0〜255）。腰の切り口のなじませ方を見る
+    const alphaCol = (c) => {
+        const ctx = c.getContext('2d');
+        const cr = c.getBoundingClientRect();
+        if (!ctx || !(cr.height > 0)) return null;
+        const ky = c.height / cr.height;
+        const x = Math.round(c.width * 0.45);
+        const out = {};
+        for (const up of [1, 10, 20, 30, 41, 60, 82, 90, 120, 200]) {
+            const y = Math.max(0, Math.min(c.height - 1, Math.round(c.height - up * ky)));
+            out[up] = ctx.getImageData(x, y, 1, 1).data[3];
+        }
+        return out;
     };
     const L = [...document.querySelectorAll('.g-layer[data-kind="script"]')].pop();
     const d = L.querySelector('.g-dialog');
@@ -93,7 +139,7 @@ function probe() {
         head: vbox(head),
         headH2: head ? R(head.querySelector('h2')) : null,
         headP: head ? R(head.querySelector('p')) : null,
-        portrait: pShown ? { id: pc.dataset.artId, ...R(pc) } : null,
+        portrait: pShown ? { id: pc.dataset.artId, ...R(pc), style: [pc.style.left, pc.style.bottom], px: [pc.width, pc.height], alpha: alphaCol(pc) } : null,
         face: fShown ? { id: f.dataset.artId, compact: f.classList.contains('compact'), ...R(f) } : null,
         bg: bg
             ? {
@@ -145,7 +191,7 @@ async function run(browser, size, mode) {
         rec.steps.push({ how, what });
         log(`  ${mode} ${size} ${how}: ${what}`);
     };
-    const { ctx, page, touch, errors, art } = await newPage(browser, size, mode);
+    const { ctx, page, touch, errors, art, w, h } = await newPage(browser, size, mode);
     const tag = `${mode}-${size.replace('@', 'at')}`;
     const press = async (loc) => {
         if (touch) await loc.tap();
@@ -246,6 +292,27 @@ async function run(browser, size, mode) {
     await page.waitForFunction(() => window.__game.ui?.kind === 'script' && window.__game.ui.id === 'council', null, POLL);
     await sleep(600);
     await readScript('council', { narration: 'narration', sakai: 'sakai', ishikawa: 'ishikawa', 'tadakatsu+choices': 'choices', 'hero+choices': 'choices', 'ishikawa+choices': 'choices', 'sakai+choices': 'choices' });
+    if (RESIZE && RESIZE_TO[size]) {
+        // 窓を変えて戻す（開発用の操作：setViewportSize。回転・窓の大きさの変更の代わり）。方針の選択肢の行のまま
+        const [w2, h2] = RESIZE_TO[size];
+        // 窓の resize はブラウザの描画の手順で届く（render=manual で動きの無い行では、次の描画が来るまで届かない）。2 フレーム描かせてから測る
+        const frames = () => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true)))));
+        const before = await page.evaluate(probe);
+        await page.setViewportSize({ width: w2, height: h2 });
+        step('dev API', `setViewportSize ${w2}x${h2}`);
+        await frames();
+        await frames();
+        await settle();
+        const mid = await page.evaluate(probe);
+        await shot(`resize-${w2}x${h2}`);
+        await page.setViewportSize({ width: w, height: h });
+        step('dev API', `setViewportSize ${w}x${h}（戻す）`);
+        await frames();
+        await frames();
+        await settle();
+        const after = await page.evaluate(probe);
+        rec.resize = { to: [w2, h2], before, mid, after };
+    }
     rec.art = [...new Set(art)];
     rec.errors = errors.filter((e) => !/\[art\]/.test(e));
     await ctx.close();
@@ -254,11 +321,60 @@ async function run(browser, size, mode) {
 
 const near = (a, b, tol = 0.6) => (a === null && b === null) || (!!a && !!b && ['l', 't', 'r', 'b'].every((k) => Math.abs(a[k] - b[k]) <= tol));
 
+/** 立ち絵の決まり（Version 27）：背景を画面より小さく描いている軍議は描いた所が元、それ以外は画面が元（Version 26 と同じ）。L は記録の名前 */
+function checkPortrait(L, p) {
+    const pr = p.portrait;
+    if (!pr) return;
+    const e = manifest[pr.id];
+    if (!e) return check(false, `${L} 立ち絵 ${pr.id} が一覧にある`);
+    const A = e.w / e.h;
+    const sy = e.meta?.shoulderY ?? 0.46;
+    check(Math.abs(pr.w - Math.floor(pr.h * A)) <= 1, `${L} 立ち絵の縦横の比はそのまま（${Math.round(pr.w)}×${Math.round(pr.h)}・比 ${A.toFixed(3)}。切らない・引き伸ばさない）`, pr);
+    check(pr.h * p.dpr <= e.h + 0.5, `${L} 立ち絵は元の画像を拡大しない（${Math.round(pr.h)} × ${p.dpr} ≦ ${e.h}）`, pr);
+    if (p.dialog && p.dialog.l < pr.r && p.dialog.r > pr.l && p.dialog.t < pr.b) check(p.dialog.t - pr.t >= sy * pr.h - 0.6, `${L} 肩まで台詞の枠の上に見える`, { top: pr.t, dialogTop: p.dialog.t, need: sy * pr.h });
+    for (const [k, b] of [['choices', p.choices], ['head', p.headH2], ['headP', p.headP]]) if (b) check(!(pr.l < b.r - 0.5 && b.l < pr.r - 0.5 && pr.t < b.b - 0.5 && b.t < pr.b - 0.5), `${L} 立ち絵が ${k} と重ならない`, { pr, b });
+    const f = p.council ? bgFrame(p) : null;
+    if (!f) {
+        check(Math.abs(pr.b - p.vh) < 0.6 && !pr.style[0] && !pr.style[1], `${L} 背景が画面いっぱい・無い：立ち絵は画面が元（下端は画面の下の端・左端は CSS。Version 26 と同じ決まり）`, pr);
+        check(pr.h <= Math.floor(p.vh * (p.vh <= 430 ? PHONE_FRAC : PC_FRAC)) + 0.5, `${L} 立ち絵の高さは画面の ${(p.vh <= 430 ? PHONE_FRAC : PC_FRAC) * 100}% まで`, pr);
+        return;
+    }
+    const wantLeft = f.l + Math.max(p.vh <= 430 ? 8 : 24, f.l > 0.5 ? f.fadeLeft : 0);
+    check(Math.abs(pr.b - f.b) < 0.6, `${L} 範囲を限った背景：立ち絵の下端は描いた所の下端 ${f.b}`, { pr, f });
+    check(Math.abs(pr.l - wantLeft) < 0.6, `${L} 立ち絵の左端は描いた所の左端＋max(24, なじませる幅 ${f.fadeLeft}) ＝ ${wantLeft}`, { pr, f });
+    check(pr.l >= f.l - 0.5 && pr.r <= f.r + 0.5 && pr.t >= f.t - 0.5, `${L} 立ち絵は描いた背景の中（外の暗い地にはみ出さない）`, { pr, f });
+    const ratio = pr.h / f.h;
+    const full = Math.min(Math.floor(f.h * PC_FRAC), Math.floor(e.h / p.dpr));
+    check(pr.h <= Math.floor(f.h * PC_FRAC) + 0.5, `${L} 立ち絵の高さは描いた背景の高さの ${PC_FRAC * 100}% まで（${Math.round(pr.h)}／${f.h}＝${ratio.toFixed(3)}）`, { pr, f });
+    // 選択肢が、その大きさの立ち絵の右（＋間 8px）より左・上端より下まで来る行は、選択肢を避けて小さくなる（今までと同じ決まり）。それ以外は決まりの大きさちょうど
+    const byChoices = !!p.choices && p.choices.l < pr.l + Math.floor(full * A) + 8 && p.choices.b + 8 > f.b - full;
+    if (!byChoices) check(Math.abs(pr.h - full) <= 0.6, `${L} 避ける物が無ければ min(描いた背景の 86%, 原寸÷端末の比) ＝ ${full}`, { h: pr.h, full });
+    else check(pr.h <= full + 0.5 && (pr.r <= p.choices.l - 8 + 0.6 || pr.t >= p.choices.b + 8 - 0.6), `${L} 選択肢を避けて小さくする（選択肢との間 8px）`, { pr, choices: p.choices });
+    check(pr.t - f.t >= HEAD_ROOM * f.h - 0.5, `${L} 頭・髷の上に描いた背景の高さの ${HEAD_ROOM * 100}% 以上の空き（${Math.round(pr.t - f.t)}px）`, { pr, f });
+    check(pr.t + sy * pr.h <= f.b - f.fadeBottom, `${L} 肩（${sy}）はなじませる所（下の ${f.fadeBottom}px）より上`, { pr, f });
+    if (f.fadeBottom > 0 && pr.alpha) {
+        // 下の端の 1px は透明に近く、なじませる幅より上（体の真ん中の列）は不透明
+        const above = [10, 20, 30, 41, 60, 82, 90, 120, 200].find((k) => k >= f.fadeBottom + 8) ?? 200;
+        check(pr.alpha[1] <= 16 && pr.alpha[above] >= 200, `${L} 腰の切り口は背景の下の縁と同じ ${f.fadeBottom}px で透明までなじませる（下の端の不透明さ ${pr.alpha[1]}・${above}px 上 ${pr.alpha[above]}）`, pr.alpha);
+    }
+}
+
 function verify(rec) {
     const tag = `${rec.mode} ${rec.size}`;
     check(rec.errors.length === 0, `${tag}：ページの誤りが無い`, rec.errors.slice(0, 3));
     const council = rec.lines.filter((l) => l.script === 'council');
     check(council.length >= 5, `${tag}：軍議の行を読んだ（${council.length} 行）`);
+    for (const p of rec.lines.filter((l) => l.script !== 'council')) checkPortrait(`${tag} ${p.script}#${p.index + 1}(${p.key})`, p);
+    for (const p of council) checkPortrait(`${tag} council#${p.index + 1}(${p.key})`, p);
+    if (rec.resize) {
+        const { before, mid, after, to } = rec.resize;
+        const L = `${tag} 窓を ${to.join('x')} へ変えて戻す`;
+        checkPortrait(`${L}（変える前）`, before);
+        checkPortrait(`${L}（${to.join('x')}）`, mid);
+        checkPortrait(`${L}（戻した後）`, after);
+        if (rec.mode === 'default') check(!!mid.portrait && !!before.portrait && !near(mid.portrait, before.portrait), `${L}：変えた先では今の画面の決まりで測り直す（古い大きさを残さない）`, { before: before.portrait, mid: mid.portrait });
+        check(near(after.portrait, before.portrait) && near(after.dialog, before.dialog) && near(after.choices, before.choices) && near(after.head, before.head), `${L}：戻した後の立ち絵・台詞の枠・選択肢・見出しの四角は変える前と同じ`, { before: before.portrait, after: after.portrait });
+    }
     for (const p of council) {
         const L = `${tag} council#${p.index + 1}(${p.key})`;
         check(p.textFont === `${p.vh <= 430 ? 15 : 16}px`, `${L} 台詞の字は ${p.vh <= 430 ? 15 : 16}px`, p.textFont);
@@ -308,7 +424,8 @@ function compare(def, off) {
         check(a.key === b.key, `${L} 同じ話し手`, [a.key, b.key]);
         for (const k of ['dialog', 'name', 'text', 'choices', 'head', 'headH2', 'headP']) check(near(a[k], b[k]), `${L} ${k} の四角が背景の有無で変わらない`, { def: a[k], off: b[k] });
         check(a.choiceRects.length === b.choiceRects.length && a.choiceRects.every((r, j) => near(r, b.choiceRects[j])), `${L} 選択肢の四角が背景の有無で変わらない`);
-        check(near(a.portrait, b.portrait) && (a.portrait?.id ?? null) === (b.portrait?.id ?? null), `${L} 立ち絵の有無と四角が背景の有無で変わらない`, { def: a.portrait, off: b.portrait });
+        if (!bgFrame(a)) check(near(a.portrait, b.portrait) && (a.portrait?.id ?? null) === (b.portrait?.id ?? null), `${L} 背景が画面いっぱい：立ち絵の有無と四角が背景の有無で変わらない`, { def: a.portrait, off: b.portrait });
+        else check((a.portrait?.id ?? null) === (b.portrait?.id ?? null) && (!b.portrait || Math.abs(b.portrait.b - b.vh) < 0.6), `${L} 範囲を限った背景：立ち絵は同じ人で、背景の無い artoff は画面が元（Version 26 と同じ）・default は描いた所が元`, { def: a.portrait, off: b.portrait });
         check(near(a.face, b.face) && (a.face?.id ?? null) === (b.face?.id ?? null), `${L} 台詞の枠の顔の有無と四角が背景の有無で変わらない`, { def: a.face, off: b.face });
     }
 }
@@ -339,6 +456,29 @@ for (const size of SIZES) {
     const o = results.find((r) => r.size === size && r.mode === 'artoff');
     if (d && o) compare(d, o);
 }
+/** BASELINE（Version 26 の report.json）と同じ行の四角を比べる。背景を画面より小さく描く軍議の立ち絵だけ違ってよい */
+const beforeAfter = [];
+if (BASELINE) {
+    for (const r of results) {
+        const b = BASELINE.runs.find((x) => x.size === r.size && x.mode === r.mode);
+        if (!b) continue;
+        const tag = `${r.mode} ${r.size} BASELINE`;
+        check(b.lines.length === r.lines.length, `${tag}：Version 26 と同じ数の行を通る（${b.lines.length}・${r.lines.length}）`);
+        for (let i = 0; i < Math.min(b.lines.length, r.lines.length); i++) {
+            const x = b.lines[i];
+            const y = r.lines[i];
+            const L = `${tag} ${y.script}#${y.index + 1}(${y.key})`;
+            check(x.script === y.script && x.key === y.key, `${L} 同じ行`, [x.key, y.key]);
+            for (const k of ['dialog', 'name', 'text', 'choices', 'head', 'headH2', 'headP', 'face']) check(near(x[k], y[k]), `${L} ${k} の四角は Version 26 と同じ`, { v26: x[k], now: y[k] });
+            check(x.choiceRects.length === y.choiceRects.length && x.choiceRects.every((c, j) => near(c, y.choiceRects[j])), `${L} 選択肢の四角は Version 26 と同じ`);
+            check(x.textFont === y.textFont, `${L} 台詞の字の大きさは Version 26 と同じ（${y.textFont}）`, [x.textFont, y.textFont]);
+            const f = y.council ? bgFrame(y) : null;
+            if (!f) check(near(x.portrait, y.portrait) && (x.portrait?.id ?? null) === (y.portrait?.id ?? null), `${L} 立ち絵の四角は Version 26 と同じ（背景が画面いっぱい・無い・会話の画面）`, { v26: x.portrait, now: y.portrait });
+            else if (y.portrait) beforeAfter.push({ size: r.size, mode: r.mode, line: `${y.script}#${y.index + 1}(${y.key})`, frame: [f.l, f.t, f.w, f.h], before: x.portrait && [x.portrait.l, x.portrait.t, x.portrait.w, x.portrait.h].map((v) => Math.round(v)), after: [y.portrait.l, y.portrait.t, y.portrait.w, y.portrait.h].map((v) => Math.round(v)), ratioBefore: x.portrait ? Math.round((x.portrait.h / f.h) * 1000) / 1000 : null, ratioAfter: Math.round((y.portrait.h / f.h) * 1000) / 1000 });
+        }
+    }
+}
+report.beforeAfter = beforeAfter;
 report.runs = results;
 const table = SIZES.map((size) => {
     const d = results.find((r) => r.size === size && r.mode === 'default');
@@ -351,4 +491,10 @@ writeFileSync(`${OUT}/report.json`, JSON.stringify(report, null, 1));
 const ng = checks.filter((c) => !c.ok);
 log(`checks ${checks.length - ng.length}/${checks.length} OK`);
 for (const t of table) log(`  ${t.size}: shown=${t.shown} need=${t.need} scale=${t.scale} limited=${t.limited} css=${JSON.stringify(t.css)} device=${JSON.stringify(t.device)} canvas=${JSON.stringify(t.canvas)}`);
+for (const r of results.filter((x) => x.mode === 'default')) {
+    const sizes = new Map();
+    for (const p of r.lines.filter((l) => l.portrait)) sizes.set(`${p.script}:${p.portrait.id}`, `${[p.portrait.l, p.portrait.t, p.portrait.w, p.portrait.h].map((v) => Math.round(v)).join(',')}${p.council && bgFrame(p) ? ` frame=${bgFrame(p).h}` : ''}`);
+    log(`  portrait ${r.size}: ${[...sizes].map(([k, v]) => `${k}=${v}`).join(' ')}`);
+}
+for (const x of beforeAfter) log(`  before/after ${x.size} ${x.mode} ${x.line}: frame=${x.frame} before=${x.before} (${x.ratioBefore}) after=${x.after} (${x.ratioAfter})`);
 process.exit(ng.length ? 1 : 0);
