@@ -4,8 +4,10 @@
 // 確かめる事（どれも本物の入力。ゲームの状態を開発用の操作で変えない。保存は読むだけ）：
 //   1. 軍議の方針の選択肢 A・B・C が画面の中にあり、真ん中を押せる。
 //   2. 「自領の防衛」（policy_home）を押すと、その方針の確かめの会話（council.confirm.home：忠勝の
-//      「どちらにも兵を出さず、国を守る。…」から 5 行）が 1 つだけ始まる。押した直後（120 ms 後）の 2 度目の押しでは、
-//      会話が 2 つ始まったり行が進んだりしない（1/5 のまま）。
+//      「どちらにも兵を出さず、国を守る。…」から 5 行）が 1 つだけ、1 行目から始まる。押した直後にもう一度押しても、
+//      会話が 2 つ始まらない。2 度目の押しが 1 行目が出てから 140 ms（台詞を送る押しの見張り）のうちにページへ届いたなら行は進まず、
+//      それより後に届いたなら 1 行だけ進む（作りどおり）。押しの届いた時刻と行の出た時刻は、ページの中で記録する（読むだけ）。
+//      重い描画（2560×1440 のソフトウェア描画は 1 フレームに数秒）では、道具の「120 ms 後」がページでは遅れて届くため。
 //   3. 本物の押しで読み進めると、5 行の後に「それで決める」「考え直す」が出る。
 //   4. 「考え直す」で、方針の選び直し（council.again：「改めて、いずれの道を取られますか。」と A・B・C）に戻る。
 //      画面上の段階は「軍議」のまま（まだ何も決まっていない）。
@@ -187,7 +189,25 @@ try {
     check(c0.phase === '軍議' && c0.policy === null, `${TAG}: 方針を選ぶ前：段階は「軍議」、保存の方針は無い（${c0.phase}・${c0.policy}）`, c0);
     await shot('1-council-choices');
 
-    // 2. 自領の防衛を押す（120 ms 後に同じ所をもう一度押す）
+    // 2. 自領の防衛を押す（120 ms 後に同じ所をもう一度押す）。押しの届いた時刻と台詞の行の移り変わりをページの中で記録する（読むだけ）
+    await page.evaluate(() => {
+        const w = window;
+        w.__pick = { downs: [], lines: [] };
+        addEventListener('pointerdown', (e) => w.__pick.downs.push({ t: e.timeStamp, target: String(e.target?.className ?? '').slice(0, 40) }), { capture: true, passive: true });
+        let last = '';
+        const rec = () => {
+            const L = [...document.querySelectorAll('.g-layer[data-kind="script"]')].pop();
+            const c = L?.querySelector('.g-dialog .count')?.textContent.trim() ?? '';
+            const x = L?.querySelector('.g-dialog .text')?.textContent.trim() ?? '';
+            const key = `${c}|${x}`;
+            if (key !== last) {
+                last = key;
+                w.__pick.lines.push({ t: performance.now(), count: c, text: x.slice(0, 20) });
+            }
+        };
+        new MutationObserver(rec).observe(document.body, { subtree: true, childList: true, characterData: true });
+        rec();
+    });
     const b = await pressChoice('policy_home');
     await sleep(120);
     if (TOUCH) await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2);
@@ -195,8 +215,18 @@ try {
     steps.push(`real ${TOUCH ? 'tap' : 'click'}: 120 ms 後に同じ所をもう一度`);
     await sleep(1500);
     const p1 = await state();
-    check(p1.text.startsWith(HOME_LINES[0]), `${TAG}: 自領の防衛を押すと、その方針の確かめの会話が始まる（${p1.speaker}：${p1.text.slice(0, 20)}…）`, p1);
-    check(p1.count === '1/5', `${TAG}: 確かめの会話は 1 行目（${p1.count}）。押した直後の 2 度目の押しで行が進まない`, p1.count);
+    const pick = await page.evaluate(() => window.__pick);
+    const first = pick.lines.find((l) => l.count === '1/5');
+    const second = pick.lines.find((l) => l.count === '2/5');
+    const downs = pick.downs.slice(-2);
+    const gap = downs.length === 2 && first ? +(downs[1].t - first.t).toFixed(1) : null;
+    log(`pick timing: downs=${JSON.stringify(downs.map((d) => ({ t: +d.t.toFixed(1), target: d.target })))} lines=${JSON.stringify(pick.lines.map((l) => ({ t: +l.t.toFixed(1), count: l.count, text: l.text })))} gap(2nd press - line 1 shown)=${gap} ms`);
+    // 文字が少しずつ出る場合に備え、行の文は同じ行の最後の記録で見る（時刻は最初の記録）
+    const firstText = [...pick.lines].reverse().find((l) => l.count === '1/5')?.text ?? '';
+    check(!!first && firstText.length >= 10 && HOME_LINES[0].startsWith(firstText.slice(0, 10)), `${TAG}: 自領の防衛を押すと、その方針の確かめの会話が 1 行目から始まる（1/5：${firstText}…）`, pick.lines);
+    check(downs.length === 2, `${TAG}: 2 度の押しがページに届いた（${downs.length}）`, pick.downs);
+    if (gap !== null && gap < 140) check(!second && p1.count === '1/5', `${TAG}: 2 度目の押しは 1 行目が出てから ${gap} ms（140 ms のうち）：行は進まない（${p1.count}）`, { gap, p1: p1.count });
+    else check(p1.count === '1/5' || (p1.count === '2/5' && !!second && second.t >= downs[1].t), `${TAG}: 2 度目の押しは 1 行目が出てから ${gap} ms（140 ms より後）：作りどおり 1 行だけ進む（${p1.count}）`, { gap, p1: p1.count });
     check(p1.layers === 1 && p1.council === 1, `${TAG}: 会話の層・軍議の層はそれぞれ 1 つだけ（${p1.layers}・${p1.council}）`, p1);
     check(p1.phase === '軍議', `${TAG}: 確かめの会話の間、段階は「軍議」のまま（${p1.phase}）`, p1.phase);
     await shot('2-confirm-start');
@@ -204,7 +234,13 @@ try {
     // 3. 読み進めると「それで決める」「考え直す」
     const r1 = await readUntilChoices(['confirm_policy', 'reconsider']);
     check(r1.s.choices.includes('confirm_policy') && r1.s.choices.includes('reconsider'), `${TAG}: 5 行の後に「それで決める」「考え直す」が出る（${r1.s.count}）`, r1.s.choices);
-    check(HOME_LINES.every((h, i) => (r1.seen[i] ?? '').startsWith(h)), `${TAG}: 確かめの会話は自領の防衛の 5 行（順に）`, r1.seen.map((t) => t.slice(0, 16)));
+    const allLines = (await page.evaluate(() => window.__pick.lines)).filter((l) => /^\d\/5$/.test(l.count));
+    const order = [];
+    for (const l of allLines) {
+        if (!order.length || order[order.length - 1].count !== l.count) order.push({ ...l });
+        else order[order.length - 1].text = l.text; // 同じ行は最後の記録の文
+    }
+    check(order.length === 5 && HOME_LINES.every((h, i) => order[i].count === `${i + 1}/5` && order[i].text.length >= 10 && h.startsWith(order[i].text.slice(0, 10))), `${TAG}: 確かめの会話は自領の防衛の 5 行（1/5〜5/5 を順に、どれも 1 度だけ）`, order);
     check(r1.s.choiceBoxes.every((x) => vin(x, r1.s) && x.hit), `${TAG}: 「それで決める」「考え直す」が画面の中にあり、真ん中を押せる`, r1.s.choiceBoxes);
     await shot('3-confirm-choices');
 
