@@ -44,7 +44,8 @@ Version 26 の dist の 152 ファイルは、今もビルドの直後の一覧�
 - **参照の先**：dist の `.html` の `src`・`href`（外の URL・`data:`・`#` だけの物・コメントの中は除く）、glTF（`.json` で `asset.version` のある物）の `images[].uri`・`buffers[].uri`（`data:` は除く）、JS の中の同じ置き場の読み込み（`"./名前.js"`・`"./名前.css"`）と生成イラスト素材の場所（`"art/…/名前.webp"` など）が、dist の中にあること。dist の外を指す物も止める。
 - **中身の形式**：拡張子と中身が合うこと。PNG・JPEG・WebP・GIF・AVIF・ICO・WOFF・音・動画は先頭の印、JSON は読めること、JS・CSS・HTML・SVG などの文字のファイルは UTF-8 として読めて NUL が無いこと。glTF の画像に `mimeType` があれば拡張子と合うこと。
 - **`--sha256 <一覧>`**：ビルドの直後の一覧（`sha256sum` の形）と、ファイルの組と中身がすべて同じこと（変わった・消えた・増えたを止める。形式の正しい別の画像に入れ替わっても止まる）。
-- **`--write-sha256 <書く先>`**：違反が無いときだけ一覧を書く。dist の中には書かない。
+- **`--write-sha256 <書く先>`**：違反が無いときだけ一覧を書く。dist の中には書かない。**既にある一覧は上書きしない**（924c56f。
+  壊れた後にもう一度走らせて、壊れた中身を「正しい」と書き直さない。終わりの値 2）。ビルドを作り直したときだけ `--overwrite-sha256` を付ける。
 
 確かめ（2026-10-13。dist は作業メモの置き場。写しは作業メモの中に作り、元の dist は変えていない。元の dist は確かめの後も一覧と全部同じ）：
 
@@ -70,9 +71,11 @@ node proto3d/tools/shots-to-jpeg.mjs <置き場> --apply [--quality 85]     # �
 
 - 変えるのは、名指しした置き場の**すぐ下**の `.png` だけ（下の階層には降りない）。
 - 置き場の名前は `shots`・`montage`・`prod-shots` だけ（`--allow-name` で足せる）。
-- パスのどこかに `dist`・`models`・`public`・`assets-src`・`dev-art`・`node_modules` を含む物は断る（`--allow-name` でも外せない）。シンボリックリンクの置き場は断る。
+- パスのどこかに `dist`・`models`・`texture`・`public`・`assets-src`・`dev-art`・`node_modules` を含む物は断る（`--allow-name` でも外せない。`texture` は 924c56f で足した：
+  git で管理していない質感の置き場を `--allow-name` で名指ししても変えない）。シンボリックリンクの置き場は断る。
 - 置き場の中に `index.html`・`*.sha256`・`*.glb`・`*.gltf` があれば断る。git で管理しているファイルがあれば断る。
-- 1 つでも断ったら、ほかの置き場も変えない。中身が PNG でない `.png`、同じ名前の `.jpg` がある物は変えない。
+- 1 つでも断ったら、ほかの置き場も変えない（そのときは「変える」と書かず、断った置き場だけを書く。924c56f）。中身が PNG でない `.png`、同じ名前の `.jpg` がある物は変えない。
+- 同じ置き場を 2 度名指ししても 1 度だけ扱う（実際の場所で比べる。924c56f。以前は 2 度目に消えた PNG を読みに行って落ちた）。
 - JPEG にするのは Python の Pillow（`python3 -I`）。
 
 単体テスト `tests/proto3d-shots-to-jpeg.test.ts`：既定で何も変えないこと、写真の置き場でない名前（`v26/final` など）・断る言葉を含むパス 7 通り・置き場の中の `index.html`／`*.sha256`／`*.glb`／`*.gltf`・シンボリックリンク・git で管理しているファイルを断り、ファイルが 1 つも変わらないこと、下の階層に降りないこと、`--apply` で写真だけが JPEG になることを確かめる。実際の置き場でも、`v26/final`・`v26/final/dist-431f5e2/models`・`proto3d/public/art` は `--apply` を付けても断った（何も変えていない）。
@@ -114,3 +117,27 @@ node proto3d/tools/shots-to-jpeg.mjs <置き場> --apply [--quality 85]     # �
 | `art/story/council_day.webp` | `d11090122bbf3dbbd36d6c599d0f1678ac6637d9a996ce4c861a747c263e0a9e` |
 
 - 3D の質感：Version 26 の dist の glTF 13 個が指す画像 208 か所（ファイルは 109 個）は、どれも、リポジトリの同じ名前の GLB（`proto3d/public/models/<名前>.glb`）の同じ番号の画像とバイト単位で同じ（PNG の 12 個の sha256 は 1 の表）。
+
+## 5. Version 27 の本番ビルドで、3 の手順をそのまま使った記録（2026-10-13）
+
+ビルドはコミット 924c56f（画面のコードは 44ac1b0 と同じ。その後は道具と記録だけ）。作業メモの置き場の一時の git worktree（vite のキャッシュも自分だけ）で、
+[proto3d.md](proto3d.md) の「公開」の行のとおりに作った。前の版の画像を手で戻すことはしていない。
+
+| 手順 | 結果 |
+|---|---|
+| 2. ビルドの直後：`check-dist.mjs dist-proto3d --baseline <Version 26 の dist-431f5e2> --write-sha256 <作業メモ>/dist-924c56f.sha256` | 問題なし（152 ファイル・62,518,481 バイト。参照：HTML 6・glTF 208・JS 31、中身と拡張子を照らしたファイル 152）。一覧（152 行）を書いた |
+| dist を作業メモの `dist-924c56f/`（dist だけを置く置き場）へ写す | — |
+| 4. 写した dist へ：`check-dist.mjs <dist-924c56f> --baseline <dist-431f5e2> --sha256 <dist-924c56f.sha256>` | 問題なし（一覧 152 件のうち 152 件が同じ中身）。`sha256sum -c` も全部同じ |
+| 同じ一覧へもう一度 `--write-sha256`（壊れた後に書き直す誤りを真似る） | 断った（終わりの値 2「sha256 の一覧が既にあるので上書きしない」）。一覧の中身は変わっていない |
+| Version 26 の dist（ビルドの直後の一覧）と比べる | 同じ中身 147 個・変わった 1 個（`index.html`）・新しい 4 個（`assets/` の entry・faceArt・index・practiceView の JS。名前の hash が変わった）・無くなった 4 個（前の名前の同じ 4 個）。**画像 130 個（`art/` 20・`models/` の質感 109（PNG 12・JPEG 97）・`favicon.png`）はすべてバイト単位で同じ**（sha256 と `cmp`）。glTF の JSON 13 個・`assets/` の three の JS と CSS・`style.css`・`battle.css` も同じ |
+
+公開で送るのは 5 ファイル（1,121,511 バイト。`index.html` と JS 4 個）、公開先から消すのは前の名前の JS 4 個。一覧は作業メモの `publish-changes-924c56f.txt`・`.json`。
+確かめ（本番の e2e・画面写真）は dist を読むだけで、写真は dist の外の `prod-shots/`・`montage/` に、はじめから JPEG で書いた（変換はしていない）。
+
+## 6. 残っていること
+
+- `--sha256` を付けずに `--baseline` だけで走らせると、テンプレートの URL で読む `models/*.json` が消えた・PNG が途中で切れた・JPEG が同じ名前のまま作り直された、は
+  注意（前回にあって今回に無い・中身が違う）にとどまり違反にならない（確かめの見直しの指摘）。公開の手順（3 の 4）は `--sha256` を付けるので、3 つとも止まる
+  （見直しで 3 つとも違反になることを確かめた）。今回は手順で守り、道具は変えていない。
+- check-dist は npm の script にしていない（手順に書いたコマンドで走らせる）。
+- 新しい手順（ビルドの直後に一覧を書く・公開の直前に照らす）での実際の公開は、Version 27 の公開が初めて（取りまとめ役が行う）。
