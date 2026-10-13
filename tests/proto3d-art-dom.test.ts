@@ -15,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ART_IDS } from '../proto3d/src/art/ids';
 import type { ArtId } from '../proto3d/src/art/ids';
 import { __setArtManifestForTest } from '../proto3d/src/art/registry';
-import { COUNCIL_ART, CouncilBackdrop, PortraitSlot, __clearArtReadyForTest, councilArtLayout, councilFeatherPx, fitArt, loadArt, parallaxAmp, type Box } from '../proto3d/src/ui/artCanvas';
+import { COUNCIL_ART, CouncilBackdrop, PORTRAIT_FADE_MS, PortraitSlot, __clearArtReadyForTest, councilArtLayout, councilFeatherPx, fitArt, loadArt, parallaxAmp, type Box } from '../proto3d/src/ui/artCanvas';
 
 // ================= 偽の DOM =================
 
@@ -955,5 +955,169 @@ describe('軍議の背景（CouncilBackdrop）', () => {
         expect(l2.layer.querySelector('.g-council-bg')).toBeNull();
         expect(l2.layer.className).toBe('g-layer council');
         expect(dom.body.className).toBe('');
+    });
+});
+
+// ================= Version 27：範囲を限って描いた軍議の背景と立ち絵 =================
+
+describe('Version 27：軍議の背景を画面より小さく描いている間は、立ち絵もその描いた所を元にする（PortraitSlot.frameOf・CouncilBackdrop.frame）', () => {
+    /** 公開している背景と同じ寸法（1664×936）と、余白を切り詰めた立ち絵（745×1453） */
+    const ASSETS27 = {
+        [ART_IDS.portraitIeyasu]: ASSETS[ART_IDS.portraitIeyasu],
+        [ART_IDS.portraitTadakatsu]: ASSETS[ART_IDS.portraitTadakatsu],
+        [ART_IDS.bgCouncil]: { file: 'art/story/council_day.webp', w: 1664, h: 936, kind: 'background' as const },
+    };
+    const A = 745 / 1453;
+    /** 2560×1440 の軍議（Version 26 で測った四角）：詳しく見る・見出し・選択肢（隠す）・台詞の枠 */
+    function layer2560() {
+        const { layer } = installDom(2560, 1440);
+        const map = new FakeEl('button');
+        map.className = 'g-council-map';
+        map.rect = box(12, 12, 142, 39);
+        const head = new FakeEl('div');
+        head.className = 'g-council-head';
+        head.rect = box(1169, 18, 222, 51);
+        head.scrim = [-8, -34, -10, -34];
+        const choices = new FakeEl('div');
+        choices.className = 'g-choices';
+        choices.hidden = true;
+        choices.rect = box(1250, 676, 420, 642);
+        const dialog = new FakeEl('div');
+        dialog.className = 'g-dialog';
+        dialog.rect = box(809, 1334, 862, 92);
+        layer.append(head, map, choices, dialog);
+        return { layer, head, map, choices, dialog };
+    }
+    /** ui/view.ts と同じつなぎ方：背景が出入りしたら測り直し、背景の描いた所を立ち絵の元にする */
+    function wire(l: ReturnType<typeof layer2560>, o: { reduced?: boolean; frame?: boolean } = {}) {
+        const p = new PortraitSlot(l.layer as unknown as HTMLElement, l.choices as unknown as HTMLElement, l.dialog as unknown as HTMLElement, resolve, () => !!o.reduced, () => []);
+        const b = new CouncilBackdrop(l.layer as unknown as HTMLElement, { base: ART_IDS.bgCouncil }, () => !!o.reduced, () => true, () => p.relayout());
+        if (o.frame !== false) p.frameOf = () => b.frame();
+        return { p, b };
+    }
+    const size = (c: FakeEl) => [parseFloat(String(c.style.width)), parseFloat(String(c.style.height))];
+    const place = (c: FakeEl) => [String(c.style.left ?? ''), String(c.style.bottom ?? '')];
+    /** 最後に描いた時の、下の縁を抜いた所（destination-out の fillRect。台詞の枠の抜きは roundRect） */
+    const lastFade = (c: FakeEl) => {
+        const calls = c.ctx!.calls;
+        const start = calls.map((k) => k.fn).lastIndexOf('clearRect');
+        return calls.slice(start).filter((k) => k.fn === 'fillRect' && k.op === 'destination-out').map((k) => k.args);
+    };
+    const resizeTo = (layer: FakeEl, W: number, H: number) => {
+        layer.rect = { left: 0, top: 0, width: W, height: H };
+        for (const f of dom.listeners.get('resize') ?? []) (f as () => void)();
+        frames(1);
+    };
+
+    it('2560×1440：背景は (240,135) 2080×1170。立ち絵は高さ 1006（1170 の 86%。Version 26 は 1238）・左端 322・下端は描いた所の下端 1305。腰の切り口は背景と同じ 82px でなじませる', async () => {
+        art({ assets: ASSETS27 });
+        const l = layer2560();
+        const { p, b } = wire(l);
+        b.start();
+        p.set('tadakatsu');
+        await flush();
+        frames(2);
+        expect(b.frame()).toEqual({ left: 240, top: 135, right: 2320, bottom: 1305, fadeLeft: 82, fadeBottom: 82 });
+        const c = l.layer.querySelector('.g-portrait')!;
+        expect(c.hidden).toBe(false);
+        expect(size(c)).toEqual([Math.floor(1006 * A), 1006]);
+        expect(place(c)).toEqual(['322px', '135px']);
+        // 縦横の比を保って描く（contain・左下寄せ：切り出しは画像全部）
+        const [d] = c.ctx!.draws().slice(-1);
+        expect(d!.args.slice(1, 5)).toEqual([0, 0, 745, 1453]);
+        // 腰の切り口：canvas の下の 82px を 1→0 で抜く（肩より下だけ）。台詞の枠は立ち絵の下端より下なので抜かない
+        expect(lastFade(c)).toEqual([[0, 1006 - 82, Math.floor(1006 * A), 82]]);
+        expect(c.ctx!.calls.some((k) => k.fn === 'roundRect')).toBe(false);
+        p.dispose();
+        b.dispose();
+        expect(b.frame()).toBeNull();
+    });
+
+    it('背景を付けない（frameOf なし）・背景が出ていない間：Version 26 と同じ（2560×1440 で 1238・CSS の左端・画面の下の端・なじませない）', async () => {
+        art({ assets: ASSETS27 });
+        const l = layer2560();
+        const { p, b } = wire(l, { frame: false });
+        b.start();
+        p.set('tadakatsu');
+        await flush();
+        const c = l.layer.querySelector('.g-portrait')!;
+        expect(size(c)).toEqual([Math.floor(1238 * A), 1238]);
+        expect(place(c)).toEqual(['', '']);
+        expect(lastFade(c)).toEqual([]);
+        p.dispose();
+        b.dispose();
+        // 背景の画像が読めない：frame は null（出ていない）。立ち絵は画面が元
+        art({ assets: ASSETS27, ok: false });
+        __clearArtReadyForTest();
+        __setArtManifestForTest({ version: 1, assets: { [ART_IDS.bgCouncil]: ASSETS27[ART_IDS.bgCouncil] } });
+        const l2 = layer2560();
+        const w2 = wire(l2);
+        w2.b.start();
+        await flush();
+        expect(w2.b.frame()).toBeNull();
+        w2.b.dispose();
+        w2.p.dispose();
+    });
+
+    it('窓の大きさが変わる（2560×1440 → 1920×1080 → 2560×1440）：古い大きさを残さない。立ち絵の見張りが背景の描き直しより先に動いても、今の画面の描いた所で決める', async () => {
+        art({ assets: ASSETS27 });
+        // 立ち絵を先に出し（見張りが先に付く）、背景は後から（読めている：同じフレームで出る）
+        await loadArt(ART_IDS.portraitTadakatsu);
+        await loadArt(ART_IDS.bgCouncil);
+        const l = layer2560();
+        const { p, b } = wire(l);
+        p.set('tadakatsu');
+        const c = l.layer.querySelector('.g-portrait')!;
+        expect(size(c)[1]).toBe(1238);
+        b.start();
+        // 背景が出た（onChange）→ 測り直し
+        expect(size(c)).toEqual([Math.floor(1006 * A), 1006]);
+        expect(place(c)).toEqual(['322px', '135px']);
+        resizeTo(l.layer, 1920, 1080);
+        expect(b.frame()).toEqual({ left: 0, top: 0, right: 1920, bottom: 1080, fadeLeft: 0, fadeBottom: 0 });
+        expect(size(c)).toEqual([Math.floor(928 * A), 928]);
+        expect(place(c)).toEqual(['', '']);
+        expect(lastFade(c)).toEqual([]);
+        resizeTo(l.layer, 2560, 1440);
+        expect(size(c)).toEqual([Math.floor(1006 * A), 1006]);
+        expect(place(c)).toEqual(['322px', '135px']);
+        expect(lastFade(c)).toEqual([[0, 924, Math.floor(1006 * A), 82]]);
+        // 1920×1200（上下に 15px の帯だけ）：左端は CSS のまま、下端は 1185、なじませる幅は帯の 2 倍の 30
+        resizeTo(l.layer, 1920, 1200);
+        expect(b.frame()).toEqual({ left: 0, top: 15, right: 1920, bottom: 1185, fadeLeft: 0, fadeBottom: 30 });
+        expect(size(c)).toEqual([Math.floor(1006 * A), 1006]);
+        expect(place(c)).toEqual(['24px', '15px']);
+        expect(lastFade(c)).toEqual([[0, 976, Math.floor(1006 * A), 30]]);
+        p.dispose();
+        b.dispose();
+        expect(listenerCount()).toBe(0);
+    });
+
+    it('話し手が変わる重ね変わり：同じ枠（描いた背景に合わせた大きさ・位置）で重ね、どのフレームも腰の切り口をなじませる', async () => {
+        art({ assets: ASSETS27 });
+        await loadArt(ART_IDS.portraitTadakatsu);
+        await loadArt(ART_IDS.portraitIeyasu);
+        await loadArt(ART_IDS.bgCouncil);
+        const l = layer2560();
+        const { p, b } = wire(l);
+        b.start();
+        p.set('tadakatsu');
+        const c = l.layer.querySelector('.g-portrait')!;
+        expect(size(c)[1]).toBe(1006);
+        c.ctx!.calls.length = 0;
+        p.set('hero');
+        expect(lastFade(c)).toEqual([[0, 924, Math.floor(1006 * A), 82]]);
+        // 途中のフレーム（前の人と次の人の 2 枚を重ねる）
+        c.ctx!.calls.length = 0;
+        frames(1, performance.now() + PORTRAIT_FADE_MS / 2);
+        expect(c.ctx!.draws()).toHaveLength(2);
+        expect(lastFade(c)).toEqual([[0, 924, Math.floor(1006 * A), 82]]);
+        frames(1, performance.now() + 10 * PORTRAIT_FADE_MS);
+        expect(lastFade(c)).toEqual([[0, 924, Math.floor(1006 * A), 82]]);
+        expect(size(c)).toEqual([Math.floor(1006 * A), 1006]);
+        expect(place(c)).toEqual(['322px', '135px']);
+        expect(c.dataset.artId).toBe(ART_IDS.portraitIeyasu);
+        p.dispose();
+        b.dispose();
     });
 });

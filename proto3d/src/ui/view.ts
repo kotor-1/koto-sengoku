@@ -616,6 +616,8 @@ export class DomView implements GameView, LayerHost {
             if (face && portrait) portrait.onShown = (id) => face.portrait(id);
             // 軍議の背景（CouncilBackdrop。表示の倍率は 1.25 倍まで：それより大きな画面は範囲を限って描く）。出入りしたら人物画を測り直す
             const backdrop = council && opts.councilArt ? new CouncilBackdrop(layer, opts.councilArt, reduced, () => this.modals[this.modals.length - 1] === m, () => portrait?.relayout()) : null;
+            // 背景を画面より小さく描いている間（2560×1440 など）は、立ち絵もその描いた所を元に大きさ・位置を決める（Version 27。画面いっぱい・出ていない時は今までどおり）
+            if (portrait && backdrop) portrait.frameOf = () => backdrop.frame();
             const choices = sc.choices ?? [];
             let i = 0;
             let sel = Math.max(0, Math.min(choices.length - 1, sc.defaultChoice ?? 0));

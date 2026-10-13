@@ -6,7 +6,7 @@
  * - 描く細かさ：端末の画素の比（devicePixelRatio）は 2 まで。元の画像より細かくはしない（大きな画面で余計な画素を持たない）。
  * - 大きさが変わったら描き直す（watchResize）。
  * - 旧表示（?art=old）・一覧に無い・読めないときは、要素を一つも作らない（Version 21 と同じ画面）。
- * 前半の計算（fitArt・fitArtBleed・backingScale・portraitLayout・portraitStep・councilArtLayout）と dialogFaceIds・dialogFaceFor は DOM を使わない純粋な関数（Node のテストで確かめる）。
+ * 前半の計算（fitArt・fitArtBleed・backingScale・portraitLayout・portraitPlacement・portraitStep・councilArtLayout）と dialogFaceIds・dialogFaceFor は DOM を使わない純粋な関数（Node のテストで確かめる）。
  */
 import { artAvailable, artEntry, artMode, loadArtBitmap } from '../art/registry';
 import { ART_IDS, type ArtId } from '../art/ids';
@@ -154,6 +154,29 @@ export interface PortraitLayoutInput {
     dialog?: Box | null;
     /** 肩が見え切る高さ（画像の上からの割合。art-build.py の set-anchor の shoulderY。省けば PORTRAIT_RULES.shoulderY） */
     shoulderY?: number;
+    /**
+     * 大きさの元にする枠（Version 27。portraitPlacement の frame）：軍議の背景を画面より小さく描いている間の、描いた所（画面の中に見えている所）。
+     * 高さの上限は画面でなくこの枠の高さの割合（pcFrac・phoneFrac）、右の端もこの枠まで。left・bottom は呼ぶ側が枠に合わせて渡す。
+     * 省けば（null）画面（vw×vh）が元（Version 26 と同じ）
+     */
+    frame?: Box | null;
+}
+
+/**
+ * 人物画を置く所（Version 27。docs/v25-portraits.md の 13）。軍議の背景を画面より小さく真ん中に描いている（描いた所が層の幅・高さに足りない。
+ * 表示の倍率を 1.25 倍に抑えた 2560×1440・1920×1200・1024×1366 など）間は、人物画もその描いた所（層の中に見えている所 bg）を元にする：
+ * 左端は描いた所の左端＋inset（CSS の左の空き cssLeft と、背景の左の縁をなじませる幅 fadeLeft の大きい方）、下端は描いた所の下端、
+ * 大きさの元（frame）は描いた所。背景が画面いっぱい・出ていない（bg が null）ときは Version 26 と同じ（左端は CSS、下端は層の下の端、枠なし）。
+ */
+export function portraitPlacement(vw: number, vh: number, cssLeft: number, bg: (Box & { fadeLeft?: number }) | null): { left: number; bottom: number; frame: Box | null } {
+    const full = { left: cssLeft, bottom: vh, frame: null };
+    if (!bg || !(vw > 0 && vh > 0)) return full;
+    const f: Box = { left: Math.max(0, bg.left), top: Math.max(0, bg.top), right: Math.min(vw, bg.right), bottom: Math.min(vh, bg.bottom) };
+    if (!(f.right - f.left >= 1 && f.bottom - f.top >= 1)) return full;
+    // 画面いっぱい（丸めの誤差の 0.5px まで）：枠を使わない（Version 26 と同じ四角）
+    if (f.left <= 0.5 && f.top <= 0.5 && f.right >= vw - 0.5 && f.bottom >= vh - 0.5) return full;
+    const fade = f.left > 0.5 && Number.isFinite(bg.fadeLeft) ? Math.max(0, bg.fadeLeft ?? 0) : 0;
+    return { left: f.left + Math.max(cssLeft, fade), bottom: f.bottom, frame: f };
 }
 
 /** 人物画の大きさの決まり（docs：art-v22・v25-portraits。測った所は Version 21〜24 の会話・軍議の画面） */
@@ -186,11 +209,15 @@ export function portraitLayout(p: PortraitLayoutInput): { w: number; h: number }
     if (!(p.vw > 0 && p.vh >= R.minViewportH && p.aspect > 0)) return null;
     const gap = p.gap ?? 8;
     const phone = p.vh <= 430;
-    let h = p.vh * (phone ? R.phoneFrac : R.pcFrac);
+    // 大きさの元：画面、または軍議の背景を画面より小さく描いている間はその描いた所（Version 27。縦横の比は保ち、切って収めない）
+    const f = p.frame && p.frame.right > p.frame.left && p.frame.bottom > p.frame.top ? p.frame : null;
+    const baseH = f ? Math.min(p.vh, f.bottom - f.top) : p.vh;
+    const right = f ? Math.min(p.vw, f.right) : p.vw;
+    let h = baseH * (phone ? R.phoneFrac : R.pcFrac);
     // 元の画像を拡大しない（端末の画素で原寸まで）
     if (p.maxH !== undefined && Number.isFinite(p.maxH)) h = Math.min(h, Math.max(0, p.maxH));
-    // 画面の右へははみ出さない
-    h = Math.min(h, (p.vw - p.left - gap) / p.aspect);
+    // 画面（枠）の右へははみ出さない
+    h = Math.min(h, (right - p.left - gap) / p.aspect);
     const live = p.avoid.filter((o) => o.right > o.left && o.bottom > o.top && o.right > p.left && o.top < p.bottom);
     for (const o of live) {
         const byWidth = (o.left - gap - p.left) / p.aspect;
@@ -202,7 +229,7 @@ export function portraitLayout(p: PortraitLayoutInput): { w: number; h: number }
     if (h < R.minH) return null;
     // その高さの範囲（上端〜下端）にある避ける物までの、左下の空きの幅
     const top = p.bottom - h;
-    let free = p.vw - gap - p.left;
+    let free = right - gap - p.left;
     for (const o of live) if (o.bottom > top) free = Math.min(free, o.left - gap - p.left);
     if (free < R.minFreeW) return null;
     // 台詞の枠の後ろに入るのは腰から下だけ：枠が人物画と横に重なるなら、枠の上端より上に肩まで（shoulderY）見えていること
@@ -463,6 +490,27 @@ export function featherArt(canvas: HTMLCanvasElement, cssW: number, cssH: number
     ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 
+/**
+ * canvas の下の縁を幅 px（CSS の px）で 1→0 へ透明に抜く（Version 27。範囲を限って描いた軍議の背景の下の縁と同じ所・同じ幅で、人物画の腰の切り口をなじませる）。
+ * 0 以下なら何もしない。canvas の画素の大きさは sizeArtCanvas で合わせてある前提
+ */
+export function fadeArtBottom(canvas: HTMLCanvasElement, cssW: number, cssH: number, px: number): void {
+    if (!(px > 0)) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const a = Math.min(px, cssH);
+    ctx.setTransform(canvas.width / Math.max(1, cssW), 0, 0, canvas.height / Math.max(1, cssH), 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'destination-out';
+    const g = ctx.createLinearGradient(0, cssH, 0, cssH - a);
+    g.addColorStop(0, 'rgba(0,0,0,1)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, cssH - a, cssW, a);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+}
+
 /** 押せない・選べない・長押しで画像の menu を出さない、飾りの canvas を作る */
 export function artCanvasEl(cls: string, id: ArtId): HTMLCanvasElement {
     const c = document.createElement('canvas');
@@ -517,6 +565,31 @@ function currentDpr(): number {
 /** 人物画は左下に寄せる（下端を画面の下の端に） */
 const PORTRAIT_FIT: FitOptions = { alignX: 0, alignY: 1 };
 
+/**
+ * 軍議の背景を画面より小さく描いている間の、描いた所（層の中の CSS の px。CouncilBackdrop.frame）と、その縁を暗い地へなじませる幅
+ * （左右の縁 fadeLeft・上下の縁 fadeBottom。帯の無い向きは 0）。人物画の大きさ・位置の元にする（Version 27）
+ */
+export interface ArtFrame extends Box {
+    fadeLeft: number;
+    fadeBottom: number;
+}
+
+/** 人物画の大きさ・位置（PortraitSlot が測った物） */
+interface PortraitMeasure {
+    w: number;
+    h: number;
+    /** 台詞の枠の後ろで抜く所 */
+    cut: ArtCut | null;
+    /** 左端（層の左から） */
+    left: number;
+    /** 下端の、層の下の端からの高さ（枠が無ければ 0） */
+    inset: number;
+    /** 描いた背景を元にした（Version 27） */
+    framed: boolean;
+    /** 下の縁をなじませる幅（CSS の px。0 ならなじませない） */
+    fade: number;
+}
+
 
 /**
  * 出ている（hidden・display: none でない）物の四角。outside（層の外の物：目的の札・メニュー）は visibility: hidden も「無い」とみなす。
@@ -558,6 +631,11 @@ export class PortraitSlot {
     onShown: ((id: ArtId | null) => void) | null = null;
     /** 最後に知らせた onShown の値（同じ値は知らせ直さない） */
     private told: ArtId | null = null;
+    /**
+     * 軍議の背景を画面より小さく描いている間の、描いた所（CouncilBackdrop.frame。ui/view.ts が付ける）。四角を返す間は、人物画の大きさ・左端・下端を
+     * その描いた所に合わせ、腰の切り口を背景の下の縁と同じになじませる（Version 27）。null・付けていない（会話の画面）なら Version 26 と同じ（画面が元）
+     */
+    frameOf: (() => ArtFrame | null) | null = null;
 
     constructor(
         private readonly layer: HTMLElement,
@@ -614,8 +692,11 @@ export class PortraitSlot {
         return c;
     }
 
-    /** 大きさと、台詞の枠の後ろで抜く所を測る（canvas は出ている前提。左端は CSS が決める：安全域を含む）。狭すぎれば null */
-    private measure(c: HTMLCanvasElement, id: ArtId, bmp: ImageBitmap): { w: number; h: number; cut: ArtCut | null } | null {
+    /**
+     * 大きさと、台詞の枠の後ろで抜く所を測る（canvas は出ている前提。左端は CSS が決める：安全域を含む）。狭すぎれば null。
+     * 軍議の背景を画面より小さく描いている間（frameOf が四角を返す）は、その描いた所を元に大きさ・左端・下端を決め、腰の切り口を背景の下の縁と同じになじませる（Version 27）
+     */
+    private measure(c: HTMLCanvasElement, id: ArtId, bmp: ImageBitmap): PortraitMeasure | null {
         const origin = this.layer.getBoundingClientRect();
         const avoid: Box[] = [];
         for (const sel of ['.g-choices', '.g-council-head', '.g-council-map']) {
@@ -629,29 +710,43 @@ export class PortraitSlot {
             const b = visibleBox(e, origin, true);
             if (b) avoid.push(b);
         }
-        const left = c.getBoundingClientRect().left - origin.left;
+        // 左端は CSS が決める（安全域を含む）。前に描いた所へ合わせて動かした位置（style の left・bottom）を外してから測る
+        if (c.style.left || c.style.bottom) {
+            c.style.left = '';
+            c.style.bottom = '';
+        }
+        const cssLeft = c.getBoundingClientRect().left - origin.left;
+        // 軍議の背景を画面より小さく描いている間は、その描いた所が元（画面いっぱい・出ていない・会話の画面は null で Version 26 と同じ）
+        const bg = this.frameOf?.() ?? null;
+        const place = portraitPlacement(origin.width, origin.height, cssLeft, bg);
+        const left = place.left;
         const d = visibleBox(this.dialog, origin);
         const sy = Number(artEntry(id)?.meta?.shoulderY);
+        const shoulder = Number.isFinite(sy) && sy > 0 && sy < 1 ? sy : undefined;
         const size = portraitLayout({
             vw: origin.width,
             vh: origin.height,
             left,
-            bottom: origin.height,
+            bottom: place.bottom,
             aspect: bmp.width / bmp.height,
             avoid,
             // 元の画像を拡大しない（端末の画素で原寸まで）
             maxH: bmp.height / currentDpr(),
             dialog: d,
-            ...(Number.isFinite(sy) && sy > 0 && sy < 1 ? { shoulderY: sy } : {}),
+            frame: place.frame,
+            ...(shoulder !== undefined ? { shoulderY: shoulder } : {}),
         });
         if (!size) return null;
-        const top = origin.height - size.h;
-        const cut = d && d.left < left + size.w && d.right > left && d.bottom > top ? { x: d.left - left, y: d.top - top, w: d.right - d.left, h: d.bottom - d.top, r: 14 } : null;
-        return { ...size, cut };
+        const top = place.bottom - size.h;
+        const cut = d && d.left < left + size.w && d.right > left && d.bottom > top && d.top < place.bottom ? { x: d.left - left, y: d.top - top, w: d.right - d.left, h: d.bottom - d.top, r: 14 } : null;
+        // 腰の切り口（画像の下の端）が描いた背景の下の縁に来る：背景と同じ幅でなじませる（肩より下の、さらに下半分まで。頭・髷・肩は抜かない）
+        const fade = place.frame && bg ? Math.round(Math.min(Math.max(0, bg.fadeBottom), (size.h * (1 - (shoulder ?? PORTRAIT_RULES.shoulderY))) / 2)) : 0;
+        return { ...size, cut, left, inset: Math.max(0, origin.height - place.bottom), framed: !!place.frame, fade };
     }
 
-    private paint(c: HTMLCanvasElement, m: { w: number; h: number; cut: ArtCut | null }, layers: ArtLayer[]): void {
+    private paint(c: HTMLCanvasElement, m: PortraitMeasure, layers: ArtLayer[]): void {
         paintArt(c, m.w, m.h, layers, undefined, m.cut);
+        fadeArtBottom(c, m.w, m.h, m.fade);
     }
 
     private show(id: ArtId, bmp: ImageBitmap): void {
@@ -666,9 +761,14 @@ export class PortraitSlot {
             this.hide(true);
             return;
         }
-        const key = `${m.w}x${m.h}|${m.cut ? `${Math.round(m.cut.x)},${Math.round(m.cut.y)},${Math.round(m.cut.w)},${Math.round(m.cut.h)}` : '-'}`;
+        const key = `${m.w}x${m.h}|${m.cut ? `${Math.round(m.cut.x)},${Math.round(m.cut.y)},${Math.round(m.cut.w)},${Math.round(m.cut.h)}` : '-'}|${m.framed ? `${Math.round(m.left)},${Math.round(m.inset)},${m.fade}` : '-'}`;
         const changed = key !== this.key;
         this.key = key;
+        // 描いた背景に合わせた位置（Version 27）。画面が元の時は CSS のまま（measure が外した）
+        if (m.framed) {
+            c.style.left = `${m.left}px`;
+            c.style.bottom = `${m.inset}px`;
+        }
         // 元の画像より細かい canvas は持たない（contain で合わせた大きさから）。端末の比 3 までは端末の画素で描く（大きさは原寸 ÷ 端末の比まで）
         sizeArtCanvas(c, m.w, m.h, srcPerCssOf(fitArt(bmp.width, bmp.height, m.w, m.h, 'contain', PORTRAIT_FIT)), PORTRAIT_MAX_DPR);
         c.dataset.artId = id;
@@ -1180,6 +1280,27 @@ export class CouncilBackdrop {
                 feather: [fx, fy],
             });
         }
+    }
+
+    /**
+     * 描いた背景の、層の中に見えている所（CSS の px。層の左上から）と縁をなじませる幅（Version 27。人物画の元：PortraitSlot.frameOf）。
+     * 出ていない（読めていない・読めない・層が測れない・片付けた）時は null。今の層の大きさから councilArtLayout で決め直す
+     * （窓の大きさが変わったフレームで、背景の描き直しより先に人物画が測っても、古い四角を使わない）。画面いっぱいの時も四角を返す（使うかは portraitPlacement が決める）
+     */
+    frame(): ArtFrame | null {
+        if (this.disposed || !this.active || !this.baseBmp) return null;
+        const r = this.layer.getBoundingClientRect();
+        const lay = councilArtLayout(this.baseBmp.width, this.baseBmp.height, Math.max(1, Math.round(r.width)), Math.max(1, Math.round(r.height)));
+        if (!lay) return null;
+        const rb = lay.rect;
+        return {
+            left: rb.dx,
+            top: rb.dy,
+            right: rb.dx + rb.dw,
+            bottom: rb.dy + rb.dh,
+            fadeLeft: councilFeatherPx(rb.dw, rb.dh, rb.dx),
+            fadeBottom: councilFeatherPx(rb.dw, rb.dh, rb.dy),
+        };
     }
 
     /** 揺れの幅を CSS へ（--g-sway）。幅が 0（動きを減らす）なら揺らさない */

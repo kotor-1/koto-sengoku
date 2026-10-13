@@ -53,6 +53,7 @@ import {
     parallaxOffset,
     peekArt,
     portraitLayout,
+    portraitPlacement,
     portraitStep,
     srcPerCssOf,
     type Box,
@@ -325,6 +326,102 @@ describe('人物画の大きさ：余白を切り詰めた細い人物画（加�
         expect(portraitLayout({ vw: 667, vh: 375, left: 8, bottom: 375, aspect: A, avoid: [box(12, 12, 122, 45), box(113, 58, 540, 207)] })).toBeNull();
         // 選択肢が左の 150 まで来て、高さで避けると 210 未満
         expect(portraitLayout({ vw: 800, vh: 400, left: 8, bottom: 400, aspect: A, avoid: [box(150, 150, 600, 120)] })).toBeNull();
+    });
+});
+
+describe('人物画の置き所（portraitPlacement・portraitLayout の frame。Version 27：範囲を限って描いた軍議の背景を元にする）', () => {
+    const box = (x: number, y: number, w: number, h: number): Box => ({ left: x, top: y, right: x + w, bottom: y + h });
+    // 公開している 4 人の立ち絵（art/portraits/*_v2.webp）の寸法と肩の高さ（manifest.gen.json）
+    const P = { ieyasu: [968, 1532, 0.4308], tadakatsu: [926, 1526, 0.4515], sakai: [1003, 1485, 0.4209], ishikawa: [978, 1523, 0.4097] } as const;
+    // 2560×1440 の軍議（Version 26 で測った四角）：背景は 1.25 倍で (240,135) 2080×1170、縁をなじませる幅 82。詳しく見る・見出し・メニュー・台詞の枠
+    const BG_2560 = { ...box(240, 135, 2080, 1170), fadeLeft: 82, fadeBottom: 82 };
+    const AVOID_2560 = [box(12, 12, 142, 39), box(1169, 18, 222, 51), box(2444, 10, 104, 41)];
+    const DIALOG_2560 = box(809, 1334, 862, 92);
+
+    it('背景が無い・画面いっぱい（丸めの 0.5px まで）：Version 26 と同じ（左端は CSS、下端は画面の下の端、枠なし）', () => {
+        expect(portraitPlacement(1920, 1080, 24, null)).toEqual({ left: 24, bottom: 1080, frame: null });
+        expect(portraitPlacement(1920, 1080, 24, { ...box(0, 0, 1920, 1080), fadeLeft: 0 })).toEqual({ left: 24, bottom: 1080, frame: null });
+        expect(portraitPlacement(1280, 720, 24, { ...box(0.3, -0.2, 1279.9, 720.4), fadeLeft: 0 })).toEqual({ left: 24, bottom: 720, frame: null });
+        // 縦向きのスマホ（背景は画面より広く描いて左右を切る）も画面いっぱい
+        expect(portraitPlacement(390, 844, 24, { ...box(-100, 0, 590, 844), fadeLeft: 0 })).toEqual({ left: 24, bottom: 844, frame: null });
+        // 大きさの無い四角・画面の外の四角は使わない
+        expect(portraitPlacement(2560, 1440, 24, { ...box(240, 135, 0, 1170), fadeLeft: 0 })).toEqual({ left: 24, bottom: 1440, frame: null });
+        expect(portraitPlacement(2560, 1440, 24, { ...box(3000, 135, 200, 1170), fadeLeft: 0 })).toEqual({ left: 24, bottom: 1440, frame: null });
+    });
+
+    it('2560×1440：描いた所 (240,135)〜(2320,1305) が枠。左端は枠の左端＋なじませる幅（CSS の 24 より広い 82）、下端は枠の下端', () => {
+        expect(portraitPlacement(2560, 1440, 24, BG_2560)).toEqual({ left: 322, bottom: 1305, frame: box(240, 135, 2080, 1170) });
+    });
+
+    it('1920×1200（上下に 15px の帯だけ）：左端は CSS のまま、下端は描いた所の下端 1185。描いた所が画面より広い向きは画面で切る', () => {
+        expect(portraitPlacement(1920, 1200, 24, { ...box(0, 15, 1920, 1170), fadeLeft: 0 })).toEqual({ left: 24, bottom: 1185, frame: box(0, 15, 1920, 1170) });
+        expect(portraitPlacement(1920, 1200, 24, { ...box(-80, 15, 2080, 1170), fadeLeft: 30 })).toEqual({ left: 24, bottom: 1185, frame: box(0, 15, 1920, 1170) });
+    });
+
+    it('とても横長で左右にだけ帯が出る画面（2000×700：描いた所 28〜1972）：高さは画面と同じ 86%、左端は帯＋なじませる幅、下端は画面の下の端（なじませる下の縁は無い）', () => {
+        const pl = portraitPlacement(2000, 700, 24, { ...box(28, 0, 1944, 700), fadeLeft: 49 });
+        expect(pl).toEqual({ left: 77, bottom: 700, frame: box(28, 0, 1944, 700) });
+        const A = 968 / 1532;
+        expect(portraitLayout({ vw: 2000, vh: 700, left: pl.left, bottom: pl.bottom, aspect: A, avoid: [], frame: pl.frame })).toEqual({ w: Math.floor(602 * A), h: 602 });
+    });
+
+    it('2560×1440 の 4 人：高さは描いた背景の高さの 86%（1170 × 0.86 → 1006。Version 26 は画面の 1440 × 0.86 → 1238）。縦横の比は保ち、枠の中に収まる（切らない）', () => {
+        const pl = portraitPlacement(2560, 1440, 24, BG_2560);
+        for (const [name, [w0, h0, sy]] of Object.entries(P)) {
+            const A = w0 / h0;
+            const v26 = portraitLayout({ vw: 2560, vh: 1440, left: 24, bottom: 1440, aspect: A, avoid: AVOID_2560, maxH: h0, dialog: DIALOG_2560, shoulderY: sy });
+            expect(v26, name).toEqual({ w: Math.floor(1238 * A), h: 1238 });
+            const r = portraitLayout({ vw: 2560, vh: 1440, left: pl.left, bottom: pl.bottom, aspect: A, avoid: AVOID_2560, maxH: h0, dialog: DIALOG_2560, shoulderY: sy, frame: pl.frame })!;
+            expect(r, name).toEqual({ w: Math.floor(1006 * A), h: 1006 });
+            // 枠の中（左・上・右・下）。下端は枠の下端（腰の切り口を背景の縁と同じ所に）
+            const rect = { left: pl.left, top: pl.bottom - r.h, right: pl.left + r.w, bottom: pl.bottom };
+            expect(rect.left).toBeGreaterThanOrEqual(240);
+            expect(rect.right).toBeLessThanOrEqual(2320);
+            expect(rect.top).toBeGreaterThanOrEqual(135);
+            expect(rect.bottom).toBe(1305);
+            // 頭の上の空き：描いた背景の上端から 164px（背景の高さの 14%）
+            expect(rect.top - 135).toBe(164);
+            // 縦横の比（幅は高さ × 比の切り捨て）
+            expect(r.w).toBe(Math.floor(r.h * A));
+            for (const o of AVOID_2560) expect(o.right <= rect.left || o.left >= rect.right || o.bottom <= rect.top || o.top >= rect.bottom).toBe(true);
+        }
+    });
+
+    it('枠があっても、元の画像の画素の上限・避ける物・肩の決まり・小さすぎの決まりはそのまま', () => {
+        const A = 1003 / 1485;
+        const frame = box(0, 98, 1024, 1170);
+        // 1024×1366（端末の比 2）：枠の 86% は 1006 だが、原寸 ÷ 2 ＝ 742 まで
+        expect(portraitLayout({ vw: 1024, vh: 1366, left: 24, bottom: 1268, aspect: A, avoid: [], maxH: 1485 / 2, frame })).toEqual({ w: Math.floor(742 * A), h: 742 });
+        // 枠の右の端を超えない（枠が細ければ幅で決まる）
+        const narrow = box(240, 135, 500, 1170);
+        const n = portraitLayout({ vw: 2560, vh: 1440, left: 264, bottom: 1305, aspect: A, avoid: [], frame: narrow })!;
+        expect(264 + n.w).toBeLessThanOrEqual(740 - 8);
+        expect(n.h).toBe(Math.floor((740 - 264 - 8) / A));
+        // 選択肢が左下まで来る：高さで避けるか幅で避けるかの大きい方（枠の下端から測る）
+        const choices = box(500, 900, 420, 300);
+        const c = portraitLayout({ vw: 2560, vh: 1440, left: 322, bottom: 1305, aspect: A, avoid: [choices], frame: BG_2560 })!;
+        // （幅で避ける (500 − 8 − 322) ÷ 比 ＝ 251 が、高さで避ける 1305 − (1200 + 8) ＝ 97 より大きい）
+        expect(c.h).toBe(Math.floor((500 - 8 - 322) / A));
+        // 台詞の枠が人物画と横に重なり、肩が枠の上に見えない：出さない（縮めない）
+        expect(portraitLayout({ vw: 2560, vh: 1440, left: 322, bottom: 1305, aspect: A, avoid: [], frame: BG_2560, dialog: box(300, 700, 900, 700), shoulderY: 0.42 })).toBeNull();
+        // 枠の下端より下の台詞の枠（2560×1440 の 1334〜）は人物画と重ならない：見ない
+        expect(portraitLayout({ vw: 2560, vh: 1440, left: 322, bottom: 1305, aspect: A, avoid: [], frame: BG_2560, dialog: box(300, 1334, 900, 92), shoulderY: 0.42 })).toEqual({ w: Math.floor(1006 * A), h: 1006 });
+        // 低すぎる画面は枠があっても出さない（画面の高さで決める）
+        expect(portraitLayout({ vw: 900, vh: 320, left: 8, bottom: 300, aspect: A, avoid: [], frame: box(100, 20, 700, 280) })).toBeNull();
+    });
+
+    it('枠を省く・null：Version 26 と同じ数（1920×1080 928・1280×720 619・844×390 312）', () => {
+        const A = 968 / 1532;
+        for (const [vw, vh, left, want] of [
+            [1920, 1080, 24, 928],
+            [1280, 720, 24, 619],
+            [844, 390, 8, 312],
+        ] as const) {
+            const a = portraitLayout({ vw, vh, left, bottom: vh, aspect: A, avoid: [], maxH: 1532 });
+            const b = portraitLayout({ vw, vh, left, bottom: vh, aspect: A, avoid: [], maxH: 1532, frame: null });
+            expect(a).toEqual({ w: Math.floor(want * A), h: want });
+            expect(b).toEqual(a);
+        }
     });
 });
 
