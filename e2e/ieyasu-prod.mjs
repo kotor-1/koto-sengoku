@@ -23,7 +23,7 @@ const DIST = resolve(process.env.DIST || 'dist-proto3d');
 const PORT = Number(process.env.PORT || 8132);
 const [VW, VH] = (process.env.VIEW || '960x540').split('x').map(Number);
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'";
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.glb': 'model/gltf-binary' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.glb': 'model/gltf-binary', '.mp3': 'audio/mpeg' };
 
 if (!existsSync(join(DIST, 'index.html'))) throw new Error(`${DIST}/index.html が無い（先に本番ビルド）`);
 const served = [];
@@ -283,6 +283,8 @@ try {
 const csp = await page.evaluate(() => window.__cspViolations).catch(() => ['(読めない)']);
 check('CSP の違反が無い', csp.length === 0, csp.slice(0, 5).join(' / '));
 check('読めなかったファイルが無い', missing.length === 0, missing.slice(0, 5).join(' '));
+// Version 28：ゲームが自分で読んだ台詞の音声ファイル（記録だけ。どの台詞を先読みするかは場面による）
+console.log(`   ゲームが読んだ音声ファイル：${[...new Set(served.filter((p) => p.startsWith('/voice/')))].join(' ') || '（無し）'}`);
 check('data: の URL の読み込みが無い', dataUrls.length === 0, dataUrls.slice(0, 3).join(' '));
 check('ページの誤り（例外・console.error）が無い', errors.length === 0, errors.slice(0, 5).join(' / '));
 await browser.close();

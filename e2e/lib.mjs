@@ -30,6 +30,10 @@ export function outDir(dir) {
  * - 押し始めの守り（350ms）があるので、出てから 0.5 秒待ってから押す。
  * - 演出そのものの確かめ（中身・通常速度）は飛ばすので、出力に「スキップした」と書く（演出の確かめは e2e/story-*.mjs・town-smoke.mjs）。
  * - 開発用のフック（__game）を使わないので、本番ビルドの e2e でも同じに使える。
+ * - Version 28：短い演出（第一章の冒頭 ch1_open は 4 秒前後。演出の時計は実時間）は、3D を描く本番ビルドでは（このコンテナの描画は
+ *   1 コマに数秒）押しの確かめ（見えて止まっているか：2 コマ）が済む前に自分で終わることがある。押す先はこの演出の「スキップ」に決め
+ *   （ElementHandle：層が閉じてボタンが外れたら探し直さない。後から出る別の演出のボタンを押さない）、押しが届く前に層が閉じたら、
+ *   「スキップしていない（最後まで流れて閉じた）」と書いて返る。層が残っているのに押せないときは今までどおり誤りにする。
  * 返り：台本の id（層の data-cine。例 'ch1_open'）。
  */
 export async function skipCinematic(page, { tap = false, what = '', timeout = 600000, log = (t) => console.log(`   ${t}`) } = {}) {
@@ -38,10 +42,28 @@ export async function skipCinematic(page, { tap = false, what = '', timeout = 60
     const id = await page.locator(sel).getAttribute('data-cine');
     await new Promise((r) => setTimeout(r, 500));
     const btn = page.locator(`${sel} .g-cine-btn[data-id="skip"]`);
-    if (tap) await btn.tap();
-    else await btn.click();
+    const layerGone = async () => (await page.locator(sel).count()) === 0;
+    let pressed = false;
+    for (const t0 = Date.now(); !pressed && Date.now() - t0 < timeout; ) {
+        const h = await btn.elementHandle({ timeout: 5000 }).catch(() => null);
+        if (!h) {
+            if (await layerGone()) break;
+            continue;
+        }
+        try {
+            if (tap) await h.tap({ timeout });
+            else await h.click({ timeout });
+            pressed = true;
+        } catch (e) {
+            if (await layerGone()) break;
+            if (!/not attached|detached/i.test(String(e))) throw e;
+        } finally {
+            await h.dispose().catch(() => {});
+        }
+    }
     await page.locator(sel).waitFor({ state: 'detached', timeout });
-    log(`演出「${id}」${what ? `（${what}）` : ''}をスキップした（本物の入力：「スキップ」を${tap ? 'タップ' : 'クリック'}。演出そのものの確かめはここでは飛ばす）`);
+    if (pressed) log(`演出「${id}」${what ? `（${what}）` : ''}をスキップした（本物の入力：「スキップ」を${tap ? 'タップ' : 'クリック'}。演出そのものの確かめはここでは飛ばす）`);
+    else log(`演出「${id}」${what ? `（${what}）` : ''}は「スキップ」の${tap ? 'タップ' : 'クリック'}が届く前に自分で最後まで流れて閉じた（スキップはしていない。描画が遅く、押しの確かめが済む前に短い演出が終わった）`);
     return id;
 }
 
