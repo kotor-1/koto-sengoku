@@ -20,7 +20,8 @@ import { ActorLayer, stackLabels } from './actors';
 import { AMBIENT_FIGURES_MAX, ambientColliders, ambientPlan, walkerAt, type AmbientPlan } from './ambient';
 import { castColliders, headingToward, type CastMember } from './cast';
 import { LookoutSession, type LookoutProbe } from './lookout';
-import { PersonFactory, hashOf } from './people';
+import { PersonFactory } from './people';
+import { rhythmOf } from './rhythm';
 import { stageFrame, type StageCastInfo, type StageHero, type StageShot } from './stage';
 import { setTowerTopVisible } from '../town/view';
 import './town.css';
@@ -464,7 +465,8 @@ export class ExploreWorld implements GameWorld {
             void this.preload();
             return null;
         }
-        const p = this.people.make(m.look ?? 'genzo', { idlePhase: (hashOf(m.id) % 1000) / 1000 });
+        // 人ごとの拍子（待機の動きの速さ・始めの位置。皆が同じ周期で揺れない：explore/rhythm.ts）
+        const p = this.people.make(m.look ?? 'genzo', { rhythm: rhythmOf(m.id) });
         const root = p.root;
         if (m.pose === 'sit') root.add(makeStool());
         root.position.set(m.x, groundY(m.x, m.z), m.z);
@@ -605,11 +607,14 @@ export class ExploreWorld implements GameWorld {
         return { ...this.guideState, mode: this.guide.hidden ? null : this.guideState.mode };
     }
 
-    /** 町の人々を今の時計の形に置く（出来事が同じ所に同じ人々を出している間は、その種類を隠す） */
+    /**
+     * 町の人々を今の時計の形に置く（出来事が同じ所に同じ人々を出している間は、その種類を隠す）。
+     * 店の人は、近くを主人公が通ると会釈する（出来事の間は主人公を渡さない）
+     */
     private updateAmbient(cam: THREE.Camera): void {
         const hide = this.hiddenAmbient;
         const people = this.plan.walkers.filter((w) => !hide.has(w.role)).map((w) => walkerAt(w, this.ambientTime));
-        this.ambientActors.setPeople(people, this.ambientTime, cam);
+        this.ambientActors.setPeople(people, this.ambientTime, cam, true, this.stageKey ? null : this.host.hero);
         const figs = hide.size ? this.plan.figures.filter((f) => !hide.has(f.kind)) : this.plan.figures;
         const bans = hide.size ? this.plan.banners.filter((b) => !hide.has(b.kind)) : this.plan.banners;
         this.ambientActors.setFigures(figs, bans, [], this.ambientTime, cam);

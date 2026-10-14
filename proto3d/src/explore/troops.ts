@@ -3,6 +3,8 @@
  * 形は shared/figures.ts（合戦と同じ箱と円すいの兵。町では 0.82 倍）、のぼりは旗の一文字の画像。
  * 置き方（位置・向き・姿勢）は呼ぶ側が毎回渡す（純粋な関数 explore/stage.ts・explore/ambient.ts の結果）。
  * 画面の外（影の届く分を足した範囲の外）・遠すぎる兵は描かない。
+ * 座る兵（床几・地べた）は、座った形（町だけの形：太もも・すね・組んだ脚。上体は同じ箱を下げる）で描く（Version 28 §4.2）。
+ * Version 27 までは立った形を縦に潰して（y を 0.7・0.52 倍）座りに見せていた。合戦の兵の形（shared/figures.ts）は変えない。
  */
 import * as THREE from 'three';
 import { CLAN_COLOR, clanOfMark, makeMarkBannerTexture, makeTroopGeometries, merge, part } from '../shared/figures';
@@ -11,12 +13,52 @@ import { SPEAR_HAND, type StageBanner, type StageFigure, type StageLitter } from
 
 /** 町の兵の大きさ（1 m 単位の形を何倍で置くか。合戦は 1.45） */
 export const TOWN_FIG = 0.82;
+/**
+ * 座った形で、上体（胴・肩・陣笠・頭・小旗）を立った形から下げる量（形の 1 m 単位）。
+ * 床几：座面の上 0.445 m（town/plan.ts の stools）÷ 0.82 ＝ 0.54 に、太ももの厚み 0.1 を足した所が胴の下（立った形は 0.8）。
+ * 地べた（胡坐）：胴の下が地面の上 0.14（組んだ脚の厚み）
+ */
+export const SEAT_DROP = { sit: 0.16, sitGround: 0.66 } as const;
+
+/**
+ * 座った兵の形（町だけ。形の 1 m 単位・前が −z。shared/figures.ts の makeTroopGeometries の body と同じ寸法・色の上体を、SEAT_DROP だけ下げる）。
+ * sit：床几に腰かける（太ももは前へ水平、すねは下へ。足は地面）。sitGround：地べたに胡坐（太ももは前の左右へ開き、すねを前で組む）
+ */
+export function makeSeatedGeometries(): { sit: THREE.BufferGeometry; sitGround: THREE.BufferGeometry } {
+    const upper = (drop: number) => [
+        part(new THREE.BoxGeometry(0.62, 0.72, 0.38), 1.0, 0, 1.16 - drop, 0),
+        part(new THREE.BoxGeometry(0.9, 0.16, 0.42), 0.78, 0, 1.46 - drop, 0),
+        part(new THREE.ConeGeometry(0.44, 0.24, 6), 0.9, 0, 1.94 - drop, 0),
+        part(new THREE.BoxGeometry(0.05, 0.62, 0.36), 1.15, 0, 2.02 - drop, 0.26),
+    ];
+    const sit = merge([
+        ...upper(SEAT_DROP.sit),
+        // 太もも（座面の上を前へ）・すね（膝から地面へ）・足
+        part(new THREE.BoxGeometry(0.42, 0.16, 0.52), 0.42, 0, 0.62, -0.18),
+        part(new THREE.BoxGeometry(0.38, 0.56, 0.18), 0.42, 0, 0.28, -0.4),
+        part(new THREE.BoxGeometry(0.38, 0.08, 0.26), 0.34, 0, 0.04, -0.46),
+    ]);
+    const thigh = (s: number) => {
+        const g = new THREE.BoxGeometry(0.17, 0.14, 0.5);
+        g.rotateY(s * 0.62);
+        return part(g, 0.42, s * 0.2, 0.08, -0.17);
+    };
+    const sitGround = merge([
+        ...upper(SEAT_DROP.sitGround),
+        // 組んだ脚：左右へ開いた太もも・前で組んだすね
+        thigh(1),
+        thigh(-1),
+        part(new THREE.BoxGeometry(0.66, 0.12, 0.16), 0.38, 0, 0.07, -0.4),
+    ]);
+    return { sit, sitGround };
+}
 /** のぼりの竿の長さ（m） */
 const POLE = 3.6;
 /** 描く距離の上限（m） */
 const FAR = 46;
 
 const mk = new THREE.Matrix4();
+const mhead = new THREE.Matrix4();
 const mspear = new THREE.Matrix4();
 const mq = new THREE.Quaternion();
 const mtmp = new THREE.Matrix4();
@@ -33,6 +75,9 @@ function tintOf(mark: string): THREE.Color {
 export class TownTroops {
     readonly group = new THREE.Group();
     private readonly body: THREE.InstancedMesh;
+    /** 座った兵の形（床几・地べた） */
+    private readonly seat: THREE.InstancedMesh;
+    private readonly seatGround: THREE.InstancedMesh;
     private readonly head: THREE.InstancedMesh;
     private readonly spear: THREE.InstancedMesh;
     private readonly cap: number;
@@ -62,6 +107,9 @@ export class TownTroops {
         const bodyMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 });
         const plainMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 });
         this.body = this.instanced('body', geo.body, bodyMat);
+        const seated = makeSeatedGeometries();
+        this.seat = this.instanced('seat', seated.sit, bodyMat);
+        this.seatGround = this.instanced('seat-ground', seated.sitGround, bodyMat);
         this.head = this.instanced('head', head, plainMat);
         this.spear = this.instanced('spear', spear, plainMat);
     }
@@ -99,32 +147,41 @@ export class TownTroops {
             return this.frustum.intersectsSphere(sphere);
         };
         let n = 0;
+        let nbody = 0;
+        let nst = 0;
+        let ngr = 0;
         let ns = 0;
         for (const f of figures) {
             if (n >= this.cap) break;
             const gy = groundY(f.x, f.z);
             if (!visible(f.x, gy + 1, f.z, 3.2)) continue;
             this.figureMatrix(f, gy, time, mk);
-            this.body.setMatrixAt(n, mk);
-            this.head.setMatrixAt(n, mk);
             const tint = tintOf(f.mark).multiplyScalar(0.9 + ((Math.sin(f.x * 12.9898 + f.z * 78.233) * 43758.5453) % 1 + 1) % 1 * 0.2);
-            this.body.setColorAt(n, tint);
+            // 体：立った形か、座った形（床几・地べた）。座った兵の頭（と槍）は、上体を下げた分だけ下げる
+            const drop = f.pose === 'sit' ? SEAT_DROP.sit : f.pose === 'sitGround' ? SEAT_DROP.sitGround : 0;
+            const [mesh, i] = f.pose === 'sit' ? [this.seat, nst++] : f.pose === 'sitGround' ? [this.seatGround, ngr++] : [this.body, nbody++];
+            mesh.setMatrixAt(i, mk);
+            mesh.setColorAt(i, tint);
+            const mh = drop ? mhead.copy(mk).multiply(mtmp.makeTranslation(0, -drop, 0)) : mk;
+            this.head.setMatrixAt(n, mh);
             this.head.setColorAt(n, color.setRGB(1, 1, 1));
             if (f.spear && ns < this.cap) {
                 // 担いだ槍（木戸をくぐる）：手を中心に後ろへ回す（形の中で。stage.ts の spearTip と同じ寸法）
                 if (f.spearTilt) {
-                    mspear.copy(mk).multiply(mtmp.makeTranslation(SPEAR_HAND.x, SPEAR_HAND.y, SPEAR_HAND.z));
+                    mspear.copy(mh).multiply(mtmp.makeTranslation(SPEAR_HAND.x, SPEAR_HAND.y, SPEAR_HAND.z));
                     mspear.multiply(mtmp.makeRotationX(f.spearTilt)).multiply(mtmp.makeTranslation(-SPEAR_HAND.x, -SPEAR_HAND.y, -SPEAR_HAND.z));
                     this.spear.setMatrixAt(ns, mspear);
-                } else this.spear.setMatrixAt(ns, mk);
+                } else this.spear.setMatrixAt(ns, mh);
                 ns++;
             }
             n++;
         }
-        this.body.count = n;
+        this.body.count = nbody;
+        this.seat.count = nst;
+        this.seatGround.count = ngr;
         this.head.count = n;
         this.spear.count = ns;
-        for (const m of [this.body, this.head, this.spear]) {
+        for (const m of [this.body, this.seat, this.seatGround, this.head, this.spear]) {
             // 0 人のときは描かない（描画の呼び出しを増やさない）
             m.visible = m.count > 0;
             m.instanceMatrix.needsUpdate = true;
@@ -179,7 +236,6 @@ export class TownTroops {
         const ph = f.phase * Math.PI * 2;
         let y = gy + f.y;
         let rx = 0;
-        let sy = 1;
         let rz = f.lean;
         switch (f.pose) {
             case 'walk':
@@ -203,17 +259,17 @@ export class TownTroops {
                 y += 0.16;
                 break;
             case 'sit':
-                sy = 0.7;
+                // 床几に腰かける（座った形。縦には縮めない）
                 break;
             case 'sitGround':
-                sy = 0.52;
+                // 地べたに胡坐、少し後ろ（土塀）へもたれる
                 rx = 0.14;
                 break;
         }
-        // 行列 = 位置 · 向き（形は前が −z） · 傾き（前後 rx・横 rz） · 大きさ（座ると縦に縮める）
+        // 行列 = 位置 · 向き（形は前が −z） · 傾き（前後 rx・横 rz） · 大きさ（縦・横・奥で同じ）
         out.makeRotationY(f.heading + Math.PI);
         out.multiply(mtmp.makeRotationFromEuler(euler.set(rx, 0, rz, 'XYZ')));
-        out.multiply(mtmp.makeScale(s, s * sy, s));
+        out.multiply(mtmp.makeScale(s, s, s));
         out.setPosition(f.x, y, f.z);
     }
 

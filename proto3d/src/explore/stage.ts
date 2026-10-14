@@ -14,6 +14,7 @@
 import type { AmbientGroup, StageEvent } from '../story/types';
 import { GROUND_SITS, GUARD_STOOLS, KIDO, MATS } from '../town/plan';
 import { ENTRY_POSE } from '../town/spots';
+import { merchantAct, rhythmOf, seeded, type PersonAct } from './rhythm';
 
 // ================================================================ 形
 
@@ -80,8 +81,10 @@ export interface StagePerson {
     label: boolean;
     /** 肩に荷（俵）を担ぐか（町の人。省けば荷を持たない） */
     carrying?: boolean;
-    /** 店先の作業（お辞儀。0〜1。町の人） */
-    work?: number;
+    /** 上体の動き（店の人の仕事・荷を持ち上げる。町の人。explore/rhythm.ts） */
+    act?: PersonAct;
+    /** 近くを主人公が通ると軽く会釈する（店の人。描く側 explore/actors.ts が主人公の位置で決める） */
+    greet?: boolean;
 }
 
 /** 出来事の間の主人公（立たせる位置と向き。無ければ主人公を描かない） */
@@ -168,6 +171,60 @@ export function alongPath(path: readonly Pt[], s: number, extend = false): { x: 
     return at(g, g.len + (extend ? rest : 0));
 }
 
+/** 道の角を丸める弧の半径（m）。角の手前・先の線が短いときは小さくする（roundPath） */
+export const CORNER_R = 0.8;
+/** 弧を細かな線に分けるときの、1 本の線で曲がる角度の上限（ラジアン。4°） */
+const ARC_STEP = (4 * Math.PI) / 180;
+const roundCache = new WeakMap<readonly Pt[], Pt[]>();
+
+/**
+ * 折れ線の角を円の弧で丸めた折れ線（Version 28 §4.2：道の角で向きが 1 コマで折れない）。弧は 4° ずつの細かな線にする。
+ * 両端の点・角から離れた所の線は元のまま（道すじの点は動かさない。角の内側を少し近道するだけ）。
+ * 弧の始まり・終わりは角から CORNER_R·tan(曲がる角 / 2) の所で、角の手前・先の線の長さの 45% まで（短い線が続く所は半径を小さく）。
+ * 歩く人の向きは弧の上で少しずつ変わる（tests/proto3d-townsfolk.test.ts：60 コマ/秒で 1 コマ 12° まで）。
+ * 同じ折れ線（同じ配列）には同じ結果を返す（作り直さない）。
+ */
+export function roundPath(path: readonly Pt[], r = CORNER_R): Pt[] {
+    const cached = r === CORNER_R ? roundCache.get(path) : undefined;
+    if (cached) return cached;
+    const n = path.length;
+    const out: Pt[] = n ? [path[0]!] : [];
+    for (let i = 1; i < n - 1; i++) {
+        const a = path[i - 1]!;
+        const b = path[i]!;
+        const c = path[i + 1]!;
+        const l1 = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        const l2 = Math.hypot(c[0] - b[0], c[1] - b[1]);
+        if (l1 < 1e-6 || l2 < 1e-6) continue;
+        const u1 = [(b[0] - a[0]) / l1, (b[1] - a[1]) / l1] as const;
+        const u2 = [(c[0] - b[0]) / l2, (c[1] - b[1]) / l2] as const;
+        const cross = u1[0] * u2[1] - u1[1] * u2[0];
+        const phi = Math.atan2(Math.abs(cross), u1[0] * u2[0] + u1[1] * u2[1]);
+        if (phi < 1e-3) {
+            out.push(b);
+            continue;
+        }
+        const tanH = Math.tan(phi / 2);
+        const d = Math.min(r * tanH, 0.45 * l1, 0.45 * l2);
+        const rho = d / tanH;
+        const p1: Pt = [b[0] - u1[0] * d, b[1] - u1[1] * d];
+        // 弧の中心：p1 から、曲がる側へ rho（x・z の面で反時計回りに曲がる（cross > 0）なら、進む向きを反時計回りに 90° 回した側）
+        const sgn = cross > 0 ? 1 : -1;
+        const cx = p1[0] - u1[1] * rho * sgn;
+        const cz = p1[1] + u1[0] * rho * sgn;
+        const a0 = Math.atan2(p1[0] - cx, p1[1] - cz);
+        const k = Math.max(1, Math.ceil(phi / ARC_STEP));
+        // 弧の上の点（中心から見た角は z 軸から x 軸へ測る。反時計回りに曲がるとき、この角は減る）
+        for (let j = 0; j <= k; j++) {
+            const ang = a0 - sgn * phi * (j / k);
+            out.push([cx + Math.sin(ang) * rho, cz + Math.cos(ang) * rho]);
+        }
+    }
+    if (n > 1) out.push(path[n - 1]!);
+    if (r === CORNER_R) roundCache.set(path, out);
+    return out;
+}
+
 /** 道すじに沿って横へずらした点（進む向きの右が +）。角のあたりは向きの平均で */
 function offsetAlong(path: readonly Pt[], s: number, side: number, extend = false): { x: number; z: number; heading: number } {
     const p = alongPath(path, s, extend);
@@ -237,22 +294,45 @@ export function bannerTop(b: Pick<StageBanner, 'x' | 'z' | 'y' | 'heading' | 'ti
 /** 1 歩の周期で進む距離（m。人物の歩きの動き 0.84 秒 × 1.4 m/秒） */
 export const STRIDE = 1.18;
 
+/** 歩き出し・止まりで速さが変わる秒（Version 28 §4.2：全速のまま 1 コマで止まらない） */
+export const WALK_ACCEL = 0.5;
+export const WALK_DECEL = 0.6;
+
+/** なめらかな 0→1（smoothstep）の 0〜x の積分（x は 0〜1） */
+const easeInt = (x: number) => x * x * x - (x * x * x * x) / 2;
+
 /**
- * 歩いて行く距離（t 秒で、遅れ delay・速さ v・長さ L）。始めと終わりはなめらかに（0.5 秒ほどで速さが変わる）。
- * 返り：{ s：歩いた距離、moving：歩いているか（0〜1） }
+ * 距離 L を、止まった所から歩き出して止まった所で止まる歩き（歩き出しから tt 秒）。速さは歩き出し WALK_ACCEL 秒・止まり WALK_DECEL 秒で
+ * なめらかに変わり（速さが smoothstep、距離はその積分）、間は速さ v。短くて速さ v に届かない道は、同じ形のまま上の速さを下げる。
+ * 返り：s 歩いた距離・v 今の速さ・T 歩き終わる秒
+ */
+export function walkProfile(tt: number, v: number, L: number): { s: number; v: number; T: number } {
+    const A = WALK_ACCEL;
+    const D = WALK_DECEL;
+    if (L <= 0 || v <= 0) return { s: 0, v: 0, T: 0 };
+    const V = Math.min(v, (2 * L) / (A + D));
+    const T = L / V + (A + D) / 2;
+    if (tt <= 0) return { s: 0, v: 0, T };
+    if (tt >= T) return { s: L, v: 0, T };
+    if (tt < A) return { s: V * A * easeInt(tt / A), v: V * ease(tt / A), T };
+    const left = T - tt;
+    if (left < D) return { s: L - V * D * easeInt(left / D), v: V * ease(left / D), T };
+    return { s: V * (tt - A / 2), v: V, T };
+}
+
+/** 歩きの動きの重み（今の速さから。止まりかけは待機の形へ混ぜる。主人公の game/heroAnim.ts と同じ決まり） */
+export function movingFor(v: number): number {
+    const x = clamp01((v - 0.05) / 0.45);
+    return round3(x * x * (3 - 2 * x));
+}
+
+/**
+ * 歩いて行く距離（t 秒で、遅れ delay・速さ v・長さ L）。歩き出しと止まりはなめらかに速さが変わる（walkProfile）。
+ * 返り：{ s：歩いた距離、moving：歩いているか（0〜1。今の速さから） }
  */
 export function walkProgress(t: number, delay: number, v: number, L: number): { s: number; moving: number } {
-    const acc = 0.5;
-    const tt = t - delay;
-    if (tt <= 0) return { s: 0, moving: 0 };
-    // 加速の間は半分の速さで進んだと見なす（なめらかに）
-    let s: number;
-    if (tt < acc) s = (v * tt * tt) / (2 * acc);
-    else s = v * (tt - acc / 2);
-    if (s >= L) return { s: L, moving: 0 };
-    const near = L - s;
-    const moving = Math.min(clamp01(tt / acc), clamp01(near / (v * 0.4)));
-    return { s, moving };
+    const w = walkProfile(t - delay, v, L);
+    return { s: w.s, moving: movingFor(w.v) };
 }
 
 // ================================================================ 町の場所（出来事の道すじ）
@@ -373,9 +453,9 @@ function arrivals(who: { key: string; look: string; name: string }[], t: number,
             [lane, 19.6 + back],
             [lane + (showHero ? 0 : 0.2), 6.0 + back],
         ];
-        // 後の画：通りの北（開始の位置の東）から行き先へ。南から近づく（置き場所の 1.6 m 南を経る）
+        // 後の画：通りの北（開始の位置の東）から行き先へ。南から近づく（置き場所の 1.6 m 南を経る）。角は丸める（向きが 1 コマで折れない）
         const startB: Pt = [1.7 + (i % 2) * 1.1, -1.0 + (i % 2) * 1.0];
-        const pathB: Pt[] = [startB, [dest[0], dest[1] + 1.6], dest];
+        const pathB = roundPath([startB, [dest[0], dest[1] + 1.6], dest]);
         const LB = pathLength(pathB);
         if (reduced) {
             // 動かさない：城門の前の画に、着いた姿で現れる。名札を出すため、同じ人の会話の相手の人物は隠して演出の人に替える
@@ -395,7 +475,8 @@ function arrivals(who: { key: string; look: string; name: string }[], t: number,
         const arrived = w1.s >= LB - 1e-6;
         if (arrived && castId) return; // 着いた：会話の相手の人物に替わる（その人物を見せる）
         const p = alongPath(pathB, w1.s);
-        const h = arrived ? heading : p.heading;
+        // 着いた後（人物に替わらないとき）は、止まってから 0.6 秒で置き場所の向きへ向き直る（1 コマで向きを飛ばさない）
+        const h = arrived ? roundH(lerpAngle(p.heading, heading, ease((t - ARRIVAL_CUT - arrivalTime(i * 0.3, ARRIVAL_SPEED_B, LB)) / 0.6))) : p.heading;
         people.push({ key: w.key, look: w.look, name: w.name, x: p.x, z: p.z, heading: h, walked: 30 + w1.s, moving: w1.moving, label: true });
         if (castId) hideCast.push(castId);
     });
@@ -443,17 +524,19 @@ const LIFE_MERCHANT = { x: -3.6, z: 2.6, heading: Math.PI / 2 } as const;
 
 function townLife(withHero: boolean, t: number, reduced: boolean): StageFrame {
     const people: StagePerson[] = [];
-    const walker = (key: string, look: string, path: readonly Pt[], delay: number, v: number) => {
-        const L = pathLength(path);
-        const w = reduced ? { s: L, moving: 0 } : walkProgress(t, delay, v, L);
-        const p = alongPath(path, w.s);
-        people.push({ key, look, name: '', x: p.x, z: p.z, heading: p.heading, walked: w.s, moving: w.moving, label: false, carrying: true, work: 0 });
+    // 荷運び：人ごとの速さ（explore/rhythm.ts）で、角を丸めた道を歩き出して止まる
+    const walker = (key: string, look: string, path: readonly Pt[], delay: number) => {
+        const P = roundPath(path);
+        const L = pathLength(P);
+        const w = reduced ? { s: L, moving: 0 } : walkProgress(t, delay, rhythmOf(key).speed, L);
+        const p = alongPath(P, w.s);
+        people.push({ key, look, name: '', x: p.x, z: p.z, heading: p.heading, walked: w.s, moving: w.moving, label: false, carrying: true });
     };
-    walker('life_porter_w', 'townsman_a', LIFE_PORTER_W, 0.3, 1.1);
-    walker('life_porter_e', 'townsman_b', LIFE_PORTER_E, 1.0, 1.1);
-    // 店の人：店先でゆっくりお辞儀（減らすときは止める）
-    const work = reduced ? 0.5 : round3(0.5 + 0.5 * Math.sin(t * 0.9));
-    people.push({ key: 'life_merchant', look: 'merchant_a', name: '', x: LIFE_MERCHANT.x, z: LIFE_MERCHANT.z, heading: LIFE_MERCHANT.heading, walked: 0, moving: 0, label: false, carrying: false, work });
+    walker('life_porter_w', 'townsman_a', LIFE_PORTER_W, 0.3);
+    walker('life_porter_e', 'townsman_b', LIFE_PORTER_E, 1.0);
+    // 店の人：待機・通りを見る・品物を整える（減らすときは待機のまま）
+    const m = reduced ? { heading: LIFE_MERCHANT.heading, act: undefined } : merchantAct('life_merchant', LIFE_MERCHANT.x, LIFE_MERCHANT.z, LIFE_MERCHANT.heading, t);
+    people.push({ key: 'life_merchant', look: 'merchant_a', name: '', x: LIFE_MERCHANT.x, z: LIFE_MERCHANT.z, heading: m.heading, walked: 0, moving: 0, label: false, carrying: false, ...(m.act ? { act: m.act } : {}) });
     const s = reduced ? TOWN_LIFE_SHOT_0 : lerpShot(TOWN_LIFE_SHOT_0, TOWN_LIFE_SHOT_1, ease(t / TOWN_LIFE_SEC));
     const hero = withHero ? { x: ENTRY_POSE.x, z: ENTRY_POSE.z, heading: ENTRY_POSE.heading } : null;
     return { people, figures: [], banners: [], litters: [], shot: s, hideCast: [], hideAmbient: ['porter', 'merchant'], hero };
@@ -497,8 +580,7 @@ function retainerReport(look: string, name: string, castId: string, t: number, r
 
 /** 歩き終わる時刻（walkProgress の逆。遅れ delay・速さ v・長さ L） */
 function arrivalTime(delay: number, v: number, L: number): number {
-    const acc = 0.5;
-    return delay + (L <= (v * acc) / 2 ? Math.sqrt((2 * acc * L) / v) : L / v + acc / 2);
+    return delay + walkProfile(0, v, L).T;
 }
 
 // ---------------- 詰所の負傷兵
@@ -629,7 +711,15 @@ export function columnSlots(count: number, wounded: number, abreast: number): Co
 }
 
 /**
- * 隊列を道すじの上に置く（頭の距離 head）。
+ * 兵ごとの歩幅の倍率と歩きの位相のずれ（隊列の何番目か。Version 28 §4.2：同じ列の兵が同じ位相で一斉に上下しない）。
+ * 歩幅は ±10%（同じ速さで歩くので、歩く拍子も人ごとに違う）、位相は 0〜1 のどこからでも
+ */
+export function columnGait(i: number): { stride: number; offset: number } {
+    return { stride: 0.9 + 0.2 * seeded('column', 2 * i), offset: seeded('column', 2 * i + 1) };
+}
+
+/**
+ * 隊列を道すじの上に置く（頭の距離 head）。道の角は丸める（roundPath）。兵ごとに歩幅と位相を違える（columnGait）。
  * gateZ：北へ木戸をくぐる道（援兵・帰還）のとき、木戸の z。木戸の 2.6 m 手前から 1 m 手前までに槍を後ろへ担ぎ・のぼりを倒し、
  * くぐった後もそのまま（先が横木の下 2.98 m より下。木戸の外の目の高さのカメラからは、先は横木の下に収まって見える）。
  */
@@ -637,22 +727,24 @@ function placeColumn(path: readonly Pt[], slots: ColumnSlot[], head: number, mar
     const figures: StageFigure[] = [];
     const banners: StageBanner[] = [];
     const litters: StageLitter[] = [];
-    for (const s of slots) {
+    const P = roundPath(path);
+    slots.forEach((s, i) => {
         const d = head - s.back;
-        const p = offsetAlong(path, d, s.side, true);
+        const p = offsetAlong(P, d, s.side, true);
         const low = gateZ === null ? 0 : ease((gateZ + 2.6 - p.z) / 1.6);
         const walking = moving > 0.05;
-        const phase = Math.max(0, d) / STRIDE / speedScale;
+        const g = columnGait(i);
+        const phase = g.offset + Math.max(0, d) / (STRIDE * g.stride) / speedScale;
         if (s.role === 'carried') {
             figures.push({ x: p.x, z: p.z, y: 0.62, heading: p.heading, pose: 'carried', phase, lean: 0, mark, spear: false });
             litters.push({ x: p.x, z: p.z, y: 0.6, heading: p.heading });
-            continue;
+            return;
         }
         const pose: FigurePose = !walking ? 'stand' : s.role === 'wounded' ? 'limp' : 'walk';
         const spear = s.role === 'soldier' || s.role === 'helper';
         figures.push({ x: p.x, z: p.z, y: 0, heading: p.heading, pose, phase, lean: s.lean, mark, spear, ...(spear && low > 0 ? { spearTilt: round3(GATE_SPEAR_TILT * low) } : {}) });
         if (s.role === 'banner' && banner) banners.push({ x: p.x, z: p.z, y: 0.95, heading: p.heading, mark, tilt: Math.max(banner.tilt, round3(GATE_BANNER_TILT * low)), open: banner.open });
-    }
+    });
     return { figures, banners, litters };
 }
 

@@ -7,6 +7,8 @@
  * - 足の踏み替え：止まっている間（待機）に、足が立つ位置から離れた・体の向きに対してねじれたときは、片足ずつ短く踏み替える
  *  （止まった後の 1 歩、その場で向きを変えるときの小さな足踏み）。ねじれ・伸びすぎが大きいときは、歩きの途中でも踏み替える。
  * 角度はラジアン、長さは m。足の骨の休みの姿勢は世界の軸にそろう（第 2 版の骨組み）。
+ * 町の人・演出の人（explore/actors.ts。同じ骨組みを人ごとの大きさ Look.scale で縮めて置く）にも使う：scale にその大きさを渡す
+ *（脚の長さ・足の裏の点・腰を下げる量をその大きさに合わせる。主人公は 1）。
  */
 import * as THREE from 'three';
 
@@ -169,14 +171,19 @@ export class HeroLegs {
     /** 確かめ用の数 */
     readonly stats = { steps: 0, forced: 0, early: 0, drop: 0 };
 
+    /** 足の裏の点（この人の大きさに合わせた世界の長さ） */
+    private readonly sole: THREE.Vector3[];
+
     constructor(
         private readonly root: THREE.Object3D,
         private readonly b: LegBones,
+        private readonly scale = 1,
     ) {
         const mk = (): Foot => ({ planted: true, heel: new THREE.Vector3(), pivot: 0, rot: new THREE.Quaternion(), yaw: 0, pos: new THREE.Vector3(), dy: 0, swingT: 0, early: 0, lifting: false, plantT: 1, lastWorld: new THREE.Vector3(), step: null, target: new THREE.Vector3() });
         this.feet = [mk(), mk()];
-        this.l1 = b.lower[0].position.length();
-        this.l2 = b.foot[0].position.length();
+        this.l1 = b.lower[0].position.length() * scale;
+        this.l2 = b.foot[0].position.length() * scale;
+        this.sole = SOLE_PTS.map((p) => p.clone().multiplyScalar(scale));
     }
 
     /** 足の固定を外す（置き直し・場面の切り替えの後。次のコマで動きの元の位置から始める） */
@@ -200,9 +207,9 @@ export class HeroLegs {
     /** 足の向き rot で、足の裏の点のうちいちばん低い点の番号と、足首から見た位置 */
     private lowest(rot: THREE.Quaternion): [number, THREE.Vector3] {
         let best = 0;
-        let off = tmpV.copy(SOLE_PTS[0]!).applyQuaternion(rot);
-        for (let k = 1; k < SOLE_PTS.length; k++) {
-            const o = tmpV2.copy(SOLE_PTS[k]!).applyQuaternion(rot);
+        let off = tmpV.copy(this.sole[0]!).applyQuaternion(rot);
+        for (let k = 1; k < this.sole.length; k++) {
+            const o = tmpV2.copy(this.sole[k]!).applyQuaternion(rot);
             if (o.y < off.y) {
                 best = k;
                 off = tmpV.copy(o);
@@ -219,7 +226,7 @@ export class HeroLegs {
         const [k, off] = this.lowest(rot);
         if (k !== f.pivot) {
             // 前の中心を今の向きで止めたまま、新しい中心の位置を求める（新しい点は今ちょうど地面に着いた所）
-            const old = tmpV2.copy(SOLE_PTS[f.pivot]!).applyQuaternion(rot);
+            const old = tmpV2.copy(this.sole[f.pivot]!).applyQuaternion(rot);
             f.heel.x += off.x - old.x;
             f.heel.z += off.z - old.z;
             f.pivot = k;
@@ -230,7 +237,7 @@ export class HeroLegs {
     /** 足首から見た、足の裏のいちばん低い点の高さ（足の向き rot で） */
     private lowOffset(rot: THREE.Quaternion): number {
         let m = Infinity;
-        for (const p of SOLE_PTS) m = Math.min(m, tmpV.copy(p).applyQuaternion(rot).y);
+        for (const p of this.sole) m = Math.min(m, tmpV.copy(p).applyQuaternion(rot).y);
         return m;
     }
 
@@ -451,7 +458,7 @@ export class HeroLegs {
         }
         this.stats.drop = this.drop;
         if (this.drop > 1e-5) {
-            b.hips.position.y -= this.drop;
+            b.hips.position.y -= this.drop / this.scale;
             b.hips.updateMatrixWorld(true);
         }
         for (let i = 0; i < 2; i++) this.solve(i, targets[i]!, rots[i]!);

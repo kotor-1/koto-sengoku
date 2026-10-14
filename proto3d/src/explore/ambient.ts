@@ -8,17 +8,21 @@
  *   castle は城内、gate は城門、street は通り）。
  *   道の真ん中（x −1.5〜2.5、z −12〜3）・人物へ南から近づく道すじ・城門への道すじには入らない（tests/proto3d-town.test.ts）。
  * - 動きは探索の時計（time 秒）で決める（演出ではない。同じ time なら同じ形）。
+ * - Version 28 §4.2：人ごとの速さ・拍子（explore/rhythm.ts）。道の角は丸め（stage.ts の roundPath）、端では速さをなめらかに上げ下げし
+ *   （walkProfile）、止まってから向き直る。荷を担ぐ・下ろすときは前かがみになる。店の人は待機・通りを見る・品物を整えるを移る
+ *  （rhythm.ts の merchantAct。お辞儀を続けない）。主人公が近くを通ったときの会釈は描く側（actors.ts）。
  */
 import type { Rect } from '../layout';
 import type { AmbientGroup, AmbientSpec } from '../story/types';
-import { alongPath, pathLength, woundedLayout, type Pt, type StageBanner, type StageFigure, type StagePerson } from './stage';
+import { merchantAct, rhythmOf, type PersonAct } from './rhythm';
+import { alongPath, movingFor, pathLength, roundPath, walkProfile, woundedLayout, type Pt, type StageBanner, type StageFigure, type StagePerson } from './stage';
 
 /** 人物の素材の写しの数の上限（重いので少なく） */
 export const AMBIENT_PEOPLE_MAX = 4;
 /** 兵の形の数の上限 */
 export const AMBIENT_FIGURES_MAX = 40;
 
-/** 行き来する人（往復の道すじ・速さ・両端で止まる秒・始めのずれ） */
+/** 行き来する人（往復の道すじ・速さ・両端で止まる秒・始めのずれ）。店の人は道すじが 1 点（その場で働く） */
 export interface AmbientWalker {
     key: string;
     role: 'porter' | 'merchant';
@@ -125,7 +129,8 @@ export function ambientPlan(spec: AmbientSpec | null): AmbientPlan {
     const porters = Math.min(PORTER_PATHS.length, count('porter'));
     for (let i = 0; i < porters; i++) {
         const path = PORTER_PATHS[i]!;
-        walkers.push({ key: `porter${i}`, role: 'porter', look: i === 0 ? 'townsman_a' : 'townsman_b', path, speed: 1.15, pause: 2.6, offset: i * 5.3, faceStart: WEST, faceEnd: i === 0 ? WEST : EAST, carry: true });
+        const key = `porter${i}`;
+        walkers.push({ key, role: 'porter', look: i === 0 ? 'townsman_a' : 'townsman_b', path, speed: rhythmOf(key).speed, pause: 2.6 + 0.5 * i, offset: i * 5.3, faceStart: WEST, faceEnd: i === 0 ? WEST : EAST, carry: true });
     }
     const merchants = Math.min(MERCHANT_SPOTS.length, count('merchant'), AMBIENT_PEOPLE_MAX - walkers.length);
     for (let i = 0; i < merchants; i++) {
@@ -153,61 +158,78 @@ export function ambientPlan(spec: AmbientSpec | null): AmbientPlan {
 
 /** 端で向き直る時間（秒） */
 const TURN_SEC = 0.6;
+/** 荷を担ぐ・下ろす前かがみの半分の長さ（秒）と強さ（rhythm.ts の PersonAct.lean。1 は品物を整えるくらい） */
+const STOOP_HALF = 0.7;
+const STOOP_LEAN = 1.4;
 /** 向き a から b へ、k（0〜1）だけ回す（近い回り。なめらかに） */
 function turnTo(a: number, b: number, k: number): number {
     const x = Math.max(0, Math.min(1, k));
     const d = Math.atan2(Math.sin(b - a), Math.cos(b - a));
     return a + d * x * x * (3 - 2 * x);
 }
+/** 時刻 x が c のまわり ±half の間の、なめらかな山（0〜1） */
+function bump(x: number, c: number, half: number): number {
+    const k = Math.max(0, 1 - Math.abs(x - c) / half);
+    return k * k * (3 - 2 * k);
+}
+const r3 = (v: number) => Math.round(v * 1000) / 1000;
+/** 荷を持ち上げる・下ろす前かがみ（手を前へ） */
+const stoopAct = (k: number): PersonAct | undefined => (k > 0 ? { lean: r3(STOOP_LEAN * k), hands: r3(k), handPhase: 0, look: null, lookWeight: 0 } : undefined);
 
 /** 行き来する人の、時刻 time（探索の時計の秒）の姿（純粋） */
-export function walkerAt(w: AmbientWalker, time: number): StagePerson & { carrying: boolean; work: number } {
+export function walkerAt(w: AmbientWalker, time: number): StagePerson & { carrying: boolean } {
     if (w.speed <= 0 || w.path.length < 2) {
+        // 店の人：その場で、待機・通りを見る・品物を整える（店の方へ向き直る）を移る
         const [x, z] = w.path[0]!;
-        // 店先の作業：ゆっくりお辞儀・手を動かす（0〜1）
-        const work = 0.5 + 0.5 * Math.sin((time + w.offset) * 0.9);
-        return { key: w.key, look: w.look, name: '', x, z, heading: w.faceStart, walked: 0, moving: 0, label: false, carrying: false, work };
+        const m = merchantAct(w.key, x, z, w.faceStart, time);
+        return { key: w.key, look: w.look, name: '', x, z, heading: m.heading, walked: 0, moving: 0, label: false, carrying: false, act: m.act, greet: true };
     }
-    const L = pathLength(w.path);
-    const leg = L / w.speed;
+    // 角を丸めた道を、止まった所から歩き出して止まった所で止まる（速さはなめらかに上がり・下がる）
+    const P = roundPath(w.path);
+    const L = pathLength(P);
+    const leg = walkProfile(0, w.speed, L).T;
     const T = 2 * (leg + w.pause);
     const u = (((time + w.offset) % T) + T) % T;
-    // 始めの端で止まる → 行く（荷を持つ）→ 終わりの端で止まる → 戻る（手ぶら）
+    // 始めの端で止まる（荷を担ぐ）→ 行く → 終わりの端で止まる（荷を下ろす）→ 戻る（手ぶら）
     let s: number;
     let moving = 0;
     let heading: number;
     let carrying: boolean;
     let walked: number;
-    const out0 = alongPath(w.path, 0).heading;
-    const in1 = alongPath(w.path, L).heading;
+    let act: PersonAct | undefined;
+    const out0 = alongPath(P, 0).heading;
+    const in1 = alongPath(P, L).heading;
     if (u < w.pause) {
         s = 0;
-        // 着いた向きから端の向きへ、出る前に道の向きへ（ゆっくり向き直る）
+        // 着いた向きから端の向きへ、出る前に道の向きへ（ゆっくり向き直る）。真ん中で前かがみになって荷を担ぐ
         heading = turnTo(turnTo(out0 + Math.PI, w.faceStart, u / TURN_SEC), out0, (u - (w.pause - TURN_SEC)) / TURN_SEC);
         carrying = w.carry && u > w.pause * 0.5;
         walked = 0;
+        if (w.carry) act = stoopAct(bump(u, w.pause * 0.5, STOOP_HALF));
     } else if (u < w.pause + leg) {
-        s = (u - w.pause) * w.speed;
-        moving = Math.min(1, Math.min(s, L - s) / 0.35);
-        heading = alongPath(w.path, s).heading;
+        const pr = walkProfile(u - w.pause, w.speed, L);
+        s = pr.s;
+        moving = movingFor(pr.v);
+        heading = alongPath(P, s).heading;
         carrying = w.carry;
         walked = s;
     } else if (u < 2 * w.pause + leg) {
         s = L;
         const k = u - w.pause - leg;
         heading = turnTo(turnTo(in1, w.faceEnd, k / TURN_SEC), in1 + Math.PI, (k - (w.pause - TURN_SEC)) / TURN_SEC);
-        carrying = w.carry && u < w.pause * 1.5 + leg;
+        carrying = w.carry && k < w.pause * 0.5;
         walked = L;
+        if (w.carry) act = stoopAct(bump(k, w.pause * 0.5, STOOP_HALF));
     } else {
-        const back = (u - 2 * w.pause - leg) * w.speed;
-        s = L - back;
-        moving = Math.min(1, Math.min(back, L - back) / 0.35);
-        heading = alongPath(w.path, s).heading + Math.PI;
+        const pr = walkProfile(u - 2 * w.pause - leg, w.speed, L);
+        s = L - pr.s;
+        moving = movingFor(pr.v);
+        heading = alongPath(P, s).heading + Math.PI;
         carrying = false;
-        walked = L + back;
+        walked = L + pr.s;
     }
-    const p = alongPath(w.path, s);
-    return { key: w.key, look: w.look, name: '', x: p.x, z: p.z, heading, walked, moving, label: false, carrying, work: 0 };
+    const p = alongPath(P, s);
+    return { key: w.key, look: w.look, name: '', x: p.x, z: p.z, heading, walked, moving, label: false, carrying, ...(act ? { act } : {}) };
 }
 
 /**
