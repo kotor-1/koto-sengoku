@@ -2,7 +2,7 @@
  * どの画面で、どの曲・環境音にするか（純粋。three も DOM も Web Audio も使わない）。
  *
  * - 城下（探索・会話・物見・戦後・結末）：城下町の曲（前の合戦で勝てなかった後の結末・結果確認・第二章の冒頭の町の場面は急報の曲）。風と、荷の作業の音（荷置き場の近く）。
- * - 危機／軍議：軍議の画面・章の冒頭の急報（使者・使い・家臣の報告の場面）・情勢の図解。
+ * - 危機／軍議：軍議の画面・章の冒頭の急報（使者・使い・家臣の報告の場面）・第一章の町の急報（Version 28）・情勢の図解。
  * - 合戦：合戦の画面（読み込みの待ちを含む）・出陣の演出（隊列が出る）。
  * - 帰還の演出：勝てば城下の曲、ほかは危機の曲（負けて戻る町を明るい曲で迎えない）。
  * - タイトル・演習の一覧：曲なし（風もなし）。
@@ -42,6 +42,8 @@ export function cineMusic(b: CineBeatInfo, defeat = false): SceneChoice {
             case 'reinforcement_arrive':
                 return { music: defeat ? 'crisis' : 'town', wind: 0.3, town: true };
             case 'envoys_arrive':
+            // 第一章の町の急報（Version 28 §4.3：ch1_report）。Version 27 の冒頭の使者の到着（envoys_arrive）と同じ急報の曲
+            case 'street_report':
             case 'messenger_arrive':
             case 'retainer_report':
                 return { music: 'crisis', wind: 0.3, town: true };
@@ -64,7 +66,10 @@ export function cineMusic(b: CineBeatInfo, defeat = false): SceneChoice {
     }
 }
 
-/** 木戸・城門を通る出来事（場面の頭でにきしみを鳴らす。返りは何秒後か。鳴らさなければ null） */
+/**
+ * 木戸・城門を通る出来事（場面の頭でにきしみを鳴らす。返りは何秒後か。鳴らさなければ null）。
+ * 町の急報（street_report）は鳴らさない：使者は木戸からではなく、止まる所の少し南の通りから走って来る（docs/v28-town-motion-voice.md §12.4）
+ */
 export function creakDelay(event: string | undefined): number | null {
     switch (event) {
         case 'envoys_arrive':
