@@ -3,14 +3,14 @@
  * - 光：西の町家（表が東）の表に日が当たり、陰になる東の店の表には照り返しの補いが当たる（どちらの側も真っ暗の逆光にしない）。
  *   日は南の側の高め（開始の画面で主人公の背と城門の正面が日なた）。
  * - 中景：歩ける範囲の外だけに置く（歩ける範囲は広げない。当たり判定は足さない）。範囲の端の竹垣はカメラ除けにもなる（カメラが垣の向こうへ出ない）。
- *   形は軽く（まとまりごとの三角形の数の上限）。
+ *   形は軽く（まとまりごとの三角形の数の上限）。遠い木は冠の絵の板（Version 28 T4）、遠くの林は田畑・村の外で山並みの手前。田畑の下に土の板。
  * - 遠景：山並みは 3 段で、奥ほど遠く・空の色に近い（空気の遠近）。手前の段の裾は地面の端（200 m）より内側（地面の切れ目を隠す）。
  * - 影：影を落とさない木（street28.json の shadow: false）は、通りから見えない所（城の土塀の線より北・東の土塀の向こう）の木だけ。
  * - 接地の影：人物の根に 1 枚だけ付き、影を落とさない（人物の影の設定をまとめて変えても）。
  */
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { RANGES, TOWN_LIGHT, makeHills, surroundGeometry } from '../proto3d/src/scenery';
+import { CROWN_CLUSTERS, FIELD_UNDERLAY, RANGES, TOWN_LIGHT, makeHills, surroundGeometry } from '../proto3d/src/scenery';
 import { surroundPlan } from '../proto3d/src/town/surround';
 import { BOUNDS, EDGE_FENCE, GATE, TREES, cameraBlockers, colliders, type Rect } from '../proto3d/src/layout';
 import { createOrbit, placeFollow } from '../proto3d/src/game/follow';
@@ -20,6 +20,14 @@ import scene from '../proto3d/blender/scene.json';
 const sunDir = new THREE.Vector3(...TOWN_LIGHT.sunOffset).normalize();
 const bounceDir = new THREE.Vector3(-TOWN_LIGHT.sunOffset[0], TOWN_LIGHT.bounce.height, -TOWN_LIGHT.sunOffset[2]).normalize();
 const inBounds = (x: number, z: number, pad = 0) => x > BOUNDS.x0 - pad && x < BOUNDS.x1 + pad && z > BOUNDS.z0 - pad && z < BOUNDS.z1 + pad;
+const fs = (await import(/* @vite-ignore */ 'node:' + 'fs')) as { readFileSync(p: URL, enc: 'utf8'): string };
+/** 地面の作り方（blender/scene/build_ground.py）の田畑の範囲 FIELDS（x0, x1, z0, z1） */
+function groundFields(): [number, number, number, number] {
+    const py = fs.readFileSync(new URL('../proto3d/blender/scene/build_ground.py', import.meta.url), 'utf8');
+    const m = /^FIELDS = dict\(x0=(-?[\d.]+), x1=(-?[\d.]+), z0=(-?[\d.]+), z1=(-?[\d.]+)\)/m.exec(py);
+    if (!m) throw new Error('build_ground.py に FIELDS が無い');
+    return m.slice(1).map(Number) as [number, number, number, number];
+}
 
 describe('光（町を歩くときの日・照り返し）', () => {
     it('日は南の側の高め（高さ 35〜50°）：開始の画面（北を見る）で主人公の背と城門の正面（南向き）が日なた', () => {
@@ -129,6 +137,47 @@ describe('中景（範囲の外の竹垣・隣の町並み・木立・村）', (
 
     it('毎回同じ形（種つきの乱数）', () => {
         expect(JSON.stringify(surroundPlan())).toBe(JSON.stringify(plan));
+    });
+
+    it('遠い木（範囲の外の木立・田畑の縁・村・遠くの林）は冠の絵の板：1 本 3 枚・表と裏で 12 三角形（材質 1）。生垣・町並みの家の間の近い木は塊（材質 0）', () => {
+        const isCard = (t: (typeof plan.trees)[number]) => t.kind !== 'hedge' && CROWN_CLUSTERS.has(t.cluster);
+        expect(plan.trees.filter(isCard).length).toBeGreaterThan(150);
+        for (const [c, g] of geo) {
+            const crownTris = g.groups.filter((q) => q.materialIndex === 1).reduce((a, q) => a + q.count / 3, 0);
+            expect(crownTris, c).toBe(plan.trees.filter((t) => t.cluster === c && isCard(t)).length * 12);
+            // 材質の区切りで形の全部を覆う（1 つの形を 2 つの材質で描く。どの三角形も描かれる）
+            expect(g.groups.reduce((a, q) => a + q.count, 0), c).toBe(g.getAttribute('position').count);
+        }
+        // 板にする木は、歩ける範囲から 24 m より遠い（近くで見ると板とわかる）
+        const away = (x: number, z: number) => Math.hypot(Math.max(BOUNDS.x0 - x, 0, x - BOUNDS.x1), Math.max(BOUNDS.z0 - z, 0, z - BOUNDS.z1));
+        for (const t of plan.trees.filter(isCard)) expect(away(t.x, t.z), JSON.stringify(t)).toBeGreaterThan(24);
+        // 町並みの家の間の木（範囲の端の近く）は板にしない
+        expect(plan.trees.filter((t) => !CROWN_CLUSTERS.has(t.cluster) && t.kind !== 'hedge').length).toBeGreaterThan(0);
+    });
+
+    it('遠くの林：田畑（build_ground.py の FIELDS）・村の外、山並みの近い段の裾（と地面の端 200 m）より内側', () => {
+        const [fx0, fx1, fz0, fz1] = groundFields();
+        const groves = plan.trees.filter((t) => t.cluster === 'groves');
+        expect(groves.length).toBeGreaterThanOrEqual(60);
+        for (const t of groves) {
+            expect(t.x > fx0 - 5 && t.x < fx1 + 5 && t.z > fz0 - 5 && t.z < fz1 + 5, JSON.stringify(t)).toBe(false);
+            for (const h of plan.houses.filter((q) => q.cluster === 'village')) expect(t.x > h.x0 - 4 && t.x < h.x1 + 4 && t.z > h.z0 - 4 && t.z < h.z1 + 4).toBe(false);
+            // 板の端（幅の半分）まで含めて、山並みの近い段の手前の裾より 2 m 以上内側
+            expect(Math.hypot(t.x, t.z) + t.r * 1.25, JSON.stringify(t)).toBeLessThan(RANGES[0]!.front - 2);
+        }
+    });
+
+    it('田畑の下の土の板：FIELDS を 15 m 以上の余白で覆い（北は町の細かい地面の端 z 19 まで）、田の水・用水路の底（−0.15 m）より下', () => {
+        const [fx0, fx1, fz0, fz1] = groundFields();
+        const u = FIELD_UNDERLAY;
+        expect(u.x0).toBeLessThanOrEqual(fx0 - 15);
+        expect(u.x1).toBeGreaterThanOrEqual(fx1 + 15);
+        expect(u.z1).toBeGreaterThanOrEqual(fz1 + 15);
+        expect(u.z0).toBeGreaterThanOrEqual(19);
+        expect(u.z0).toBeLessThan(fz0);
+        expect(u.y).toBeLessThan(-0.15);
+        // 地面の端（200 m）の内側
+        expect(Math.max(-u.x0, u.x1, u.z1)).toBeLessThan(200);
     });
 });
 

@@ -2,7 +2,7 @@
  * 町のまわりの中景（Version 28 §3.2「近景・中景・遠景のつながり」）の置き方。純粋（three を使わない）。形は scenery.ts の makeSurroundings が作る。
  * - 歩ける範囲（layout.ts の BOUNDS）の外だけに置く。歩ける範囲は広げない（当たり判定は足さない。範囲の端は今のまま BOUNDS で止まる）。
  * - 範囲の端（東西）には竹垣を立てる：見えない壁で止まる所を、垣で止まる所に見せる。垣はカメラ除けの箱にもする（layout.ts の cameraBlockers）。
- * - 垣の向こう：隣の町並み（屋根と壁だけの軽い形を 2 列。間に裏の通り）、屋敷の木・竹やぶ。木戸の外：田畑の縁の並木と、田畑の先の村（茅葺きと板葺きの屋根、屋敷林）。
+ * - 垣の向こう：隣の町並み（屋根と壁だけの軽い形を 2 列。間に裏の通り）、屋敷の木・竹やぶ。木戸の外：田畑の縁の並木と、田畑の先の村（茅葺きと板葺きの屋根、屋敷林）、その向こうの遠くの林（山並みの手前）。
  * - どれも架空の町並み（ゲームの創作）。名前は付けない。
  * - 形はまとまり（cluster）ごとに 1 つにまとめる（描く回数を増やさない。画面の外のまとまりは描かない）。影は落とさない・受けない（町の通りからは遠い）。
  * 乱数は種つき（毎回同じ形）。
@@ -16,8 +16,8 @@ export type WallKind = 'front' | 'plaster' | 'board' | 'earth';
 /** 木の種類（広葉樹・松・竹やぶ・生垣） */
 export type TreeKind = 'broad' | 'pine' | 'bamboo' | 'hedge';
 
-/** まとまり：西の町並み（北・南）、東の町並み（北・南）、西と東の奥の木立、田畑の縁の並木（西・東・南）、南の村 */
-export type SurroundCluster = 'west_n' | 'west_s' | 'east_n' | 'east_s' | 'west_far' | 'east_far' | 'fields_w' | 'fields_e' | 'fields_s' | 'village';
+/** まとまり：西の町並み（北・南）、東の町並み（北・南）、西と東の奥の木立、田畑の縁の並木（西・東・南）、南の村、遠くの林（山並みの手前） */
+export type SurroundCluster = 'west_n' | 'west_s' | 'east_n' | 'east_s' | 'west_far' | 'east_far' | 'fields_w' | 'fields_e' | 'fields_s' | 'village' | 'groves';
 
 /** 家 1 軒（上から見た四角形 x0〜x1・z0〜z1、軒の高さ、屋根の勾配（1 m あたりの上がり）、棟の向き、表の向き） */
 export interface SurroundHouse {
@@ -190,6 +190,35 @@ function village(out: SurroundPlan, seed: number): void {
     }
 }
 
+/**
+ * 遠くの林（Version 28 T4）：田畑・村の向こうから山並みの手前（町の中心から 110〜170 m）に、木を 7〜12 本ずつのまとまりで置く。
+ * 物見・木戸の外を見たとき、田畑の先に平らな何も無い地面が山の裾まで続いて見えないように。田畑（x −65〜65、z 20〜95）と村には置かない。
+ * 遠いので冠の絵の板（scenery.ts）。地面の端（200 m）と山並みの近い段（182 m〜）より内側
+ */
+function groves(out: SurroundPlan, seed: number): void {
+    const r = rng(seed);
+    const spots: [number, number, number][] = [
+        [-125, 20, 9], [-142, 70, 12], [-98, 116, 8], [-55, 150, 10], [55, 150, 11], [108, 116, 9], [142, 66, 12], [128, 12, 9], [-135, -36, 7], [140, -42, 8],
+    ];
+    for (const [cx, cz, n] of spots) {
+        for (let i = 0; i < n; i++) {
+            const a = r() * Math.PI * 2;
+            const d = Math.sqrt(r());
+            const kp = r();
+            const kind: TreeKind = kp < 0.25 ? 'pine' : kp < 0.38 ? 'bamboo' : 'broad';
+            out.trees.push({
+                cluster: 'groves',
+                x: cx + Math.cos(a) * d * 16,
+                z: cz + Math.sin(a) * d * 9,
+                h: kind === 'bamboo' ? 10 + r() * 3 : 9 + r() * 7,
+                r: kind === 'bamboo' ? 3 + r() : 3 + r() * 2,
+                kind,
+                tint: 0.85 + r() * 0.25,
+            });
+        }
+    }
+}
+
 /** 町のまわりの中景の置き方（毎回同じ） */
 export function surroundPlan(): SurroundPlan {
     const out: SurroundPlan = { houses: [], trees: [], fences: [] };
@@ -225,5 +254,6 @@ export function surroundPlan(): SurroundPlan {
     treeLine(out, 'fields_s', -60, 96, -8, 96, 2.6, 44, ['hedge']);
     treeLine(out, 'fields_s', 8, 96, 60, 96, 2.6, 45, ['hedge']);
     village(out, 51);
+    groves(out, 61);
     return out;
 }

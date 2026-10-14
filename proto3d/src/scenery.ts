@@ -300,6 +300,27 @@ class Builder {
         g.computeBoundingBox();
         return g;
     }
+
+    /** 冠の絵の板 1 枚（表と裏の 2 面。法線は頂点ごとに渡す。uv は冠の絵の画像の中の値） */
+    card(p: THREE.Vector3[], n: THREE.Vector3[], uv: [number, number][], c: number[]): void {
+        for (const i of [0, 1, 2, 0, 2, 3]) this.v(p[i]!, n[i]!, uv[i]!, c[i]!);
+        for (const i of [1, 0, 3, 1, 3, 2]) this.v(p[i]!, n[i]!, uv[i]!, c[i]!);
+    }
+
+    /** 2 つの組み立てをつなぐ（前の材質 0：模様の画像、後ろの材質 1：冠の絵）。group で材質を分ける */
+    static merged(a: Builder, b: Builder | undefined): THREE.BufferGeometry {
+        if (!b || !b.pos.length) {
+            const g = a.geometry();
+            g.addGroup(0, a.pos.length / 3, 0);
+            return g;
+        }
+        const m = new Builder();
+        for (const k of ['pos', 'nrm', 'uv', 'col'] as const) for (const src of [a[k], b[k]]) for (const x of src) m[k].push(x);
+        const g = m.geometry();
+        g.addGroup(0, a.pos.length / 3, 0);
+        g.addGroup(a.pos.length / 3, b.pos.length / 3, 1);
+        return g;
+    }
 }
 
 const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
@@ -455,6 +476,183 @@ function addTree(b: Builder, t: SurroundTree, seed: number, fine: boolean): void
     }
 }
 
+/**
+ * 遠い木（範囲の外の木立・田畑の縁・村。通りから 25 m より遠い）は、冠の絵（コードで描く透けた画像。makeCrownTexture）を
+ * 縦の板 3 枚（60° ずつ回して交差）に貼る。塊を重ねた冠は遠くで多角形の輪郭（六角形の塊の積み重ね）に見えたので、
+ * 葉の房の縁のある輪郭にする（三角形も 1 本 12 に減る）。生垣と、町並みの家の間の近い木は塊のまま
+ */
+export const CROWN_CLUSTERS: ReadonlySet<SurroundCluster> = new Set<SurroundCluster>(['west_far', 'east_far', 'fields_w', 'fields_e', 'fields_s', 'village', 'groves']);
+/** 冠の絵の升目（横に 4 枚：広葉樹 2・松・竹やぶ） */
+const CROWN_CELL = { broad_a: 0, broad_b: 1, pine: 2, bamboo: 3 } as const;
+type CrownId = keyof typeof CROWN_CELL;
+/** 冠の絵の 1 枚の大きさ（px。横 128・縦 256） */
+const CROWN_W = 128;
+const CROWN_H = 256;
+
+function crownUv(id: CrownId, u: number, v: number): [number, number] {
+    const pad = 1.5 / (CROWN_W * 4);
+    const i = CROWN_CELL[id];
+    return [i / 4 + pad + (1 / 4 - 2 * pad) * u, v];
+}
+
+function addCrownCard(b: Builder, t: SurroundTree, seed: number): void {
+    const rnd = (k: number) => 0.5 + 0.5 * Math.sin(seed * 12.9898 + k * 78.233);
+    const id: CrownId = t.kind === 'pine' ? 'pine' : t.kind === 'bamboo' ? 'bamboo' : rnd(7) < 0.5 ? 'broad_a' : 'broad_b';
+    // 板の幅（絵の冠は升目の幅の 9 割ほど）と高さ（絵の下の端が根もと。少し地面に埋める）
+    const w = t.r * (id === 'pine' ? 2.5 : id === 'bamboo' ? 2.0 : 2.3);
+    const y0 = -0.25;
+    const y1 = t.h * 1.04;
+    const a0 = seed * 1.3;
+    for (let k = 0; k < 3; k++) {
+        const a = a0 + (k * Math.PI) / 3;
+        const dx = (Math.cos(a) * w) / 2;
+        const dz = (Math.sin(a) * w) / 2;
+        const p = [V(t.x - dx, y0, t.z - dz), V(t.x + dx, y0, t.z + dz), V(t.x + dx, y1, t.z + dz), V(t.x - dx, y1, t.z - dz)];
+        // 法線：上向きを主に、板の左右へ少し開く（交差した板どうしで明るさが急に変わらない。上ほど空を向く）
+        const nx = Math.cos(a) * 0.5;
+        const nz = Math.sin(a) * 0.5;
+        const n = [V(-nx, 0.35, -nz).normalize(), V(nx, 0.35, nz).normalize(), V(nx, 1, nz).normalize(), V(-nx, 1, -nz).normalize()];
+        const uv = [crownUv(id, 0, 0), crownUv(id, 1, 0), crownUv(id, 1, 1), crownUv(id, 0, 1)];
+        const c0 = 0.58 * t.tint;
+        const c1 = 0.96 * t.tint;
+        b.card(p, n, uv, [c0, c0, c1, c1]);
+    }
+}
+
+/**
+ * 冠の絵（コードで描く。512×256 の 4 枚：広葉樹 2・松・竹やぶ。地は透明。種つきの乱数で毎回同じ）。
+ * 葉の房（暗い下・明るい上）を重ねて輪郭に凹凸と小さな透き間を作る。幹と枝も描く（板の下の端が根もと）
+ */
+function makeCrownTexture(): THREE.CanvasTexture {
+    const W = CROWN_W;
+    const H = CROWN_H;
+    const cv = document.createElement('canvas');
+    cv.width = W * 4;
+    cv.height = H;
+    const g = cv.getContext('2d')!;
+    let seed = 19;
+    const rnd = () => {
+        seed = (seed * 16807) % 2147483647;
+        return (seed - 1) / 2147483646;
+    };
+    const disc = (x: number, y: number, r: number, c: string) => {
+        g.fillStyle = c;
+        g.beginPath();
+        g.arc(x, y, Math.max(0.5, r), 0, Math.PI * 2);
+        g.fill();
+    };
+    const stroke = (pts: [number, number][], w: number, c: string) => {
+        g.strokeStyle = c;
+        g.lineWidth = w;
+        g.lineCap = 'round';
+        g.beginPath();
+        g.moveTo(pts[0]![0], pts[0]![1]);
+        for (const q of pts.slice(1)) g.lineTo(q[0], q[1]);
+        g.stroke();
+    };
+    /** 葉の房を点の列に描く（暗い影 → 中の色 → 上の明るい色の 3 回。下ほど暗い） */
+    const clumps = (pts: [number, number, number][], dark: string, mid: string, light: string, top: number, bottom: number) => {
+        for (const [x, y, r] of pts) disc(x + r * 0.2, y + r * 0.3, r, dark);
+        for (const [x, y, r] of pts) disc(x, y, r * 0.82, mid);
+        for (const [x, y, r] of pts) {
+            const k = 1 - (y - top) / Math.max(1, bottom - top);
+            if (rnd() < 0.2 + 0.45 * k) disc(x - r * 0.28, y - r * 0.32, r * (0.28 + 0.18 * k), light);
+        }
+    };
+    /** 輪郭の細かい葉（房の縁に小さな点を散らす）と、冠の中の小さな透き間 */
+    const fringe = (cx: number, cy: number, rx: number, ry: number, n: number, c: string) => {
+        for (let i = 0; i < n; i++) {
+            const a = rnd() * Math.PI * 2;
+            const k = 0.92 + rnd() * 0.16;
+            disc(cx + Math.cos(a) * rx * k, cy + Math.sin(a) * ry * k, 1 + rnd() * 2.2, c);
+        }
+    };
+    const holes = (cx: number, cy: number, rx: number, ry: number, n: number) => {
+        g.save();
+        g.globalCompositeOperation = 'destination-out';
+        for (let i = 0; i < n; i++) {
+            const a = rnd() * Math.PI * 2;
+            const k = 0.55 + rnd() * 0.35;
+            disc(cx + Math.cos(a) * rx * k, cy + Math.sin(a) * ry * k, 1.5 + rnd() * 2.5, '#000');
+        }
+        g.restore();
+    };
+    // 広葉樹：幹と 2〜3 本の枝、丸く不揃いな冠（房 60〜80）
+    const broad = (i: number, shape: { cy: number; rx: number; ry: number; n: number; lean: number }) => {
+        const x0 = i * W;
+        const cx = x0 + W / 2;
+        const cy = H * shape.cy;
+        const trunkTop = cy + H * shape.ry * 0.2;
+        stroke([[cx, H], [cx + shape.lean * 4, (H + trunkTop) / 2], [cx + shape.lean * 7, trunkTop]], 7, '#3b3029');
+        stroke([[cx + shape.lean * 5, H * 0.72], [cx - W * 0.2, cy + H * 0.05]], 3.5, '#3b3029');
+        stroke([[cx + shape.lean * 6, H * 0.66], [cx + W * 0.22, cy]], 3, '#3b3029');
+        const pts: [number, number, number][] = [];
+        for (let k = 0; k < shape.n; k++) {
+            // 楕円の中に、縁へ寄せて置く（輪郭の凹凸が出るように）
+            const a = rnd() * Math.PI * 2;
+            const d = Math.sqrt(rnd()) * (0.55 + 0.45 * rnd());
+            const r = W * (0.07 + rnd() * 0.06);
+            pts.push([cx + Math.cos(a) * W * shape.rx * d, cy + Math.sin(a) * H * shape.ry * d, r]);
+        }
+        pts.sort((p, q) => q[1] - p[1]);
+        clumps(pts, '#182a12', '#334f25', '#587a40', cy - H * shape.ry, cy + H * shape.ry);
+        fringe(cx, cy, W * shape.rx * 1.02, H * shape.ry * 1.02, 140, '#2a4624');
+        holes(cx, cy, W * shape.rx, H * shape.ry, 14);
+    };
+    broad(CROWN_CELL.broad_a, { cy: 0.36, rx: 0.36, ry: 0.27, n: 70, lean: 0.3 });
+    broad(CROWN_CELL.broad_b, { cy: 0.4, rx: 0.38, ry: 0.3, n: 80, lean: -0.4 });
+    // 松：傾いた幹、横に平たい枝の茂み（段 5。上ほど小さい）
+    {
+        const x0 = CROWN_CELL.pine * W;
+        const cx = x0 + W / 2;
+        stroke([[cx - 4, H], [cx + 2, H * 0.6], [cx + 10, H * 0.3], [cx + 8, H * 0.08]], 6, '#4a3a30');
+        const pads = [
+            { y: 0.62, w: 0.46, side: -1 },
+            { y: 0.5, w: 0.42, side: 1 },
+            { y: 0.37, w: 0.4, side: -1 },
+            { y: 0.25, w: 0.33, side: 1 },
+            { y: 0.12, w: 0.24, side: 0 },
+        ];
+        for (const pd of pads) {
+            const px = cx + pd.side * W * 0.12 + (pd.side ? 0 : 6);
+            const py = H * pd.y;
+            stroke([[cx + 4, py + 10], [px, py + 4]], 2.5, '#4a3a30');
+            const pts: [number, number, number][] = [];
+            for (let k = 0; k < 26; k++) {
+                const u = (rnd() - 0.5) * 2;
+                pts.push([px + u * W * pd.w * 0.95, py - Math.abs(u) * 3 + (rnd() - 0.6) * H * 0.045, W * (0.045 + rnd() * 0.035)]);
+            }
+            clumps(pts, '#142318', '#2a4630', '#4a6e4c', py - H * 0.05, py + H * 0.04);
+            fringe(px, py - 2, W * pd.w, H * 0.035, 40, '#223a28');
+        }
+    }
+    // 竹やぶ：細い稈を何本も、上の 7 割に細かい葉の房（上ほど広がり、先は細く垂れる）
+    {
+        const x0 = CROWN_CELL.bamboo * W;
+        const cx = x0 + W / 2;
+        for (let k = 0; k < 16; k++) {
+            const bx = cx + (rnd() - 0.5) * W * 0.4;
+            const lean = (rnd() - 0.5) * W * 0.35;
+            const top = H * (0.03 + rnd() * 0.12);
+            stroke([[bx, H], [bx + lean * 0.3, H * 0.5], [bx + lean, top]], 1.6, rnd() < 0.5 ? '#9aa266' : '#7f8a52');
+        }
+        const pts: [number, number, number][] = [];
+        for (let k = 0; k < 150; k++) {
+            const v = Math.pow(rnd(), 0.8);
+            const y = H * (0.06 + v * 0.62);
+            const half = W * (0.12 + 0.3 * Math.sin(Math.PI * Math.min(1, (y / H - 0.02) / 0.75)));
+            pts.push([cx + (rnd() - 0.5) * 2 * half, y, W * (0.025 + rnd() * 0.03)]);
+        }
+        pts.sort((p, q) => q[1] - p[1]);
+        clumps(pts, '#34492a', '#557238', '#88a456', H * 0.05, H * 0.7);
+        fringe(cx, H * 0.36, W * 0.4, H * 0.32, 120, '#56743a');
+    }
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+    return tex;
+}
+
 /** 竹垣（a → b）：1.8 m ごとの面（両側）と柱 */
 function addFence(b: Builder, ax: number, az: number, bx: number, bz: number, h: number): void {
     const L = Math.hypot(bx - ax, bz - az);
@@ -490,12 +688,18 @@ function addFence(b: Builder, ax: number, az: number, bx: number, bz: number, h:
 /** 中景の形（まとまりごとに 1 つ。three の材質は付けない：確かめで三角形の数・置き場所を見る） */
 export function surroundGeometry(plan: SurroundPlan = surroundPlan()): Map<SurroundCluster, THREE.BufferGeometry> {
     const builders = new Map<SurroundCluster, Builder>();
+    const crowns = new Map<SurroundCluster, Builder>();
     const bOf = (c: SurroundCluster) => builders.get(c) ?? builders.set(c, new Builder()).get(c)!;
+    const cOf = (c: SurroundCluster) => crowns.get(c) ?? crowns.set(c, new Builder()).get(c)!;
     for (const f of plan.fences) addFence(bOf(f.cluster), f.ax, f.az, f.bx, f.bz, f.h);
     for (const h of plan.houses) addHouse(bOf(h.cluster), h);
-    plan.trees.forEach((t, i) => addTree(bOf(t.cluster), t, i * 1.37 + 0.5, t.cluster !== 'fields_s' && t.cluster !== 'village'));
+    plan.trees.forEach((t, i) => {
+        const seed = i * 1.37 + 0.5;
+        if (t.kind !== 'hedge' && CROWN_CLUSTERS.has(t.cluster)) addCrownCard(cOf(t.cluster), t, seed);
+        else addTree(bOf(t.cluster), t, seed, t.cluster !== 'fields_s' && t.cluster !== 'village');
+    });
     const out = new Map<SurroundCluster, THREE.BufferGeometry>();
-    for (const [c, b] of builders) out.set(c, b.geometry());
+    for (const c of new Set([...builders.keys(), ...crowns.keys()])) out.set(c, Builder.merged(builders.get(c) ?? new Builder(), crowns.get(c)));
     return out;
 }
 
@@ -711,13 +915,35 @@ function makeSurroundTexture(): THREE.CanvasTexture {
     return tex;
 }
 
+/**
+ * 木戸の外の田畑（地面の素材 ground_v3 の ground_fields。範囲は blender/scene/build_ground.py の FIELDS：x −65〜65、z 20〜95）の下に敷く暗い土の板。
+ * 田畑の外の縁は遠くの地面（ground_far）の縁より数 mm 低く、その段のすき間を通る視線が地面の下を抜けて空に当たり、物見から白い点線に見えた。
+ * すき間を抜けた視線が当たるように、田畑のまわり 20 m まで広げる（物見の高さ・通りの高さの浅い視線でも、高さ −0.3 m まで下がる前に板に当たる）。
+ * 田の水・用水路の底より下。北の端は町の細かい地面の端（z 19）まで（町の側溝の底にかからない）。影は落とさない・受けない
+ */
+export const FIELD_UNDERLAY = { x0: -85, x1: 85, z0: 19, z1: 115, y: -0.3 } as const;
+function makeFieldUnderlay(): THREE.Mesh {
+    const u = FIELD_UNDERLAY;
+    const g = new THREE.PlaneGeometry(u.x1 - u.x0, u.z1 - u.z0);
+    g.rotateX(-Math.PI / 2);
+    g.translate((u.x0 + u.x1) / 2, u.y, (u.z0 + u.z1) / 2);
+    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: '#4f4234', roughness: 1, metalness: 0 }));
+    m.name = '田畑の下の土';
+    m.castShadow = false;
+    m.receiveShadow = false;
+    return m;
+}
+
 /** 中景（竹垣・隣の町並み・木立・村）。まとまりごとの形を 1 つの材質で描く。影は落とさない・受けない */
 export function makeSurroundings(plan: SurroundPlan = surroundPlan()): THREE.Group {
     const group = new THREE.Group();
     group.name = '中景';
+    group.add(makeFieldUnderlay());
     const mat = new THREE.MeshStandardMaterial({ map: makeSurroundTexture(), vertexColors: true, roughness: 0.92, metalness: 0 });
+    // 遠い木の冠の絵（透けた所は描かない。板は表と裏の 2 面で作ってあるので片面）
+    const crownMat = new THREE.MeshStandardMaterial({ map: makeCrownTexture(), vertexColors: true, roughness: 0.95, metalness: 0, alphaTest: 0.5 });
     for (const [cluster, g] of surroundGeometry(plan)) {
-        const m = new THREE.Mesh(g, mat);
+        const m = new THREE.Mesh(g, [mat, crownMat]);
         m.name = `中景-${cluster}`;
         m.castShadow = false;
         m.receiveShadow = false;
