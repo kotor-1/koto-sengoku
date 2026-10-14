@@ -100,7 +100,7 @@ export function cineFirstShown(spec: CineSpec): ReadonlyMap<string, number> | un
 function build(id: string, moment: CineMoment, title: string, plans: BeatPlan[]): CineSpec {
     // 1) 場面と字幕の時刻
     const timed = plans.map((p) => {
-        // 声の付いた字幕は、読み上げの見積もりより短くしない（次の字幕で前の声が止まるので、声を途中で切らない）
+        // 声の付いた字幕は、声の長さ（音声ファイルの長さ＋余白、無ければ読み上げの見積もり）より短くしない（次の字幕で前の声が止まるので、声を途中で切らない）
         const secs = p.caps.map((c) => Math.max(captionSec(c.text), c.voice ? Math.ceil(voiceSecFor(c.voice) * 10) / 10 : 0));
         const sum = secs.reduce((a, b) => a + b, 0);
         const dur = Math.max(p.min ?? 0, sum);
@@ -230,8 +230,8 @@ function retainerEvent(): StageEvent {
 /**
  * 第一章の冒頭（docs/v20-feedback-request.md【1】）：町の様子（時代と主人公の字幕）→ 急報（使者 2 人が木戸から入る）
  * → 主人公と家臣の短いやり取り（目前の目的：城門の前の本多忠勝と話し、軍議を開く）→ 操作。地図の場面は無い。
- * 使者の言葉は今の台本（情勢の図解・会話）と同じ文。声の付いた字幕は読み上げの見積もり（voiceLines.ts の voiceSecFor）より短くしないので、
- * 地の文は 1 つにまとめる（時代・主人公・急報）。長さは 18.8 秒（CINE_LENGTH_RANGE の 12〜19 秒）。
+ * 使者の言葉は今の台本（情勢の図解・会話）と同じ文。声の付いた字幕は声の長さ（voiceLines.ts の voiceSecFor。Version 28 から、音声ファイルの
+ * ある台詞は実際の音の長さ＋余白）より短くしないので、地の文は 1 つにまとめる（時代・主人公・急報）。長さは 18.4 秒（CINE_LENGTH_RANGE の 12〜19 秒）。
  */
 function ch1Open(): CineSpec {
     return build('ch1_open', 'ch1_open', CH1_HEADING, [

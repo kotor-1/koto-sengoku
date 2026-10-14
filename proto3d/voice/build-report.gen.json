@@ -1,0 +1,315 @@
+{
+  "about": "台詞の音声を作ったときの記録（proto3d/tools/voice-build.py build が作る）。数で測っただけで、耳で聞いた確かめではない",
+  "engine": "VOICEVOX CORE 0.17.0・libvoicevox_onnxruntime.so.1.17.3・open_jtalk_dic_utf_8-1.11",
+  "models": [
+    "剣崎雌雄（ノーマル・id 21・モデル 0.17.0）",
+    "玄野武宏（ツンギレ・id 40・モデル 0.17.0）",
+    "雀松朱司（ノーマル・id 52・モデル 0.17.0）",
+    "離途（シリアス・id 101・モデル 0.17.0）"
+  ],
+  "loudness": {
+    "targetLufs": -20.0,
+    "method": "ITU-R BS.1770-4（K 特性・ゲート付き。モノラルを 1 チャンネルとして測る）＋台本の演技の差",
+    "peakMaxDbfs": -1.0
+  },
+  "mp3Delay": 1105,
+  "lines": [
+    {
+      "id": "ch1.oda_envoy.ask",
+      "voice": "玄野武宏（ツンギレ・40）",
+      "autoKana": "トク'ガワドノニモ、ヘ'エオ/ダ'_シテ/イタダ_キタ'イ",
+      "kana": "トクガワドノニモ'、ヘ'エオ/ダ'_シテ/イタダ_キタ'イ",
+      "readingChanged": false,
+      "diffs": [
+        "アクセント：トク'ガワドノニモ → トクガワドノニモ'"
+      ],
+      "intendedPauses": [
+        0.1
+      ],
+      "gainDb": 5.24,
+      "peakLimited": true,
+      "pcm": {
+        "sec": 2.16,
+        "speechSec": 1.88,
+        "leadSec": 0.07,
+        "tailSec": 0.21,
+        "pauses": [
+          {
+            "at": 0.8,
+            "sec": 0.13
+          }
+        ],
+        "lufs": -20.14,
+        "peakDb": -1.85,
+        "truePeakDb": -1.5,
+        "f0": {
+          "medianHz": 197.9,
+          "p10Hz": 118.4,
+          "p90Hz": 246.2,
+          "minHz": 107.2,
+          "maxHz": 259.2,
+          "rangeSemitones": 12.67,
+          "voicedFrames": 75,
+          "endVsMedianSemitones": -8.09
+        }
+      },
+      "mp3": {
+        "bytes": 17472,
+        "frames": 91,
+        "sec": 2.184,
+        "lead": 0.06,
+        "tail": 0.224
+      }
+    },
+    {
+      "id": "ch1.asai_envoy.ask",
+      "voice": "剣崎雌雄（ノーマル・21）",
+      "autoKana": "オ'モワ、トク'ガワドノト/テ'オ/ムスビタ'イト",
+      "kana": "ア'ルジワ、トクガワドノト'/テ'オ/ムスビタ'イト",
+      "readingChanged": true,
+      "diffs": [
+        "読み：オ'モワ → ア'ルジワ",
+        "アクセント：トク'ガワドノト → トクガワドノト'"
+      ],
+      "intendedPauses": [
+        0.35
+      ],
+      "gainDb": 4.78,
+      "peakLimited": false,
+      "pcm": {
+        "sec": 3.34,
+        "speechSec": 2.95,
+        "leadSec": 0.12,
+        "tailSec": 0.27,
+        "pauses": [
+          {
+            "at": 0.69,
+            "sec": 0.39
+          }
+        ],
+        "lufs": -22.0,
+        "peakDb": -2.12,
+        "truePeakDb": -2.1,
+        "f0": {
+          "medianHz": 115.2,
+          "p10Hz": 92.4,
+          "p90Hz": 149.1,
+          "minHz": 83.7,
+          "maxHz": 157.6,
+          "rangeSemitones": 8.29,
+          "voicedFrames": 162,
+          "endVsMedianSemitones": -4.65
+        }
+      },
+      "mp3": {
+        "bytes": 26880,
+        "frames": 140,
+        "sec": 3.36,
+        "lead": 0.1,
+        "tail": 0.27
+      }
+    },
+    {
+      "id": "ch1.tadakatsu.council",
+      "voice": "離途（シリアス・101）",
+      "autoKana": "シンガリ'、グ'ンギオ/ヒラキマショ'オ、ジョオモンノ'/マ'エデ/オマ_チ'/シマ'_ス",
+      "kana": "ト'ノ、グ'ンギオ/ヒラキマショ'オ、ジョオモンノ'/マ'エデ/オマチシマ'_ス",
+      "readingChanged": true,
+      "diffs": [
+        "読み：シンガリ' → ト'ノ",
+        "句の切り方：オマ_チ'/シマ'_ス → オマチシマ'_ス"
+      ],
+      "intendedPauses": [
+        0.3,
+        0.45
+      ],
+      "gainDb": 2.5,
+      "peakLimited": false,
+      "pcm": {
+        "sec": 4.82,
+        "speechSec": 4.47,
+        "leadSec": 0.1,
+        "tailSec": 0.25,
+        "pauses": [
+          {
+            "at": 0.58,
+            "sec": 0.33
+          },
+          {
+            "at": 2.25,
+            "sec": 0.44
+          }
+        ],
+        "lufs": -20.0,
+        "peakDb": -2.77,
+        "truePeakDb": -2.77,
+        "f0": {
+          "medianHz": 92.5,
+          "p10Hz": 85.2,
+          "p90Hz": 96.5,
+          "minHz": 73.9,
+          "maxHz": 101.6,
+          "rangeSemitones": 2.15,
+          "voicedFrames": 225,
+          "endVsMedianSemitones": -1.12
+        }
+      },
+      "mp3": {
+        "bytes": 38592,
+        "frames": 201,
+        "sec": 4.824,
+        "lead": 0.08,
+        "tail": 0.254
+      }
+    },
+    {
+      "id": "talk.tadakatsu.envoys",
+      "voice": "離途（シリアス・101）",
+      "autoKana": "オダ'カカラ/シ'シャガ/マ'イッテ/オリマ'_ス、アサイ'カカラモ、ベツノ'/シ'シャガ",
+      "kana": "オダ'ケカラ/シ'シャガ/マ'イッテ/オリマ'_ス、アザイ'ケカラモ、ベツノ'/シ'シャガ",
+      "readingChanged": true,
+      "diffs": [
+        "読み：オダ'カカラ → オダ'ケカラ",
+        "読み：アサイ'カカラモ → アザイ'ケカラモ"
+      ],
+      "intendedPauses": [
+        0.4,
+        0.15
+      ],
+      "gainDb": 1.96,
+      "peakLimited": false,
+      "pcm": {
+        "sec": 5.15,
+        "speechSec": 4.79,
+        "leadSec": 0.1,
+        "tailSec": 0.26,
+        "pauses": [
+          {
+            "at": 1.37,
+            "sec": 0.14
+          },
+          {
+            "at": 2.17,
+            "sec": 0.42
+          },
+          {
+            "at": 3.68,
+            "sec": 0.18
+          }
+        ],
+        "lufs": -20.0,
+        "peakDb": -2.54,
+        "truePeakDb": -2.51,
+        "f0": {
+          "medianHz": 91.7,
+          "p10Hz": 85.3,
+          "p90Hz": 101.4,
+          "minHz": 75.6,
+          "maxHz": 116.4,
+          "rangeSemitones": 2.99,
+          "voicedFrames": 188,
+          "endVsMedianSemitones": -0.54
+        }
+      },
+      "mp3": {
+        "bytes": 41280,
+        "frames": 215,
+        "sec": 5.16,
+        "lead": 0.08,
+        "tail": 0.26
+      }
+    },
+    {
+      "id": "ch1.hero.gather",
+      "voice": "雀松朱司（ノーマル・52）",
+      "autoKana": "ウム'、ミナオ'/アツメ'ヨ",
+      "kana": "ウ'ム、ミナオ'/アツメ'ヨ",
+      "readingChanged": false,
+      "diffs": [
+        "アクセント：ウム' → ウ'ム"
+      ],
+      "intendedPauses": [
+        0.45
+      ],
+      "gainDb": 3.56,
+      "peakLimited": false,
+      "pcm": {
+        "sec": 2.39,
+        "speechSec": 2.05,
+        "leadSec": 0.09,
+        "tailSec": 0.25,
+        "pauses": [
+          {
+            "at": 0.68,
+            "sec": 0.38
+          }
+        ],
+        "lufs": -20.0,
+        "peakDb": -4.31,
+        "truePeakDb": -4.29,
+        "f0": {
+          "medianHz": 109.6,
+          "p10Hz": 87.6,
+          "p90Hz": 124.2,
+          "minHz": 84.5,
+          "maxHz": 133.4,
+          "rangeSemitones": 6.04,
+          "voicedFrames": 117,
+          "endVsMedianSemitones": -3.94
+        }
+      },
+      "mp3": {
+        "bytes": 19200,
+        "frames": 100,
+        "sec": 2.4,
+        "lead": 0.08,
+        "tail": 0.26
+      }
+    },
+    {
+      "id": "talk.hero.same_day",
+      "voice": "雀松朱司（ノーマル・52）",
+      "autoKana": "リョ'オケカラ、オナジ'/ヒニカ'",
+      "kana": "リョ'オケカラ、オナジ'/ヒニカ'",
+      "readingChanged": false,
+      "diffs": [],
+      "intendedPauses": [
+        0.25
+      ],
+      "gainDb": 4.13,
+      "peakLimited": false,
+      "pcm": {
+        "sec": 2.45,
+        "speechSec": 2.11,
+        "leadSec": 0.09,
+        "tailSec": 0.25,
+        "pauses": [
+          {
+            "at": 0.91,
+            "sec": 0.22
+          }
+        ],
+        "lufs": -20.0,
+        "peakDb": -3.18,
+        "truePeakDb": -3.11,
+        "f0": {
+          "medianHz": 111.9,
+          "p10Hz": 89.9,
+          "p90Hz": 132.7,
+          "minHz": 79.2,
+          "maxHz": 149.8,
+          "rangeSemitones": 6.74,
+          "voicedFrames": 104,
+          "endVsMedianSemitones": 2.02
+        }
+      },
+      "mp3": {
+        "bytes": 19776,
+        "frames": 103,
+        "sec": 2.472,
+        "lead": 0.08,
+        "tail": 0.272
+      }
+    }
+  ]
+}

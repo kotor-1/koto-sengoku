@@ -63,6 +63,7 @@ export const READINGS: Readonly<Record<string, { text: string; reading: string }
     'ch2.village.first.other': { text: '浪人どもが、また村へ来ると噂しております。', reading: 'ろうにんどもが、また村へ来ると、うわさしております。' },
     'ch2.village.mission': { text: '村の者だけでは守れませぬ。どうかお助けを。', reading: 'むらのものだけでは守れませぬ。どうか、おたすけを。' },
     'ch2.tadakatsu.council': { text: '軍議を開きましょう。城門の前でお待ちします。', reading: 'ぐんぎを開きましょう。じょうもんの前でお待ちします。' },
+    'talk.tadakatsu.envoys': { text: '織田家から使者が参っております。浅井家からも、別の使者が。', reading: 'おだけから、ししゃが参っております。あざいけからも、べつのししゃが。' },
     'talk.hero.same_day': { text: '両家から、同じ日にか。', reading: 'りょうけから、おなじ日にか。' },
     'talk.tadakatsu.again': { text: '皆、陣幕の内に控えております。軍議を開かれますか。', reading: 'みな、じんまくのうちに控えております。ぐんぎを開かれますか。' },
     'depart.hero': { text: '皆の者、出陣じゃ。', reading: 'みなのもの、しゅつじんじゃ。' },
