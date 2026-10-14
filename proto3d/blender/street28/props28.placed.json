@@ -1,0 +1,791 @@
+{
+ "_about": "町の小物の置き方（ゲームの座標。town/plan.ts の TOWN_PROPS の parts を写した一覧。手で書かない）。地面の制作（scene/build_ground.py）がこの一覧で props28.glb の形を置いて接地の陰を焼く。書き直し：UPDATE_PLACED=1 npx vitest run tests/proto3d-town-props.test.ts",
+ "placed": [
+  {
+   "prop": "kido",
+   "cluster": "south",
+   "type": "kido",
+   "x": 0,
+   "y": 0,
+   "z": 16.4,
+   "rotY": 0,
+   "sx": 1
+  },
+  {
+   "prop": "fence_w",
+   "cluster": "fence_w",
+   "type": "fence_bay",
+   "x": -22,
+   "y": 0,
+   "z": 16.4,
+   "rotY": 0,
+   "sx": 0.9556
+  },
+  {
+   "prop": "fence_w",
+   "cluster": "fence_w",
+   "type": "fence_bay",
+   "x": -20.28,
+   "y": 0,
+   "z": 16.4,
+   "rotY": 0,
+   "sx": 0.9556
+  },
+  {
+   "prop": "fence_w",
+   "cluster": "fence_w",
+   "type": "fence_bay",
+   "x": -18.56,
+   "y": 0,
+   "z": 16.4,
+   "rotY": 0,
+   "sx": 0.9556
+  },
+  {
+   "prop": "fence_w",
+   "cluster": "fence_w",
+   "type": "fence_bay",
+   "x": -16.84,
+   "y": 0,
+   "z": 16.4,
+   "rotY": 0,
+   "sx": 0.9556
+  },
+  {
+   "prop": "fence_w",
+   "cluster": "fence_w",
+   "type": "fence_bay",
+   "x": -15.12,
+   "y": 0,
+   "z": 16.4,
+   "rotY": 0,
+   "sx": 0.9556
+  },
+  {
+   "prop": "fence_w",
+   "cluster": "fence_w",
+   "type": "fence_bay",
+   "x": -13.4,
+   "y": 0,
+   "z": 16.4,
+   "rotY": 0,
+   "sx": 0.9556
+  },
+  {
+   "prop": "fence_w",
+   "cluster": "fence_w",
+   "type": "fence_bay",
+   "x": -11.68,
+   "y": 0,
+   "z": 16.4,
+   "rotY": 0,
+   "sx": 0.9556
+  },
+  {
+   "prop": "fence_w",
+   "cluster": "fence_w",
+   "type": "fence_bay",
+   "x": -9.96,
+   "y": 0,
+   "z": 16.4,
+   "rotY": 0,
+   "sx": 0.9556
+  },
+  {
+   "prop": "fence_w",
+   "cluster": "fence_w",
+   "type": "fence_bay",
+   "x": -8.24,
+   "y": 0,
+   "z": 16.4,
+   "rotY": 0,
+   "sx": 0.9556
+  },
+  {
+   "prop": "fence_w",
+   "cluster": "fence_w",
+   "type": "fence_bay",
+   "x": -6.52,
+   "y": 0,
+   "z": 16.4,
+   "rotY": 0,
+   "sx": 0.9556
+  },
+  {
+   "prop": "fence_w",
+   "cluster": "fence_w",
+   "type": "fence_bay",
+   "x": -4.8,
+   "y": 0,
+   "z": 16.4,
+   "rotY": 0,
+   "sx": 0.9556
+  },
+  {
+   "prop": "fence_w",
+   "cluster": "fence_w",
+   "type": "fence_post",
+   "x": -3.08,
+   "y": 0,
+   "z": 16.4,
+   "rotY": 0,
+   "sx": 1
+  },
+  {
+   "prop": "fence_e1",
+   "cluster": "south",
+   "type": "fence_bay",
+   "x": 3.08,
+   "y": 0,
+   "z": 16.4,
+   "rotY": 0,
+   "sx": 0.6778
+  },
+  {
+   "prop": "fence_e1",
+   "cluster": "south",
+   "type": "fence_post",
+   "x": 4.3,
+   "y": 0,
+   "z": 16.4,
+   "rotY": 0,
+   "sx": 1
+  },
+  {
+   "prop": "fence_e2",
+   "cluster": "fence_e",
+   "type": "fence_bay",
+   "x": 9.74,
+   "y": 0,
+   "z": 16.4,
+   "rotY": 0,
+   "sx": 0.95
+  },
+  {
+   "prop": "fence_e2",
+   "cluster": "fence_e",
+   "type": "fence_bay",
+   "x": 11.45,
+   "y": 0,
+   "z": 16.4,
+   "rotY": 0,
+   "sx": 0.95
+  },
+  {
+   "prop": "fence_e2",
+   "cluster": "fence_e",
+   "type": "fence_bay",
+   "x": 13.16,
+   "y": 0,
+   "z": 16.4,
+   "rotY": 0,
+   "sx": 0.95
+  },
+  {
+   "prop": "fence_e2",
+   "cluster": "fence_e",
+   "type": "fence_bay",
+   "x": 14.87,
+   "y": 0,
+   "z": 16.4,
+   "rotY": 0,
+   "sx": 0.95
+  },
+  {
+   "prop": "fence_e2",
+   "cluster": "fence_e",
+   "type": "fence_bay",
+   "x": 16.58,
+   "y": 0,
+   "z": 16.4,
+   "rotY": 0,
+   "sx": 0.95
+  },
+  {
+   "prop": "fence_e2",
+   "cluster": "fence_e",
+   "type": "fence_bay",
+   "x": 18.29,
+   "y": 0,
+   "z": 16.4,
+   "rotY": 0,
+   "sx": 0.95
+  },
+  {
+   "prop": "fence_e2",
+   "cluster": "fence_e",
+   "type": "fence_post",
+   "x": 20,
+   "y": 0,
+   "z": 16.4,
+   "rotY": 0,
+   "sx": 1
+  },
+  {
+   "prop": "lookout_tower",
+   "cluster": "south",
+   "type": "tower",
+   "x": -6.9,
+   "y": 0,
+   "z": 14.9,
+   "rotY": 0,
+   "sx": 1
+  },
+  {
+   "prop": "lookout_tower_top",
+   "cluster": "towertop",
+   "type": "tower_top",
+   "x": -6.9,
+   "y": 0,
+   "z": 14.9,
+   "rotY": 0,
+   "sx": 1
+  },
+  {
+   "prop": "cart_w",
+   "cluster": "south",
+   "type": "cart",
+   "x": -12.4,
+   "y": 0,
+   "z": 10,
+   "rotY": 1.5708,
+   "sx": 1
+  },
+  {
+   "prop": "bales_w",
+   "cluster": "south",
+   "type": "tawara",
+   "x": -8.994,
+   "y": 0,
+   "z": 8.7008,
+   "rotY": -0.0173,
+   "sx": 1
+  },
+  {
+   "prop": "bales_w",
+   "cluster": "south",
+   "type": "tawara",
+   "x": -9.0023,
+   "y": 0,
+   "z": 9.2,
+   "rotY": -0.0057,
+   "sx": 1
+  },
+  {
+   "prop": "bales_w",
+   "cluster": "south",
+   "type": "tawara",
+   "x": -9.0103,
+   "y": 0,
+   "z": 9.6992,
+   "rotY": 0.0069,
+   "sx": 1
+  },
+  {
+   "prop": "bales_w",
+   "cluster": "south",
+   "type": "tawara",
+   "x": -8.9801,
+   "y": 0.41,
+   "z": 8.9504,
+   "rotY": -0.0377,
+   "sx": 1
+  },
+  {
+   "prop": "bales_w",
+   "cluster": "south",
+   "type": "tawara",
+   "x": -8.9881,
+   "y": 0.41,
+   "z": 9.4496,
+   "rotY": -0.0288,
+   "sx": 1
+  },
+  {
+   "prop": "bales_w2",
+   "cluster": "south",
+   "type": "tawara",
+   "x": -10.2496,
+   "y": 0,
+   "z": 11.394,
+   "rotY": 1.5535,
+   "sx": 1
+  },
+  {
+   "prop": "bales_w2",
+   "cluster": "south",
+   "type": "tawara",
+   "x": -9.7504,
+   "y": 0,
+   "z": 11.4023,
+   "rotY": 1.5651,
+   "sx": 1
+  },
+  {
+   "prop": "bales_w2",
+   "cluster": "south",
+   "type": "tawara",
+   "x": -10,
+   "y": 0.41,
+   "z": 11.3801,
+   "rotY": 1.5331,
+   "sx": 1
+  },
+  {
+   "prop": "baskets_w",
+   "cluster": "south",
+   "type": "basket",
+   "x": -9.5,
+   "y": 0,
+   "z": 12.7,
+   "rotY": 0,
+   "sx": 1
+  },
+  {
+   "prop": "baskets_w",
+   "cluster": "south",
+   "type": "basket",
+   "x": -10.15,
+   "y": 0,
+   "z": 13.15,
+   "rotY": 1.7,
+   "sx": 1
+  },
+  {
+   "prop": "baskets_w",
+   "cluster": "south",
+   "type": "basket",
+   "x": -9.6,
+   "y": 0,
+   "z": 13.5,
+   "rotY": 3.4,
+   "sx": 1
+  },
+  {
+   "prop": "bales_e",
+   "cluster": "shop_e",
+   "type": "tawara",
+   "x": 10.3504,
+   "y": 0,
+   "z": 13.594,
+   "rotY": 1.5535,
+   "sx": 1
+  },
+  {
+   "prop": "bales_e",
+   "cluster": "shop_e",
+   "type": "tawara",
+   "x": 10.8496,
+   "y": 0,
+   "z": 13.6023,
+   "rotY": 1.5651,
+   "sx": 1
+  },
+  {
+   "prop": "bales_e",
+   "cluster": "shop_e",
+   "type": "tawara",
+   "x": 10.6,
+   "y": 0.41,
+   "z": 13.5801,
+   "rotY": 1.5331,
+   "sx": 1
+  },
+  {
+   "prop": "guard_hut",
+   "cluster": "guardpost",
+   "type": "hut",
+   "x": 16.6,
+   "y": 0,
+   "z": -8.9,
+   "rotY": 0,
+   "sx": 1
+  },
+  {
+   "prop": "guard_tub",
+   "cluster": "guardpost",
+   "type": "tub",
+   "x": 15.1,
+   "y": 0,
+   "z": -6.1,
+   "rotY": 0,
+   "sx": 1
+  },
+  {
+   "prop": "spear_rack",
+   "cluster": "rest",
+   "type": "spear_rack",
+   "x": 6.62,
+   "y": 0,
+   "z": 1,
+   "rotY": -1.5708,
+   "sx": 1
+  },
+  {
+   "prop": "mats",
+   "cluster": "rest",
+   "type": "mat",
+   "x": 3.55,
+   "y": 0,
+   "z": 2,
+   "rotY": -0.036,
+   "sx": 1
+  },
+  {
+   "prop": "mats",
+   "cluster": "rest",
+   "type": "mat",
+   "x": 3.55,
+   "y": 0,
+   "z": 0,
+   "rotY": -0.012,
+   "sx": 1
+  },
+  {
+   "prop": "mats",
+   "cluster": "rest",
+   "type": "mat",
+   "x": 4.65,
+   "y": 0,
+   "z": 2,
+   "rotY": 0.012,
+   "sx": 1
+  },
+  {
+   "prop": "mats",
+   "cluster": "rest",
+   "type": "mat",
+   "x": 4.65,
+   "y": 0,
+   "z": 0,
+   "rotY": 0.036,
+   "sx": 1
+  },
+  {
+   "prop": "mats",
+   "cluster": "rest",
+   "type": "mat",
+   "x": 5.75,
+   "y": 0,
+   "z": 2,
+   "rotY": -0.024,
+   "sx": 1
+  },
+  {
+   "prop": "mats",
+   "cluster": "rest",
+   "type": "mat",
+   "x": 5.75,
+   "y": 0,
+   "z": 0,
+   "rotY": 0,
+   "sx": 1
+  },
+  {
+   "prop": "guard_stools",
+   "cluster": "guardpost",
+   "type": "stool",
+   "x": 12.4,
+   "y": 0,
+   "z": -6.5,
+   "rotY": 0,
+   "sx": 1
+  },
+  {
+   "prop": "guard_stools",
+   "cluster": "guardpost",
+   "type": "stool",
+   "x": 13.3,
+   "y": 0,
+   "z": -6.6,
+   "rotY": 0,
+   "sx": 1
+  },
+  {
+   "prop": "guard_stools",
+   "cluster": "guardpost",
+   "type": "stool",
+   "x": 14.2,
+   "y": 0,
+   "z": -6.5,
+   "rotY": 0,
+   "sx": 1
+  },
+  {
+   "prop": "council_stools",
+   "cluster": "council",
+   "type": "stool",
+   "x": 11.6,
+   "y": 0,
+   "z": -24.2,
+   "rotY": 0,
+   "sx": 1
+  },
+  {
+   "prop": "council_stools",
+   "cluster": "council",
+   "type": "stool",
+   "x": 11.6,
+   "y": 0,
+   "z": -21.2,
+   "rotY": 3.1416,
+   "sx": 1
+  },
+  {
+   "prop": "council_stools",
+   "cluster": "council",
+   "type": "stool",
+   "x": 12.8,
+   "y": 0,
+   "z": -24.2,
+   "rotY": 0,
+   "sx": 1
+  },
+  {
+   "prop": "council_stools",
+   "cluster": "council",
+   "type": "stool",
+   "x": 12.8,
+   "y": 0,
+   "z": -21.2,
+   "rotY": 3.1416,
+   "sx": 1
+  },
+  {
+   "prop": "council_stools",
+   "cluster": "council",
+   "type": "stool",
+   "x": 14,
+   "y": 0,
+   "z": -24.2,
+   "rotY": 0,
+   "sx": 1
+  },
+  {
+   "prop": "council_stools",
+   "cluster": "council",
+   "type": "stool",
+   "x": 14,
+   "y": 0,
+   "z": -21.2,
+   "rotY": 3.1416,
+   "sx": 1
+  },
+  {
+   "prop": "council_stools",
+   "cluster": "council",
+   "type": "stool",
+   "x": 15.3,
+   "y": 0,
+   "z": -22.7,
+   "rotY": -1.5708,
+   "sx": 1
+  }
+ ],
+ "keep_clear": {
+  "points": [
+   [
+    -1.5,
+    -7.2
+   ],
+   [
+    5.3,
+    -2.4
+   ],
+   [
+    5.5,
+    -8.3
+   ],
+   [
+    -2,
+    -7.4
+   ],
+   [
+    2,
+    -7.1
+   ],
+   [
+    5.3,
+    -2.4
+   ],
+   [
+    5.5,
+    -8.3
+   ],
+   [
+    0,
+    -10.9
+   ],
+   [
+    -2,
+    -7.4
+   ],
+   [
+    -3.1,
+    -5.4
+   ],
+   [
+    2,
+    -7.1
+   ],
+   [
+    2.9,
+    -6.6
+   ],
+   [
+    5.3,
+    -2.4
+   ],
+   [
+    5.6,
+    -1.2
+   ],
+   [
+    5.5,
+    -8.3
+   ],
+   [
+    -3.6,
+    2.6
+   ],
+   [
+    3.75,
+    14
+   ],
+   [
+    -1.25,
+    -14.9
+   ],
+   [
+    1.25,
+    -14.9
+   ],
+   [
+    -3,
+    -14
+   ],
+   [
+    3,
+    -14
+   ],
+   [
+    6.62,
+    -0.8
+   ],
+   [
+    6.62,
+    -1.6
+   ],
+   [
+    6.62,
+    -2.4
+   ],
+   [
+    12.4,
+    -6.5
+   ],
+   [
+    13.3,
+    -6.6
+   ],
+   [
+    14.2,
+    -6.5
+   ],
+   [
+    3.55,
+    2
+   ],
+   [
+    3.55,
+    0
+   ],
+   [
+    4.65,
+    2
+   ],
+   [
+    4.65,
+    0
+   ],
+   [
+    5.75,
+    2
+   ],
+   [
+    5.75,
+    0
+   ],
+   [
+    4.55,
+    -4.7
+   ],
+   [
+    4.55,
+    -5.8
+   ],
+   [
+    4.55,
+    -6.9
+   ],
+   [
+    5.7,
+    -4.7
+   ],
+   [
+    5.7,
+    -5.8
+   ],
+   [
+    5.7,
+    -6.9
+   ],
+   [
+    -6.9,
+    11.9
+   ],
+   [
+    -1.4,
+    13.2
+   ]
+  ],
+  "paths": [
+   [
+    [
+     -8,
+     8.85
+    ],
+    [
+     -4.9,
+     8.75
+    ],
+    [
+     -3.1,
+     7.6
+    ],
+    [
+     -3.1,
+     6.6
+    ],
+    [
+     -3.75,
+     6.3
+    ]
+   ],
+   [
+    [
+     3.2,
+     12.3
+    ],
+    [
+     3.2,
+     7.2
+    ],
+    [
+     3.45,
+     6.7
+    ]
+   ]
+  ]
+ }
+}

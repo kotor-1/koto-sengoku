@@ -86,8 +86,11 @@ describe('3D 比較版：肩越しのカメラ', () => {
 
     it('町家の壁を背にすると、カメラはすぐに近づき（突き抜けない）、離れると元の距離へなめらかに戻る', () => {
         const o = createOrbit(-Math.PI / 2); // 東を見る＝カメラは西（町家の側）
-        const x = HOUSE.x1 + 0.25 + 0.3;
         const z = (HOUSE.z0 + HOUSE.z1) / 2;
+        // 町家の表の壁（目の高さのカメラ除けの東の端。Version 28 は素材の形から作った箱で、軒下の土間は歩ける）の 0.55 m 前に立つ
+        const front = Math.max(...cameraBlockers().filter((b) => b.y0 < FOLLOW.height && b.y1 > FOLLOW.height && b.z0 < z && b.z1 > z && b.x0 < HOUSE.x1 && b.x1 <= HOUSE.x1 + 0.3).map((b) => b.x1));
+        const x = front + 0.55;
+        expect(isFree(x, z)).toBe(true);
         placeFollow(o, x, z, 1 / 60);
         expect(o.dist).toBeLessThan(0.9); // 1 コマで近づく
         // 道の中ほどへ離れると、少しずつ戻る

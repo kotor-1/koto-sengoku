@@ -12,6 +12,7 @@ import * as THREE from 'three';
 import { Gaze } from '../game/gaze';
 import { HeroLegs, legBones } from '../game/legs';
 import { groundY } from '../layout';
+import { townPropModel } from '../town/view';
 import { posePerson, type PersonBody, type PersonFactory } from './people';
 import { BOW_SEC, bowWeight, rhythmOf, type PersonAct } from './rhythm';
 import type { StageBanner, StageFigure, StageLitter, StagePerson } from './stage';
@@ -44,7 +45,7 @@ interface ActorPerson {
     key: string;
     look: string;
     body: PersonBody;
-    bale: THREE.Mesh | null;
+    bale: THREE.Object3D | null;
     label: HTMLElement | null;
     showLabel: boolean;
     /** 足（着いた足を止める・IK・踏み替え）・首と頭の向き（素材が無い代わりの形では null） */
@@ -76,6 +77,10 @@ export class ActorLayer {
     private readonly people = new Map<string, ActorPerson>();
     private readonly frustum = new THREE.Frustum();
     private readonly pv = new THREE.Matrix4();
+    /**
+     * 肩に担ぐ俵の代わりの筒（大きさは BALE）。形は町の小物の俵（props28.glb の tawara：藁の材質・縄の締め）を縮めて使う（makeBale）。
+     * この筒は町の小物を読み終える前だけの代わり
+     */
     private readonly baleGeo = new THREE.CylinderGeometry(BALE.r, BALE.r, BALE.len, 10);
     private readonly baleMat = new THREE.MeshStandardMaterial({ color: '#9c8656', roughness: 0.95 });
     /** 確かめ用：直前に描いた人の数 */
@@ -174,6 +179,31 @@ export class ActorLayer {
         this.peopleDrawn = 0;
     }
 
+    /**
+     * 担ぐ俵の形（中心が原点、長さは z に沿う。半径・長さは BALE）。町の小物の俵（props28.glb の tawara。小物の中の座標で長さは x に沿い
+     * 長さ 0.81 m・縄を含む半径 0.256 m、地面に置いた形で中心の高さ 0.248 m）を回して縮める。町の小物を読む前は色だけの筒
+     */
+    private makeBale(): THREE.Object3D {
+        const src = townPropModel('tawara');
+        if (!src) {
+            const m = new THREE.Mesh(this.baleGeo, this.baleMat);
+            m.rotation.x = Math.PI / 2;
+            m.castShadow = !this.low;
+            return m;
+        }
+        const k = BALE.r / 0.256;
+        src.rotation.y = Math.PI / 2;
+        src.scale.set(BALE.len / 0.81, k, k);
+        src.position.y = -0.248 * k;
+        src.traverse((o) => {
+            if ((o as THREE.Mesh).isMesh) o.castShadow = !this.low;
+        });
+        const g = new THREE.Group();
+        g.name = 'bale';
+        g.add(src);
+        return g;
+    }
+
     /** 人物の素材を読み終えた：代わりの形の人を作り直す（次の setPeople で） */
     resetPeople(): void {
         for (const [k, a] of this.people) this.remove(k, a);
@@ -185,13 +215,11 @@ export class ActorLayer {
 
     private add(p: ActorPersonState): ActorPerson {
         const body = this.factory.make(p.look, { walk: true, rhythm: rhythmOf(p.key) });
-        let bale: THREE.Mesh | null = null;
+        let bale: THREE.Object3D | null = null;
         if (p.carrying !== undefined) {
             // 肩に担ぐ俵（右肩の骨に付ける：休みの形では骨は回っていないので、骨の中の向きは人物の向きと同じ。人物の前後に長い）。
-            // 肩の上の少し外に載せ、頭に重ならない（BALE）
-            bale = new THREE.Mesh(this.baleGeo, this.baleMat);
-            bale.rotation.x = Math.PI / 2;
-            bale.castShadow = !this.low;
+            // 肩の上の少し外に載せ、頭に重ならない（BALE）。形は町の小物の俵（makeBale）
+            bale = this.makeBale();
             bale.visible = false;
             const shoulder = body.bones.get('RightShoulder');
             if (shoulder) {

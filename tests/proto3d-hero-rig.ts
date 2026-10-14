@@ -8,7 +8,7 @@ import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { HeroAnimator, type HeroRig } from '../proto3d/src/game/heroAnim';
 import { SOLE } from '../proto3d/src/game/legs';
 import { createHero, stepHero, type HeroState } from '../proto3d/src/game/motion';
-import { groundY } from '../proto3d/src/layout';
+import { colliders, groundY } from '../proto3d/src/layout';
 
 // テストは Node で動く。Node の型定義は入れていないので、ファイルの読み込みだけ型なしで使う
 const fs = (await import(/* @vite-ignore */ 'node:' + 'fs')) as { readFileSync: (p: URL) => Uint8Array };
@@ -183,3 +183,15 @@ export function maxYawStepDeg(rows: Row[]): number {
     for (let i = 1; i < rows.length; i++) m = Math.max(m, Math.abs(Math.atan2(Math.sin(rows[i]!.yaw - rows[i - 1]!.yaw), Math.cos(rows[i]!.yaw - rows[i - 1]!.yaw))));
     return (m * 180) / Math.PI;
 }
+
+/**
+ * 壁に沿って滑る確かめの始めの位置：東を向いた長さ 3 m 以上の壁（当たり判定の箱の東の辺）で、その東 1 m の帯に別の箱が無い所。
+ * その辺の南の端の 0.6 m 東に立つ。北西を押し続けると、壁に沿って北へ滑る（町の配置が変わっても、店先の小物に引っかからない壁を選ぶ）
+ */
+export function wallSlideStart(): { x: number; z: number; wall: { x1: number; z0: number; z1: number } } {
+    const cs = colliders();
+    const r = cs.find((r) => r.z1 - r.z0 >= 3 && !cs.some((o) => o !== r && o.x0 < r.x1 + 1 && o.x1 > r.x1 && o.z0 < r.z1 && o.z1 > r.z0));
+    if (!r) throw new Error('壁に沿って滑る確かめに使える壁が無い');
+    return { x: r.x1 + 0.6, z: r.z1 - 0.3, wall: { x1: r.x1, z0: r.z0, z1: r.z1 } };
+}
+

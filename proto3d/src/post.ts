@@ -12,8 +12,11 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 
 /** 色の整え（表示の色＝sRGB の値に対して）。値は実際のゲーム画面を参考画像と並べて決めた */
 export const GRADE = {
-    /** 陰の色（暗い所に寄せる色）と強さ */
-    shadowTint: new THREE.Color(0.86, 0.95, 1.14),
+    /**
+     * 陰の色（暗い所に寄せる色）と強さ。Version 28：青みを弱く（Version 27 の (0.86, 0.95, 1.14) では、日の当たらない家の表・人物が青黒く見えた。
+     * 陰は空の光でわずかに青い程度にし、色は光（main.ts の空と地面の照り返し）で決める）
+     */
+    shadowTint: new THREE.Color(0.95, 0.98, 1.05),
     /** 日なたの色（明るい所に寄せる色） */
     highlightTint: new THREE.Color(1.04, 1.0, 0.94),
     saturation: 0.92,
@@ -104,8 +107,8 @@ export function createPost(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ca
                 // 明るい所をなだらかに（白飛びを抑える：0.7 から上を 0.88 に寄せる）
                 vec3 hi = max( c - 0.7, 0.0 );
                 c = c - hi + hi / ( 1.0 + hi * 3.4 );
-                // 陰の底を少し持ち上げる（真っ黒にしない）
-                c = c * 0.955 + 0.02 * vec3( 0.85, 0.95, 1.15 );
+                // 陰の底を少し持ち上げる（真っ黒にしない。持ち上げる色はほぼ白：陰を青く染めない）
+                c = c * 0.955 + 0.02 * vec3( 0.97, 0.98, 1.03 );
                 // 画面の隅を少し暗く
                 vec2 q = vUv - 0.5;
                 c *= 1.0 - vignette * smoothstep( 0.25, 0.85, dot( q, q ) * 2.2 );

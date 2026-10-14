@@ -1,0 +1,94 @@
+{
+  "_about": "Version 28 の歩く通り（南の木戸 z 16.4 → 店先 → 詰所の前の休み場 → 城門 z −12）の配置の唯一の元。数値はゲームの座標（メートル）：x 東、y 上、z 南。ゲーム（town/plan.ts・layout.ts・main.ts）と Blender の制作（street28/build_street28.py）が同じこの表を読む。建物の当たり判定・カメラ除けは、ここに書かず、制作が形の中の「固い物」の部品から作って <id>.meta.json に書く（layout.ts がその meta を読む）。物語・保存・確かめが参照する目印（町の入口・人物の置き場所・物見・街道口・休み場・詰所・軍議所・道の真ん中・城門の開き）は town/spots.ts と explore/cast.ts にあり、ここでは動かさない。",
+  "version": 28,
+  "buildings": [
+    {
+      "id": "machiya_a28",
+      "replaces": "machiya_a",
+      "footprint": { "x0": -10.2, "x1": -4.2, "z0": -9.4, "z1": -1.2 },
+      "front": "+x",
+      "brief": "つし二階の商家（Version 27 の A を作り直し）。弁柄の親子格子・出格子・暖簾。表の 4 間目にばったり床几（下ろして品物）。北の妻の腰は下見板と霧除け。壁の裾の汚れ。"
+    },
+    {
+      "id": "machiya_b28",
+      "replaces": "machiya_b",
+      "footprint": { "x0": -10.8, "x1": -4.2, "z0": -0.4, "z1": 7.6 },
+      "front": "+x",
+      "brief": "本二階の大店（Version 27 の B を作り直し）。庇は独立柱に出桁・腕木、垂木 0.3 m ごと・二重の鼻先・濃い軒裏。店先にひな壇の品台。南の妻（入口から見える）の腰は下見板と霧除けの小窓。"
+    },
+    {
+      "id": "machiya_d28",
+      "replaces": "machiya_d",
+      "footprint": { "x0": 4.2, "x1": 9.6, "z0": 3.8, "z1": 10.8 },
+      "front": "-x",
+      "brief": "一階半の小店（Version 27 の D を作り直し）。上げた蔀戸の下にばったり床几と品物、板戸の入口に半暖簾、出桁を繰形の腕木で受ける軒。南の妻（路地）の腰は下見板。"
+    },
+    {
+      "id": "kura28",
+      "replaces": "machiya_d の鏡写し（Version 27 まで z 12.9〜19.9 にあった）",
+      "footprint": { "x0": 4.2, "x1": 9.6, "z0": 12.6, "z1": 15.8 },
+      "front": "-x",
+      "brief": "妻入りの土蔵造りの店（店蔵。架空）。厚い漆喰の壁と塗籠の軒、腰は海鼠壁、表の 1 階は格子と半暖簾の入口・ばったり床几、2 階に観音開きの土扉の窓、表に瓦の庇。木戸の柵の線（z 16.4）にまたがらない（南の軒の先 z 16.35 まで）。北の路地（町家 D の南 z 10.9 〜 z 12.45）を残す。"
+    },
+    {
+      "id": "nishi28",
+      "replaces": "（新規）西の空き地の通りの縁",
+      "footprint": { "x0": -6.2, "x1": -4.45, "z0": 9.55, "z1": 11.35 },
+      "front": "+x",
+      "fence": { "x": -4.55, "z0": 12.9, "z1": 16.3, "h": 1.6 },
+      "brief": "西の空き地（町家 B の南）の通りの縁を閉じる：石置き板葺きの小屋掛けの店（品物の棚・ばったり床几・巻いた簾）と、物見櫓の前の板塀。荷運びの道（z 8.2〜9.4）と、物見（LOOKOUT −6.9, 11.9）へ通りから歩く口（z 11.5〜12.75）は空ける。"
+    }
+  ],
+  "kido": { "z": 16.4, "postX": 2.9, "open": 2.6 },
+  "tower": { "x": -6.9, "z": 14.9, "floorY": 6.0, "half": 1.2, "ladder": { "footOut": 0.9 }, "eyeY": 7.6 },
+  "tent": { "w": 6.0, "d": 5.4, "gate": 1.8 },
+  "hut": { "x": 16.6, "z": -8.9 },
+  "rest": { "x0": 3.0, "x1": 6.9, "z0": -1.0, "z1": 3.0 },
+  "mats": [[3.55, 2.0], [3.55, 0.0], [4.65, 2.0], [4.65, 0.0], [5.75, 2.0], [5.75, 0.0]],
+  "guard_stools": [[12.4, -6.5, 0], [13.3, -6.6, 0], [14.2, -6.5, 0]],
+  "rest_rack": { "x": 6.62, "z": 1.0, "rotY": -1.5707963267948966 },
+  "_props_note": "props の _at は、置き場所を上の名前つきの値（kido・tower・hut・rest_rack・mats・guard_stools）から取る印（同じ数字を 2 か所に書かない）。",
+  "props": [
+    { "id": "kido", "type": "kido", "cluster": "south", "_at": "kido" },
+    { "id": "fence_w", "type": "fence", "cluster": "fence_w", "x": -22, "z": 16.4, "rotY": 0, "len": 18.92 },
+    { "id": "fence_e1", "type": "fence", "cluster": "south", "x": 3.08, "z": 16.4, "rotY": 0, "len": 1.22 },
+    { "id": "fence_e2", "type": "fence", "cluster": "fence_e", "x": 9.74, "z": 16.4, "rotY": 0, "len": 10.26 },
+    { "id": "lookout_tower", "type": "lookout_tower", "cluster": "south", "_at": "tower" },
+    { "id": "cart_w", "type": "cart", "cluster": "south", "x": -12.4, "z": 10.0, "rotY": 1.5707963267948966 },
+    { "id": "bales_w", "type": "bales", "cluster": "south", "x": -9.0, "z": 9.2, "rotY": 0, "n": 3 },
+    { "id": "bales_w2", "type": "bales", "cluster": "south", "x": -10.0, "z": 11.4, "rotY": 1.5707963267948966, "n": 2 },
+    { "id": "baskets_w", "type": "baskets", "cluster": "south", "pts": [[-9.5, 12.7], [-10.15, 13.15], [-9.6, 13.5]] },
+    { "id": "bales_e", "type": "bales", "cluster": "shop_e", "x": 10.6, "z": 13.6, "rotY": 1.5707963267948966, "n": 2 },
+    { "id": "guard_hut", "type": "hut", "cluster": "guardpost", "_at": "hut" },
+    { "id": "guard_tub", "type": "tub", "cluster": "guardpost", "x": 15.1, "z": -6.1, "rotY": 0 },
+    { "id": "spear_rack", "type": "spear_rack", "cluster": "rest", "_at": "rest_rack" },
+    { "id": "mats", "type": "mats", "cluster": "rest", "_at": "mats" },
+    { "id": "guard_stools", "type": "stools", "cluster": "guardpost", "_at": "guard_stools" },
+    { "id": "council_tent", "type": "council_tent", "cluster": "council", "x": 13, "z": -22.7, "rotY": 0 }
+  ],
+  "banners": [{ "cluster": "council", "x": 16.5, "z": -25.8, "rotY": 1.5707963267948966, "mark": "徳", "height": 4.4 }],
+  "trees": [
+    { "name": "sakura", "model": "tree_sakura", "x": -8.0, "z": -16.2, "rotY": 0, "scale": 1, "shadow": false, "note": "桜。塀の奥（城内）。" },
+    { "name": "pine_big", "model": "tree_pine", "x": 10.8, "z": -7.5, "rotY": 0, "scale": 1, "shadow": false, "note": "東の土塀の内側の大きな黒松。" },
+    { "name": "pine_back", "model": "tree_pine", "x": -7.5, "z": -22.5, "rotY": 0, "scale": 0.9, "shadow": false, "note": "門の北西（城内）の黒松。枝の張り出しを西へ（門越しの天守を隠さない）。" },
+    { "name": "willow_kido", "model": "tree_willow28", "x": -5.6, "z": 18.6, "rotY": 0.4, "scale": 0.85, "trunk": 0.3, "note": "Version 28：木戸の外の西、街道の脇の柳（枝垂れの先は木戸の口 x −2.6 にかからない）。" },
+    { "name": "willow_yard", "model": "tree_willow28", "x": -15.2, "z": 13.6, "rotY": 2.2, "scale": 0.85, "trunk": 0.3, "note": "Version 28：荷置き場の西の隅の柳（荷車・俵の上に枝垂れが掛からない）。" },
+    { "name": "pine_lot", "model": "tree_pine_far", "x": -12.3, "z": 7.4, "rotY": 1.2, "scale": 0.72, "trunk": 0.25, "note": "Version 28：町家 B の南の裏、荷置き場の北の松（軽い松の素材を小さく）。" },
+    { "name": "pine_kura", "model": "tree_pine_far", "x": 12.4, "z": 13.6, "rotY": 3.6, "scale": 0.7, "trunk": 0.25, "note": "Version 28：土蔵造りの店の裏の松（通りから屋根の向こうに見える）。" },
+    { "name": "pine_kido_e", "model": "tree_pine_far", "x": 6.6, "z": 19.2, "rotY": 0.8, "scale": 0.66, "trunk": 0.25, "note": "Version 28：木戸の外の東、田の手前の松。" }
+  ],
+  "back_trees": [
+    { "model": "tree_pine", "x": -27, "z": -16, "rotY": 0.3, "scale": 1.1 },
+    { "model": "tree_pine", "x": 26, "z": -22, "rotY": 1.7, "scale": 1.2 },
+    { "model": "tree_pine", "x": -26, "z": 12, "rotY": 2.6, "scale": 1.0 },
+    { "model": "tree_pine", "x": 27, "z": 9, "rotY": 1.1, "scale": 0.95 }
+  ],
+  "_trees_note": "trees は幹の当たり判定を持つ木（layout.ts。幹の箱の半分の幅は trunk、無ければ 0.35 m）、back_trees は歩ける範囲の外の木立（当たり判定なし。影は落とさない）。shadow: false の木は影を落とさない（城内・東の土塀の内側の大きな木：日は南南東なので影は通りから見えない城内へ落ちる。影の描画の三角形を減らす。Version 28 T3）。Version 28 の地面（scene/build_ground.py → ground_v3.glb）・草むら（ground_plants28.glb）はこの表（建物・小物・木・側溝）を読んで作る。",
+  "edges": {
+    "road": { "center_x": 0, "half_width": 3.4 },
+    "ditches": [
+      { "name": "west", "x": [-4.1, -3.72], "z": [-9.6, 7.8] },
+      { "name": "east", "x": [3.72, 4.1], "z": [-11.4, 12.35], "note": "Version 28：町家 D の南の路地の口（渡り石）を越えて、土蔵造りの店の北の角（三和土の縁石）まで延ばす（その先は店の下の暗渠）" }
+    ]
+  }
+}

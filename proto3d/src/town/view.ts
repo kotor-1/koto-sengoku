@@ -1,29 +1,26 @@
 /**
  * 小さな城下町の描画（three）。配置は town/plan.ts（純粋）。main.ts が場面の素材を読み終えた後に 1 回だけ作る。
- * - 町家の写し：読み込み済みの町家の素材を複製して置く（形・素材は元と共有。新しい素材は読み込まない）。
- * - 小物：箱・円柱・円すいを、場所（まとまり）×材質ごとに 1 つの形へまとめる（描く回数を増やしすぎない。見えないまとまりは three が描かない）。
+ * - 通りの建物（Version 28 の町家・土蔵造りの店・西の小屋と板塀）は main.ts が場面の素材として読み込んで置く（ここでは作らない）。
+ *   Version 27 までの「町家 D の鏡写し」（読み込み済みの素材の複製）はやめた（土蔵造りの店に置き換え）。
+ * - 小物（Version 28）：Blender で形から作った素材 props28.glb（種類ごとに prop_<種類> の下の網）を、plan.ts の置き方（parts）どおりに
+ *   写し、場所（まとまり）× 材質ごとに 1 つの形へまとめる（描く回数を増やしすぎない。見えないまとまりは three が描かない）。
+ *   コードで作る箱の形は軍議所の陣幕の囲いと机だけ（布の縞の画像をコードで描く）。
  * - のぼり：旗の一文字の画像（shared/figures.ts。合戦と同じ描き方）。
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { makeMarkBannerTexture } from '../shared/figures';
 import { groundY } from '../layout';
-import { MACHIYA_COPIES, TOWN_BANNERS, TOWN_PROPS, type Piece, type TownCluster, type TownMat, type TownProp } from './plan';
+import { PROP_TYPES, TOWN_BANNERS, TOWN_PROPS, partToProp, propToWorld, type Piece, type PropPart, type PropType, type TownCluster, type TownMat, type TownProp } from './plan';
 
-/** 小物の材質（色だけ。画像は陣幕の縞だけ：コードで描く） */
+/** コードで作る形の材質（陣幕の囲い・机。色だけ。画像は陣幕の縞だけ：コードで描く） */
 function makeMaterials(): Record<TownMat, THREE.Material> {
     const std = (color: string, roughness = 0.88, extra: THREE.MeshStandardMaterialParameters = {}) => new THREE.MeshStandardMaterial({ color, roughness, metalness: 0, ...extra });
     return {
         wood: std('#5a4430'),
         plank: std('#5f4733'),
-        straw: std('#9c8656', 0.95),
-        mat: std('#7d6f4c', 0.97),
-        basket: std('#86693f', 0.92, { side: THREE.DoubleSide }),
         cloth: std('#ffffff', 0.9, { map: makeCurtainTexture() }),
-        metal: std('#cfd2d4', 0.45, { metalness: 0.6 }),
         paper: std('#d8cfb6', 0.95),
-        roof: std('#4a4038', 0.9),
-        dark: std('#2a2420', 0.95),
     };
 }
 
@@ -43,11 +40,59 @@ function makeCurtainTexture(): THREE.CanvasTexture {
     return tex;
 }
 
+/** 種類ごとの形（材質ごとの網。座標は小物の中） */
+type TypeMeshes = Map<PropType, { geometry: THREE.BufferGeometry; material: THREE.Material }[]>;
+/** 読み込んだ props28.glb の種類ごとの形（townPropModel が写す） */
+let propSource: TypeMeshes | null = null;
+
+/** props28.glb の場面から、種類（prop_<種類> の空）ごとの網を集める（網の形は空の座標＝小物の中の座標へ直す） */
+function collectTypes(root: THREE.Object3D): TypeMeshes {
+    const out: TypeMeshes = new Map();
+    root.updateMatrixWorld(true);
+    const rel = new THREE.Matrix4();
+    root.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh) return;
+        let p: THREE.Object3D | null = m.parent;
+        while (p && !p.name.startsWith('prop_')) p = p.parent;
+        if (!p) return;
+        const type = p.name.slice('prop_'.length) as PropType;
+        if (!(type in PROP_TYPES)) return;
+        const geometry = m.geometry.clone();
+        rel.copy(p.matrixWorld).invert().multiply(m.matrixWorld);
+        geometry.applyMatrix4(rel);
+        const list = out.get(type) ?? [];
+        list.push({ geometry, material: m.material as THREE.Material });
+        out.set(type, list);
+    });
+    return out;
+}
+
+/**
+ * 町の小物の 1 つの種類の形（props28.glb の写し。形と材質は共有）。人物の脇の床几・高札（explore/world.ts）が使う。
+ * 町を作る前（素材を読み終える前）は null（呼ぶ側は代わりの形を使う）
+ */
+export function townPropModel(type: PropType): THREE.Object3D | null {
+    const list = propSource?.get(type);
+    if (!list?.length) return null;
+    const g = new THREE.Group();
+    g.name = `prop:${type}`;
+    for (const { geometry, material } of list) {
+        const m = new THREE.Mesh(geometry, material);
+        m.castShadow = PROP_TYPES[type].cast;
+        m.receiveShadow = true;
+        g.add(m);
+    }
+    return g;
+}
+
 const tmpM = new THREE.Matrix4();
 const tmpE = new THREE.Euler();
 const tmpQ = new THREE.Quaternion();
 const tmpP = new THREE.Vector3();
 const ONE = new THREE.Vector3(1, 1, 1);
+const tmpS = new THREE.Vector3();
+const Y_AXIS = new THREE.Vector3(0, 1, 0);
 
 function pieceGeometry(p: Piece): THREE.BufferGeometry {
     const s = p.size;
@@ -75,19 +120,36 @@ function placedPiece(prop: TownProp, p: Piece, gy: number): THREE.BufferGeometry
     return g;
 }
 
+/** 形（種類の網の 1 つ）を、置いた位置（地面の高さを足す）のゲームの座標の形にする */
+function placedPart(prop: TownProp, q: PropPart, src: THREE.BufferGeometry, gy: number): THREE.BufferGeometry {
+    const g = src.clone();
+    tmpQ.setFromAxisAngle(Y_AXIS, q.rotY);
+    tmpP.set(q.x, q.y, q.z);
+    tmpS.set(q.sx ?? 1, 1, 1);
+    g.applyMatrix4(tmpM.compose(tmpP, tmpQ, tmpS));
+    tmpQ.setFromAxisAngle(Y_AXIS, prop.rotY);
+    tmpP.set(prop.x, gy, prop.z);
+    g.applyMatrix4(tmpM.compose(tmpP, tmpQ, ONE));
+    return g;
+}
+
+/** まとめる形どうしの属性をそろえる（全部にある属性だけ残す。mergeGeometries は同じ属性の組でないとまとめない） */
+function sameAttributes(geos: THREE.BufferGeometry[]): void {
+    const names = Object.keys(geos[0]!.attributes).filter((n) => geos.every((g) => n in g.attributes));
+    for (const g of geos) for (const n of Object.keys(g.attributes)) if (!names.includes(n)) g.deleteAttribute(n);
+}
+
 export interface TownView {
-    /** 町に足した物の根（町家の写し・小物・のぼり） */
+    /** 町に足した物の根（小物・のぼり） */
     root: THREE.Group;
     /** まとまりごとの形（塀の陰で見えないまとまりを描かない：updateTownView） */
     clusters: Map<TownCluster, THREE.Object3D[]>;
     /** 影を落とす形と、その形と影の届く所を囲む球（画面に入らない形は影の描画を省く：updateTownView） */
     casters: { meshes: THREE.Mesh[]; sphere: THREE.Sphere }[];
-    /** 町家の写し（見下ろしのときに半透明にする対象） */
-    copies: THREE.Object3D[];
-    /** 画質「低」（小物は影を落とさない。町家の写しは元と同じく落とす） */
+    /** 画質「低」（小物は影を落とさない） */
     lowShadows: boolean;
     /** 確かめ用：まとめた形の数と三角形の数 */
-    stats: { meshes: number; triangles: number; copies: number };
+    stats: { meshes: number; triangles: number };
 }
 
 /** 物見櫓の屋根と柱を描く／描かない（物見の眺めの間は目の前をふさがないように描かない） */
@@ -126,7 +188,7 @@ const pv = new THREE.Matrix4();
 
 /**
  * 毎フレーム、描く前：塀の陰で見えないまとまりを描かない。形も影も画面に入らない物は、影の描画も省く
- * （影の範囲は主人公の前後に広いので、背中側の町家の写しの影も描いていた）。
+ * （影の範囲は主人公の前後に広いので、背中側の小物の影も描いていた）。
  */
 export function updateTownView(view: TownView, camera: THREE.Camera): void {
     const p = camera.position;
@@ -144,38 +206,40 @@ export function updateTownView(view: TownView, camera: THREE.Camera): void {
 }
 
 /**
- * 町に足した物を作る。models は読み込み済みの場面の素材（名前 → 根。町家の写しの元）。
- * prepare は素材の影・異方性の設定（main.ts の prepare と同じ）。
+ * 町に足した小物・のぼりを作る（low は画質「低」：小物は影を落とさない）。props は読み込んだ props28.glb の場面（Blender で作った小物の形）。
  */
-export function buildTown(models: ReadonlyMap<string, THREE.Object3D>, prepare: (o: THREE.Object3D) => void, low: boolean): TownView {
+export function buildTown(low: boolean, props: THREE.Object3D): TownView {
     const root = new THREE.Group();
     root.name = 'town';
-    const copies: THREE.Object3D[] = [];
-    // ---- 町家の写し（元と同じ形・素材を共有。z = c の面で鏡に写す：three は鏡の裏返しを自動で直す）
-    for (const cp of MACHIYA_COPIES) {
-        const src = models.get(cp.source);
-        if (!src) continue;
-        const c = src.clone(true);
-        c.name = `${cp.source}_copy`;
-        c.scale.z = -1;
-        c.position.z = 2 * cp.mirrorZ;
-        prepare(c);
-        c.updateMatrixWorld(true);
-        root.add(c);
-        copies.push(c);
-    }
-    // ---- 小物：まとまり × 材質ごとに 1 つの形へ
-    const mats = makeMaterials();
-    const buckets = new Map<string, { cluster: TownCluster; mat: TownMat; geos: THREE.BufferGeometry[] }>();
+    const types = collectTypes(props);
+    propSource = types;
+    // ---- 小物：まとまり × 材質（× 影を落とすか）ごとに 1 つの形へ
+    const codeMats = makeMaterials();
+    const buckets = new Map<string, { cluster: TownCluster; name: string; material: THREE.Material; cast: boolean; geos: THREE.BufferGeometry[] }>();
+    const bucket = (cluster: TownCluster, name: string, material: THREE.Material, cast: boolean) => {
+        const key = `${cluster}:${material.uuid}:${cast ? 1 : 0}`;
+        let b = buckets.get(key);
+        if (!b) buckets.set(key, (b = { cluster, name, material, cast, geos: [] }));
+        return b;
+    };
     for (const prop of TOWN_PROPS) {
         const gy = groundY(prop.x, prop.z);
+        for (const q of prop.parts) {
+            const list = types.get(q.type);
+            if (!list) throw new Error(`props28.glb に ${q.type} の形が無い（${prop.name}）`);
+            // 散らばった小物（籠・筵・床几）は形ごとに、その所の地面の高さを取る
+            let y = gy;
+            if (prop.scatter) {
+                const c = partToProp(q, 0, 0);
+                const w = propToWorld(prop, c.x, c.z);
+                y = groundY(w.x, w.z);
+            }
+            const cast = PROP_TYPES[q.type].cast;
+            for (const { geometry, material } of list) bucket(prop.cluster, material.name || q.type, material, cast).geos.push(placedPart(prop, q, geometry, y));
+        }
         for (const p of prop.pieces) {
-            const key = `${prop.cluster}:${p.mat}`;
-            let b = buckets.get(key);
-            if (!b) buckets.set(key, (b = { cluster: prop.cluster, mat: p.mat, geos: [] }));
-            // 散らばった小物（籠・床几）は部品ごとに地面の高さを取る
-            const local = prop.x === 0 && prop.z === 0 ? groundY(p.pos[0], p.pos[2]) : gy;
-            b.geos.push(placedPiece(prop, p, local));
+            const local = prop.scatter ? groundY(p.pos[0], p.pos[2]) : gy;
+            bucket(prop.cluster, p.mat, codeMats[p.mat], true).geos.push(placedPiece(prop, p, local));
         }
     }
     let triangles = 0;
@@ -187,23 +251,25 @@ export function buildTown(models: ReadonlyMap<string, THREE.Object3D>, prepare: 
         clusters.set(c, list);
     };
     for (const b of buckets.values()) {
+        sameAttributes(b.geos);
         const g = mergeGeometries(b.geos);
         for (const x of b.geos) x.dispose();
         if (!g) continue;
         g.computeBoundingSphere();
-        const m = new THREE.Mesh(g, mats[b.mat]);
-        m.name = `town:${b.cluster}:${b.mat}`;
-        m.castShadow = !low;
+        const m = new THREE.Mesh(g, b.material);
+        m.name = `town:${b.cluster}:${b.name}`;
+        m.castShadow = !low && b.cast;
         m.receiveShadow = true;
+        m.userData.cast = b.cast;
         m.matrixAutoUpdate = false;
         m.updateMatrix();
         root.add(m);
         addTo(b.cluster, m);
         meshes++;
-        triangles += (g.index ? g.index.count : g.attributes.position.count) / 3;
+        triangles += (g.index ? g.index.count : g.attributes.position!.count) / 3;
     }
     // ---- のぼり（竿と布）
-    const poleMat = mats.wood;
+    const poleMat = codeMats.wood;
     const bannerMats = new Map<string, THREE.Material>();
     for (const bn of TOWN_BANNERS) {
         let bm = bannerMats.get(bn.mark);
@@ -239,7 +305,7 @@ export function buildTown(models: ReadonlyMap<string, THREE.Object3D>, prepare: 
     const addCaster = (o: THREE.Object3D) => {
         const meshes: THREE.Mesh[] = [];
         o.traverse((x) => {
-            if ((x as THREE.Mesh).isMesh && (x as THREE.Mesh).castShadow) meshes.push(x as THREE.Mesh);
+            if ((x as THREE.Mesh).isMesh && (x as THREE.Mesh).castShadow && x.userData.cast !== false) meshes.push(x as THREE.Mesh);
         });
         if (!meshes.length) return;
         const box = new THREE.Box3().setFromObject(o);
@@ -250,7 +316,6 @@ export function buildTown(models: ReadonlyMap<string, THREE.Object3D>, prepare: 
         sphere.radius += reach * 0.5 + 1;
         casters.push({ meshes, sphere });
     };
-    for (const c of copies) addCaster(c);
     for (const list of clusters.values()) for (const o of list) addCaster(o);
-    return { root, clusters, casters, copies, lowShadows: false, stats: { meshes, triangles: Math.round(triangles), copies: copies.length } };
+    return { root, clusters, casters, lowShadows: false, stats: { meshes, triangles: Math.round(triangles) } };
 }

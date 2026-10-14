@@ -4,7 +4,7 @@
  * - カメラ：主人公の背後・肩越しの三人称（既定）。画面の右側（PC は画面のどこでも）のドラッグで周りを見る。
  *   移動はカメラの向きに合わせる。壁・屋根を突き抜けない（game/follow.ts）。
  *   確認用に、これまでの斜め見下ろしの固定カメラも残す（?view=top）。
- * - 空と山並みは、このコードで作る形（scenery.ts）。
+ * - 空と山並み（遠景）・町のまわりの竹垣・隣の町並み・木立・田畑の先の村（中景）は、このコードで作る形（scenery.ts。中景の置き方は town/surround.ts）。
  * - 素材は GLB（public/models/）を GLTFLoader で読み込む。城門前の場面の素材（主人公 hero_v3・町家 3 棟・城門・土塀・木・地面・天守）は
  *   Blender で作ったもの（proto3d/blender/。配置の約束は blender/scene.json、当たり判定は素材ごとの *.meta.json）。
  *   前の主人公（利用者が用意したモデルを改良した hero_v2）へは画面のボタン・?hero=old で切り替えられる。
@@ -15,9 +15,10 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { FOLLOW, createOrbit, look, placeFollow, segmentClear } from './game/follow';
 import { CAMERA_YAW, createHero, stepHero, type HeroState } from './game/motion';
 import { HeroAnimator } from './game/heroAnim';
-import { START, TREES, cameraBlockers, colliders, groundY, type Rect } from './layout';
+import { BACK_TREES, GATE, START, STREET_BUILDINGS, TREES, cameraBlockers, colliders, groundY, type Rect } from './layout';
 import treesMeta from '../blender/trees/trees.meta.json';
-import { SKY, makeHills, makeSky } from './scenery';
+import { SKY, TOWN_LIGHT, makeHills, makeSky, makeSurroundings } from './scenery';
+import { addContactShadow, isCharacter } from './explore/contactShadow';
 import { activeMode, setAppContext } from './app/modes';
 import { createPost, type Post } from './post';
 import { bootChapter, type ExploreHost } from './ui/boot';
@@ -70,27 +71,25 @@ view.appendChild(renderer.domElement);
 let hemiBoost = 0;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(SKY.horizon);
-// 霧（空気の遠近）：遠いほど青みがかった地平の色に近づく。肩越しでは門越しの天守（約 60m 先）に薄くかかる程度から
-scene.fog = tps ? new THREE.Fog(SKY.haze, 14, 170) : new THREE.Fog(SKY.horizon, 32, 70);
-// 日差し：カメラ（開始時は北北西を向く）の左うしろ＝南南西の低め（高さ約 34°）から（晴れた午後遅く）。
-// 西の町家の影が道の左側に落ち、主人公・門・塀の正面は日なたになる。見下ろしのときはこれまでの高さ
-const SUN_OFFSET = tps ? new THREE.Vector3(-5, 12, 16) : new THREE.Vector3(-14, 18, 7);
+// 霧（空気の遠近）と日差し・空と地面の照り返し（肩越し：Version 28 の値と理由は scenery.ts の TOWN_LIGHT）。見下ろし（?view=top）はこれまでの値
+scene.fog = tps ? new THREE.Fog(SKY.haze, TOWN_LIGHT.fog.near, TOWN_LIGHT.fog.far) : new THREE.Fog(SKY.horizon, 32, 70);
+const SUN_OFFSET = tps ? new THREE.Vector3(...TOWN_LIGHT.sunOffset) : new THREE.Vector3(-14, 18, 7);
 const sky = makeSky(SUN_OFFSET);
-scene.add(sky, makeHills());
+scene.add(sky, makeHills(SUN_OFFSET), makeSurroundings());
 const pmrem = new THREE.PMREMGenerator(renderer);
 // 周囲の映り込み（空の色のやわらかい光）。画質「低」では省く（ソフトウェア描画の検証環境では描画時間が約 2 倍になった）
 if (!low) {
     const env = new THREE.Scene();
     env.add(makeSky(SUN_OFFSET));
     scene.environment = pmrem.fromScene(env, 0.04, 1, 2000).texture;
-    // 映り込みは弱く（陰を明るく灰色にしない。陰の明るさは主に青い空の光で決める）
+    // 映り込みは弱く（陰を明るく灰色にしない。陰の明るさは主に空の光と地面の照り返しで決める）
     scene.environmentIntensity = tps ? 0.3 : 0.45;
 } else {
     hemiBoost = 0.25;
 }
 
-// 肩越し：低い日の暖かい色で強く（日なたをはっきり明るく）
-const sun = new THREE.DirectionalLight(tps ? '#ffd6a8' : '#fff0d8', tps ? 5.2 : 2.7);
+// 肩越し：昼前の日の暖かい白
+const sun = new THREE.DirectionalLight(tps ? TOWN_LIGHT.sun.color : '#fff0d8', tps ? TOWN_LIGHT.sun.intensity : 2.7);
 sun.castShadow = true;
 sun.shadow.mapSize.set(low ? 1024 : 2048, low ? 1024 : 2048);
 // 影の範囲：肩越しでは前方に広く（主人公の少し先を中心に）
@@ -100,10 +99,17 @@ sun.shadow.bias = -0.0004;
 sun.shadow.normalBias = 0.03;
 sun.shadow.radius = tps ? 2 : 3;
 scene.add(sun, sun.target);
-// 空と地面の照り返し：肩越しでは地面の照り返しを暖かく（土の道の色）
-// 肩越し：空の光は青く弱く（陰は深いが青みがあり形が読める）、地面の照り返しは土の色
-const hemi = tps ? new THREE.HemisphereLight('#9dbcec', '#8a7358', 1.0 + hemiBoost) : new THREE.HemisphereLight('#cfdcea', '#7a6750', 1.0 + hemiBoost);
+// 空と地面の照り返し。肩越し：空の光はわずかに青く（陰が青黒くならない強さ）、地面の照り返しは日の当たる土の道の色
+const hemi = tps
+    ? new THREE.HemisphereLight(TOWN_LIGHT.hemi.sky, TOWN_LIGHT.hemi.ground, TOWN_LIGHT.hemi.intensity + hemiBoost)
+    : new THREE.HemisphereLight('#cfdcea', '#7a6750', 1.0 + hemiBoost);
 scene.add(hemi);
+// 照り返しの補い（肩越しだけ。影を作らない弱い光。日の反対の低い所から）
+const bounce = tps ? new THREE.DirectionalLight(TOWN_LIGHT.bounce.color, TOWN_LIGHT.bounce.intensity) : null;
+if (bounce) {
+    bounce.position.set(-SUN_OFFSET.x, TOWN_LIGHT.bounce.height, -SUN_OFFSET.z);
+    scene.add(bounce);
+}
 
 const TPS_FOV = 48;
 const camera = new THREE.PerspectiveCamera(tps ? TPS_FOV : CAMERA.fov, 1, tps ? 0.1 : 0.5, 2000);
@@ -432,16 +438,28 @@ heroBtn.addEventListener('click', (e) => {
     if (e.detail === 0) void switchHero(heroKey === 'v2' ? 'mpfb' : 'v2');
 });
 
+/**
+ * 読み込んだ素材の下ごしらえ：影（素材の指定。無ければ落とす・受ける）・画像の異方性フィルタ。
+ * 人物（骨組みのある形。主人公・会話の相手・町の人々）には足元の接地の影を足す（explore/contactShadow.ts）
+ */
 function prepare(obj: THREE.Object3D): void {
     obj.traverse((o) => {
         const mesh = o as THREE.Mesh;
-        if (!mesh.isMesh) return;
+        if (!mesh.isMesh || o.userData.contactShadow) return;
         const ud = mesh.userData as { cast?: boolean; receive?: boolean };
         mesh.castShadow = ud.cast ?? true;
         mesh.receiveShadow = ud.receive ?? true;
         // 斜めから見る地面・壁でぼやけないように、色だけでなく凹凸・粗さ・陰の画像にも異方性フィルタを掛ける
         const mat = mesh.material as THREE.MeshStandardMaterial;
         for (const t of [mat.map, mat.normalMap, mat.roughnessMap, mat.metalnessMap, mat.aoMap]) if (t) t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    });
+    if (isCharacter(obj)) addContactShadow(obj);
+}
+
+/** 物（木など）の影を落とすかを、その下の形すべてに決める */
+function castShadows(obj: THREE.Object3D, cast: boolean): void {
+    obj.traverse((o) => {
+        if ((o as THREE.Mesh).isMesh) o.castShadow = cast;
     });
 }
 
@@ -508,54 +526,65 @@ const frameHooks: ((dt: number) => void)[] = [];
 async function start(): Promise<void> {
     const t0 = performance.now();
     // 城門前の一場面（Blender で作った素材）。地面・城門・土塀・遠景の天守・町家は配置どおりの位置で作ってあるので、そのまま置く
-    const [placed, [pine, sakura, pineFar], firstHero] = await Promise.all([
+    const [placed, [pine, sakura, pineFar, willow], props, firstHero] = await Promise.all([
         Promise.all(SCENE_MODELS.map(load)),
-        Promise.all(['tree_pine', 'tree_sakura', 'tree_pine_far'].map(load)),
+        Promise.all(['tree_pine', 'tree_sakura', 'tree_pine_far', 'tree_willow28'].map(load)),
+        load('props28'),
         loadHeroView(heroKey),
     ]);
     placed.forEach((g, i) => {
         prepare(g.scene);
+        // 地面の起伏（数 cm）は影を落とさない（縁石・側溝の石だけ落とす。影の描画の三角形を減らす）
+        if (SCENE_MODELS[i] === 'ground_v3') {
+            g.scene.traverse((o) => {
+                if ((o as THREE.Mesh).isMesh && !o.name.startsWith('ground_stone')) o.castShadow = false;
+            });
+        }
         scene.add(g.scene);
         // 隠れたら半透明にするのは見下ろしのときだけ（肩越しではカメラが壁の手前に来るので、建物は薄くしない）
-        if (!tps && SCENE_MODELS[i] !== 'ground_v2' && SCENE_MODELS[i] !== 'keep' && SCENE_MODELS[i] !== 'inner') addOccluder(g.scene);
+        if (!tps && !GROUND_MODELS.has(SCENE_MODELS[i]!)) addOccluder(g.scene);
     });
-    // 小さな城下町で足した物（町家の写し・木戸・物見櫓・荷置き場・詰所・軍議所。town/plan.ts）。素材は読み込み済みの物を複製するだけ
-    town = buildTown(new Map(placed.map((g, i) => [SCENE_MODELS[i]!, g.scene])), prepare, low);
+    // 小さな城下町で足した小物（木戸・柵・物見櫓・荷置き場・詰所・休み場・軍議所。置き方は town/plan.ts、形は Blender で作った props28.glb）
+    town = buildTown(low, props.scene);
     scene.add(town.root);
-    if (!tps) for (const c of town.copies) addOccluder(c);
-    // 木：配置（scene.json の trees）の幹の位置へ。松は 2 本（向きと大きさを変える）
+    // 木：配置（street28.json の trees）の幹の位置へ。同じ素材の 2 本目からは複製（向きと大きさは表のとおり。
+    // pine_back は枝の張り出しを西（左）へ：開始の画面で、門越しの天守を隠さない）
     prepare(pine.scene);
     prepare(sakura.scene);
-    let pineUsed = false;
+    prepare(pineFar.scene);
+    prepare(willow.scene);
+    // Version 28 の通りの木：柳（tree_willow28）と、軽い松（tree_pine_far）を小さくした松。遠景の松の置き場所の元（pineFar.scene）は複製して使う
+    const treeSrc: Record<string, THREE.Object3D> = { tree_pine: pine.scene, tree_sakura: sakura.scene, tree_pine_far: pineFar.scene, tree_willow28: willow.scene };
+    const treeShared = new Set(['tree_pine_far']);
+    const treeUsed = new Set<string>();
     for (const t of TREES) {
-        const isPine = t.name.startsWith('pine');
-        const src = isPine ? pine.scene : sakura.scene;
-        const obj = isPine && pineUsed ? src.clone() : src;
-        if (isPine) pineUsed = true;
+        const src = treeSrc[t.model]!;
+        const obj = treeUsed.has(t.model) || treeShared.has(t.model) ? src.clone() : src;
+        treeUsed.add(t.model);
         obj.position.set(t.x, 0, t.z);
-        if (t.name === 'pine_back') {
-            // 枝の張り出しを西（左）へ：開始の画面で、門越しの天守を隠さない
-            obj.rotation.y = 0;
-            obj.scale.setScalar(0.9);
-        }
+        obj.rotation.y = t.rotY;
+        obj.scale.setScalar(t.scale);
+        castShadows(obj, t.shadow);
         scene.add(obj);
         addOccluder(obj);
     }
     // 城内・空き地の奥の松（軽い遠景用。置き場所は trees.meta.json）
-    prepare(pineFar.scene);
     for (const f of treesMeta.tree_pine_far.placements) {
         const t = pineFar.scene.clone();
         t.position.set(f.x, 0, f.z);
         t.rotation.y = f.rotation_y;
         t.scale.setScalar(f.scale);
+        // 城内（城の土塀の線より北）の松は影を落とさない（影は通りから見えない城内へ落ちる）
+        castShadows(t, f.z > GATE.z);
         scene.add(t);
     }
-    // 町の外側の木立（歩ける範囲の外。奥行きを出す）
-    for (const [x, z, r, sc] of BACK_TREES) {
-        const t = pine.scene.clone();
-        t.position.set(x, 0, z);
-        t.rotation.y = r;
-        t.scale.setScalar(sc);
+    // 町の外側の木立（歩ける範囲の外。奥行きを出す。street28.json の back_trees）
+    for (const b of BACK_TREES) {
+        const t = treeSrc[b.model]!.clone();
+        t.position.set(b.x, 0, b.z);
+        t.rotation.y = b.rotY;
+        t.scale.setScalar(b.scale);
+        castShadows(t, false);
         scene.add(t);
     }
     // 草むらは影を落とさない（地面の書き出しで指定済み）
@@ -567,12 +596,13 @@ async function start(): Promise<void> {
     renderer.setAnimationLoop(frame);
 }
 
-/** 場面の素材（配置どおりの位置で作ってある） */
-const SCENE_MODELS = ['ground_v2', 'gate_v2', 'walls_v2', 'keep', 'inner', 'machiya_a', 'machiya_b', 'machiya_d'];
-/** 町の外側の木立：[x, z, 向き, 大きさ]（歩ける範囲 BOUNDS の外。松を使い回す） */
-const BACK_TREES: [number, number, number, number][] = [
-    [-27, -16, 0.3, 1.1], [26, -22, 1.7, 1.2], [-26, 12, 2.6, 1.0], [27, 9, 1.1, 0.95],
-];
+/**
+ * 場面の素材（配置どおりの位置で作ってある）。通りの建物は Version 28 の作り直し（street28.json の buildings：
+ * 町家 A・B・D・土蔵造りの店・西の小屋と板塀。旧の machiya_a・b・d の GLB はリポジトリに残すが読まない）
+ */
+const SCENE_MODELS = ['ground_v3', 'ground_plants28', 'gate_v2', 'walls_v2', 'keep', 'inner', ...STREET_BUILDINGS.map((b) => b.id)];
+/** 地面と草むら（隠れても半透明にしない） */
+const GROUND_MODELS = new Set(['ground_v3', 'ground_plants28', 'keep', 'inner']);
 
 // ---- 毎フレーム ----
 const camTarget = new THREE.Vector3(hero.x, 1.0, hero.z);
@@ -822,6 +852,8 @@ if (import.meta.env.DEV) {
     Object.assign(window, {
         __p3: {
             hero, stats, camera, renderer, scene, releaseAll,
+            /** 確認用：光（日・空と地面の照り返し・照り返しの補い・日の向き（主人公の少し先からの位置の差。書き換えると次のカメラの置き直しから効く）・空） */
+            light: { sun, hemi, bounce, sunOffset: SUN_OFFSET, sky },
             get anim() {
                 const a = heroView?.anim;
                 return { walkBlend: a?.walkBlend ?? 0, runBlend: a?.runBlend ?? 0, stride: a?.stride ?? 0, strideTotal: a?.strideTotal ?? 0, walkTime: heroView?.walk.time ?? 0, running: running(), runMode, yaw: a?.yaw ?? 0, speed: a?.speed ?? 0, legs: a?.legs?.stats ?? null };

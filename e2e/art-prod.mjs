@@ -4,7 +4,7 @@
 // 準備（公開と同じ作り。docs/proto3d.md の「公開」）：
 //   VITE_MODEL_EXT=.json npm run proto3d:build
 //   rm dist-proto3d/models/*.glb
-//   node proto3d/tools/glb-to-gltf.mjs proto3d/public/models dist-proto3d/models ground_v2 gate_v2 walls_v2 keep inner machiya_a machiya_b machiya_d tree_pine tree_sakura tree_pine_far hero_v3b_mpfb hero_v2b
+//   node proto3d/tools/glb-to-gltf.mjs proto3d/public/models dist-proto3d/models ground_v3 ground_plants28 gate_v2 walls_v2 keep inner machiya_a28 machiya_b28 machiya_d28 kura28 nishi28 props28 tree_pine tree_sakura tree_pine_far tree_willow28 hero_v3b_mpfb hero_v2b
 // 使い方：node e2e/art-prod.mjs [出力先]   （DIST=dist-proto3d PORT=8134 VIEW=960x540 RUNS=art,v24,abort,old ART_MANIFEST=<manifest.gen.json> で変えられる。
 //   ソフトウェア描画では歩きが遅い（1 コマ 0.1 秒までしか進まない）ので、既定の大きさは ieyasu-prod と同じ 960x540）
 // この中で、次のヘッダー付きの簡易サーバーを立てる（.webp は image/webp）：

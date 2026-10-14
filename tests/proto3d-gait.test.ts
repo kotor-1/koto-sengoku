@@ -7,8 +7,7 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { GAIT } from '../proto3d/src/game/gait';
 import { SPEED } from '../proto3d/src/game/motion';
-import { HOUSE } from '../proto3d/src/layout';
-import { glbJson, loadGlb, maxYawStepDeg, plantedSpeeds, rigOf, simulate, type Row } from './proto3d-hero-rig';
+import { glbJson, loadGlb, maxYawStepDeg, plantedSpeeds, rigOf, simulate, wallSlideStart, type Row } from './proto3d-hero-rig';
 
 const HERO = 'hero_v3b_mpfb';
 const gltf = await loadGlb(HERO);
@@ -140,7 +139,8 @@ describe('主人公の足運び（ゲームの仕組みで 60 コマ/秒）', ()
         sim.hold('stop', 1.2, 0, 0);
     });
     scenario('wallslide', () => {
-        sim.place(HOUSE.x1 + 0.6, (HOUSE.z0 + HOUSE.z1) / 2 + 1.5, -Math.PI / 2);
+        const w = wallSlideStart();
+        sim.place(w.x, w.z, -Math.PI / 2);
         sim.hold('idle', 0.5, 0, 0);
         sim.hold('slide', 2.0, N, N);
         sim.hold('stop', 1.2, 0, 0);

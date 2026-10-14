@@ -28,7 +28,7 @@ import { LookoutSession, type LookoutProbe } from './lookout';
 import { PersonFactory } from './people';
 import { NO_ACT, rhythmOf as rhythmOfId } from './rhythm';
 import { afterWalkEnd, stageFrame, type StageCastInfo, type StageHero, type StageOrigin, type StagePerson, type StageShot } from './stage';
-import { setTowerTopVisible } from '../town/view';
+import { setTowerTopVisible, townPropModel } from '../town/view';
 import './town.css';
 
 /** カメラの差し替え（決めた位置から決めた点を見る。hideHero なら主人公を描かない） */
@@ -985,16 +985,23 @@ function box(w: number, h: number, d: number, mat: THREE.Material, x: number, y:
     return m;
 }
 
-/** 床几（腰掛け。簡単な箱。暫定） */
+/** 床几（腰掛け）：町の小物の床几（Blender で作った props28.glb の形。town/view.ts）。素材を読み終える前だけ簡単な箱 */
 function makeStool(): THREE.Object3D {
+    const m = townPropModel('stool');
+    if (m) return m;
     const g = new THREE.Group();
     g.add(box(0.46, 0.06, 0.36, WOOD, 0, 0.42, 0.02));
     for (const sx of [-1, 1]) g.add(box(0.05, 0.42, 0.3, WOOD, sx * 0.19, 0.21, 0.02));
     return g;
 }
 
-/** 高札（2 本の柱・板・小さな屋根。簡単な箱。暫定）。表（文字の面）は +z。向きは cast の heading で回す */
+/**
+ * 高札（2 本の柱・板・3 枚の札・小さな切妻の板屋根）：町の小物の高札（Blender で作った props28.glb の形。town/view.ts）。
+ * 素材を読み終える前だけ簡単な箱。表（文字の面）は +z。向きは cast の heading で回す
+ */
 function makeNoticeBoard(): THREE.Object3D {
+    const m = townPropModel('kosatsu');
+    if (m) return m;
     const g = new THREE.Group();
     for (const sx of [-1, 1]) g.add(box(0.1, 2.1, 0.1, WOOD, sx * 0.7, 1.05, 0));
     g.add(box(1.5, 0.75, 0.05, WOOD, 0, 1.45, 0.02));

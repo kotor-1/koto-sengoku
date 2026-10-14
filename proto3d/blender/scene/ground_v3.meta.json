@@ -1,0 +1,177 @@
+{
+  "name": "ground_v3",
+  "coords": "game (x east, y up, z south), meters",
+  "_about": "地面の素材（Version 28）の当たり判定（大きな石）。側溝は歩いて渡れる（当たり判定なし）。カメラ除けの箱は無し（低い物だけ）。built_from は制作が読んだ通りの配置（street28.json）の値（tests/proto3d-town.test.ts が今の表と同じかを確かめる：表を変えたら地面を作り直す）。",
+  "colliders": [
+    {
+      "x0": 4.614,
+      "x1": 5.286,
+      "z0": -11.186,
+      "z1": -10.514
+    },
+    {
+      "x0": -13.0,
+      "x1": -12.2,
+      "z0": -10.95,
+      "z1": -10.15
+    },
+    {
+      "x0": -15.52,
+      "x1": -14.88,
+      "z0": -8.62,
+      "z1": -7.98
+    },
+    {
+      "x0": -6.768,
+      "x1": -6.032,
+      "z0": -14.668,
+      "z1": -13.932
+    },
+    {
+      "x0": 5.064,
+      "x1": 5.736,
+      "z0": -14.936,
+      "z1": -14.264
+    }
+  ],
+  "built_from": {
+    "buildings": [
+      {
+        "id": "machiya_a28",
+        "footprint": {
+          "x0": -10.2,
+          "x1": -4.2,
+          "z0": -9.4,
+          "z1": -1.2
+        }
+      },
+      {
+        "id": "machiya_b28",
+        "footprint": {
+          "x0": -10.8,
+          "x1": -4.2,
+          "z0": -0.4,
+          "z1": 7.6
+        }
+      },
+      {
+        "id": "machiya_d28",
+        "footprint": {
+          "x0": 4.2,
+          "x1": 9.6,
+          "z0": 3.8,
+          "z1": 10.8
+        }
+      },
+      {
+        "id": "kura28",
+        "footprint": {
+          "x0": 4.2,
+          "x1": 9.6,
+          "z0": 12.6,
+          "z1": 15.8
+        }
+      },
+      {
+        "id": "nishi28",
+        "footprint": {
+          "x0": -6.2,
+          "x1": -4.45,
+          "z0": 9.55,
+          "z1": 11.35
+        }
+      }
+    ],
+    "ditches": [
+      {
+        "name": "west",
+        "x": [
+          -4.1,
+          -3.72
+        ],
+        "z": [
+          -9.6,
+          7.8
+        ]
+      },
+      {
+        "name": "east",
+        "x": [
+          3.72,
+          4.1
+        ],
+        "z": [
+          -11.4,
+          12.35
+        ]
+      }
+    ],
+    "road_half_width": 3.4,
+    "trees": [
+      {
+        "name": "sakura",
+        "x": -8.0,
+        "z": -16.2
+      },
+      {
+        "name": "pine_big",
+        "x": 10.8,
+        "z": -7.5
+      },
+      {
+        "name": "pine_back",
+        "x": -7.5,
+        "z": -22.5
+      },
+      {
+        "name": "willow_kido",
+        "x": -5.6,
+        "z": 18.6
+      },
+      {
+        "name": "willow_yard",
+        "x": -15.2,
+        "z": 13.6
+      },
+      {
+        "name": "pine_lot",
+        "x": -12.3,
+        "z": 7.4
+      },
+      {
+        "name": "pine_kura",
+        "x": 12.4,
+        "z": 13.6
+      },
+      {
+        "name": "pine_kido_e",
+        "x": 6.6,
+        "z": 19.2
+      }
+    ],
+    "props_placed": 58,
+    "kido_z": 16.4,
+    "fields": {
+      "x0": -65.0,
+      "x1": 65.0,
+      "z0": 20.0,
+      "z1": 95.0
+    }
+  },
+  "triangles": 40480,
+  "glb_bytes": 9046140,
+  "embedded_stones": 44,
+  "plants": {
+    "glb": "models/ground_plants28.glb",
+    "triangles": 39224,
+    "glb_bytes": 3006332
+  },
+  "triangles_by_part": {
+    "ground_terrain": 31702,
+    "ground_far": 552,
+    "ground_fields": 2158,
+    "ground_stone": 5200,
+    "ground_ditch_bed": 732,
+    "ground_ditch_water": 136
+  }
+}

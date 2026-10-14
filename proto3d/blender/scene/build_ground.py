@@ -1,7 +1,22 @@
 """
-城門前の一場面の地面（ground_v2.glb）を作る。
+城門前の一場面の地面（Version 28：ground_v3.glb と、草むら・低木の ground_plants28.glb）を作る。
 
     /root/blender-venv/bin/python proto3d/blender/scene/build_ground.py [--quick] [--no-bake]
+    python3 proto3d/blender/scene/ground_height.py        （作り直したら、足の高さの格子も作り直す）
+
+Version 28 の変更（Version 27 の ground_v2.glb・ground.meta.json はリポジトリに残す。ゲームは読まない）:
+- 配置は通りの配置の唯一の元 street28/street28.json（建物・木・側溝・道）と、建物の meta（形の中の本体の箱）、
+  小物の置き方 street28/props28.placed.json（town/plan.ts から書き出した一覧。tests/proto3d-town-props.test.ts が一致を確かめる）。
+  城門・土塀・開始の位置は scene.json。
+- 接地の陰：Version 28 の建物 5 棟・小物（props28.glb を置き方どおりに置く）・木をすべて置いたまま、地面の AO を焼く。
+  空の見え方（6 m）と接地の陰（0.7 m）の 2 回を掛けて 1 枚の ORM（R 遮蔽、TEXCOORD_1）に。小物・木の根元の周りが暗くなる。
+- 東の側溝を z 11 から土蔵造りの店の北の角（z 12.35）まで延ばし、路地の口に渡り石。両方の側溝に浅い水面（ground_ditch_water）、
+  水際の石は濡れて暗く苔の色（頂点色）。
+- 木戸の外：道の続きと、田（水を張った田・植えた田、畦）・畑（畝）を広げる（ground_fields。歩ける範囲は広げない）。
+  遠くの簡単な地面（ground_far）は田畑の所を抜く。木戸の外の道の両脇は草の縁。
+- 砂利：木戸の下の踏み固めた砂利と、荷置き場の砂利のむら（重ねる物の砂利。縁は地面へもぐらせる）。
+- 草むら・低木（plants.glb の部品）は ground_plants28.glb へ分ける（地面の三角形の目安 6 万を、地面だけで守る）。
+  塀・柵・板塀の裾、家の脇、側溝の縁、木の根元に、まとまりと抜けを付けて置く。つつじは暗い塊にならないよう明るくし、羊歯・草と組にする。
 
 中身（すべてゲームの絶対座標のまま書き出す。原点に置けばよい）:
 - ground_terrain: 細かい範囲（x -20〜20、z -26〜20）の地面。踏み固めた暖かい土の道（中央のわずかな盛り上がり、深さ 2〜3 cm の 2 本の轍、
@@ -9,16 +24,14 @@
   土の画像は地面だけの 'road'（ground_tex.gen_road：点々の小石なし、締まった土の段・砂ぼこり・擦れ跡）。
   道の面は 1〜6 m のゆるい起伏（±2〜3 cm。家の前・側溝・塀・門の敷居の近くでは 0）。
   色（大きな明暗・乾き／湿り（wetness）・塀と町家の根元の締まった土）は頂点色 COLOR_0。
-  周りの建物と木を置いたまま焼いた AO と、乾き・湿りの粗さ（0.64〜0.95）は 1 枚の ORM（R 遮蔽・G 粗さ、TEXCOORD_1、2048 px）。
+  周りの建物・小物・木を置いたまま焼いた AO と、乾き・湿りの粗さ（0.64〜0.95）は 1 枚の ORM（R 遮蔽・G 粗さ、TEXCOORD_1、2048 px）。
   同じメッシュに、あとから重ねる物も入れる（同じ AO の画像を使うので、日陰で浮かない）:
-    ・道の縁と門の敷居の前だけに埋まった平たい石（44 個。10〜12 角、上は平ら、土から 0.5〜1.2 cm 出る。まわりの土が縁にかぶさる）。
-    ・塀と町家の根元のわずかな小石、軒・笠の雨落ちの砂利の帯（幅約 0.24 m）。
-- ground_far: その外の 200 m までの簡単な地面。細かい範囲の下に 1 m もぐらせてある。
-- ground_stone: 側溝の割り石の縁石（長さ・高さ・傾きがそろわない、面取りと角の欠け）、端の石、入口の前の渡り石、大きな石。
-- ground_ditch_bed: 側溝の暗く湿った底と、縁石の目地を埋める土。
-- ground_fence_bamboo / ground_fence_post: 空き地の低い四つ目垣（竹、黒い棕櫚縄の結び目）と杉丸太の柱。
-- ground_grass / ground_fern / ground_azalea: plants.glb の草むら・羊歯・つつじ。草は 3〜8 株のまとまりで、目地にも少し。
-当たり判定は ground.meta.json（垣と大きな石）。
+    ・道の縁と門の敷居の前だけに埋まった平たい石。塀と町家の根元のわずかな小石、軒・笠の雨落ちの砂利の帯、木戸の下・荷置き場の砂利のむら。
+- ground_far: その外の 200 m までの簡単な地面（田畑の所は抜く）。細かい範囲の下に 1 m もぐらせてある。
+- ground_fields: 木戸の外の道・草の縁・用水路・田（水面・植えた苗の列）・畦・畑の畝。
+- ground_stone: 側溝の割り石の縁石（長さ・高さ・傾きがそろわない、面取りと角の欠け。水際は濡れて暗い）、端の石、入口の前の渡り石、大きな石。
+- ground_ditch_bed / ground_ditch_water: 側溝の暗く湿った底と、縁石の目地を埋める土。浅い水面。
+当たり判定は ground_v3.meta.json（大きな石）。
 """
 from __future__ import annotations
 
@@ -43,13 +56,21 @@ import ground_tex as gtx  # noqa: E402
 import assemble as asm  # noqa: E402
 
 L = scene_layout()
-OUT = MODELS_DIR / 'ground_v2.glb'
-META = HERE / 'ground.meta.json'
+STREET_DIR = HERE.parent / 'street28'
+STREET = json.loads((STREET_DIR / 'street28.json').read_text())
+BMETA = {b['id']: json.loads((STREET_DIR / f"{b['id']}.meta.json").read_text()) for b in STREET['buildings']}
+PLACED = json.loads((STREET_DIR / 'props28.placed.json').read_text())
+PTYPES = json.loads((STREET_DIR / 'props28.types.json').read_text())['types']
+OUT = MODELS_DIR / 'ground_v3.glb'
+OUT_PLANTS = MODELS_DIR / 'ground_plants28.glb'
+META = HERE / 'ground_v3.meta.json'
 TMP = BUILD_DIR / 'scene'
+WORK = BUILD_DIR / 'ground_v3'          # この版の焼いた画像の置き場（共有の build の中の新しいフォルダ）
+WORK.mkdir(parents=True, exist_ok=True)
 
 # 細かい範囲（ゲームの座標）
 AREA = dict(x0=-20.0, x1=20.0, z0=-26.0, z1=20.0)
-ROAD_HW = L['road']['half_width']
+ROAD_HW = STREET['edges']['road']['half_width']
 RUT_X = 0.78            # 轍の中心（道の中心から）
 WALL_HALF = 0.59        # 塀の根元の石の張り出しを含む半分の厚み（walls_v2）
 DRIP = 0.81             # 塀の笠の雨落ち（中心から）
@@ -57,7 +78,7 @@ EW_Z = -12.0
 NS_X = 7.6
 NS_Z = (-12.0, 3.0)
 # 西の町家（A・B）の置き場所は scene.json の houses。下の西側の決め打ちの z は、もとの配置（A の北の妻 z -5.6）からのずれ DZW だけずらす
-DZW = next(h for h in L['houses'] if h['name'] == 'machiya_a')['footprint']['z0'] - (-5.6)
+DZW = next(h for h in STREET['buildings'] if h['id'] == 'machiya_a28')['footprint']['z0'] - (-5.6)
 FENCE_Z = -7.35 + DZW   # 空き地の南の垣（路地 A の北の妻の手前 1.6 m は空ける）
 FENCE_X = -4.45         # 空き地の道側の垣
 ALLEY = (-7.2 + DZW, -5.6 + DZW)   # 町家 A の北の路地
@@ -65,24 +86,45 @@ TURF_WS = -10.75        # 塀ぎわの草の南の端
 TURF_WN = -13.25        # 城内側の塀ぎわの草の北の端
 TURF_NSW = 6.3          # 東の塀（南北）の西側の草の西の端
 FOOTINGS = [(2.02, 2.86, -12.33, -11.40), (-2.86, -2.02, -12.33, -11.40)]   # 門の礎石（gate_v2）
+FENCE_S = STREET['kido']['z']    # 町の南の柵の線（街道口の木戸）
 EARTH_TINT = np.array([1.0, 0.92, 0.80])     # 暖かい土の色（線形の掛け算）
 CURB_W = dict(house=0.17, road=0.18)          # 縁石の幅。溝は 0.27 m
 
 
+# 家の下の地面を抜く建物（GLB の下に土の塊がある町家 A・B・D。土蔵造りの店・西の小屋は穴の無い地面の上）
+HOLE_UNDER = ('machiya_a28', 'machiya_b28', 'machiya_d28')
+
+
+def _solid(bid, sid):
+    return next((s_['box'] for s_ in BMETA[bid]['solids'] if s_['id'] == sid), None)
+
+
 def _houses():
-    """町家の本体と軒下の三和土（ゲームの座標）。本体の表の壁の位置は machiya の制作と同じ"""
-    H = {h['name']: h for h in L['houses']}
-    a, b, d = H['machiya_a']['footprint'], H['machiya_b']['footprint'], H['machiya_d']['footprint']
-    body = [(a['x0'], a['x0'] + 5.1, a['z0'], a['z1']), (b['x0'], b['x0'] + 5.3, b['z0'], b['z1']),
-            (d['x1'] - 4.8, d['x1'], d['z0'], d['z1'])]
-    apron = [(a['x0'] + 5.1, a['x0'] + 6.02, a['z0'] - 0.15, a['z1'] + 0.15), (b['x0'] + 5.3, b['x0'] + 6.58, b['z0'] - 0.15, b['z1'] + 0.15),
-             (d['x1'] - 5.42, d['x1'] - 4.8, d['z0'] - 0.1, d['z1'] + 0.1)]
-    return body, apron
+    """
+    建物の本体（形の中の本体の固い部品の箱）・表の三和土と軒下（本体の表から、表に側溝があれば足元の表の線、無ければ軒の線まで）・
+    地面を抜く所（町家 A・B・D の本体）。ゲームの座標 (x0, x1, z0, z1)
+    """
+    body, apron, hole = [], [], []
+    for b in STREET['buildings']:
+        bx = _solid(b['id'], 'body')
+        fp = b['footprint']
+        r = (bx['x0'], bx['x1'], bx['z0'], bx['z1'])
+        body.append(r)
+        if b['id'] in HOLE_UNDER:
+            hole.append(r)
+        eave = _solid(b['id'], 'hisashi') or _solid(b['id'], 'roof')
+        ditch = any(min(d['z']) < bx['z1'] and max(d['z']) > bx['z0'] and (d['x'][0] < 0) == (b['front'] == '+x') for d in STREET['edges']['ditches'])
+        if b['front'] == '+x':
+            x0, x1 = bx['x1'], (fp['x1'] + 0.02 if ditch else max(fp['x1'], eave['x1']))
+        else:
+            x0, x1 = (fp['x0'] - 0.02 if ditch else min(fp['x0'], eave['x0'])), bx['x0']
+        apron.append((x0, x1, bx['z0'] - 0.1, bx['z1'] + 0.1))
+    return body, apron, hole
 
 
-HOUSE_BODY, HOUSE_APRON = _houses()
+HOUSE_BODY, HOUSE_APRON, HOUSE_HOLE = _houses()
 DITCH = {}
-for _d in L['ditches']:
+for _d in STREET['edges']['ditches']:
     side = -1 if _d['x'][0] < 0 else 1
     # 地面の穴（石組みの外の端まで）：家側 0.08 m、道側 0.16 m 広げる（縁石 0.17・0.18 m、溝 0.27 m）
     if side < 0:
@@ -93,7 +135,7 @@ for _d in L['ditches']:
         chan = (hole[0] + CURB_W['road'], hole[1] - CURB_W['house'])
     DITCH[_d['name']] = dict(side=side, x=tuple(_d['x']), hole=hole, chan=chan, z=(_d['z'][0], _d['z'][1]))
 # 入口の前の渡り石（z の範囲）
-BRIDGES = {'west': [(-3.55 + DZW, -1.5 + DZW), (3.49 + DZW, 5.31 + DZW)], 'east': [(6.1, 8.5)]}
+BRIDGES = {'west': [(-3.55 + DZW, -1.5 + DZW), (3.49 + DZW, 5.31 + DZW)], 'east': [(6.1, 8.5), (11.2, 12.05)]}   # 東の 2 つ目は町家 D の南の路地の口
 # 雨落ちの砂利の帯（ゲームの (x, z) の 2 点。幅 0.2 m）：塀の笠の下（町側・城内側）と町家の妻・裏の軒の下
 DRIP_LINES = [
     ((-17.9, EW_Z + DRIP), (-2.95, EW_Z + DRIP)), ((2.95, EW_Z + DRIP), (NS_X - DRIP - 0.1, EW_Z + DRIP)),
@@ -197,6 +239,8 @@ def is_turf(x, z):
     t |= (z <= EW_Z) & (z >= TURF_WN) & (ax >= 2.9)                                     # 城内側の塀ぎわ
     t |= (z < TURF_WN) & (ax >= 12.0)
     t |= (z > 12.0) & (ax >= 11.0)
+    # 木戸の外（柵の線より南）：道の両脇は草の縁（道の幅のゆらぎ）
+    t |= (z > FENCE_S + 0.25) & (ax > ROAD_HW + 0.3)
     band = base_dist(x, z) < 0.3 + 0.09 * F_BAND(x, z)
     return t & ~band
 
@@ -298,7 +342,9 @@ def grid_lines():
         xk += [b[0], b[1], a[0], a[1]]
     for s in (-1, 1):
         xk += [s * RUT_X + o for o in (-0.26, -0.13, 0.0, 0.13, 0.26)]
+        xk += [s * (ROAD_HW + 0.3)]          # 木戸の外の道と草の縁の境
     zk = [AREA['z0'], AREA['z1'], EW_Z - WALL_HALF, EW_Z, EW_Z + WALL_HALF, TURF_WS, TURF_WN, FENCE_Z, -5.6 + DZW, NS_Z[1], 12.0,
+          FENCE_S, FENCE_S + 0.25,
           EW_Z + WALL_HALF + 0.2, EW_Z + WALL_HALF + 0.4, EW_Z - WALL_HALF - 0.2, EW_Z - WALL_HALF - 0.4,
           -5.8 + DZW, -6.0 + DZW, 3.6 + DZW, 3.4 + DZW, 11.6 + DZW, 11.8 + DZW, 11.0, 11.2]
     for d in DITCH.values():
@@ -307,7 +353,7 @@ def grid_lines():
         zk += [b[2], b[3]]
     xs = axis_lines([(-20, -12, 0.8), (-12, -5.5, 0.5), (-5.5, -3.4, 0.25), (-3.4, 3.4, 0.25), (3.4, 5.0, 0.25), (5.0, 8.4, 0.4),
                      (8.4, 20, 0.8)], xk)
-    zs = axis_lines([(-26, -14.5, 0.7), (-14.5, 4.0, 0.32), (4.0, 12, 0.5), (12, 20, 0.8)], zk)
+    zs = axis_lines([(-26, -14.5, 0.7), (-14.5, 4.0, 0.32), (4.0, 12, 0.45), (12, 20, 0.55)], zk)
     _GRID = (xs, zs)
     return _GRID
 
@@ -319,7 +365,8 @@ def warp(X, Z):
     A, w = 0.14, 0.42
     specs = [('z', TURF_WS, 4.18, NS_X), ('x', TURF_NSW, EW_Z, NS_Z[1]), ('z', TURF_WN, 2.9, 18.0), ('z', TURF_WN, -18.0, -2.9),
              ('x', -12.0, -26.0, TURF_WN), ('x', 12.0, -26.0, TURF_WN), ('x', -11.2, FENCE_Z, 12.0), ('x', 9.8, NS_Z[1], 20.0),
-             ('x', -11.0, 12.0, 20.0), ('x', 11.0, 12.0, 20.0), ('z', 12.0, -20, -11.0), ('z', 12.0, 11.0, 20.0)]
+             ('x', -11.0, 12.0, 20.0), ('x', 11.0, 12.0, 20.0), ('z', 12.0, -20, -11.0), ('z', 12.0, 11.0, 20.0),
+             ('x', -(ROAD_HW + 0.3), FENCE_S + 0.25, 20.0), ('x', ROAD_HW + 0.3, FENCE_S + 0.25, 20.0)]
     for ax, c, lo, hi in specs:
         if ax == 'z':
             m = (np.abs(Z - c) < w) & (X >= lo - 0.3) & (X <= hi + 0.3)
@@ -448,7 +495,7 @@ def build_terrain():
     cx = (xs[i] + xs[i + 1]) / 2
     cz = (zs[j] + zs[j + 1]) / 2
     drop = np.zeros(cx.shape, bool)
-    for r in HOUSE_BODY:
+    for r in HOUSE_HOLE:
         drop |= in_rect(cx, cz, (r[0] + 0.15, r[1] - 0.15, r[2] + 0.15, r[3] - 0.15))
     for r in wall_rects(-0.12):
         drop |= in_rect(cx, cz, r)
@@ -593,7 +640,7 @@ def terrain_colors(x, z, y):
     vt = 0.965 + 0.035 * n1 + 0.015 * n2 + 0.06 * np.clip(F_MAC(x, z), -1.5, 1.5)
     tn = F_TURF(x, z)
     tint = np.stack([1 + 0.07 * tn, 1 + 0.02 * tn, 1 - 0.06 * tn], -1) * vt[:, None]
-    pine = np.array(next(tt['pos'] for tt in L['trees'] if tt['name'] == 'pine_big'))
+    pine = np.array(next((tt['x'], tt['z']) for tt in STREET['trees'] if tt['name'] == 'pine_big'))
     dp = np.hypot(x - pine[0], z - pine[1])
     litter = np.exp(-(dp / 3.0) ** 2)
     tint *= np.stack([1 + 0.10 * litter, 1 - 0.04 * litter, 1 - 0.14 * litter], -1)
@@ -611,7 +658,7 @@ def terrain_colors(x, z, y):
 def build_far():
     ring = [19, 24, 32, 45, 65, 95, 140, 200]
     xs = sorted(set([-v for v in ring] + ring + [-ROAD_HW, ROAD_HW, -11.0, 11.0]))
-    zs = sorted(set([-25 - (v - 19) for v in ring] + [19 + (v - 19) for v in ring] + [-12.0, 0.0, 10.0]))
+    zs = sorted(set([-25 - (v - 19) for v in ring] + [19 + (v - 19) for v in ring] + [-12.0, 0.0, 10.0, FIELDS['z0']]))
     xs, zs = np.array(xs, float), np.array(zs, float)
     nx, nz = len(xs), len(zs)
     X, Z = np.meshgrid(xs, zs, indexing='ij')
@@ -624,6 +671,8 @@ def build_far():
             cx, cz = (xs[i] + xs[i + 1]) / 2, (zs[j] + zs[j + 1]) / 2
             if -19 < cx < 19 and -25 < cz < 19:
                 continue
+            if FIELDS['x0'] < cx < FIELDS['x1'] and FIELDS['z0'] < cz < FIELDS['z1']:
+                continue                 # 木戸の外の田畑（ground_fields）
             earth = not bool(is_turf(np.array([cx]), np.array([cz]))[0])
             faces.append((idx[i, j], idx[i, j + 1], idx[i + 1, j + 1], idx[i + 1, j]))
             fm.append(0 if earth else 1)
@@ -641,6 +690,283 @@ def build_far():
     uv.data.foreach_set('uv', np.stack([P[:, 0] / tile, P[:, 1] / tile], -1).astype(np.float32).ravel())
     set_point_colors(o, terrain_colors(X.ravel(), Z.ravel(), Y.ravel()))
     return o
+
+
+# ---------------------------------------------------------------------------
+# 木戸の外の田畑（Version 28）：道の続き・草の縁・用水路・田（水を張った田・植えた田）・畦・畑の畝
+#   歩ける範囲（z 18 まで）は広げない。木戸から南を見たとき、地面の端（z 20）が切れて見えないように
+# ---------------------------------------------------------------------------
+
+FIELDS = dict(x0=-65.0, x1=65.0, z0=20.0, z1=95.0)
+# 田畑の区画の線（ゲームの座標）。西は道の西の草の縁まで、東は用水路の東から
+FIELD_XW = [-65.0, -51.0, -39.5, -28.5, -18.0]
+FIELD_XE = [12.5, 23.5, 35.0, 48.5, 65.0]
+FIELD_ZW = [20.0, 27.5, 35.5, 44.5, 55.0, 67.0, 80.0, 95.0]
+FIELD_ZE = [20.0, 29.0, 37.5, 47.0, 57.5, 69.0, 82.0, 95.0]
+
+
+def field_road(z):
+    """木戸の外の道：真ん中の x（南へ行くと少し東へ曲がる）と半分の幅（3.4 → 2.7 m）"""
+    z = np.asarray(z, np.float64)
+    return 2.2 * sstep(30.0, 70.0, z), ROAD_HW - 0.7 * sstep(20.0, 40.0, z)
+
+
+def water_material(name='water'):
+    """水面（画像なし）：頂点色 × 暗い青緑、つやのある面（空が映る）。田・側溝・用水路"""
+    m = bpy.data.materials.get(name)
+    if m is not None:
+        return m
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    nt = m.node_tree
+    bsdf = nt.nodes['Principled BSDF']
+    vc = nt.nodes.new('ShaderNodeVertexColor')
+    vc.layer_name = mats.COLOR_ATTR
+    mx = nt.nodes.new('ShaderNodeMix')
+    mx.data_type = 'RGBA'
+    mx.blend_type = 'MULTIPLY'
+    mx.inputs['Factor'].default_value = 1.0
+    a, b, o = mats._mix_sockets(mx)
+    a.default_value = (0.12, 0.155, 0.15, 1.0)        # 線形の色（sRGB ≒ #61706d：浅い濁った水。暗すぎると空の映りが弱い町では黒く見える）
+    nt.links.new(vc.outputs['Color'], b)
+    nt.links.new(o, bsdf.inputs['Base Color'])
+    bsdf.inputs['Roughness'].default_value = 0.1
+    bsdf.inputs['Metallic'].default_value = 0.0
+    return m
+
+
+class FieldMesh:
+    """田畑の網（ゲームの座標の頂点、材質 0 土・1 草・2 水、頂点色）"""
+
+    def __init__(self):
+        self.v, self.f, self.fm, self.col = [], [], [], []
+
+    def quad(self, pts, m, cols):
+        """pts = 4 点（ゲームの (x, y, z)）。上から見て向きをそろえる"""
+        k = len(self.v)
+        self.v.extend(pts)
+        self.col.extend(cols if isinstance(cols, list) else [cols] * 4)
+        a, b, c = (np.array(pts[i], np.float64) for i in range(3))
+        e1, e2 = b - a, c - a
+        nz = e1[0] * (-e2[2]) - (-e1[2]) * e2[0]       # Blender の Z（上）の向き：(x, −z) の外積
+        self.f.append((k, k + 1, k + 2, k + 3) if nz >= 0 else (k + 3, k + 2, k + 1, k))
+        self.fm.append(m)
+
+    def strip(self, p0, p1, half, y, m, cols, n=1, ys=None):
+        """p0→p1 の平らな帯（幅 2·half、高さ y、n 分割）"""
+        (xa, za), (xb, zb) = p0, p1
+        ln = math.hypot(xb - xa, zb - za)
+        ux, uz = (xb - xa) / ln, (zb - za) / ln
+        nx, nz = -uz, ux
+        for i in range(n):
+            t0, t1 = i / n, (i + 1) / n
+            ax, az = xa + (xb - xa) * t0, za + (zb - za) * t0
+            bx, bz = xa + (xb - xa) * t1, za + (zb - za) * t1
+            y0 = y if ys is None else ys[0]
+            y1 = y if ys is None else ys[1]
+            self.quad([(ax - nx * half, y0, az - nz * half), (bx - nx * half, y0, bz - nz * half),
+                       (bx + nx * half, y1, bz + nz * half), (ax + nx * half, y1, az + nz * half)], m, cols)
+
+    def bund(self, pts, rng, base=-0.06, top=0.1, wb=0.26, wt=0.12):
+        """畦（折れ線 pts に沿う台形の土手：両側の斜面と上面。草の材質）"""
+        for (xa, za), (xb, zb) in zip(pts[:-1], pts[1:]):
+            ln = math.hypot(xb - xa, zb - za)
+            if ln < 1e-3:
+                continue
+            ux, uz = (xb - xa) / ln, (zb - za) / ln
+            nx, nz = -uz, ux
+            k = rng.uniform(0.88, 1.06)
+            c_top = (0.9 * k, 1.0 * k, 0.78 * k)
+            c_side = (0.82 * k, 0.86 * k, 0.7 * k)
+            hb, ht = wb, wt
+            self.quad([(xa - nx * hb, base, za - nz * hb), (xb - nx * hb, base, zb - nz * hb),
+                       (xb - nx * ht, top, zb - nz * ht), (xa - nx * ht, top, za - nz * ht)], 1, c_side)
+            self.quad([(xa - nx * ht, top, za - nz * ht), (xb - nx * ht, top, zb - nz * ht),
+                       (xb + nx * ht, top, zb + nz * ht), (xa + nx * ht, top, za + nz * ht)], 1, c_top)
+            self.quad([(xa + nx * ht, top, za + nz * ht), (xb + nx * ht, top, zb + nz * ht),
+                       (xb + nx * hb, base, zb + nz * hb), (xa + nx * hb, base, za + nz * hb)], 1, c_side)
+
+
+def _plot(fmesh, rng, corners, kind, along_x):
+    """田畑の 1 区画（四隅 (x, z)：北西・北東・南東・南西の順）。kind: water（水を張った田）・planted（植えた田）・field（畑の畝）・fallow（草）"""
+    (x00, z00), (x10, z10), (x11, z11), (x01, z01) = corners
+    inset = 0.22
+
+    def P(u, v, y):
+        x = (x00 * (1 - u) + x10 * u) * (1 - v) + (x01 * (1 - u) + x11 * u) * v
+        z = (z00 * (1 - u) + z10 * u) * (1 - v) + (z01 * (1 - u) + z11 * u) * v
+        return (x, y, z)
+    W = math.hypot(x10 - x00, z10 - z00)
+    H = math.hypot(x01 - x00, z01 - z00)
+    du, dv = inset / max(W, 1e-3), inset / max(H, 1e-3)
+    u0, u1, v0, v1 = du, 1 - du, dv, 1 - dv
+    k = rng.uniform(0.9, 1.08)
+    if kind in ('water', 'planted'):
+        tint = (0.95 * k, 1.0 * k, 0.98 * k) if rng.random() < 0.5 else (1.0 * k, 0.98 * k, 0.9 * k)
+        fmesh.quad([P(u0, v0, -0.05), P(u1, v0, -0.05), P(u1, v1, -0.05), P(u0, v1, -0.05)], 2, tint)
+    if kind == 'planted':
+        # 苗の列（水面の上の細い緑の帯。列の間に水が光る）
+        n = max(4, int((H if along_x else W) / 0.62))
+        for i in range(n):
+            t = (i + 0.5) / n
+            g = rng.uniform(0.88, 1.0)
+            col = (0.72 * g, 1.0 * g, 0.48 * g)
+            hw = 0.16 / max(H if along_x else W, 1e-3)
+            if along_x:
+                fmesh.quad([P(u0, t - hw, -0.025), P(u1, t - hw, -0.025), P(u1, t + hw, -0.025), P(u0, t + hw, -0.025)], 1, col)
+            else:
+                fmesh.quad([P(t - hw, v0, -0.025), P(t + hw, v0, -0.025), P(t + hw, v1, -0.025), P(t - hw, v1, -0.025)], 1, col)
+    elif kind == 'field':
+        # 畑：土の面と、畝（三角の断面の土の盛り上がり）と、畝の上の作物の緑の帯
+        soil = (0.72 * k, 0.66 * k, 0.58 * k)
+        fmesh.quad([P(u0, v0, -0.035), P(u1, v0, -0.035), P(u1, v1, -0.035), P(u0, v1, -0.035)], 0, soil)
+        L_ = H if along_x else W
+        n = max(4, int(L_ / 0.9))
+        for i in range(n):
+            t = (i + 0.5) / n
+            hw = 0.28 / max(L_, 1e-3)
+            cw = 0.09 / max(L_, 1e-3)
+            g = rng.uniform(0.85, 1.05)
+            crop = (0.66 * g, 0.86 * g, 0.44 * g)
+            ridge = (0.66 * k, 0.6 * k, 0.53 * k)
+            if along_x:
+                fmesh.quad([P(u0, t - hw, -0.03), P(u1, t - hw, -0.03), P(u1, t - cw, 0.1), P(u0, t - cw, 0.1)], 0, ridge)
+                fmesh.quad([P(u0, t + cw, 0.1), P(u1, t + cw, 0.1), P(u1, t + hw, -0.03), P(u0, t + hw, -0.03)], 0, ridge)
+                fmesh.quad([P(u0, t - cw, 0.1), P(u1, t - cw, 0.1), P(u1, t + cw, 0.1), P(u0, t + cw, 0.1)], 1, crop)
+            else:
+                fmesh.quad([P(t - hw, v0, -0.03), P(t - cw, v0, 0.1), P(t - cw, v1, 0.1), P(t - hw, v1, -0.03)], 0, ridge)
+                fmesh.quad([P(t + cw, v0, 0.1), P(t + hw, v0, -0.03), P(t + hw, v1, -0.03), P(t + cw, v1, 0.1)], 0, ridge)
+                fmesh.quad([P(t - cw, v0, 0.1), P(t + cw, v0, 0.1), P(t + cw, v1, 0.1), P(t - cw, v1, 0.1)], 1, crop)
+    elif kind == 'fallow':
+        fmesh.quad([P(u0, v0, -0.03), P(u1, v0, -0.03), P(u1, v1, -0.03), P(u0, v1, -0.03)], 1, (0.95 * k, 0.96 * k, 0.8 * k))
+
+
+def build_fields():
+    rng = np.random.default_rng(97)
+    fm = FieldMesh()
+    zs = np.arange(FIELDS['z0'], FIELDS['z1'] + 1e-6, 2.5)
+    xc, hw = field_road(zs)
+    # 細かい範囲の地面の南の端（z 20、高さ −0.04）とのつなぎ目：端の下にもぐらせた帯（つなぎ目のすき間から空が見えないように）
+    for x0_ in np.arange(AREA['x0'], AREA['x1'] - 1e-6, 5.0):
+        fm.quad([(x0_, -0.046, AREA['z1'] - 0.7), (x0_ + 5.0, -0.046, AREA['z1'] - 0.7), (x0_ + 5.0, -0.046, AREA["z1"] + 0.02),
+                 (x0_, -0.046, AREA["z1"] + 0.02)], 0, (0.86, 0.8, 0.72))
+    # 道（土）・両脇の草の縁・東の用水路（土手は草、水面は低い）
+    for i in range(len(zs) - 1):
+        za, zb = zs[i], zs[i + 1]
+        ca, cb, ha, hb = xc[i], xc[i + 1], hw[i], hw[i + 1]
+        kr = rng.uniform(0.94, 1.04)
+        road = (1.0 * kr, 0.97 * kr, 0.92 * kr)
+        e0, c0 = (-0.04, -0.04) if i == 0 else (-0.035, -0.022)     # 最初の列は細かい範囲の端と同じ高さ
+        fm.quad([(ca - ha, e0, za), (cb - hb, -0.035, zb), (cb, -0.022, zb), (ca, c0, za)], 0, road)
+        fm.quad([(ca, c0, za), (cb, -0.022, zb), (cb + hb, -0.035, zb), (ca + ha, e0, za)], 0, road)
+        verge = (0.92 * kr, 0.98 * kr, 0.8 * kr)
+        fm.quad([(ca - ha - 1.2, e0, za), (cb - hb - 1.2, -0.03, zb), (cb - hb, -0.035, zb), (ca - ha, e0, za)], 1, verge)
+        fm.quad([(ca + ha, e0, za), (cb + hb, -0.035, zb), (cb + hb + 1.2, -0.02, zb), (ca + ha + 1.2, e0, za)], 1, verge)
+        # 用水路：土手（草）→ 水面 → 向こうの土手
+        e0a, e0b = ca + ha + 1.2, cb + hb + 1.2
+        fm.quad([(e0a, -0.02, za), (e0b, -0.02, zb), (e0b + 0.12, -0.15, zb), (e0a + 0.12, -0.15, za)], 1, (0.8, 0.86, 0.7))
+        fm.quad([(e0a + 0.12, -0.13, za), (e0b + 0.12, -0.13, zb), (e0b + 0.55, -0.13, zb), (e0a + 0.55, -0.13, za)], 2, (1.0, 1.02, 0.96))
+        fm.quad([(e0a + 0.55, -0.15, za), (e0b + 0.55, -0.15, zb), (e0b + 0.7, 0.04, zb), (e0a + 0.7, 0.04, za)], 1, (0.82, 0.88, 0.72))
+    # 区画（西・東）
+    def road_w(z):
+        c, h = field_road(z)
+        return float(c - h - 1.2)
+
+    def road_e(z):
+        c, h = field_road(z)
+        return float(c + h + 1.2 + 0.7)
+    for side, xs_fixed, zs_side in (('w', FIELD_XW, FIELD_ZW), ('e', FIELD_XE, FIELD_ZE)):
+        ncol = len(xs_fixed)
+        for j in range(len(zs_side) - 1):
+            za, zb = zs_side[j], zs_side[j + 1]
+            for i in range(ncol):
+                if side == 'w':
+                    xa0, xa1 = xs_fixed[i], (xs_fixed[i + 1] if i + 1 < ncol else road_w(za))
+                    xb0, xb1 = xs_fixed[i], (xs_fixed[i + 1] if i + 1 < ncol else road_w(zb))
+                else:
+                    xa0, xa1 = (xs_fixed[i - 1] if i > 0 else road_e(za)), xs_fixed[i]
+                    xb0, xb1 = (xs_fixed[i - 1] if i > 0 else road_e(zb)), xs_fixed[i]
+                near = (side == 'w' and i == ncol - 1) or (side == 'e' and i == 0)
+                if near and za < 36:
+                    kind = 'field'
+                else:
+                    r = rng.random()
+                    kind = 'water' if r < 0.5 else ('planted' if r < 0.85 else 'fallow')
+                _plot(fm, rng, [(xa0, za), (xa1, za), (xb1, zb), (xb0, zb)], kind, along_x=(rng.random() < 0.5))
+        # 畦：区画の線（南北の線は区画の z の範囲、東西の線は西の端から道の側まで）
+        z0, z1 = zs_side[0], zs_side[-1]
+        for x in xs_fixed:
+            if abs(x) < 64.9:
+                fm.bund([(x, z0), (x, z1)], rng)
+        zz = np.arange(z0, z1 + 1e-6, 2.5)
+        edge = [((road_w(z) if side == 'w' else road_e(z)), z) for z in zz]
+        fm.bund(edge, rng)
+        for z in zs_side:
+            if side == 'w':
+                fm.bund([(FIELDS['x0'], z), (road_w(z), z)], rng)
+            else:
+                fm.bund([(road_e(z), z), (FIELDS['x1'], z)], rng)
+    V = np.array(fm.v)
+    verts_b = np.stack([V[:, 0], -V[:, 2], V[:, 1]], -1)
+    m_earth = gtx.material('road', gtx.build_road(), gtx.ROAD_TILE)
+    m_turf = gtx.material('turf', gtx.build_turf(), gtx.TURF_TILE)
+    o = mesh_object('ground_fields', verts_b, fm.f, mat_slots=[m_earth, m_turf, water_material()], face_mats=fm.fm)
+    me = o.data
+    lv = np.empty(len(me.loops), np.int64)
+    me.loops.foreach_get('vertex_index', lv)
+    pm = np.array([pp.material_index for pp in me.polygons for _ in pp.loop_indices])
+    tile = np.where(pm == 1, gtx.TURF_TILE[0], 4.0)
+    P_ = verts_b[lv]
+    uv = me.uv_layers.new(name='UVMap')
+    uv.data.foreach_set('uv', np.stack([P_[:, 0] / tile, P_[:, 1] / tile], -1).astype(np.float32).ravel())
+    # 色：土・草は細い範囲と同じ大きな明暗を掛ける
+    cols = np.array(fm.col, np.float64)
+    mac = np.clip(0.06 * F_MAC(V[:, 0], V[:, 2]) + 0.05 * F_MAC2(V[:, 0], V[:, 2]), -0.15, 0.12)
+    cols = np.clip(cols * (1 + mac)[:, None] * EARTH_TINT[None] ** 0.3, 0.2, 1.0)
+    set_point_colors(o, cols)
+    print(f'fields: {len(fm.f)} faces')
+    return o
+
+
+# ---------------------------------------------------------------------------
+# 小物の足元・人の道（Version 28：street28/props28.placed.json）
+# ---------------------------------------------------------------------------
+
+def placed_rects(pad=0.0):
+    """小物の歩きの当たり判定の箱（筵は形の箱）をゲームの座標へ写した四角形 (x0, x1, z0, z1)"""
+    out = []
+    for it in PLACED['placed']:
+        t = PTYPES[it['type']]
+        c, s_ = math.cos(it['rotY']), math.sin(it['rotY'])
+        boxes = t['walk'] if t['walk'] else [t['bounds']]
+        for r in boxes:
+            xs, zs_ = [], []
+            for px in (r['x0'] * it['sx'], r['x1'] * it['sx']):
+                for pz in (r['z0'], r['z1']):
+                    xs.append(it['x'] + px * c + pz * s_)
+                    zs_.append(it['z'] - px * s_ + pz * c)
+            out.append((min(xs) - pad, max(xs) + pad, min(zs_) - pad, max(zs_) + pad))
+    return out
+
+
+PROP_RECTS = placed_rects()
+KEEP_PTS = [tuple(q) for q in PLACED['keep_clear']['points']]
+KEEP_PATHS = [[tuple(q) for q in path] for path in PLACED['keep_clear']['paths']]
+
+
+def near_keep(x, z, r):
+    """人の置き場所・町の人の道すじから r より近いか（低木・大きな石を置かない）"""
+    if any(math.hypot(x - px, z - pz) < r for px, pz in KEEP_PTS):
+        return True
+    for path in KEEP_PATHS:
+        for p0, p1 in zip(path[:-1], path[1:]):
+            if float(seg_dist(np.array([x]), np.array([z]), p0, p1)[0]) < r:
+                return True
+    return False
+
+
+# 砂利のむら（ゲームの (x, z, 半径 x, 半径 z, 回転)）：木戸の下の踏み固めた砂利、荷置き場、詰所の囲い
+GRAVEL = [(0.0, 16.45, 2.5, 0.95, 0.0), (-8.7, 12.1, 1.5, 1.05, 0.35), (-10.9, 9.3, 1.3, 0.85, -0.25), (14.9, -6.3, 1.5, 0.95, 0.15)]
 
 
 # ---------------------------------------------------------------------------
@@ -742,8 +1068,11 @@ def stone_blocks(bm, col_layer):
                 if under_bridge:
                     top = min(top, 0.03)          # 渡り石の下（渡り石の上に出ないように）
                 chip = rng.uniform(0.015, 0.03) if rng.random() < 0.3 else 0.0
+                col = curb_color(rng)
+                if kind == 'house' and rng.random() < 0.35:
+                    col = (col[0] * 0.86, col[1] * 0.95, col[2] * 0.76, 1.0)      # 家の側の縁石に苔
                 ymax, vs = split_stone(bm, col_layer, rng, xa + 0.006, xb - 0.006, z + gap / 2, z + ln - gap / 2,
-                                       top, -0.34, bevel=rng.uniform(0.03, 0.045), color=curb_color(rng), chip=chip)
+                                       top, -0.34, bevel=rng.uniform(0.03, 0.045), color=col, chip=chip)
                 lim = (g + 0.03) if kind == 'road' else 0.03 if under_bridge else 9.0
                 if ymax > lim:
                     # 道側の上端は道から 3 cm まで（出すぎた石は沈める）
@@ -752,10 +1081,12 @@ def stone_blocks(bm, col_layer):
                 if z + ln < zend - 0.05:
                     joints.append(((xa + xb) / 2, z + ln, kind, s))
                 z += ln
-        # 両端の石（溝をふさぐ）
-        for za, zb in ((z0, z0 + 0.16), (z1 - 0.16, z1)):
+        # 両端の石（溝をふさぐ）。外の端は地面の穴の縁の下へ 3 cm 差し込み、上端は穴の縁の地面より上に
+        # （低い目線で溝の先を見たとき、石と穴の縁のすき間から下の何もない所が白い線に見えないように）
+        for za, zb, edge in ((z0 - 0.03, z0 + 0.16, z0), (z1 - 0.16, z1 + 0.03, z1)):
             g = float(terrain_height_at(np.array([(hx0 + hx1) / 2]), np.array([(za + zb) / 2]))[0])
-            split_stone(bm, col_layer, rng, hx0 + 0.005, hx1 - 0.005, za + 0.005, zb - 0.005, g + 0.012, -0.34, bevel=0.03,
+            ge = float(np.max(terrain_height_at(np.array([hx0, (hx0 + hx1) / 2, hx1]), np.array([edge, edge, edge]))))
+            split_stone(bm, col_layer, rng, hx0 + 0.005, hx1 - 0.005, za + 0.005, zb - 0.005, max(g, ge) + 0.012, -0.34, bevel=0.03,
                         color=curb_color(rng), tilt=0.012)
         # 渡り石（入口の前の平たい板石）
         for (za, zb) in BRIDGES[name]:
@@ -776,7 +1107,10 @@ ROCKS = [  # ゲームの (x, z, 半径, 高さの比, 細かさ)
 ]
 # 町家・路地に掛かる石は置かない（町家の置き場所を動かしたとき）
 ROCKS = [r for r in ROCKS if not any(in_rect(r[0], r[1], h, r[2] + 0.2) for h in HOUSE_BODY + HOUSE_APRON)
-         and not (ALLEY[0] - 0.3 < r[1] < ALLEY[1] + 0.3 and -11.0 < r[0] < -3.0)]
+         and not (ALLEY[0] - 0.3 < r[1] < ALLEY[1] + 0.3 and -11.0 < r[0] < -3.0)
+         and not any(in_rect(r[0], r[1], h, r[2] + 0.3) for h in PROP_RECTS)
+         and not any(math.hypot(r[0] - t['x'], r[1] - t['z']) < r[2] + 0.6 for t in STREET['trees'])
+         and not (r[2] >= 0.33 and near_keep(r[0], r[1], r[2] + 0.9))]
 
 
 def rocks(bm, col_layer):
@@ -812,6 +1146,13 @@ def build_stones():
     col_layer = bm.verts.layers.float_color.new(mats.COLOR_ATTR)
     joints = stone_blocks(bm, col_layer)
     rocks(bm, col_layer)
+    # 水際：側溝の中（地面より下）の石の面は濡れて暗く、少し緑（苔）。道の面より上は乾いたまま
+    for v in bm.verts:
+        z = v.co.z
+        if z < -0.02:
+            k = min(1.0, (-0.02 - z) / 0.12)
+            c = v[col_layer]
+            v[col_layer] = (c[0] * (1 - 0.48 * k), c[1] * (1 - 0.4 * k), c[2] * (1 - 0.52 * k), 1.0)
     me = bpy.data.meshes.new('ground_stone')
     bm.normal_update()
     bm.to_mesh(me)
@@ -862,6 +1203,28 @@ def build_ditch_beds():
             for k in range(n):
                 a = base + k * 2
                 faces.append((a, a + 2, a + 3, a + 1))
+    # 浅い水面（溝の底 −0.26 の上 9 cm。縁石の間いっぱい）
+    wv, wf, wc = [], [], []
+    for d in DITCH.values():
+        (z0, z1) = d['z']
+        cx0, cx1 = d['chan']
+        n = max(2, int((z1 - z0) / 0.6))
+        base = len(wv)
+        for k in range(n + 1):
+            z = z0 + 0.12 + (z1 - z0 - 0.24) * k / n
+            y = -0.17 + rng.uniform(-0.003, 0.003)
+            wv += [(cx0 - 0.03, -z, y), (cx1 + 0.03, -z, y)]
+            g = rng.uniform(0.9, 1.08)
+            wc += [(0.95 * g, 1.0 * g, 0.92 * g)] * 2
+        for k in range(n):
+            a_ = base + k * 2
+            wf.append((a_, a_ + 2, a_ + 3, a_ + 1))
+    water = mesh_object('ground_ditch_water', wv, wf, mat_slots=[water_material()])
+    for pg in water.data.polygons:
+        if pg.normal.z < 0:
+            pg.flip()
+    set_point_colors(water, np.array(wc))
+    water['cast'] = False
     o = mesh_object('ground_ditch_bed', verts, faces, mat_slots=[mats.get('earth_road', vcol=True)])
     # 面は上向きに（Y が -z なので並びを確かめる）
     for p in o.data.polygons:
@@ -871,7 +1234,7 @@ def build_ditch_beds():
     bpy.context.view_layer.update()
     mats.uv_box(o)
     set_point_colors(o, np.array(cols))
-    return o, (fill0, len(verts))
+    return o, (fill0, len(verts)), water
 
 
 # ---------------------------------------------------------------------------
@@ -903,6 +1266,8 @@ def _ok_ground(x, z, r):
     """重ねる石を置けるか（建物・塀・溝・渡り石・門の礎石・草地・轍を避ける）"""
     ax = abs(x)
     if any(in_rect(x, z, rr, r + 0.08) for rr in HOUSE_BODY + HOUSE_APRON) or any(in_rect(x, z, rr, r + 0.1) for rr in wall_rects()):
+        return False
+    if any(in_rect(x, z, rr, r + 0.05) for rr in PROP_RECTS):
         return False
     if any(in_rect(x, z, (d['hole'][0], d['hole'][1], d['z'][0], d['z'][1]), r + 0.06) for d in DITCH.values()):
         return False
@@ -1082,6 +1447,31 @@ def add_drip_strip(ov, rng, p0, p1, width=0.24, step=0.25):
                 add_pebble(ov, rng, x_, z_, rng.uniform(0.015, 0.03), (0.76 * kk, 0.72 * kk, 0.66 * kk))
 
 
+def add_gravel_patch(ov, rng, cx, cz, rx, rz, rot):
+    """砂利のむら：中は地面より 6 mm 上、縁は揃わない輪郭で地面の下へもぐる（土 ↔ 砂利の移り変わり）"""
+    seg = 18
+    th = np.arange(seg) / seg * math.tau
+    wob = 1 + 0.16 * np.sin(3 * th + rng.uniform(0, 6)) + 0.08 * np.sin(7 * th + rng.uniform(0, 6))
+
+    def ring(f):
+        lx = np.cos(th) * rx * f * wob
+        lz = np.sin(th) * rz * f * wob
+        return cx + lx * math.cos(rot) - lz * math.sin(rot), cz + lx * math.sin(rot) + lz * math.cos(rot)
+    col = np.array([1.0, 0.95, 0.88])
+    c = ov.add(cx, float(terrain_height_at(np.array([cx]), np.array([cz]))[0]) + 0.007, cz, tuple(col * 0.97))
+    rings = []
+    for f, dy, k in ((0.45, 0.007, 0.98), (0.8, 0.005, 0.95), (1.0, -0.004, 0.86)):
+        xs, zs = ring(f)
+        g = terrain_height_at(xs, zs)
+        rings.append([ov.add(xs[i], g[i] + dy, zs[i], tuple(col * k * rng.uniform(0.95, 1.04))) for i in range(seg)])
+    for i in range(seg):
+        i1 = (i + 1) % seg
+        ov.tri(c, rings[0][i], rings[0][i1], 2)
+        for a_, b_ in ((rings[0], rings[1]), (rings[1], rings[2])):
+            ov.tri(a_[i], b_[i], b_[i1], 2)
+            ov.tri(a_[i], b_[i1], a_[i1], 2)
+
+
 def pebble_spots(rng):
     """塀・町家の根元の締まった土の上の小石（3〜6 個のまとまり）"""
     spots = []
@@ -1114,6 +1504,8 @@ def build_overlay():
         add_flat_stone(ov, rng, x, z, r)
     for p0, p1 in DRIP_LINES:
         add_drip_strip(ov, rng, p0, p1)
+    for g in GRAVEL:
+        add_gravel_patch(ov, rng, *g)
     peb = pebble_spots(rng)
     for x, z, r in peb:
         k = rng.uniform(0.72, 1.08)
@@ -1333,7 +1725,7 @@ def build_fence():
 # 草・羊歯・つつじ（plants.glb の部品を置いて、種類ごとに 1 つにまとめる）
 # ---------------------------------------------------------------------------
 
-def _plant_ok(x, z, avoid_road=True):
+def _plant_ok(x, z, avoid_road=True, shrub=False):
     if avoid_road and abs(x) < ROAD_HW + 0.1 and not (abs(z - EW_Z) < 0.9):
         return False
     if any(in_rect(x, z, r, 0.05) for r in HOUSE_BODY + HOUSE_APRON) or any(in_rect(x, z, r, 0.02) for r in wall_rects()):
@@ -1348,25 +1740,36 @@ def _plant_ok(x, z, avoid_road=True):
         return False
     if any(math.hypot(x - rx, z - rz) < rr + 0.1 for rx, rz, rr, *_ in ROCKS):
         return False
-    if any(math.hypot(x - t['pos'][0], z - t['pos'][1]) < 0.7 for t in L['trees']):
+    if any(math.hypot(x - t['x'], z - t['z']) < 0.45 for t in STREET['trees']):
+        return False
+    # 小物の足元（柵の帯は根元に草が生えてよいので、柵の間だけは許す）
+    if any(in_rect(x, z, r, 0.08 if shrub else 0.03) for r in PROP_RECTS if (r[1] - r[0]) * (r[3] - r[2]) > 0.06 or shrub):
+        return False
+    if shrub and near_keep(x, z, 1.0):
+        return False
+    # 木戸の口（道の続き）・路地（町家 D と土蔵造りの店の間）は空ける
+    if abs(x) < 2.8 and abs(z - FENCE_S) < 1.6:
+        return False
+    if 4.2 < x < 10.0 and 11.0 < z < 12.4 and not (abs(z - 11.05) < 0.12 or abs(z - 12.3) < 0.12):
         return False
     return True
 
 
 def plant_spots(joints):
+    """
+    草むら・低木の置き場所（Version 28）。まとまりと抜けを付ける：
+    塀の根元・柵と板塀の裾・家の脇（妻の壁の根元）・側溝の縁石の目地と端・木の根元・木戸の外の道の縁。
+    つつじは羊歯・草と組にして置く（ひとつだけの暗い塊にしない）
+    """
     rng = np.random.default_rng(81)
-    spots = [('shrub_azalea', -13.6, -10.85, 1.0), ('shrub_azalea', -10.3, -10.95, 0.85), ('shrub_azalea', 5.3, -11.0, 0.8),
-             ('shrub_azalea', 6.62, -1.9, 0.85),
-             ('shrub_fern', -5.2, -10.8, 0.9), ('shrub_fern', 6.62, -10.95, 0.85), ('shrub_fern', -8.8, -7.75 + DZW, 0.8)]
-    # 塀の根元・家の前の低木の中景（つつじ・羊歯のかたまり）
-    extra = [('shrub_azalea', -7.0, -10.95, 1.15), ('shrub_fern', -6.3, -10.8, 1.0), ('shrub_azalea', -12.0, -10.9, 1.1),
-             ('shrub_azalea', 8.0, -10.95, 1.1), ('shrub_fern', 9.2, -10.85, 1.0), ('shrub_azalea', 10.4, -10.95, 1.2),
-             ('shrub_fern', 4.55, -10.85, 0.9), ('shrub_azalea', NS_X - WALL_HALF - 0.55, -7.6, 1.0),
-             ('shrub_fern', NS_X - WALL_HALF - 0.5, -5.0, 0.95), ('shrub_azalea', NS_X - WALL_HALF - 0.55, 0.4, 0.9),
-             ('shrub_fern', -4.6, -10.85, 0.8), ('shrub_azalea', -9.0, -10.95, 0.95)]
-    spots += [sp for sp in extra if _plant_ok(sp[1], sp[2], avoid_road=False)]
-    print('extra shrubs placed:', sum(_plant_ok(sp[1], sp[2], avoid_road=False) for sp in extra), '/', len(extra))
+    spots = []
     grass = ('grass_a', 'grass_b', 'grass_c')
+
+    def add(kind, x, z, sc, shrub=False, avoid_road=False):
+        if _plant_ok(x, z, avoid_road=avoid_road, shrub=shrub):
+            spots.append((kind, x, z, sc))
+            return True
+        return False
 
     def cluster(cx, cz, n, rad=0.28, smin=0.55, smax=1.05, avoid_road=True):
         k = tries = 0
@@ -1374,32 +1777,90 @@ def plant_spots(joints):
             tries += 1
             a, d = rng.uniform(0, math.tau), rad * math.sqrt(rng.random())
             x, z = cx + d * math.cos(a), cz + d * math.sin(a) * 0.8
-            if not _plant_ok(x, z, avoid_road):
-                continue
-            spots.append((grass[rng.integers(3)], x, z, rng.uniform(smin, smax)))
-            k += 1
+            if add(grass[rng.integers(3)], x, z, rng.uniform(smin, smax), avoid_road=avoid_road):
+                k += 1
 
-    def clusters(m, x0, x1, z0, z1, nmin=3, nmax=8, **kw):
-        for _ in range(m):
-            cluster(rng.uniform(x0, x1), rng.uniform(z0, z1), int(rng.integers(nmin, nmax + 1)), **kw)
+    def shrub_group(cx, cz, sc=0.85, azalea=True):
+        """低木の組：つつじ（小さめ）＋羊歯＋草（どれかが置けなければ、置ける物だけ）"""
+        if azalea:
+            add('shrub_azalea', cx, cz, sc * rng.uniform(0.75, 0.9), shrub=True)
+        add('shrub_fern', cx + rng.uniform(0.35, 0.55) * rng.choice((-1, 1)), cz + rng.uniform(-0.25, 0.25), sc * rng.uniform(0.8, 1.0), shrub=True)
+        cluster(cx + rng.uniform(-0.3, 0.3), cz + rng.uniform(-0.3, 0.3), int(rng.integers(3, 6)), rad=0.45, avoid_road=False)
 
-    # 塀の根元（締まった土と雨落ちの際に、3〜6 株のまとまり）
+    def along(p0, p1, step, off, fn):
+        """p0→p1 の線に沿って、step ごとに（間を抜きながら）fn(x, z)"""
+        (xa, za), (xb, zb) = p0, p1
+        ln = math.hypot(xb - xa, zb - za)
+        ux, uz = (xb - xa) / ln, (zb - za) / ln
+        nx, nz = -uz, ux
+        t = rng.uniform(0, step)
+        while t < ln:
+            if rng.random() > 0.3:               # 3 割は抜く（まとまりと抜け）
+                o = off * rng.uniform(0.6, 1.3)
+                fn(xa + ux * t + nx * o, za + uz * t + nz * o)
+            t += step * rng.uniform(0.7, 1.3)
+
+    # ---- 塀の根元（Version 27 と同じ所）
     for x in (-15.8, -11.6, -8.3, -6.0, -3.4, 3.35, 4.6, 6.4):
-        cluster(x + rng.uniform(-0.3, 0.3), EW_Z + WALL_HALF + rng.uniform(0.08, 0.3), int(rng.integers(3, 6)), avoid_road=False)
+        cluster(x + rng.uniform(-0.3, 0.3), EW_Z + WALL_HALF + rng.uniform(0.08, 0.3), int(rng.integers(3, 5)), avoid_road=False)
     for z in (-9.6, -5.8, -1.9, 1.8):
         cluster(NS_X - WALL_HALF - rng.uniform(0.08, 0.3), z + rng.uniform(-0.3, 0.3), int(rng.integers(3, 6)))
     for x in (-9.5, -5.2, 4.4):
         cluster(x, EW_Z - WALL_HALF - rng.uniform(0.08, 0.3), 3)
     for x in (-9.4, -7.1):
         cluster(x, -5.75 + DZW, 3, rad=0.2)
+    # 塀の根元の低木の組（城門の脇・城内側）。休み場・援兵・高札の前は空ける
+    for (x, z) in ((-13.6, -10.85), (-10.3, -10.95), (-7.0, -10.95), (5.3, -11.0), (8.6, -10.95), (10.6, -10.95), (-12.0, -13.4), (6.0, -13.3)):
+        shrub_group(x, z, azalea=rng.random() < 0.6)
+    # ---- 柵の裾（町の南の境）・西の小屋の板塀の裾・木戸の柱の根元
+    along((-20.5, FENCE_S - 0.2), (-8.6, FENCE_S - 0.2), 2.6, 0.0, lambda x, z: cluster(x, z, int(rng.integers(2, 4)), rad=0.3, avoid_road=False))
+    along((-20.5, FENCE_S + 0.25), (-3.3, FENCE_S + 0.25), 2.2, 0.0, lambda x, z: cluster(x, z, int(rng.integers(2, 4)), rad=0.3, avoid_road=False))
+    along((9.9, FENCE_S + 0.25), (19.5, FENCE_S + 0.25), 2.2, 0.0, lambda x, z: cluster(x, z, int(rng.integers(2, 4)), rad=0.3, avoid_road=False))
+    along((10.0, FENCE_S - 0.2), (19.5, FENCE_S - 0.2), 2.8, 0.0, lambda x, z: cluster(x, z, int(rng.integers(2, 4)), rad=0.3, avoid_road=False))
+    along((-4.32, 13.0), (-4.32, 16.2), 1.1, 0.0, lambda x, z: cluster(x, z, int(rng.integers(2, 4)), rad=0.18, avoid_road=False))
+    along((-4.8, 13.0), (-4.8, 16.2), 1.6, 0.0, lambda x, z: cluster(x, z, 2, rad=0.2, avoid_road=False))
+    for s_ in (-1, 1):
+        cluster(s_ * 3.15, FENCE_S + 0.3, 3, rad=0.15, avoid_road=False)
+    # ---- 家の脇（妻の壁の根元）：町家 A の北・B の南・D の北・土蔵の南、路地の両側
+    a_, b_, d_, k_ = (_solid(i, 'body') for i in ('machiya_a28', 'machiya_b28', 'machiya_d28', 'kura28'))
+    along((a_['x0'] + 0.3, a_['z0'] - 0.18), (a_['x1'] - 0.3, a_['z0'] - 0.18), 1.3, 0.0, lambda x, z: cluster(x, z, 3, rad=0.2, avoid_road=False))
+    along((b_['x0'] + 0.3, b_['z1'] + 0.18), (b_['x1'] - 0.2, b_['z1'] + 0.18), 1.3, 0.0, lambda x, z: cluster(x, z, 3, rad=0.18, avoid_road=False))
+    along((d_['x0'] + 0.4, d_['z0'] - 0.18), (d_['x1'] - 0.2, d_['z0'] - 0.18), 1.2, 0.0, lambda x, z: cluster(x, z, 3, rad=0.18, avoid_road=False))
+    along((k_['x0'] + 0.5, k_['z1'] + 0.2), (k_['x1'] - 0.2, k_['z1'] + 0.2), 1.0, 0.0, lambda x, z: cluster(x, z, 3, rad=0.15, avoid_road=False))
+    along((d_['x0'] + 0.6, d_['z1'] + 0.1), (d_['x1'] - 0.3, d_['z1'] + 0.1), 1.6, 0.0, lambda x, z: cluster(x, z, 2, rad=0.1, avoid_road=False))
+    along((k_['x0'] + 0.6, k_['z0'] - 0.1), (k_['x1'] - 0.3, k_['z0'] - 0.1), 1.6, 0.0, lambda x, z: cluster(x, z, 2, rad=0.1, avoid_road=False))
+    # 西の荷置き場の奥（町家 B の裏・小屋の裏）
     if FENCE_Z > -10.0:
-        clusters(4, -17.5, -5.0, -11.0, FENCE_Z - 0.35, nmin=3, nmax=6, smin=0.7, smax=1.2)        # 空き地
-    else:
-        clusters(4, -17.5, -11.4, -11.0, -4.0, nmin=3, nmax=6, smin=0.7, smax=1.2)        # 町家 A の裏
-    # 縁石の目地（約 2 割。見える所だけ）から小さな草
-    for x, z, kind, s in joints:
-        if -16.0 < z < 8.0 and rng.random() < 0.2:
+        pass
+    for (x, z) in ((-11.6, 8.6), (-7.2, 9.3), (-13.6, 11.6), (-12.8, 15.4), (-9.6, 15.6)):
+        cluster(x, z, int(rng.integers(2, 4)), rad=0.35, avoid_road=False)
+    # ---- 木の根元（羊歯と草）
+    for t in STREET['trees']:
+        if not (AREA['x0'] < t['x'] < AREA['x1'] and AREA['z0'] < t['z'] < AREA['z1']):
+            continue
+        for k in range(int(rng.integers(1, 3))):
+            a = rng.uniform(0, math.tau)
+            d = rng.uniform(0.6, 1.3)
+            x, z = t['x'] + d * math.cos(a), t['z'] + d * math.sin(a)
+            if rng.random() < 0.45:
+                add('shrub_fern', x, z, rng.uniform(0.7, 0.95), shrub=True)
+            else:
+                cluster(x, z, int(rng.integers(2, 4)), rad=0.3, avoid_road=False)
+    # ---- 木戸の外の道の縁
+    for s_ in (-1, 1):
+        along((s_ * (ROAD_HW + 0.7), FENCE_S + 0.8), (s_ * (ROAD_HW + 0.7), 19.6), 1.3, 0.0,
+              lambda x, z: cluster(x + rng.uniform(-0.4, 0.8) * (1 if x > 0 else -1), z, int(rng.integers(2, 5)), rad=0.4, smin=0.7, smax=1.25, avoid_road=False))
+    # ---- 側溝の縁石の目地（見える所の 3 割）と、側溝の端
+    for x, z, kind, s_ in joints:
+        if rng.random() < 0.2:
             spots.append((grass[1 + rng.integers(2)], x + rng.uniform(-0.03, 0.03), z, rng.uniform(0.3, 0.5)))
+    for d in DITCH.values():
+        for zz in d['z']:
+            cluster((d['hole'][0] + d['hole'][1]) / 2 + d['side'] * 0.35, zz + (0.25 if zz > 0 else -0.25), 3, rad=0.15, avoid_road=False)
+    # 空き地（Version 27：町家 A の裏）
+    for _ in range(3):
+        cluster(rng.uniform(-17.5, -11.4), rng.uniform(-11.0, -4.0), int(rng.integers(3, 5)), smin=0.7, smax=1.2)
+    print('plant spots', len(spots), {k: sum(1 for s_ in spots if s_[0] == k) for k in ('grass_a', 'grass_b', 'grass_c', 'shrub_azalea', 'shrub_fern')})
     return spots
 
 
@@ -1407,7 +1868,7 @@ def build_plants(joints):
     root, objs = asm.load_glb('_plants_kit', MODELS_DIR / 'plants.glb')
     kit = {o.name.split('.')[0]: o for o in objs if o.type == 'MESH'}
     rng = np.random.default_rng(91)
-    groups = {'ground_grass': [], 'ground_fern': [], 'ground_azalea': []}
+    groups = {'plants_grass': [], 'plants_fern': [], 'plants_azalea': []}
     for kind, x, z, sc in plant_spots(joints):
         src = kit[kind]
         c = src.copy()
@@ -1415,9 +1876,10 @@ def build_plants(joints):
         bpy.context.scene.collection.objects.link(c)
         c.parent = None
         y = float(terrain_height_at(np.array([x]), np.array([z]))[0])
-        c.matrix_world = (mathutils.Matrix.Translation(g2b(x, y - 0.01, z)) @ mathutils.Matrix.Rotation(rng.uniform(0, math.tau), 4, 'Z')
-                          @ mathutils.Matrix.Scale(sc, 4))
-        g = 'ground_grass' if kind.startswith('grass') else ('ground_fern' if kind == 'shrub_fern' else 'ground_azalea')
+        # つつじは少し平たく、横に不揃いに（丸い塊に見せない）
+        S = mathutils.Matrix.Diagonal((sc * rng.uniform(0.9, 1.15), sc * rng.uniform(0.85, 1.1), sc * (0.78 if kind == 'shrub_azalea' else 1.0), 1.0))
+        c.matrix_world = (mathutils.Matrix.Translation(g2b(x, y - 0.01, z)) @ mathutils.Matrix.Rotation(rng.uniform(0, math.tau), 4, 'Z') @ S)
+        g = 'plants_grass' if kind.startswith('grass') else ('plants_fern' if kind == 'shrub_fern' else 'plants_azalea')
         groups[g].append(c)
     out = []
     for name, cs in groups.items():
@@ -1430,8 +1892,16 @@ def build_plants(joints):
         o.data.name = name
         o.data.transform(o.matrix_world)
         o.matrix_world = mathutils.Matrix.Identity(4)
-        o['cast'] = not name == 'ground_grass'
+        o['cast'] = not name == 'plants_grass'
         o['receive'] = True
+        if name == 'plants_azalea':
+            # Version 27 のつつじは奥が暗すぎて黒い塊に見えた：頂点色（体積の遮蔽）の暗さを半分にし、葉の緑を少し明るく
+            a = o.data.color_attributes.get(mats.COLOR_ATTR) or o.data.color_attributes[0]
+            buf = np.empty(len(a.data) * 4, np.float32)
+            a.data.foreach_get('color', buf)
+            buf = buf.reshape(-1, 4)
+            buf[:, :3] = np.clip((0.45 + 0.55 * buf[:, :3]) * np.array([1.06, 1.12, 0.96]), 0, 1)
+            a.data.foreach_set('color', buf.ravel())
         out.append(o)
     for o in objs:
         bpy.data.objects.remove(o, do_unlink=True)
@@ -1450,13 +1920,46 @@ def write_meta(stats):
     for x, z, r, *_ in ROCKS:
         if r >= 0.33:
             col.append(dict(x0=round(x - r * 0.8, 3), x1=round(x + r * 0.8, 3), z0=round(z - r * 0.8, 3), z1=round(z + r * 0.8, 3)))
-    d = {'name': 'ground_v2', 'coords': 'game (x east, y up, z south), meters',
-         '_about': '地面の素材の当たり判定（空き地の四つ目垣と大きな石）。側溝は歩いて渡れる（当たり判定なし）。カメラ除けの箱は無し（低い物だけ）。',
-         'colliders': col, **stats}
+    d = {'name': 'ground_v3', 'coords': 'game (x east, y up, z south), meters',
+         '_about': '地面の素材（Version 28）の当たり判定（大きな石）。側溝は歩いて渡れる（当たり判定なし）。カメラ除けの箱は無し（低い物だけ）。'
+                   'built_from は制作が読んだ通りの配置（street28.json）の値（tests/proto3d-town.test.ts が今の表と同じかを確かめる：表を変えたら地面を作り直す）。',
+         'colliders': col,
+         'built_from': {
+             'buildings': [{'id': b['id'], 'footprint': b['footprint']} for b in STREET['buildings']],
+             'ditches': [{'name': d_['name'], 'x': d_['x'], 'z': d_['z']} for d_ in STREET['edges']['ditches']],
+             'road_half_width': ROAD_HW,
+             'trees': [{'name': t['name'], 'x': t['x'], 'z': t['z']} for t in STREET['trees']],
+             'props_placed': len(PLACED['placed']),
+             'kido_z': FENCE_S,
+             'fields': FIELDS,
+         },
+         **stats}
     META.write_text(json.dumps(d, ensure_ascii=False, indent=2) + '\n')
 
 
 # ---------------------------------------------------------------------------
+
+def bake_terrain_ao(terrain, size, quick):
+    """
+    地面の ORM（R 遮蔽）：空の見え方（6 m）と、接地の陰（0.7 m：建物・小物・木の根元の周り）を 2 回焼いて掛ける。
+    画像は build/ground_v3/ に置く（共有の build の新しいフォルダ）
+    """
+    path = WORK / 'ground_terrain_v3.png'
+    img = mats.bake_ao_to_texture(terrain, size, 'lightmap', samples=12 if quick else 32, distance=6.0, strength=0.85,
+                                  ground_plane=False, margin=4, blur_px=1, path=path)
+    sky = np.empty(size * size * 4, np.float32)
+    img.pixels.foreach_get(sky)
+    img = mats.bake_ao_to_texture(terrain, size, 'lightmap', samples=12 if quick else 40, distance=0.7, strength=0.6,
+                                  ground_plane=False, margin=4, blur_px=1, path=path)
+    near = np.empty(size * size * 4, np.float32)
+    img.pixels.foreach_get(near)
+    px = near.reshape(-1, 4)
+    px[:, :3] = px[:, :3] * sky.reshape(-1, 4)[:, :3]
+    img.pixels.foreach_set(px.ravel())
+    img.save()
+    print('terrain AO: sky × contact, p1/p50', np.percentile(px[:, 0], [1, 50]).round(3))
+    return img
+
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
@@ -1469,17 +1972,18 @@ def main(argv=None):
     reset()
     terrain = build_terrain()
     far = build_far()
+    fields = build_fields()
     stone, joints = build_stones()
-    bed, fill_rng = build_ditch_beds()
+    bed, fill_rng, water = build_ditch_beds()
     fence = build_fence() if FENCE_RUNS else []
     plants = build_plants(joints)
     overlay, pts, ov_cols, ov_V = build_overlay()
-    ground = [terrain, far, stone, bed, *fence, *plants]
-    print('built in', round(time.time() - t0, 1), 's; triangles', {o.name: triangles([o]) for o in ground + [overlay]})
+    ground = [terrain, far, fields, stone, bed, water, *fence]
+    print('built in', round(time.time() - t0, 1), 's; triangles', {o.name: triangles([o]) for o in ground + plants + [overlay]})
     img = None
     if not a.no_bake:
-        # 周りの建物・木を置いたまま焼く（遮るものとして）。重ねる物は地面の焼き込みには入れない（下の地面が黒くなるので）
-        others = asm.assemble(ground=False, hero=False, back_trees=False)
+        # 周りの建物・小物・木を置いたまま焼く（遮るものとして）。重ねる物は地面の焼き込みには入れない（下の地面が黒くなるので）
+        others = asm.assemble28()
         overlay.hide_render = True
         detail = [stone, bed, *fence]
         fill_cols = get_point_colors(bed)[fill_rng[0]:fill_rng[1]]
@@ -1492,13 +1996,12 @@ def main(argv=None):
         mats.bake_ao_to_color([terrain], ground_plane=False, samples=16 if a.quick else 48, distance=0.6, strength=0.3)
         capture_terrain_ao(terrain)
         print('terrain vcol AO', round(time.time() - t0, 1))
-        # 地面：空の見え方（長い距離の AO）を occlusionTexture に。草の板は遮る物から外す
-        for o in plants:
+        # 地面：空の見え方と接地の陰を occlusionTexture に。草の板・水面は遮る物から外す
+        for o in plants + [water]:
             o.hide_render = True
-        img = mats.bake_ao_to_texture(terrain, 1024 if a.quick else 2048, 'lightmap', samples=12 if a.quick else 32, distance=6.0,
-                                      strength=0.85, ground_plane=False, margin=4, blur_px=1)
+        img = bake_terrain_ao(terrain, 1024 if a.quick else 2048, a.quick)
         add_roughness_to_lightmap(terrain, img)
-        for o in plants:
+        for o in plants + [water]:
             o.hide_render = False
         overlay.hide_render = False
         print('terrain tex AO', round(time.time() - t0, 1))
@@ -1510,19 +2013,21 @@ def main(argv=None):
                 bpy.data.objects.remove(root, do_unlink=True)
     merge_overlay(terrain, overlay, ov_cols, ov_V, img)
     # 書き出し：不透明の画像は JPEG に（草の板の PNG は透明を残す）
-    gtx.jpeg_materials({s.material for o in ground for s in o.material_slots})
+    gtx.jpeg_materials({s_.material for o in ground for s_ in o.material_slots})
     size = export_glb(out_path, ground, jpeg=False)
     tri = triangles(ground)
     per = {o.name: triangles([o]) for o in ground}
     print('exported', out_path, size, 'bytes', tri, 'tris', per, round(time.time() - t0, 1), 's')
-    s = mats.glb_summary(out_path)
-    for m in s['materials']:
+    psize = export_glb(OUT_PLANTS, plants, jpeg=False)
+    ptri = triangles(plants)
+    print('exported', OUT_PLANTS, psize, 'bytes', ptri, 'tris', {o.name: triangles([o]) for o in plants})
+    s_ = mats.glb_summary(out_path)
+    for m in s_['materials']:
         print(' mat', m)
-    for p in s['primitives']:
-        print(' prim', p)
-    print(' images', s['images'])
+    print(' images', s_['images'])
     if out_path == OUT:
-        write_meta(dict(triangles=tri, glb_bytes=size, embedded_stones=len(pts)))
+        write_meta(dict(triangles=tri, glb_bytes=size, embedded_stones=len(pts), plants=dict(glb='models/ground_plants28.glb', triangles=ptri, glb_bytes=psize),
+                        triangles_by_part=per))
 
 
 if __name__ == '__main__':

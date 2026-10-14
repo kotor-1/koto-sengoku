@@ -1,5 +1,5 @@
 """
-地面（ground_v2.glb の ground_terrain）の高さを格子で書き出す。ゲームは主人公の足の高さをこの格子から読む（起伏で足が沈まない・浮かないように）。
+地面（Version 28 の ground_v3.glb の ground_terrain。Version 27 は ground_v2.glb）の高さを格子で書き出す。ゲームは主人公の足の高さをこの格子から読む（起伏で足が沈まない・浮かないように）。
 
     python3 proto3d/blender/scene/ground_height.py
 
@@ -16,7 +16,7 @@ import struct
 import numpy as np
 
 HERE = pathlib.Path(__file__).resolve().parent
-GLB = HERE.parents[1] / 'public' / 'models' / 'ground_v2.glb'
+GLB = HERE.parents[1] / 'public' / 'models' / 'ground_v3.glb'
 OUT = HERE / 'ground_height.json'
 X0, X1, Z0, Z1, STEP = -20.0, 20.0, -26.0, 20.0, 0.25
 
