@@ -5,7 +5,7 @@
 //
 // 準備（公開と同じ作り。/home/user/ks-prod のような別の作業場所で）：
 //   rm -rf dist-proto3d && VITE_MODEL_EXT=.json npm run proto3d:build && rm -f dist-proto3d/models/*.glb && \
-//   node proto3d/tools/glb-to-gltf.mjs proto3d/public/models dist-proto3d/models ground_v2 gate_v2 walls_v2 keep inner machiya_a machiya_b machiya_d tree_pine tree_sakura tree_pine_far hero_v3_mpfb hero_v2
+//   node proto3d/tools/glb-to-gltf.mjs proto3d/public/models dist-proto3d/models ground_v2 gate_v2 walls_v2 keep inner machiya_a machiya_b machiya_d tree_pine tree_sakura tree_pine_far hero_v3b_mpfb hero_v2b
 // 使い方：DIST=<本番ビルドの dist-proto3d> node e2e/story-prod.mjs [出力先]   （PORT=8133 VIEW=844x390 で変えられる）
 // この中で、次のヘッダー付きの簡易サーバーを立てる（e2e/ieyasu-prod.mjs と同じ作り）：
 //   content-security-policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'

@@ -15,6 +15,9 @@ import { blockersForTest } from '../proto3d/src/game/follow';
 import { createHero } from '../proto3d/src/game/motion';
 import { START, cameraBlockers, colliders, type Rect } from '../proto3d/src/layout';
 import type { StageEvent } from '../proto3d/src/story/types';
+import { ieyasuCinematic } from '../proto3d/src/campaign/ieyasu1570/story/cinematics';
+import { newIeyasuGame } from '../proto3d/src/campaign/ieyasu1570/flow';
+import { ch1Cases, ch2Starts } from './proto3d-ieyasu-story-states';
 
 const ALL = colliders();
 const inside = (r: Rect, x: number, z: number) => x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1;
@@ -48,7 +51,20 @@ const EVENTS: StageEvent[] = [
     { id: 'town_life', hero: false },
     { id: 'envoys_arrive', envoys: [{ look: 'tashiro_envoy', name: '織田家の使者' }, { look: 'omori_envoy', name: '浅井家の使者' }], showHero: true },
     { id: 'retainer_report', look: 'genzo', name: '本多忠勝', castId: 'tadakatsu' },
+    // Version 28 §4.3：第一章の冒頭の短い始め（町の入口の主人公へ寄る 1 つのカメラの動き）と、操作の途中の町の急報（決めた所で始めたとき）
+    { id: 'town_life', hero: true, establish: true },
+    (ieyasuCinematic(newIeyasuGame(), 'ch1_report')!.beats[0] as { event: StageEvent }).event,
+    // Version 28 §4.3 の最後の項：第二章の冒頭の使いの急報（使い・家臣・主人公）と、号令ありの出陣（主人公の見送り・会話の相手を隠さない）
+    (() => {
+        const sp = ieyasuCinematic(ch2Starts(ch1Cases().slice(0, 4))[0]!.state, 'ch2_open')!;
+        return (sp.beats[sp.beats.length - 1] as { event: StageEvent }).event;
+    })(),
+    { id: 'column_depart', count: 24, mark: '徳', order: 1.8 },
 ];
+/** Version 28 の出来事（EVENTS の中の位置） */
+const ESTABLISH = EVENTS[14]!;
+const REPORT = EVENTS[15]!;
+const MESSENGER = EVENTS[16]!;
 /** 冒頭の出来事（EVENTS の中の位置） */
 const LIFE = EVENTS[10]!;
 const LIFE_NO_HERO = EVENTS[11]!;
@@ -98,25 +114,32 @@ describe('演出の 3D の出来事：時刻 t の純粋な関数', () => {
         }
     });
 
-    it('カメラの動きはゆっくり：向きは毎秒 12° まで、位置は毎秒 0.5 m まで（使者の場面の切り替え 1 回を除く）', () => {
+    it('カメラの動きはゆっくり：向きは毎秒 12° まで、位置は毎秒 0.5 m まで（使者の場面の切り替え 1 回・町の急報と第二章の冒頭の使いの急報の画の切り替え 2 回までを除く。冒頭の短い始めは 1 つの寄りで毎秒 2.5 m まで）', () => {
         const dir = (s: { px: number; py: number; pz: number; tx: number; ty: number; tz: number }) => new THREE.Vector3(s.tx - s.px, s.ty - s.py, s.tz - s.pz).normalize();
         for (const ev of EVENTS) {
             const step = 0.05;
             const list = shotsOver(ev, false, 30, step, CAST_EXPLORE);
             let maxAng = 0;
             let maxMove = 0;
+            let reportCuts = 0;
             for (let i = 1; i < list.length; i++) {
                 const a = list[i - 1]!;
                 const b = list[i]!;
+                const jump = Math.hypot(b.shot.px - a.shot.px, b.shot.py - a.shot.py, b.shot.pz - a.shot.pz);
                 const cut =
-                    ((ev.id === 'envoys_arrive' || ev.id === 'messenger_arrive') && a.t < ARRIVAL_CUT && b.t >= ARRIVAL_CUT) ||
-                    (ev.id === 'retainer_report' && a.t < RETAINER_CUT && b.t >= RETAINER_CUT);
-                if (cut) continue;
+                    ((ev.id === 'envoys_arrive' || (ev.id === 'messenger_arrive' && !ev.report)) && a.t < ARRIVAL_CUT && b.t >= ARRIVAL_CUT) ||
+                    (ev.id === 'retainer_report' && a.t < RETAINER_CUT && b.t >= RETAINER_CUT) ||
+                    ((ev === REPORT || ev === MESSENGER) && (jump > 0.2 || (dir(a.shot).angleTo(dir(b.shot)) * 180) / Math.PI > 5));
+                if (cut) {
+                    if (ev === REPORT || ev === MESSENGER) reportCuts++;
+                    continue;
+                }
                 maxAng = Math.max(maxAng, (dir(a.shot).angleTo(dir(b.shot)) * 180) / Math.PI / step);
-                maxMove = Math.max(maxMove, Math.hypot(b.shot.px - a.shot.px, b.shot.py - a.shot.py, b.shot.pz - a.shot.pz) / step);
+                maxMove = Math.max(maxMove, jump / step);
             }
             expect(maxAng, `${ev.id} の向きの速さ（°/秒）`).toBeLessThan(12);
-            expect(maxMove, `${ev.id} の位置の速さ（m/秒）`).toBeLessThan(0.5);
+            expect(maxMove, `${ev.id} の位置の速さ（m/秒）`).toBeLessThan(ev === ESTABLISH ? 2.5 : 0.5);
+            if (ev === REPORT || ev === MESSENGER) expect(reportCuts).toBeLessThanOrEqual(2);
         }
     });
 
@@ -465,6 +488,7 @@ describe('探索の場面の口：stage(null) で片付けて戻る', () => {
         const orbit = { yaw: 1.1, pitch: 0.2, dist: 2.1 };
         const shots: unknown[] = [];
         const poses: unknown[] = [];
+        const keep: boolean[] = [];
         const host = {
             scene,
             camera,
@@ -473,12 +497,14 @@ describe('探索の場面の口：stage(null) で片付けて戻る', () => {
             low: true,
             load: () => Promise.reject(new Error('素材なし（テスト）')),
             prepare: () => undefined,
-            setHeroPose: (p: { x: number; z: number; heading: number }) => {
+            setHeroPose: (p: { x: number; z: number; heading: number }, opts?: { keepCamera?: boolean }) => {
                 poses.push(p);
+                keep.push(!!opts?.keepCamera);
                 hero.x = p.x;
                 hero.z = p.z;
                 hero.heading = p.heading;
-                // 本物と同じく、見回しも背後へ戻す
+                // 本物と同じく、keepCamera でなければ見回しも背後へ戻す
+                if (opts?.keepCamera) return;
                 orbit.yaw = p.heading - Math.PI;
                 orbit.pitch = -0.08;
             },
@@ -531,6 +557,8 @@ describe('探索の場面の口：stage(null) で片付けて戻る', () => {
         expect({ x: hero.x, z: hero.z, heading: hero.heading }).toEqual(before);
         expect(orbit).toEqual(orbitBefore);
         expect(poses[poses.length - 1]).toEqual(before);
+        // 戻すときは見回しのカメラを変えない置き方（Version 28：出来事の後に真後ろへ戻さない）
+        expect(keep[keep.length - 1]).toBe(true);
         // 何度呼んでもよい（2 回目は何もしない）
         const n = shots.length;
         world.stage(null, 0, false);

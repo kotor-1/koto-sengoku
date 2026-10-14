@@ -189,6 +189,12 @@ export interface Scenario<S extends ScenarioStateCore = ScenarioStateCore> {
     scoutPoints?(s: S): ScoutPoint[];
     /** 物見で調べた印を記録した状態（純粋。同じ記録をもう一度入れても増えない。兵・信頼・目標は変えない） */
     scout?(s: S, pointId: string, marks: string[]): S;
+    /**
+     * 町の出来事（Version 28 §4.3：第一章の町の急報）。「はじめから」で始めた回の中だけで 1 回、操作中の主人公が zone の中へ入ったときに
+     * 演出 moment を流す（状態は読むだけ。保存に書かない・状態を変えない）。arrive はその出来事で町へ来る会話の相手（出来事の前は置かない・話せない。
+     * 出来事の後は置く）。今の状態で起こさなければ null（つづきから・確認用・第二章では ChapterGame が聞かない）
+     */
+    townEvent?(s: S): { moment: CineMoment; arrive: readonly string[]; zone(x: number, z: number): boolean } | null;
 }
 
 /** どのシナリオでも入る箱（ChapterGame が複数のシナリオを並べるとき） */

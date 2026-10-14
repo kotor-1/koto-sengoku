@@ -12,8 +12,9 @@
  */
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { FOLLOW, createOrbit, look, placeFollow } from './game/follow';
-import { CAMERA_YAW, SPEED, createHero, stepHero, type HeroState } from './game/motion';
+import { FOLLOW, createOrbit, look, placeFollow, segmentClear } from './game/follow';
+import { CAMERA_YAW, createHero, stepHero, type HeroState } from './game/motion';
+import { HeroAnimator } from './game/heroAnim';
 import { START, TREES, cameraBlockers, colliders, groundY, type Rect } from './layout';
 import treesMeta from '../blender/trees/trees.meta.json';
 import { SKY, makeHills, makeSky } from './scenery';
@@ -334,24 +335,25 @@ interface HeroView {
     idle: THREE.AnimationAction;
     walk: THREE.AnimationAction;
     run: THREE.AnimationAction;
-    /** 歩き・走りの 1 周期で進む距離（m）。進んだ距離から再生位置を決める（足が滑らない） */
-    cycle: { walk: number; run: number };
+    /** 動きの元の混ぜ方・位相・足（着いた足を止める・IK・踏み替え）・顔の向き（game/heroAnim.ts） */
+    anim: HeroAnimator;
 }
 
 /**
  * 主人公の見た目（比較用に切り替えられる）。移動・当たり判定・カメラ・歩く／走るは共通で、表示と動きの素材だけを替える。
  * - v3：Blender で作り直した主人公（proto3d/blender/hero/。体・髪・衣服を別の形で作り、布の厚み・重なり・折り目を持つ）。
- *   骨組みと動き（Idle / Walk / Run）は第 2 版と同じ
+ *   骨組みと動き（Idle / Walk / Run）は第 2 版と同じ（Version 27 までの動きのまま。確認用）
  * - v2：自作の主人公モデル 第 2 版（利用者が用意した第 1 版 proto3d/assets-src/hero_v1/ を改良。proto3d/assets-src/hero_v2/）
- * - mpfb：既定（暫定の素材）。MPFB／MakeHuman の CC0 の人体の基本形から作った頭部。体・衣服・動きは v3 と同じ
+ * - mpfb：既定（暫定の素材）。MPFB／MakeHuman の CC0 の人体の基本形から作った頭部。体・衣服は v3 と同じ
+ * Version 28：v2・mpfb は、形・材質・画像はそのままで動き（Idle / Walk / Run）だけを作り直した写し（hero_v2b.glb・hero_v3b_mpfb.glb。
+ * proto3d/assets-src/hero_v2/hero_motion.py・write_clips.py）を読む。前の GLB（hero_v2.glb・hero_v3_mpfb.glb）はリポジトリに残す。
+ * 動きの決まり（1 周期の距離・足の着く割合）は game/gait.ts。
  */
 type HeroKey = 'v3' | 'v2' | 'mpfb';
-// 基準速度（Walk 1.4m/秒・Run 3.0m/秒。接地した足の送りの速さを骨組みから測って一致を確認）× 1 周期の長さ。v3 は v2 と同じ動き
-const cycleOf = (w: THREE.AnimationClip, r: THREE.AnimationClip) => ({ walk: 1.4 * w.duration, run: 3.0 * r.duration });
-const HERO_MODELS: Record<HeroKey, { file: string; clips: [string, string, string]; cycle: (walk: THREE.AnimationClip, run: THREE.AnimationClip) => { walk: number; run: number } }> = {
-    v3: { file: 'hero_v3', clips: ['Idle', 'Walk', 'Run'], cycle: cycleOf },
-    v2: { file: 'hero_v2', clips: ['Idle', 'Walk', 'Run'], cycle: cycleOf },
-    mpfb: { file: 'hero_v3_mpfb', clips: ['Idle', 'Walk', 'Run'], cycle: cycleOf },
+const HERO_MODELS: Record<HeroKey, { file: string; clips: [string, string, string] }> = {
+    v3: { file: 'hero_v3', clips: ['Idle', 'Walk', 'Run'] },
+    v2: { file: 'hero_v2b', clips: ['Idle', 'Walk', 'Run'] },
+    mpfb: { file: 'hero_v3b_mpfb', clips: ['Idle', 'Walk', 'Run'] },
 };
 const heroParam = params.get('hero') ?? new URLSearchParams(location.hash.slice(1)).get('hero');
 // 既定は mpfb（MPFB の基本形から作った頭部。完成品質ではない暫定の素材。?hero=v3 で前の自作頭部、?hero=old で第 2 版）
@@ -384,14 +386,20 @@ async function loadHeroView(key: HeroKey): Promise<HeroView> {
         a.timeScale = 0;
         a.setEffectiveWeight(0);
     }
-    const view = { root: gltf.scene, mixer, idle, walk, run, cycle: def.cycle(walkClip, runClip) };
+    const rig = { root: gltf.scene, mixer, idle, walk, run };
+    const view = { ...rig, anim: new HeroAnimator(rig) };
     heroViews.set(key, view);
     return view;
 }
 
 /** 表示する主人公を替える（位置・向き・歩きの位相はそのまま） */
 function showHero(key: HeroKey, view: HeroView): void {
-    if (heroView) scene.remove(heroView.root);
+    if (heroView) {
+        scene.remove(heroView.root);
+        const a = heroView.anim;
+        Object.assign(view.anim, { walkBlend: a.walkBlend, runBlend: a.runBlend, stride: a.stride, strideTotal: a.strideTotal });
+    }
+    view.anim.snap(hero);
     heroKey = key;
     heroView = view;
     scene.add(view.root);
@@ -574,6 +582,13 @@ const sunCenter = new THREE.Vector3();
  * 決めた位置から決めた点を見る。影の範囲も、その見ている所に合わせる。
  */
 let cameraShot: CameraShot | null = null;
+/**
+ * 差し替えのカメラ（演出・物見）から肩越しのカメラへ戻るときの移り（Version 28）。差し替えの最後の位置・見る点から、
+ * 肩越しのカメラ（見回しの向き・高さ・距離は出来事の前のまま）へ、なめらかに寄せる。間に壁・屋根があるとき・遠すぎるときは切り替える。
+ */
+let cameraBlend: { from: THREE.Vector3; fromTarget: THREE.Vector3; t: number; dur: number } | null = null;
+const CAMERA_BLEND_SEC = 0.9;
+const blendTarget = new THREE.Vector3();
 const shotDir = new THREE.Vector3();
 function applyShot(sh: CameraShot): void {
     camera.position.set(sh.px, sh.py, sh.pz);
@@ -595,8 +610,16 @@ function placeCamera(k: number, dt = 0): void {
     }
     if (tps) {
         const pose = placeFollow(orbit, hero.x, hero.z, dt);
-        camera.position.copy(pose.position);
-        camera.lookAt(pose.target);
+        if (cameraBlend) {
+            cameraBlend.t += dt;
+            const u = THREE.MathUtils.smootherstep(cameraBlend.t / cameraBlend.dur, 0, 1);
+            camera.position.lerpVectors(cameraBlend.from, pose.position, u);
+            camera.lookAt(blendTarget.lerpVectors(cameraBlend.fromTarget, pose.target, u));
+            if (cameraBlend.t >= cameraBlend.dur) cameraBlend = null;
+        } else {
+            camera.position.copy(pose.position);
+            camera.lookAt(pose.target);
+        }
         // 壁ぎわでカメラが頭のすぐ後ろまで寄ったときは、主人公を描かない
         if (heroView) heroView.root.visible = orbit.dist > FOLLOW.hideHeroDistance;
         // 影は主人公の少し先を中心に（見える範囲の手前側）
@@ -622,13 +645,6 @@ function placeCamera(k: number, dt = 0): void {
 
 const clock = new THREE.Clock();
 const stats = { readyMs: 0, loadMs: 0, frames: 0 };
-/** 動いている重み（0 待機 → 1 歩き・走り） */
-let walkBlend = 0;
-/** 歩き・走りの位相（0〜1、1 周期で 1）。進んだ距離から決めるので、足が地面の上で滑らない */
-let stride = 0;
-/** 確認用：これまでに進めた周期の合計（1 周するごとに 0 に戻らない） */
-let strideTotal = 0;
-let runBlend = 0;
 const fpsEl = document.getElementById('fps')!;
 fpsEl.hidden = !showFps;
 let fpsTime = 0;
@@ -651,25 +667,11 @@ function frame(): void {
 function advance(dt: number, raw: number, ix: number, iy: number): void {
     stats.frames++;
     stepHero(hero, ix, iy, tps ? orbit.yaw : CAMERA.yaw, dt, running(), walkRects);
-    const v = heroView!;
-    v.root.position.set(hero.x, groundY(hero.x, hero.z), hero.z); // 足を地面の起伏に合わせる（動き・当たり判定は平面のまま）
-    v.root.rotation.y = hero.heading;
-    // 待機と動きを速さで混ぜ、動きの中では歩きと走りを速さで混ぜる
-    const want = THREE.MathUtils.smoothstep(hero.speed, 0.05, 0.5);
-    walkBlend += (want - walkBlend) * (1 - Math.exp(-10 * dt));
-    runBlend = THREE.MathUtils.smoothstep(hero.speed, SPEED.walk * 1.02, SPEED.walk + (SPEED.run - SPEED.walk) * 0.7);
-    // 位相は実際に進んだ速さで進める（1 周期の距離は歩きと走りを混ぜた長さ）。止まれば脚も止まり、滑らない
-    const cycle = THREE.MathUtils.lerp(v.cycle.walk, v.cycle.run, runBlend);
-    strideTotal += (hero.speed * dt) / cycle;
-    stride = (stride + (hero.speed * dt) / cycle) % 1;
-    v.walk.time = stride * v.walk.getClip().duration;
-    v.run.time = stride * v.run.getClip().duration;
-    v.walk.setEffectiveWeight(walkBlend * (1 - runBlend));
-    v.run.setEffectiveWeight(walkBlend * runBlend);
-    v.idle.setEffectiveWeight(1 - walkBlend);
-    v.mixer.update(dt);
-    // 足音：歩き・走りの位相（stride）の半周ごとに 1 歩。止まっている間は鳴らさない（audio/sfx.ts の FootstepTracker）
-    audio()?.step(strideTotal, hero.speed, runBlend > 0.5);
+    // 見た目の動き：位相・混ぜ方は実際に進んだ距離から。体の向き・着いた足を止める・脚の IK（地面の起伏に合わせる。動き・当たり判定は平面のまま）・顔の向き
+    const a = heroView!.anim;
+    a.update(hero, dt, groundY);
+    // 足音：歩き・走りの位相の半周ごとに 1 歩（踵の着く所）。止まっている間は鳴らさない（audio/sfx.ts の FootstepTracker）
+    audio()?.step(a.strideTotal, a.speed, a.runBlend > 0.5);
     placeCamera(1 - Math.exp(-6 * dt), dt);
     // 環境音を聞く位置（荷の作業の音の近さ）：カメラの位置
     audio()?.listener(camera.position.x, camera.position.z);
@@ -720,18 +722,23 @@ const exploreHost: ExploreHost = {
     low,
     load,
     prepare,
-    setHeroPose(p) {
+    setHeroPose(p, opts) {
         hero.x = p.x;
         hero.z = p.z;
         hero.heading = p.heading;
         hero.speed = 0;
         hero.dirX = Math.sin(p.heading);
         hero.dirZ = Math.cos(p.heading);
+        // 足・体の向きをその場に合わせ直す（歩いて見せない）
+        heroView?.anim.snap(hero);
+        // 演出の後に元の位置へ戻すとき（keepCamera）は、見回しの向き・高さ・距離をそのままにする（Version 28：出来事の後に真後ろへ戻さない）
+        if (opts?.keepCamera) return;
         // カメラは主人公の背後から、向いている方を見る（開始の位置なら、決めてある開始の構図）
         const atStart = Math.abs(p.x - START.x) < 1e-6 && Math.abs(p.z - START.z) < 1e-6 && Math.abs(p.heading - START.heading) < 1e-6;
         orbit.yaw = atStart ? START.yaw : Math.atan2(Math.sin(p.heading - Math.PI), Math.cos(p.heading - Math.PI));
         orbit.pitch = START.pitch;
         orbit.dist = FOLLOW.distance;
+        cameraBlend = null;
         placeCamera(1);
     },
     setControl(enabled) {
@@ -753,9 +760,21 @@ const exploreHost: ExploreHost = {
     },
     orbit,
     setCameraShot(shot) {
+        const prev = cameraShot;
         cameraShot = shot ? { ...shot } : null;
-        if (cameraShot) applyShot(cameraShot);
-        else placeCamera(1);
+        if (cameraShot) {
+            cameraBlend = null;
+            applyShot(cameraShot);
+            return;
+        }
+        // 差し替えから戻る：今の位置・見る点から、肩越しのカメラへなめらかに（間に物があれば・遠ければ切り替える）
+        cameraBlend = null;
+        if (prev && tps) {
+            const from = new THREE.Vector3(prev.px, prev.py, prev.pz);
+            const to = placeFollow({ ...orbit }, hero.x, hero.z, 0).position;
+            if (from.distanceTo(to) < 30 && segmentClear(from, to)) cameraBlend = { from, fromTarget: new THREE.Vector3(prev.tx, prev.ty, prev.tz), t: 0, dur: CAMERA_BLEND_SEC };
+        }
+        placeCamera(1);
     },
     renderOnce() {
         // 確認用の手動の描画（?render=manual）では描かない（__p3.renderNow のときだけ描く決まりのまま）
@@ -764,6 +783,7 @@ const exploreHost: ExploreHost = {
         if (heroView) {
             heroView.root.position.set(hero.x, groundY(hero.x, hero.z), hero.z);
             heroView.root.rotation.y = hero.heading;
+            heroView.anim.yaw = hero.heading;
         }
         placeCamera(1);
         renderNow();
@@ -771,6 +791,9 @@ const exploreHost: ExploreHost = {
     setLookHandler(fn) {
         lookHandler = fn;
         if (!fn) releaseLook();
+    },
+    setHeroGaze(p, weight) {
+        heroView?.anim.gaze?.lookAt(p, weight);
     },
     viewSize: () => ({ w: view.clientWidth || window.innerWidth, h: view.clientHeight || window.innerHeight }),
 };
@@ -799,7 +822,12 @@ if (import.meta.env.DEV) {
     Object.assign(window, {
         __p3: {
             hero, stats, camera, renderer, scene, releaseAll,
-            get anim() { return { walkBlend, runBlend, stride, strideTotal, walkTime: heroView?.walk.time ?? 0, running: running(), runMode }; },
+            get anim() {
+                const a = heroView?.anim;
+                return { walkBlend: a?.walkBlend ?? 0, runBlend: a?.runBlend ?? 0, stride: a?.stride ?? 0, strideTotal: a?.strideTotal ?? 0, walkTime: heroView?.walk.time ?? 0, running: running(), runMode, yaw: a?.yaw ?? 0, speed: a?.speed ?? 0, legs: a?.legs?.stats ?? null };
+            },
+            /** 確認用：足・体の向きを今の位置に合わせ直す（e2e/motion-probe.mjs が主人公を置き直した後） */
+            resetLegs() { if (heroView) heroView.anim.snap(hero); },
             get heroModel() { return heroKey; },
             /** 確認用：町に足した物（まとめた形の数・三角形の数・町家の写しの数） */
             get town() { return town?.stats ?? null; },

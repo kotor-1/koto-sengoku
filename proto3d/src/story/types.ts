@@ -57,12 +57,15 @@ export interface MapScene {
 
 /**
  * 演出の時（どこで流すか）。
- * - ch1_open・ch2_open：章の冒頭（3D の場面だけ。町の様子 → 急報・使い → 主人公と家臣のやり取り → 操作。自動で流す）。
+ * - ch1_open：第一章の冒頭（Version 28 §4.3：町の入口の主人公へ寄る 1 つのカメラの動きと字幕 1 行だけ。そのまま操作へ。自動で流す）。
+ * - ch1_report：第一章の町の急報（Version 28 §4.3：操作中に主人公が通りを北へ進み、決めた所へ入ったとき「はじめから」の回の中で 1 回だけ。
+ *   使者 2 人の急報 → 忠勝 → 家康の返事 → 操作。情勢の画面から見直せる）。
+ * - ch2_open：第二章の冒頭（3D の場面だけ。町の様子 → 急報・使い → 主人公と家臣のやり取り → 操作。自動で流す）。
  * - ch1_intro・ch2_intro：情勢の図解（地図の台本。自動では流さない。情勢の画面・軍議の「詳しく見る」から任意で見る）。
  * - departure・return：出陣・帰還。
- * docs/v20-feedback-request.md【1】。
+ * docs/v20-feedback-request.md【1】・docs/v28-town-motion-voice.md §4.3。
  */
-export type CineMoment = 'ch1_open' | 'ch2_open' | 'ch1_intro' | 'ch2_intro' | 'departure' | 'return';
+export type CineMoment = 'ch1_open' | 'ch1_report' | 'ch2_open' | 'ch1_intro' | 'ch2_intro' | 'departure' | 'return';
 
 /** 字幕 1 行 */
 export interface CineCaption {
@@ -110,7 +113,15 @@ export type StageEvent =
      * 町の様子（章の冒頭の最初の画。docs/v20-feedback-request.md【1】【2】）：街道口の木戸のあたりから北の城門へ向かう通りを見る。
      * 荷を運ぶ人・店の人・門番・（あれば）詰所の負傷兵・援兵が働いている。hero：主人公を入口の位置（town/spots.ts の ENTRY_POSE）に立たせて見せる
      */
-    | { id: 'town_life'; hero: boolean }
+    | {
+          id: 'town_life';
+          hero: boolean;
+          /**
+           * 第一章の冒頭（Version 28 §4.3）：町の入口の主人公へ寄っていく 1 つのカメラの動き（高い所から、肩越しのカメラの位置へ）。
+           * 終わりの画は操作の肩越しのカメラと同じなので、切らずに操作へ渡す。町の人々は隠さない（出来事の人を出さない：操作へ移っても人が入れ替わらない）
+           */
+          establish?: boolean;
+      }
     /** 使者が街道口から城門の前へ。showHero：主人公（入口に立つ）を画に入れる（冒頭）。省けば前どおり描かない */
     | { id: 'envoys_arrive'; envoys: { look: string; name: string }[]; showHero?: boolean }
     /**
@@ -118,10 +129,45 @@ export type StageEvent =
      * 字幕（話し手つき）は台本が出す。終わると家臣は自分の置き場所（城門の前）へ戻る（演出の外で、会話の相手の人物に替わる）
      */
     | { id: 'retainer_report'; look: string; name: string; castId: string }
-    | { id: 'messenger_arrive'; look: string; name: string }
+    /**
+     * 使いの到着。report の無いもの（情勢の図解の中の場面）は今までどおり：街道口の画 → 城門の前の画で、使いは同じ見た目の人物の所へ歩く。
+     * report（Version 28 §4.3 の最後の項。第二章の冒頭）：町の入口の主人公のもとへ、使いが南の木戸から走って来て、減速して止まり、片膝をついて言う
+     * （主人公は足を踏み替えて振り向く）。その間に家臣が城門の前から歩いて来て、止まってから言う（主人公は家臣へ向き直る）。
+     * 使い・家臣の cast は会話の相手の id（出来事の間も後も、その人物そのもの。入れ替えない）、spot はその置き場所 [x, z, 向き]（出来事の後、
+     * そこへ歩いて行く）。cue は台詞の時刻（場面の始めからの秒）：messenger は使いの台詞の [字幕の始め, 声の終わり]、retainer は家臣の台詞、
+     * end は場面の終わり。
+     */
+    | {
+          id: 'messenger_arrive';
+          look: string;
+          name: string;
+          report?: {
+              messenger: { cast: string; spot: [number, number, number] };
+              retainer: { look: string; name: string; cast: string; spot: [number, number, number] };
+              cue: { messenger: [number, number][]; retainer: [number, number]; end: number };
+          };
+      }
+    /**
+     * 町の急報（Version 28 §4.3。第一章）：操作中の主人公の所（出来事を始めた時の主人公の位置から決める）へ、織田の使者が南の木戸の方から
+     * 走って来て止まり、片膝をついて言う → 浅井の使者が少し遅れて急ぎ足で来て止まり、言う → 忠勝が城門の方から歩いて来て止まってから言う
+     * → 家康が短い間の後に答える。終わると忠勝は城門の前へ、使者 2 人は話せる位置へ歩いて行き、会話の相手の人物になる（同じ人のまま。入れ替えない）。
+     * envoys・retainer の cast は会話の相手の id、spot はその置き場所 [x, z, 向き]。cue は台詞の時刻（字幕と同じ。場面の始めからの秒）：
+     * say は使者 2 人・家臣・家康の順の [声の始め, 声の終わり]、end は場面の終わり。
+     */
+    | {
+          id: 'street_report';
+          envoys: { look: string; name: string; cast: string; spot: [number, number, number] }[];
+          retainer: { look: string; name: string; cast: string; spot: [number, number, number] };
+          cue: { say: [number, number][]; end: number };
+      }
     | { id: 'wounded_rest'; count: number }
     | { id: 'reinforcement_arrive'; count: number; mark: string; name: string }
-    | { id: 'column_depart'; count: number; mark: string }
+    /**
+     * 出陣。order（Version 28 §4.3 の最後の項）：主人公の号令の声の終わり（場面の始めからの秒）。主人公は城門の前で号令し、隊列の道を
+     * 空けて脇に立ち、出て行く隊列を見送る（会話の相手の人物も置き場所で隊列の方を向いて見送る。隠さない）。隊列は号令の後に歩き出す。
+     * 省けば今までどおり（主人公を描かず、隊列は整ってすぐ歩き出す）
+     */
+    | { id: 'column_depart'; count: number; mark: string; order?: number }
     | { id: 'column_return'; count: number; wounded: number; mark: string; victory: boolean };
 
 /** 演出の台本 */

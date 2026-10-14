@@ -681,7 +681,8 @@ async function ch2One(name) {
     note(`[${tag}] 結果確認の画面の援兵の行：${(recordText.match(/援兵[^。]*。?/g) ?? []).slice(0, 3).join(' / ') || '(無し)'}`);
   }
   // 判断の手の字幕（選べる手の数・殿の読み）は情勢の図解（ch2_intro）の物で、冒頭には無い（単体テスト tests/proto3d-ieyasu-story-cinematics.test.ts で確かめる）
-  check(`[${tag}] 冒頭の最後は家臣の一言（忠勝：軍議を開く・城門の前）→ 操作`, seq.at(-1) === '軍議を開きましょう。城門の前でお待ちします。' && evs.at(-1)?.id === 'retainer_report', J({ last: seq.at(-1), ev: evs.at(-1) }));
+  // Version 28 §4.3 の最後の項：使いの到着と家臣の一言は 1 つの場面（messenger_arrive の report。使いは止まってから・家臣は歩いて来て止まってから言う）
+  check(`[${tag}] 冒頭の最後は家臣の一言（忠勝：軍議を開く・城門の前）→ 操作`, seq.at(-1) === '軍議を開きましょう。城門の前でお待ちします。' && evs.at(-1)?.id === 'messenger_arrive' && evs.at(-1)?.report?.retainer?.cast === 'tadakatsu', J({ last: seq.at(-1), ev: evs.at(-1) }));
   const msg = evs.find((e) => e.id === 'messenger_arrive');
   note(`[${tag}] 使い：${J(msg)}・援兵：${J(rein ?? null)}`);
   return { runs, video, ambient: amb.spec, stageKeys: run.stageKeys, seq, recordText };

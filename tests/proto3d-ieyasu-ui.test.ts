@@ -149,6 +149,13 @@ describe('タイトル：シナリオを選ぶ', () => {
         expect(view.hudInfo?.chapter).toContain('元亀元年・家康');
         expect(view.hudInfo?.provisional).toBe('歴史分岐・創作を含む');
         // lookout は物見櫓（物語の見せ方の改修：探索・支度の段階に物見櫓の相手 lookout を置く。kind は lookout で会話の相手ではない。docs/story-rpg-design.md §5.2）
+        // Version 28 §4.3：両家の使者は、はじめは町に居ない。通りを北へ歩いて町の急報の線（z=6）を越えると、急報の後に町に居る
+        expect(world.cast.map((c) => c.id).sort()).toEqual(['lookout', 'notice', 'tadakatsu']);
+        expect(game.townEventPending).toBe('ch1_report');
+        world.setHeroPose({ x: 0.3, z: 5.9, heading: Math.PI });
+        game.tick(1 / 30);
+        await flush();
+        expect(game.townEventPending).toBeNull();
         expect(world.cast.map((c) => c.id).sort()).toEqual(['asai_envoy', 'lookout', 'notice', 'oda_envoy', 'tadakatsu']);
         // 人物の見た目は既存の暫定素材（explore/world.ts の LOOKS にある鍵）
         for (const c of world.cast.filter((x) => x.kind === 'person')) expect(['genzo', 'shinpachi', 'tashiro_envoy', 'omori_envoy']).toContain(c.look);

@@ -65,6 +65,8 @@ import {
 import type { StorageLike } from '../save';
 import type { ExplorePose } from '../state';
 import { ENTRY_POSE } from '../../town/spots';
+import { inReportZone } from '../../explore/stage';
+import type { CineMoment } from '../../story/types';
 import { ieyasuAmbient } from './story/ambient';
 import { ieyasuCinematic } from './story/cinematics';
 import { lookoutCast } from './story/lookout';
@@ -238,6 +240,16 @@ export function ieyasuFaceOf(speaker: string): ArtId | null {
 /** 軍議の背景（城内の陣幕の内。第一章・第二章の軍議で同じ。人のいない画で、状態で変わる物は描かない） */
 export const IEYASU_COUNCIL_ART: { base: ArtId; front?: ArtId } = { base: ART_IDS.bgCouncil, front: ART_IDS.bgCouncilFront };
 
+/**
+ * 第一章の町の急報（Version 28 §4.3）：演出 ch1_report。織田・浅井の使者はこの出来事で町へ来る（出来事の前は置かない・話せない）。
+ * 始める所は explore/stage.ts の inReportZone（通りを北へ進んで決めた線を越えた所。脇の道から来たときは通りへ入った所）
+ */
+export const IEYASU_TOWN_EVENT = { moment: 'ch1_report', arrive: ['oda_envoy', 'asai_envoy'], zone: inReportZone } as const satisfies {
+    moment: CineMoment;
+    arrive: readonly string[];
+    zone(x: number, z: number): boolean;
+};
+
 // ================= シナリオ =================
 
 /**
@@ -291,6 +303,8 @@ export function ieyasuScenario(storage: StorageLike | null, store: IeyasuCampaig
         ambient: (s) => ieyasuAmbient(s),
         scoutPoints: (s) => ieyasuScoutPoints(s),
         scout: (s, pointId, marks) => ieyasuScout(s, pointId, marks),
+        // 第一章の町の急報（Version 28 §4.3）：「はじめから」の回の中だけで 1 回。探索の段階で、主人公が通りを北へ進んだとき
+        townEvent: (s) => (!two(s) && s.phase === 'explore' ? IEYASU_TOWN_EVENT : null),
         // 生成イラスト素材（Version 22。Version 25 から）：家康・忠勝・酒井・石川（・榊原・長政）の人物画と台詞の枠の顔と、軍議の背景（素材が無い・旧表示なら画面は今までのまま）
         portraitOf: (_s, speaker) => ieyasuPortraitOf(speaker),
         faceOf: (_s, speaker) => ieyasuFaceOf(speaker),

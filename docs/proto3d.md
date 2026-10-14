@@ -25,7 +25,7 @@
 | 保存 | 端末内（`localStorage` の `koto-sengoku/3d-chapter1`）。自動（出陣前・戦後・結末）と、探索中のメニューの「保存する」。書いた後に読み戻して確かめる。つづきからで段階・陣営・関係・兵・人物・会話の済み印・位置が戻る（出陣前の保存からは支度の段階の開始の位置から）。合戦の途中の保存はしない。2D 版の保存（`koto-sengoku/save`）には触れない。はじめからの前の保存は `koto-sengoku/3d-chapter1/previous` に控え |
 | 詳しく | 仕様：`docs/chapter1-spec.md`。遊び方・ファイルの役目・確認のしかた・開発用のフック：`docs/chapter1-play.md` |
 | 通しの確認 | `e2e/chapter1-routes.mjs`（開発サーバー。田代 × 勝利・大森 × 敗北・独力 × 撤退、保存して開き直し、スマホのタッチ。合戦の命令は画面の操作）、`e2e/chapter1-prod.mjs`（本番ビルドを CSP の下で。開発用のフックなし）。タイトルでは歴史分岐と並ぶので、架空の第一章のボタンは `new:fictional`／`continue:fictional` |
-| 公開 | `VITE_MODEL_EXT=.json npm run proto3d:build` の後、`dist-proto3d/models/*.glb` を消して `node proto3d/tools/glb-to-gltf.mjs proto3d/public/models dist-proto3d/models ground_v2 gate_v2 walls_v2 keep inner machiya_a machiya_b machiya_d tree_pine tree_sakura tree_pine_far hero_v3_mpfb hero_v2`（`dist-proto3d/` 一式、約 58MB）。公開は `index.html` をページにし、ほかのファイルを同じ相対パスで添える。上の「確認用 URL の版」が今の公開の版。**Version 27 から**：ビルドの直後に `node proto3d/tools/check-dist.mjs dist-proto3d --baseline <前回公開した dist> --write-sha256 <作業の置き場>/dist-<コミット>.sha256`（違反が無いときだけ一覧を書く）、公開の直前に同じ dist へ `--baseline <前回公開した dist> --sha256 <その一覧>` を付けて走らせ、「問題なし」の dist をそのまま公開する（check-dist は、HTML・glTF・JS が指すファイルが無い、中身が拡張子と合わない、ビルドの直後と中身が違う、を止める。前の版の画像を手で戻すことは手順にしない）。原画・3D モデル・dist には画像の一括の変換をしない。e2e の画面写真は、はじめから JPEG で撮るか、`node proto3d/tools/shots-to-jpeg.mjs <shots・montage・prod-shots の置き場>`（既定は並べるだけ。`--apply` で変える。dist・素材の置き場は断る）だけで JPEG にする。Version 26 の事故の記録と決まりは [build-image-safety.md](build-image-safety.md) |
+| 公開 | `VITE_MODEL_EXT=.json npm run proto3d:build` の後、`dist-proto3d/models/*.glb` を消して `node proto3d/tools/glb-to-gltf.mjs proto3d/public/models dist-proto3d/models ground_v2 gate_v2 walls_v2 keep inner machiya_a machiya_b machiya_d tree_pine tree_sakura tree_pine_far hero_v3b_mpfb hero_v2b`（`dist-proto3d/` 一式、約 58MB）。公開は `index.html` をページにし、ほかのファイルを同じ相対パスで添える。上の「確認用 URL の版」が今の公開の版。**Version 27 から**：ビルドの直後に `node proto3d/tools/check-dist.mjs dist-proto3d --baseline <前回公開した dist> --write-sha256 <作業の置き場>/dist-<コミット>.sha256`（違反が無いときだけ一覧を書く）、公開の直前に同じ dist へ `--baseline <前回公開した dist> --sha256 <その一覧>` を付けて走らせ、「問題なし」の dist をそのまま公開する（check-dist は、HTML・glTF・JS が指すファイルが無い、中身が拡張子と合わない、ビルドの直後と中身が違う、を止める。前の版の画像を手で戻すことは手順にしない）。原画・3D モデル・dist には画像の一括の変換をしない。e2e の画面写真は、はじめから JPEG で撮るか、`node proto3d/tools/shots-to-jpeg.mjs <shots・montage・prod-shots の置き場>`（既定は並べるだけ。`--apply` で変える。dist・素材の置き場は断る）だけで JPEG にする。Version 26 の事故の記録と決まりは [build-image-safety.md](build-image-safety.md) |
 
 ## 歴史分岐シナリオ「元亀元年・家康」（同じゲームのタイトルから選ぶ）
 
@@ -123,6 +123,8 @@
 ### 主人公の自作モデル 第 2 版
 
 利用者が用意した第 1 版（`proto3d/assets-src/hero_v1/`、受け取ったまま保存）の生成用ソースを写し、背中から近くで見える所を直した（`proto3d/assets-src/hero_v2/build_hero.py`。Python・NumPy・SciPy・Pillow で `hero_v2.glb` を作る）。骨組み・動き（Idle / Walk / Run）は第 1 版と同じ。
+
+**Version 28**：動き（Idle / Walk / Run）を作り直した（`proto3d/assets-src/hero_v2/hero_motion.py`。歩きの腰の上下の向き・待機と歩きの腰の高さ・踵の着地と足先の蹴り出し・走りの上下）。形・材質・画像はそのままで動きだけを差し替えた写し `hero_v2b.glb`（町の人物）・`hero_v3b_mpfb.glb`（主人公）を `write_clips.py` で作り、ゲームはそれを読む。前の `hero_v2.glb`・`hero_v3_mpfb.glb` はリポジトリに残す。結果と測り方は [v28-town-motion-voice.md](v28-town-motion-voice.md) の「動きの結果」。
 
 - 首の後ろを回る襟と、その上に少しのぞく白い半襟を足した（第 1 版は背中の首元が開いて見えた）
 - 首から肩の付け根の肌が、背中で小袖の外へ突き出していたのを内側に収めた

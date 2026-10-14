@@ -7,6 +7,9 @@
 - 重み：全身の代わり（プロキシ）に骨の熱の自動の重み → 近い点から写す。袖・袴・帯・刀は形に合わせて決める
 - 接地の陰：Cycles の AO を頂点の色に焼く（three.js では頂点の色が色に掛かる）
 出力：proto3d/public/models/hero_v3.glb、作業用 proto3d/blender/build/hero/hero_v3.blend
+Version 28：ゲームが読む主人公は hero_v3b_mpfb.glb（動きだけを assets-src/hero_v2/hero_motion.py の新しい動きへ差し替えた写し）。
+  それは Blender ではなく assets-src/hero_v2/write_clips.py（--relax-arms）で hero_v3_mpfb.glb から作る（形・画像は同じバイト列）。
+  この台本は hero_v2.glb（Version 27 までの動き）を読むまま残す（hero_v3.glb を作り直しても新しい動きにはならない）。
 """
 from __future__ import annotations
 

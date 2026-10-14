@@ -19,6 +19,7 @@ import type { IeyasuAnyState, Ieyasu2State } from '../proto3d/src/campaign/ieyas
 import { isChapter2 } from '../proto3d/src/campaign/ieyasu1570/chapter2/state';
 import { newIeyasuGame } from '../proto3d/src/campaign/ieyasu1570/flow';
 import type { CineMapBeat, CineMoment, CineSpec, StageEvent } from '../proto3d/src/story/types';
+import { REPORT_LEAD } from '../proto3d/src/explore/stage';
 import { CAPTION_CHARS_PER_SEC, CAPTION_MAX_CHARS, CAPTION_MIN_SEC, CINE_LENGTH_RANGE, INFO_KEYS, PLACE_APPEAR_SEC, ROUTE_DRAW_SEC, frameAt, orderedBeats } from '../proto3d/src/story/timeline';
 import { CH2_DEFEATS, RESULTS, ch1BeforeBattle, ch1Cases, ch1Ending, ch2Aftermath, ch2Battle, ch2Cases, ch2Muster, ch2Starts, checkBannedWords, type Ch1Case } from './proto3d-ieyasu-story-states';
 import { ieyasuToBattle } from './proto3d-ieyasu-helpers';
@@ -42,7 +43,8 @@ const eventOf = <K extends StageEvent['id']>(spec: CineSpec, id: K) => events(sp
 /** 台本の形の検査（どの台本にも当てはまる決まり） */
 function checkShape(spec: CineSpec, name: string): void {
     const intro = spec.moment === 'ch1_intro' || spec.moment === 'ch2_intro';
-    const open = spec.moment === 'ch1_open' || spec.moment === 'ch2_open';
+    // 第一章の町の急報（Version 28 §4.3）も章の冒頭と同じ 3D の場面だけの台本（長さは moment ごとの決まり）
+    const open = spec.moment === 'ch1_open' || spec.moment === 'ch2_open' || spec.moment === 'ch1_report';
     if (intro) {
         expect(spec.duration, `${name}：情勢の図解の長さ`).toBeGreaterThanOrEqual(30);
         expect(spec.duration, `${name}：情勢の図解の長さ`).toBeLessThanOrEqual(45);
@@ -55,8 +57,11 @@ function checkShape(spec: CineSpec, name: string): void {
         expect(spec.duration, `${name}：出陣・帰還の長さ`).toBeGreaterThanOrEqual(8);
         expect(spec.duration, `${name}：出陣・帰還の長さ`).toBeLessThanOrEqual(15);
     }
-    // 場面はすき間なく続き、最初は地図（見出し：いつ・どこ）。章の冒頭は地図の場面が無い（見出しは題：いつ・どこ）
-    expect(spec.beats.length).toBeGreaterThan(1);
+    // 場面はすき間なく続き、最初は地図（見出し：いつ・どこ）。章の冒頭は地図の場面が無い（見出しは題：いつ・どこ）。
+    // 第一章の冒頭（短い始め：1 つのカメラの動き）と町の急報（1 つの出来事の中で画を替える）は場面 1 つ
+    const oneBeat = spec.moment === 'ch1_open' || spec.moment === 'ch1_report';
+    expect(spec.beats.length).toBeGreaterThan(oneBeat ? 0 : 1);
+    if (oneBeat) expect(spec.beats).toHaveLength(1);
     expect(spec.beats[0]!.start).toBe(0);
     for (let i = 1; i < spec.beats.length; i++) expect(spec.beats[i]!.start, name).toBeCloseTo(spec.beats[i - 1]!.end, 5);
     expect(spec.beats[spec.beats.length - 1]!.end).toBeCloseTo(spec.duration, 5);
@@ -78,8 +83,9 @@ function checkShape(spec: CineSpec, name: string): void {
         expect(c.end).toBeLessThanOrEqual(spec.duration + 1e-6);
         prevEnd = c.end;
     }
-    // 字幕は始めから終わりまで切れ目なく（長文の自動送りではなく、場面ごとの短い字幕）
-    expect(spec.captions[0]!.start).toBe(0);
+    // 字幕は始めから終わりまで切れ目なく（長文の自動送りではなく、場面ごとの短い字幕）。町の急報だけは、使者が走って来て
+    // 止まるまで（最初の台詞まで）字幕が無い
+    expect(spec.captions[0]!.start).toBe(spec.moment === 'ch1_report' ? REPORT_LEAD : 0);
     expect(prevEnd).toBeCloseTo(spec.duration, 5);
     // 情報の札の時刻は長さの中
     for (const k of Object.keys(spec.info) as (keyof CineSpec['info'])[]) {
@@ -121,7 +127,7 @@ function cineTexts(spec: CineSpec): string[] {
     return out;
 }
 
-const MOMENTS: readonly CineMoment[] = ['ch1_open', 'ch2_open', 'ch1_intro', 'ch2_intro', 'departure', 'return'];
+const MOMENTS: readonly CineMoment[] = ['ch1_open', 'ch1_report', 'ch2_open', 'ch1_intro', 'ch2_intro', 'departure', 'return'];
 function allSpecs(s: IeyasuAnyState): CineSpec[] {
     return MOMENTS.map((m) => ieyasuCinematic(s, m)).filter((x): x is CineSpec => !!x);
 }
@@ -260,7 +266,7 @@ describe('地図の出方：字幕より先に出ない・場面の切り替わ�
             n += checkAppearance(spec, name);
             moments.add(spec.moment);
         }
-        expect([...moments].sort()).toEqual(['ch1_intro', 'ch1_open', 'ch2_intro', 'ch2_open', 'departure', 'return']);
+        expect([...moments].sort()).toEqual(['ch1_intro', 'ch1_open', 'ch1_report', 'ch2_intro', 'ch2_open', 'departure', 'return']);
         expect(uniq.size).toBeGreaterThan(100);
         expect(n).toBeGreaterThan(10000);
     }, 120_000);
@@ -324,8 +330,8 @@ describe('流す時が無ければ null（状態に無いことを見せない�
         }
     });
     it('見直しの一覧：今の章の情勢の図解と冒頭（第二章は第一章の図解も）。戦後は直前の合戦の出陣・帰還。図解は kind diagram', () => {
-        expect(ieyasuReplays(newIeyasuGame()).map((r) => r.moment)).toEqual(['ch1_intro', 'ch1_open']);
-        expect(ieyasuReplays(CH1[0]!.state).map((r) => r.moment)).toEqual(['ch1_intro', 'ch1_open', 'departure', 'return']);
+        expect(ieyasuReplays(newIeyasuGame()).map((r) => r.moment)).toEqual(['ch1_intro', 'ch1_open', 'ch1_report']);
+        expect(ieyasuReplays(CH1[0]!.state).map((r) => r.moment)).toEqual(['ch1_intro', 'ch1_open', 'ch1_report', 'departure', 'return']);
         expect(ieyasuReplays(CH2_STARTS[0]!.state).map((r) => r.moment)).toEqual(['ch2_intro', 'ch2_open', 'ch1_intro']);
         const after = CH2.find((x) => x.state.phase === 'aftermath')!.state;
         expect(ieyasuReplays(after).map((r) => r.moment)).toEqual(['ch2_intro', 'ch2_open', 'ch1_intro', 'departure', 'return']);
@@ -361,8 +367,8 @@ describe('矛盾を避ける決まり', () => {
     it('敵方の人物を味方に出さない・信長を出さない（A に長政は出ない／B の味方に織田は出ない／C に両家の部隊は出ない）', () => {
         const check = (s: IeyasuAnyState, name: string) => {
             for (const sp of allSpecs(s)) {
-                // 第一章の始め（冒頭・図解）は方針を決める前（両家の使者が来る）
-                if (sp.moment === 'ch1_intro' || sp.moment === 'ch1_open') continue;
+                // 第一章の始め（冒頭・町の急報・図解）は方針を決める前（両家の使者が来る）
+                if (sp.moment === 'ch1_intro' || sp.moment === 'ch1_open' || sp.moment === 'ch1_report') continue;
                 const all = cineTexts(sp).join('\n');
                 expect(all, name).not.toContain('信長');
                 const policy = isChapter2(s) ? s.policy : s.policy;
@@ -386,7 +392,7 @@ describe('矛盾を避ける決まり', () => {
             if (state.characters.nagamasa !== 'wounded' || state.chapter1.characters.nagamasa !== 'wounded') continue;
             wounded++;
             for (const sp of allSpecs(state)) {
-                if (sp.moment === 'ch1_intro' || sp.moment === 'ch1_open') continue;
+                if (sp.moment === 'ch1_intro' || sp.moment === 'ch1_open' || sp.moment === 'ch1_report') continue;
                 // 第一章の振り返り（約束の対象の名前「浅井長政隊」）は第一章の出来事なので除き、第二章の今の場面（関係の行より後の字幕と 3D の出来事）を見る
                 const now = sp.moment === 'ch2_intro' ? sp.captions.filter((c) => c.start >= sp.info.ally!) : sp.captions;
                 const all = [...now.map((c) => `${c.speaker ?? ''}${c.text}`), ...events(sp).map((e) => JSON.stringify(e))].join('\n');

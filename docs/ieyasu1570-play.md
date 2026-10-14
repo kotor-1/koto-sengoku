@@ -144,7 +144,7 @@
   ```
   VITE_MODEL_EXT=.json npm run proto3d:build
   rm dist-proto3d/models/*.glb
-  node proto3d/tools/glb-to-gltf.mjs proto3d/public/models dist-proto3d/models ground_v2 gate_v2 walls_v2 keep inner machiya_a machiya_b machiya_d tree_pine tree_sakura tree_pine_far hero_v3_mpfb hero_v2
+  node proto3d/tools/glb-to-gltf.mjs proto3d/public/models dist-proto3d/models ground_v2 gate_v2 walls_v2 keep inner machiya_a machiya_b machiya_d tree_pine tree_sakura tree_pine_far hero_v3b_mpfb hero_v2b
   node e2e/ieyasu-prod.mjs e2e-out/ieyasu/prod      # 歴史分岐：C × 約束を引き受ける × 号令 × 全軍撤退 → 開き直し → 結末
   node e2e/chapter1-prod.mjs e2e-out/chapter1/prod  # 架空の第一章
   ```

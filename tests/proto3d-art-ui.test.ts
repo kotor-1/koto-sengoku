@@ -854,6 +854,14 @@ describe('ChapterGame：会話・軍議の画面へ渡す人物画と背景の�
         expect(view.preloaded).toEqual([ART_IDS.portraitIeyasu, ART_IDS.portraitTadakatsu, ART_IDS.faceIeyasu, ART_IDS.faceTadakatsu]);
         expect(urls).toEqual(['./art/portraits/ieyasu.webp', './art/portraits/tadakatsu.webp']);
         expect(peekArt(ART_IDS.portraitTadakatsu)).not.toBeNull();
+        // Version 28 §4.3：忠勝の前へ行く道は町の急報の線（z=6）を越える。急報（演出）では人物画を読まない
+        v.cinematic = () => Promise.resolve('done');
+        world.setHeroPose({ x: 0.3, z: 5.9, heading: Math.PI });
+        game.tick(1 / 30);
+        await flush();
+        expect(game.townEventPending).toBeNull();
+        expect(view.preloaded).toHaveLength(4);
+        expect(urls).toEqual(['./art/portraits/ieyasu.webp', './art/portraits/tadakatsu.webp']);
         // 「話す」が出た：もう一度頼んでも読み直さない（同じ約束）
         const t = world.cast.find((c) => c.id === 'tadakatsu')!;
         world.setHeroPose({ x: t.x + 0.9, z: t.z, heading: 0 });

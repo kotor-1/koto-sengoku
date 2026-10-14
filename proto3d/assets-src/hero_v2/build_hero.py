@@ -11,6 +11,8 @@ Dependencies: numpy, scipy, Pillow. Units: metres; Y up, +Z forward.
 - 袴の腰板（背中の腰の台形の板）と縁を足す
 - 袖のふくらみを少し小さく（風船のように見えないように）
 出力はこのフォルダの assets/ に書く。ゲームでは assets/sengoku_hero.glb を proto3d/public/models/hero_v2.glb として使う。
+Version 28：動き（Idle / Walk / Run）は hero_motion.py で作り直した（frame_pose はそこにある）。ゲームが読む町人の GLB（hero_v2b.glb）は、
+形・画像を変えずに動きだけを差し替える write_clips.py で hero_v2.glb から作った（この台本では作り直していない）。
 """
 from __future__ import annotations
 import json, math, struct, pathlib, io, base64
@@ -419,61 +421,15 @@ def merged():
 GROUPS=merged()
 
 # Animation: original keyframes, in place. IK foot targets on the ground plane.
-def quat_from_to(a,b):
-    a=np.array(a,float);b=np.array(b,float);a/=np.linalg.norm(a);b/=np.linalg.norm(b)
-    d=float(np.clip(a@b,-1,1))
-    if d<-.999999:return Rotation.from_rotvec(np.array([1.,0,0])*PI).as_quat()
-    q=np.r_[np.cross(a,b),1+d];return q/np.linalg.norm(q)
-
-def frame_pose(kind,t):
-    qs={b['name']:np.array([0.,0,0,1.]) for b in BONES}; ts={}
-    if kind=='Idle':
-        p=2*PI*t/3.2
-        qs['Spine']=Rotation.from_euler('x',.010*math.sin(p)).as_quat()
-        qs['Head']=Rotation.from_euler('y',.025*math.sin(p)*.5).as_quat()
-        for side,s in [('Left',1),('Right',-1)]:
-            qs[side+'UpperArm']=Rotation.from_euler('xz',[.03,.012*s*math.sin(p)]).as_quat()
-            qs[side+'ForeArm']=Rotation.from_euler('x',-.06).as_quat()
-        return qs,ts
-    run=kind=='Run';cycle=.64 if run else .84;nominal=3.0 if run else 1.4;stance=.36 if run else .56
-    phase=(t/cycle)%1; travel=nominal*cycle*stance; amp=travel/2
-    # Lower the pelvis slightly from its relaxed rest height for adequate reach.
-    hy=.875+( .027*abs(math.sin(phase*2*PI)) if run else .012*math.cos(phase*4*PI))
-    ts['Hips']=REST['Hips']-REST['Root']+np.array([0,hy-.945,0])
-    qs['Spine']=Rotation.from_euler('xyz',[(.11 if run else .025),(.03 if run else .025)*math.sin(phase*2*PI),0]).as_quat()
-    qs['Chest']=Rotation.from_euler('y',-.04*math.sin(phase*2*PI)).as_quat()
-    for side,s,offset in [('Left',1,0),('Right',-1,.5)]:
-        ph=(phase+offset)%1
-        if ph<stance:
-            q=ph/stance;z=amp-travel*q;fy=.098
-        else:
-            q=(ph-stance)/(1-stance);sm=q*q*(3-2*q)
-            z=-amp+travel*sm;fy=.098+(.16 if run else .080)*math.sin(q*PI)**1.2
-        hip=REST[side+'UpperLeg'].copy();hip[1]+=hy-.945
-        ankle=np.array([hip[0],fy,.026+z]);u0=REST[side+'LowerLeg']-REST[side+'UpperLeg'];l0=REST[side+'Foot']-REST[side+'LowerLeg']
-        l1=np.linalg.norm(u0);l2=np.linalg.norm(l0);d=ankle-hip;dist=np.linalg.norm(d);dist=min(dist,l1+l2-1e-5);dn=d/(np.linalg.norm(d)+1e-12)
-        along=(l1*l1-l2*l2+dist*dist)/(2*dist);height=math.sqrt(max(0,l1*l1-along*along))
-        perp=np.array([0.,dn[2],-dn[1]]) # knee bends toward +Z
-        perp/=np.linalg.norm(perp)
-        knee=hip+along*dn+height*perp
-        qu=quat_from_to(u0,knee-hip);ru=Rotation.from_quat(qu)
-        qlworld=quat_from_to(l0,ankle-knee);rlworld=Rotation.from_quat(qlworld)
-        qs[side+'UpperLeg']=qu;qs[side+'LowerLeg']=(ru.inv()*rlworld).as_quat()
-        qs[side+'Foot']=rlworld.inv().as_quat()
-        armphase=2*PI*ph
-        qs[side+'UpperArm']=Rotation.from_euler('xz',[(.43 if run else .22)*math.cos(armphase),s*(.025 if run else .012)]).as_quat()
-        qs[side+'ForeArm']=Rotation.from_euler('x',-.85 if run else -.10-.06*(1+math.sin(armphase))).as_quat()
-        qs[side+'Hand']=Rotation.from_euler('y',-.1*s if run else 0).as_quat()
-    return qs,ts
-CLIPS=[]
-for name,dur in [('Idle',3.2),('Walk',.84),('Run',.64)]:
-    count=round(dur*30)+1;times=np.linspace(0,dur,count,dtype=np.float32)
-    rots={b['name']:[] for b in BONES};trans=[]
-    for i,t in enumerate(times):
-        q,tr=frame_pose(name,float(t) if i<count-1 else 0.)
-        for bn in rots:rots[bn].append(q[bn])
-        trans.append(tr.get('Hips',REST['Hips']))
-    CLIPS.append(dict(name=name,times=times,rots=rots,trans=np.array(trans,np.float32)))
+# Version 28：動きの元（frame_pose）は hero_motion.py へ移して作り直した（歩きの腰の上下の向き・待機と歩きの腰の高さ・踵の着地と足先の蹴り出し・
+# 走りの上下・歩きと走りの足の位相）。旧 frame_pose は git の履歴（Version 27 まで）にある。
+# この台本で全部を作り直す代わりに、形・画像をそのまま残して動きだけ差し替えるときは write_clips.py を使う（hero_v2b.glb はそれで作った）。
+import sys as _sys
+_sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import hero_motion as HM  # noqa: E402
+assert [b['name'] for b in BONES] == HM.BONE_NAMES and all(np.allclose(REST[n], HM.REST[n]) for n in HM.BONE_NAMES), '骨組みが hero_motion.py と違う'
+frame_pose = HM.frame_pose
+CLIPS = HM.build_clips()
 
 # glTF 2.0 serializer: supports skins, PBR materials and animation clips.
 class Gltf:
@@ -532,11 +488,12 @@ class Gltf:
                 if np.max(np.abs(rs-rs[0]))<1e-7 and np.max(np.abs(rs[0]-[0,0,0,1]))<1e-7:continue
                 si=len(ani['samplers']);ani['samplers'].append({'input':ta,'output':self.acc(rs,'VEC4'),'interpolation':'LINEAR'})
                 ani['channels'].append({'sampler':si,'target':{'node':BI[bn]+1,'path':'rotation'}})
-            if clip['name']!='Idle':
-                si=len(ani['samplers']);ani['samplers'].append({'input':ta,'output':self.acc(clip['trans'],'VEC3'),'interpolation':'LINEAR'})
-                ani['channels'].append({'sampler':si,'target':{'node':BI['Hips']+1,'path':'translation'}})
+            # Version 28：待機も腰の位置（重心の移り）を持つ
+            si=len(ani['samplers']);ani['samplers'].append({'input':ta,'output':self.acc(clip['trans'],'VEC3'),'interpolation':'LINEAR'})
+            ani['channels'].append({'sampler':si,'target':{'node':BI['Hips']+1,'path':'translation'}})
             d['animations'].append(ani)
-        d['extras']={'original_asset':True,'coordinate_system':'Y-up, +Z forward, metres','animation_root_motion':False,'walk_reference_speed_mps':1.4,'run_reference_speed_mps':3.0,'notice':'Original fictional game character, not an authenticated historical portrait. Clothes are skinned, not cloth-simulated.'}
+        _info=HM.info()
+        d['extras']={'original_asset':True,'coordinate_system':'Y-up, +Z forward, metres','animation_root_motion':False,'motion':'v28 (hero_motion.py)','walk_reference_speed_mps':_info['Walk']['speed'],'walk_stride_m':_info['Walk']['stride'],'walk_duty':_info['Walk']['duty'],'run_reference_speed_mps':_info['Run']['speed'],'run_stride_m':_info['Run']['stride'],'run_duty':_info['Run']['duty'],'notice':'Original fictional game character, not an authenticated historical portrait. Clothes are skinned, not cloth-simulated.'}
         d['buffers']=[{'byteLength':len(self.bin)}]
         if filename.suffix=='.gltf':
             d['buffers'][0]['uri']=filename.stem+'.bin';filename.write_text(json.dumps(d,separators=(',',':')));filename.with_suffix('.bin').write_bytes(self.bin)

@@ -1,11 +1,16 @@
 /**
  * 人物の素材の写し（three）。会話の相手・演出の使者・町の人々で共有する。
- * 見た目は既存の人物の素材（hero_v2.glb）を複製し、着物・袴・髪の色だけを変える（新しい素材は作らない）。
+ * 見た目は既存の人物の素材（hero_v2b.glb：hero_v2.glb と同じ形で、動きを Version 28 で作り直した写し）を複製し、着物・袴・髪の色だけを変える（新しい素材は作らない）。
  * 演出・町の人々の人は、歩きと立ちの動きを「時刻・歩いた距離」から決める（自分では進めない。同じ時刻なら同じ形）。
+ * 人ごとの拍子（待機の速さ・始めの位置・歩幅。explore/rhythm.ts）で、皆が同じ周期で揺れない（Version 28 §4.2）。
  */
 import * as THREE from 'three';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { GAIT, strideFor } from '../game/gait';
+import { idleClipTime, type PersonRhythm } from './rhythm';
+
+export { hashOf } from './rhythm';
 
 export interface Look {
     kosode: [number, number, number];
@@ -39,6 +44,8 @@ export interface PersonBody {
     bones: Map<string, THREE.Bone>;
     idle: THREE.AnimationAction | null;
     walk: THREE.AnimationAction | null;
+    /** 走り（演出の人だけ。急報の使者が走って来る） */
+    run: THREE.AnimationAction | null;
     /** 素材が読めなかったときの代わりの形 */
     standIn: boolean;
 }
@@ -61,16 +68,18 @@ export class PersonFactory {
     }
 
     /**
-     * 人物を作る。walk なら歩きの動きも持たせる（演出・町の人々。再生位置は呼ぶ側が決める）。
-     * idlePhase は待機の動きの始めの位置（0〜1。皆が同じ拍子で揺れないように）
+     * 人物を作る。walk なら歩きの動きも持たせる（演出・町の人々。再生位置は呼ぶ側が決める：posePerson）。
+     * rhythm は人ごとの拍子（explore/rhythm.ts）：自分で待機の動きを進める人（会話の相手）は、その再生の速さ・始めの位置で揺れる
+     *（皆が同じ周期・同じ拍子で揺れない）。idlePhase は始めの位置だけを決める古い指定（rhythm が無いとき）
      */
-    make(lookKey: string | undefined, opts: { walk?: boolean; idlePhase?: number } = {}): PersonBody {
+    make(lookKey: string | undefined, opts: { walk?: boolean; idlePhase?: number; rhythm?: PersonRhythm } = {}): PersonBody {
         const look = (lookKey && LOOKS[lookKey]) || LOOKS.genzo!;
         const root = new THREE.Group();
         const bones = new Map<string, THREE.Bone>();
         let mixer: THREE.AnimationMixer | null = null;
         let idle: THREE.AnimationAction | null = null;
         let walk: THREE.AnimationAction | null = null;
+        let run: THREE.AnimationAction | null = null;
         let body: THREE.Object3D;
         if (this.base) {
             body = cloneSkinned(this.base.scene);
@@ -91,7 +100,8 @@ export class PersonFactory {
             if (idleClip) {
                 idle = mixer.clipAction(idleClip);
                 idle.play();
-                idle.time = (opts.idlePhase ?? 0) * idleClip.duration;
+                idle.time = (opts.rhythm?.idlePhase ?? opts.idlePhase ?? 0) * idleClip.duration;
+                if (opts.rhythm) idle.timeScale = opts.rhythm.idleRate;
             }
             if (opts.walk) {
                 const walkClip = THREE.AnimationClip.findByName(this.base.animations, 'Walk');
@@ -100,16 +110,23 @@ export class PersonFactory {
                     walk.play();
                     walk.setEffectiveWeight(0);
                 }
+                const runClip = THREE.AnimationClip.findByName(this.base.animations, 'Run');
+                if (runClip) {
+                    run = mixer.clipAction(runClip);
+                    run.play();
+                    run.setEffectiveWeight(0);
+                }
                 // 動きの位置は呼ぶ側が決める（自分では進めない）
                 if (idle) idle.timeScale = 0;
                 if (walk) walk.timeScale = 0;
+                if (run) run.timeScale = 0;
             }
         } else {
             body = makeStandIn();
         }
         body.scale.setScalar(look.scale);
         root.add(body);
-        return { root, mixer, bones, idle, walk, standIn: !this.base };
+        return { root, mixer, bones, idle, walk, run, standIn: !this.base };
     }
 
     /** 人物ごとの色を掛けた素材（同じ見た目の人物で共用） */
@@ -138,26 +155,41 @@ export class PersonFactory {
     }
 }
 
-/** 1 歩の周期で進む距離（m。歩きの動き 0.84 秒 × 1.4 m/秒。主人公と同じ） */
-const STRIDE_M = 1.4 * 0.84;
+/** 1 周期（2 歩）で進む距離（m。歩きの動きの決まり game/gait.ts。主人公と同じ）。人物の大きさ（Look.scale）を掛けて使う */
+const STRIDE_M = GAIT.walk.stride;
+
+/** 拍子を省いたとき（前と同じ：待機は time のまま、歩幅は動きの元のまま） */
+const PLAIN: PersonRhythm = { speed: GAIT.walk.speed, stride: 1, idleRate: 1, idlePhase: 0, walkPhase: 0 };
 
 /**
- * 歩きと立ちの形を決める（時刻 time 秒・歩いた距離 walked m・歩いている割合 moving 0〜1）。同じ値なら同じ形。
- * 待機の動きは time から、歩きの動きは walked から（足が滑らない）。
+ * 歩きと立ちの形を決める（時刻 time 秒・歩いた距離 walked m・歩いている割合 moving 0〜1・人ごとの拍子 rhythm）。同じ値なら同じ形。
+ * - 待機の動きは time から（人ごとの再生の速さ・始めの位置）、歩きの動きは walked から（足が滑らない）。
+ * - 歩幅が動きの元より狭い人（rhythm.stride < 1）は、1 周期で進む距離をその分短くし、歩きの動きの重みを stride 倍にして待機の形と混ぜる
+ *  （足の前後の振れが歩幅に合うので、着いた足は地面の上で止まったまま。残りの小さなずれは explore/actors.ts の足の IK が止める）。
  */
-export function posePerson(p: PersonBody, time: number, walked: number, moving: number): void {
+export function posePerson(p: PersonBody, time: number, walked: number, moving: number, rhythm: PersonRhythm = PLAIN, run = 0, cycle?: number): void {
     if (!p.mixer) return;
-    const m = Math.max(0, Math.min(1, moving));
+    // 走り（run > 0）・周期の数（cycle）を渡された人（急報の使者）：歩きと走りを、位相をそろえた 2 つの動きとして混ぜる（主人公と同じ決まり）。
+    // 歩幅は動きの元のまま（人ごとの歩幅の倍率は使わない）。渡されなければ前と同じ（歩きだけ）
+    const r = p.run ? Math.max(0, Math.min(1, run)) : 0;
+    const both = r > 0 || cycle !== undefined;
+    const m = Math.max(0, Math.min(1, moving)) * (both ? 1 : Math.max(0.5, Math.min(1, rhythm.stride)));
     if (p.idle) {
         const d = p.idle.getClip().duration;
-        p.idle.time = ((time % d) + d) % d;
+        p.idle.time = idleClipTime(rhythm, time, d);
         p.idle.setEffectiveWeight(1 - m);
     }
     if (p.walk) {
         const d = p.walk.getClip().duration;
-        const ph = (((walked / STRIDE_M) % 1) + 1) % 1;
+        const scale = p.root.children[0]?.scale.x || 1;
+        const cyc = both ? (cycle ?? walked / strideFor(r)) / scale : walked / (STRIDE_M * scale * rhythm.stride);
+        const ph = (((rhythm.walkPhase + cyc) % 1) + 1) % 1;
         p.walk.time = ph * d;
-        p.walk.setEffectiveWeight(m);
+        p.walk.setEffectiveWeight(m * (1 - r));
+        if (p.run) {
+            p.run.time = ph * p.run.getClip().duration;
+            p.run.setEffectiveWeight(m * r);
+        }
     }
     p.mixer.update(0);
 }
@@ -170,11 +202,4 @@ export function makeStandIn(): THREE.Object3D {
     body.castShadow = true;
     g.add(body);
     return g;
-}
-
-/** 名前（文字列）から決まる数（皆が同じ拍子にならないように） */
-export function hashOf(s: string): number {
-    let h = 7;
-    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-    return h;
 }
