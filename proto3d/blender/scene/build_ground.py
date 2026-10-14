@@ -10,7 +10,8 @@ Version 28 の変更（Version 27 の ground_v2.glb・ground.meta.json はリポ
   城門・土塀・開始の位置は scene.json。
 - 接地の陰：Version 28 の建物 5 棟・小物（props28.glb を置き方どおりに置く）・木をすべて置いたまま、地面の AO を焼く。
   空の見え方（6 m）と接地の陰（0.7 m）の 2 回を掛けて 1 枚の ORM（R 遮蔽、TEXCOORD_1）に。小物・木の根元の周りが暗くなる。
-- 東の側溝を z 11 から土蔵造りの店の北の角（z 12.35）まで延ばし、路地の口に渡り石。両方の側溝に浅い水面（ground_ditch_water）、
+- 東の側溝を z 11 から土蔵造りの店の北の角（z 12.35）まで延ばし、路地の口に渡り石。詰所の前の休み場（筵の下、z −1.35〜3.35）は暗渠にして
+  溝を 2 つ（east・east_s）に分ける（筵が溝と縁石にまたがらない）。両方の側溝に浅い水面（ground_ditch_water）、
   水際の石は濡れて暗く苔の色（頂点色）。
 - 木戸の外：道の続きと、田（水を張った田・植えた田、畦）・畑（畝）を広げる（ground_fields。歩ける範囲は広げない）。
   遠くの簡単な地面（ground_far）は田畑の所を抜く。木戸の外の道の両脇は草の縁。
@@ -134,8 +135,8 @@ for _d in STREET['edges']['ditches']:
         hole = (_d['x'][0] - 0.16, _d['x'][1] + 0.08)
         chan = (hole[0] + CURB_W['road'], hole[1] - CURB_W['house'])
     DITCH[_d['name']] = dict(side=side, x=tuple(_d['x']), hole=hole, chan=chan, z=(_d['z'][0], _d['z'][1]))
-# 入口の前の渡り石（z の範囲）
-BRIDGES = {'west': [(-3.55 + DZW, -1.5 + DZW), (3.49 + DZW, 5.31 + DZW)], 'east': [(6.1, 8.5), (11.2, 12.05)]}   # 東の 2 つ目は町家 D の南の路地の口
+# 入口の前の渡り石（z の範囲）。東の側溝は詰所の前の休み場（筵の下）で暗渠にして 2 つに分ける（east：町家 D・土蔵造りの店の前、east_s：城の土塀の前から休み場の南まで）
+BRIDGES = {'west': [(-3.55 + DZW, -1.5 + DZW), (3.49 + DZW, 5.31 + DZW)], 'east': [(6.1, 8.5), (11.2, 12.05)], 'east_s': []}   # 東の 2 つ目は町家 D の南の路地の口
 # 雨落ちの砂利の帯（ゲームの (x, z) の 2 点。幅 0.2 m）：塀の笠の下（町側・城内側）と町家の妻・裏の軒の下
 DRIP_LINES = [
     ((-17.9, EW_Z + DRIP), (-2.95, EW_Z + DRIP)), ((2.95, EW_Z + DRIP), (NS_X - DRIP - 0.1, EW_Z + DRIP)),
@@ -264,6 +265,11 @@ def bump_fade(x, z):
         dh = np.minimum(dh, rect_dist(x, z, r))
     f *= sstep(0.3, 1.2, dh)
     f *= 1 - (1 - sstep(0.9, 2.2, np.abs(z - EW_Z))) * (np.abs(x) < 3.6)
+    # 筵の下は平ら（筵は置いた所の真ん中の地面の高さに平らに置くので、起伏があると縁が埋まる・浮く）
+    dm = np.full(x.shape, 99.0)
+    for r in MAT_RECTS:
+        dm = np.minimum(dm, rect_dist(x, z, r))
+    f *= sstep(0.1, 0.8, dm)
     return f
 
 
@@ -932,10 +938,12 @@ def build_fields():
 # 小物の足元・人の道（Version 28：street28/props28.placed.json）
 # ---------------------------------------------------------------------------
 
-def placed_rects(pad=0.0):
-    """小物の歩きの当たり判定の箱（筵は形の箱）をゲームの座標へ写した四角形 (x0, x1, z0, z1)"""
+def placed_rects(pad=0.0, types=None):
+    """小物の歩きの当たり判定の箱（筵は形の箱）をゲームの座標へ写した四角形 (x0, x1, z0, z1)。types があればその種類だけ"""
     out = []
     for it in PLACED['placed']:
+        if types is not None and it['type'] not in types:
+            continue
         t = PTYPES[it['type']]
         c, s_ = math.cos(it['rotY']), math.sin(it['rotY'])
         boxes = t['walk'] if t['walk'] else [t['bounds']]
@@ -950,6 +958,7 @@ def placed_rects(pad=0.0):
 
 
 PROP_RECTS = placed_rects()
+MAT_RECTS = placed_rects(types=('mat',))      # 筵の形の箱（下の地面の起伏を消す：bump_fade）
 KEEP_PTS = [tuple(q) for q in PLACED['keep_clear']['points']]
 KEEP_PATHS = [[tuple(q) for q in path] for path in PLACED['keep_clear']['paths']]
 
@@ -1855,8 +1864,9 @@ def plant_spots(joints):
         if rng.random() < 0.2:
             spots.append((grass[1 + rng.integers(2)], x + rng.uniform(-0.03, 0.03), z, rng.uniform(0.3, 0.5)))
     for d in DITCH.values():
-        for zz in d['z']:
-            cluster((d['hole'][0] + d['hole'][1]) / 2 + d['side'] * 0.35, zz + (0.25 if zz > 0 else -0.25), 3, rad=0.15, avoid_road=False)
+        # 溝の両端の外（南の端は南へ、北の端は北へ 0.25 m。溝を暗渠で分けた所でも溝の外）
+        for zz, out in ((d['z'][0], -0.25), (d['z'][1], 0.25)):
+            cluster((d['hole'][0] + d['hole'][1]) / 2 + d['side'] * 0.35, zz + out, 3, rad=0.15, avoid_road=False)
     # 空き地（Version 27：町家 A の裏）
     for _ in range(3):
         cluster(rng.uniform(-17.5, -11.4), rng.uniform(-11.0, -4.0), int(rng.integers(3, 5)), smin=0.7, smax=1.2)

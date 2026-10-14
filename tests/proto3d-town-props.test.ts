@@ -4,6 +4,7 @@
  *   （地面の制作 scene/build_ground.py が、この一覧で小物を置いて接地の陰を焼く。2 か所の置き方がずれない）。
  *   一覧を書き直すとき：UPDATE_PLACED=1 npx vitest run tests/proto3d-town-props.test.ts
  * - 小物の当たり判定・カメラ除けは、種類ごとの固い部品の箱（制作が書き出した props28.types.json）を置き場所へ写したもの。
+ * - 小物（筵を含む）は側溝の穴（石組みの縁石まで）にまたがらない（溝の上に渡したり、縁石に載ったりしない）。
  */
 import { describe, expect, it } from 'vitest';
 import { colliders, groundY, type Rect } from '../proto3d/src/layout';
@@ -174,6 +175,57 @@ describe('Version 28 の町の小物（Blender で作った形）', () => {
         for (const b of PROP_TYPES.tower_top.camera) {
             const covers = b.x0 < 0 && b.x1 > 0 && b.z0 < 0 && b.z1 > 0;
             if (covers) expect(b.y0).toBeGreaterThan(TOWER.eyeY);
+        }
+    });
+
+    it('小物（筵を含む）は側溝の穴（溝と両側の縁石）にまたがらない：溝の上に渡したり、縁石に載ったりしない（休み場の前の東の側溝は筵の下で暗渠）', () => {
+        // 側溝の穴は表の側溝（溝の内のり）から、道側 0.16 m・家側 0.08 m 広い（scene/build_ground.py の DITCH。縁石 0.17〜0.18 m）
+        const holes = street.edges.ditches.map((d) => {
+            const east = d.x[0] > 0;
+            return { name: d.name, x0: d.x[0] - (east ? 0.16 : 0.08), x1: d.x[1] + (east ? 0.08 : 0.16), z0: d.z[0], z1: d.z[1] };
+        });
+        let n = 0;
+        for (const it of placedList()) {
+            const t = PROP_TYPES[it.type];
+            const c = Math.cos(it.rotY);
+            const s_ = Math.sin(it.rotY);
+            // 置いた形の足元（歩きの箱。無い筵・櫓の屋根は形の箱）を置き場所へ写した四角（地面の制作の placed_rects と同じ写し方）
+            for (const r of t.walk.length ? t.walk : [t.bounds]) {
+                const xs: number[] = [];
+                const zs: number[] = [];
+                for (const px of [r.x0 * it.sx, r.x1 * it.sx]) {
+                    for (const pz of [r.z0, r.z1]) {
+                        xs.push(it.x + px * c + pz * s_);
+                        zs.push(it.z - px * s_ + pz * c);
+                    }
+                }
+                const w = { x0: Math.min(...xs), x1: Math.max(...xs), z0: Math.min(...zs), z1: Math.max(...zs) };
+                for (const h of holes) {
+                    const hit = w.x0 < h.x1 && w.x1 > h.x0 && w.z0 < h.z1 && w.z1 > h.z0;
+                    expect(hit, `${it.prop}:${it.type} (${it.x}, ${it.z}) が側溝 ${h.name} の穴にまたがる`).toBe(false);
+                }
+                n++;
+            }
+        }
+        expect(n).toBeGreaterThan(40);
+        // 休み場の筵は 6 枚とも、筵の下を暗渠にした所（東の側溝の 2 つの間）にある
+        const east = holes.filter((h) => h.x0 > 0).sort((a, b) => a.z0 - b.z0);
+        expect(east.length).toBe(2);
+        for (const [, z] of MATS) {
+            expect(z - 1.1).toBeGreaterThan(east[0]!.z1);
+            expect(z + 1.1).toBeLessThan(east[1]!.z0);
+        }
+        // 筵は真ん中の地面の高さに平らに置くので、筵の下の地面は平ら（地面の起伏で縁が埋まる・浮くのは 1 cm まで。地面の制作が筵の下の起伏を消す）
+        const b = PROP_TYPES.mat.bounds;
+        for (const [mx, mz] of MATS) {
+            const y0 = groundY(mx, mz);
+            for (let i = 0; i <= 8; i++) {
+                for (let k = 0; k <= 16; k++) {
+                    const x = mx + b.x0 + ((b.x1 - b.x0) * i) / 8;
+                    const z = mz + b.z0 + ((b.z1 - b.z0) * k) / 16;
+                    expect(Math.abs(groundY(x, z) - y0), `筵 (${mx}, ${mz}) の下 (${x.toFixed(2)}, ${z.toFixed(2)})`).toBeLessThan(0.01);
+                }
+            }
         }
     });
 
