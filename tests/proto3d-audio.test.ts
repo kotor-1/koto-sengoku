@@ -22,7 +22,10 @@ const TABLE: VoiceTable = {
     nameOf: (s) => (VOICE_SPEAKER_NAMES as Record<string, string>)[s] ?? '',
 };
 
-/** 偽物で組んだ音のまとめ役 */
+/**
+ * 偽物で組んだ音のまとめ役。このファイルの声の確かめは端末の読み上げ（旧）の道筋なので、声の種類は 'tts'（URL の ?voice=tts と同じ）にする。
+ * 新しい声（台詞ごとの音声ファイル。既定）の確かめは tests/proto3d-voice-play.test.ts。
+ */
 function makeSystem(opts: { storage?: ReturnType<typeof memoryStorage> | null; synth?: FakeSynth | null; noContext?: boolean } = {}) {
     const { ctx, create } = fakeContext();
     const page = new FakePage();
@@ -40,6 +43,7 @@ function makeSystem(opts: { storage?: ReturnType<typeof memoryStorage> | null; s
         page,
         speech: { synth, makeUtterance: (t) => new FakeUtterance(t) },
         timers,
+        voiceSourceOverride: 'tts',
     });
     /** 音の時計と、タイマーを一緒に進める（秒） */
     const run = (sec: number, stepMs = TICK_MS) => {
@@ -250,6 +254,7 @@ describe('有効にする・失敗しても進む', () => {
             speech: { synth, makeUtterance: (t) => new FakeUtterance(t) },
             timers: new FakeTimers(),
             renderer: null,
+            voiceSourceOverride: 'tts',
         });
         expect(sys.sayId('depart.hero')).toBeNull();
         sys.unlock();

@@ -26,6 +26,11 @@
 //   - --write-sha256 <ファイル>：違反が無いときだけ、今の dist の sha256 の一覧を書く（dist の中には書かない）。ビルドの直後に書き、
 //     公開の直前に --sha256 で照らす。既にある一覧は上書きしない（壊れた後にもう一度走らせて、壊れた中身を「正しい」と書き直さない）。
 //     ビルドを作り直したときだけ --overwrite-sha256 を付ける。
+// - Version 28：台詞の音声ファイル（voice/<台詞の id>.mp3。docs/v28-town-motion-voice.md §5）。
+//   - 参照：JS の中の音声ファイルの場所（一覧 voiceManifest.gen.json がバンドルに入った "voice/…\.mp3" など）が dist の中にあること。
+//   - 中身：.mp3 は先頭（ID3 の札があればその後）が MPEG の音のフレームの頭として読めること（版・層・速さ・標本化の速さの値が正しい）。
+//   - voice/ にあるのに JS から参照の無い音声ファイルは注意にする（一覧から外したのに残った物）。
+//   - 公開しない素材の名前の確かめ（UNSHIPPED_ART の oda_ など）は、voice/ の音声ファイルには当てない（台詞の id の「oda_envoy」は織田家の使者の台詞で、絵ではない）。
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, posix, relative, resolve, sep } from 'node:path';
@@ -104,6 +109,34 @@ export function sniff(b) {
     if (ascii(b, 0, 4) === 'glTF') return 'GLB';
     return null;
 }
+/** MPEG の音（Layer I〜III）の速さの表（kbps）と標本化の速さの表（Hz）。MPEG-1・MPEG-2・MPEG-2.5 */
+const MP3_RATES = { 1: [44100, 48000, 32000], 2: [22050, 24000, 16000], 25: [11025, 12000, 8000] };
+/**
+ * MP3 の最初のフレームの頭を読む（ID3v2 の札があればその後ろ）。読めれば { version, layer, kbpsIndex, sampleRate, offset }、
+ * 読めなければ理由の文（string）
+ */
+export function mp3FirstFrame(b) {
+    let i = 0;
+    if (ascii(b, 0, 3) === 'ID3') {
+        if (b.length < 10) return 'ID3 の札が切れている';
+        // 札の大きさは 7 ビットずつの 4 バイト（syncsafe）。足の札（footer）があれば 10 バイト足す
+        const size = ((b[6] & 0x7f) << 21) | ((b[7] & 0x7f) << 14) | ((b[8] & 0x7f) << 7) | (b[9] & 0x7f);
+        i = 10 + size + (b[5] & 0x10 ? 10 : 0);
+    }
+    if (b.length < i + 4) return 'MPEG のフレームの頭が無い（短すぎる）';
+    if (b[i] !== 0xff || (b[i + 1] & 0xe0) !== 0xe0) return `MPEG のフレームの頭（同期の印）が無い（${i} バイト目）`;
+    const v = (b[i + 1] >> 3) & 3;
+    const layer = (b[i + 1] >> 1) & 3;
+    const bri = (b[i + 2] >> 4) & 15;
+    const sri = (b[i + 2] >> 2) & 3;
+    const version = { 0: 25, 2: 2, 3: 1 }[v];
+    if (!version) return 'MPEG の版の値が予約の値';
+    if (layer === 0) return 'MPEG の層の値が予約の値';
+    if (bri === 0 || bri === 15) return `MPEG の速さの値が使えない値（${bri}）`;
+    if (sri === 3) return 'MPEG の標本化の速さの値が予約の値';
+    return { version, layer: 4 - layer, kbpsIndex: bri, sampleRate: MP3_RATES[version][sri], offset: i };
+}
+
 /** 拡張子ごとに、先頭の印で合うとみなす種類 */
 const BINARY_KIND = {
     '.png': ['PNG'],
@@ -135,7 +168,14 @@ export function contentCheck(ext, buf) {
     const kinds = BINARY_KIND[ext];
     if (kinds) {
         const got = sniff(buf);
-        if (kinds.includes(got)) return { problem: null, checked: true };
+        if (kinds.includes(got)) {
+            // Version 28：MP3 は最初のフレームの頭まで読む（先頭の 2 バイトが偶然合っただけの物・壊れた物を止める）
+            if (ext === '.mp3') {
+                const f = mp3FirstFrame(buf);
+                if (typeof f === 'string') return { problem: `.mp3 なのに MPEG の音として読めない（${f}）`, checked: true };
+            }
+            return { problem: null, checked: true };
+        }
         return { problem: `${ext} なのに中身は ${got ?? (buf.length ? '見分けられない形式' : '空（0 バイト）')}`, checked: true };
     }
     if (!TEXT_EXT.has(ext)) return { problem: null, checked: false };
@@ -201,12 +241,19 @@ export function gltfRefs(json) {
     return out;
 }
 
-/** JS の中の、同じ置き場の読み込み（"./名前.js"・"./名前.css"、JS の置き場から）と生成イラスト素材（"art/…"、dist の根から）の文字 */
+/**
+ * JS の中の、同じ置き場の読み込み（"./名前.js"・"./名前.css"、JS の置き場から）と生成イラスト素材（"art/…"、dist の根から）と
+ * 台詞の音声ファイル（"voice/…\.mp3" など、dist の根から。Version 28）の文字
+ */
 export function jsRefs(js) {
     const chunks = [...js.matchAll(/["'`]\.\/([A-Za-z0-9_.@-]+\.(?:m?js|css))["'`]/g)].map((m) => `./${m[1]}`);
     const art = [...js.matchAll(/["'`](?:\.\/)?(art\/[A-Za-z0-9_\-/]+\.(?:webp|png|jpe?g|avif|gif))["'`]/g)].map((m) => m[1]);
-    return { chunks: [...new Set(chunks)], art: [...new Set(art)] };
+    const voice = [...js.matchAll(/["'`](?:\.\/)?(voice\/[A-Za-z0-9_.\-/]+\.(?:mp3|ogg|opus|m4a|wav))["'`]/g)].map((m) => m[1]);
+    return { chunks: [...new Set(chunks)], art: [...new Set(art)], voice: [...new Set(voice)] };
 }
+
+/** 台詞の音声ファイルの置き場（dist の根の voice/ の直下の音のファイル） */
+export const VOICE_FILE = /^voice\/[^/]+\.(?:mp3|ogg|opus|m4a|wav)$/;
 
 const MIME_EXT = { 'image/png': ['.png'], 'image/jpeg': ['.jpg', '.jpeg'], 'image/webp': ['.webp'], 'image/ktx2': ['.ktx2'] };
 
@@ -259,7 +306,9 @@ export function checkDist(distDir, { baseline = null, budget = null, sha256 = nu
     if (budget !== null && total > budget) errors.push(`合計 ${total} が目安 ${budget} を超えた`);
 
     const present = new Set(files.map((f) => f.rel));
-    const refs = { html: 0, gltf: 0, js: 0, content: 0 };
+    const refs = { html: 0, gltf: 0, js: 0, content: 0, voice: 0 };
+    /** JS から参照のある音声ファイル（dist の根からの場所） */
+    const voiceRefs = new Set();
     /** 参照の先が dist の中にあるか。無ければ違反（何から・何を・どこを探したか） */
     const needRef = (from, ref, what, base = from) => {
         const t = localTarget(base, ref);
@@ -300,6 +349,13 @@ export function checkDist(distDir, { baseline = null, budget = null, sha256 = nu
                 refs.js++;
                 needRef(f.rel, r, 'JS の中の素材の場所', 'index.html');
             }
+            // Version 28：台詞の音声ファイル（一覧がバンドルに入っている）
+            for (const r of j.voice) {
+                refs.js++;
+                if (!voiceRefs.has(r)) refs.voice++;
+                voiceRefs.add(r);
+                needRef(f.rel, r, 'JS の中の台詞の音声ファイルの場所', 'index.html');
+            }
         }
         const g = c.json !== undefined ? gltfRefs(c.json) : null;
         if (g)
@@ -327,7 +383,10 @@ export function checkDist(distDir, { baseline = null, budget = null, sha256 = nu
     }
     const art = files.filter((f) => f.rel.startsWith('art/'));
     for (const f of art) if (!ART_EXT.has(f.ext)) errors.push(`/art に画像でないファイル: ${f.rel}`);
-    for (const f of files) if (UNSHIPPED_ART.test(f.rel)) errors.push(`公開しない素材（予約・未使用・素材パックそのもの）の名前のファイル: ${f.rel}`);
+    // 公開しない素材の名前は絵の物（台詞の音声ファイルの id の「oda_envoy」などは当てない。Version 28）
+    for (const f of files) if (UNSHIPPED_ART.test(f.rel) && !VOICE_FILE.test(f.rel)) errors.push(`公開しない素材（予約・未使用・素材パックそのもの）の名前のファイル: ${f.rel}`);
+    // Version 28：voice/ にあるのに JS から参照の無い音声ファイル（一覧から外したのに残った物）
+    for (const f of files) if (VOICE_FILE.test(f.rel) && !voiceRefs.has(f.rel)) warnings.push(`JS から参照の無い台詞の音声ファイル: ${f.rel}`);
     const pack = packV2Hashes();
     if (!pack) warnings.push(`素材パック第 2 版の一覧の写しが無いので、パックのファイルそのものが入っていないかの確かめ（sha256）を飛ばした: ${PACK_V2_LIST}`);
     else
@@ -420,7 +479,7 @@ function main(argv) {
     for (const f of r.art.files) console.log(`  ${f.path.padEnd(36)} ${String(f.bytes).padStart(9)}`);
     for (const s of r.stale) console.log(`  前回だけにある: ${s}`);
     console.log(
-        `参照の先（dist の中にあるか）: HTML ${r.refs.html} 件・glTF ${r.refs.gltf} 件・JS ${r.refs.js} 件／中身と拡張子を照らしたファイル ${r.refs.content} 件`,
+        `参照の先（dist の中にあるか）: HTML ${r.refs.html} 件・glTF ${r.refs.gltf} 件・JS ${r.refs.js} 件（うち台詞の音声ファイル ${r.refs.voice} 件）／中身と拡張子を照らしたファイル ${r.refs.content} 件`,
     );
     if (r.sha256) console.log(`sha256 の一覧 ${r.sha256.list}: ${r.sha256.listed} 件のうち ${r.sha256.same} 件が同じ中身`);
     if (wrote === true) console.log(`sha256 の一覧を書いた: ${resolve(opt.writeSha256)}`);

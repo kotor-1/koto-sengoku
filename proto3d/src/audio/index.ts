@@ -3,10 +3,16 @@
  *
  * 取り付け（どこも短く。音が無い・失敗しても進行は止めない）：
  * - ui/boot.ts：作って登録する（installAudio）。最初の利用者の操作で有効にする。画面から曲を決める見張り（200 ms ごと）。
- * - ui/view.ts：会話の行（line）・会話を閉じた（stopVoice）・メニューの音の設定。
- * - ui/cinePlayer.ts：演出の場面（cineBeat）・字幕（caption）・一時停止（cinePaused）・終わり（cineEnd）。
+ * - ui/view.ts：会話の行（line）・会話の先読み（prefetchLines）・会話を閉じた・上に画面を重ねた（stopVoice）・メニューの音の設定。
+ * - ui/cinePlayer.ts：演出の先読み（prefetchVoices）・場面（cineBeat）・字幕（caption）・一時停止（cinePaused）・終わり（cineEnd）。
  * - main.ts：足音（step）・聞く位置（listener）。
  * - battle/entry.ts：合戦の毎フレーム（battleFrame）・始まり・能力・撤退・終わり。
+ *
+ * 声の種類（Version 28。docs/v28-town-motion-voice.md §5.4）：
+ * - 'file'（既定）：台詞ごとに作った音声ファイル（voiceFiles.ts）。ファイルの無い台詞は無音（字幕だけ）。端末の読み上げには一切触れない
+ *   （speechSynthesis を読みもしない：端末の読み上げの部品は、端末の読み上げを選んだときに初めて作る）。
+ * - 'tts'：端末の読み上げ（旧。voice.ts）。音の設定の「声の種類」か、URL の ?voice=tts（その回だけ。保存しない）で選ぶ。
+ * - 自動で端末の読み上げに切り替えない（ファイルが読めない・無いときも）。
  */
 import { AudioEngine, browserPage, type PageLike } from './engine';
 import { cineMusic, creakDelay, sceneFor, type CineBeatInfo, type ScreenInput } from './director';
@@ -15,6 +21,9 @@ import { AudioSettingsStore } from './settings';
 import { FootstepTracker, Sfx } from './sfx';
 import type { SongId } from './songs';
 import { VoicePlayer, browserSpeech, type SpeechLike, type UtteranceLike, type VoiceLineLike, type VoiceStatus } from './voice';
+import { VoiceFilePlayer, type FetchBytes } from './voiceFiles';
+import type { VoiceFileEntry } from './voiceManifest';
+import type { VoiceSource } from './settings';
 import type { StorageLike } from '../campaign/save';
 
 /** 声の台詞の表の引き方（campaign/ieyasu1570/story/voiceLines.ts を boot がつなぐ） */
@@ -34,7 +43,20 @@ export interface AudioSystemOptions {
     timers?: TimerLike;
     /** BGM を描く（省けば OfflineAudioContext。null で描かずに予約だけ） */
     renderer?: SongRenderer | null;
+    /** 声の音声ファイルの読み方（省けばブラウザの fetch と voiceManifest の一覧。テストでは偽物） */
+    voiceFiles?: { fetchBytes?: FetchBytes; fileFor?: (id: string) => VoiceFileEntry | undefined };
+    /** URL の ?voice= の指定（その回だけ設定より優先。保存しない。null・省けば設定のまま） */
+    voiceSourceOverride?: VoiceSource | null;
 }
+
+/**
+ * 演出の字幕の声を、頼んでからこの秒数（音の時計）より遅れて流せるようになったら流さない（字幕の長さは音の長さ＋0.2 秒。
+ * それより遅れて始めると、次の字幕で言い終える前に切られる）。演出を始めたときに台詞を先に読むので、ふつうは遅れない
+ */
+export const CINE_VOICE_LATE_SEC = 0.25;
+
+/** この画面へ移ったら声を止める（会話・軍議・演出の上に重ねる画面と、タイトル） */
+const VOICE_STOP_SCREENS: ReadonlySet<string> = new Set(['menu', 'situation', 'title']);
 
 /** 合戦の音に要る形（battle/sim.ts の BattleState の使う所だけ） */
 export interface BattleLike {
@@ -46,8 +68,14 @@ export class AudioSystem {
     readonly engine: AudioEngine;
     readonly music: MusicPlayer;
     readonly sfx: Sfx;
-    readonly voice: VoicePlayer;
+    /** 声（新しい声：台詞ごとの音声ファイル） */
+    readonly voiceFiles: VoiceFilePlayer;
     readonly feet = new FootstepTracker();
+    /** 端末の読み上げ（旧）の部品。端末の読み上げを選ぶまで作らない（新しい声では speechSynthesis に触れない） */
+    private tts: VoicePlayer | null = null;
+    private readonly speechOpt: AudioSystemOptions['speech'];
+    private readonly sourceOverride: VoiceSource | null;
+    private lastSource: VoiceSource;
     private readonly voices: VoiceTable;
     private readonly timers: TimerLike;
     private screen: ScreenInput = { screen: 'boot', battle: false, cine: null };
@@ -64,9 +92,44 @@ export class AudioSystem {
         this.engine = new AudioEngine({ settings: this.settings, ...(opts.createContext ? { createContext: opts.createContext } : {}), page: opts.page === undefined ? browserPage() : opts.page });
         this.music = new MusicPlayer(this.engine, this.timers, playNote, opts.renderer === undefined ? offlineRenderer() : opts.renderer);
         this.sfx = new Sfx(this.engine);
-        const sp = opts.speech ?? browserSpeech();
-        this.voice = new VoicePlayer(this.engine, { synth: sp.synth, makeUtterance: sp.makeUtterance, timers: this.timers });
+        this.speechOpt = opts.speech;
+        this.sourceOverride = opts.voiceSourceOverride ?? null;
+        this.voiceFiles = new VoiceFilePlayer(this.engine, { timers: this.timers, ...(opts.voiceFiles ?? {}) });
+        this.lastSource = this.voiceSource;
+        // 声の種類を替えた：今の声（どちらも）を止める
+        this.settings.onChange(() => {
+            const now = this.voiceSource;
+            if (now === this.lastSource) return;
+            this.lastSource = now;
+            this.stopAllVoices();
+        });
         this.engine.onReady(() => this.ensureAmbienceTimer());
+    }
+
+    /** 今の声の種類（URL の ?voice= があればそれ。無ければ音の設定） */
+    get voiceSource(): VoiceSource {
+        return this.sourceOverride ?? this.settings.get().voiceSource;
+    }
+    /** URL の ?voice= で声の種類を決めている（音の設定の欄では替えられない） */
+    get voiceSourceFixed(): boolean {
+        return this.sourceOverride !== null;
+    }
+
+    /** 端末の読み上げ（旧）の部品（初めて使うときに作る。新しい声のままなら作らない） */
+    get voice(): VoicePlayer {
+        if (!this.tts) {
+            const sp = this.speechOpt ?? browserSpeech();
+            this.tts = new VoicePlayer(this.engine, { synth: sp.synth, makeUtterance: sp.makeUtterance, timers: this.timers });
+        }
+        return this.tts;
+    }
+    private get useTts(): boolean {
+        return this.voiceSource === 'tts';
+    }
+    /** 両方の声を止める（端末の読み上げは、作ってあるときだけ） */
+    private stopAllVoices(): void {
+        this.voiceFiles.stop();
+        this.tts?.stop();
     }
 
     /**
@@ -76,8 +139,8 @@ export class AudioSystem {
     unlock(activation = true): boolean {
         return guard(() => {
             const ok = this.engine.unlock();
-            // 読み上げの下ごしらえは Web Audio が無い端末でもする（声は AudioContext を通らない）
-            if (activation && !this.voice.primed) this.voice.prime();
+            // 読み上げの下ごしらえは Web Audio が無い端末でもする（声は AudioContext を通らない）。端末の読み上げを選んでいるときだけ
+            if (activation && this.useTts && !this.voice.primed) this.voice.prime();
             this.apply('unlock');
             return ok;
         }, false);
@@ -86,12 +149,15 @@ export class AudioSystem {
     /** 操作の中で有効にし直す要るか（始まっていない・中断されたまま。アプリの切り替えで止めている間は要らない） */
     get needsGesture(): boolean {
         const st = this.engine.state;
-        if (st === 'unavailable') return !this.voice.primed && this.voiceStatus !== 'unsupported';
-        return (st !== 'running' && !this.engine.held) || (!this.voice.primed && this.voiceStatus !== 'unsupported');
+        // 読み上げの下ごしらえが要るのは端末の読み上げ（旧）のときだけ（新しい声は AudioContext を通る）
+        const prime = this.useTts && !this.voice.primed && this.voiceStatus !== 'unsupported';
+        if (st === 'unavailable') return prime;
+        return (st !== 'running' && !this.engine.held) || prime;
     }
 
+    /** 端末の読み上げ（旧）の様子（新しい声のときは 'unknown'：端末の読み上げを調べない） */
     get voiceStatus(): VoiceStatus {
-        return this.voice.status;
+        return this.useTts ? this.voice.status : 'unknown';
     }
 
     // ---------------- 画面と曲
@@ -101,8 +167,9 @@ export class AudioSystem {
     setScreen(screen: string, battle: boolean, defeat = false): void {
         guard(() => {
             if (this.screen.screen === screen && this.screen.battle === battle && !!this.screen.defeat === defeat) return;
-            // 別の画面へ移った：古い声を止める（会話・演出の中の移り変わりは、それぞれの口で止める）
-            if (battle !== this.screen.battle) this.voice.stop();
+            // 別の画面へ移った：古い声を止める（会話・演出の中の移り変わりは、それぞれの口で止める）。
+            // 合戦の出入り・メニュー・情勢・タイトルへ移った（会話・軍議の上に重ねたときも。ui/view.ts は重ねた時にすぐ止める。ここは見張りの側の止め）
+            if (battle !== this.screen.battle || (screen !== this.screen.screen && VOICE_STOP_SCREENS.has(screen))) this.stopAllVoices();
             this.screen = { screen, battle, cine: this.cine, defeat };
             this.apply(`screen:${screen}${battle ? '+battle' : ''}${defeat ? '+defeat' : ''}`);
         }, undefined);
@@ -123,13 +190,13 @@ export class AudioSystem {
     }
     /** 演出を閉じた（終わり・スキップ・タイトルへ）：声を止め、演出の曲の決めを外す */
     cineEnd(): void {
-        guard(() => this.voice.stop(), undefined);
+        guard(() => this.stopAllVoices(), undefined);
         this.cineBeat(null);
     }
     /** 演出の一時停止（自動の一時停止も）：声を止める（再開しても読み直さない） */
     cinePaused(on: boolean): void {
         guard(() => {
-            if (on) this.voice.stop();
+            if (on) this.stopAllVoices();
         }, undefined);
     }
 
@@ -163,16 +230,41 @@ export class AudioSystem {
     caption(c: { speaker?: string; text: string; voice?: string } | null): void {
         guard(() => {
             const line = c?.voice ? this.voices.byId(c.voice) : c?.speaker ? this.voices.find(c.speaker, c.text) : undefined;
-            if (line && line.text === c!.text) this.voice.say(line);
-            else this.voice.stop();
+            if (!line || line.text !== c!.text) this.stopAllVoices();
+            else if (this.useTts) this.voice.say(line);
+            else this.voiceFiles.say(line, { lateLimitSec: CINE_VOICE_LATE_SEC });
         }, undefined);
     }
     /** 会話の行が出た（表にある文なら読む。無ければ前の声を止める） */
     line(speaker: string, name: string, text: string): void {
         guard(() => {
-            const v = this.voices.find(speaker, text) ?? (name ? this.voices.find(name, text) : undefined);
-            if (v) this.voice.say(v);
-            else this.voice.stop();
+            const v = this.lineOf(speaker, name, text);
+            if (!v) this.stopAllVoices();
+            else if (this.useTts) this.voice.say(v);
+            else this.voiceFiles.say(v);
+        }, undefined);
+    }
+    private lineOf(speaker: string, name: string, text: string): VoiceLineLike | undefined {
+        return this.voices.find(speaker, text) ?? (name ? this.voices.find(name, text) : undefined);
+    }
+    /**
+     * 会話を開いた：その会話の行のうち声のある台詞を、先に読んでおく（新しい声のときだけ。端末の読み上げは先読みが無い）
+     */
+    prefetchLines(lines: readonly { speaker: string; name?: string; text: string }[]): void {
+        guard(() => {
+            if (this.useTts) return;
+            const ids: string[] = [];
+            for (const l of lines) {
+                const v = this.lineOf(l.speaker, l.name ?? '', l.text);
+                if (v) ids.push(v.id);
+            }
+            this.voiceFiles.prefetch(ids);
+        }, undefined);
+    }
+    /** 演出を始めた：字幕の声の id（出る順）を先に読んでおく（新しい声のときだけ） */
+    prefetchVoices(ids: readonly string[]): void {
+        guard(() => {
+            if (!this.useTts) this.voiceFiles.prefetch(ids);
         }, undefined);
     }
     /**
@@ -181,18 +273,18 @@ export class AudioSystem {
     sayId(id: string, before?: (v: VoiceLineLike) => void): VoiceLineLike | null {
         return guard(() => {
             const v = this.voices.byId(id);
-            if (!v || !this.voice.canSay()) return null;
+            if (!v || !(this.useTts ? this.voice.canSay() : this.voiceFiles.canSay(v))) return null;
             try {
                 before?.(v);
             } catch (e) {
                 console.error(e);
             }
-            return this.voice.say(v) ? v : null;
+            return (this.useTts ? this.voice.say(v) : this.voiceFiles.say(v)) ? v : null;
         }, null);
     }
     stopVoice(): void {
         guard(() => {
-            this.voice.stop();
+            this.stopAllVoices();
         }, undefined);
     }
     speakerName(speaker: string): string {
@@ -261,7 +353,9 @@ export class AudioSystem {
             ducked: this.engine.isDucked,
             settings: this.settings.get(),
             music: { wanted: this.music.wanted, current: this.music.current, mode: this.music.mode, section: this.music.section(), ready: this.music.ready, audible: this.music.audible, ...this.music.stats },
-            voice: { status: this.voice.status, speaking: this.voice.speakingId, ...this.voice.stats, log: this.voice.log.slice(0, 10) },
+            voice: this.useTts
+                ? { source: 'tts' as const, status: this.voice.status, speaking: this.voice.speakingId, ...this.voice.stats, log: this.voice.log.slice(0, 10) }
+                : { source: 'file' as const, fixed: this.voiceSourceFixed, speaking: this.voiceFiles.playingId, pending: this.voiceFiles.pendingId, ...this.voiceFiles.stats, lastError: this.voiceFiles.lastError, cached: this.voiceFiles.cached(), log: this.voiceFiles.log.slice(0, 12) },
             sfx: { ...this.sfx.stats, meleeActive: this.sfx.melee.active(this.engine.now()), meleeRefused: this.sfx.melee.refused, cueRefused: this.sfx.cues.refused },
             screen: this.screen.screen,
             battle: this.screen.battle,

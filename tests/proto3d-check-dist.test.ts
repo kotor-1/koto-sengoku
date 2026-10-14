@@ -51,7 +51,7 @@ function fakeDist(): string {
     return root;
 }
 
-type Result = { status: number | null; json: { errors: string[]; warnings: string[]; refs: { html: number; gltf: number; js: number; content: number }; sha256: { listed: number; same: number } | null; wroteSha256: string | false | null }; stdout: string; stderr: string };
+type Result = { status: number | null; json: { errors: string[]; warnings: string[]; refs: { html: number; gltf: number; js: number; content: number; voice?: number }; sha256: { listed: number; same: number } | null; wroteSha256: string | false | null }; stdout: string; stderr: string };
 
 function run(dist: string, ...args: string[]): Result {
     const r = node(TOOL, [dist, '--json', ...args]);
@@ -201,5 +201,77 @@ describe('check-dist：ビルドの直後の sha256 の一覧（--write-sha256�
         expect(over.status).toBe(0);
         expect(readText(list)).not.toBe(first);
         expect(run(root, '--overwrite-sha256').status).toBe(2);
+    });
+});
+
+// ---- Version 28：台詞の音声ファイル（voice/<id>.mp3）の参照と中身。本番の e2e の簡易サーバーの音の種類 ----
+
+/** 配信する本物の MP3（VOICEVOX で作った台詞。proto3d/public/voice/） */
+const MP3 = fs.readFileSync(repoPath('proto3d/public/voice/ch1.oda_envoy.ask.mp3'));
+
+/** 偽の dist に、一覧（バンドルに入った形）と音声ファイルを足す */
+function voiceDist(files: Record<string, Uint8Array>, refs: string[] = Object.keys(files)): string {
+    const root = fakeDist();
+    const list = refs.map((f) => `{id:"x",file:"${f}",sec:2.184}`).join(',');
+    writeFileSync(join(root, 'assets/voice-DDDD.js'), `const m={version:1,lines:[${list}]};export{m};\n`);
+    for (const [rel, data] of Object.entries(files)) {
+        mkdirSync(dirname(join(root, rel)), { recursive: true });
+        writeFileSync(join(root, rel), data);
+    }
+    return root;
+}
+
+describe('check-dist：台詞の音声ファイル（Version 28）', () => {
+    it('一覧の音声ファイルが dist にあり MP3 として読めれば違反なし。台詞の id の oda_ は公開しない絵の名前と見なさない', () => {
+        const r = run(voiceDist({ 'voice/ch1.oda_envoy.ask.mp3': MP3, 'voice/talk.hero.same_day.mp3': MP3 }));
+        expect(r.json.errors).toEqual([]);
+        expect(r.status).toBe(0);
+        expect(r.json.refs.voice).toBe(2);
+        expect(r.json.warnings.filter((w) => w.includes('voice/'))).toEqual([]);
+    });
+    it('一覧にあるのに dist に無い音声ファイルを止める', () => {
+        const r = run(voiceDist({ 'voice/ch1.oda_envoy.ask.mp3': MP3 }, ['voice/ch1.oda_envoy.ask.mp3', 'voice/ch1.hero.gather.mp3']));
+        expect(r.status).toBe(1);
+        expect(r.json.errors).toEqual(['JS の中の台詞の音声ファイルの場所の先のファイルが無い: assets/voice-DDDD.js → voice/ch1.hero.gather.mp3（voice/ch1.hero.gather.mp3）']);
+    });
+    it('MP3 の名前で中身が違う・壊れた物（同期の印だけ合う・速さの値が使えない・ID3 の後にフレームが無い）を止める', () => {
+        const bad = {
+            'voice/a.mp3': JPEG,
+            'voice/b.mp3': new Uint8Array([0xff, 0xf3, 0x00, 0x00, 0, 0, 0, 0]),
+            'voice/c.mp3': new Uint8Array([0x49, 0x44, 0x33, 4, 0, 0, 0, 0, 0, 2, 0, 0, 0x41, 0x42, 0x43, 0x44]),
+            'voice/d.mp3': new Uint8Array(0),
+        };
+        const r = run(voiceDist(bad));
+        expect(r.status).toBe(1);
+        expect(r.json.errors).toContain('中身が拡張子と合わない: voice/a.mp3（.mp3 なのに中身は JPEG）');
+        expect(r.json.errors).toContain('中身が拡張子と合わない: voice/b.mp3（.mp3 なのに MPEG の音として読めない（MPEG の速さの値が使えない値（0）））');
+        expect(r.json.errors).toContain('中身が拡張子と合わない: voice/c.mp3（.mp3 なのに MPEG の音として読めない（MPEG のフレームの頭（同期の印）が無い（12 バイト目）））');
+        expect(r.json.errors).toContain('中身が拡張子と合わない: voice/d.mp3（.mp3 なのに中身は 空（0 バイト））');
+    });
+    it('ID3 の札の後ろの正しいフレームは読める。JS から参照の無い音声ファイルは注意にする', () => {
+        const id3 = new Uint8Array([0x49, 0x44, 0x33, 4, 0, 0, 0, 0, 0, 2, 0, 0, ...MP3]);
+        const r = run(voiceDist({ 'voice/ch1.oda_envoy.ask.mp3': id3, 'voice/old.unused.mp3': MP3 }, ['voice/ch1.oda_envoy.ask.mp3']));
+        expect(r.json.errors).toEqual([]);
+        expect(r.json.warnings).toContain('JS から参照の無い台詞の音声ファイル: voice/old.unused.mp3');
+    });
+    it('音声ファイルの置き場の外の oda_ の名前のファイル（絵）は、今までどおり止める', () => {
+        const r = run(voiceDist({ 'voice/ch1.oda_envoy.ask.mp3': MP3, 'art/portraits/oda_nobunaga.webp': WEBP }, ['voice/ch1.oda_envoy.ask.mp3']));
+        expect(r.status).toBe(1);
+        expect(r.json.errors).toContain('公開しない素材（予約・未使用・素材パックそのもの）の名前のファイル: art/portraits/oda_nobunaga.webp');
+    });
+});
+
+describe('本番の e2e の簡易サーバー（e2e/lib.mjs の PROD_MIME）', () => {
+    it('台詞の音声ファイルを音の種類で出す（.mp3 は audio/mpeg）。今までの種類は変えない', () => {
+        const r = node('--input-type=module', ['-e', `import('${repoPath('e2e/lib.mjs')}').then((m) => console.log(JSON.stringify(m.PROD_MIME)))`]);
+        expect(r.status).toBe(0);
+        const mime = JSON.parse(r.stdout) as Record<string, string>;
+        expect(mime['.mp3']).toBe('audio/mpeg');
+        expect(mime['.ogg']).toBe('audio/ogg');
+        expect(mime['.m4a']).toBe('audio/mp4');
+        expect(mime['.wav']).toBe('audio/wav');
+        expect(mime['.webp']).toBe('image/webp');
+        expect(mime['.js']).toBe('text/javascript');
+        expect(mime['.html']).toBe('text/html; charset=utf-8');
     });
 });

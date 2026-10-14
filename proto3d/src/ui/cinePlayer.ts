@@ -367,6 +367,8 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
                 hooks.onProbe?.(null);
             },
         };
+        // 声：字幕の声（出る順）を先に読んでおく（新しい声のとき。字幕が出た時に読み込みを待たない）
+        audio()?.prefetchVoices(spec.captions.flatMap((c) => (c.voice ? [c.voice] : [])));
         try {
             render();
         } catch (e) {

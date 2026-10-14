@@ -1,13 +1,32 @@
 /**
- * メニューに足す小さな「音」の欄：全体のミュートと、BGM・声・効果音／環境音の音量（docs/audio.md）。
- * 変えたらすぐ当て、'koto-sengoku/3d-audio' に書く（変えたときだけ）。声は端末の日本語読み上げを使うことを短く書く。
+ * メニューに足す小さな「音」の欄：全体のミュートと、BGM・声・効果音／環境音の音量、声の種類（docs/audio.md）。
+ * 変えたらすぐ当て、'koto-sengoku/3d-audio' に書く（変えたときだけ）。
+ * 声の種類（Version 28。docs/v28-town-motion-voice.md §5.4）：新しい声（台詞ごとに作った音声ファイル・既定）／端末の読み上げ（旧）。
+ * URL の ?voice= で決めている回は、選べないようにして、そのことを書く。声のクレジット（「音声：VOICEVOX:…」。一覧に使った声の名前）を出す。
  * 音が無い（作れなかった）ときは欄を出さない。
  */
 import { audio } from '../audio';
-import { VOLUME_CHANNELS, type VolumeChannel } from '../audio/settings';
+import { VOICE_SOURCES, VOLUME_CHANNELS, type VoiceSource, type VolumeChannel } from '../audio/settings';
+import { voiceCredits } from '../audio/voiceManifest';
 import { el } from './dom';
 
 const LABEL: Record<VolumeChannel, string> = { bgm: 'BGM', voice: '声', sfx: '効果音・環境音' };
+const SOURCE_LABEL: Record<VoiceSource, string> = { file: '新しい声', tts: '端末の読み上げ（旧）' };
+
+/** 声の種類ごとの短い説明（端末の読み上げは、端末に日本語の声が無いと分かったときにそのことを足す） */
+export function voiceNote(source: VoiceSource, status: string, fixed: boolean): string {
+    const base =
+        source === 'file'
+            ? '声は台詞ごとに作った音声です。音声の無い台詞は字幕だけです。'
+            : '声は端末の日本語読み上げ（旧）を使います。端末に日本語の声が無いと声は出ません（字幕は出ます）。' +
+              (status === 'no_japanese' || status === 'unsupported' ? 'この端末では日本語の声が見つかりませんでした。' : '');
+    return base + (fixed ? `（URL の指定 ?voice=${source} でこの種類にしています）` : '');
+}
+
+/** 音声のクレジット（一覧に使った声。無ければ空） */
+export function voiceCreditText(credits: readonly string[] = voiceCredits()): string {
+    return credits.length ? `音声：${credits.join('、')}` : '';
+}
 
 /** 欄の見た目（メニューの板の中に小さく。ui.css は担当が多いので、ここで 1 回だけ足す） */
 const CSS = `
@@ -19,6 +38,10 @@ const CSS = `
 .g-sound-row input[type=range] { width: 100%; touch-action: none; }
 .g-sound-row .v { text-align: right; font-variant-numeric: tabular-nums; opacity: 0.8; }
 .g-sound-note { margin: 6px 0 0; font-size: 11.5px; opacity: 0.75; line-height: 1.45; }
+.g-sound-row select { grid-column: 2 / 4; min-height: 28px; font: inherit; font-size: 13px; color: inherit; background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.28); border-radius: 4px; padding: 2px 6px; }
+.g-sound-row select option { color: #111; background: #f4efe4; }
+.g-sound-row select:disabled { opacity: 0.6; }
+.g-sound-credit { margin: 4px 0 0; font-size: 11px; opacity: 0.7; line-height: 1.4; }
 `;
 let styled = false;
 function ensureStyle(): void {
@@ -77,10 +100,37 @@ export function soundPanel(): HTMLElement | null {
         row.append(name, r, v);
         box.append(row);
     }
-    const st = sys.voiceStatus;
-    const note =
-        '声は端末の日本語読み上げを使います。端末に日本語の声が無いと声は出ません（字幕は出ます）。' +
-        (st === 'no_japanese' || st === 'unsupported' ? 'この端末では日本語の声が見つかりませんでした。' : '');
-    box.append(el('p', 'g-sound-note', note));
+    // 声の種類（新しい声／端末の読み上げ（旧））。URL の ?voice= で決めている回は選べない
+    const srcRow = el('label', 'g-sound-row');
+    const src = el('select');
+    src.dataset.id = 'voiceSource';
+    src.setAttribute('aria-label', '声の種類');
+    for (const v of VOICE_SOURCES) {
+        const o = el('option', undefined, SOURCE_LABEL[v]);
+        o.value = v;
+        src.append(o);
+    }
+    src.value = sys.voiceSource;
+    src.disabled = sys.voiceSourceFixed;
+    srcRow.append(el('span', 'n', '声の種類'), src);
+    box.append(srcRow);
+    const note = el('p', 'g-sound-note');
+    note.dataset.id = 'voiceNote';
+    const showNote = () => (note.textContent = voiceNote(sys.voiceSource, sys.voiceStatus, sys.voiceSourceFixed));
+    src.addEventListener('change', () => {
+        sys.unlock();
+        sys.settings.set({ voiceSource: src.value as VoiceSource });
+        src.value = sys.voiceSource;
+        showNote();
+    });
+    showNote();
+    box.append(note);
+    // クレジット（音声ファイルに使った声。VOICEVOX の利用規約で作品の中に書く。声の種類に関わらず出す）
+    const credit = voiceCreditText();
+    if (credit) {
+        const c = el('p', 'g-sound-credit', credit);
+        c.dataset.id = 'voiceCredit';
+        box.append(c);
+    }
     return box;
 }

@@ -1,5 +1,6 @@
 /**
- * 声（暫定）：端末の日本語読み上げ（Web Speech API の speechSynthesis）で、台詞の表の短い台詞だけを読む。
+ * 声（Version 21〜27 の声。Version 28 からは「端末の読み上げ（旧）」を選んだとき・URL の ?voice=tts のときだけ使う。既定の新しい声は voiceFiles.ts）：
+ * 端末の日本語読み上げ（Web Speech API の speechSynthesis）で、台詞の表の短い台詞だけを読む。
  *
  * - 端末に依存する：日本語の声が無い端末では声を出さない（字幕だけ）。status が 'no_japanese'・'unsupported' になる。
  * - 読むのは音声用の読み（readings.ts）。表示の文と言葉は同じ。

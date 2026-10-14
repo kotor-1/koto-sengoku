@@ -1,6 +1,6 @@
 /**
- * 音のテスト用の偽物：AudioContext（ノードの作成・つなぎ・予約を記録するだけ。音は出さない）と speechSynthesis。
- * 時刻（currentTime）はテストが進める。
+ * 音のテスト用の偽物：AudioContext（ノードの作成・つなぎ・予約を記録するだけ。音は出さない）と speechSynthesis、
+ * 声の音声ファイルの読み込み（FakeFetch。Version 28）。時刻（currentTime）はテストが進める。
  */
 import type { PageLike } from '../proto3d/src/audio/engine';
 import type { SpeechLike, UtteranceLike, VoiceLike } from '../proto3d/src/audio/voice';
@@ -40,6 +40,8 @@ export class FakeParam {
 
 export class FakeNode {
     outs: FakeNode[] = [];
+    /** つないだ先の記録（切り離しても消えない） */
+    readonly everOuts: FakeNode[] = [];
     constructor(
         readonly ctx: FakeAudioContext,
         readonly kind: string,
@@ -47,7 +49,10 @@ export class FakeNode {
         ctx.nodes.push(this);
     }
     connect(n: FakeNode | FakeParam) {
-        if (n instanceof FakeNode) this.outs.push(n);
+        if (n instanceof FakeNode) {
+            this.outs.push(n);
+            this.everOuts.push(n);
+        }
         return n;
     }
     disconnect() {
@@ -56,10 +61,12 @@ export class FakeNode {
     }
 }
 
-class FakeSource extends FakeNode {
+export class FakeSource extends FakeNode {
     startedAt: number | null = null;
     stoppedAt: number | null = null;
     offset = 0;
+    buffer: FakeBuffer | null = null;
+    onended: (() => void) | null = null;
     start(t = 0, offset = 0) {
         this.startedAt = t;
         this.offset = offset;
@@ -67,6 +74,10 @@ class FakeSource extends FakeNode {
     }
     stop(t = 0) {
         this.stoppedAt = t;
+    }
+    /** 鳴り終えた（本物と同じく終わりの知らせを呼ぶ） */
+    end() {
+        this.onended?.();
     }
 }
 
@@ -135,7 +146,36 @@ export class FakeAudioContext {
         return Object.assign(new FakeSource(this, 'osc'), { type: 'sine', frequency: new FakeParam(440), detune: new FakeParam(0) });
     }
     createBufferSource() {
-        return Object.assign(new FakeSource(this, 'buffer'), { buffer: null as FakeBuffer | null, loop: false, playbackRate: new FakeParam(1) });
+        return Object.assign(new FakeSource(this, 'buffer'), { loop: false, playbackRate: new FakeParam(1) });
+    }
+    /** decodeAudioData を呼んだ回数・渡された中身の長さ（ほどく前に写しを渡しているか） */
+    decodes: number[] = [];
+    /** false なら decodeAudioData は待つ（decodeNow() で答える） */
+    autoDecode = true;
+    private decodeWaiting: (() => void)[] = [];
+    /** 偽の音声ファイル（fakeVoiceBytes）をほどく：先頭の 8 バイトの秒数の長さの音にする。読めなければ失敗（知らせの関数と約束の両方で答える） */
+    decodeAudioData(bytes: ArrayBuffer, ok?: (b: AudioBuffer) => void, bad?: (e: unknown) => void): Promise<AudioBuffer> {
+        this.decodes.push(bytes.byteLength);
+        const sec = bytes.byteLength >= 8 ? new DataView(bytes).getFloat64(0) : NaN;
+        const run = (res: (b: AudioBuffer) => void, rej: (e: unknown) => void) => {
+            if (!Number.isFinite(sec) || sec <= 0) {
+                const e = new Error('ほどけない');
+                bad?.(e);
+                rej(e);
+                return;
+            }
+            const buf = new FakeBuffer(1, Math.round(sec * this.sampleRate), this.sampleRate) as unknown as AudioBuffer;
+            ok?.(buf);
+            res(buf);
+        };
+        return new Promise((res, rej) => {
+            if (this.autoDecode) run(res, rej);
+            else this.decodeWaiting.push(() => run(res, rej));
+        });
+    }
+    /** 待たせていた decodeAudioData に答える */
+    decodeNow() {
+        for (const f of this.decodeWaiting.splice(0)) f();
     }
     createBiquadFilter() {
         return Object.assign(new FakeNode(this, 'filter'), { type: 'lowpass', frequency: new FakeParam(350), Q: new FakeParam(1), gain: new FakeParam(0) });
@@ -270,6 +310,37 @@ export class FakeSynth implements SpeechLike {
         const u = this.queue.shift();
         u?.onend?.();
         this.queue[0]?.onstart?.();
+    }
+}
+
+/** 偽の音声ファイルの中身（先頭の 8 バイトに長さの秒数。FakeAudioContext.decodeAudioData がその長さの音にする） */
+export function fakeVoiceBytes(sec: number, size = 64): ArrayBuffer {
+    const b = new ArrayBuffer(Math.max(8, size));
+    new DataView(b).setFloat64(0, sec);
+    return b;
+}
+
+/**
+ * 偽の fetch（音声ファイル）：頼まれた場所を記録し、答えはテストが出す（auto なら、すぐ secOf の長さの中身で答える）
+ */
+export class FakeFetch {
+    readonly urls: string[] = [];
+    readonly waiting: { url: string; resolve: (b: ArrayBuffer) => void; reject: (e: unknown) => void }[] = [];
+    auto = false;
+    constructor(public secOf: (url: string) => number = () => 2) {}
+    readonly fetchBytes = (url: string): Promise<ArrayBuffer> => {
+        this.urls.push(url);
+        if (this.auto) return Promise.resolve(fakeVoiceBytes(this.secOf(url)));
+        return new Promise((resolve, reject) => this.waiting.push({ url, resolve, reject }));
+    };
+    /** 待っている読み込みに答える（url を渡せばその場所だけ。fail なら失敗で） */
+    answer(url?: string, fail = false) {
+        for (const w of [...this.waiting]) {
+            if (url !== undefined && !w.url.endsWith(url)) continue;
+            this.waiting.splice(this.waiting.indexOf(w), 1);
+            if (fail) w.reject(new Error('HTTP 404'));
+            else w.resolve(fakeVoiceBytes(this.secOf(w.url)));
+        }
     }
 }
 

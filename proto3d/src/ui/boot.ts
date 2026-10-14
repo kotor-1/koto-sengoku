@@ -9,6 +9,7 @@
  */
 import { activeModeName, exitMode, getBattleRunner, onModeChange } from '../app/modes';
 import { installAudio, unlockOnGesture } from '../audio';
+import { voiceSourceFromUrl } from '../audio/settings';
 import { VOICE_LINES, VOICE_SPEAKER_NAMES, findVoiceLine } from '../campaign/ieyasu1570/story/voiceLines';
 import { ChapterGame, devStateFor, type BattleRunnerLike, type GameWorld } from '../campaign/game';
 import { getBrowserStorage } from '../campaign/save';
@@ -66,6 +67,7 @@ export function bootChapter(host: ExploreHost): ChapterGame<any> {
     view.prefs = prefs;
     // 音（BGM・環境音・効果音・声）：設定は 'koto-sengoku/3d-audio'（変えたときだけ書く）。最初の利用者の操作で有効にする。
     // 作れなくても・有効にできなくても、進行は止めない（docs/audio.md）
+    // 声の種類（Version 28）：既定は台詞ごとの音声ファイル。URL の ?voice=tts（#voice=tts も）でその回だけ端末の読み上げ（旧）にする（保存しない）
     const sound = installAudio({
         storage,
         voices: {
@@ -73,6 +75,7 @@ export function bootChapter(host: ExploreHost): ChapterGame<any> {
             find: (speaker, text) => findVoiceLine(speaker, text),
             nameOf: (speaker) => (VOICE_SPEAKER_NAMES as Record<string, string>)[speaker] ?? '',
         },
+        voiceSourceOverride: voiceSourceFromUrl(location.search, location.hash),
     });
     // 合戦場の演習（タイトルの入口）：画面の塊は選んだときに読み込む。記録は 'koto-sengoku/3d-fields' だけに書く
     let practice: { mode: PracticeMode; store: PracticeRecordStore } | null = null;
