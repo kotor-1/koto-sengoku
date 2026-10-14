@@ -509,11 +509,8 @@ function ch1Intro(): CineSpec {
                 ],
             },
             min: 9,
-            caps: [
-                { speaker: '織田家の使者', text: '徳川殿にも、兵を出していただきたい。' },
-                { speaker: '浅井家の使者', text: '主は、徳川殿と手を結びたいと。' },
-                { text: '本多忠勝が、城下で待っている。' },
-            ],
+            // 使者の 2 つは声の付いた台詞（同じ話し手・同じ文）：字幕の長さを声の長さから決め、声を先に読んでおく（声を途中で切らない）
+            caps: [voiceCap('ch1.oda_envoy.ask'), voiceCap('ch1.asai_envoy.ask'), { text: '本多忠勝が、城下で待っている。' }],
         },
         {
             kind: 'map',
