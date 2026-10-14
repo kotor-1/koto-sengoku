@@ -60,14 +60,16 @@ async function open(opts = {}, main = null) {
   page.setDefaultTimeout(300000);
   let reloading = false;
   const onErr = (text) => {
-    if (reloading && /Couldn't load texture blob:/.test(text)) return;
+    // 読み込み直しで捨てた読み込み（前のページの素材の fetch が読み込み直しで切られる）は数えない
+    if (reloading && /Couldn't load texture blob:|Failed to fetch/.test(text)) return;
     errors.push(text);
     console.log(`   ！ページの誤り [${secs()}] ${text.slice(0, 200)}`);
   };
   page.on('pageerror', (e) => onErr(e.message));
   page.on('console', (m) => { if (m.type() === 'error') onErr(m.text()); });
   await page.goto(BASE + '/?q=low&render=manual');
-  await page.waitForFunction(() => window.__game?.ui?.kind === 'title', null, POLL);
+  // 読み込みが済んでから読み込み直す（素材の読み込みの途中で読み込み直すと、切られた fetch の誤りが出る）
+  await page.waitForFunction(() => window.__game?.ui?.kind === 'title' && document.getElementById('loading')?.hidden === true && window.__game.world?.ready, null, POLL);
   // 見張りの保存（2D・架空・演習）を入れ、歴史分岐の保存は main（null なら消す）（直接状態変更）
   await page.evaluate(([s, k, k1, p, v]) => {
     localStorage.clear();
