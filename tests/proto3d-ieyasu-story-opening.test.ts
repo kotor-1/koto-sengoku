@@ -422,8 +422,11 @@ class World implements GameWorld {
     heroPose() {
         return { ...this.pose };
     }
-    setHeroPose(p: ExplorePose) {
+    /** setHeroPose の呼び出し（見回しのカメラを変えないか：keepCamera） */
+    poseCalls: { pose: ExplorePose; keepCamera: boolean }[] = [];
+    setHeroPose(p: ExplorePose, opts?: { keepCamera?: boolean }) {
         this.pose = { ...p };
+        this.poseCalls.push({ pose: { ...p }, keepCamera: !!opts?.keepCamera });
     }
     setControl(on: boolean) {
         this.control = on;
@@ -450,6 +453,26 @@ function game(storage: MemoryStorage) {
     const g = new ChapterGame({ view, world, store: new CampaignSaveStore(storage), scenarios: [ieyasuScenario(storage)], battleRunner: async () => null });
     return { g, view, world };
 }
+
+describe('演出の後のカメラ（Version 28）', () => {
+    it('冒頭の演出の後は、主人公の位置・向きだけを戻し、見回しのカメラ（向き・高さ・距離）は変えない（真後ろへ戻さない）', async () => {
+        const storage = new MemoryStorage();
+        const { g, view, world } = game(storage);
+        void g.start();
+        (await next(view, 'title')).answer('new:ieyasu1570');
+        const c = await next(view, 'cinematic');
+        // 演出の前に町の入口に立たせる（場面に入る）のは、カメラも決め直す置き方
+        const before = world.poseCalls.length;
+        expect(world.poseCalls.some((x) => !x.keepCamera)).toBe(true);
+        c.answer('done');
+        await flush();
+        expect(g.screen).toBe('explore');
+        const after = world.poseCalls.slice(before);
+        expect(after.length).toBeGreaterThan(0);
+        expect(after.every((x) => x.keepCamera)).toBe(true);
+        expect(world.pose).toEqual({ x: ENTRY_POSE.x, z: ENTRY_POSE.z, heading: ENTRY_POSE.heading });
+    });
+});
 
 describe('流れ：自動で流すのは冒頭だけ。図解は情勢の画面から任意（偽の画面・本物の台本）', () => {
     it('第一章：はじめから → 冒頭（本物の台本 ch1_open）→ 町の入口から操作。図解を見なくても忠勝と話して軍議へ進める', async () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GATE, HOUSE, START, colliders } from '../proto3d/src/layout';
-import { CAMERA_YAW, HERO_RADIUS, MAX_SPEED, SPEED, createHero, isFree, screenToGround, stepHero } from '../proto3d/src/game/motion';
+import { CAMERA_YAW, HERO_RADIUS, MAX_SPEED, MAX_TURN, SPEED, createHero, isFree, screenToGround, stepHero } from '../proto3d/src/game/motion';
 import { GATE_POSTS, PINE } from '../proto3d/src/layout';
 
 /** 実際のゲームと同じカメラの向き */
@@ -87,6 +87,53 @@ describe('3D 比較版：主人公の動き', () => {
         const d = Math.abs(Math.atan2(Math.sin(h.heading - h0), Math.cos(h.heading - h0)));
         expect(d).toBeGreaterThan(0);
         expect(d).toBeLessThan(0.4);
+    });
+
+    it('体の向きは 1 コマ（60 コマ/秒）で 12° を超えて回らない（180° の切り返し・走りながらでも。Version 27 は最初のコマで 37.5°）', () => {
+        const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+        for (const running of [false, true]) {
+            const h = createHero(START.x, START.z, Math.PI);
+            run(h, 0, -1, 1, running);
+            let max = 0;
+            for (const [ix, iy] of [[0, 1], [1, 0], [-1, 0], [0, -1], [Math.SQRT1_2, Math.SQRT1_2]] as const) {
+                for (let i = 0; i < 40; i++) {
+                    const before = h.heading;
+                    stepHero(h, ix, iy, YAW, DT, running);
+                    max = Math.max(max, Math.abs(wrap(h.heading - before)));
+                }
+            }
+            expect((max * 180) / Math.PI).toBeLessThanOrEqual(12);
+            expect(MAX_TURN * DT).toBeLessThanOrEqual((12 * Math.PI) / 180);
+        }
+    });
+
+    it('向き直りの途中で別の向きを押しても、その場で待たずに新しい向きへ進み、体もそちらへ回り始める', () => {
+        const h = createHero(START.x, START.z, Math.PI);
+        run(h, 0, -1, 1);
+        run(h, 0, 1, 0.08); // 南へ切り返しの途中
+        const mid = h.heading;
+        stepHero(h, 1, 0, YAW, DT); // すぐ東へ
+        expect(h.dirX).toBeCloseTo(1, 6);
+        expect(h.dirZ).toBeCloseTo(0, 6);
+        const x0 = h.x;
+        run(h, 1, 0, 0.1);
+        expect(h.x).toBeGreaterThan(x0 + 0.05);
+        // 体は東（heading π/2）へ近づいていく
+        const d = (a: number) => Math.abs(Math.atan2(Math.sin(a - Math.PI / 2), Math.cos(a - Math.PI / 2)));
+        expect(d(h.heading)).toBeLessThan(d(mid));
+        run(h, 1, 0, 0.4);
+        expect(d(h.heading)).toBeLessThan(0.05);
+    });
+
+    it('壁に斜めに押し当てて壁に沿って滑る間は、体は実際に進む向き（壁に沿う向き）を向く（壁へ押し付ける向きのまま横へ滑らない）', () => {
+        const h = createHero(HOUSE.x1 + 0.6, (HOUSE.z0 + HOUSE.z1) / 2 + 1.5, -Math.PI / 2);
+        // 北西（家の表の壁へ斜め）を押し続ける
+        run(h, -Math.SQRT1_2, -Math.SQRT1_2, 1.5);
+        const z0 = h.z;
+        run(h, -Math.SQRT1_2, -Math.SQRT1_2, 0.5);
+        expect(h.z).toBeLessThan(z0 - 0.3); // 北へ滑っている
+        // 体は北（heading π）を向く（入力の北西 −3π/4 ではない）
+        expect(Math.abs(Math.atan2(Math.sin(h.heading - Math.PI), Math.cos(h.heading - Math.PI)))).toBeLessThan(0.15);
     });
 
     it('家の横（北側の路地）を東西に通り抜けられ、家には入り込まない', () => {

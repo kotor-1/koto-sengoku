@@ -179,7 +179,8 @@ export interface CinematicOptions {
 export interface GameWorld {
     setCast(cast: CastMember<string>[]): void;
     heroPose(): ExplorePose;
-    setHeroPose(p: ExplorePose): void;
+    /** keepCamera：見回しのカメラ（向き・高さ・距離）を変えない（演出の後に元の位置へ戻すとき） */
+    setHeroPose(p: ExplorePose, opts?: { keepCamera?: boolean }): void;
     /** 探索の操作（歩く・見回す）を許す／止める。止めるときは押している入力も離す */
     setControl(enabled: boolean): void;
     /** 話す相手と主人公を向き合わせる */
@@ -1086,7 +1087,8 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         } finally {
             if (epoch === this.epoch) {
                 world.stage?.(null, 0, this.reduced());
-                world.setHeroPose(before);
+                // 位置・向きだけ戻す。見回しのカメラは stage(null) が出来事の前の向きへ戻したまま（Version 28：真後ろへ戻さない）
+                world.setHeroPose(before, { keepCamera: true });
                 // 最後の場面が 3D のとき、次のコマまで最後の 3D の画が残り、その上に案内や HUD が出る。すぐ町を描き直す
                 world.redraw?.();
                 const p = world.heroPose();

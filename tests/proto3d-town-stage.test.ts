@@ -465,6 +465,7 @@ describe('探索の場面の口：stage(null) で片付けて戻る', () => {
         const orbit = { yaw: 1.1, pitch: 0.2, dist: 2.1 };
         const shots: unknown[] = [];
         const poses: unknown[] = [];
+        const keep: boolean[] = [];
         const host = {
             scene,
             camera,
@@ -473,12 +474,14 @@ describe('探索の場面の口：stage(null) で片付けて戻る', () => {
             low: true,
             load: () => Promise.reject(new Error('素材なし（テスト）')),
             prepare: () => undefined,
-            setHeroPose: (p: { x: number; z: number; heading: number }) => {
+            setHeroPose: (p: { x: number; z: number; heading: number }, opts?: { keepCamera?: boolean }) => {
                 poses.push(p);
+                keep.push(!!opts?.keepCamera);
                 hero.x = p.x;
                 hero.z = p.z;
                 hero.heading = p.heading;
-                // 本物と同じく、見回しも背後へ戻す
+                // 本物と同じく、keepCamera でなければ見回しも背後へ戻す
+                if (opts?.keepCamera) return;
                 orbit.yaw = p.heading - Math.PI;
                 orbit.pitch = -0.08;
             },
@@ -531,6 +534,8 @@ describe('探索の場面の口：stage(null) で片付けて戻る', () => {
         expect({ x: hero.x, z: hero.z, heading: hero.heading }).toEqual(before);
         expect(orbit).toEqual(orbitBefore);
         expect(poses[poses.length - 1]).toEqual(before);
+        // 戻すときは見回しのカメラを変えない置き方（Version 28：出来事の後に真後ろへ戻さない）
+        expect(keep[keep.length - 1]).toBe(true);
         // 何度呼んでもよい（2 回目は何もしない）
         const n = shots.length;
         world.stage(null, 0, false);

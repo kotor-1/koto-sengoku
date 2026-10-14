@@ -3,7 +3,7 @@
  * 物語の見せ方の口も持つ：演出の 3D の出来事（stage）・町の人々（setAmbient）・物見の眺め（startLookout）・軍議所を映す（showCouncilHall）。
  * campaign/game.ts の GameWorld を満たす。置く場所と誰が居るかは explore/cast.ts（純粋）が決める。
  *
- * 見た目は暫定：人物は既存の主人公の素材（hero_v2.glb。GLB／公開用の JSON の読み込みは main.ts のまま）を複製し、
+ * 見た目は暫定：人物は既存の主人公の素材（hero_v2b.glb：hero_v2.glb と同じ形で、動きだけ Version 28 で作り直した写し。GLB／公開用の JSON の読み込みは main.ts のまま）を複製し、
  * 着物・髪の色だけを変える（explore/people.ts）。新しい素材は作らない。
  * 負傷した人物は、床几（簡単な箱）に腰掛けた姿勢にする（骨の向きを直接決める）。
  * 出来事・町の人々の置き方は純粋な関数（explore/stage.ts・explore/ambient.ts）、描くのは explore/actors.ts。
@@ -39,8 +39,11 @@ export interface ExploreHost {
     low: boolean;
     load(name: string): Promise<GLTF>;
     prepare(obj: THREE.Object3D): void;
-    /** 主人公をその位置・向きに立たせ、カメラを背後へ */
-    setHeroPose(p: ExplorePose): void;
+    /**
+     * 主人公をその位置・向きに立たせ、カメラを背後へ。keepCamera：見回しの向き・高さ・距離を変えない（演出の後に元の位置へ戻すとき。
+     * Version 28：出来事の後に、出来事の前にプレイヤーが向けていたカメラへ戻す）
+     */
+    setHeroPose(p: ExplorePose, opts?: { keepCamera?: boolean }): void;
     /** 探索の操作を許す／止める（止めるときは入力を離す） */
     setControl(enabled: boolean): void;
     /** 探索の描画を止める／戻す（画面を覆うものが開いている間） */
@@ -60,9 +63,14 @@ export interface ExploreHost {
     renderOnce(): void;
     /** 見回しの面のドラッグを受け取る（物見の間。探索の操作を止めていても渡す）。null で戻す */
     setLookHandler(fn: ((dx: number, dy: number) => void) | null): void;
+    /**
+     * 主人公の顔と目線（首・頭の骨）を見る点（世界）へ向ける。null で正面へ戻す（省ける。game/gaze.ts。限度・なめらかさはそちら）。
+     * 会話の相手・演出の話し手を見るのに使う（Version 28 §4.4）
+     */
+    setHeroGaze?(p: { x: number; y: number; z: number } | null, weight?: number): void;
 }
 
-const NPC_MODEL = 'hero_v2';
+const NPC_MODEL = 'hero_v2b';
 
 interface NpcView {
     member: CastMember<string>;
@@ -216,12 +224,14 @@ export class ExploreWorld implements GameWorld {
         return { x: h.x, z: h.z, heading: h.heading };
     }
 
-    setHeroPose(p: ExplorePose): void {
-        this.host.setHeroPose(p);
+    setHeroPose(p: ExplorePose, opts?: { keepCamera?: boolean }): void {
+        this.host.setHeroPose(p, opts);
     }
 
     setControl(enabled: boolean): void {
         this.host.setControl(enabled);
+        // 操作へ戻ったら（会話の後）、顔は正面へ戻す
+        if (enabled) this.host.setHeroGaze?.(null);
     }
 
     faceTalk(id: string): void {
@@ -230,11 +240,12 @@ export class ExploreWorld implements GameWorld {
         const m = v?.member ?? this.cast.find((c) => c.id === id);
         if (!m) return;
         if (v && m.kind === 'person' && m.pose === 'stand') v.targetHeading = headingToward(m.x, m.z, h.x, h.z);
-        // 主人公も相手の方を向く（城門はそのまま）
+        // 主人公も相手の方を向く（城門はそのまま）。描く体は 1 コマで回さず、足を踏み替えて向く（game/heroAnim.ts・legs.ts）。顔は相手の顔へ
         if (m.kind !== 'gate') {
             h.heading = headingToward(h.x, h.z, m.x, m.z);
             h.dirX = Math.sin(h.heading);
             h.dirZ = Math.cos(h.heading);
+            if (m.kind === 'person') this.host.setHeroGaze?.({ x: m.x, y: groundY(m.x, m.z) + 1.5, z: m.z });
         }
     }
 
@@ -318,8 +329,8 @@ export class ExploreWorld implements GameWorld {
         const before = this.stageBefore;
         this.stageBefore = null;
         if (before) {
-            // 主人公を始める前の位置・向きへ（カメラの見回しも始める前の向きへ）
-            this.host.setHeroPose(before.pose);
+            // 主人公を始める前の位置・向きへ（カメラの見回しも始める前の向き・高さ・距離へ。背後へは戻さない）
+            this.host.setHeroPose(before.pose, { keepCamera: true });
             Object.assign(this.host.orbit, before.orbit);
         }
         this.appliedShot = null;

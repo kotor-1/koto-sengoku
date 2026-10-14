@@ -8,6 +8,8 @@
 - 使った第三者素材：proto3d/thirdparty/mpfb2/（写し）、docs/third-party-assets.md
 出力：proto3d/public/models/hero_v3_mpfb.glb、作業用 proto3d/blender/build/hero/hero_v3_mpfb.blend
 hero_v3.glb（81bc02f の頭）は変えない（もう一つの比較案として残す）。
+Version 28：ゲームが読むのは、この出力の動きだけを差し替えた hero_v3b_mpfb.glb（assets-src/hero_v2/write_clips.py --relax-arms で作る）。
+  この台本で hero_v3_mpfb.glb を作り直したときは、続けて write_clips.py で hero_v3b_mpfb.glb を作り直す。
 """
 from __future__ import annotations
 

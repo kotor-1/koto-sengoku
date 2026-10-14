@@ -10,7 +10,7 @@
 // 準備（公開と同じ作り。決まったコミットを別の作業木で）：
 //   git worktree add --detach /home/user/ks-prod <コミット>; ln -s /home/user/koto-sengoku/node_modules /home/user/ks-prod/node_modules
 //   cd /home/user/ks-prod && VITE_MODEL_EXT=.json npm run proto3d:build && rm -f dist-proto3d/models/*.glb &&
-//   node proto3d/tools/glb-to-gltf.mjs proto3d/public/models dist-proto3d/models ground_v2 gate_v2 walls_v2 keep inner machiya_a machiya_b machiya_d tree_pine tree_sakura tree_pine_far hero_v3_mpfb hero_v2
+//   node proto3d/tools/glb-to-gltf.mjs proto3d/public/models dist-proto3d/models ground_v2 gate_v2 walls_v2 keep inner machiya_a machiya_b machiya_d tree_pine tree_sakura tree_pine_far hero_v3b_mpfb hero_v2b
 // 使い方：DIST=/home/user/ks-prod/dist-proto3d node e2e/ieyasu-ch2-prod.mjs [出力先]   （PORT=8134 VIEW=960x540 で変えられる）
 // この中で、次のヘッダー付きの簡易サーバーを立てる：
 //   content-security-policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'

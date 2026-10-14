@@ -3,8 +3,10 @@
  * - 入力は画面の向き（右・上）で受け取り、固定カメラの向きに合わせて地面の方向へ直す。
  * - 歩く／走る：上限の速さだけが変わる（ゲームの時間は変えない）。速さは SPEED の一か所で調整する。
  * - 速さはなめらかに上がり、指を離すと素早く止まる。走るのをやめると、歩きの速さまでなめらかに落とす。
- * - 入力した方向へすぐ進み、体の向きは進みながらなめらかに向き直る（向き終わるのを待たない）。
- * - 当たり判定は、上から見た円（主人公）と四角形（壁・柱・家）。壁に沿って滑る。
+ * - 入力した方向へすぐ進み、体の向きは進みながらなめらかに向き直る（向き終わるのを待たない。途中で別の向きへ変えてもよい）。
+ *   体の向きの変わる速さには上限がある（MAX_TURN：60 コマ/秒で 1 コマ 11.5° まで。Version 28）。
+ * - 当たり判定は、上から見た円（主人公）と四角形（壁・柱・家）。壁に沿って滑る。壁に沿って滑る間は、体は実際に進む向きを向く（壁へ押し付ける向きのまま横へ滑らない）。
+ * 足の運び（着いた足を止める・踏み替え）は描く側（game/legs.ts・game/heroAnim.ts）で、実際に進んだ距離から決める。
  */
 import { BOUNDS, colliders, type Rect } from '../layout';
 
@@ -25,6 +27,8 @@ const DECEL = 12;
 const SUBSTEP = 0.1;
 /** 向きを変える速さ（1/秒、指数的に近づく）。180° の切り返しで約 0.3 秒 */
 const TURN_RATE = 14;
+/** 体の向きの変わる速さの上限（ラジアン/秒）。60 コマ/秒で 1 コマ 11.5°（大きな切り返しでも 1 コマで飛ばない） */
+export const MAX_TURN = 12;
 /** 進む方向が逆向き寄り（90° より大きく）に切り替わったとき、残す速さの割合（勢いを殺して切り返す） */
 const REVERSE_KEEP = 0.4;
 
@@ -71,9 +75,6 @@ export function stepHero(h: HeroState, ix: number, iy: number, cameraYaw: number
         if (d.x * h.dirX + d.z * h.dirZ < 0) h.speed *= REVERSE_KEEP;
         h.dirX = d.x;
         h.dirZ = d.z;
-        const target = Math.atan2(d.x, d.z);
-        const diff = wrapAngle(target - h.heading);
-        h.heading = wrapAngle(h.heading + diff * (1 - Math.exp(-TURN_RATE * dt)));
         // 上限の速さへ近づける（上げるときは ACCEL、走りから歩きに戻すときは DECEL）。斜めでも入力の長さは 1 まで
         const want = (run ? SPEED.run : SPEED.walk) * mag;
         h.speed = h.speed < want ? Math.min(want, h.speed + ACCEL * dt) : Math.max(want, h.speed - DECEL * dt);
@@ -82,6 +83,7 @@ export function stepHero(h: HeroState, ix: number, iy: number, cameraYaw: number
     }
     if (h.speed <= 1e-4) {
         h.speed = 0;
+        if (mag > 0.05) turnToward(h, Math.atan2(h.dirX, h.dirZ), dt);
         return;
     }
     // 入力した方向へ進む（体の向きは後から追いつく）
@@ -96,9 +98,24 @@ export function stepHero(h: HeroState, ix: number, iy: number, cameraYaw: number
         resolve(h, rects);
     }
     // 壁に当たって進めなかった分は速度も落とす
-    const moved = Math.hypot(h.x - before.x, h.z - before.z);
+    const mx = h.x - before.x;
+    const mz = h.z - before.z;
+    const moved = Math.hypot(mx, mz);
     const wanted = Math.hypot(vx, vz);
     if (wanted > 0 && moved < wanted * 0.3) h.speed *= 0.6;
+    // 体の向き：入力した方向へ。壁に沿って滑っている（進めたのが 25〜90%）ときは、実際に進んだ向きへ
+    if (mag > 0.05) {
+        const slide = wanted > 0 && moved > wanted * 0.25 && moved < wanted * 0.9;
+        turnToward(h, slide ? Math.atan2(mx, mz) : Math.atan2(h.dirX, h.dirZ), dt);
+    }
+}
+
+/** 体の向きを target へ近づける（指数的に。1 コマの回りは MAX_TURN·dt まで） */
+function turnToward(h: HeroState, target: number, dt: number): void {
+    const diff = wrapAngle(target - h.heading);
+    const step = diff * (1 - Math.exp(-TURN_RATE * dt));
+    const lim = MAX_TURN * dt;
+    h.heading = wrapAngle(h.heading + Math.max(-lim, Math.min(lim, step)));
 }
 
 /** 円を四角形の外へ押し出す */

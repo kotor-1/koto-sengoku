@@ -1,11 +1,12 @@
 /**
  * 人物の素材の写し（three）。会話の相手・演出の使者・町の人々で共有する。
- * 見た目は既存の人物の素材（hero_v2.glb）を複製し、着物・袴・髪の色だけを変える（新しい素材は作らない）。
+ * 見た目は既存の人物の素材（hero_v2b.glb：hero_v2.glb と同じ形で、動きを Version 28 で作り直した写し）を複製し、着物・袴・髪の色だけを変える（新しい素材は作らない）。
  * 演出・町の人々の人は、歩きと立ちの動きを「時刻・歩いた距離」から決める（自分では進めない。同じ時刻なら同じ形）。
  */
 import * as THREE from 'three';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { GAIT } from '../game/gait';
 
 export interface Look {
     kosode: [number, number, number];
@@ -138,8 +139,8 @@ export class PersonFactory {
     }
 }
 
-/** 1 歩の周期で進む距離（m。歩きの動き 0.84 秒 × 1.4 m/秒。主人公と同じ） */
-const STRIDE_M = 1.4 * 0.84;
+/** 1 周期（2 歩）で進む距離（m。歩きの動きの決まり game/gait.ts。主人公と同じ）。人物の大きさ（Look.scale）を掛けて使う */
+const STRIDE_M = GAIT.walk.stride;
 
 /**
  * 歩きと立ちの形を決める（時刻 time 秒・歩いた距離 walked m・歩いている割合 moving 0〜1）。同じ値なら同じ形。
@@ -155,7 +156,8 @@ export function posePerson(p: PersonBody, time: number, walked: number, moving: 
     }
     if (p.walk) {
         const d = p.walk.getClip().duration;
-        const ph = (((walked / STRIDE_M) % 1) + 1) % 1;
+        const scale = p.root.children[0]?.scale.x || 1;
+        const ph = (((walked / (STRIDE_M * scale)) % 1) + 1) % 1;
         p.walk.time = ph * d;
         p.walk.setEffectiveWeight(m);
     }

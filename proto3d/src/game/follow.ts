@@ -102,6 +102,14 @@ export function placeFollow(o: Orbit, hx: number, hz: number, dt: number, boxes:
     return { position, target, pivot };
 }
 
+/** 2 点の間をカメラが動いても、壁・屋根・柱などの箱を通らないか（演出のカメラから肩越しのカメラへなめらかに戻すとき） */
+export function segmentClear(a: THREE.Vector3, b: THREE.Vector3, boxes: THREE.Box3[] = BLOCKERS): boolean {
+    const d = b.clone().sub(a);
+    const len = d.length();
+    if (len < 1e-6) return true;
+    return firstHit(a, d.divideScalar(len), len, boxes) >= len - 1e-6;
+}
+
 /** テスト用：箱の一覧を、カメラの大きさの分だけ広げた形で作る */
 export function blockersForTest(boxes: Box[]): THREE.Box3[] {
     return expanded(boxes, FOLLOW.radius);
