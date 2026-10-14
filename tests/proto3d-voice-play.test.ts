@@ -14,7 +14,8 @@ import { VOICE_MANIFEST, voiceCredits, voiceFileFor } from '../proto3d/src/audio
 import { DUCK_LEVEL } from '../proto3d/src/audio/engine';
 import { READINGS } from '../proto3d/src/audio/readings';
 import { voiceCreditText, voiceNote } from '../proto3d/src/ui/soundPanel';
-import { VOICE_LINES, VOICE_SPEAKER_NAMES, findVoiceLine, voiceCap } from '../proto3d/src/campaign/ieyasu1570/story/voiceLines';
+import { VOICE_LINES, VOICE_SPEAKER_NAMES, findVoiceLine, voiceCap, voiceEstimateSec } from '../proto3d/src/campaign/ieyasu1570/story/voiceLines';
+import { reportCues } from '../proto3d/src/campaign/ieyasu1570/story/cinematics';
 import { FakeFetch, FakeNode, FakePage, FakeSource, FakeSynth, FakeTimers, FakeUtterance, fakeContext, memoryStorage, type FakeAudioContext } from './proto3d-audio-fakes';
 
 const TABLE: VoiceTable = {
@@ -604,5 +605,24 @@ describe('音の設定の欄：声の種類の説明とクレジット', () => {
         expect(voiceNote('tts', 'ready', false)).toContain('端末の日本語読み上げ（旧）');
         expect(voiceNote('tts', 'no_japanese', false)).toContain('見つかりませんでした');
         expect(voiceNote('tts', 'ready', true)).toContain('?voice=tts');
+    });
+    it('説明：端末の読み上げ（旧）では、字幕の長さが新しい声のままで読み上げが途中で止まりうることと、旧版そのままの比べ方（Version 27）を書く。新しい声には書かない', () => {
+        const TTS_CUT = '字幕の長さは新しい声に合わせているため、端末によっては読み上げが途中で止まることがあります（旧版の読み上げのままの比較は Version 27 で）。';
+        for (const status of ['ready', 'unknown', 'no_japanese', 'unsupported']) {
+            for (const fixed of [false, true]) {
+                const t = voiceNote('tts', status, fixed);
+                expect(t, `${status} ${fixed}`).toContain(TTS_CUT);
+                expect(voiceNote('file', status, fixed)).not.toContain('字幕の長さ');
+            }
+        }
+        // 文の並び：端末の声の有無の文の後、URL の指定の前
+        expect(voiceNote('tts', 'no_japanese', true)).toBe(
+            '声は端末の日本語読み上げ（旧）を使います。端末に日本語の声が無いと声は出ません（字幕は出ます）。この端末では日本語の声が見つかりませんでした。' +
+                TTS_CUT +
+                '（URL の指定 ?voice=tts でこの種類にしています）',
+        );
+        // この注意が要るわけ：町の急報の織田の使者の字幕（次の字幕まで）は、端末の読み上げの見積もりより短い。字幕の長さは変えず、注意の文で知らせるだけ
+        const cues = reportCues();
+        expect(cues.capEnd[0]! - cues.say[0]![0]).toBeLessThan(voiceEstimateSec('ch1.oda_envoy.ask'));
     });
 });

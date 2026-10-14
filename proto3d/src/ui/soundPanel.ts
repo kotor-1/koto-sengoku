@@ -13,13 +13,18 @@ import { el } from './dom';
 const LABEL: Record<VolumeChannel, string> = { bgm: 'BGM', voice: '声', sfx: '効果音・環境音' };
 const SOURCE_LABEL: Record<VoiceSource, string> = { file: '新しい声', tts: '端末の読み上げ（旧）' };
 
-/** 声の種類ごとの短い説明（端末の読み上げは、端末に日本語の声が無いと分かったときにそのことを足す） */
+/**
+ * 声の種類ごとの短い説明（端末の読み上げは、端末に日本語の声が無いと分かったときにそのことを足す）。
+ * 端末の読み上げ（旧）でも演出の字幕の長さは新しい声の音声ファイルの長さのまま（docs/v28-town-motion-voice.md §7.7・§8.5）なので、
+ * 読み上げが次の字幕で止まることがあると書き、旧版そのままの比べ方（Version 27）を示す
+ */
 export function voiceNote(source: VoiceSource, status: string, fixed: boolean): string {
     const base =
         source === 'file'
             ? '声は台詞ごとに作った音声です。音声の無い台詞は字幕だけです。'
             : '声は端末の日本語読み上げ（旧）を使います。端末に日本語の声が無いと声は出ません（字幕は出ます）。' +
-              (status === 'no_japanese' || status === 'unsupported' ? 'この端末では日本語の声が見つかりませんでした。' : '');
+              (status === 'no_japanese' || status === 'unsupported' ? 'この端末では日本語の声が見つかりませんでした。' : '') +
+              '字幕の長さは新しい声に合わせているため、端末によっては読み上げが途中で止まることがあります（旧版の読み上げのままの比較は Version 27 で）。';
     return base + (fixed ? `（URL の指定 ?voice=${source} でこの種類にしています）` : '');
 }
 
