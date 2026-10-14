@@ -141,6 +141,13 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
                     render();
                     break;
                 case 'next':
+                    // 最後の場面の「次の場面」（→ キー）はスキップと同じ：終わりの画を描かずに終える（描くと、探索の側は最後まで見たとして、
+                    // 町の急報の人を止まる所へ飛ばしてから置き場所へ歩かせた。スキップは置き場所に置く）
+                    if (!clock.beats[clock.beatIndex + 1]) {
+                        clock.skip();
+                        finish('skipped');
+                        break;
+                    }
                     clock.next();
                     render();
                     if (clock.ended) finish('done');

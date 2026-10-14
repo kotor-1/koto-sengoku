@@ -25,6 +25,7 @@ import {
 import { ieyasuCastFor, ieyasuScenario, ieyasuStartPose, IEYASU_LOOKS } from '../proto3d/src/campaign/ieyasu1570/scenario';
 import { ieyasuCinematic, ieyasuReplays, CINE_CAPTION_MAX } from '../proto3d/src/campaign/ieyasu1570/story/cinematics';
 import { ieyasuSituation } from '../proto3d/src/campaign/ieyasu1570/story/situation';
+import { voiceFileFor } from '../proto3d/src/audio/voiceManifest';
 import { VOICE_LINES, VOICE_SPEAKER_NAMES, findVoiceLine, moraCount, voiceEstimateSec, voiceLine, voiceSecFor } from '../proto3d/src/campaign/ieyasu1570/story/voiceLines';
 import { VISUAL_MAX, outcomeTroops, visualCount } from '../proto3d/src/campaign/ieyasu1570/story/counts';
 import { ieyasu2CastFor } from '../proto3d/src/campaign/ieyasu1570/chapter2/scenario';
@@ -129,14 +130,20 @@ describe('第一章の冒頭（ch1_open）と町の急報（ch1_report）：Vers
         expect(report.captions.filter((c) => c.speaker && !c.voice)).toEqual([]);
         expect(checkVoices(spec, 'ch1_open')).toBe(0);
     });
-    it('情勢の図解（ch1_intro）は残る（地図の台本・30〜45 秒）。どの状態から作っても冒頭・急報は同じ（急報は第一章だけ）', () => {
+    it('情勢の図解（ch1_intro）は残る（地図の台本・30〜45 秒）。どの状態から作っても冒頭・急報の字幕と時刻は同じ（急報は第一章だけ）', () => {
         const d = ieyasuCinematic(newIeyasuGame(), 'ch1_intro')!;
         expect(d.title).toBe('情勢の図解（第一章の始め）');
         expect(d.beats.some((b) => b.kind === 'map')).toBe(true);
         expect(specProblems(d)).toEqual([]);
+        const [ev0] = events(report) as [Extract<StageEvent, { id: 'street_report' }>];
         for (const c of [CH1[0]!, CH1[40]!]) {
             expect(ieyasuCinematic(c.state, 'ch1_open')).toEqual(spec);
-            expect(ieyasuCinematic(c.state, 'ch1_report')).toEqual(report);
+            // 急報の人の置き場所だけは今の段階の城下の配役から（見直し：tests/proto3d-street-report.test.ts）。字幕・時刻・人は同じ
+            const r = ieyasuCinematic(c.state, 'ch1_report')!;
+            const [ev] = events(r) as [Extract<StageEvent, { id: 'street_report' }>];
+            expect({ ...r, beats: [] }).toEqual({ ...report, beats: [] });
+            expect(ev.cue).toEqual(ev0.cue);
+            expect([...ev.envoys, ev.retainer].map((p) => [p.cast, p.look, p.name])).toEqual([...ev0.envoys, ev0.retainer].map((p) => [p.cast, p.look, p.name]));
         }
         expect(ieyasuCinematic(CH2_STARTS[3]!.state, 'ch1_open')).toEqual(spec);
         expect(ieyasuCinematic(CH2_STARTS[3]!.state, 'ch1_report')).toBeNull();
@@ -308,6 +315,10 @@ describe('声の付いた字幕は、声の長さより短くない（字幕が�
         for (const sp of specs) {
             const caps = [...sp.captions].sort((a, b) => a.start - b.start);
             caps.forEach((c, i) => {
+                // 話し手と文から音声ファイルのある台詞が引ける字幕（声の id が無くても、audio の caption が話し手と文から引いて流す）は、
+                // 声の id を持つ（無いと字幕の長さが文字数だけから決まり、声を先に読まないので、情勢の図解の浅井の使者の声が次の字幕で切れた）
+                const found = c.speaker ? findVoiceLine(c.speaker, c.text) : undefined;
+                if (found && voiceFileFor(found.id)) expect(c.voice, `${sp.id}：${c.speaker}「${c.text}」`).toBe(found.id);
                 if (!c.voice) return;
                 const need = voiceSecFor(c.voice);
                 expect(c.end - c.start + 1e-6, `${sp.id}：${c.voice}（${c.text}）`).toBeGreaterThanOrEqual(need);

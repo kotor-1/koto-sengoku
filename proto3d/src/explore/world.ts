@@ -27,7 +27,7 @@ import { castColliders, headingToward, type CastMember } from './cast';
 import { LookoutSession, type LookoutProbe } from './lookout';
 import { PersonFactory } from './people';
 import { NO_ACT, rhythmOf as rhythmOfId } from './rhythm';
-import { afterWalkEnd, stageFrame, type StageCastInfo, type StageHero, type StageOrigin, type StagePerson, type StageShot } from './stage';
+import { afterWalkEnd, afterWalkers, stageFrame, type StageCastInfo, type StageHero, type StageOrigin, type StagePerson, type StageShot } from './stage';
 import { setTowerTopVisible, townPropModel } from '../town/view';
 import './town.css';
 
@@ -106,6 +106,8 @@ interface Epilogue {
     origin: StageOrigin;
     t0: number;
     end: number;
+    /** 歩く人（会話の相手の id。今の段階の城下に居ない人は歩かない：見直し） */
+    walkers: Set<string>;
     /** 確認用の話しかけで、歩きを終えて置き場所へ置いた人 */
     done: Set<string>;
 }
@@ -157,6 +159,11 @@ export class ExploreWorld implements GameWorld {
     private readonly pv = new THREE.Matrix4();
     private readonly keys = new HeldKeys();
     private time = 0;
+    /**
+     * 立つ会話の相手（castActors）の動きの時計：ふだんは探索の時計と同じだけ進み、演出の出来事の間は演出の時計（stage の t）の差だけ進む
+     * （遅いコマでは探索の時計は 1 コマ 0.1 秒までしか進まないが、演出の人は 1 コマで 1 秒分動く。足の合わせ直しの判定を演出の時計で）
+     */
+    private castTime = 0;
     // ---- 演出の出来事
     private stageKey: string | null = null;
     private stageT = 0;
@@ -256,8 +263,14 @@ export class ExploreWorld implements GameWorld {
     // ---------------- GameWorld ----------------
 
     setCast(cast: CastMember<string>[]): void {
-        // タイトル・合戦（相手が誰もいない）：物見の眺めの途中なら終わらせる
-        if (cast.length === 0) this.lookout?.cancel();
+        // タイトル・合戦（相手が誰もいない）：物見の眺めの途中なら終わらせる。町の急報の後の歩きの途中なら、それも終える
+        //（残すと、次に読み込んだ回の町で前の回の使者が歩き、着くまで「話す」が出なかった）。話している相手・主人公の向き直りも外す
+        if (cast.length === 0) {
+            this.lookout?.cancel();
+            this.epilogue = null;
+            this.talkWith = null;
+            this.heroTurn = null;
+        }
         // 同じ相手・同じ姿勢・同じ場所なら作り直さない
         const same =
             cast.length === this.cast.length &&
@@ -368,7 +381,7 @@ export class ExploreWorld implements GameWorld {
             this.stageOrigin = { x: h.x, z: h.z, heading: h.heading, dirX: h.dirX, dirZ: h.dirZ, speed: h.speed, yaw: this.host.orbit.yaw };
             this.epilogue = null;
             this.heroTurn = null;
-        }
+        } else this.castTime += Math.max(0, t - this.stageT);
         this.stageT = t;
         this.stageReduced = reduced;
         const f = stageFrame(ev, t, reduced, this.castInfo(), this.stageOrigin ?? undefined);
@@ -433,7 +446,7 @@ export class ExploreWorld implements GameWorld {
         // 置き場所に座っている人物を出来事が立たせて動かしていた（見直し）ときは、後の歩きをせず置き場所へ戻す（座った人物と二人にしない）
         const seatedLinked = [...this.stageLinked.keys()].some((id) => this.views.get(id)?.stander === false);
         if (ev && end !== null && this.stageOrigin && !this.stageReduced && !seatedLinked && this.stageT >= end - 0.05) {
-            this.epilogue = { ev, origin: this.stageOrigin, t0: this.time, end, done: new Set() };
+            this.epilogue = { ev, origin: this.stageOrigin, t0: this.time, end, walkers: new Set(afterWalkers(ev)), done: new Set() };
         }
         // 出来事が動かしていた会話の相手は、最後の形の所から続ける（後の歩き・置き場所へ戻すのは updateCast）
         for (const [id, o] of this.stageLinked) {
@@ -476,7 +489,8 @@ export class ExploreWorld implements GameWorld {
             this.epilogue = null;
             return null;
         }
-        return new Map(f.people.filter((p) => p.cast && !e.done.has(p.cast)).map((p) => [p.cast!, p]));
+        // 着いて向き直った人（settled）は返さない：その人は置き場所の人物に戻り、ほかの人がまだ歩いていても話しかけられる
+        return new Map(f.people.filter((p) => p.cast && e.walkers.has(p.cast) && !e.done.has(p.cast) && !p.settled).map((p) => [p.cast!, p]));
     }
 
     /**
@@ -521,7 +535,7 @@ export class ExploreWorld implements GameWorld {
         }
         // まだ配役に居ない人（町の急報の間・後の使者）
         for (const o of over.values()) list.push(o);
-        this.castActors.setPeople(list, this.time, cam, false, null);
+        this.castActors.setPeople(list, this.castTime, cam, false, null);
     }
 
     /** 町の人々（見た目だけ。null で消す）。同じ中身なら置き直さない */
@@ -704,6 +718,8 @@ export class ExploreWorld implements GameWorld {
 
     frame(dt: number): void {
         this.time += dt;
+        // 演出の出来事の間は、演出の時計が進めた分（stage）
+        if (!this.stageKey) this.castTime += dt;
         this.ambientTime += dt;
         this.lookout?.frame();
         const h = this.host.hero;

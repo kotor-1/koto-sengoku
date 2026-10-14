@@ -316,6 +316,18 @@ describe('第二章の冒頭の使い・家臣・主人公の動き', () => {
 });
 
 describe('第二章の冒頭のカメラ：3 つの画（話す人と聞く人）。最後は操作の肩越しのカメラで終わる', () => {
+    it('荷運びを隠すのは 1 の画の間だけ（2 の画への切り替えで戻す）。最後の画（操作の肩越しのカメラ）と場面の終わりでは隠さない（操作へ戻った時に急に現れない）。動きを減らすときは隠さない', () => {
+        for (const { c, spec } of SAMPLES) {
+            const ev = msgEvent(spec);
+            const E = ev.report.cue.end;
+            const [cut1] = messengerLayout(ev).cuts;
+            expect(stageFrame(ev, 0, false).hideAmbient, c.name).toEqual(['porter']);
+            expect(stageFrame(ev, cut1 - DT, false).hideAmbient, c.name).toEqual(['porter']);
+            for (let t = cut1; t <= E + 1e-9; t += 0.1) expect(stageFrame(ev, t, false).hideAmbient, `${c.name} t=${t.toFixed(2)}`).toEqual([]);
+            expect(stageFrame(ev, E, false).hideAmbient, c.name).toEqual([]);
+            for (const t of [0, cut1 - DT, E]) expect(stageFrame(ev, t, true).hideAmbient, c.name).toEqual([]);
+        }
+    });
     it('切り替えは 2 回、画の中の動きはゆっくり（毎秒 0.5 m・12° まで）、カメラ除けの箱に入らない、人に 0.75 m より近づかない。主人公はいつも画の中（見る向きから 35° 以内）', () => {
         for (const { c, spec } of SAMPLES) {
             const ev = msgEvent(spec);
@@ -459,6 +471,8 @@ describe('探索の場面：使い・家臣は会話の相手そのもの（入�
         let maxJump = 0;
         let maxTurn = 0;
         let frames = 0;
+        // 着いて向き直った人から話せる：忠勝（約 13 秒で着く）は、使い（約 17 秒）がまだ歩いていても話せる
+        let free = 0;
         while (world.castArriving().length && frames < 60 * 40) {
             world.frame(DT);
             frames++;
@@ -469,7 +483,17 @@ describe('探索の場面：使い・家臣は会話の相手そのもの（入�
                 maxTurn = Math.max(maxTurn, deg(wrap(p.now - q.now)));
             }
             prev = new Map(world.probe().map((p) => [p.id, p]));
+            const a = world.castArriving();
+            if (a.length && !a.includes('tadakatsu')) {
+                const tk = world.probe().find((p) => p.id === 'tadakatsu')!;
+                expect(tk.at).toEqual([tk.x, tk.z]);
+                expect(tk.now).toBeCloseTo(tk.heading, 2);
+                expect(tk.driven).toBe(false);
+                expect(a).toEqual(['envoy']);
+                free++;
+            }
         }
+        expect(free / 60).toBeGreaterThan(2);
         expect(frames).toBeLessThan(60 * 25);
         expect(maxJump).toBeLessThan(0.05);
         expect(maxTurn).toBeLessThanOrEqual(12);

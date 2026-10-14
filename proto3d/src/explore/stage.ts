@@ -102,6 +102,11 @@ export interface StagePerson {
     run?: number;
     /** 歩き・走りの周期の数（1 周期の距離で割って足した物。省けば walked と歩きの 1 周期の距離から。走りから止まるとき位相が飛ばない） */
     cycle?: number;
+    /**
+     * 出来事の後の歩きで、この人は置き場所に着いて置き場所の向きへ向き直った（会話の相手の人物）。ほかの人がまだ歩いていても、
+     * この人はもう話しかけられる（描く側は置き場所の人物に戻す）
+     */
+    settled?: boolean;
 }
 
 /** 出来事の間の主人公（立たせる位置と向き。無ければ主人公を描かない） */
@@ -849,15 +854,32 @@ function reportPlan(ev: Extract<StageEvent, { id: 'street_report' }>, o0: StageO
     const asaiT = s2 - ASAI_EARLY;
     const asaiL = Math.max(1, ASAI_WALK * (asaiT - ASAI_DECEL / 2));
     const asaiFrom: Pt = [asaiStop[0], asaiStop[1] + asaiL];
-    let retStop: Pt =
-        H[1] + RET_AT[1] < RET_Z_MIN ? [round3(clampN(H[0] + 1.4, -1.5, 2.6)), round3(H[1] - 0.5)] : [round3(clampN(H[0] + RET_AT[0], -2.4, 2.4)), round3(H[1] + RET_AT[1])];
+    // 忠勝の止まる所：決めた所が城門の柱・扉・塀（当たり判定から人の大きさ 0.35 m）にかかる、または主人公から近すぎる・遠すぎるときは、
+    // 次の候補へ（城門の前の広場の北東の隅で始めた見直しで、東の柱の中に止まっていた）
+    const retFree = (p: Pt) => {
+        const d = Math.hypot(p[0] - H[0], p[1] - H[1]);
+        return standable(p[0], p[1], 0.35) && d >= 1.35 && d <= 3.3;
+    };
+    const zIn = Math.max(H[1] - 0.5, -10.95);
+    const retCands: Pt[] = [
+        H[1] + RET_AT[1] < RET_Z_MIN ? [clampN(H[0] + 1.4, -1.5, 2.6), H[1] - 0.5] : [clampN(H[0] + RET_AT[0], -2.4, 2.4), H[1] + RET_AT[1]],
+        [clampN(H[0] - 1.4, -2.6, 1.5), H[1] - 0.5],
+        [H[0] - 1.4, zIn],
+        [H[0] + 1.4, zIn],
+        [H[0] - 1.4, H[1] + 0.3],
+        [H[0] + 1.4, H[1] + 0.3],
+    ];
+    const retPick = retCands.find(retFree) ?? retCands[0]!;
+    let retStop: Pt = [round3(retPick[0]), round3(retPick[1])];
     const rs = ev.retainer.spot;
     let retPath = roundPath(detour([[rs[0], rs[1]], retStop], H));
     const retArrive = s3t - RET_EARLY;
-    // 速く歩いても言い始める前に着けない遠さなら、手前（城門の側）で止まる
+    // 速く歩いても言い始める前に着けない遠さなら、手前（城門の側）で止まる（その所が当たり判定にかかるなら、かからない所まで手前へ）
     const retMaxL = RET_SPEED[1] * Math.max(0.5, retArrive - 0.15 - (WALK_ACCEL + WALK_DECEL) / 2);
     if (pathLength(retPath) > retMaxL) {
-        const p = alongPath(retPath, retMaxL);
+        let l = retMaxL;
+        let p = alongPath(retPath, l);
+        while (l > 0.1 && !standable(p.x, p.z, 0.35)) p = alongPath(retPath, (l -= 0.1));
         retStop = [round3(p.x), round3(p.z)];
         retPath = roundPath(detour([[rs[0], rs[1]], retStop], H));
     }
@@ -870,8 +892,9 @@ function reportPlan(ev: Extract<StageEvent, { id: 'street_report' }>, o0: StageO
     const e1 = ev.envoys[1];
     // 出来事の後：織田の使者は主人公の脇を通って置き場所へ。浅井の使者は通りを東の空き地へ（町家 D の角をよける）。忠勝は城門の前へ
     const odaAfter = e0 ? roundPath(detour([odaStop, sp(e0)], H)) : [odaStop];
-    const asaiVia: Pt[] = asaiStop[1] > 3.2 ? [[2.4, 2.4]] : [];
-    const asaiAfter = e1 ? roundPath(detour([asaiStop, ...asaiVia, [4.7, -0.9], sp(e1)], H)) : [asaiStop];
+    // （浅井の使者の置き場所が通りの中のとき（支度・戦後の見直し：城門の前の使者の所）は、東の空き地を回らず、織田の使者と同じにまっすぐ）
+    const asaiVia: Pt[] = e1 && e1.spot[0] > REPORT_STREET.x1 ? [...(asaiStop[1] > 3.2 ? [[2.4, 2.4] as Pt] : []), [4.7, -0.9]] : [];
+    const asaiAfter = e1 ? roundPath(detour([asaiStop, ...asaiVia, sp(e1)], H)) : [asaiStop];
     const retAfter = roundPath(detour([retStop, [rs[0], rs[1]]], H));
     // 出来事の間の人の位置（カメラが人に重ならないように。止まる所・忠勝の歩く道を時刻で）
     const retL0 = pathLength(retPath);
@@ -987,9 +1010,9 @@ function streetReport(ev: Extract<StageEvent, { id: 'street_report' }>, t: numbe
     const headAt = (x: number, z: number, y = HEAD_Y) => ({ x: round3(x), y, z: round3(z) });
     const look = (w: number): PersonAct => ({ ...NO_ACT, look: { x: H[0], y: HEAD_Y - 0.05, z: H[1] }, lookWeight: w });
     let settledAt = E;
-    // ---- 織田の使者：走って来て止まり、片膝をつく。出来事の後は立って置き場所へ
+    // ---- 織田の使者：走って来て止まり、片膝をつく。出来事の後は立って置き場所へ（after が false なら、場面の後は描かない）
     const e0 = ev.envoys[0];
-    if (e0) {
+    if (e0 && (inEvent || e0.after !== false)) {
         const L = P.odaFrom[1] - P.odaStop[1];
         const Tstop = arriveProfile(0, ODA_RUN, L, ODA_DECEL).T;
         const spotH = e0.spot[2];
@@ -1020,13 +1043,13 @@ function streetReport(ev: Extract<StageEvent, { id: 'street_report' }>, t: numbe
             const from = lerpAngle(Math.PI, headingTo(P.odaStop, H), 1);
             const w = walkHome(P.after.oda, from, E + AFTER.oda.start, AFTER.oda.speed, t, spotH, spotH);
             settledAt = Math.max(settledAt, w.done);
-            people.push({ key: e0.cast, cast: e0.cast, look: e0.look, name: e0.name, x: round3(w.x), z: round3(w.z), heading: roundH(w.heading), walked: round3(w.walked), moving: w.moving, cycle: walkCycles(w.walked), label: false });
+            people.push({ key: e0.cast, cast: e0.cast, look: e0.look, name: e0.name, x: round3(w.x), z: round3(w.z), heading: roundH(w.heading), walked: round3(w.walked), moving: w.moving, cycle: walkCycles(w.walked), label: false, ...(t >= w.done ? { settled: true } : {}) });
         }
-        if (!reduced) settledAt = Math.max(settledAt, E + AFTER.oda.start + walkProfile(0, AFTER.oda.speed, pathLength(P.after.oda)).T + FACE_SEC);
+        if (!reduced && e0.after !== false) settledAt = Math.max(settledAt, E + AFTER.oda.start + walkProfile(0, AFTER.oda.speed, pathLength(P.after.oda)).T + FACE_SEC);
     }
     // ---- 浅井の使者：少し遅れて急ぎ足で来て止まり、主人公の方へ向く。出来事の後は東の空き地へ
     const e1 = ev.envoys[1];
-    if (e1) {
+    if (e1 && (inEvent || e1.after !== false)) {
         const L = P.asaiFrom[1] - P.asaiStop[1];
         const spotH = e1.spot[2];
         const faceH = headingTo(P.asaiStop, H);
@@ -1052,15 +1075,18 @@ function streetReport(ev: Extract<StageEvent, { id: 'street_report' }>, t: numbe
         } else {
             const w = walkHome(P.after.asai, faceH, E + AFTER.asai.start, AFTER.asai.speed, t, spotH, spotH);
             settledAt = Math.max(settledAt, w.done);
-            people.push({ key: e1.cast, cast: e1.cast, look: e1.look, name: e1.name, x: round3(w.x), z: round3(w.z), heading: roundH(w.heading), walked: round3(L + w.walked), moving: w.moving, cycle: walkCycles(L + w.walked), label: false });
+            people.push({ key: e1.cast, cast: e1.cast, look: e1.look, name: e1.name, x: round3(w.x), z: round3(w.z), heading: roundH(w.heading), walked: round3(L + w.walked), moving: w.moving, cycle: walkCycles(L + w.walked), label: false, ...(t >= w.done ? { settled: true } : {}) });
         }
-        if (!reduced) settledAt = Math.max(settledAt, E + AFTER.asai.start + walkProfile(0, AFTER.asai.speed, pathLength(P.after.asai)).T + FACE_SEC);
+        if (!reduced && e1.after !== false) settledAt = Math.max(settledAt, E + AFTER.asai.start + walkProfile(0, AFTER.asai.speed, pathLength(P.after.asai)).T + FACE_SEC);
     }
     // ---- 忠勝：城門の前から歩いて来て、止まってから言う。家康の命に軽く礼をして、城門の前へ歩いて戻る
     const r = ev.retainer;
     const rSpotH = r.spot[2];
     const rFace = headingTo(P.retStop, H);
-    if (reduced) {
+    const rGone = !inEvent && r.after === false;
+    if (rGone) {
+        // 今の段階の城下に立っていない（見直し）：場面の後は描かない
+    } else if (reduced) {
         people.push({ key: r.cast, cast: r.cast, look: r.look, name: r.name, x: P.retStop[0], z: P.retStop[1], heading: roundH(rFace), walked: 0, moving: 0, label: inEvent, act: look(0.9) });
     } else if (inEvent || t < E + AFTER.ret.start) {
         const L = pathLength(P.retPath);
@@ -1088,15 +1114,16 @@ function streetReport(ev: Extract<StageEvent, { id: 'street_report' }>, t: numbe
     } else {
         const w = walkHome(P.after.ret, rFace, E + AFTER.ret.start, AFTER.ret.speed, t, rSpotH, rSpotH);
         settledAt = Math.max(settledAt, w.done);
-        people.push({ key: r.cast, cast: r.cast, look: r.look, name: r.name, x: round3(w.x), z: round3(w.z), heading: roundH(w.heading), walked: round3(pathLength(P.retPath) + w.walked), moving: w.moving, cycle: walkCycles(pathLength(P.retPath) + w.walked), label: false });
+        people.push({ key: r.cast, cast: r.cast, look: r.look, name: r.name, x: round3(w.x), z: round3(w.z), heading: roundH(w.heading), walked: round3(pathLength(P.retPath) + w.walked), moving: w.moving, cycle: walkCycles(pathLength(P.retPath) + w.walked), label: false, ...(t >= w.done ? { settled: true } : {}) });
     }
-    if (!reduced) settledAt = Math.max(settledAt, E + AFTER.ret.start + walkProfile(0, AFTER.ret.speed, pathLength(P.after.ret)).T + FACE_SEC);
-    const settled = reduced ? t > E + 1e-9 : t >= settledAt;
+    if (!reduced && r.after !== false) settledAt = Math.max(settledAt, E + AFTER.ret.start + walkProfile(0, AFTER.ret.speed, pathLength(P.after.ret)).T + FACE_SEC);
+    // 後の歩きをする人が居ないとき（見直し）は、場面の終わりの次から settled（場面の最後のコマでは、まだみな描く）
+    const settled = reduced ? t > E + 1e-9 : !inEvent && t >= settledAt;
     // 動きを減らすときは、出来事の後も止まる所のまま（t によらない。置き場所へは描く側が出来事の終わりに置き直す）
     if (settled && !reduced) {
         // 着いた：置き場所・置き場所の向き（会話の相手の人物と同じ所・同じ向き。これより後は人物のまま）
         people.length = 0;
-        for (const x of [...ev.envoys, ev.retainer]) people.push({ key: x.cast, cast: x.cast, look: x.look, name: x.name, x: x.spot[0], z: x.spot[1], heading: roundH(x.spot[2]), walked: 0, moving: 0, label: false });
+        for (const x of [...ev.envoys, ev.retainer]) if (x.after !== false) people.push({ key: x.cast, cast: x.cast, look: x.look, name: x.name, x: x.spot[0], z: x.spot[1], heading: roundH(x.spot[2]), walked: 0, moving: 0, label: false });
     }
     // ---- 主人公：減速して止まり、走って来る足音に振り向く（足を踏み替えて）。忠勝が来ると、そちらへ向き直る
     let hero: StageHero | null = null;
@@ -1348,7 +1375,7 @@ function messengerReport(ev: MessengerReportEvent, t: number, reduced: boolean):
         });
     } else {
         const w = walkHome(P.after.msg, P.faceM, P.afterStart.msg, MSG_AFTER.msg, t, msgSpotH, msgSpotH);
-        people.push({ key: ms.cast, cast: ms.cast, look: ev.look, name: ev.name, x: round3(w.x), z: round3(w.z), heading: roundH(w.heading), walked: round3(P.L + w.walked), moving: w.moving, cycle: walkCycles(P.L + w.walked), label: false });
+        people.push({ key: ms.cast, cast: ms.cast, look: ev.look, name: ev.name, x: round3(w.x), z: round3(w.z), heading: roundH(w.heading), walked: round3(P.L + w.walked), moving: w.moving, cycle: walkCycles(P.L + w.walked), label: false, ...(t >= w.done ? { settled: true } : {}) });
     }
     // ---- 家臣：城門の前の置き場所から歩いて来て、止まって主人公の方を向いてから言う。言い終えて軽く礼をし、城門の前へ歩いて戻る
     const r = rp.retainer;
@@ -1379,7 +1406,7 @@ function messengerReport(ev: MessengerReportEvent, t: number, reduced: boolean):
         });
     } else {
         const w = walkHome(P.after.ret, P.rFace, P.afterStart.ret, MSG_AFTER.ret, t, rSpotH, rSpotH);
-        people.push({ key: r.cast, cast: r.cast, look: r.look, name: r.name, x: round3(w.x), z: round3(w.z), heading: roundH(w.heading), walked: round3(P.retL + w.walked), moving: w.moving, cycle: walkCycles(P.retL + w.walked), label: false });
+        people.push({ key: r.cast, cast: r.cast, look: r.look, name: r.name, x: round3(w.x), z: round3(w.z), heading: roundH(w.heading), walked: round3(P.retL + w.walked), moving: w.moving, cycle: walkCycles(P.retL + w.walked), label: false, ...(t >= w.done ? { settled: true } : {}) });
     }
     const settled = reduced ? t > E + 1e-9 : t >= P.settledAt;
     if (settled && !reduced) {
@@ -1424,8 +1451,9 @@ function messengerReport(ev: MessengerReportEvent, t: number, reduced: boolean):
         litters: [],
         shot: s,
         hideCast: [],
-        // 荷運び（町家 D の店先へ運ぶ人）は、1 の画のカメラのすぐ前を通るので、この場面の間だけ隠す（今までの家臣の報告と同じ）
-        hideAmbient: inEvent ? ['porter'] : [],
+        // 荷運び（町家 D の店先へ運ぶ人）は、1 の画のカメラのすぐ前を通るので、1 の画の間だけ隠す（2 の画への切り替えで戻す。
+        // 最後の画は操作の肩越しのカメラへ切らずに渡すので、操作へ戻った時に荷運びが急に現れないように）。動きを減らすときの静止の画は通りの東から
+        hideAmbient: inEvent && !reduced && t < sh.cut1 ? ['porter'] : [],
         hero,
         ...(heroGaze !== undefined ? { heroGaze } : {}),
         settled,
@@ -1443,9 +1471,17 @@ export function messengerLayout(ev: MessengerReportEvent): { hero: Pt; messenger
  * 町の急報・第二章の冒頭の使いの急報。ほかの出来事は null
  */
 export function afterWalkEnd(ev: StageEvent): number | null {
-    if (ev.id === 'street_report') return ev.cue.end;
+    // 町の急報：後の歩きをする人（今の段階の城下に立つ人）が居るときだけ
+    if (ev.id === 'street_report') return afterWalkers(ev).length ? ev.cue.end : null;
     if (ev.id === 'messenger_arrive' && ev.report) return ev.report.cue.end;
     return null;
+}
+
+/** 出来事の後に置き場所まで歩く会話の相手の id（町の急報は after が false の人（今の段階の城下に居ない人：見直し）を除く） */
+export function afterWalkers(ev: StageEvent): string[] {
+    if (ev.id === 'street_report') return [...ev.envoys, ev.retainer].filter((x) => x.after !== false).map((x) => x.cast);
+    if (ev.id === 'messenger_arrive' && ev.report) return [ev.report.messenger.cast, ev.report.retainer.cast];
+    return [];
 }
 
 /** 演出の中で町へ来る会話の相手（来るまで配役に置かない：第二章の冒頭の使い）。台本の 3D の出来事から */
