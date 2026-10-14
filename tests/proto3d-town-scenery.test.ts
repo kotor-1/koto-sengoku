@@ -12,10 +12,11 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { CROWN_CLUSTERS, FIELD_UNDERLAY, RANGES, TOWN_LIGHT, makeHills, surroundGeometry } from '../proto3d/src/scenery';
 import { surroundPlan } from '../proto3d/src/town/surround';
-import { BOUNDS, EDGE_FENCE, GATE, TREES, cameraBlockers, colliders, type Rect } from '../proto3d/src/layout';
+import { BACK_TREES, BOUNDS, EDGE_FENCE, GATE, TREES, cameraBlockers, colliders, type Rect } from '../proto3d/src/layout';
 import { createOrbit, placeFollow } from '../proto3d/src/game/follow';
 import { CONTACT_SHADOW, addContactShadow, isCharacter } from '../proto3d/src/explore/contactShadow';
 import scene from '../proto3d/blender/scene.json';
+import treesMeta from '../proto3d/blender/trees/trees.meta.json';
 
 const sunDir = new THREE.Vector3(...TOWN_LIGHT.sunOffset).normalize();
 const bounceDir = new THREE.Vector3(-TOWN_LIGHT.sunOffset[0], TOWN_LIGHT.bounce.height, -TOWN_LIGHT.sunOffset[2]).normalize();
@@ -120,6 +121,19 @@ describe('中景（範囲の外の竹垣・隣の町並み・木立・村）', (
                 const east = placeFollow(createOrbit(Math.PI / 2, pitch), BOUNDS.x1, z, 0).position;
                 expect(east.x, `east z=${z} pitch=${pitch}`).toBeLessThan(EDGE_FENCE.east);
             }
+        }
+    });
+
+    it('木が家の中から生えない：範囲の外の木（back_trees・範囲の外の通りの木）は中景の家の四角から根張りの分より離れ、中景の木（生垣を除く）の幹は家の四角（1 m の余白）の外', () => {
+        const away = (h: { x0: number; x1: number; z0: number; z1: number }, x: number, z: number) => Math.hypot(Math.max(h.x0 - x, 0, x - h.x1), Math.max(h.z0 - z, 0, z - h.z1));
+        const meta = treesMeta as unknown as Record<string, { root_flare_radius?: number; trunk_radius_at_1m?: number }>;
+        // 根張りの半径（無ければ幹の半径 + 0.5 m）× 大きさ
+        const reach = (model: string, scale: number) => Math.max(meta[model]?.root_flare_radius ?? 0, (meta[model]?.trunk_radius_at_1m ?? 0.35) + 0.5) * scale;
+        const outer = [...BACK_TREES.map((b) => ({ name: `back(${b.x}, ${b.z})`, ...b })), ...TREES.filter((t) => !inBounds(t.x, t.z))];
+        expect(outer.length).toBeGreaterThan(0);
+        for (const t of outer) for (const h of plan.houses) expect(away(h, t.x, t.z), `${t.name} ${JSON.stringify(h)}`).toBeGreaterThan(reach(t.model, t.scale));
+        for (const t of plan.trees.filter((q) => q.kind !== 'hedge')) {
+            for (const h of plan.houses) expect(t.x > h.x0 - 1 && t.x < h.x1 + 1 && t.z > h.z0 - 1 && t.z < h.z1 + 1, `${JSON.stringify(t)} ${JSON.stringify(h)}`).toBe(false);
         }
     });
 

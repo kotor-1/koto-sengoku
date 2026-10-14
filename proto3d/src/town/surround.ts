@@ -255,5 +255,14 @@ export function surroundPlan(): SurroundPlan {
     treeLine(out, 'fields_s', 8, 96, 60, 96, 2.6, 45, ['hedge']);
     village(out, 51);
     groves(out, 61);
+    // 木が家の屋根の中から生えないように（村の屋敷林・竹やぶ、田畑の端の並木）、幹が家の四角（軒・けらばの出の分 1 m の余白）の中に入った木は、
+    // いちばん近い辺の外（壁から 1.5 m）へ出す。出した先も家の中なら置かない。置いた後で直す（乱数は前と同じだけ使う：ほかの家・木の置き方は変えない）
+    const houseAt = (x: number, z: number) => out.houses.find((h) => x > h.x0 - 1 && x < h.x1 + 1 && z > h.z0 - 1 && z < h.z1 + 1);
+    out.trees = out.trees.flatMap((t) => {
+        const h = houseAt(t.x, t.z);
+        if (!h) return [t];
+        const [x, z] = ([[h.x0 - 1.5, t.z], [h.x1 + 1.5, t.z], [t.x, h.z0 - 1.5], [t.x, h.z1 + 1.5]] as const).reduce((a, b) => (Math.hypot(b[0] - t.x, b[1] - t.z) < Math.hypot(a[0] - t.x, a[1] - t.z) ? b : a));
+        return houseAt(x, z) ? [] : [{ ...t, x, z }];
+    });
     return out;
 }

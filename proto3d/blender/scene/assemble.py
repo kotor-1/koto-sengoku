@@ -33,7 +33,8 @@ TMP.mkdir(parents=True, exist_ok=True)
 
 # main.ts と同じ
 SCENE_MODELS = ['ground_v2', 'gate_v2', 'walls_v2', 'keep', 'machiya_a', 'machiya_b', 'machiya_d']
-BACK_TREES = [(-27, -16, 0.3, 1.1), (26, -22, 1.7, 1.2), (-26, 12, 2.6, 1.0), (27, 9, 1.1, 0.95)]
+# Version 28：(−26, 12)・(27, 9) の 2 本は中景の家並み（town/surround.ts）の 1 列目の家の中に立つので除いた（street28.json の back_trees と同じ）
+BACK_TREES = [(-27, -16, 0.3, 1.1), (26, -22, 1.7, 1.2)]
 SKY = dict(zenith='#4f7fb8', horizon='#c9d6db', glow='#ffdcae')
 FOG = (45.0, 480.0)
 FOLLOW = dict(height=1.5, shoulder=0.38, distance=2.1, pitch0=0.06)

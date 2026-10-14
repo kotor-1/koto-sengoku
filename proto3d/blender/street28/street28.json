@@ -79,9 +79,7 @@
   ],
   "back_trees": [
     { "model": "tree_pine", "x": -27, "z": -16, "rotY": 0.3, "scale": 1.1 },
-    { "model": "tree_pine", "x": 26, "z": -22, "rotY": 1.7, "scale": 1.2 },
-    { "model": "tree_pine", "x": -26, "z": 12, "rotY": 2.6, "scale": 1.0 },
-    { "model": "tree_pine", "x": 27, "z": 9, "rotY": 1.1, "scale": 0.95 }
+    { "model": "tree_pine", "x": 26, "z": -22, "rotY": 1.7, "scale": 1.2 }
   ],
   "_trees_note": "trees は幹の当たり判定を持つ木（layout.ts。幹の箱の半分の幅は trunk、無ければ 0.35 m）、back_trees は歩ける範囲の外の木立（当たり判定なし。影は落とさない）。shadow: false の木は影を落とさない（城内・東の土塀の内側の大きな木：日は南南東なので影は通りから見えない城内へ落ちる。影の描画の三角形を減らす。Version 28 T3）。Version 28 の地面（scene/build_ground.py → ground_v3.glb）・草むら（ground_plants28.glb）はこの表（建物・小物・木・側溝）を読んで作る。",
   "edges": {
