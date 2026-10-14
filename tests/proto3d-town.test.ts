@@ -459,6 +459,21 @@ describe('町の人々の置き方', () => {
         expect(p.banners.map((b) => `${b.kind}:${b.mark}`).sort()).toEqual(['preparing:徳', 'reinforcement:織']);
     });
 
+    it('店の人の立つ所は、店の方へ向き直ってかがんでも店の形に入らない：建物の本体（柱・壁）から 0.62 m、高い所の固い物（暖簾など高さ 1 m より上）から 0.5 m 離れる', () => {
+        const away = (r: Rect, x: number, z: number) => Math.hypot(Math.max(r.x0 - x, 0, x - r.x1), Math.max(r.z0 - z, 0, z - r.z1));
+        for (const [x, z] of MERCHANT_SPOTS) {
+            for (const m of BUILDING_METAS) {
+                for (const s of m.solids) {
+                    if (!s.walk_box) continue;
+                    const need = s.id === 'body' ? 0.62 : s.box.y1 > 1 ? 0.5 : 0;
+                    expect(away(s.walk_box, x, z), `店の人 (${x}, ${z}) と ${m.name} の ${s.id}`).toBeGreaterThanOrEqual(need);
+                }
+            }
+            // 低い物（揚げ見世・床几など）を含めて、当たり判定の箱の中には立たない
+            for (const r of ALL) expect(inside(r, x, z), `店の人 (${x}, ${z})`).toBe(false);
+        }
+    });
+
     it('歩く人・兵は、当たり判定の中・道の真ん中・道すじに入らない（往復のどの時刻でも）', () => {
         for (const s of SPECS) {
             const p = ambientPlan(s);
