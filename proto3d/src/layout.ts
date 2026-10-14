@@ -22,8 +22,10 @@ export const GATE_POSTS = { z: GATE.z + scene.gate.control_pillars.z_offset, siz
 export const HOUSE = scene.houses[0].footprint;
 /** 通りの建物（Version 28。素材の名前・足元・表の向き。当たり判定は素材の meta から） */
 export const STREET_BUILDINGS: readonly { id: string; footprint: Rect; front: string }[] = street.buildings.map((b) => ({ id: b.id, footprint: b.footprint, front: b.front }));
-/** 木（幹の位置・素材・向き・大きさ・幹の当たり判定の箱の半分の幅（表に無ければ 0.35 m）。幹に当たり判定） */
-export const TREES: readonly { name: string; model: string; x: number; z: number; rotY: number; scale: number; trunk: number }[] = street.trees.map((t) => ({
+/**
+ * 木（幹の位置・素材・向き・大きさ・幹の当たり判定の箱の半分の幅（表に無ければ 0.35 m）・影を落とすか（表の shadow。無ければ落とす））。幹に当たり判定
+ */
+export const TREES: readonly { name: string; model: string; x: number; z: number; rotY: number; scale: number; trunk: number; shadow: boolean }[] = street.trees.map((t) => ({
     name: t.name,
     model: t.model,
     x: t.x,
@@ -31,6 +33,7 @@ export const TREES: readonly { name: string; model: string; x: number; z: number
     rotY: t.rotY,
     scale: t.scale,
     trunk: 'trunk' in t && typeof t.trunk === 'number' ? t.trunk : 0.35,
+    shadow: !('shadow' in t && t.shadow === false),
 }));
 /** 町の外側の木立（歩ける範囲の外。当たり判定なし） */
 export const BACK_TREES: readonly { model: string; x: number; z: number; rotY: number; scale: number }[] = street.back_trees;
@@ -43,6 +46,12 @@ export const TREE2 = tree('sakura');
 export const START = { x: scene.hero_start[0], z: scene.hero_start[1], heading: scene.hero_start_heading, yaw: scene.hero_start_yaw, pitch: scene.hero_start_pitch } as const;
 /** 動ける範囲 */
 export const BOUNDS = { x0: -22, x1: 20, z0: -30, z1: 18 } as const;
+/**
+ * 範囲の端（東西）の竹垣（Version 28 の中景。形は scenery.ts、置き方は town/surround.ts）：歩ける範囲の端から 0.4 m（主人公の体の半径 0.3 m より少し外）の線に、
+ * 城の土塀の線（z −12）の少し南から町の南の柵の線（z 16.4）まで。当たり判定は足さない（範囲の端で止まる）。カメラ除けの箱にはする（垣の向こうの家並みに入らない）
+ */
+const EDGE_GAP = 0.4;
+export const EDGE_FENCE = { h: 1.9, z0: -11.6, z1: 16.4, west: BOUNDS.x0 - EDGE_GAP, east: BOUNDS.x1 + EDGE_GAP } as const;
 
 export interface Rect {
     x0: number;
@@ -141,6 +150,8 @@ export function cameraBlockers(): Box[] {
     b.push(...metaBlockers);
     // 小さな城下町で足した物（town/plan.ts）
     b.push(...townBlockers());
+    // 範囲の端の竹垣（垣より高く：カメラが垣を越えて向こうの家並みに入らない）
+    for (const x of [EDGE_FENCE.west, EDGE_FENCE.east]) box(rectOf(x - 0.12, x + 0.12, EDGE_FENCE.z0, EDGE_FENCE.z1), 0, 8);
     return b;
 }
 
