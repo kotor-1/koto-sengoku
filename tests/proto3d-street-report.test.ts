@@ -59,6 +59,7 @@ import { SOLE } from '../proto3d/src/game/legs';
 import { groundY } from '../proto3d/src/layout';
 import { loadGlb } from './proto3d-hero-rig';
 import { ch2Starts, ch1Cases } from './proto3d-ieyasu-story-states';
+import { ieyasu2CastFor } from '../proto3d/src/campaign/ieyasu1570/chapter2/scenario';
 
 const DT = 1 / 60;
 const J = (v: unknown) => JSON.stringify(v);
@@ -1090,6 +1091,49 @@ describe('探索の場面：急報の人は会話の相手そのもの（入れ�
                 expect(p.driven, `${name} ${p.id}`).toBe(false);
             }
         }
+    });
+
+    it('後の歩きの途中でタイトルへ戻った（配役を空に）：後の歩きを終える。次に読み込んだ回（第二章）の町に前の回の使者を描かず、「話す」を止めない', async () => {
+        const { world, full, pending } = await makeWorld();
+        const drawn = spyCastActors(world);
+        world.setCast(pending as never);
+        watchToEnd(world);
+        world.setCast(full as never);
+        for (let i = 0; i < 120; i++) world.frame(DT);
+        expect(world.castArriving().length).toBeGreaterThan(0);
+        // タイトル（ChapterGame.title は配役を空にする）
+        world.setCast([]);
+        expect(world.castArriving()).toEqual([]);
+        expect(world.eventProbe().epilogue).toEqual([]);
+        // つづきから（第二章の探索）
+        const ch2 = ieyasu2CastFor(ch2Starts(ch1Cases())[0]!.state);
+        const ids = new Set(ch2.map((c) => c.id as string));
+        world.setCast(ch2 as never);
+        const n0 = drawn.length;
+        for (let i = 0; i < 30; i++) world.frame(DT);
+        expect(world.castArriving()).toEqual([]);
+        for (const c of drawn.slice(n0)) for (const k of c.keys) expect(ids.has(k), k).toBe(true);
+    });
+
+    it('遅いコマ（毎秒 1 コマ）：出来事が動かす会話の相手の動きの時計は、演出の時計の差で進む（探索の時計の 1 コマ 0.1 秒ではない）。出来事の外は探索の時計', async () => {
+        const { world, pending } = await makeWorld();
+        const drawn = spyCastActors(world);
+        world.setCast(pending as never);
+        world.frame(0.1);
+        world.stage(EV, 0, false);
+        const at: number[] = [];
+        for (let t = 1; t <= 6; t++) {
+            // 探索の毎フレームは 0.1 秒まで（main.ts）。演出の時計は 1 秒進む
+            world.frame(0.1);
+            at.push(drawn[drawn.length - 1]!.time);
+            world.stage(EV, t, false);
+        }
+        for (let i = 1; i < at.length; i++) expect(at[i]! - at[i - 1]!).toBeCloseTo(1, 6);
+        world.stage(null, 0, false);
+        world.frame(0.1);
+        const a = drawn[drawn.length - 1]!.time;
+        world.frame(0.1);
+        expect(drawn[drawn.length - 1]!.time - a).toBeCloseTo(0.1, 6);
     });
 });
 
