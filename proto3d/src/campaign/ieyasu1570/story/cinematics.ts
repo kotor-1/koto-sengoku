@@ -37,7 +37,8 @@ import { CH2_MISSION_TITLES, CH2_PLAN_LABELS, CH2_SUPPORT_NAMES } from '../chapt
 import { ieyasu2CastFor, ieyasu2LookOf } from '../chapter2/scenario';
 import { IEYASU_LOOKS } from '../looks';
 import { IEYASU_PLEDGE_MIN_RATIO } from '../../../battle/maps';
-import { PLEDGE_SPECS, type PledgeResult, type PledgeState, type Policy } from '../state';
+import { PLEDGE_SPECS, type IeyasuState, type IeyasuTalkId, type PledgeResult, type PledgeState, type Policy } from '../state';
+import { ieyasuCastFor } from '../scenario';
 import { IEYASU_RESULT_LABELS, IEYASU_TALK_NAMES, supportSourceName } from '../story';
 import { VISUAL_MAX, allyLosses, ch1GateTroops, ch2BattleTroops, ch2Sortie, heavyLoss, outcomeTroops, visualCount, type AllyLosses } from './counts';
 import { CH2_SITE } from './geo';
@@ -334,17 +335,26 @@ const VOICE_PAD_GUESS = 0.4;
  * 軍議を勧める → 家康は短い間の後に答える。台詞は今の台本と同じ文・同じ順（新しい出来事は足さない）。終わると忠勝は城門の前へ、使者 2 人は
  * 話せる位置へ歩いて行く（会話の相手の人物そのもの。入れ替えない）。長さは声の長さ（音声ファイルの実際の長さ）と返答の間から（15 秒前後）。
  */
-function ch1Report(): CineSpec {
+function ch1Report(s: IeyasuState): CineSpec {
     const ids = CH1_REPORT_LINES;
     const cue = reportCues(ids);
     const spot = SPOTS;
+    // 置き場所：今の段階の城下の配役（第一章の探索なら使者 2 人と忠勝。支度・戦後の見直しなら忠勝と、残っている使者）。立つ人は出来事の後に
+    // そこへ歩いて行く。今の段階の城下に居ない人（帰った使者・軍議と結末の見直し）は探索の置き場所から来て、後の歩きをしない（場面の終わりで消える）。
+    // 座っている人（戦後の負傷した忠勝）はその所から来て、終われば座った所へ戻す（見直しの間だけ立つ人物：explore/world.ts）
+    const cast = ieyasuCastFor(s);
+    const place = (id: IeyasuTalkId, explore: Spot): { spot: [number, number, number]; after?: false } => {
+        const c = cast.find((x) => x.id === id);
+        if (!c) return { spot: exploreSpot(explore), after: false };
+        return c.pose === 'stand' ? { spot: [c.x, c.z, c.heading] } : { spot: [c.x, c.z, c.heading], after: false };
+    };
     const event: StageEvent = {
         id: 'street_report',
         envoys: [
-            { look: IEYASU_LOOKS.oda_envoy, name: '織田家の使者', cast: 'oda_envoy', spot: exploreSpot(spot.muster.envoy!) },
-            { look: IEYASU_LOOKS.asai_envoy, name: '浅井家の使者', cast: 'asai_envoy', spot: exploreSpot(spot.explore.shinpachi!) },
+            { look: IEYASU_LOOKS.oda_envoy, name: '織田家の使者', cast: 'oda_envoy', ...place('oda_envoy', spot.muster.envoy!) },
+            { look: IEYASU_LOOKS.asai_envoy, name: '浅井家の使者', cast: 'asai_envoy', ...place('asai_envoy', spot.explore.shinpachi!) },
         ],
-        retainer: { look: IEYASU_LOOKS.tadakatsu, name: IEYASU_TALK_NAMES.tadakatsu, cast: 'tadakatsu', spot: exploreSpot(spot.explore.genzo!) },
+        retainer: { look: IEYASU_LOOKS.tadakatsu, name: IEYASU_TALK_NAMES.tadakatsu, cast: 'tadakatsu', ...place('tadakatsu', spot.explore.genzo!) },
         cue: { say: cue.say, end: cue.end },
     };
     const captions: CineCaption[] = ids.map((id, i) => ({ start: cue.say[i]![0], end: cue.capEnd[i]!, ...voiceCap(id) }));
@@ -874,7 +884,7 @@ export function ieyasuCinematic(s: IeyasuAnyState, moment: CineMoment): CineSpec
             return ch1Open();
         case 'ch1_report':
             // 第一章の町の急報（第二章では起こさない・見直しにも出さない）
-            return isChapter2(s) ? null : ch1Report();
+            return isChapter2(s) ? null : ch1Report(s);
         case 'ch2_open':
             return isChapter2(s) ? ch2Open(s) : null;
         case 'ch1_intro':

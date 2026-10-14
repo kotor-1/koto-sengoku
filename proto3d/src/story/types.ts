@@ -153,11 +153,12 @@ export type StageEvent =
      * → 家康が短い間の後に答える。終わると忠勝は城門の前へ、使者 2 人は話せる位置へ歩いて行き、会話の相手の人物になる（同じ人のまま。入れ替えない）。
      * envoys・retainer の cast は会話の相手の id、spot はその置き場所 [x, z, 向き]。cue は台詞の時刻（字幕と同じ。場面の始めからの秒）：
      * say は使者 2 人・家臣・家康の順の [声の始め, 声の終わり]、end は場面の終わり。
+     * after が false の人は、出来事の後に置き場所へ歩かない（今の段階の城下に立っていない人：見直し。場面の終わりで描くのをやめる）。
      */
     | {
           id: 'street_report';
-          envoys: { look: string; name: string; cast: string; spot: [number, number, number] }[];
-          retainer: { look: string; name: string; cast: string; spot: [number, number, number] };
+          envoys: { look: string; name: string; cast: string; spot: [number, number, number]; after?: false }[];
+          retainer: { look: string; name: string; cast: string; spot: [number, number, number]; after?: false };
           cue: { say: [number, number][]; end: number };
       }
     | { id: 'wounded_rest'; count: number }

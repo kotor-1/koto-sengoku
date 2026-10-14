@@ -27,7 +27,7 @@ import { castColliders, headingToward, type CastMember } from './cast';
 import { LookoutSession, type LookoutProbe } from './lookout';
 import { PersonFactory } from './people';
 import { NO_ACT, rhythmOf as rhythmOfId } from './rhythm';
-import { afterWalkEnd, stageFrame, type StageCastInfo, type StageHero, type StageOrigin, type StagePerson, type StageShot } from './stage';
+import { afterWalkEnd, afterWalkers, stageFrame, type StageCastInfo, type StageHero, type StageOrigin, type StagePerson, type StageShot } from './stage';
 import { setTowerTopVisible, townPropModel } from '../town/view';
 import './town.css';
 
@@ -106,6 +106,8 @@ interface Epilogue {
     origin: StageOrigin;
     t0: number;
     end: number;
+    /** 歩く人（会話の相手の id。今の段階の城下に居ない人は歩かない：見直し） */
+    walkers: Set<string>;
     /** 確認用の話しかけで、歩きを終えて置き場所へ置いた人 */
     done: Set<string>;
 }
@@ -433,7 +435,7 @@ export class ExploreWorld implements GameWorld {
         // 置き場所に座っている人物を出来事が立たせて動かしていた（見直し）ときは、後の歩きをせず置き場所へ戻す（座った人物と二人にしない）
         const seatedLinked = [...this.stageLinked.keys()].some((id) => this.views.get(id)?.stander === false);
         if (ev && end !== null && this.stageOrigin && !this.stageReduced && !seatedLinked && this.stageT >= end - 0.05) {
-            this.epilogue = { ev, origin: this.stageOrigin, t0: this.time, end, done: new Set() };
+            this.epilogue = { ev, origin: this.stageOrigin, t0: this.time, end, walkers: new Set(afterWalkers(ev)), done: new Set() };
         }
         // 出来事が動かしていた会話の相手は、最後の形の所から続ける（後の歩き・置き場所へ戻すのは updateCast）
         for (const [id, o] of this.stageLinked) {
@@ -476,7 +478,8 @@ export class ExploreWorld implements GameWorld {
             this.epilogue = null;
             return null;
         }
-        return new Map(f.people.filter((p) => p.cast && !e.done.has(p.cast)).map((p) => [p.cast!, p]));
+        // 着いて向き直った人（settled）は返さない：その人は置き場所の人物に戻り、ほかの人がまだ歩いていても話しかけられる
+        return new Map(f.people.filter((p) => p.cast && e.walkers.has(p.cast) && !e.done.has(p.cast) && !p.settled).map((p) => [p.cast!, p]));
     }
 
     /**

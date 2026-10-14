@@ -471,6 +471,8 @@ describe('探索の場面：使い・家臣は会話の相手そのもの（入�
         let maxJump = 0;
         let maxTurn = 0;
         let frames = 0;
+        // 着いて向き直った人から話せる：忠勝（約 13 秒で着く）は、使い（約 17 秒）がまだ歩いていても話せる
+        let free = 0;
         while (world.castArriving().length && frames < 60 * 40) {
             world.frame(DT);
             frames++;
@@ -481,7 +483,17 @@ describe('探索の場面：使い・家臣は会話の相手そのもの（入�
                 maxTurn = Math.max(maxTurn, deg(wrap(p.now - q.now)));
             }
             prev = new Map(world.probe().map((p) => [p.id, p]));
+            const a = world.castArriving();
+            if (a.length && !a.includes('tadakatsu')) {
+                const tk = world.probe().find((p) => p.id === 'tadakatsu')!;
+                expect(tk.at).toEqual([tk.x, tk.z]);
+                expect(tk.now).toBeCloseTo(tk.heading, 2);
+                expect(tk.driven).toBe(false);
+                expect(a).toEqual(['envoy']);
+                free++;
+            }
         }
+        expect(free / 60).toBeGreaterThan(2);
         expect(frames).toBeLessThan(60 * 25);
         expect(maxJump).toBeLessThan(0.05);
         expect(maxTurn).toBeLessThanOrEqual(12);

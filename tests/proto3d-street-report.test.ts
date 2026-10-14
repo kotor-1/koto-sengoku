@@ -25,7 +25,7 @@ import {
 import { IEYASU_LOOKS, IEYASU_TOWN_EVENT, ieyasuCastFor, ieyasuScenario } from '../proto3d/src/campaign/ieyasu1570/scenario';
 import { CH1_OPEN_FIRST, CH1_REPORT_LINES, ieyasuCinematic, ieyasuReplays, reportCues } from '../proto3d/src/campaign/ieyasu1570/story/cinematics';
 import { VOICE_SPEAKER_NAMES, voiceLine, voiceSecFor } from '../proto3d/src/campaign/ieyasu1570/story/voiceLines';
-import { newIeyasuGame } from '../proto3d/src/campaign/ieyasu1570/flow';
+import { devIeyasuState, newIeyasuGame } from '../proto3d/src/campaign/ieyasu1570/flow';
 import { IEYASU_SAVE_KEY } from '../proto3d/src/campaign/ieyasu1570/save';
 import type { ScenarioEndingView, ScenarioScript } from '../proto3d/src/campaign/scenario';
 import { CampaignSaveStore } from '../proto3d/src/campaign/save';
@@ -38,6 +38,7 @@ import {
     FOLLOW_GEOM,
     REPORT_DEFAULT_ORIGIN,
     REPORT_LINE_Z,
+    afterWalkEnd,
     inReportZone,
     reportLayout,
     stageFrame,
@@ -274,6 +275,65 @@ describe('急報の台本：同じ台詞・同じ順。時刻は声の長さと�
         for (const c of ch2Starts(ch1Cases()).slice(0, 8)) expect(ieyasuCinematic(c.state, 'ch1_report')).toBeNull();
         // 情勢の画面から見直せる（第一章の間）
         expect(ieyasuReplays(newIeyasuGame()).map((r) => r.moment)).toEqual(['ch1_intro', 'ch1_open', 'ch1_report']);
+    });
+    it('見直し（支度・戦後・結末）：置き場所は今の段階の城下の配役。居ない使者は後の歩きをせず（after: false）、場面の後は描かない。居る人は置き場所へ歩いて着く', () => {
+        const o = REPORT_DEFAULT_ORIGIN;
+        for (const [phase, policy] of [
+            ['muster', 'oda'],
+            ['muster', 'asai'],
+            ['muster', 'home'],
+            ['aftermath', 'oda'],
+            ['aftermath', 'asai'],
+            ['ending', 'asai'],
+        ] as const) {
+            const name = `${phase}/${policy}`;
+            const st = devIeyasuState(phase, policy);
+            const spec = ieyasuCinematic(st, 'ch1_report')!;
+            const ev = (spec.beats[0] as { event: StageEvent }).event as Extract<StageEvent, { id: 'street_report' }>;
+            // 字幕・時刻は同じ
+            expect(ev.cue, name).toEqual(EV.cue);
+            expect(spec.captions, name).toEqual(SPEC.captions);
+            const cast = ieyasuCastFor(st);
+            const present: string[] = [];
+            for (const p of [...ev.envoys, ev.retainer]) {
+                const m = cast.find((c) => c.id === p.cast && c.pose === 'stand');
+                if (m) {
+                    present.push(p.cast);
+                    expect(p.after, `${name} ${p.cast}`).toBeUndefined();
+                    expect(p.spot, `${name} ${p.cast}`).toEqual([m.x, m.z, m.heading]);
+                } else expect(p.after, `${name} ${p.cast}`).toBe(false);
+            }
+            const E = ev.cue.end;
+            expect(afterWalkEnd(ev), name).toBe(present.length ? E : null);
+            // 場面の最後のコマまでは 3 人とも描く
+            expect(
+                stageFrame(ev, E, false, [], o)
+                    .people.map((p) => p.cast)
+                    .sort(),
+                name,
+            ).toEqual(['asai_envoy', 'oda_envoy', 'tadakatsu']);
+            // 場面の後：居る人だけ（歩いて置き場所へ。1 コマで飛ばない）。着いたら置き場所・置き場所の向き
+            let prev: StagePerson[] | null = null;
+            let t = E + DT;
+            for (; t < E + 40; t += DT) {
+                const f = stageFrame(ev, t, false, [], o);
+                expect(f.people.map((p) => p.cast).sort(), `${name} t=${t.toFixed(2)}`).toEqual([...present].sort());
+                for (const p of f.people) {
+                    const q = prev?.find((x) => x.cast === p.cast);
+                    if (q) expect(Math.hypot(p.x - q.x, p.z - q.z), `${name} ${p.cast} t=${t.toFixed(2)}`).toBeLessThan(0.1);
+                    for (const r of ALL) if (touches(r, p.x, p.z)) throw new Error(`${name} t=${t.toFixed(2)}：${p.cast} (${p.x.toFixed(2)}, ${p.z.toFixed(2)}) が当たり判定 ${J(r)} にかかる`);
+                }
+                prev = f.people;
+                if (f.settled) break;
+            }
+            expect(t, name).toBeLessThan(E + 40);
+            for (const id of present) {
+                const p = stageFrame(ev, t, false, [], o).people.find((x) => x.cast === id)!;
+                const m = cast.find((c) => c.id === id)!;
+                expect([p.x, p.z], `${name} ${id}`).toEqual([m.x, m.z]);
+                expect(p.heading, `${name} ${id}`).toBeCloseTo(m.heading, 5);
+            }
+        }
     });
 });
 
@@ -831,6 +891,30 @@ async function makeWorld() {
     return { world, hero, orbit, poses, full, pending: full.filter((c) => c.id !== 'oda_envoy' && c.id !== 'asai_envoy') };
 }
 
+/** 立つ会話の相手を描く層（castActors）へ渡した時刻と人の名前の鍵を覚える（確かめ用に、world の中の層の setPeople を包む） */
+function spyCastActors(world: object): { time: number; keys: string[] }[] {
+    const layer = (world as { castActors: { setPeople: (list: { key: string }[], time: number, ...rest: unknown[]) => void } }).castActors;
+    const calls: { time: number; keys: string[] }[] = [];
+    const orig = layer.setPeople.bind(layer);
+    layer.setPeople = (list, time, ...rest) => {
+        calls.push({ time, keys: list.map((p) => p.key) });
+        orig(list, time, ...rest);
+    };
+    return calls;
+}
+
+/** 急報を最後まで見る（演出の時計と探索の毎フレームを交互に）。終われば片付ける */
+function watchToEnd(world: { stage(ev: StageEvent | null, t: number, r: boolean): void; frame(dt: number): void }, ev: StageEvent = EV) {
+    const E = (ev as Extract<StageEvent, { id: 'street_report' }>).cue.end;
+    for (let t = 0; t <= E + 1e-9; t += 0.25) {
+        world.stage(ev, Math.min(t, E), false);
+        world.frame(0.25);
+    }
+    world.stage(ev, E, false);
+    world.frame(DT);
+    world.stage(null, 0, false);
+}
+
 describe('探索の場面：急報の人は会話の相手そのもの（入れ替えない）。後の歩き・話すときの向き直り', () => {
     it('見終えた：使者・忠勝は同じ人物のまま話せる位置へ歩く（その間は話せない）。着いた所は置き場所・置き場所の向きで、位置・向きは飛ばない', async () => {
         const { world, hero, orbit, poses, full, pending } = await makeWorld();
@@ -925,6 +1009,87 @@ describe('探索の場面：急報の人は会話の相手そのもの（入れ�
         expect(world.eventProbe().talkWith).toBe('tadakatsu');
         world.setControl(true);
         expect(world.eventProbe().talkWith).toBeNull();
+    });
+
+    it('後の歩き：着いて向き直った人から話せる（忠勝が着いたら、使者がまだ歩いていても忠勝には話せる）。通りの真ん中・広場で始めたとき', async () => {
+        for (const plaza of [false, true]) {
+            const where = plaza ? '広場（西の脇の道から）' : '通りの真ん中';
+            const { world, hero, full, pending } = await makeWorld();
+            if (plaza) {
+                hero.x = -4.1;
+                hero.z = -10;
+                hero.heading = Math.PI / 2;
+                hero.dirX = 1;
+                hero.dirZ = 0;
+            }
+            world.setCast(pending as never);
+            watchToEnd(world);
+            world.setCast(full as never);
+            expect(world.castArriving().sort(), where).toEqual(['asai_envoy', 'oda_envoy', 'tadakatsu']);
+            let free = 0;
+            let frames = 0;
+            while (world.castArriving().length && frames < 60 * 40) {
+                world.frame(DT);
+                frames++;
+                const a = world.castArriving();
+                const tk = world.probe().find((p) => p.id === 'tadakatsu')!;
+                if (a.includes('tadakatsu')) continue;
+                // 着いた人は置き場所・置き場所の向きの人物（出来事はもう動かしていない）
+                expect(tk.at, where).toEqual([tk.x, tk.z]);
+                expect(tk.now, where).toBeCloseTo(tk.heading, 2);
+                expect(tk.driven, where).toBe(false);
+                if (a.length) free++;
+            }
+            expect(frames, where).toBeLessThan(60 * 40);
+            // 忠勝が着いてから使者が着くまで（使者はまだ歩いている。始めた所によって 4〜6.5 秒）、忠勝にはもう話せる
+            expect(free / 60, where).toBeGreaterThan(2);
+        }
+    });
+
+    it('見直し（支度・戦後）を最後まで見た：その段階の城下に立つ人だけが置き場所へ歩いて戻る（飛ばない）。居ない使者は後の歩きに出ず、描かない', async () => {
+        for (const [phase, policy] of [
+            ['muster', 'asai'],
+            ['muster', 'oda'],
+            ['aftermath', 'oda'],
+        ] as const) {
+            const name = `${phase}/${policy}`;
+            const st = devIeyasuState(phase, policy);
+            const ev = (ieyasuCinematic(st, 'ch1_report')!.beats[0] as { event: StageEvent }).event as Extract<StageEvent, { id: 'street_report' }>;
+            const cast = ieyasuCastFor(st);
+            const ids = new Set(cast.map((c) => c.id as string));
+            const present = [...ev.envoys, ev.retainer].filter((p) => p.after !== false).map((p) => p.cast);
+            expect(present.length, name).toBe(2);
+            const { world } = await makeWorld();
+            const drawn = spyCastActors(world);
+            world.setCast(cast as never);
+            world.frame(DT);
+            watchToEnd(world, ev);
+            expect(world.castArriving().sort(), name).toEqual([...present].sort());
+            const n0 = drawn.length;
+            let prev = new Map(world.probe().map((p) => [p.id, p]));
+            let maxJump = 0;
+            let frames = 0;
+            while (world.castArriving().length && frames < 60 * 40) {
+                world.frame(DT);
+                frames++;
+                for (const id of world.castArriving()) expect(present, name).toContain(id);
+                for (const p of world.probe()) {
+                    const q = prev.get(p.id);
+                    if (q) maxJump = Math.max(maxJump, Math.hypot(p.at[0] - q.at[0], p.at[1] - q.at[1]));
+                }
+                prev = new Map(world.probe().map((p) => [p.id, p]));
+            }
+            expect(frames, name).toBeLessThan(60 * 40);
+            expect(maxJump, name).toBeLessThan(0.05);
+            // 後の歩きの間に描いた人は、今の段階の配役の人だけ（居ない使者は場面の終わりで消え、歩かない）
+            for (const c of drawn.slice(n0)) for (const k of c.keys) expect(ids.has(k), `${name}：${k}`).toBe(true);
+            world.frame(DT);
+            for (const p of world.probe().filter((x) => present.includes(x.id))) {
+                expect(p.at, `${name} ${p.id}`).toEqual([p.x, p.z]);
+                expect(p.now, `${name} ${p.id}`).toBeCloseTo(p.heading, 2);
+                expect(p.driven, `${name} ${p.id}`).toBe(false);
+            }
+        }
     });
 });
 
