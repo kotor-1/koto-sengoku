@@ -93,6 +93,22 @@ const stateJson = (page) => page.evaluate(() => JSON.stringify(window.__game.sta
 const storage = (page) => page.evaluate(() => Object.fromEntries(Object.keys(localStorage).sort().map((k) => [k, localStorage.getItem(k)])));
 const recOn = (page) => page.evaluate(() => ((window.__rec.rows = []), (window.__rec.on = true)));
 const recOff = (page) => page.evaluate(() => ((window.__rec.on = false), window.__rec.rows));
+/**
+ * 1 コマのカメラの動きを、そのコマ（と 1 つ前のコマ）で進んだ演出の時刻と比べる：許す量 = max(floor m, speed m/秒 × 進んだ秒)。
+ * 演出の時計は実時間なので、描画が遅れたコマ（このコンテナの CPU の取り合い）では 1 コマの時間が長く、1 コマの動きも大きくなる。
+ * それを切り替え（数 m の飛び）と分ける。返り：許す量に対する最大の割合（1 未満なら切らずに動いている）・一番長かったコマの秒
+ */
+const stepVsClock = (rows, speed = 3, floor = 0.25) => {
+    let worst = 0;
+    let maxDt = 0;
+    for (let i = 1; i < rows.length; i++) {
+        const d = Math.hypot(rows[i].x - rows[i - 1].x, rows[i].y - rows[i - 1].y, rows[i].z - rows[i - 1].z);
+        const dt = Math.max(0, (rows[i].ct ?? 0) - (rows[i - 1].ct ?? 0), i >= 2 ? (rows[i - 1].ct ?? 0) - (rows[i - 2].ct ?? 0) : 0);
+        worst = Math.max(worst, d / Math.max(floor, speed * dt));
+        maxDt = Math.max(maxDt, dt);
+    }
+    return { worst, maxDt };
+};
 /** 1 コマのカメラの動きの最大（m） */
 const maxStep = (rows) => {
     let m = 0;
@@ -179,9 +195,9 @@ if (PARTS.includes('watch')) {
     const inCine = rowsOpen.filter((r) => r.cine === 'ch1_open');
     const after = rowsOpen.filter((r) => r.screen === 'explore' && !r.cine);
     const hand = rowsOpen.slice(Math.max(0, rowsOpen.indexOf(inCine.at(-1)) - 5), rowsOpen.indexOf(after[0]) + 30);
-    result.open = { id: openId, cineFrames: inCine.length, lastT: inCine.at(-1)?.ct, handoverMaxStep: maxStep(hand), moveMaxStep: maxStep(inCine) };
+    result.open = { id: openId, cineFrames: inCine.length, lastT: inCine.at(-1)?.ct, handoverMaxStep: maxStep(hand), moveMaxStep: maxStep(inCine), moveVsClock: stepVsClock(inCine) };
     check('はじめから：自動で流れるのは短い始め（ch1_open）だけ', openId === 'ch1_open', openId);
-    check('短い始めは 1 つのカメラの動き（1 コマ 0.25 m 以内）で、終わりから操作のカメラへ切らずにつながる（つなぎ目の 1 コマ 0.05 m 以内）', result.open.moveMaxStep < 0.25 && result.open.handoverMaxStep < 0.05, J(result.open));
+    check('短い始めは 1 つのカメラの動き（1 コマ 0.25 m 以内。描画の遅れたコマはそのコマの演出の時間 × 3 m/秒 以内）で、終わりから操作のカメラへ切らずにつながる（つなぎ目の 1 コマ 0.05 m 以内）', result.open.moveVsClock.worst < 1 && result.open.handoverMaxStep < 0.05, J(result.open));
     let s = await S(page);
     check('操作へ：使者はまだ町に居ない（話せない）・急報を待っている', s.screen === 'explore' && s.townEvent === 'ch1_report' && !s.cast.some((c) => c.id === 'oda_envoy' || c.id === 'asai_envoy') && s.cast.some((c) => c.id === 'tadakatsu'), J({ townEvent: s.townEvent, cast: s.cast.map((c) => c.id) }));
     // 見回す（本物の引きずり：右へ 40px）
