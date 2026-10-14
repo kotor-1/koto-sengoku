@@ -74,10 +74,10 @@
   ```
   VITE_MODEL_EXT=.json npm run proto3d:build
   rm dist-proto3d/models/*.glb
-  node proto3d/tools/glb-to-gltf.mjs proto3d/public/models dist-proto3d/models ground_v2 gate_v2 walls_v2 keep inner machiya_a machiya_b machiya_d tree_pine tree_sakura tree_pine_far hero_v3b_mpfb hero_v2b
+  node proto3d/tools/glb-to-gltf.mjs proto3d/public/models dist-proto3d/models ground_v3 ground_plants28 gate_v2 walls_v2 keep inner machiya_a28 machiya_b28 machiya_d28 kura28 nishi28 props28 tree_pine tree_sakura tree_pine_far tree_willow28 hero_v3b_mpfb hero_v2b
   node e2e/chapter1-prod.mjs e2e-out/chapter1/prod
   ```
-  （`dist-proto3d/` がそのまま公開するファイル一式。素材は 13 個の JSON と画像、合計約 58MB）
+  （`dist-proto3d/` がそのまま公開するファイル一式。Version 28 の素材は 18 個の JSON と画像。大きさは docs/v28-town-motion-voice.md の公開の記録）
 - 合戦の画面だけ：`BASE=http://localhost:8121 node e2e/chapter1-battle.mjs e2e-out/chapter1/battle`（`?dev=battle&ally=tashiro|omori|alone`）。
 - 入力の見張り（スマホ横・タッチ）：`BASE3D=… node e2e/chapter1-input.mjs e2e-out/chapter1/input`（会話を進めた二度タップ・マウスの二度押し・押さえたままの Enter で選択肢が決まらない、会話の途中のメニュー、知らせの上からのスティック・見回し・地図のドラッグ、軍議の 3 つの要点）。
 - 結果の保存と二重の反映：`BASE3D=… node e2e/chapter1-idempotent.mjs`（結果の画面で開き直すと戦後から、「続ける」の連打、保存の失敗）。
