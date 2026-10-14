@@ -15,6 +15,10 @@ function groundInput(gx: number, gz: number): [number, number] {
 function run(h: ReturnType<typeof createHero>, ix: number, iy: number, sec: number, running = false, dt = DT) {
     for (let t = 0; t < sec - 1e-9; t += dt) stepHero(h, ix, iy, YAW, dt, running);
 }
+/** 町家 A の本体の当たり判定（足元に重なる箱のうちいちばん広いもの。Version 28 は素材の形から作った箱） */
+const HOUSE_BODY = colliders()
+    .filter((r) => r.x0 < HOUSE.x1 && r.x1 > HOUSE.x0 && r.z0 < HOUSE.z1 && r.z1 > HOUSE.z0)
+    .sort((a, b) => (b.x1 - b.x0) * (b.z1 - b.z0) - (a.x1 - a.x0) * (a.z1 - a.z0))[0]!;
 
 describe('3D 比較版：主人公の動き', () => {
     it('始めの位置は通れる場所', () => {
@@ -109,8 +113,14 @@ describe('3D 比較版：主人公の動き', () => {
         const h = createHero(HOUSE.x1 + 1.5, (HOUSE.z0 + HOUSE.z1) / 2, -Math.PI / 2);
         const [ix, iy] = groundInput(-1, 0);
         run(h, ix, iy, 4);
-        expect(h.x).toBeGreaterThanOrEqual(HOUSE.x1 + 0.25 + HERO_RADIUS - 1e-6);
+        // Version 28：家の当たり判定は形から作った箱（軒下の土間は歩ける）。家の本体の表より手前で止まり、どの箱にもめり込まない
+        expect(h.x).toBeGreaterThanOrEqual(HOUSE_BODY.x1 + HERO_RADIUS - 1e-6);
+        expect(h.x).toBeLessThan(HOUSE.x1);
         expect(isFree(h.x, h.z)).toBe(true);
+        // 止まったまま（押し続けても西へ進まない）
+        const x = h.x;
+        run(h, ix, iy, 1);
+        expect(Math.abs(h.x - x)).toBeLessThan(1e-6);
     });
 
     it('土塀は越えられず、城門の間だけ通れる', () => {
@@ -187,7 +197,7 @@ describe('3D 比較版：歩く／走る', () => {
             // 家の表へ（西へ）
             const house = createHero(HOUSE.x1 + 2, (HOUSE.z0 + HOUSE.z1) / 2, -Math.PI / 2);
             run(house, -1, 0, 3, true, dt);
-            expect(house.x).toBeGreaterThanOrEqual(HOUSE.x1 + 0.25 + HERO_RADIUS - 1e-6);
+            expect(house.x).toBeGreaterThanOrEqual(HOUSE_BODY.x1 + HERO_RADIUS - 1e-6);
             // 土塀へ（北へ）
             const wall = createHero(6, GATE.z + 3, Math.PI);
             run(wall, 0, -1, 3, true, dt);

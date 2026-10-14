@@ -14,7 +14,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { FOLLOW, createOrbit, look, placeFollow } from './game/follow';
 import { CAMERA_YAW, SPEED, createHero, stepHero, type HeroState } from './game/motion';
-import { START, TREES, cameraBlockers, colliders, groundY, type Rect } from './layout';
+import { BACK_TREES, START, STREET_BUILDINGS, TREES, cameraBlockers, colliders, groundY, type Rect } from './layout';
 import treesMeta from '../blender/trees/trees.meta.json';
 import { SKY, makeHills, makeSky } from './scenery';
 import { activeMode, setAppContext } from './app/modes';
@@ -511,25 +511,22 @@ async function start(): Promise<void> {
         // 隠れたら半透明にするのは見下ろしのときだけ（肩越しではカメラが壁の手前に来るので、建物は薄くしない）
         if (!tps && SCENE_MODELS[i] !== 'ground_v2' && SCENE_MODELS[i] !== 'keep' && SCENE_MODELS[i] !== 'inner') addOccluder(g.scene);
     });
-    // 小さな城下町で足した物（町家の写し・木戸・物見櫓・荷置き場・詰所・軍議所。town/plan.ts）。素材は読み込み済みの物を複製するだけ
-    town = buildTown(new Map(placed.map((g, i) => [SCENE_MODELS[i]!, g.scene])), prepare, low);
+    // 小さな城下町で足した小物（木戸・物見櫓・荷置き場・詰所・軍議所。town/plan.ts）
+    town = buildTown(low);
     scene.add(town.root);
-    if (!tps) for (const c of town.copies) addOccluder(c);
-    // 木：配置（scene.json の trees）の幹の位置へ。松は 2 本（向きと大きさを変える）
+    // 木：配置（street28.json の trees）の幹の位置へ。同じ素材の 2 本目からは複製（向きと大きさは表のとおり。
+    // pine_back は枝の張り出しを西（左）へ：開始の画面で、門越しの天守を隠さない）
     prepare(pine.scene);
     prepare(sakura.scene);
-    let pineUsed = false;
+    const treeSrc: Record<string, THREE.Object3D> = { tree_pine: pine.scene, tree_sakura: sakura.scene };
+    const treeUsed = new Set<string>();
     for (const t of TREES) {
-        const isPine = t.name.startsWith('pine');
-        const src = isPine ? pine.scene : sakura.scene;
-        const obj = isPine && pineUsed ? src.clone() : src;
-        if (isPine) pineUsed = true;
+        const src = treeSrc[t.model]!;
+        const obj = treeUsed.has(t.model) ? src.clone() : src;
+        treeUsed.add(t.model);
         obj.position.set(t.x, 0, t.z);
-        if (t.name === 'pine_back') {
-            // 枝の張り出しを西（左）へ：開始の画面で、門越しの天守を隠さない
-            obj.rotation.y = 0;
-            obj.scale.setScalar(0.9);
-        }
+        obj.rotation.y = t.rotY;
+        obj.scale.setScalar(t.scale);
         scene.add(obj);
         addOccluder(obj);
     }
@@ -542,12 +539,12 @@ async function start(): Promise<void> {
         t.scale.setScalar(f.scale);
         scene.add(t);
     }
-    // 町の外側の木立（歩ける範囲の外。奥行きを出す）
-    for (const [x, z, r, sc] of BACK_TREES) {
-        const t = pine.scene.clone();
-        t.position.set(x, 0, z);
-        t.rotation.y = r;
-        t.scale.setScalar(sc);
+    // 町の外側の木立（歩ける範囲の外。奥行きを出す。street28.json の back_trees）
+    for (const b of BACK_TREES) {
+        const t = treeSrc[b.model]!.clone();
+        t.position.set(b.x, 0, b.z);
+        t.rotation.y = b.rotY;
+        t.scale.setScalar(b.scale);
         scene.add(t);
     }
     // 草むらは影を落とさない（地面の書き出しで指定済み）
@@ -559,12 +556,11 @@ async function start(): Promise<void> {
     renderer.setAnimationLoop(frame);
 }
 
-/** 場面の素材（配置どおりの位置で作ってある） */
-const SCENE_MODELS = ['ground_v2', 'gate_v2', 'walls_v2', 'keep', 'inner', 'machiya_a', 'machiya_b', 'machiya_d'];
-/** 町の外側の木立：[x, z, 向き, 大きさ]（歩ける範囲 BOUNDS の外。松を使い回す） */
-const BACK_TREES: [number, number, number, number][] = [
-    [-27, -16, 0.3, 1.1], [26, -22, 1.7, 1.2], [-26, 12, 2.6, 1.0], [27, 9, 1.1, 0.95],
-];
+/**
+ * 場面の素材（配置どおりの位置で作ってある）。通りの建物は Version 28 の作り直し（street28.json の buildings：
+ * 町家 A・B・D・土蔵造りの店・西の小屋と板塀。旧の machiya_a・b・d の GLB はリポジトリに残すが読まない）
+ */
+const SCENE_MODELS = ['ground_v2', 'gate_v2', 'walls_v2', 'keep', 'inner', ...STREET_BUILDINGS.map((b) => b.id)];
 
 // ---- 毎フレーム ----
 const camTarget = new THREE.Vector3(hero.x, 1.0, hero.z);

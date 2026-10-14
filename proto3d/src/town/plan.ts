@@ -2,15 +2,18 @@
  * 小さな城下町の配置（純粋なデータ。three も DOM も使わない）。設計：docs/story-rpg-design.md §5、記録：docs/story-rpg-town.md。
  * 座標は探索の座標（x 東、y 上、z 南。北の城門は z −12）。
  *
- * - 今の町家 3 棟・城門・塀・木・地面・人物の置き場所・開始の位置・道の真ん中（x −1.5〜2.5、z −12〜3）・城門への道すじは動かさない・塞がない。
- * - 足す物：町家の写し 1 棟（町家 D を道の東の南へ。今の素材を複製して置くだけ）・街道口の木戸と柵・物見櫓・荷置き場（荷車・俵・籠）・
- *   東の囲いの詰所（小屋・槍立て・筵・床几・桶）・城内の東の軍議所（陣幕・床几・机・のぼり）。
+ * - Version 28：置き場所の数字は proto3d/blender/street28/street28.json（通りの配置の唯一の元。Blender の建物の制作も同じ表を読む）。
+ *   ここは小物の形（箱・円柱・円すいの組み合わせ）の作り方と、表の数字から小物を組む所。
+ * - 通りの建物（町家 A・B・D の作り直し・土蔵造りの店・西の空き地の小屋と板塀）は Blender で作った素材（street28.json の buildings）。
+ *   その当たり判定・カメラ除けは素材と一緒に書き出した meta（形の中の固い物の部品の箱）から layout.ts が読む。
+ *   Version 27 までの「町家 D の鏡写し」（木戸の柵の線にまたがっていた）は、土蔵造りの店（kura28）に置き換えてやめた。
+ * - 今の城門・塀・木・地面・人物の置き場所・開始の位置・道の真ん中（x −1.5〜2.5、z −12〜3）・城門への道すじは動かさない・塞がない。
  * - 小物は箱・円柱・円すいの組み合わせ（新しい素材は読み込まない）。描く側（town/view.ts）が材質ごと・場所ごとに 1 つの形へまとめる。
  * - 当たり判定・カメラ除けは layout.ts の colliders()・cameraBlockers() がここから足す（歩き・カメラ・確かめの 4 か所のキャッシュに入る）。
  */
-import machiyaD from '../../blender/machiya/machiya_d.meta.json';
+import street from '../../blender/street28/street28.json';
 import type { Box, Rect } from '../layout';
-import { COUNCIL_HALL, HIGHWAY_MOUTH } from './spots';
+import { HIGHWAY_MOUTH } from './spots';
 
 /** 材質（描く側が 1 つずつ作る。同じ材質はまとめて 1 回で描く） */
 export type TownMat = 'wood' | 'plank' | 'straw' | 'mat' | 'basket' | 'cloth' | 'metal' | 'paper' | 'roof' | 'dark';
@@ -62,12 +65,6 @@ export interface TownBanner {
     mark: string;
     /** 竿の高さ（m） */
     height: number;
-}
-
-/** 町家の写し（素材の頂点はゲームの座標のまま。z = c の面で鏡に写す：z' = 2c − z。向き（表）は元のまま） */
-export interface MachiyaCopy {
-    source: 'machiya_d';
-    mirrorZ: number;
 }
 
 // ================================================================ 小さな計算
@@ -371,29 +368,28 @@ function councilTent(x: number, z: number): TownProp[] {
     return [tent, stools('council_stools', 'council', seats)];
 }
 
-// ================================================================ 置き場所の数字
+// ================================================================ 置き場所の数字（street28.json から）
+
+type Pt2 = [number, number];
+type Pt3 = [number, number, number];
 
 /** 街道口の木戸の柱の x（道の真ん中から）。開いた口は x −2.6〜2.6 */
-export const KIDO = { z: 16.4, postX: 2.9, open: 2.6 } as const;
+export const KIDO: { readonly z: number; readonly postX: number; readonly open: number } = street.kido;
 /** 物見櫓：真ん中・床の高さ・脚の半分の幅・梯子の足の張り出し・物見の目の高さ */
-export const TOWER = { x: -6.9, z: 14.9, floorY: 6.0, half: 1.2, ladder: { footOut: 0.9 }, eyeY: 7.6 } as const;
+export const TOWER: { readonly x: number; readonly z: number; readonly floorY: number; readonly half: number; readonly ladder: { readonly footOut: number }; readonly eyeY: number } = street.tower;
 /** 軍議所の陣幕の囲い（幅 x・奥行き z・西の口の幅） */
-export const TENT = { w: 6.0, d: 5.4, gate: 1.8 } as const;
+export const TENT: { readonly w: number; readonly d: number; readonly gate: number } = street.tent;
 /** 詰所の小屋の真ん中 */
-export const HUT = { x: 16.6, z: -8.9 } as const;
+export const HUT: { readonly x: number; readonly z: number } = street.hut;
 /**
  * 詰所の前の休み場（Version 21）：通りの東、東の土塀と町家 D の北の端の間（詰所の囲いへの戸の前）。x 3.0〜6.9、z −1.0〜3.0。
  * 前は筵・槍立てを東の囲いの中（土塀の向こう）に置いていて、通りを歩いても見えなかった（docs/story-rpg-town.md §11）。
  * 町の入口から城門へ通りを北へ歩くと、右の前に見える。
  */
-export const REST = { x0: 3.0, x1: 6.9, z0: -1.0, z1: 3.0 } as const;
+export const REST: Rect = street.rest;
 /** 筵（負傷兵が横になる所）。休み場に 3 列 × 2 枚（長い辺は南北）。通りに近い列から */
-export const MATS: readonly [number, number][] = [
-    [3.55, 2.0], [3.55, 0.0],
-    [4.65, 2.0], [4.65, 0.0],
-    [5.75, 2.0], [5.75, 0.0],
-];
-/** 地べたに座る負傷兵（筵の 6 人の後）：休み場の北、土塀ぎわに南北に。西（通り）を向く。[x, z, 向き] */
+export const MATS: readonly Pt2[] = street.mats as Pt2[];
+/** 地べたに座る負傷兵（筵の 6 人の後）：休み場の北、土塀ぎわに南北に。西（通り）を向く。[x, z, 向き]（人物の置き場所。小物ではない） */
 export const GROUND_SITS: readonly [number, number, number][] = [
     [6.62, -0.8, -Math.PI / 2], [6.62, -1.6, -Math.PI / 2], [6.62, -2.4, -Math.PI / 2],
 ];
@@ -401,67 +397,73 @@ export const GROUND_SITS: readonly [number, number, number][] = [
  * 詰所の床几（座った負傷兵。筵・土塀ぎわの後の 3 人）：東の囲いの中（小屋の西）。[x, z, 向き]。
  * 通りの側には置かない（合戦の兵の形は人物の素材より粗く、歩く道のすぐ脇の床几では大きく粗く見えた）
  */
-export const GUARD_STOOLS: readonly [number, number, number][] = [
-    [12.4, -6.5, 0], [13.3, -6.6, 0], [14.2, -6.5, 0],
-];
+export const GUARD_STOOLS: readonly Pt3[] = street.guard_stools as Pt3[];
 /** 休み場の槍立て（土塀ぎわ。並びは南北、槍の先は土塀（東）へ傾く） */
-export const REST_RACK = { x: 6.62, z: 1.0, rotY: -Math.PI / 2 } as const;
-
-/** 町家の写し：町家 D を道の東の南へ（z = 11.85 の面で鏡に写す。元の D との間に東へ抜ける路地を残す：詰所へ南東から入る） */
-export const MACHIYA_COPIES: readonly MachiyaCopy[] = [{ source: 'machiya_d', mirrorZ: 11.85 }];
+export const REST_RACK: { readonly x: number; readonly z: number; readonly rotY: number } = street.rest_rack;
 
 /** 町の小物（場所ごと） */
 export const TOWN_PROPS: readonly TownProp[] = buildProps();
 /** のぼり（軍議所の脇） */
-export const TOWN_BANNERS: readonly TownBanner[] = [{ cluster: 'council', x: COUNCIL_HALL.x + TENT.w / 2 + 0.5, z: COUNCIL_HALL.z + 0.3 - TENT.d / 2 - 0.4, rotY: Math.PI / 2, mark: '徳', height: 4.4 }];
+export const TOWN_BANNERS: readonly TownBanner[] = street.banners.map((b) => ({ ...b, cluster: b.cluster as TownCluster }));
+
+/** 表の小物の 1 行（street28.json の props） */
+interface PropSpec {
+    id: string;
+    type: string;
+    cluster: string;
+    x?: number;
+    z?: number;
+    rotY?: number;
+    len?: number;
+    n?: number;
+    pts?: number[][];
+}
+
+/** 表の 1 行から小物を組む（type ごとに形の作り方を選ぶ） */
+function propsOf(p: PropSpec): TownProp[] {
+    const c = p.cluster as TownCluster;
+    const x = p.x ?? 0;
+    const z = p.z ?? 0;
+    const r = p.rotY ?? 0;
+    switch (p.type) {
+        case 'kido':
+            return [kido(KIDO.z)];
+        case 'fence':
+            return [fence(p.id, c, x, z, r, p.len ?? 1)];
+        case 'lookout_tower':
+            return lookoutTower(TOWER.x, TOWER.z);
+        case 'cart':
+            return [cart(p.id, x, z, r)];
+        case 'bales':
+            return [bales(p.id, c, x, z, r, p.n ?? 2)];
+        case 'baskets':
+            return [baskets(p.id, c, (p.pts ?? []) as Pt2[])];
+        case 'hut':
+            return [hut(HUT.x, HUT.z)];
+        case 'tub':
+            return [tub(p.id, c, x, z)];
+        case 'spear_rack':
+            return [spearRack(c, REST_RACK.x, REST_RACK.z, REST_RACK.rotY)];
+        case 'mats':
+            return [mats(c, MATS)];
+        case 'stools':
+            return [stools(p.id, c, GUARD_STOOLS)];
+        case 'council_tent':
+            return councilTent(x, z);
+        default:
+            throw new Error(`street28.json：知らない小物の種類 ${p.type}（${p.id}）`);
+    }
+}
 
 function buildProps(): TownProp[] {
-    const out: TownProp[] = [];
-    // ---- 街道口：木戸と柵（木戸の東西。東は町家の写しの裏から歩ける範囲の東の端まで）
-    out.push(kido(KIDO.z));
-    out.push(fence('fence_w', 'fence_w', -22, KIDO.z, 0, 22 - KIDO.postX - 0.18));
-    out.push(fence('fence_e1', 'south', KIDO.postX + 0.18, KIDO.z, 0, 4.3 - KIDO.postX - 0.18));
-    out.push(fence('fence_e2', 'fence_e', 9.74, KIDO.z, 0, 20 - 9.74));
-    // ---- 物見櫓（街道口の西）
-    out.push(...lookoutTower(TOWER.x, TOWER.z));
-    // ---- 荷置き場（道の西、町家 B の南）：荷車・俵・籠
-    out.push(cart('cart_w', -6.3, 10.0, Math.PI / 2));
-    out.push(bales('bales_w', 'south', -9.0, 9.2, 0, 3));
-    out.push(bales('bales_w2', 'south', -10.0, 11.4, Math.PI / 2, 2));
-    out.push(baskets('baskets_w', 'south', [[-9.5, 12.7], [-10.15, 13.15], [-9.6, 13.5]]));
-    // 町家の写しの店先（道の東、木戸の内側）
-    out.push(baskets('baskets_e', 'shop_e', [[3.95, 12.95]]));
-    out.push(bales('bales_e', 'shop_e', 10.6, 13.6, Math.PI / 2, 2));
-    // ---- 詰所（東の囲い）：小屋・床几・桶。筵・槍立ては通りから見える休み場（詰所の前）へ（Version 21）
-    out.push(hut(HUT.x, HUT.z));
-    out.push(tub('guard_tub', 'guardpost', 15.1, -6.1));
-    out.push(spearRack('rest', REST_RACK.x, REST_RACK.z, REST_RACK.rotY));
-    out.push(mats('rest', MATS));
-    out.push(stools('guard_stools', 'guardpost', GUARD_STOOLS));
-    // ---- 軍議所（城内の東）：陣幕・机・床几
-    out.push(...councilTent(COUNCIL_HALL.x, COUNCIL_HALL.z + 0.3));
-    return out;
+    return (street.props as PropSpec[]).flatMap(propsOf);
 }
 
 // ================================================================ 当たり判定・カメラ除け
 
-/** 町家の写しの当たり判定・カメラ除け（素材の箱を写した位置へ） */
-function copyRects(): { colliders: Rect[]; blockers: Box[] } {
-    const colliders: Rect[] = [];
-    const blockers: Box[] = [];
-    for (const cp of MACHIYA_COPIES) {
-        const meta = machiyaD as { colliders: Rect[]; camera_blockers: Box[] };
-        const m = (r: Rect): Rect => ({ x0: r.x0, x1: r.x1, z0: 2 * cp.mirrorZ - r.z1, z1: 2 * cp.mirrorZ - r.z0 });
-        colliders.push(...meta.colliders.map(m));
-        // 写した町家の壁（素材の箱の外側の大まかな形。layout.ts が元の町家に足す houseRects と同じ考え）
-        blockers.push(...meta.camera_blockers.map((b) => ({ ...m(b), y0: b.y0, y1: b.y1 })));
-    }
-    return { colliders, blockers };
-}
-
 /** 町の足した物の当たり判定（ゲームの座標） */
 export function townColliders(): Rect[] {
-    const out: Rect[] = [...copyRects().colliders];
+    const out: Rect[] = [];
     for (const p of TOWN_PROPS) for (const r of p.colliders) out.push(propRect(p, r));
     for (const b of TOWN_BANNERS) out.push(rectOf(b.x - 0.15, b.x + 0.15, b.z - 0.15, b.z + 0.15));
     return out;
@@ -469,7 +471,7 @@ export function townColliders(): Rect[] {
 
 /** 町の足した物のカメラ除け（ゲームの座標。y は地面から＝町の地面はほぼ 0） */
 export function townBlockers(): Box[] {
-    const out: Box[] = [...copyRects().blockers];
+    const out: Box[] = [];
     for (const p of TOWN_PROPS) for (const b of p.blockers) out.push({ ...propRect(p, b), y0: b.y0, y1: b.y1 });
     for (const b of TOWN_BANNERS) out.push(boxOf(rectOf(b.x - 0.12, b.x + 0.12, b.z - 0.12, b.z + 0.12), 0, b.height));
     return out;

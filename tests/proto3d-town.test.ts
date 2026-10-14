@@ -2,7 +2,9 @@
  * 小さな城下町（proto3d/src/town/plan.ts・explore/ambient.ts・explore/lookout.ts）：
  * - 足した物の当たり判定が、人物の置き場所・開始の位置・道の真ん中・城門への道すじ・人物へ南から近づく道すじを塞がない。
  * - 開始の位置から、新しい場所（詰所・軍議所・物見櫓・街道口・南の通り）へ歩いて行ける（今の到達の網のテストと同じ作り）。
- * - 町家の写しの当たり判定・カメラ除けが写した位置にある。肩越しのカメラが新しい場所でも箱に入らない。
+ * - Version 28 の通りの建物（street28.json）：当たり判定・カメラ除けは制作が形の中の固い物の部品から作った meta だけ（足元の四角との二重なし）。
+ *   本体の箱が足元と合う。土蔵造りの店は木戸の柵の線にまたがらず、町家 D との間の路地を残す。西の空き地の縁は小屋と板塀で閉じ、荷運びの口と物見への口は空く。
+ *   肩越しのカメラが新しい場所でも箱に入らない。
  * - 町の人々の置き方が純粋で、道の真ん中・道すじ・当たり判定に入らない。物見の向きの計算。
  * - 町の入口（ENTRY_POSE。Version 21 の歴史分岐の探索の始め）から：城門・人物へ通りを歩いて行ける。北を向いて真っすぐ歩くと城門の前の家臣に
  *   話しかけられる。歩く途中の肩越しのカメラから、詰所の前の休み場・援兵・門番・荷運び・店の人が見える（カメラ除けの箱に遮られない）。
@@ -14,11 +16,35 @@ import { AMBIENT_PEOPLE_MAX, GUARD_SPOTS, ambientColliders, MERCHANT_SPOTS, PORT
 import { LOOKOUT_TOLERANCE, examinable, headingVector, lookoutShot, nearestMark, startHeading, wrapAngle } from '../proto3d/src/explore/lookout';
 import { FOLLOW, blockersForTest, createOrbit, placeFollow } from '../proto3d/src/game/follow';
 import { HERO_RADIUS, isFree } from '../proto3d/src/game/motion';
-import { BOUNDS, START, cameraBlockers, colliders, type Rect } from '../proto3d/src/layout';
-import { GROUND_SITS, KIDO, LOOKOUT_EYE, MACHIYA_COPIES, MATS, REST, TOWER, TOWN_PROPS, townBlockers, townColliders } from '../proto3d/src/town/plan';
+import { BOUNDS, START, STREET_BUILDINGS, cameraBlockers, colliders, type Box, type Rect } from '../proto3d/src/layout';
+import { GROUND_SITS, KIDO, LOOKOUT_EYE, MATS, REST, TOWER, TOWN_PROPS, townBlockers, townColliders } from '../proto3d/src/town/plan';
 import { COUNCIL_HALL, ENTRY_POSE, GUARDPOST, GUARD_REST, HIGHWAY_MOUTH, LOOKOUT } from '../proto3d/src/town/spots';
-import machiyaD from '../proto3d/blender/machiya/machiya_d.meta.json';
+import scene from '../proto3d/blender/scene.json';
+import street from '../proto3d/blender/street28/street28.json';
+import oldA from '../proto3d/blender/machiya/machiya_a.meta.json';
+import oldB from '../proto3d/blender/machiya/machiya_b.meta.json';
+import oldD from '../proto3d/blender/machiya/machiya_d.meta.json';
 import type { AmbientSpec } from '../proto3d/src/story/types';
+
+/** 通りの建物の meta（制作が書き出す。形の中の固い物の部品の箱） */
+interface Solid {
+    id: string;
+    walk: boolean;
+    camera: boolean;
+    box: Box;
+    walk_box: Rect | null;
+    camera_boxes: Box[];
+}
+interface BuildingMeta {
+    name: string;
+    colliders: Rect[];
+    camera_blockers: Box[];
+    solids: Solid[];
+    footprint: Rect;
+    triangles: number;
+}
+const BUILDING_METAS = Object.values(import.meta.glob('../proto3d/blender/street28/*.meta.json', { eager: true, import: 'default' })) as BuildingMeta[];
+const metaOf = (id: string) => BUILDING_METAS.find((m) => m.name === id);
 
 const ALL = colliders();
 const TOWN = townColliders();
@@ -122,19 +148,6 @@ describe('小さな城下町：足した物は今の場所・道すじを塞が�
         for (const r of ROUTES) for (let i = 1; i < r.length; i++) expect(segFree(r[i - 1]!, r[i]!, TOWN), `道すじ ${JSON.stringify(r)}`).toBe(true);
     });
 
-    it('町家の写しの当たり判定・カメラ除けは、元の町家 D の箱を写した位置にある（数も同じ）', () => {
-        expect(MACHIYA_COPIES.length).toBeGreaterThanOrEqual(1);
-        expect(MACHIYA_COPIES.length).toBeLessThanOrEqual(2);
-        const c = MACHIYA_COPIES[0]!.mirrorZ;
-        for (const r of machiyaD.colliders) expect(TOWN).toContainEqual({ x0: r.x0, x1: r.x1, z0: 2 * c - r.z1, z1: 2 * c - r.z0 });
-        const tb = townBlockers();
-        for (const b of machiyaD.camera_blockers) expect(tb).toContainEqual({ x0: b.x0, x1: b.x1, z0: 2 * c - b.z1, z1: 2 * c - b.z0, y0: b.y0, y1: b.y1 });
-        // 写しは元の町家 D と重ならず、間に東へ抜ける路地（主人公が通れる幅）がある
-        const dMax = Math.max(...machiyaD.colliders.map((r) => r.z1));
-        const copyMin = Math.min(...machiyaD.colliders.map((r) => 2 * c - r.z1));
-        expect(copyMin - dMax).toBeGreaterThan(2 * HERO_RADIUS + 0.6);
-    });
-
     it('当たり判定・カメラ除けは layout.ts の一覧に入る（歩き・カメラ・確かめが同じ物を見る）', () => {
         for (const r of TOWN) expect(ALL).toContainEqual(r);
         const cb = cameraBlockers();
@@ -149,7 +162,7 @@ describe('小さな城下町：足した物は今の場所・道すじを塞が�
         expect(canReach(HIGHWAY_MOUTH.x, HIGHWAY_MOUTH.z), '街道口').toBe(true);
         expect(canReach(0, KIDO.z + 1.2), '木戸の外').toBe(true);
         // 南の通り（荷置き場の前・町家の写しの前・路地の東）
-        for (const [x, z, name] of [[-2.8, 11.6, '荷置き場の前'], [3.4, 14.5, '町家の写しの前'], [11.5, 11.8, '路地の東']] as const) expect(canReach(x, z), name).toBe(true);
+        for (const [x, z, name] of [[-2.8, 11.6, '荷置き場の前'], [3.2, 14.5, '土蔵造りの店の前'], [11.5, 11.8, '路地の東']] as const) expect(canReach(x, z), name).toBe(true);
         // 詰所（筵のあたり・小屋の戸口の前）
         expect(canReach(GUARDPOST.x, GUARDPOST.z), '詰所').toBe(true);
         expect(canReach(14.0, -8.6), '詰所の小屋の前').toBe(true);
@@ -175,6 +188,8 @@ describe('小さな城下町：足した物は今の場所・道すじを塞が�
         const boxes = blockersForTest(cameraBlockers());
         const areas: [number, number, number, number][] = [
             [-11, 5, 7.6, 18],
+            // Version 28：通りの北半分（町家 A・B・D の軒下の土間も歩ける。庇・軒のカメラ除けの下）
+            [-5.4, 5, -11, 7.6],
             [8, 19.5, -11, 12],
             [8, 17.5, -27.5, -18],
         ];
@@ -197,6 +212,113 @@ describe('小さな城下町：足した物は今の場所・道すじを塞が�
         }
         expect(checked).toBeGreaterThan(2000);
     }, 60_000);
+});
+
+describe('Version 28 の通りの建物（street28.json・形から作った当たり判定）', () => {
+    it('建物ごとに meta があり、当たり判定・カメラ除けは固い物の部品の箱そのもの（手で書いた箱ではない）。三角形は 1 棟 7 万まで', () => {
+        expect(STREET_BUILDINGS.map((b) => b.id).sort()).toEqual(street.buildings.map((b) => b.id).sort());
+        for (const b of STREET_BUILDINGS) {
+            const m = metaOf(b.id);
+            expect(m, `${b.id} の meta`).toBeTruthy();
+            expect(m!.footprint).toEqual(b.footprint);
+            expect(m!.colliders).toEqual(m!.solids.filter((x) => x.walk).map((x) => x.walk_box));
+            expect(m!.camera_blockers).toEqual(m!.solids.flatMap((x) => x.camera_boxes));
+            // 歩きの箱・カメラ除けの箱は、その部品の形の箱の中（歩きは高さ 1.9 m より下の頂点、カメラ除けは 1.9 m の上下に分けた頂点の箱）
+            const within = (q: Rect, x: Solid) => q.x0 >= x.box.x0 - 1e-9 && q.x1 <= x.box.x1 + 1e-9 && q.z0 >= x.box.z0 - 1e-9 && q.z1 <= x.box.z1 + 1e-9;
+            for (const x of m!.solids) {
+                if (x.walk) expect(within(x.walk_box!, x), `${b.id}:${x.id}`).toBe(true);
+                for (const q of x.camera_boxes) expect(within(q, x), `${b.id}:${x.id}`).toBe(true);
+                expect(x.camera_boxes.length > 0).toBe(x.camera);
+            }
+            expect(m!.triangles).toBeLessThanOrEqual(scene.budgets.house_triangles_each);
+        }
+    });
+
+    it('建物ごとの当たり判定は、その meta の箱と同じ（layout.ts の一覧に入る）。本体の箱は足元と合う（許す差 0.35 m、表は軒下の土間の分 1.3 m まで内へ）', () => {
+        const cb = cameraBlockers();
+        for (const b of STREET_BUILDINGS) {
+            const m = metaOf(b.id)!;
+            for (const r of m.colliders) expect(ALL, `${b.id} の当たり判定 ${JSON.stringify(r)}`).toContainEqual(r);
+            for (const q of m.camera_blockers) expect(cb, `${b.id} のカメラ除け`).toContainEqual(q);
+            const body = m.solids.find((x) => x.id === 'body')!.walk_box!;
+            const f = b.footprint;
+            const tol = 0.35;
+            // 裏と両側は足元の線から 0.35 m 以内。表は足元の線から内へ 1.3 m まで（軒下の三和土・店先の分）、外へ 0.35 m まで
+            const front = b.front === '+x' ? { body: body.x1, line: f.x1, inward: -1 } : { body: body.x0, line: f.x0, inward: 1 };
+            const back = b.front === '+x' ? Math.abs(body.x0 - f.x0) : Math.abs(body.x1 - f.x1);
+            expect(back, `${b.id} の裏`).toBeLessThanOrEqual(tol);
+            expect(Math.abs(body.z0 - f.z0), `${b.id} の北の側`).toBeLessThanOrEqual(tol);
+            expect(Math.abs(body.z1 - f.z1), `${b.id} の南の側`).toBeLessThanOrEqual(tol);
+            const inward = (front.body - front.line) * front.inward;
+            expect(inward, `${b.id} の表`).toBeGreaterThanOrEqual(-tol);
+            expect(inward, `${b.id} の表`).toBeLessThanOrEqual(1.3);
+        }
+    });
+
+    it('足元の四角と meta の二重はない：Version 27 の足元の四角（表へ 0.25 m 広げた形）も、旧の町家の meta の箱も、当たり判定に入っていない', () => {
+        for (const h of scene.houses) {
+            const f = h.footprint;
+            const old = h.front === '+x' ? { x0: f.x0 - 0.1, x1: f.x1 + 0.25 } : { x0: f.x0 - 0.25, x1: f.x1 + 0.1 };
+            expect(ALL).not.toContainEqual({ ...old, z0: f.z0 - 0.1, z1: f.z1 + 0.1 });
+        }
+        for (const m of [oldA, oldB, oldD]) for (const r of m.colliders) expect(ALL, `旧の ${m.name}`).not.toContainEqual(r);
+        // 建物の足元に重なる当たり判定は、その建物の meta の箱だけ（ほかの元から同じ所に重ねて足していない）
+        const own = new Set(BUILDING_METAS.flatMap((m) => m.colliders.map((r) => JSON.stringify(r))));
+        for (const b of STREET_BUILDINGS) {
+            const f = b.footprint;
+            const inner = { x0: f.x0 + 0.5, x1: f.x1 - 0.5, z0: f.z0 + 0.5, z1: f.z1 - 0.5 };
+            for (const r of ALL) if (overlaps(r, inner)) expect(own.has(JSON.stringify(r)), `${b.id} の足元に、建物の meta 以外の当たり判定 ${JSON.stringify(r)}`).toBe(true);
+        }
+    });
+
+    it('土蔵造りの店は木戸の柵の線（z 16.4）にまたがらず、町家 D との間に東へ抜ける路地（主人公が通れる幅）を残す。前の町家 D の鏡写しはない', () => {
+        const kura = metaOf('kura28')!;
+        for (const q of [...kura.colliders, ...kura.camera_blockers]) expect(q.z1, JSON.stringify(q)).toBeLessThan(KIDO.z);
+        const d = metaOf('machiya_d28')!;
+        const dMax = Math.max(...d.colliders.map((r) => r.z1));
+        const kMin = Math.min(...kura.colliders.map((r) => r.z0));
+        expect(kMin - dMax).toBeGreaterThan(2 * HERO_RADIUS + 0.6);
+        expect(segFree([3.2, 11.7], [11.5, 11.7], ALL), '路地を東へ').toBe(true);
+        expect(STREET_BUILDINGS.some((b) => b.id.startsWith('machiya_d') && b.id !== 'machiya_d28')).toBe(false);
+    });
+
+    it('西の空き地の通りの縁は、小屋（z 9.6〜11.3）と板塀（z 12.9〜16.3）で閉じ、荷運びの口（z 8.8）と物見への口（z 12.1）は空く', () => {
+        for (let z = 9.7; z <= 11.2; z += 0.1) expect(isFree(-4.8, z, ALL), `小屋 z=${z.toFixed(1)}`).toBe(false);
+        for (let z = 13.0; z <= 16.2; z += 0.1) expect(isFree(-4.55, z, ALL), `板塀 z=${z.toFixed(1)}`).toBe(false);
+        expect(segFree([-3.2, 8.8], [-8.0, 8.85], ALL), '荷運びの口').toBe(true);
+        expect(segFree([-3.0, 12.1], [LOOKOUT.x, LOOKOUT.z], ALL), '物見への口').toBe(true);
+        // 荷運びの道の折れ点は、建物の当たり判定の中にない（往復のどの時刻でもの確かめは下の「町の人々の置き方」）
+        for (const p of PORTER_PATHS) for (const [x, z] of p) for (const r of ALL) expect(inside(r, x, z), `荷運び (${x}, ${z})`).toBe(false);
+    });
+
+    it('町の入口から、城門の前の家臣（忠勝）・両使者の話せる所・物見・詰所の前の休み場の前へ、当たり判定を避けて歩いて行ける', () => {
+        const canReach = reachable(ALL, ENTRY_POSE);
+        const targets: [string, number, number][] = [
+            ['忠勝', SPOTS.explore.genzo![0], SPOTS.explore.genzo![1]],
+            ['織田の使者', SPOTS.muster.envoy![0], SPOTS.muster.envoy![1]],
+            ['浅井の使者', SPOTS.explore.shinpachi![0], SPOTS.explore.shinpachi![1]],
+            ['物見', LOOKOUT.x, LOOKOUT.z],
+            ['休み場', GUARD_REST.x, GUARD_REST.z],
+        ];
+        for (const [name, x, z] of targets) expect(reachNear(canReach, x, z, 1.9), name).toBe(true);
+        // 休み場の前（通りの側）に立てる
+        expect(canReach(2.9, GUARD_REST.z), '休み場の前').toBe(true);
+    }, 60_000);
+
+    it('表（street28.json）の木・側溝は、Version 27 の地面の制作が読む scene.json の値と同じ（地面を作り直すまで 2 か所の値がずれない）', () => {
+        expect(street.trees.map((t) => [t.name, t.x, t.z])).toEqual(scene.trees.map((t) => [t.name, t.pos[0], t.pos[1]]));
+        expect(street.edges.ditches.map((d) => [d.name, d.x, d.z])).toEqual(scene.ditches.map((d) => [d.name, d.x, d.z]));
+        expect(street.edges.road.half_width).toBe(scene.road.half_width);
+        // 表の小物の置き場所は、物語の目印（spots.ts）と合う：木戸の柱の線＝街道口、軍議所の陣幕＝軍議所の 0.3 m 南、物見櫓の北に物見
+        expect(KIDO.z).toBe(HIGHWAY_MOUTH.z);
+        expect(street.props.find((p) => p.id === 'council_tent')).toMatchObject({ x: COUNCIL_HALL.x, z: COUNCIL_HALL.z + 0.3 });
+        expect(TOWER.x).toBe(LOOKOUT.x);
+        expect(TOWER.z - LOOKOUT.z).toBeCloseTo(3.0, 9);
+        // 町家 A・B・D の足元は Version 27 と同じ（地面の穴・目印を動かさない）
+        for (const [id, old] of [['machiya_a28', 'machiya_a'], ['machiya_b28', 'machiya_b'], ['machiya_d28', 'machiya_d']] as const) {
+            expect(street.buildings.find((b) => b.id === id)!.footprint).toEqual(scene.houses.find((h) => h.name === old)!.footprint);
+        }
+    });
 });
 
 describe('町の入口（ENTRY_POSE）から城門の前の家臣へ：通りを歩く導線（Version 21）', () => {

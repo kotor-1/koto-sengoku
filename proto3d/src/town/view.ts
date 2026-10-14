@@ -1,6 +1,7 @@
 /**
  * 小さな城下町の描画（three）。配置は town/plan.ts（純粋）。main.ts が場面の素材を読み終えた後に 1 回だけ作る。
- * - 町家の写し：読み込み済みの町家の素材を複製して置く（形・素材は元と共有。新しい素材は読み込まない）。
+ * - 通りの建物（Version 28 の町家・土蔵造りの店・西の小屋と板塀）は main.ts が場面の素材として読み込んで置く（ここでは作らない）。
+ *   Version 27 までの「町家 D の鏡写し」（読み込み済みの素材の複製）はやめた（土蔵造りの店に置き換え）。
  * - 小物：箱・円柱・円すいを、場所（まとまり）×材質ごとに 1 つの形へまとめる（描く回数を増やしすぎない。見えないまとまりは three が描かない）。
  * - のぼり：旗の一文字の画像（shared/figures.ts。合戦と同じ描き方）。
  */
@@ -8,7 +9,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { makeMarkBannerTexture } from '../shared/figures';
 import { groundY } from '../layout';
-import { MACHIYA_COPIES, TOWN_BANNERS, TOWN_PROPS, type Piece, type TownCluster, type TownMat, type TownProp } from './plan';
+import { TOWN_BANNERS, TOWN_PROPS, type Piece, type TownCluster, type TownMat, type TownProp } from './plan';
 
 /** 小物の材質（色だけ。画像は陣幕の縞だけ：コードで描く） */
 function makeMaterials(): Record<TownMat, THREE.Material> {
@@ -76,18 +77,16 @@ function placedPiece(prop: TownProp, p: Piece, gy: number): THREE.BufferGeometry
 }
 
 export interface TownView {
-    /** 町に足した物の根（町家の写し・小物・のぼり） */
+    /** 町に足した物の根（小物・のぼり） */
     root: THREE.Group;
     /** まとまりごとの形（塀の陰で見えないまとまりを描かない：updateTownView） */
     clusters: Map<TownCluster, THREE.Object3D[]>;
     /** 影を落とす形と、その形と影の届く所を囲む球（画面に入らない形は影の描画を省く：updateTownView） */
     casters: { meshes: THREE.Mesh[]; sphere: THREE.Sphere }[];
-    /** 町家の写し（見下ろしのときに半透明にする対象） */
-    copies: THREE.Object3D[];
-    /** 画質「低」（小物は影を落とさない。町家の写しは元と同じく落とす） */
+    /** 画質「低」（小物は影を落とさない） */
     lowShadows: boolean;
     /** 確かめ用：まとめた形の数と三角形の数 */
-    stats: { meshes: number; triangles: number; copies: number };
+    stats: { meshes: number; triangles: number };
 }
 
 /** 物見櫓の屋根と柱を描く／描かない（物見の眺めの間は目の前をふさがないように描かない） */
@@ -126,7 +125,7 @@ const pv = new THREE.Matrix4();
 
 /**
  * 毎フレーム、描く前：塀の陰で見えないまとまりを描かない。形も影も画面に入らない物は、影の描画も省く
- * （影の範囲は主人公の前後に広いので、背中側の町家の写しの影も描いていた）。
+ * （影の範囲は主人公の前後に広いので、背中側の小物の影も描いていた）。
  */
 export function updateTownView(view: TownView, camera: THREE.Camera): void {
     const p = camera.position;
@@ -144,26 +143,11 @@ export function updateTownView(view: TownView, camera: THREE.Camera): void {
 }
 
 /**
- * 町に足した物を作る。models は読み込み済みの場面の素材（名前 → 根。町家の写しの元）。
- * prepare は素材の影・異方性の設定（main.ts の prepare と同じ）。
+ * 町に足した小物・のぼりを作る（low は画質「低」：小物は影を落とさない）。
  */
-export function buildTown(models: ReadonlyMap<string, THREE.Object3D>, prepare: (o: THREE.Object3D) => void, low: boolean): TownView {
+export function buildTown(low: boolean): TownView {
     const root = new THREE.Group();
     root.name = 'town';
-    const copies: THREE.Object3D[] = [];
-    // ---- 町家の写し（元と同じ形・素材を共有。z = c の面で鏡に写す：three は鏡の裏返しを自動で直す）
-    for (const cp of MACHIYA_COPIES) {
-        const src = models.get(cp.source);
-        if (!src) continue;
-        const c = src.clone(true);
-        c.name = `${cp.source}_copy`;
-        c.scale.z = -1;
-        c.position.z = 2 * cp.mirrorZ;
-        prepare(c);
-        c.updateMatrixWorld(true);
-        root.add(c);
-        copies.push(c);
-    }
     // ---- 小物：まとまり × 材質ごとに 1 つの形へ
     const mats = makeMaterials();
     const buckets = new Map<string, { cluster: TownCluster; mat: TownMat; geos: THREE.BufferGeometry[] }>();
@@ -250,7 +234,6 @@ export function buildTown(models: ReadonlyMap<string, THREE.Object3D>, prepare: 
         sphere.radius += reach * 0.5 + 1;
         casters.push({ meshes, sphere });
     };
-    for (const c of copies) addCaster(c);
     for (const list of clusters.values()) for (const o of list) addCaster(o);
-    return { root, clusters, casters, copies, lowShadows: false, stats: { meshes, triangles: Math.round(triangles), copies: copies.length } };
+    return { root, clusters, casters, lowShadows: false, stats: { meshes, triangles: Math.round(triangles) } };
 }
