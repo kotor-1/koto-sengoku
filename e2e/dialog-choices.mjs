@@ -7,7 +7,7 @@
  *                     縦長（高さ ＞ 幅）と高さ 430 以下はタッチ（hasTouch・isMobile・端末の比 2）。それ以外はマウスとキー
  *     MODES=default,old   default … 何も付けない（Version 25 から人物画・軍議の背景も出る）、v24 … ?art=v24（Version 24 の見た目）、old … ?art=old
  *                         （人物画は押せない飾り：elementFromPoint の隠れの数えには入らない。人物画と選択肢の重なりは e2e/portrait-v25.mjs が確かめる）
- *     PARTS=ch1,ch2       ch1 … 城門の忠勝（軍議を開く）→ 軍議（方針 A/B/C）→ 確かめ（それで決める／考え直す）→ 改めて → 確かめ → 決める →
+ *     PARTS=ch1,ch2       ch1 …（はじめから → 冒頭のスキップ → 本物の W で北へ歩いて町の急報を Esc／タップで飛ばす：Version 28）→ 城門の忠勝（軍議を開く）→ 軍議（方針 A/B/C）→ 確かめ（それで決める／考え直す）→ 改めて → 確かめ → 決める →
  *                               約束（3 つ）→ 城門の出陣 → 戦後の忠勝（開発用の setIeyasuPhase。直接状態変更）
  *                         ch2 … 第一章の結末の保存（tests/fixtures/ieyasu-ch1-v3/oda_defeat_broken_heavy）を localStorage に入れる（直接状態変更）→
  *                               第二章 → 忠勝 → 軍議（判断）→ 確かめ → 補充（石川）→ 城門の出陣 → 戦後の忠勝（開発用の setIeyasu2Phase。直接状態変更）
@@ -26,7 +26,7 @@
  *     STOP=council        その場面（scene の名前）の確かめの後で、その部を止める（短く回す時。省けば最後まで）
  *
  * 出力：<出力先>/shots/<部>-<見せ方>-<大きさ>-<場面>.png、<出力先>/report.json（場面ごとの四角・隠れ・確かめの一覧）。
- * 入力の記録（report.json の steps）：タイトル・演出のスキップ・話す（E／「話す」のタップ）・行送り（Enter／枠のタップ）・選択肢・メニュー・
+ * 入力の記録（report.json の steps）：タイトル・演出のスキップ・町の急報の前の歩き（W）と飛ばし（Esc／「スキップ」のタップ）・話す（E／「話す」のタップ）・行送り（Enter／枠のタップ）・選択肢・メニュー・
  *   詳しく見る・なぞり（CDP の Input.dispatchTouchEvent：指を置く・動かす・離す）・ホイールは本物の入力。
  *   開発用の操作（__game・__p3）：相手の前への teleport・戦後の段階を作る setIeyasuPhase／setIeyasu2Phase（直接状態変更）・
  *   保存の差し込み（ch2 の localStorage。直接状態変更）・3D の手動の描画（renderNow）・読むだけの数え上げ（ui・cast・prompt）。
@@ -35,7 +35,7 @@
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { boxesOverlap, launchBrowser, skipCinematic } from './lib.mjs';
+import { boxesOverlap, launchBrowser, passStreetReport, skipCinematic } from './lib.mjs';
 
 const BASE = process.env.BASE || 'http://localhost:8721';
 const OUT = resolve(process.argv[2] || 'e2e-out/dialog-choices');
@@ -292,6 +292,11 @@ async function run(part, size, mode) {
         }
     };
     await settle();
+    if (part === 'ch1') {
+        // Version 28 §4.3：「はじめから」の後、使者は町の急報（通りを北へ線を越えた所で 1 回）の後に町へ来る。相手の前へ teleport する前に、
+        // 本物の W で北へ歩いて線を越え、急報を飛ばす（Esc／タッチの端末は「スキップ」をタップ）。忠勝の前へ移すと線の北なので、その場で急報が始まってしまう
+        await passStreetReport(page, { tap: touch, log: (t) => step('real', t) });
+    }
 
     /** 相手の前へ teleport（dev）→「話す」（E／タップ。本物の入力）→ 選択肢の出る行まで行送り（Enter／枠のタップ） */
     const talkTo = async (id) => {

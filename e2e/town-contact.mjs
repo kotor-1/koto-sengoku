@@ -2,7 +2,8 @@
 // 壁ぎわで本物のマウスの引きずりで見回して、カメラが物の中・向こうに入らないかを見る・町の入口から W だけで忠勝まで歩く。
 //
 // 確認の種類（出力の行にも書く）：
-//   - 本物の入力：キーの W（押し続ける）・マウスの横と縦の引きずり（見回し）・タイトルの「はじめから」と演出の「スキップ」（クリック）。
+//   - 本物の入力：キーの W（押し続ける）・マウスの横と縦の引きずり（見回し）・タイトルの「はじめから」と演出の「スキップ」（クリック）・
+//     町の急報（Version 28 §4.3。通りを北へ線を越えると 1 回）の Esc。
 //   - 描画の省略：?q=low&render=manual（3D は描かない。歩きと見回しの時計・入力は実時間）。
 //   - 直接状態変更：物へ歩き込む前・見回す前の立ち位置へ __game.teleport で置く（その後の歩きは本物の W）。
 //   - 読むだけ：主人公とカメラの位置・当たり判定（layout.ts）・3D の形への光線（three の Raycaster。体の幅の中の 7 本 × 高さ 6 段の線で、
@@ -16,7 +17,7 @@
 //   (PORT=8093 setsid nohup npx vite --config proto3d/blender/tools/vite.nohmr.mjs > /tmp/vite-8093.log 2>&1 &)
 //   BASE=http://localhost:8093 node e2e/town-contact.mjs [出力先]
 import { writeFileSync } from 'node:fs';
-import { launchBrowser, outDir, skipCinematic } from './lib.mjs';
+import { endStreetReport, launchBrowser, outDir, passStreetReport, skipCinematic } from './lib.mjs';
 
 const OUT = outDir(process.argv[2] || 'e2e-out/town-contact');
 const BASE = process.env.BASE3D || process.env.BASE || 'http://localhost:8093';
@@ -127,11 +128,23 @@ if (PARTS.includes('entry')) {
   const entry = await page.evaluate(async () => (await import('/src/town/spots.ts')).ENTRY_POSE);
   check('探索の始めは ENTRY_POSE（はじめから → 冒頭のスキップの後）', Math.abs(s0.x - entry.x) < 1e-3 && Math.abs(s0.z - entry.z) < 1e-3, J({ s0, entry }));
   const talk = () => page.evaluate(() => { const b = document.querySelector('.g-talk'); return !!b && !b.hidden && b.dataset.target === 'tadakatsu'; });
+  // Version 28 §4.3：通りを北へ線（z≈6）を越えると、「はじめから」の回の中で 1 回だけ町の急報が始まる。そこまでを 1 本目の歩き、
+  // 急報を Esc で飛ばし（飛ばすと使者は話せる位置・忠勝は城門の前に置かれる）、また W を押し続けて忠勝の「話す」までを 2 本目の歩きとして、
+  // 2 本をつないだ道すじで「途中で引っかからない」を見る
+  const cine = () => page.evaluate(() => !!document.querySelector('.g-layer[data-kind="cine"]'));
+  const r1 = await holdUntilStop(['KeyW'], async () => cine(), 180000);
+  check('W で北へ歩くと、線（z≈6）を越えた所で町の急報（ch1_report）が始まる', r1.reason === 'cond' && (await page.evaluate(() => window.__game.cine?.id)) === 'ch1_report' && r1.end.z < 6.05, J({ end: r1.end, reason: r1.reason, sec: r1.ms / 1000 }));
+  await endStreetReport(page);
+  log('町の急報を Esc で飛ばした（急報そのものの確かめは e2e/v28-envoy-event.mjs）');
   const r = await holdUntilStop(['KeyW'], async () => talk(), 180000);
-  const xs = r.track.map((p) => p.x);
+  const track = [...r1.track, ...r.track];
+  const xs = track.map((p) => p.x);
   const td = await page.evaluate(() => { const c = window.__game.cast.find((c) => c.id === 'tadakatsu'); const p = c?.pose ?? c; return p && typeof p.x === 'number' ? { x: p.x, z: p.z } : { x: -1.5, z: -7.2, from: 'design §3.1' }; });
-  result.entry = { start: s0, end: r.end, reason: r.reason, sec: r.ms / 1000, xMin: Math.min(...xs), xMax: Math.max(...xs), walked: r.track.reduce((a, p, i) => (i ? a + Math.hypot(p.x - r.track[i - 1].x, p.z - r.track[i - 1].z) : 0), 0), tadakatsu: td, dist: td ? Math.hypot(r.end.x - td.x, r.end.z - td.z) : null };
-  check('W を押し続けるだけで、城門の前の忠勝の「話す」が出る（途中で引っかからない）', r.reason === 'cond', J(result.entry));
+  result.entry = { start: s0, event: r1.end, end: r.end, reason: r.reason, sec: (r1.ms + r.ms) / 1000, xMin: Math.min(...xs), xMax: Math.max(...xs), walked: track.reduce((a, p, i) => (i ? a + Math.hypot(p.x - track[i - 1].x, p.z - track[i - 1].z) : 0), 0), tadakatsu: td, dist: td ? Math.hypot(r.end.x - td.x, r.end.z - td.z) : null };
+  check('W を押し続けるだけで（途中の町の急報は Esc で飛ばす）、城門の前の忠勝の「話す」が出る（途中で引っかからない）', r.reason === 'cond', J(result.entry));
+} else {
+  // 町の急報の前に線の北（町家 B の店先など）へ teleport すると、その場で急報が始まる。先に本物の W で線を越えて飛ばしておく
+  await passStreetReport(page, { log });
 }
 
 // ---------------------------------------------------------------- objects：新しい物へ歩き込む

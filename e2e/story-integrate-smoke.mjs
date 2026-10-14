@@ -333,18 +333,10 @@ async function ch1() {
   await sleep(800);
   const p3 = await cine(page);
   check('本物の入力：「再開」で続きから進む', !p3.paused && p3.t > p2.t + 0.4, `${p2.t} → ${p3.t}`);
-  // 次の場面
-  const b0 = p3.beat;
-  await cineBtn(page, 'next');
-  const n1 = await cine(page);
-  check('本物の入力：「次の場面」で次の場面の頭へ', n1.beat === b0 + 1, J({ from: b0, to: n1.beat, t: n1.t, mode: n1.mode }));
-  // 使者の到着（冒頭の 2 つ目の場面）へ、次の場面・前の場面で合わせる
-  for (let i = 0; i < 4 && (await cine(page))?.beat !== 1; i++) await cineBtn(page, (await cine(page)).beat > 1 ? 'prev' : 'next');
-  // 使者の到着の場面（冒頭の 2 つ目）にいることを見て、出来事が町に出ることを見る（描画の省略：見た目ではなく出来事の置き方）
-  await sleep(600);
+  // Version 28 §4.3：冒頭は 1 つの 3D の場面（町の様子の字幕 1 行と、町の入口の主人公へ寄る 1 つのカメラの動き）だけになった。
+  // 前の版の「次の場面で 2 つ目の場面（使者の到着）へ」「冒頭の中で使者の到着の出来事が町に出る」は、操作の途中の町の急報（下の 4.5）で見る
   const sp = await page.evaluate(() => window.__game.world.stageProbe());
-  check('冒頭の 3D の場面：使者の到着の出来事が町に出る（使者 2 人・会話の相手の使者は隠す・カメラの差し替え）', sp.event === 'envoys_arrive' && sp.people === 2 && sp.hiddenCast.length === 2 && !!sp.shot, J({ ev: sp.event, people: sp.people, hidden: sp.hiddenCast, t: sp.t.toFixed(1) }));
-  await sleep(500);
+  check('冒頭は 1 つの 3D の場面（町の様子 town_life。出来事の人は出さない・カメラの差し替え）', p3.count === 1 && sp.event === 'town_life' && sp.people === 0 && !!sp.shot, J({ count: p3.count, ev: sp.event, people: sp.people, shot: !!sp.shot, t: p3.t }));
   await cineBtn(page, 'skip');
   await waitScreen(page, 'explore');
   const S1 = await st(page);
@@ -431,6 +423,27 @@ async function ch1() {
   await sleep(400);
   await page.keyboard.press('Escape');
   await waitScreen(page, 'explore');
+  // ---- 4.5 町の急報（Version 28 §4.3）：通りを北へ線（z≈6）を越えると「はじめから」の回の中で 1 回だけ始まる（使者 2 人と忠勝。会話の相手そのもの）。
+  //      1 つの場面なので「次の場面」は終わりへ（前の版の冒頭の「次の場面」・使者の到着の確かめの置き換え。急報そのものの確かめは e2e/v28-envoy-event.mjs）
+  const SE0 = await st(page);
+  await walkTo(page, 0.5, 3.0, 0.5, (q) => q.ui === 'cine');
+  await waitUi(page, 'cine');
+  const linked = new Set();
+  let rc = await cine(page);
+  let spR = null;
+  for (let i = 0; i < 200 && rc && rc.t < 9; i++) {
+    const r = await page.evaluate(() => ({ probe: window.__game.world.stageProbe(), ev: window.__game.event }));
+    for (const id of r.ev.linked) linked.add(id);
+    if (r.probe.event === 'street_report') spR = r.probe;
+    await sleep(150);
+    rc = await cine(page);
+  }
+  check('本物のキーで通りを北へ歩くと、線を越えた所で町の急報（ch1_report・1 つの場面）が始まり、使者 2 人と忠勝が会話の相手そのものとして出る・カメラの差し替え', rc?.id === 'ch1_report' && rc.count === 1 && spR?.event === 'street_report' && !!spR.shot && ['oda_envoy', 'asai_envoy', 'tadakatsu'].every((id) => linked.has(id)), J({ id: rc?.id, count: rc?.count, t: rc?.t, ev: spR?.event, linked: [...linked] }));
+  await cineBtn(page, 'next');
+  await waitScreen(page, 'explore');
+  check('本物の入力：急報の「次の場面」→ 1 つの場面なので終わりへ（層が閉じて城下）。状態は同じ・保存は書かない', !(await cine(page)) && J(norm(await st(page))) === J(norm(SE0)) && Object.keys(await writes(page)).length === 0, J(await writes(page)));
+  // 急報の後、使者・忠勝は話せる位置へ歩いて行く（着くまで「話す」は出ない）
+  await page.waitForFunction(() => window.__game.event.epilogue.length === 0, null, POLL);
   // ---- 5. 忠勝と軍議（詳しく見る・タブで強調・決めない）
   let u = await talkTo(page, 'tadakatsu');
   check('本物の入力：忠勝へ歩いて話す → 軍議を開く', (u.choices ?? []).includes('open_council'), u.seenId);

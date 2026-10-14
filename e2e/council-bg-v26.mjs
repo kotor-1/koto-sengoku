@@ -33,7 +33,7 @@
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { launchBrowser, skipCinematic } from './lib.mjs';
+import { launchBrowser, passStreetReport, skipCinematic } from './lib.mjs';
 
 const BASE = process.env.BASE || 'http://127.0.0.1:8743';
 const OUT = resolve(process.argv[2] || 'e2e-out/council-bg-v26');
@@ -219,6 +219,9 @@ async function run(browser, size, mode) {
     await skipCinematic(page, { tap: touch, log: (t) => step('real', t) });
     await page.waitForFunction(() => window.__game.screen === 'explore' && !window.__game.ui, null, POLL);
     await sleep(600);
+    // Version 28 §4.3：使者は町の急報（通りを北へ線を越えた所で 1 回）の後に町へ来る。相手の前へ teleport する前に、本物の W で北へ歩いて越え、
+    // 急報を飛ばす（Esc／タッチの端末は「スキップ」をタップ）
+    await passStreetReport(page, { tap: touch, log: (t) => step('real', t) });
     const talkTo = async (id) => {
         const cast = await page.evaluate(() => window.__game.cast);
         const c = cast.find((x) => x.id === id);

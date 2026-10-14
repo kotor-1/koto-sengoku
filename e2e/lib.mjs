@@ -46,6 +46,142 @@ export async function skipCinematic(page, { tap = false, what = '', timeout = 60
 }
 
 /**
+ * Version 28 §4.3：第一章の「はじめから」の後、使者 2 人は町に居ない。主人公が通りを北へ進んで線（z≈6）を越えると、
+ * 「はじめから」の回の中で 1 回だけ町の急報（演出 ch1_report：織田の使者・浅井の使者・忠勝・家康の声のある台詞）が始まり、
+ * その後に使者は話せる位置へ、忠勝は城門の前へ歩いて行く。使者・城門・忠勝の前へ行く e2e は、その前にこれで急報を越える。
+ *
+ * 本物の入力だけ：今の見回しのまま W（run なら Shift も）を押し続けて北へ歩き、急報の層（`.g-layer[data-kind="cine"][data-cine="ch1_report"]`）
+ * が出たら離す。飛ばす（既定）なら、出てから 0.5 秒（押し始めの守り 350ms）待って Esc（tap なら「スキップ」をタップ）を押し、層が閉じるまで待つ。
+ * watch なら最後まで見て、層が閉じるまで待つ。どちらも閉じた後、開発の画面（window.__game がある）では操作へ戻る（screen が explore・
+ * 層が無い）まで待つ。本番ビルド（開発用のフックが無い）でも同じに使える。
+ * - 呼ぶのは「はじめから」の冒頭の演出（ch1_open）が閉じた後（町の入口・北を見る）。主人公が線の北に居ると歩いても出ないので、そこで呼ばない。
+ * - 歩いても出ないとき（walkTimeout）は誤りを投げる（開発の画面なら主人公の位置も書く）。
+ * - 開発用の口（__game.teleport など）で線の北へ移すと、その場で急報が始まる。移す前にこれで越えておく。
+ * - settle（最後まで見た後、使者・忠勝が話せる位置に着くまで待つ）は endStreetReport、optional（急報の無い前の版のビルドでも使う）は
+ *   walkToStreetReport を見る。optional で急報が無かったときの返りは id: null。
+ * 返り：{ id, walkMs, skipped, watchedMs }
+ */
+export async function passStreetReport(page, { watch = false, settle = false, run = false, tap = false, optional = false, walkTimeout = 600000, timeout = 1800000, log = (t) => console.log(`   ${t}`) } = {}) {
+    const { id, walkMs } = await walkToStreetReport(page, { run, optional, walkTimeout, timeout });
+    if (!id) {
+        log(`町の急報は無かった（W${run ? '＋Shift' : ''}で北へ ${(walkMs / 1000).toFixed(1)} 秒歩いて忠勝の「話す」が出た：急報の無い前の版のビルド）`);
+        return { id: null, walkMs, skipped: false, watchedMs: null };
+    }
+    const { watchedMs } = await endStreetReport(page, { watch, settle, tap, timeout });
+    log(`町の急報「${id}」：W${run ? '＋Shift' : ''}で北へ ${(walkMs / 1000).toFixed(1)} 秒歩いて線を越えた → ${watch ? `最後まで見た（${(watchedMs / 1000).toFixed(1)} 秒${settle ? '。使者・忠勝が話せる位置に着くまで待った' : ''}）` : `${tap ? '「スキップ」のタップ' : 'Esc'}で飛ばした（急報そのものの確かめは e2e/v28-envoy-event.mjs）`}`);
+    return { id, walkMs, skipped: !watch, watchedMs };
+}
+
+/**
+ * passStreetReport の後半だけ：出ている町の急報の層を、飛ばす（出てから 0.5 秒待って Esc／tap なら「スキップ」をタップ）か最後まで見て、
+ * 層が閉じて操作へ戻るまで待つ（自分の歩きの記録を取りながら線を越えた e2e が使う）。返り：{ watchedMs }
+ * settle（最後まで見たときだけ意味がある）：急報の後、使者・忠勝は話せる位置へ歩いて行き、着くまで「話す」が出ない。その歩きが終わるまで待つ
+ * （開発の画面は __game.event の epilogue が空になるまで。本番ビルドは町の時計で STREET_REPORT_SETTLE_SEC 秒：waitGameSeconds）。
+ * 飛ばしたときは、使者・忠勝はすぐ話せる位置に置かれるので待たない。
+ */
+export async function endStreetReport(page, { watch = false, settle = false, tap = false, timeout = 1800000 } = {}) {
+    const sel = '.g-layer[data-kind="cine"]';
+    await page.locator(sel).waitFor({ state: 'attached', timeout });
+    const id = await page.locator(sel).getAttribute('data-cine');
+    if (id !== 'ch1_report') throw new Error(`町の急報のはずの演出が「${id}」だった`);
+    let watchedMs = null;
+    if (watch) {
+        const w0 = Date.now();
+        await page.locator(sel).waitFor({ state: 'detached', timeout });
+        watchedMs = Date.now() - w0;
+    } else {
+        await new Promise((r) => setTimeout(r, 500));
+        if (tap) await page.locator(`${sel} .g-cine-btn[data-id="skip"]`).tap();
+        else await page.keyboard.press('Escape');
+        await page.locator(sel).waitFor({ state: 'detached', timeout });
+    }
+    await waitControl(page, timeout);
+    if (watch && settle) {
+        const dev = await page.evaluate(() => !!window.__game?.event);
+        if (dev) await page.waitForFunction(() => window.__game.event.epilogue.length === 0, null, { timeout, polling: 200 });
+        else await waitGameSeconds(page, STREET_REPORT_SETTLE_SEC);
+    }
+    return { watchedMs };
+}
+
+/** 急報の後、使者・忠勝が話せる位置に着くまでの町の時計の秒（設計 §12.2：出来事の終わりから 10.4〜14.2 秒。余裕を足す） */
+export const STREET_REPORT_SETTLE_SEC = 16;
+
+/**
+ * 町の時計（探索の 1 コマの進みは min(実時間の差, 0.1 秒)：main.ts の frame）で sec 秒進むまで待つ。開発用のフックを使わない
+ * （本番ビルドでも使える）。描画の遅いこのコンテナでは、1 コマ 0.1 秒の上限の分、実時間はずっと長くかかる
+ */
+export function waitGameSeconds(page, sec) {
+    return page.evaluate(
+        (sec) =>
+            new Promise((done) => {
+                let acc = 0;
+                let last = null;
+                const loop = (ts) => {
+                    if (last !== null) acc += Math.min(Math.max(0, (ts - last) / 1000), 0.1);
+                    last = ts;
+                    if (acc >= sec) done(acc);
+                    else requestAnimationFrame(loop);
+                };
+                requestAnimationFrame(loop);
+            }),
+        sec,
+    );
+}
+
+/**
+ * passStreetReport の歩くところだけ：W（run なら Shift も）を押し続け、町の急報の層が出たら離して返る（演出は流れたまま）。
+ * 急報の途中で何かをする e2e（声の確かめ・途中のメニューなど）が使う。返り：{ id, walkMs }
+ * optional：急報の無い前の版のビルド（比べのための旧版の dist など）でも使えるように、急報より先に忠勝の「話す」が出たら
+ * そこで止めて { id: null } を返す（今の版では、忠勝の前へ行くには必ず線を越えるので、先に急報が出る）。
+ */
+export async function walkToStreetReport(page, { run = false, optional = false, walkTimeout = 600000, timeout = 1800000 } = {}) {
+    const sel = '.g-layer[data-kind="cine"]';
+    await page.locator(sel).waitFor({ state: 'detached', timeout });
+    await waitControl(page, timeout);
+    const keys = run ? ['ShiftLeft', 'KeyW'] : ['KeyW'];
+    const t0 = Date.now();
+    for (const k of keys) await page.keyboard.down(k);
+    let err = null;
+    try {
+        if (optional)
+            await page.waitForFunction(
+                () => {
+                    if (document.querySelector('.g-layer[data-kind="cine"]')) return true;
+                    const b = document.querySelector('.g-talk');
+                    return !!b && !b.hidden && b.dataset.target === 'tadakatsu';
+                },
+                null,
+                { timeout: walkTimeout, polling: 100 },
+            );
+        else await page.locator(sel).waitFor({ state: 'attached', timeout: walkTimeout });
+    } catch (e) {
+        err = e;
+    } finally {
+        for (const k of [...keys].reverse()) await page.keyboard.up(k);
+    }
+    const walkMs = Date.now() - t0;
+    if (!err && optional && !(await page.locator(sel).count())) return { id: null, walkMs };
+    if (err) {
+        const where = await page.evaluate(() => (window.__p3?.hero ? { x: window.__p3.hero.x, z: window.__p3.hero.z, screen: window.__game?.screen, ui: window.__game?.ui?.kind ?? null, townEvent: window.__game?.townEvent ?? null } : null)).catch(() => null);
+        throw new Error(`町の急報（ch1_report）が始まらない（W を ${(walkMs / 1000).toFixed(1)} 秒押した${where ? `。主人公 ${JSON.stringify(where)}` : ''}）`);
+    }
+    const id = await page.locator(sel).getAttribute('data-cine');
+    if (id !== 'ch1_report') throw new Error(`町の急報のはずの演出が「${id}」だった`);
+    return { id, walkMs };
+}
+
+/** 開発の画面（window.__game がある）なら、操作へ戻る（探索の画面・層が無い）まで待つ。本番ビルドではすぐ返る */
+function waitControl(page, timeout) {
+    return page.waitForFunction(() => !window.__game || (window.__game.screen === 'explore' && !window.__game.ui), null, { timeout, polling: 100 });
+}
+
+/** passStreetReport の、急報を最後まで見る形（声・字幕・人物の動きを流し切る） */
+export function watchStreetReport(page, opts = {}) {
+    return passStreetReport(page, { ...opts, watch: true });
+}
+
+/**
  * 本番の e2e（開発用のフックが無い）の歩き：肩越しのカメラの見回しの向き（yaw。0 で北を見る）を本物の入力から測る。
  * S を短く押して下がり（下がれなければ W で進み）、前後の位置（readPose：メニューから保存して読むなど）の差から求める。
  * 見回しは引きずりでしか変わらないが、演出の後・段階の始めには主人公の向きから決め直す（歴史分岐の町の入口は 0・架空の章の開始の位置は 0.36）ので、

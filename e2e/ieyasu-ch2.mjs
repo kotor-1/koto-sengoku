@@ -29,7 +29,7 @@
 //   (PORT=8191 setsid nohup npx vite --config proto3d/blender/tools/vite.nohmr.mjs > /tmp/vite-8191.log 2>&1 &)
 //   BASE3D=http://localhost:8191 BASE=http://localhost:8191 PARTS=chain:oda node e2e/ieyasu-ch2.mjs [出力先]
 import { readFileSync } from 'node:fs';
-import { launchBrowser, outDir, skipCinematic } from './lib.mjs';
+import { endStreetReport, launchBrowser, outDir, passStreetReport, skipCinematic } from './lib.mjs';
 
 const OUT = outDir(process.argv[2] || 'e2e-out/ieyasu-ch2');
 const BASE = process.env.BASE3D || process.env.BASE || 'http://localhost:8191';
@@ -290,6 +290,15 @@ async function newIeyasu(page, io) {
   // 第一章の冒頭の演出（はじめからの道だけ）：スキップのボタンを本物の入力で押す
   await skipCinematic(page, { tap: io.phone, what: '第一章の冒頭', log: note });
   await waitScreen(page, 'explore');
+  // Version 28 §4.3：通りを北へ線（z≈6）を越えると町の急報が 1 回始まる。本物の入力（スマホはスティック、PC は W）で越えて飛ばす
+  // （スマホは「スキップ」をタップ、PC は Esc。急報そのものの確かめは e2e/v28-envoy-event.mjs）
+  if (io.phone) {
+    const p0 = await pose(page);
+    const pe = await walkTouch(page, io.cdp, p0.x, 2.0, (q) => q.ui === 'cine');
+    if (pe.ui !== 'cine') throw new Error(`町の急報が始まらない（${JSON.stringify(pe)}）`);
+    await endStreetReport(page, { tap: true });
+    note('   町の急報：スティックで北へ歩いて線を越え、「スキップ」をタップした');
+  } else await passStreetReport(page, { log: note });
 }
 async function council1(page, io, P, policy) {
   let u = await talkTo(page, 'tadakatsu', io);

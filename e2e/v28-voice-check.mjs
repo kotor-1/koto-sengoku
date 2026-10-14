@@ -16,19 +16,25 @@
 // - MUTATE=nostop：確かめの側で声を止める口を何もしない物に替えて走らせる（この e2e が止め忘れ・重なり・戻った後の続きを見つけられるかの確かめ。NG が出るのが正しい）。
 // - ANALYZE_ONLY=1：録った物（<部>-log.json・<部>.webm）から分析だけをやり直す。
 //
-// 部（PARTS。カンマ区切り。既定は natural,skip,fast,menu,tab）：
-//   natural  はじめから（本物のクリック）→ 冒頭の演出（通常の速さで最後まで。声の字幕 4 つ）→ 本物のキー（Shift＋W）で城門の前の忠勝まで
-//            歩く → E で話す → Enter で行を送る（声の行 2 つは鳴り終えてから）→ 選択肢（本物のクリック）。6 台詞すべての始まりと終わり。
-//   skip     冒頭の演出の 2 つ目の声（浅井の使者）の途中で、本物のクリックで「スキップ」→ すぐ止まり、後から鳴らない。
-//   fast     タッチの端末（hasTouch）：演出の中で「次の場面 ▶」を 220 ms ごとに本物のタップ → 会話の行を 200 ms ごとに本物のタップ（300 ms より短い）。
-//            重ならない・前の行の声を後から鳴らさない。
-//   menu     声の行で本物の M（メニュー）→ 止まる・閉じても流し直さない → 次の声の行でアプリの切り替えをページの中で起こす
+// 部（PARTS。カンマ区切り。既定は natural,skip,fast,menu,tab）。Version 28 S1 の後の第一章の始め（短い冒頭 ch1_open（声なし）→ 操作 →
+// 通りを北へ線（z≈6）を越えると町の急報 ch1_report（声のある台詞 4 つ：織田の使者・浅井の使者・忠勝・家康）→ 操作。忠勝は城門の前へ歩いて戻る）に合わせた：
+//   natural  はじめから（本物のクリック）→ 短い冒頭を最後まで見る → 本物の W で北へ歩いて線を越える → 急報を通常の速さで最後まで（声の字幕 4 つ）
+//            → 忠勝が城門の前に着くのを待つ → 本物のキー（Shift＋W）で忠勝まで歩く → E で話す → Enter で行を送る（声の行 2 つは鳴り終えてから）
+//            → 選択肢（本物のクリック）。6 台詞すべての始まりと終わり。
+//   skip     急報の 2 つ目の声（浅井の使者）の途中で本物の Esc → すぐ止まり、後から鳴らない（残りの 2 台詞も鳴らない）。
+//   fast     タッチの端末（hasTouch）：急報の 1 つ目の声（織田の使者）の途中で「スキップ」を本物のタップ → 城門の前の会話の行を 200 ms ごとに
+//            本物のタップ（300 ms より短い）。重ならない・前の行の声を後から鳴らさない。
+//            （前の版の「演出の『次の場面 ▶』を 220 ms ごとに 2 回」は、冒頭が 3 つの場面だった頃の物。急報は 1 つの場面で「次の場面」は終わりへ
+//             飛ぶだけなので、演出の中の速い送りは「スキップ」のタップ 1 回にした）
+//   menu     急報の 1 つ目の声の途中で本物の M → メニューは開かない・声は止まらない（急報の 4 台詞は最後まで鳴る）・急報の後にも開かない
+//            → 城門の前の会話の声の行で本物の M → 止まる・閉じても流し直さない → 次の声の行でアプリの切り替えをページの中で起こす
 //            （document.hidden を上書きして visibilitychange。これだけを証拠にしない）→ 止まる・戻っても流し直さない。
 //   tab      本物のタブの切り替え（同じ窓に別のタブを開いて前に出し、戻す）。取り込み中のタブは Chromium が「見えている」まま
 //            （visibilitychange は来ず、本物の blur／focus が来る）なので、1 つ目の声の行は録りながら（blur の道筋）、
 //            2 つ目の声の行は録るのを止めてから（本物の visibilitychange で hidden になる道筋。ページの中の記録で確かめる）。
-//   render   natural の冒頭の演出（声の字幕 4 つ）だけを 3D の描画あり（?q=low）で（この環境の描画は 1 コマに数秒〜20 秒かかるので、
-//            映像のコマは少なく、演出の時計も遅れる。会話まで含めると 1 時間を超えるので、会話は既定の部で確かめる）。既定では走らせない。
+//            急報は最初の声の前（0.5 秒）に Esc で飛ばす（急報の 4 台詞は鳴らない）。
+//   render   natural の冒頭と急報（声の字幕 4 つ）だけを 3D の描画あり（?q=low）で（この環境の描画は 1 コマに数秒〜20 秒かかるので、
+//            映像のコマは少なく、演出の時計も遅れる。歩くのも遅い。会話まで含めると 1 時間を超えるので、会話は既定の部で確かめる）。既定では走らせない。
 //
 // 注意：
 // - Playwright は各ページに「窓が前にある」ふり（Emulation.setFocusEmulationEnabled）をかけ、その間はタブを切り替えても見えたまま・blur も来ない。
@@ -43,7 +49,7 @@
 import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
-import { outDir } from './lib.mjs';
+import { outDir, passStreetReport, walkToStreetReport } from './lib.mjs';
 
 const MANIFEST = JSON.parse(readFileSync(new URL('../proto3d/src/audio/voiceManifest.gen.json', import.meta.url), 'utf8'));
 const LINES = MANIFEST.lines;
@@ -431,12 +437,41 @@ async function newGame(env) {
   await mark(env, 'はじめから');
 }
 
-/** 探索に入ったら、本物のキー（Shift＋W：走る）で城門の前の忠勝の「話す」が出るまで北へ。出たら E（タッチなら「話す」をタップ） */
+/**
+ * 短い冒頭（ch1_open）の後：本物の W で北へ歩いて線（z≈6）を越え、町の急報（ch1_report）が始まったら離す（e2e/lib.mjs の walkToStreetReport）。
+ * 演出は流れたまま返る（見る・途中で止める・飛ばすは呼んだ側）
+ */
+async function walkToEvent(env) {
+  await sleep(600);
+  await mark(env, '歩き始め（急報へ）');
+  const r = await walkToStreetReport(env.page);
+  await mark(env, '急報が始まった');
+  note(`   急報：W で北へ ${(r.walkMs / 1000).toFixed(1)} 秒歩いて線を越えた`);
+  return r;
+}
+
+/** 演出（短い冒頭）の層が出てから ms 待って、本物の Esc（タッチの端末なら「スキップ」をタップ）で飛ばす */
+async function skipCine(env, ms = 800) {
+  const { page } = env;
+  await sleep(ms);
+  if (env.touch) {
+    const c = await center(page.locator('.g-layer[data-kind="cine"] .g-cine-btn[data-id="skip"]'));
+    await press(env, c.x, c.y);
+  } else await page.keyboard.press('Escape');
+  await page.locator('.g-layer[data-kind="cine"]').waitFor({ state: 'detached' });
+}
+
+/**
+ * 探索に入ったら（急報の後。忠勝が城門の前（置き場所）に着くまで待つ：歩いて戻る間は「話す」が出ない）、本物のキー（Shift＋W：走る）で
+ * 城門の前の忠勝の「話す」が出るまで北へ。出たら E（タッチなら「話す」をタップ）
+ */
 async function walkAndTalk(env) {
   const { page } = env;
   await page.waitForFunction(() => window.__game.screen === 'explore' && !window.__game.ui, null, POLL);
+  if (await page.evaluate(() => window.__game.townEvent)) throw new Error('町の急報をまだ越えていない（忠勝の前へ歩くと途中で急報が始まる）');
+  await page.waitForFunction(() => !(window.__game.event?.epilogue ?? []).includes('tadakatsu'), null, POLL);
   await sleep(600);
-  await mark(env, '歩き始め');
+  await mark(env, '歩き始め（忠勝へ）');
   const shown = () => page.evaluate(() => {
     const b = document.querySelector('.g-talk');
     return !!b && !b.hidden && b.dataset.target === 'tadakatsu';
@@ -517,26 +552,32 @@ async function tabAway(env, ms) {
 
 // ================================================================ 部
 
-/** 部ごとの見込み：full＝最後まで鳴る台詞・cut＝止める台詞と止める理由（入力・知らせ）・skipped＝鳴らない台詞 */
-const ALL6 = ['ch1.oda_envoy.ask', 'ch1.asai_envoy.ask', 'ch1.tadakatsu.council', 'ch1.hero.gather', 'talk.tadakatsu.envoys', 'talk.hero.same_day'];
+/** 部ごとの見込み：full＝最後まで鳴る台詞・cut＝止める台詞と止める理由（入力・知らせ。キーはその code）・skipped＝鳴らない台詞 */
+const EVENT4 = ['ch1.oda_envoy.ask', 'ch1.asai_envoy.ask', 'ch1.tadakatsu.council', 'ch1.hero.gather'];
+const ALL6 = [...EVENT4, 'talk.tadakatsu.envoys', 'talk.hero.same_day'];
 const EXPECT = {
   natural: { full: ALL6 },
-  render: { full: ['ch1.oda_envoy.ask', 'ch1.asai_envoy.ask', 'ch1.tadakatsu.council', 'ch1.hero.gather'] },
-  skip: { full: ['ch1.oda_envoy.ask'], cut: [{ id: 'ch1.asai_envoy.ask', by: 'pointer' }], skipped: ['ch1.tadakatsu.council', 'ch1.hero.gather'] },
-  fast: { cut: [{ id: 'ch1.oda_envoy.ask', by: 'pointer' }, { id: 'ch1.tadakatsu.council', by: 'pointer' }, { id: 'talk.tadakatsu.envoys', by: 'pointer' }, { id: 'talk.hero.same_day', by: 'pointer' }], skipped: ['ch1.asai_envoy.ask', 'ch1.hero.gather'] },
-  menu: { cut: [{ id: 'talk.tadakatsu.envoys', by: 'KeyM' }, { id: 'talk.hero.same_day', by: 'synthetic-hidden' }] },
-  tab: { cut: [{ id: 'talk.tadakatsu.envoys', by: 'blur' }, { id: 'talk.hero.same_day', by: 'hidden', unrecorded: true }] },
+  render: { full: EVENT4 },
+  skip: { full: ['ch1.oda_envoy.ask'], cut: [{ id: 'ch1.asai_envoy.ask', by: 'Escape' }], skipped: ['ch1.tadakatsu.council', 'ch1.hero.gather'] },
+  fast: { cut: [{ id: 'ch1.oda_envoy.ask', by: 'pointer' }, { id: 'talk.tadakatsu.envoys', by: 'pointer' }, { id: 'talk.hero.same_day', by: 'pointer' }], skipped: ['ch1.asai_envoy.ask', 'ch1.tadakatsu.council', 'ch1.hero.gather'] },
+  // 急報の間の M はメニューを開かず、声も止めない（急報の 4 台詞は最後まで鳴る）
+  menu: { full: EVENT4, cut: [{ id: 'talk.tadakatsu.envoys', by: 'KeyM' }, { id: 'talk.hero.same_day', by: 'synthetic-hidden' }] },
+  // 急報は最初の声の前に飛ばす
+  tab: { cut: [{ id: 'talk.tadakatsu.envoys', by: 'blur' }, { id: 'talk.hero.same_day', by: 'hidden', unrecorded: true }], skipped: EVENT4 },
 };
 
 async function partNatural(part = 'natural', query = QUERY, { talk = true } = {}) {
-  note(`== ${part}：はじめから → 冒頭の演出（通常の速さ）${talk ? ' → 歩いて忠勝 → 会話（声の行は鳴り終えてから送る）' : 'だけ'}${query.includes('render=manual') ? '' : '（3D の描画あり）'}`);
+  note(`== ${part}：はじめから → 短い冒頭（通常の速さ）→ W で北へ → 町の急報を最後まで（声 4 つ）${talk ? ' → 忠勝が城門の前に着く → 歩いて忠勝 → 会話（声の行は鳴り終えてから送る）' : 'だけ'}${query.includes('render=manual') ? '' : '（3D の描画あり）'}`);
   const env = await openGame(part, { query });
   await startRecording(env);
   await newGame(env);
   await env.page.locator('.g-layer[data-kind="cine"]').waitFor({ state: 'detached', timeout: 1800000 });
-  await mark(env, '演出の終わり');
+  await mark(env, '冒頭の終わり');
+  await walkToEvent(env);
+  await env.page.locator('.g-layer[data-kind="cine"]').waitFor({ state: 'detached', timeout: 1800000 });
+  await mark(env, '急報の終わり');
   if (!talk) {
-    // 3D を描くと、この混んだ環境では 1 コマに 5〜20 秒かかり、会話まで含めると 1 時間を超えるので、冒頭の演出だけ（会話は既定の部で）
+    // 3D を描くと、この混んだ環境では 1 コマに 5〜20 秒かかり、会話まで含めると 1 時間を超えるので、冒頭と急報だけ（会話は既定の部で）
     await sleep(1500);
     await stopRecording(env);
     const log = await pageLog(env);
@@ -562,18 +603,19 @@ async function partNatural(part = 'natural', query = QUERY, { talk = true } = {}
 
 async function partSkip() {
   const part = 'skip';
-  note(`== ${part}：冒頭の演出の 2 つ目の声（浅井の使者）の途中で、本物のクリックで「スキップ」`);
+  note(`== ${part}：短い冒頭を Esc で飛ばす → W で北へ → 町の急報の 2 つ目の声（浅井の使者）の途中で本物の Esc`);
   const env = await openGame(part);
   await startRecording(env);
   await newGame(env);
+  await skipCine(env);
+  await walkToEvent(env);
   await waitPlaying(env.page, 'ch1.asai_envoy.ask');
-  await sleep(1000);
-  const c = await center(env.page.locator('.g-cine-btn[data-id="skip"]'));
-  await mark(env, 'スキップを押す直前');
-  await press(env, c.x, c.y);
+  await sleep(1100);
+  await mark(env, 'Esc を押す直前');
+  await env.page.keyboard.press('Escape');
   await env.page.locator('.g-layer[data-kind="cine"]').waitFor({ state: 'detached' });
   await sleep(5000);
-  await mark(env, 'スキップの後 5 秒');
+  await mark(env, 'Esc の後 5 秒');
   await stopRecording(env);
   const log = await pageLog(env);
   await closeGame(env);
@@ -582,16 +624,18 @@ async function partSkip() {
 
 async function partFast() {
   const part = 'fast';
-  note(`== ${part}：タッチの端末。演出の「次の場面 ▶」を 220 ms ごとに本物のタップ → 会話の行を 200 ms ごとに本物のタップ`);
+  note(`== ${part}：タッチの端末。急報の 1 つ目の声の途中で「スキップ」をタップ → 城門の前の会話の行を 200 ms ごとに本物のタップ`);
   const env = await openGame(part, { touch: true });
   await startRecording(env);
   await newGame(env);
   const { page } = env;
+  await skipCine(env, 600);
+  await walkToEvent(env);
   await waitPlaying(page, 'ch1.oda_envoy.ask');
   await sleep(400);
-  const nx = await center(page.locator('.g-cine-btn[data-id="next"]'));
-  await mark(env, '次の場面のタップ（2 回・220 ms ごと）');
-  await rapidTaps(env, nx.x, nx.y, 2, 220);
+  const sk = await center(page.locator('.g-layer[data-kind="cine"] .g-cine-btn[data-id="skip"]'));
+  await mark(env, '急報の「スキップ」のタップ');
+  await press(env, sk.x, sk.y);
   await page.locator('.g-layer[data-kind="cine"]').waitFor({ state: 'detached' });
   await sleep(3000);
   await walkAndTalk(env);
@@ -613,14 +657,25 @@ async function partFast() {
 
 async function partMenu() {
   const part = 'menu';
-  note(`== ${part}：声の行で本物の M（メニュー）→ 閉じる → 次の声の行でページの中の visibilitychange（hidden）→ 戻す`);
+  note(`== ${part}：急報の声の途中で本物の M（開かない・止めない）→ 城門の前の会話の声の行で本物の M（メニュー）→ 閉じる → 次の声の行でページの中の visibilitychange（hidden）→ 戻す`);
   const env = await openGame(part);
   await startRecording(env);
   await newGame(env);
   const { page } = env;
-  await sleep(800);
-  await page.keyboard.press('Escape');
-  await page.locator('.g-layer[data-kind="cine"]').waitFor({ state: 'detached' });
+  await skipCine(env);
+  await walkToEvent(env);
+  // 急報の間の M：演出の間はメニュー・情勢を開かない（今までの演出と同じ守り）。声も止めない
+  await waitPlaying(page, 'ch1.oda_envoy.ask');
+  await sleep(600);
+  await mark(env, 'M（急報の間）');
+  await page.keyboard.press('KeyM');
+  await sleep(400);
+  const during = await page.evaluate(() => ({ menu: !!document.querySelector('.g-layer[data-kind="menu"]'), ui: window.__game.ui?.kind ?? null, state: window.__game.cine?.state ?? null, playing: window.__audio.sys.voiceFiles.playingId }));
+  await page.locator('.g-layer[data-kind="cine"]').waitFor({ state: 'detached', timeout: 1800000 });
+  await mark(env, '急報の終わり');
+  await sleep(600);
+  const afterEv = await page.evaluate(() => ({ menu: !!document.querySelector('.g-layer[data-kind="menu"]'), ui: window.__game.ui?.kind ?? null, screen: window.__game.screen }));
+  env.menuBlock = { during, after: afterEv };
   await walkAndTalk(env);
   await advanceTo(env, LINE['talk.tadakatsu.envoys'].text, 700);
   await waitPlaying(page, 'talk.tadakatsu.envoys');
@@ -674,9 +729,12 @@ async function partTab() {
   env.focusAfterOff = await page.evaluate(() => ({ vis: document.visibilityState, focus: document.hasFocus() }));
   await startRecording(env);
   await newGame(env);
-  await sleep(800);
-  await page.keyboard.press('Escape');
-  await page.locator('.g-layer[data-kind="cine"]').waitFor({ state: 'detached' });
+  await skipCine(env);
+  // 町の急報：W で北へ歩いて線を越え、最初の声（1.55 秒）の前に Esc で飛ばす（e2e/lib.mjs の passStreetReport）
+  await sleep(600);
+  await mark(env, '歩き始め（急報へ）');
+  await passStreetReport(page, { log: note });
+  await mark(env, '急報を飛ばした');
   await walkAndTalk(env);
   // 別のタブを先に開いておく（開く処理を、声の行の時刻に入れない）
   env.other = await env.ctx.newPage();
@@ -1137,6 +1195,7 @@ function analyzePart(name, log, dec, templates0, recordedUntil) {
   const templates = Object.fromEntries(Object.entries(templates0).map(([k, v]) => [k, highpass(v)]));
   const ncc = makeNcc(x);
   const a = { recSec: r3(x.length / SR), ticks: [], plays: [], unexpected: [], overlaps: [], visual: [] };
+  const fullIds = new Set(EXPECT[name]?.full ?? []);
   // ---- 合わせの音
   const tc = ncc(highpass(chirp()));
   const tp = peaks(tc, 0.5, Math.round(0.5 * SR)).sort((p, q) => q.v - p.v).slice(0, 2).sort((p, q) => p.k - q.k);
@@ -1289,7 +1348,8 @@ function analyzePart(name, log, dec, templates0, recordedUntil) {
   //      止まった時刻：stop の呼び出し・音源の ended・始めた後の最初の入力（キー・押し）・blur・hidden のうち最も早い時刻。その 0.15〜5 秒後を探す
   for (const p of measurable) {
     const { T, ws } = p._m;
-    const trig = [p.stopCallMs, p.endedMs, log.input.find((i) => i.t > p.startCallMs + 1)?.t, log.pageEv.find((e) => (e.e === 'blur' || (e.e === 'visibilitychange' && e.vis === 'hidden')) && e.t > p.startCallMs)?.t].filter((v) => Number.isFinite(v));
+    // 最後まで鳴らす台詞（部の見込みの full）は、鳴り終わり（ended）か stop から探す（途中の入力が止めない物のとき：急報の間の M）
+    const trig = (fullIds.has(p.id) ? [p.stopCallMs, p.endedMs] : [p.stopCallMs, p.endedMs, log.input.find((i) => i.t > p.startCallMs + 1)?.t, log.pageEv.find((e) => (e.e === 'blur' || (e.e === 'visibilitychange' && e.vis === 'hidden')) && e.t > p.startCallMs)?.t]).filter((v) => Number.isFinite(v));
     const ref = Math.min(...trig);
     const off = p.rec.offsetMs;
     const r0 = Math.max(0, Math.round(toRec(ref + 150, off) * SR));
@@ -1370,7 +1430,8 @@ function analyzePart(name, log, dec, templates0, recordedUntil) {
 /** 止めた理由の時刻（ページの時刻）：入力（M・押し）・知らせ（blur・visibilitychange） */
 function triggerOf(log, play, by) {
   const after = play.startCallMs;
-  if (by === 'KeyM') return log.input.find((i) => i.k === 'KeyM' && i.t > after)?.t ?? null;
+  // キー（KeyM・Escape など。押したキーの code）
+  if (/^(Key|Escape$|Enter$|Space$|Arrow)/.test(by)) return log.input.find((i) => i.k === by && i.t > after)?.t ?? null;
   if (by === 'pointer') return log.input.find((i) => i.p && i.t > after)?.t ?? null;
   if (by === 'blur') return log.pageEv.find((e) => e.e === 'blur' && e.t > after)?.t ?? null;
   if (by === 'synthetic-hidden') return log.pageEv.find((e) => e.e === 'visibilitychange' && e.vis === 'hidden' && e.t > after)?.t ?? null;
@@ -1459,7 +1520,7 @@ try {
       // 録った後の分析だけをやり直す（<部>-log.json と <部>.webm から）
       const j = JSON.parse(readFileSync(join(OUT, `${part}-log.json`), 'utf8'));
       const webm = join(OUT, `${part}.webm`);
-      runs[part] = { env: { part, errors: j.errors, marks: j.marks, loadSec: j.loadSec, voiceReq: j.voiceReq, tracks: j.tracks, webm: existsSync(webm) ? webm : null, focusAfterOff: j.focusAfterOff, switch1: j.switch?.[0] ?? null, switch2: j.switch?.[1] ?? null }, log: j, recordedUntil: j.cap?.stopT ?? null };
+      runs[part] = { env: { part, errors: j.errors, marks: j.marks, loadSec: j.loadSec, voiceReq: j.voiceReq, tracks: j.tracks, webm: existsSync(webm) ? webm : null, focusAfterOff: j.focusAfterOff, switch1: j.switch?.[0] ?? null, switch2: j.switch?.[1] ?? null, menuBlock: j.menuBlock ?? null }, log: j, recordedUntil: j.cap?.stopT ?? null };
       continue;
     }
     let run = null;
@@ -1474,7 +1535,7 @@ try {
     runs[part] = run;
     const { env, log } = run;
     run.recordedUntil = log.cap?.stopT ?? null;
-    writeFileSync(join(OUT, `${part}-log.json`), JSON.stringify({ part, loadSec: env.loadSec, tracks: env.tracks ?? null, cap: log.cap, marks: env.marks, focusAfterOff: env.focusAfterOff ?? null, switch: [env.switch1 ?? null, env.switch2 ?? null], voiceReq: env.voiceReq, errors: env.errors, ...log }));
+    writeFileSync(join(OUT, `${part}-log.json`), JSON.stringify({ part, loadSec: env.loadSec, tracks: env.tracks ?? null, cap: log.cap, marks: env.marks, focusAfterOff: env.focusAfterOff ?? null, switch: [env.switch1 ?? null, env.switch2 ?? null], menuBlock: env.menuBlock ?? null, voiceReq: env.voiceReq, errors: env.errors, ...log }));
     note(`   ${part}：読み込み ${env.loadSec.toFixed(1)} 秒・録画 ${env.webm ? `${log.cap?.chunks} かたまり ${log.cap?.bytes} バイト（${((log.cap.stopT - log.cap.startT) / 1000).toFixed(1)} 秒）` : 'なし'}・音源 ${log.src.filter((e) => e.ev === 'start').map((e) => e.id).join(' / ')}`);
   }
   // ---- 分析
@@ -1497,6 +1558,12 @@ try {
     results.parts[part] = { analysis: a, marks: run.env.marks, loadSec: run.env.loadSec, voiceReq: run.env.voiceReq, tracks: run.env.tracks ?? null, pageEv: run.log.pageEv, stats: run.log.stats, focusAfterOff: run.env.focusAfterOff ?? null, switch: [run.env.switch1 ?? null, run.env.switch2 ?? null] };
     judge(part, run, a);
     if (part === 'tab') tabChecks(run, a);
+    if (part === 'menu') {
+      // 急報の間の本物の M：メニューは開かない（演出のまま流れる）・声は止めない（4 台詞が最後まで鳴るかは上の判定）・急報の後にも開かない
+      const mb = run.env.menuBlock ?? null;
+      results.parts.menu.menuBlock = mb;
+      check('menu', '町の急報の間の本物の M：メニューは開かない・演出は流れたまま・鳴っている声（織田の使者）は止めない。急報が終わった後にもメニューは開かない', !!mb && !mb.during.menu && mb.during.ui === 'cine' && mb.during.state === 'playing' && mb.during.playing === 'ch1.oda_envoy.ask' && !mb.after.menu && mb.after.ui === null && mb.after.screen === 'explore', JSON.stringify(mb));
+    }
     if (part === 'fast') {
       // 本物のタップの間（ページに届いた pointerdown の時刻）：300 ms より短い間で続けたタップの並び
       // 間はタップを作った時刻（イベントの timeStamp）で。ページが受け取った時刻（重い処理の後）の間も書く
@@ -1509,7 +1576,8 @@ try {
       }
       const seqs = runsOf.filter((r) => r.length >= 2).map((r) => ({ made: r.slice(1).map((t, i) => r1(t.ts - r[i].ts)), got: r.slice(1).map((t, i) => r1(t.t - r[i].t)) }));
       results.parts.fast.tapGaps = seqs;
-      check('fast', '本物のタップを 300 ms より短い間で続けた（演出の「次の場面」2 回・会話 4 回。タップを作った時刻の間）', seqs.some((g) => g.made.length === 1) && seqs.some((g) => g.made.length >= 3) && seqs.every((g) => g.made.every((v) => v < 300)), seqs.map((g) => `作った間 ${g.made.join('/')} ms（ページが受け取った間 ${g.got.join('/')} ms）`).join('・'));
+      // （前の版は演出の「次の場面」2 回も数えた。急報は 1 つの場面なので、演出の中は「スキップ」のタップ 1 回にした）
+      check('fast', '本物のタップを 300 ms より短い間で続けた（城門の前の会話 4 回。タップを作った時刻の間）', seqs.some((g) => g.made.length >= 3) && seqs.every((g) => g.made.every((v) => v < 300)), seqs.map((g) => `作った間 ${g.made.join('/')} ms（ページが受け取った間 ${g.got.join('/')} ms）`).join('・'));
     }
   }
 } catch (e) {

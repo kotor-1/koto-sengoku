@@ -1,5 +1,6 @@
 // 物語の見せ方の「画面と流れ」の小さな確かめ（開発サーバー）：演出の再生器・情勢の画面・軍議の「詳しく見る」・動きを減らす・自動の一時停止。
 // 章の冒頭（ch1_open：3D の場面だけ）が自動で流れ、情勢の図解（ch1_intro）は情勢の画面から任意で見る（docs/v20-feedback-request.md【1】）。
+// Version 28 §4.3：冒頭は 1 つの短い場面になり、使者・家臣は操作の途中の町の急報（ch1_report）へ移った。intro の部は冒頭の後に W で北へ歩いて急報も見る。
 // 依頼：docs/story-rpg-request.md【1】【2】【5】・設計 docs/story-rpg-design.md §1・§3・§4。
 //
 // 確認の種類（出力の行にも書く）：
@@ -16,7 +17,7 @@
 // 使い方：自動再読み込みなしの開発サーバーを起動して
 //   (PORT=5291 setsid nohup npx vite --config proto3d/blender/tools/vite.nohmr.mjs > /tmp/vite-5291.log 2>&1 &)
 //   BASE=http://localhost:5291 node e2e/story-shell-smoke.mjs [出力先]
-import { launchBrowser, outDir } from './lib.mjs';
+import { launchBrowser, outDir, walkToStreetReport } from './lib.mjs';
 
 const OUT = outDir(process.argv[2] || 'e2e-out/story-shell');
 const BASE = process.env.BASE3D || process.env.BASE || 'http://localhost:5291';
@@ -104,7 +105,7 @@ async function cineLooks(page, tag) {
 // ================================================================ intro：通常速度の冒頭（PC）
 let introState = null;
 if (PARTS.includes('intro')) {
-  console.log('--- intro：第一章の冒頭を通常速度で（PC：マウスとキー。描画の省略）');
+  console.log('--- intro：第一章の冒頭（短い始め）と、操作の途中の町の急報を通常速度で（PC：マウスとキー。描画の省略）');
   const { ctx, page } = await open();
   await sleep(600);
   await page.click('.g-scn[data-scenario="ieyasu1570"] .g-btn[data-id="new:ieyasu1570"]');
@@ -116,9 +117,9 @@ if (PARTS.includes('intro')) {
   check('始めた直後の Esc（守りの中）では飛ばない', c?.state === 'playing', J({ state: c?.state, t: c?.t }));
   const S0 = await st(page);
   const h0 = await hero(page);
-  check('本物の入力：はじめから → 第一章の冒頭（層 cine・台本 ch1_open・3D の場面＝町の様子から。図解の地図ではない）', c?.id === 'ch1_open' && c.mode === 'stage' && c.count === 3 && (await page.evaluate(() => window.__game.screen)) === 'cinematic', J({ id: c?.id, count: c?.count, mode: c?.mode }));
-  await cineLooks(page, '冒頭');
-  await page.screenshot({ path: `${OUT}/intro-open-844x390.png` });
+  // Version 28 §4.3：冒頭は 1 つの 3D の場面（町の様子の字幕 1 行と、町の入口の主人公へ寄る 1 つのカメラの動き。4 秒前後）。
+  // 前の版の 3 つの場面（町の様子 → 使者の到着 → 家臣の報告）のうち、使者と家臣は操作の途中の町の急報（ch1_report。この部の後半）へ移った
+  check('本物の入力：はじめから → 第一章の冒頭（層 cine・台本 ch1_open・3D の場面＝町の様子の 1 つだけ。図解の地図ではない）', c?.id === 'ch1_open' && c.mode === 'stage' && c.count === 1 && (await page.evaluate(() => window.__game.screen)) === 'cinematic', J({ id: c?.id, count: c?.count, mode: c?.mode }));
   // 演出中の入力（W を押し続ける・E・Enter）は、探索の移動・会話へ漏れない
   await page.keyboard.down('KeyW');
   await sleep(1200);
@@ -129,6 +130,58 @@ if (PARTS.includes('intro')) {
   const h1 = await hero(page);
   c = await cine(page);
   check('演出中の W・E・Enter は移動・会話へ漏れない（主人公は動かない・演出のまま）', Math.hypot(h1.x - h0.x, h1.z - h0.z) < 1e-6 && c?.state === 'playing' && (await ui(page))?.kind === 'cine', J({ h0, h1 }));
+  // 見た目を測る間は Space で止める（冒頭は 4 秒前後と短い）→ K で再開
+  await page.keyboard.press('Space');
+  await sleep(150);
+  await cineLooks(page, '冒頭');
+  await page.screenshot({ path: `${OUT}/intro-open-844x390.png` });
+  await page.keyboard.press('KeyK');
+  await sleep(150);
+  // ここから最後まで触らずに見る：時計は通常速度（壁の時計と同じ速さ）
+  let w0 = Date.now();
+  let tStart = (await cine(page))?.t ?? 0;
+  let beats = [];
+  let last = -1;
+  let cap = null;
+  for (;;) {
+    const x = await cine(page);
+    if (!x) break;
+    if (x.beat !== last) {
+      last = x.beat;
+      beats.push({ beat: x.beat, mode: x.mode, t: x.t, wall: (Date.now() - w0) / 1000 });
+      if (x.mode === 'stage') await page.screenshot({ path: `${OUT}/intro-stage-${x.beat}.png` });
+    }
+    cap = x;
+    await sleep(200);
+  }
+  let wall = (Date.now() - w0) / 1000;
+  let remain = (cap?.t ?? tStart) - tStart;
+  note(`場面：${beats.map((b) => `${b.beat}(${b.mode}) t=${b.t.toFixed(1)} 壁 ${b.wall.toFixed(1)}s`).join(' / ')}`);
+  check('通常速度：触らずに見た区間の演出の時間と壁の時計がほぼ同じ（描画の省略）', Math.abs(wall - remain) < Math.max(1.5, remain * 0.08), `演出 ${remain.toFixed(1)} 秒・壁 ${wall.toFixed(1)} 秒`);
+  check('冒頭の最後に出した情報の札：いつ・どこ・危機（両家の使者が同じ日に来た）。場面は 3D', ['when', 'where', 'crisis'].every((k) => (cap?.info ?? []).includes(k)) && beats.every((b) => b.mode === 'stage'), J({ info: cap?.info, modes: beats.map((b) => b.mode) }));
+  await page.waitForFunction(() => window.__game.screen === 'explore', null, POLL);
+  const S1 = await st(page);
+  const h2 = await hero(page);
+  check('終わったら城下（探索）。状態は始める前と同じ（遊んだ時間を除く）', J(norm(S1)) === J(norm(S0)), '');
+  check('終わったら主人公は始める前の位置', Math.hypot(h2.x - h0.x, h2.z - h0.z) < 1e-6, J({ h0, h2 }));
+  const w = await writes(page);
+  check('演出を見ても保存は書かない（設定も書かない）・見張りの保存はそのまま', Object.keys(w).length === 0 && (await sentinelsKept(page)), J(w));
+  // 操作が戻っている：W を押し直すと歩く
+  await sleep(300);
+  await page.keyboard.down('KeyW');
+  await sleep(1200);
+  await page.keyboard.up('KeyW');
+  const h3 = await hero(page);
+  check('本物の入力：終わった後は W で歩ける（操作が戻る）', Math.hypot(h3.x - h2.x, h3.z - h2.z) > 0.5, `${Math.hypot(h3.x - h2.x, h3.z - h2.z).toFixed(2)} m`);
+  introState = norm(S1);
+
+  // ---- 町の急報（ch1_report。15 秒前後の 1 つの 3D の場面）：通りを北へ W で歩いて線（z≈6）を越えると 1 回だけ始まる。
+  //      再生器の操作（一時停止・再開・Space・K・←・→）は、長さのあるこの演出で見る（前の版は冒頭で見ていた）
+  await sleep(300);
+  await walkToStreetReport(page);
+  await waitCine(page);
+  c = await cine(page);
+  check('本物の入力：W で通りを北へ歩いて線を越えると、町の急報（層 cine・台本 ch1_report・1 つの 3D の場面）', c?.id === 'ch1_report' && c.mode === 'stage' && c.count === 1, J({ id: c?.id, count: c?.count, mode: c?.mode, t: c?.t }));
   // 一時停止（ボタン）→ 2 秒止まる → 再開
   await sleep(1500);
   await clickBtn(page, 'pause');
@@ -148,56 +201,39 @@ if (PARTS.includes('intro')) {
   await sleep(150);
   const k2 = await cine(page);
   check('キー：Space で一時停止・K で再開', k1.paused === true && k2.paused === false, J({ k1: k1.paused, k2: k2.paused }));
-  // 次の場面（ボタン）・前の場面（←）・次の場面（→）
-  const b0 = (await cine(page)).beat;
-  await clickBtn(page, 'next');
-  const n1 = await cine(page);
-  check('本物の入力：「次の場面」で次の場面の頭へ', n1.beat === b0 + 1, J({ from: b0, to: n1.beat, t: n1.t }));
+  // ←：急報は 1 つの場面なので、今の場面の頭（始め）へ戻る（前の版の「← で前の場面へ」。前の場面へ移るのは情勢の図解の見直し（situation の部）で見る）
+  const tb = (await cine(page)).t;
   await page.keyboard.press('ArrowLeft');
   await sleep(120);
   const n2 = await cine(page);
-  check('キー：← で前の場面へ', n2.beat === b0, J({ beat: n2.beat, t: n2.t }));
-  await page.keyboard.press('ArrowRight');
-  await sleep(120);
-  const n3 = await cine(page);
-  check('キー：→ で次の場面へ', n3.beat === b0 + 1, J({ beat: n3.beat }));
-  // ここから最後まで触らずに見る：時計は通常速度（壁の時計と同じ速さ）
-  const w0 = Date.now();
-  const tStart = n3.t;
-  const beats = [];
-  let last = -1;
-  let cap = null;
+  check('キー：← で今の場面の頭へ（1 つの場面なので始めから）', tb > 1 && n2.beat === 0 && n2.t < 0.6, J({ before: tb, beat: n2.beat, t: n2.t }));
+  // 家康の返事（最後の台詞）が出るまで触らずに見る：時計は通常速度
+  w0 = Date.now();
+  tStart = n2.t;
+  cap = null;
   for (;;) {
     const x = await cine(page);
     if (!x) break;
-    if (x.beat !== last) {
-      last = x.beat;
-      beats.push({ beat: x.beat, mode: x.mode, t: x.t, wall: (Date.now() - w0) / 1000 });
-      if (x.mode === 'stage') await page.screenshot({ path: `${OUT}/intro-stage-${x.beat}.png` });
-    }
     cap = x;
+    if (x.caption?.speaker === '家康') break;
     await sleep(200);
   }
-  const wall = (Date.now() - w0) / 1000;
-  const remain = (cap?.t ?? tStart) - tStart;
-  note(`場面：${beats.map((b) => `${b.beat}(${b.mode}) t=${b.t.toFixed(1)} 壁 ${b.wall.toFixed(1)}s`).join(' / ')}`);
-  check('通常速度：触らずに見た区間の演出の時間と壁の時計がほぼ同じ（描画の省略）', Math.abs(wall - remain) < Math.max(1.5, remain * 0.08), `演出 ${remain.toFixed(1)} 秒・壁 ${wall.toFixed(1)} 秒`);
-  check('最後に出した情報の札：いつ・どこ・危機（急報）・判断（軍議）。場面はすべて 3D', ['when', 'where', 'crisis', 'decide'].every((k) => (cap?.info ?? []).includes(k)) && beats.every((b) => b.mode === 'stage'), J({ info: cap?.info, modes: beats.map((b) => b.mode) }));
-  await page.waitForFunction(() => window.__game.screen === 'explore', null, POLL);
-  const S1 = await st(page);
-  const h2 = await hero(page);
-  check('終わったら城下（探索）。状態は始める前と同じ（遊んだ時間を除く）', J(norm(S1)) === J(norm(S0)), '');
-  check('終わったら主人公は始める前の位置', Math.hypot(h2.x - h0.x, h2.z - h0.z) < 1e-6, J({ h0, h2 }));
-  const w = await writes(page);
-  check('演出を見ても保存は書かない（設定も書かない）・見張りの保存はそのまま', Object.keys(w).length === 0 && (await sentinelsKept(page)), J(w));
-  // 操作が戻っている：W を押し直すと歩く
+  wall = (Date.now() - w0) / 1000;
+  remain = (cap?.t ?? tStart) - tStart;
+  check('通常速度：急報を触らずに見た区間の演出の時間と壁の時計がほぼ同じ（描画の省略）', Math.abs(wall - remain) < Math.max(1.5, remain * 0.08) && remain > 8, `演出 ${remain.toFixed(1)} 秒・壁 ${wall.toFixed(1)} 秒`);
+  check('急報の情報の札：危機（両家の使者の急報）・判断（軍議を開く）。最後の台詞は家康', ['crisis', 'decide'].every((k) => (cap?.info ?? []).includes(k)) && cap?.caption?.speaker === '家康', J({ info: cap?.info, caption: cap?.caption }));
+  // →：1 つの場面なので終わりへ（前の版の「→ で次の場面へ」。「次の場面」のボタンは situation の部の情勢の図解で見る）
+  const SE = await st(page);
+  await page.keyboard.press('ArrowRight');
+  await page.waitForFunction(() => window.__game.screen === 'explore' && !window.__game.ui, null, POLL);
+  check('キー：→ で急報の終わりへ（1 つの場面なので層が閉じて城下）。状態は同じ・保存は書かない', !(await cine(page)) && J(norm(await st(page))) === J(norm(SE)) && J(norm(SE)) === J(introState) && Object.keys(await writes(page)).length === 0 && (await sentinelsKept(page)), J(await writes(page)));
   await sleep(300);
-  await page.keyboard.down('KeyW');
+  const h4 = await hero(page);
+  await page.keyboard.down('KeyS');
   await sleep(1200);
-  await page.keyboard.up('KeyW');
-  const h3 = await hero(page);
-  check('本物の入力：終わった後は W で歩ける（操作が戻る）', Math.hypot(h3.x - h2.x, h3.z - h2.z) > 0.5, `${Math.hypot(h3.x - h2.x, h3.z - h2.z).toFixed(2)} m`);
-  introState = norm(S1);
+  await page.keyboard.up('KeyS');
+  const h5 = await hero(page);
+  check('本物の入力：急報の後は S で歩ける（操作が戻る）', Math.hypot(h5.x - h4.x, h5.z - h4.z) > 0.5, `${Math.hypot(h5.x - h4.x, h5.z - h4.z).toFixed(2)} m`);
   await ctx.close();
 }
 
@@ -269,6 +305,21 @@ if (PARTS.includes('situation')) {
   await waitCine(page);
   const r1 = await cine(page);
   check('本物の入力：「図解を見る」で情勢の図解（地図の台本）を最初から（状態は読むだけ）', r1.id === 'ch1_intro' && r1.mode === 'map' && r1.t < 1.5, J({ id: r1.id, t: r1.t, mode: r1.mode }));
+  // 次の場面（ボタン）・前の場面（←）・次の場面（→）：Version 28 で第一章の冒頭・町の急報が 1 つの場面になったので、いくつも場面のあるこの演出で見る（前の版は intro の部の冒頭で見ていた）
+  await sleep(600);
+  const b0 = (await cine(page)).beat;
+  await page.locator('.g-layer[data-kind="cine"] .g-cine-btn[data-id="next"]').tap();
+  await sleep(150);
+  const n1 = await cine(page);
+  check('本物の入力：「次の場面」で次の場面の頭へ', r1.count > 1 && n1.beat === b0 + 1, J({ from: b0, to: n1.beat, t: n1.t, count: r1.count }));
+  await page.keyboard.press('ArrowLeft');
+  await sleep(120);
+  const n2 = await cine(page);
+  check('キー：← で前の場面へ', n2.beat === b0, J({ beat: n2.beat, t: n2.t }));
+  await page.keyboard.press('ArrowRight');
+  await sleep(120);
+  const n3 = await cine(page);
+  check('キー：→ で次の場面へ', n3.beat === b0 + 1, J({ beat: n3.beat }));
   await sleep(1500);
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => window.__game.ui?.kind === 'situation', null, POLL);

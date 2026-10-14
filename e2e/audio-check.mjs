@@ -3,14 +3,16 @@
 // 部（PARTS。カンマ区切り。既定はすべて）：
 //   songs  BGM 3 種と効果音の見本を、ページの中の OfflineAudioContext で、ゲームと同じ楽器・楽譜のコードで描いて WAV にする
 //          （実時間ではない。音の中身（大きさ・割れ・段の変化）を聞いて・測るための物）。
-//   flow   タイトルの「はじめから」（本物のクリック）→ 章の冒頭（通常速度）→ 城下を歩く（本物の W）→ メニューでミュート（本物のクリック）→
+//   flow   タイトルの「はじめから」（本物のクリック）→ 章の冒頭（通常速度）→ 本物の W で北へ歩いて町の急報（Version 28：ch1_report。通常速度で最後まで）→
+//          城下を歩く（本物の W）→ メニューでミュート（本物のクリック）→
 //          忠勝と話す（開発用の口 __game.talk・行送りは本物の Enter・選択は本物のクリック）→ 軍議 → 支度（直接状態変更：約束に答えた状態）→
 //          城門へ歩く（本物の W）→ 出陣（本物のクリック）→ 出陣の演出（通常速度）→ 合戦（本物のクリック・×2・能力 F・全軍撤退）→
 //          結果まで早送り（__battle.fastForward）→ 続ける（本物のクリック）→ 帰還の演出（通常速度）→ 戦後の城下。
 //          描画の省略（?render=manual）：3D を描かない（このコンテナの描画は 1 コマ 1〜8 秒で、そのあいだ音の予約のタイマーも止まるため）。
 //          ページの中で、マスターの後の AnalyserNode の音の大きさを 100 ms ごとに記録し、MediaRecorder で音のファイル（webm/opus）に取る。
 //          声：このコンテナの Chromium には日本語の声が無いので、偽の speechSynthesis（ページに差し込む）で、呼び出しの文・読み・止め方を記録する。
-//   interrupt  アプリの切り替え（ページの中で visibilitychange を起こす。直接）で止まり・戻り、演出のスキップ（本物の Esc）で声が止まり、
+//   interrupt  町の急報（Version 28：冒頭の後に本物の W で北へ歩いて始める）の声の途中で、
+//          アプリの切り替え（ページの中で visibilitychange を起こす。直接）で止まり・戻り、演出のスキップ（本物の Esc）で声が止まり、
 //          会話の途中にメニューからタイトルへ（本物の M・クリック）で声と曲が止まること（描画の省略・偽の speechSynthesis）。
 //   prod   本番ビルド（DIST。既定 dist-proto3d）を CSP の下で開き、「はじめから」の後に音が出ること・CSP の違反が無いこと（既定の PARTS には入れない）。
 //   video  音付きの実際のプレイ映像（最初の約 70 秒。描画あり ?q=low）：CDP の画面の流し（コマと時刻）と、Web Audio の出力の MediaRecorder を
@@ -20,7 +22,7 @@
 //   BASE3D=http://localhost:8613 node e2e/audio-check.mjs <出力先>
 import { spawn } from 'node:child_process';
 import { writeFileSync, statSync } from 'node:fs';
-import { launchBrowser, outDir } from './lib.mjs';
+import { launchBrowser, outDir, walkToStreetReport } from './lib.mjs';
 
 const OUT = outDir(process.argv[2] || 'e2e-out/audio');
 const BASE = process.env.BASE3D || process.env.BASE || 'http://localhost:8613';
@@ -392,6 +394,15 @@ async function partFlow() {
   note(`   音の取り込み（MediaRecorder・マスターの後）開始：${recOk}`);
   await waitCineDone(page, '章の冒頭');
   const tExplore = await markAt(page, '城下（操作の開始）');
+  // Version 28 §4.3：冒頭は 1 つの短い場面。使者の急報・家臣とのやり取り（声のある台詞）は、操作の途中の町の急報（ch1_report：通りを北へ線を越えた所で 1 回）。
+  // 本物の W で北へ歩いて始め、最後まで流す（偽の speechSynthesis が読む）。その後の城下で足音を見る
+  await sleep(1000);
+  const tWalk = await markAt(page, '町の急報へ歩く');
+  await walkToStreetReport(page);
+  const tRep = await markAt(page, '町の急報');
+  await waitCineDone(page, '町の急報');
+  const tRepEnd = await markAt(page, '城下（急報の後）');
+  await sleep(1000);
   // 本物の W で 6 秒歩く → 3 秒止まる
   const st0 = (await probe(page)).sfx.footsteps;
   await page.keyboard.down('KeyW');
@@ -518,7 +529,9 @@ async function partFlow() {
   const S = (a, b) => stats(m, a, b);
   const sections = [
     ['冒頭', tStart + 1500, tExplore],
-    ['城下を歩く', tExplore + 1000, tStop],
+    ['城下（急報の前）', tExplore + 300, tWalk],
+    ['町の急報', tRep + 1500, tRepEnd],
+    ['城下を歩く', tRepEnd + 1000, tStop],
     ['ミュート中', tMute + 400, tUnmute - 100],
     ['ミュートを外した後', tUnmute + 600, tUnmute + 1400],
     ['軍議', tCouncil + 800, tMuster - 200],
@@ -541,7 +554,8 @@ async function partFlow() {
     const st = S(sec[1], sec[2]);
     check(`flow 「${name}」：曲 ${song} が鳴り、音が出ている（RMS の平均 > 0.005）`, st.music.includes(song) && st.mean > 0.005, JSON.stringify(st));
   }
-  check('flow 冒頭：急報（使者）で危機の曲へ', m.some((r) => r.cine?.includes('envoys_arrive') && r.music === 'crisis'), '');
+  // Version 27 は冒頭の使者の到着（envoys_arrive）で危機の曲へ替わった。Version 28 では使者の急報は町の急報（street_report）に移ったので、そこで見る
+  check('flow 町の急報（使者）で危機の曲へ', m.some((r) => r.cine?.includes('street_report') && r.music === 'crisis'), JSON.stringify(m.filter((r) => r.cine?.includes('street_report')).map((r) => r.music).filter((v, i, a) => a.indexOf(v) === i)));
   check('flow 出陣の演出：合戦の曲', m.some((r) => r.cine?.startsWith('departure') && r.music === 'battle'), '');
   // 重ならない：2 曲が鳴っている（フェードの間）のは 1 回あたり 1.3 秒まで
   let over = 0;
@@ -578,7 +592,7 @@ async function partFlow() {
   note(`   声（偽の speechSynthesis）：読んだ ${spoken.length}・止めた ${sp.filter((e) => e.ev === 'cancel').length}・重なり ${sp.filter((e) => e.ev === 'overlap').length}`);
   for (const e of spoken) note(`     読み「${e.text}」（高さ ${e.pitch}・速さ ${e.rate}・字幕「${e.cap}」）`);
   check('flow 声：同時に 2 人が話さない（重なり 0）', sp.every((e) => e.ev !== 'overlap'));
-  check('flow 声：冒頭の使者・忠勝・家康の台詞を読んだ（読みはかな）', ['とくがわどのにも', 'あるじは', 'との、ぐんぎ', 'みなを集めよ'].every((k) => spoken.some((e) => e.text.includes(k))));
+  check('flow 声：町の急報の使者・忠勝・家康の台詞を読んだ（読みはかな）', ['とくがわどのにも', 'あるじは', 'との、ぐんぎ', 'みなを集めよ'].every((k) => spoken.some((e) => e.text.includes(k))));
   check('flow 声：出陣の台詞・全軍撤退の掛け声を読んだ', spoken.some((e) => e.text.includes('しゅつじん')) && spoken.some((e) => e.text.startsWith('ひけ')));
   check('flow 声：読んだ時、同じ台詞の字幕が出ていた', spoken.every((e) => !!e.cap));
   const duckRows = m.filter((r) => r.ducked);
@@ -594,6 +608,10 @@ async function partInterrupt() {
   await page.locator('button[data-id="new:ieyasu1570"]').waitFor({ state: 'visible' });
   await sleep(500);
   await page.locator('button[data-id="new:ieyasu1570"]').click();
+  // Version 28 §4.3：使者の急報（声のある台詞）は冒頭ではなく、操作の途中の町の急報（ch1_report）。冒頭（短い場面）の後、本物の W で北へ歩いて始める
+  await page.locator('.g-layer[data-kind="cine"]').waitFor({ state: 'attached' });
+  await page.locator('.g-layer[data-kind="cine"]').waitFor({ state: 'detached' });
+  await walkToStreetReport(page);
   await page.waitForFunction(() => (window.__speechLog ?? []).some((e) => e.ev === 'speak' && e.text.includes('とくがわどのにも')), null, POLL);
   await sleep(300);
   const setVis = (v) => page.evaluate((v) => {

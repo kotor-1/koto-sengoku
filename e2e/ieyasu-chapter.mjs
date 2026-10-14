@@ -14,7 +14,7 @@
 // 使い方：自動再読み込みなしの開発サーバーを起動して
 //   (PORT=8153 nohup npx vite --config proto3d/blender/tools/vite.nohmr.mjs > /tmp/vite-8153.log 2>&1 &)
 //   BASE3D=http://localhost:8153 node e2e/ieyasu-chapter.mjs [出力先]   （ONLY=A などで絞る）
-import { launchBrowser, outDir, skipCinematic } from './lib.mjs';
+import { endStreetReport, launchBrowser, outDir, passStreetReport, skipCinematic } from './lib.mjs';
 
 const OUT = outDir(process.argv[2] || 'e2e-out/ieyasu/chapter');
 const BASE = process.env.BASE3D || 'http://localhost:8153';
@@ -254,6 +254,14 @@ async function runA() {
   check('はじめから（歴史分岐）→ 城下（家康編・目的は忠勝）', s.scenario === 'ieyasu1570' && s.phase === 'explore' && (await page.textContent('.g-hud')).includes('忠勝'), await page.textContent('.g-hud'));
   await sleep(1500);
   await shot(page, 'A02-explore');
+  // Version 28 §4.3：使者 2 人は、通りを北へ線（z≈6）を越えた所で 1 回だけ始まる町の急報の後に町へ来る（それまでは居ない・話せない）
+  const cast0 = await castOf(page);
+  check('城下の人物（町の急報の前）：本多忠勝・高札。使者 2 人はまだ居ない', ['tadakatsu', 'notice'].every((id) => cast0.some((c) => c.id === id)) && !cast0.some((c) => c.id === 'oda_envoy' || c.id === 'asai_envoy'), cast0.map((c) => c.id).join(','));
+  // タッチのスティックで通りを北へ → 線を越えると町の急報 →「スキップ」をタップ（本物の入力。急報そのものの確かめは e2e/v28-envoy-event.mjs）
+  const p0 = await pose(page);
+  const pe = await walkTouch(page, touch.cdp, p0.x, 2.0, (q) => q.ui === 'cine');
+  check('タッチのスティックで通りを北へ進むと、町の急報（ch1_report）が始まる', pe.ui === 'cine' && (await page.evaluate(() => window.__game.cine?.id)) === 'ch1_report', JSON.stringify(pe));
+  await endStreetReport(page, { tap: true });
   const cast = await castOf(page);
   check('城下の人物：本多忠勝・織田家の使者・浅井家の使者・高札', ['tadakatsu', 'oda_envoy', 'asai_envoy', 'notice'].every((id) => cast.some((c) => c.id === id)), cast.map((c) => c.id).join(','));
 
@@ -464,6 +472,8 @@ async function runB() {
   }
   await skipCinematic(page, { what: '第一章の冒頭' });
   await waitScreen(page, 'explore');
+  // Version 28 §4.3：通りを北へ線を越えると町の急報が 1 回始まる。本物の W で越えて Esc で飛ばす
+  await passStreetReport(page);
   let u = await talkTo(page, 'tadakatsu', kb);
   await pick('open_council');
   await waitScreen(page, 'council');
@@ -530,6 +540,8 @@ async function runC() {
   }
   await skipCinematic(page, { what: '第一章の冒頭' });
   await waitScreen(page, 'explore');
+  // Version 28 §4.3：通りを北へ線を越えると町の急報が 1 回始まる。本物の W で越えて Esc で飛ばす
+  await passStreetReport(page);
   await talkTo(page, 'tadakatsu', mouse);
   await pick('open_council');
   await waitScreen(page, 'council');

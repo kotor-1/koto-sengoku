@@ -14,6 +14,7 @@
  *                              ch2 … 第一章の結末の保存（tests/fixtures/ieyasu-ch1-v3/oda_defeat_broken_heavy：家康・忠勝が負傷）→ 第二章 → 忠勝 → 軍議、
  *                              fictional … 架空の章（主人公 hero は宗真：顔を付けない）
  *     WALK=1280x720            この大きさだけ、最初に町の入口から忠勝の前まで本物の入力（W キー）で歩いて話し、「まだ」を選ぶ
+ *                              （Version 28：途中で線を越えると町の急報が始まるので Esc で飛ばす。ch1 はどの大きさも、相手の前へ移す前に W で歩いて急報を飛ばす）
  *                              （その後の使者・忠勝の前へは開発用の teleport。ほかの大きさは最初から teleport）
  *
  * 出力：<出力先>/shots/<部>-<見せ方>-<大きさ>-<場面>.png、<出力先>/report.json（行ごとの枠・名前・台詞・顔・選択肢の四角、確かめの一覧、DOM の写し）。
@@ -33,7 +34,7 @@
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { boxesOverlap, launchBrowser, skipCinematic } from './lib.mjs';
+import { boxesOverlap, launchBrowser, passStreetReport, skipCinematic } from './lib.mjs';
 
 const BASE = process.env.BASE || 'http://localhost:8681';
 const OUT = resolve(process.argv[2] || 'e2e-out/dialog-face');
@@ -246,6 +247,12 @@ async function run(part, size, mode) {
     }
     await page.waitForFunction(() => window.__game.screen === 'explore' && !window.__game.ui, null, POLL);
     await sleep(600);
+    if (part === 'ch1') {
+        // Version 28 §4.3：使者は町の急報（通りを北へ線を越えた所で 1 回）の後に町へ来る。相手の前へ teleport・歩く前に、本物の W で北へ
+        // 歩いて線を越え、急報を飛ばす（Esc／タッチの端末は「スキップ」をタップ）。WALK の大きさは、その後も W のまま忠勝の前まで歩く
+        await passStreetReport(page, { tap: touch, log: (t) => step('real', t) });
+        await sleep(400);
+    }
     const cast = await page.evaluate(() => window.__game.cast);
 
     /** 相手の前へ（teleport か、本物の入力で歩く）→「話す」（E／タップ） */

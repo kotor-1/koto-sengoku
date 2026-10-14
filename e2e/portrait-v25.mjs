@@ -7,7 +7,7 @@
  *                    幅x高さ@端末の画素の比。高さ 430 以下・幅 480 以下はタッチ（hasTouch・isMobile）。それ以外はマウスとキー
  *     MODES=default,v24,old   default … 何も付けない（人物画 4（話す人）・新しい顔・軍議の背景（Version 26 からどの画面でも。表示の倍率 1.25 まで））、
  *                             v24 … ?art=v24（Version 24 の見た目：第 1 版の顔だけ・人物画も背景も無し）、old … ?art=old（Version 21 の見た目）
- *     PARTS=ch1,ch2   ch1 … タイトル → はじめから → 織田の使者（使者の行・家康の行）→ 城門の忠勝（地の文・忠勝・家康・選択肢）→ 軍議（地の文・忠勝・
+ *     PARTS=ch1,ch2   ch1 … タイトル → はじめから →（冒頭のスキップ → 本物の W で北へ歩いて町の急報を Esc／タップで飛ばす：Version 28）→ 織田の使者（使者の行・家康の行）→ 城門の忠勝（地の文・忠勝・家康・選択肢）→ 軍議（地の文・忠勝・
  *                           家康・酒井・石川・方針 A/B/C。PC は ↓ キーで B・C を選んだ所も撮る）→ A → 確かめ（それで決める／考え直す）→ 考え直す →
  *                           改めて → A → 確かめ → それで決める
  *                     ch2 … 第一章の結末の保存（tests/fixtures/ieyasu-ch1-v3/home_victory_kept：方針 C＝自領の防衛）を localStorage に入れる
@@ -35,7 +35,7 @@
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { boxesOverlap, launchBrowser, skipCinematic } from './lib.mjs';
+import { boxesOverlap, launchBrowser, passStreetReport, skipCinematic } from './lib.mjs';
 
 const BASE = process.env.BASE || 'http://127.0.0.1:8734';
 const OUT = resolve(process.argv[2] || 'e2e-out/portrait-v25');
@@ -316,6 +316,8 @@ async function run(part, size, mode) {
         await press(page.locator('.g-btn[data-id="new:ieyasu1570"]'));
         step('real', 'はじめから（歴史分岐）');
         await skipCinematic(page, { tap: touch, log: (t) => step('real', t) });
+        // Version 28 §4.3：使者は町の急報（通りを北へ線を越えた所で 1 回）の後に町へ来る。本物の W で北へ歩いて越え、Esc／「スキップ」のタップで飛ばす
+        await passStreetReport(page, { tap: touch, log: (t) => step('real', t) });
     }
     await page.waitForFunction(() => window.__game.screen === 'explore' && !window.__game.ui, null, POLL);
     await sleep(600);

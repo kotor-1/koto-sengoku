@@ -26,7 +26,7 @@
 // 素材の一覧が空のとき（今）は「素材の一覧が空」と書き、素材の確かめは飛ばして、ほかの確かめはそのまま行う。
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
-import { councilBgExpect, councilBgMatches, COUNCIL_BG_MAX_SCALE, launchBrowser, outDir, serveDist, skipCinematic } from './lib.mjs';
+import { councilBgExpect, councilBgMatches, COUNCIL_BG_MAX_SCALE, launchBrowser, outDir, passStreetReport, serveDist, skipCinematic } from './lib.mjs';
 
 const OUT = outDir(process.argv[2] || 'e2e-out/art-prod');
 const DIST = resolve(process.env.DIST || 'dist-proto3d');
@@ -240,6 +240,8 @@ async function run(kind) {
     await pressBtn('new:ieyasu1570');
     await skipCinematic(page, { what: '第一章の冒頭' });
     await page.locator('.g-hud').waitFor({ state: 'visible' });
+    // Version 28 §4.3：通りを北へ線を越えると町の急報が 1 回始まる。本物の W で越えて Esc で飛ばす（急報の無い前の版の dist では、忠勝の「話す」で止まる）
+    await passStreetReport(page, { optional: true, log: (t) => console.log(`   ${kind}: ${t}`) });
     const talkShown = () => page.evaluate(() => { const b = document.querySelector('.g-talk'); return !!b && !b.hidden && b.dataset.target === 'tadakatsu'; });
     const walked = await holdUntil(['Shift', 'KeyW'], talkShown, 900000);
     check(`${kind}: W と Shift で歩くと本多忠勝の「話す」が出る`, walked);

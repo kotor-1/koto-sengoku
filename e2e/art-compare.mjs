@@ -40,7 +40,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { boxesOverlap, councilBgExpect, councilBgMatches, COUNCIL_BG_MAX_SCALE, launchBrowser, skipCinematic } from './lib.mjs';
+import { boxesOverlap, councilBgExpect, councilBgMatches, COUNCIL_BG_MAX_SCALE, endStreetReport, launchBrowser, passStreetReport, skipCinematic } from './lib.mjs';
 
 const BASE = process.env.BASE || 'http://localhost:8633';
 const OUT = resolve(process.argv[2] || 'e2e-out/art-compare');
@@ -324,22 +324,37 @@ async function runStory(mode, W, H, q) {
     await skipCinematic(page, { tap: touch, what: 'ch1 opening', log: (t) => step('real', t) });
     await page.waitForFunction(() => window.__game.screen === 'explore' && !window.__game.ui, null, POLL);
     await sleep(600);
+    // Version 28 §4.3：通りを北へ線（z≈6）を越えると町の急報が 1 回始まる（V22 などの前の版には無い）。忠勝の前へ teleport すると線の北なので、
+    // その場で急報が始まってしまう。先に本物の入力で越えて飛ばす（Esc／タッチの端末は「スキップ」をタップ。急報の後の城下は前の版と同じ並び）
+    const hasEvent = await page.evaluate(() => window.__game?.townEvent === 'ch1_report');
+    if (hasEvent && !WALK) {
+        await passStreetReport(page, { tap: touch, log: (t) => step('real', t) });
+        await sleep(400);
+    }
     const tk = (await page.evaluate(() => window.__game.cast)).find((c) => c.id === 'tadakatsu');
     if (WALK) {
-        // 忠勝は町の入口から真っすぐ北（見回しは真後ろ＝ yaw 0）。W／左のスティックを上へ倒したまま「話す」が出るまで
-        if (touch) {
-            const cdp = await ctx.newCDPSession(page);
-            const O = [150, H - 110];
-            const t = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y]) => ({ x, y, id: 1 })) });
-            await t('touchStart', [O]);
-            await t('touchMove', [[O[0], O[1] - 60]]);
-            await page.waitForFunction(() => window.__game.prompt === 'tadakatsu', null, POLL);
-            await t('touchEnd', []);
-        } else {
-            await page.keyboard.down('KeyW');
-            await page.waitForFunction(() => window.__game.prompt === 'tadakatsu', null, POLL);
-            await page.keyboard.up('KeyW');
+        // 忠勝は町の入口から真っすぐ北（見回しは真後ろ＝ yaw 0）。W／左のスティックを上へ倒したまま「話す」が出るまで（途中の町の急報は飛ばす）
+        const north = async (until) => {
+            if (touch) {
+                const cdp = await ctx.newCDPSession(page);
+                const O = [150, H - 110];
+                const t = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y]) => ({ x, y, id: 1 })) });
+                await t('touchStart', [O]);
+                await t('touchMove', [[O[0], O[1] - 60]]);
+                await page.waitForFunction(until, null, POLL);
+                await t('touchEnd', []);
+            } else {
+                await page.keyboard.down('KeyW');
+                await page.waitForFunction(until, null, POLL);
+                await page.keyboard.up('KeyW');
+            }
+        };
+        if (hasEvent) {
+            await north(() => !!document.querySelector('.g-layer[data-kind="cine"]'));
+            await endStreetReport(page, { tap: touch });
+            step('real', `crossed the street line (${touch ? 'touch stick' : 'W key'}): skipped the street report ch1_report (${touch ? 'tap スキップ' : 'Esc'})`);
         }
+        await north(() => window.__game.prompt === 'tadakatsu');
         step('real', `walked north to Tadakatsu (${touch ? 'touch stick, CDP touch events' : 'W key'}) — final pose varies run to run`);
     } else {
         await page.evaluate(([x, z]) => window.__game.teleport(x, z, Math.PI), [tk.x, tk.z + 1.6]);

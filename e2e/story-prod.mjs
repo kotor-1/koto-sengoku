@@ -9,7 +9,8 @@
 // 使い方：DIST=<本番ビルドの dist-proto3d> node e2e/story-prod.mjs [出力先]   （PORT=8133 VIEW=844x390 で変えられる）
 // この中で、次のヘッダー付きの簡易サーバーを立てる（e2e/ieyasu-prod.mjs と同じ作り）：
 //   content-security-policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'
-// 経路：タイトル（歴史分岐のはじめから）→ 第一章の冒頭（3D の場面だけ）をスキップせずに最後まで → J で情勢を開いて閉じる
+// 経路：タイトル（歴史分岐のはじめから）→ 第一章の冒頭（3D の場面だけ）をスキップせずに最後まで
+//       → 本物の W で通りを北へ歩いて町の急報（Version 28：ch1_report）をスキップせずに最後まで → 使者・忠勝が話せる位置に着くまで待つ → J で情勢を開いて閉じる
 //       → 本多忠勝と話す → 軍議で C（自領の防衛）→ 支度で忠勝の約束を引き受ける → 物見櫓まで歩いて物見を 1 回（印に向いて「調べる」→「終える」）
 //       → J で情勢（物見の記録が載る）→ 城門まで歩いて「出陣する」→ 出陣の演出を最後まで → 合戦（×2・すぐに全軍撤退）→ 結果の「続ける」
 //       → 帰還の演出を最後まで → 戦後の城下。CSP の違反・ページの誤り・読めなかったファイル・data: の URL が無いこと。
@@ -23,7 +24,7 @@
 import { createServer } from 'node:http';
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
-import { keysToward as keysFor, launchBrowser, measureYaw, outDir } from './lib.mjs';
+import { keysToward as keysFor, launchBrowser, measureYaw, outDir, passStreetReport } from './lib.mjs';
 
 const OUT = outDir(process.argv[2] || 'e2e-out/story-prod');
 const DIST = resolve(process.env.DIST || 'dist-proto3d');
@@ -248,17 +249,30 @@ try {
   const intro = await playThrough('第一章の冒頭');
   await page.waitForFunction(() => { const h = document.querySelector('.g-hud'); return !!h && !h.hidden; }, null, W);
   const toControl = (Date.now() - tNew) / 1000;
-  let lg = await stopLog();
-  const si = cineSummary(lg.log, intro.id);
-  note(`冒頭の字幕（順）：${si.caps.map((c) => `「${c}」`).join(' → ')}`);
-  note(`「はじめから」のクリックから操作の開始（HUD）まで：${toControl.toFixed(1)} 秒（本番ビルド・描画あり・ソフトウェア描画。3D の場面の始めの待ちのコマ ${si.waits}）`);
-  check(`第一章の冒頭（${intro.id}）をスキップせずに最後まで：3D の場面だけ（data-mode stage。地図の図解ではない）・字幕 ${si.caps.length} 件・3D の場面の始めの待ちのコマ ${si.waits}・実時間 ${si.wall.toFixed(0)} 秒`,
-    intro.id === 'ch1_open' && J(si.modes) === '["stage"]' && si.caps.length >= 5 && si.caps[0] === '元亀元年、徳川家康の城下に、織田と浅井の使者が同じ日に来た。' && si.caps.some((c) => c.includes('城門の前')) && si.wall >= 15,
-    J({ modes: si.modes, beats: si.beats, first: si.caps[0], err: lg.err }));
-  result.intro = { ...intro, ...si, toControl };
   check('冒頭の後：城下の目的の札（城門の前の本多忠勝と話し、軍議を開く）・歩く／走るの操作が出る', /城門の前の本多忠勝と話し、軍議を開く/.test(await page.textContent('.g-hud')), await page.textContent('.g-hud'));
   await sleep(1500);
   await shot('P01-after-intro');
+  // Version 28 §4.3：冒頭は 1 つの短い 3D の場面（町の様子の字幕 1 行）になり、使者の急報・家臣とのやり取りは、操作の途中の町の急報
+  // （ch1_report：通りを北へ線を越えた所で 1 回）へ移った。本物の W で北へ歩いて始め、スキップせずに最後まで流す。
+  // 急報の後、使者・忠勝は話せる位置へ歩いて行く（着くまで「話す」が出ない）ので、町の時計で 16 秒待つ（本番ビルドには開発用のフックが無い）
+  const tRep = Date.now();
+  const rep = await passStreetReport(page, { watch: true, settle: true, log: note });
+  const repInfo = { id: rep.id, wall: rep.watchedMs / 1000, walkSec: rep.walkMs / 1000, settleSec: (Date.now() - tRep - rep.walkMs - rep.watchedMs) / 1000 };
+  let lg = await stopLog();
+  const si = cineSummary(lg.log, intro.id);
+  const sRep = cineSummary(lg.log, 'ch1_report');
+  note(`冒頭の字幕（順）：${si.caps.map((c) => `「${c}」`).join(' → ')}`);
+  note(`町の急報の字幕（順）：${sRep.caps.map((c) => `「${c}」`).join(' → ')}`);
+  note(`「はじめから」のクリックから操作の開始（HUD）まで：${toControl.toFixed(1)} 秒（本番ビルド・描画あり・ソフトウェア描画。3D の場面の始めの待ちのコマ ${si.waits}）`);
+  // 前の版の冒頭の確かめ（字幕 5 件以上・城門の前・実時間 15 秒以上）は、冒頭と町の急報の 2 つに分けた
+  check(`第一章の冒頭（${intro.id}）をスキップせずに最後まで：3D の場面だけ（data-mode stage。地図の図解ではない）・字幕 ${si.caps.length} 件・3D の場面の始めの待ちのコマ ${si.waits}・実時間 ${si.wall.toFixed(0)} 秒`,
+    intro.id === 'ch1_open' && J(si.modes) === '["stage"]' && si.caps.length >= 1 && si.caps[0] === '元亀元年、徳川家康の城下に、織田と浅井の使者が同じ日に来た。' && si.wall >= 3,
+    J({ modes: si.modes, beats: si.beats, first: si.caps[0], err: lg.err }));
+  check(`本物の W で通りを北へ歩くと町の急報（ch1_report）：スキップせずに最後まで・3D の場面だけ・字幕 ${sRep.caps.length} 件（使者 2 人・忠勝・家康。城門の前・軍議）・実時間 ${sRep.wall.toFixed(0)} 秒`,
+    rep.id === 'ch1_report' && J(sRep.modes) === '["stage"]' && sRep.caps.length >= 4 && sRep.caps.includes('徳川殿にも、兵を出していただきたい。') && sRep.caps.some((c) => c.includes('城門の前')) && sRep.wall >= 10,
+    J({ modes: sRep.modes, caps: sRep.caps.length, wall: sRep.wall, ...repInfo }));
+  result.intro = { ...intro, ...si, toControl, report: { ...repInfo, ...sRep } };
+  check('急報の後：城下の目的の札は同じ（城門の前の本多忠勝と話し、軍議を開く）', /城門の前の本多忠勝と話し、軍議を開く/.test(await page.textContent('.g-hud')), await page.textContent('.g-hud'));
 
   // ================================================================ J で情勢を開いて閉じる
   async function openSituation() {

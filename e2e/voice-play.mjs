@@ -6,20 +6,21 @@
 // 字幕／会話の文・画面を記録し、AudioBufferSourceNode の start／stop を記録して、2 つの声が重ならないことを確かめる。
 //
 // 部（PARTS。カンマ区切り。既定はすべて）：
-//   cine     タイトルの「はじめから」（本物のクリック）→ 章の冒頭の演出を通常速度で最後まで：字幕ごとに、その台詞の音声ファイルが鳴る・
+//   cine     タイトルの「はじめから」（本物のクリック）→ 章の冒頭（短い始め。声なし）→ 本物の W で北へ歩いて町の急報（Version 28：ch1_report）を
+//            通常速度で最後まで：字幕ごとに、その台詞の音声ファイルが鳴る・
 //            字幕と声の台詞が合う・鳴っている間だけ BGM を下げる・音の長さは一覧の秒数・2 つ重ならない・音声ファイルは演出の始めに先読み。
 //            続けて城下で忠勝と話す（__game.talk）→ 本物の Enter で行送り → 声の行で本物の M（メニュー）→ 止まる・閉じても流し直さない →
 //            次の声の行でアプリの切り替え（ページの中で visibilitychange）→ 止まる・戻っても流し直さない → 本物の Enter で速く送る。
 //            音の設定の欄（声の種類・クレジット）の画像と、声の種類を替えた保存（koto-sengoku/3d-audio の中だけ）。
 //            新しい声では speechSynthesis を一度も読まない（ページに差し込んだ見張りで数える）。
-//   skip     声が鳴っている間に本物の Esc で演出を飛ばす：すぐ止まり、後から鳴らない。
-//   fast     演出の中で本物の → を続けて押す：重ならず、後から古い台詞を鳴らさない。
+//   skip     町の急報の声が鳴っている間に本物の Esc で演出を飛ばす：すぐ止まり、後から鳴らない。
+//   fast     町の急報の中で本物の → を続けて押す（1 つの場面なので最初の → で終わる）：重ならず、後から古い台詞を鳴らさない。
 //   tts      ?voice=tts：端末の読み上げ（旧）の道筋（音声ファイルを読まない）・設定の欄は選べず、そのことを書く。
 //
 // 使い方：(cd <worktree> && PORT=8791 npx vite --config proto3d/blender/tools/vite.nohmr.mjs &)
 //   BASE3D=http://localhost:8791 node e2e/voice-play.mjs <出力先>
 import { readFileSync, writeFileSync } from 'node:fs';
-import { launchBrowser, outDir } from './lib.mjs';
+import { launchBrowser, outDir, walkToStreetReport } from './lib.mjs';
 
 /** 台詞の音声ファイルの一覧（ほどいた長さの確かめ） */
 const MANIFEST = JSON.parse(readFileSync(new URL('../proto3d/src/audio/voiceManifest.gen.json', import.meta.url), 'utf8'));
@@ -187,9 +188,18 @@ async function partCine() {
   check('cine 既定の声の種類は新しい声（音声ファイル）', before.source === 'file', before.source);
   await page.locator('button[data-id="new:ieyasu1570"]').waitFor({ state: 'visible' });
   await sleep(500);
-  const t0 = Date.now();
   await page.locator('button[data-id="new:ieyasu1570"]').click();
   await page.locator('.g-layer[data-kind="cine"]').waitFor({ state: 'attached' });
+  const openId = await page.locator('.g-layer[data-kind="cine"]').getAttribute('data-cine');
+  await page.locator('.g-layer[data-kind="cine"]').waitFor({ state: 'detached', timeout: 300000 });
+  // Version 28 §4.3：冒頭（ch1_open）は町の様子の字幕 1 行（音声ファイルの無い地の文）だけ。声のある 4 台詞は操作の途中の町の急報（ch1_report）へ移った。
+  // 冒頭では声を鳴らさない → 本物の W で通りを北へ歩いて線を越え、急報を通常速度で最後まで
+  const openPlays = (await vlog(page)).filter((l) => l.event === 'play');
+  check('cine 冒頭（短い始め・地の文の字幕 1 行）では声を鳴らさない（音声ファイルの無い行は無音）', openId === 'ch1_open' && openPlays.length === 0, `${openId}・鳴らした ${openPlays.map((p) => p.id).join(',') || 'なし'}`);
+  await sleep(500);
+  await walkToStreetReport(page);
+  // 急報の層が出た時刻（先読みは演出を始めた時。最初の声の字幕は急報の 1.55 秒）
+  const t0 = Date.now();
   const cineId = await page.locator('.g-layer[data-kind="cine"]').getAttribute('data-cine');
   await page.locator('.g-layer[data-kind="cine"]').waitFor({ state: 'detached', timeout: 300000 });
   const cineEndT = await now(page);
@@ -197,9 +207,9 @@ async function partCine() {
   const log1 = await vlog(page);
   const plays = log1.filter((l) => l.event === 'play');
   note(`   演出 ${cineId}：鳴らした台詞 ${plays.map((p) => `${p.id}(${p.sec}s)`).join(' / ')}`);
-  const fetchedEarly = voiceReq.filter((r) => r.t - t0 < 4000).map((r) => r.path);
+  const fetchedEarly = voiceReq.filter((r) => r.t - t0 < 1500).map((r) => r.path);
   check('cine 演出を始めたときに字幕の声（4 つ）を先に読む（最初の声の字幕より前）', ['ch1.oda_envoy.ask', 'ch1.asai_envoy.ask', 'ch1.tadakatsu.council', 'ch1.hero.gather'].every((id) => fetchedEarly.includes(`/voice/${id}.mp3`)), fetchedEarly.join(' '));
-  check('cine 冒頭の声のある字幕 4 つすべてで、その台詞の音声ファイルが鳴った（順も同じ）', plays.map((p) => p.id).join() === 'ch1.oda_envoy.ask,ch1.asai_envoy.ask,ch1.tadakatsu.council,ch1.hero.gather', plays.map((p) => p.id).join());
+  check('cine 町の急報の声のある字幕 4 つすべてで、その台詞の音声ファイルが鳴った（順も同じ）', plays.map((p) => p.id).join() === 'ch1.oda_envoy.ask,ch1.asai_envoy.ask,ch1.tadakatsu.council,ch1.hero.gather', plays.map((p) => p.id).join());
   check('cine ほどいた長さは一覧の秒数と同じ（±0.01 秒）', plays.every((p) => Math.abs(p.sec - secOf[p.id]) < 0.01), plays.map((p) => `${p.sec}/${secOf[p.id]}`).join(' '));
   // 鳴っている間の字幕は、その台詞の文
   const playingRows = r1.filter((x) => x.playing);
@@ -325,14 +335,23 @@ async function partCine() {
   await ctx.close();
 }
 
+/** 「はじめから」の後：冒頭（短い始め）が終わるのを待ち、本物の W で北へ歩いて線を越え、町の急報（声のある台詞 4 つ）を始める（Version 28 §4.3） */
+async function toStreetReport(page) {
+  await page.locator('.g-layer[data-kind="cine"]').waitFor({ state: 'attached' });
+  await page.locator('.g-layer[data-kind="cine"]').waitFor({ state: 'detached', timeout: 300000 });
+  await sleep(500);
+  await walkToStreetReport(page);
+}
+
 // ---------------------------------------------------------------- skip：鳴っている間に Esc
 
 async function partSkip() {
-  note('== skip：最初の声が鳴っている間に本物の Esc で演出を飛ばす');
+  note('== skip：町の急報の最初の声が鳴っている間に本物の Esc で演出を飛ばす');
   const { page, ctx, errors } = await openPage();
   await page.locator('button[data-id="new:ieyasu1570"]').waitFor({ state: 'visible' });
   await sleep(500);
   await page.locator('button[data-id="new:ieyasu1570"]').click();
+  await toStreetReport(page);
   await page.waitForFunction(() => window.__audio.sys.voiceFiles.playingId === 'ch1.oda_envoy.ask', null, POLL);
   await sleep(600);
   await page.keyboard.press('Escape');
@@ -353,11 +372,13 @@ async function partSkip() {
 // ---------------------------------------------------------------- fast：演出の中で → を続けて押す
 
 async function partFast() {
-  note('== fast：演出の中で本物の → を続けて押す（場面を速く進める）');
+  // Version 28：町の急報は 1 つの場面なので、最初の → で終わりへ（2 つ目の → は城下で押す）。声が重ならない・後から鳴らないことは同じに見る
+  note('== fast：町の急報の中で本物の → を続けて押す（場面を速く進める。急報は 1 つの場面なので最初の → で終わる）');
   const { page, ctx, errors } = await openPage();
   await page.locator('button[data-id="new:ieyasu1570"]').waitFor({ state: 'visible' });
   await sleep(500);
   await page.locator('button[data-id="new:ieyasu1570"]').click();
+  await toStreetReport(page);
   await page.waitForFunction(() => window.__audio.sys.voiceFiles.playingId === 'ch1.oda_envoy.ask', null, POLL);
   await sleep(300);
   for (let i = 0; i < 2; i++) {
@@ -387,7 +408,7 @@ async function partTts() {
   await page.locator('button[data-id="new:ieyasu1570"]').waitFor({ state: 'visible' });
   await sleep(500);
   await page.locator('button[data-id="new:ieyasu1570"]').click();
-  await page.locator('.g-layer[data-kind="cine"]').waitFor({ state: 'attached' });
+  await toStreetReport(page);
   await page.waitForFunction(() => (document.querySelector('.g-cine-cap .txt')?.textContent || '').includes('徳川殿にも'), null, POLL);
   await sleep(1500);
   const p = await page.evaluate(() => ({ source: window.__audio.sys.voiceSource, fixed: window.__audio.sys.voiceSourceFixed, voice: window.__audio.probe.voice, tts: window.__ttsCalls }));

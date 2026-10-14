@@ -20,13 +20,15 @@
 //
 // PARTS（カンマ区切り。既定はすべて）：
 //   intro     第一章の冒頭（3D の場面だけ）を、タイトルの「はじめから」の本物のクリックから最後まで（844×390）。終わった後に主人公（町の入口）・カメラが戻り、W で歩けるか。
+//             Version 28：冒頭は 1 つの短い場面。続けて本物の W で北へ歩いて線を越え、町の急報（ch1_report：使者 2 人・忠勝・家康）を最後まで撮る。
 //             「はじめから」から操作の開始までの実時間を測る
 //   ch2       第二章の冒頭（第一章の結末の保存から。「つづきから」→「第二章へ進む」→ 結果確認 →「城下へ」→ 冒頭）。
 //             保存は CH2（カンマ区切り。tests/fixtures/ieyasu-ch1-v3/ の名前）で選ぶ。既定は oda_victory_kept,home_defeat_broken_heavy,asai_victory_kept
 //             （A 勝ち・約束を守った／C 負け・約束を破った・損害大／B 勝ち・約束を守った）
 //   depart    出陣（城門で「出陣する」）と帰還（合戦は全軍撤退 → 結果の「続ける」）を 1 回ずつ
 //   reduced   動きを減らす設定（端末の prefers-reduced-motion を模擬）での第一章の冒頭
-//   controls  一時停止（クリック）・再開（Space）・次の場面（→）・前の場面（←）・スキップ（クリック）→ 城下 → J → 情勢の「見直す」→ Esc でスキップ → 「閉じる」
+//   controls  冒頭のスキップ（クリック）→ 城下 → W で北へ → 町の急報で一時停止（クリック）・再開（Space）・場面の頭（←）・終わり（→）→ J → 情勢の「見直す」→ Esc でスキップ → 「閉じる」
+//             （Version 28：冒頭・急報は 1 つの場面なので、前の版の「次の場面の頭へ・前の場面へ」は「場面の頭へ・終わりへ」になった）
 //   ch2a      第二章 A（織田勢の撤収を支える）を、第一章の結末の保存から戦後の城下まで、どの演出もスキップせずにつなぐ（docs/ch2a-reason-request.md の確認）：
 //             「つづきから」→「第二章へ進む」→ 結果確認 →「城下へ」→ 第二章の冒頭 → J（情勢）→「図解を見る」（情勢の図解を最後まで）→ J（情勢）→ 忠勝と軍議 → 判断 → 石川と補充 → 城門で「出陣する」→ 出陣の演出 →
 //             合戦 → 結果の「続ける」→ 帰還の演出 → 戦後の城下 → J（情勢）。
@@ -42,7 +44,7 @@
 //   NG の行は「見つけたこと」（このコンテナの重い 3D のコマで起きるものを含む）。実機の滑らかさはここでは確かめられない
 import { spawn } from 'node:child_process';
 import { readFileSync, writeFileSync, statSync } from 'node:fs';
-import { launchBrowser, outDir } from './lib.mjs';
+import { launchBrowser, outDir, walkToStreetReport, watchStreetReport } from './lib.mjs';
 import { battleIO, driveTactic, fastForwardToResult } from './ch2-drive.mjs';
 
 const OUT = outDir(process.argv[2] || 'e2e-out/story-video');
@@ -200,6 +202,8 @@ const LOGGER = () => {
         w: ts, wl: performance.now(), ui: g.ui?.kind ?? null, screen: g.screen, id: c?.id ?? null, t: c?.t ?? null, beat: c?.beat ?? null, count: c?.count ?? null, mode: c?.mode ?? null,
         state: c?.state ?? null, paused: c?.paused ?? null, reduced: c?.reduced ?? null, cap: c?.caption?.text ?? null, info: c?.info?.length ?? 0,
         ev: sp.event, st: r3(sp.t), people: sp.people, figures: sp.figures, hidden: sp.hiddenCast.length, hideHero: !!sp.shot?.hideHero,
+        // Version 28：演出が動かしている会話の相手（町の急報の使者 2 人・忠勝。演出の人ではなく会話の相手そのもの）の数と位置
+        linked: g.event?.linked?.length ?? 0, lk: sp.active && g.event ? Object.values(g.event.linkedAt).map((q) => [Math.round(q.x * 100) / 100, Math.round(q.z * 100) / 100]) : [],
         cam: [r3(cam.position.x), r3(cam.position.y), r3(cam.position.z)], dir: [r3(d.x), r3(d.y), r3(d.z)],
         hero: [r3(h.x), r3(h.z), r3(h.heading)], yaw: r3(o.yaw), pitch: r3(o.pitch), ppl,
         appearing: L ? L.querySelectorAll('.g-cine-map [data-state="appearing"]').length : 0,
@@ -387,6 +391,7 @@ function analyze(rec, specs = {}) {
         if (dd > 1.5) camJumps++;
       }
       const pplSet = new Set(rr.map((r) => J(r.ppl)));
+      const lkSet = new Set(rr.map((r) => J(r.lk ?? [])));
       const pausedRows = rr.filter((r) => r.paused).length;
       const waitRows = rr.filter((r) => r.wait).length;
       return {
@@ -401,7 +406,7 @@ function analyze(rec, specs = {}) {
         lost: bb.mode === 'map' && specDur !== null ? +(specDur - wall).toFixed(2) : null,
         tStart, tEnd, rafRows: rr.length, rafPerSec: wall > 0 ? +(rr.length / wall).toFixed(1) : null, castFrames: framesIn(wStart, wNext),
         people: Math.max(...rr.map((r) => r.people)), figures: Math.max(...rr.map((r) => r.figures)), hidden: Math.max(...rr.map((r) => r.hidden)),
-        camPoses: camSet.size, camMaxStep: +camStep.toFixed(3), camJumps, peopleSets: pplSet.size, appearingMax: Math.max(...rr.map((r) => r.appearing)), pausedRows, waitRows,
+        camPoses: camSet.size, camMaxStep: +camStep.toFixed(3), camJumps, peopleSets: pplSet.size, linked: Math.max(...rr.map((r) => r.linked ?? 0)), linkedSets: lkSet.size, appearingMax: Math.max(...rr.map((r) => r.appearing)), pausedRows, waitRows,
         reduced: [...new Set(rr.map((r) => r.reduced))], vStart: +vsec(wStart).toFixed(2), vEnd: +vsec(wNext).toFixed(2),
       };
     });
@@ -556,9 +561,11 @@ function specCapsCheck(tag, run, spec) {
 /** 字幕の全部を出力する（見た文の記録） */
 const listCaps = (tag, seq) => note(`[${tag}] 画面に出た字幕（順）：${seq.map((t) => `「${t}」`).join(' → ')}`);
 
-// ================================================================ intro：第一章の冒頭（本物の「はじめから」から最後まで）
+// ================================================================ intro：第一章の冒頭（本物の「はじめから」から最後まで）と、操作の途中の町の急報
+// Version 28 §4.3：冒頭は 1 つの 3D の場面（町の様子の字幕 1 行と、町の入口の主人公へ寄る 1 つのカメラの動き）になり、使者の到着・家臣とのやり取りは
+// 操作の途中の町の急報（ch1_report。通りを北へ線（z≈6）を越えた所で 1 回）へ移った。冒頭の後に本物の W で北へ歩き、急報も最後まで撮る
 async function partIntro(tag = 'intro', reducedMotion = 'no-preference') {
-  console.log(`=== ${tag}：第一章の冒頭を、タイトルの「はじめから」の本物のクリックから最後まで（844×390・描画あり ?q=low・通常速度${reducedMotion === 'reduce' ? '・端末の prefers-reduced-motion を模擬' : ''}）`);
+  console.log(`=== ${tag}：第一章の冒頭を、タイトルの「はじめから」の本物のクリックから最後まで → 本物の W で北へ歩いて町の急報を最後まで（844×390・描画あり ?q=low・通常速度${reducedMotion === 'reduce' ? '・端末の prefers-reduced-motion を模擬' : ''}）`);
   const { ctx, page } = await open({ reducedMotion });
   const dev = await page.evaluate(() => ({ reduced: window.__game.reducedMotion, mm: matchMedia('(prefers-reduced-motion: reduce)').matches }));
   note(`[${tag}] 動きを減らす設定：${J(dev)}`);
@@ -572,52 +579,64 @@ async function partIntro(tag = 'intro', reducedMotion = 'no-preference') {
   await waitUi(page, 'cine');
   const S0 = await st(page);
   const spec = await specOf(page, 'ch1_open');
+  const specR = await specOf(page, 'ch1_report');
   const c0 = await page.evaluate(() => window.__game.cine);
-  check(`[${tag}] 本物のクリック「はじめから」→ 第一章の冒頭（台本 ${c0.id}・場面 ${c0.count}・長さ ${spec?.duration} 秒。3D の場面だけ。情勢の図解は流れない）`, c0.id === spec?.id && c0.id === 'ch1_open' && spec.beats.every((b) => b.kind === 'stage'), J({ beats: spec?.beats.map((b) => [b.kind, b.start, b.end, b.event?.id ?? '']) }));
+  check(`[${tag}] 本物のクリック「はじめから」→ 第一章の冒頭（台本 ${c0.id}・場面 ${c0.count}・長さ ${spec?.duration} 秒。3D の場面 1 つ（町の様子）だけ。情勢の図解は流れない）`, c0.id === spec?.id && c0.id === 'ch1_open' && spec.beats.length === 1 && spec.beats.every((b) => b.kind === 'stage'), J({ beats: spec?.beats.map((b) => [b.kind, b.start, b.end, b.event?.id ?? '']) }));
   await waitExplore(page);
   const toControl = (Date.now() - tNew) / 1000;
   mark(rec, 'after-end');
   note(`[${tag}] 本物のクリック「はじめから」から操作の開始（城下）まで：実時間 ${toControl.toFixed(1)} 秒（台本 ${spec.duration} 秒。描画あり ?q=low・このコンテナのソフトウェア描画。3D の場面は重いコマの分、時計が実時間より遅れる）`);
-  await sleep(4000);
-  await stopRec(rec).then(async (r) => Object.assign(rec, r));
+  await sleep(2000);
   const E = await entryPose(page);
   const p = await checkRestored(page, tag, { x: E.x, z: E.z, heading: E.heading, what: '町の入口（ENTRY_POSE）' });
   const S1 = await st(page);
   const w = await writes(page);
   check(`[${tag}] 冒頭を見ても状態は始めのまま（位置は状態に書かない）・保存は書かない（設定のキーも）`, J(norm(S1)) === J(norm(S0)) && S1.explore === null && Object.keys(w).length === 0, J(w));
+  // 町の急報：本物の W で通りを北へ歩いて線を越える → 最後まで見る（声は e2e/v28-voice-check.mjs が確かめる）
+  mark(rec, 'walk-north');
+  await watchStreetReport(page, { log: (t) => note(`[${tag}] ${t}`) });
+  mark(rec, 'after-report');
+  await waitExplore(page);
+  await sleep(4000);
+  await stopRec(rec).then(async (r) => Object.assign(rec, r));
+  const pr = await pose(page);
+  const w2 = await writes(page);
+  check(`[${tag}] 急報の後：出来事を片付け・カメラの差し替えを外し・body の g-cine を外す。状態は始めのまま・保存は書かない`, !pr.stage.active && pr.stage.people === 0 && pr.stage.figures === 0 && pr.shot === null && !/g-cine/.test(pr.body) && J(norm(await st(page))) === J(norm(S1)) && Object.keys(w2).length === 0, J({ hero: [pr.x, pr.z], shot: pr.shot, w: w2 }));
   await checkWalk(page, tag);
   await ctx.close();
   const video = await encode(rec);
-  const runs = analyze(rec, { [spec.id]: spec });
+  const runs = analyze(rec, { [spec.id]: spec, [specR.id]: specR });
   await report(rec, video, runs);
   mapRatioIfAny(tag, runs);
   captionCheck(tag, runs);
   const run = runs.find((r) => r.id === spec.id);
+  const runR = runs.find((r) => r.id === specR.id);
   const stages = run.beats.filter((b) => b.mode === 'stage');
-  const env = stages.filter((b) => (b.ev?.id ?? b.ev) === 'envoys_arrive');
-  check(`[${tag}] 冒頭の 3D の場面（町の様子・使者の到着・家臣とのやり取り）がどれも描かれた（画面の流しのコマがある）`, stages.length === 3 && stages.every((b) => b.castFrames > 0), J(stages.map((b) => ({ ev: b.ev, frames: b.castFrames, people: b.people }))));
-  if (reducedMotion === 'reduce') {
-    // 動きを減らすとき：使者は歩かず、着いた姿で城門の前の画に現れる。名札を出すため、同じ見た目の会話の相手は隠して演出の人（名札つき）に替える
-    // （点検の指摘：会話の相手のままでは演出の間に名札が出ず、誰が誰か分からなかった）。人が歩かないことは下の「動きを減らす」の確かめで見る
-    check(`[${tag}] 使者の到着（動きを減らす）：使者 2 人が着いた所に名札つきで現れ、会話の相手の使者はその間だけ隠す`, env.length === 1 && env.every((b) => b.people >= 2 && b.hidden >= 2), J(env.map((b) => ({ ev: b.ev, frames: b.castFrames, people: b.people, hidden: b.hidden }))));
-  } else check(`[${tag}] 使者の到着：使者 2 人・会話の相手の使者は隠す`, env.length === 1 && env.every((b) => b.people >= 2 && b.hidden >= 2), J(env.map((b) => ({ ev: b.ev, frames: b.castFrames, people: b.people, hidden: b.hidden }))));
-  // 最後の場面が 3D のとき（章の冒頭）は、時計が長さに着いたコマで層を閉じるので、記録の最後の t は長さの 1 コマ前（1 コマの上限 1 秒）
-  check(`[${tag}] 時計は最後まで進んだ（台本の長さ ${spec.duration} 秒）`, run.clockEnd <= spec.duration + 1e-6 && run.clockEnd >= spec.duration - (run.beats.at(-1).mode === 'stage' ? 1.0 : 0.05) - 1e-6, `${run.clockEnd}`);
+  const stagesR = runR ? runR.beats.filter((b) => b.mode === 'stage') : [];
+  check(`[${tag}] 冒頭の 3D の場面（町の様子 1 つ）が描かれた（画面の流しのコマがある）。出来事の人は出さない`, stages.length === 1 && stages[0].ev === 'town_life' && stages.every((b) => b.castFrames > 0 && b.people === 0), J(stages.map((b) => ({ ev: b.ev, frames: b.castFrames, people: b.people }))));
+  // 前の版の「使者の到着：使者 2 人・会話の相手の使者は隠す」（演出の人と入れ替える）は、急報では会話の相手そのものを動かす（入れ替えない）に変わった
+  check(`[${tag}] 町の急報の 3D の場面（street_report）が描かれた。使者 2 人と忠勝は会話の相手そのもの（演出が動かす会話の相手 3・隠す会話の相手 0）`, stagesR.length === 1 && stagesR[0].ev === 'street_report' && stagesR.every((b) => b.castFrames > 0 && b.linked >= 3 && b.hidden === 0), J(stagesR.map((b) => ({ ev: b.ev, frames: b.castFrames, linked: b.linked, hidden: b.hidden, people: b.people }))));
+  // 最後の場面が 3D のとき（章の冒頭・急報）は、時計が長さに着いたコマで層を閉じるので、記録の最後の t は長さの 1 コマ前（1 コマの上限 1 秒）
+  check(`[${tag}] 時計は最後まで進んだ（冒頭の長さ ${spec.duration} 秒・急報の長さ ${specR.duration} 秒）`, [[run, spec], [runR, specR]].every(([r, sp]) => !!r && r.clockEnd <= sp.duration + 1e-6 && r.clockEnd >= sp.duration - (r.beats.at(-1).mode === 'stage' ? 1.0 : 0.05) - 1e-6), `${run.clockEnd}・${runR?.clockEnd}`);
   const seq = specCapsCheck(tag, run, spec);
   listCaps(tag, seq);
+  const seqR = runR ? specCapsCheck(`${tag}・急報`, runR, specR) : [];
+  listCaps(`${tag}・急報`, seqR);
   // 第 2 回の直し（S）：最初の字幕で自分が徳川家康だと分かる（城・町の名前は出さない。見出しの「徳川の城下（三河）」と同じ所）・A の言い方
   const first = run.captions.find((c) => c.text);
   check(`[${tag}] 最初の字幕は「元亀元年、徳川家康の城下に、織田と浅井の使者が同じ日に来た。」（時代・主人公・急報）で、見出しは「元亀元年（1570年）・徳川の城下（三河）」`,
     first?.text === '元亀元年、徳川家康の城下に、織田と浅井の使者が同じ日に来た。' && /徳川の城下（三河）/.test(first?.head ?? ''), J({ cap: first?.text, head: first?.head }));
-  check(`[${tag}] 急報と使者の一言、家臣とのやり取り（目前の目的：城門の前・軍議）が字幕に出た`, seq.includes('徳川殿にも、兵を出していただきたい。') && seq.includes('主は、徳川殿と手を結びたいと。') && seq.some((t) => t.includes('城門の前') && t.includes('軍議')), J(seq));
+  check(`[${tag}] 急報と使者の一言、家臣とのやり取り（目前の目的：城門の前・軍議）が字幕に出た（町の急報）`, seqR.includes('徳川殿にも、兵を出していただきたい。') && seqR.includes('主は、徳川殿と手を結びたいと。') && seqR.some((t) => t.includes('城門の前') && t.includes('軍議')), J(seqR));
+  const allBeats = [...run.beats, ...(runR?.beats ?? [])];
+  const allStages = [...stages, ...stagesR];
   if (reducedMotion === 'reduce') {
-    check(`[${tag}] 動きを減らす：どのコマも reduced`, run.beats.every((b) => J(b.reduced) === '[true]'), J(run.beats.map((b) => b.reduced)));
-    check(`[${tag}] 動きを減らす：地図の場所・線は現れる途中が無い（すぐ出る）`, run.beats.filter((b) => b.mode === 'map').every((b) => b.appearingMax === 0), J(run.beats.map((b) => b.appearingMax)));
-    check(`[${tag}] 動きを減らす：3D の場面でカメラが動かない（1 コマの動き 1 cm 未満。画の切り替えの飛びは別に数える）・人は歩かない`,
-      stages.every((b) => b.camMaxStep < 0.01 || (b.camJumps > 0 && b.camPoses <= b.camJumps + 1)) && stages.every((b) => b.peopleSets <= b.camJumps + 1),
-      J(stages.map((b) => ({ ev: b.ev, camPoses: b.camPoses, camMaxStep: b.camMaxStep, jumps: b.camJumps, peopleSets: b.peopleSets }))));
+    check(`[${tag}] 動きを減らす：どのコマも reduced`, allBeats.every((b) => J(b.reduced) === '[true]'), J(allBeats.map((b) => b.reduced)));
+    check(`[${tag}] 動きを減らす：地図の場所・線は現れる途中が無い（すぐ出る）`, allBeats.filter((b) => b.mode === 'map').every((b) => b.appearingMax === 0), J(allBeats.map((b) => b.appearingMax)));
+    check(`[${tag}] 動きを減らす：3D の場面でカメラが動かない（1 コマの動き 1 cm 未満。画の切り替えの飛びは別に数える）・人は歩かない（急報の使者・忠勝は止まる所に現れる）`,
+      allStages.every((b) => b.camMaxStep < 0.01 || (b.camJumps > 0 && b.camPoses <= b.camJumps + 1)) && allStages.every((b) => b.peopleSets <= b.camJumps + 1 && b.linkedSets <= b.camJumps + 1),
+      J(allStages.map((b) => ({ ev: b.ev, camPoses: b.camPoses, camMaxStep: b.camMaxStep, jumps: b.camJumps, peopleSets: b.peopleSets, linkedSets: b.linkedSets }))));
   } else {
-    check(`[${tag}] 通常：3D の場面でカメラ・人が動く（時計どおりに置き直す）`, stages.some((b) => b.camPoses > 2 && b.peopleSets > 2), J(stages.map((b) => ({ ev: b.ev, camPoses: b.camPoses, peopleSets: b.peopleSets }))));
+    check(`[${tag}] 通常：3D の場面でカメラ・人が動く（時計どおりに置き直す。急報は会話の相手そのものが動く）`, allStages.some((b) => b.camPoses > 2 && (b.peopleSets > 2 || b.linkedSets > 2)), J(allStages.map((b) => ({ ev: b.ev, camPoses: b.camPoses, peopleSets: b.peopleSets, linkedSets: b.linkedSets }))));
   }
   return { runs, video, pose: p };
 }
@@ -837,9 +856,12 @@ async function partDepart() {
 }
 
 // ================================================================ controls：一時停止・再開・次・前・スキップ・見直し（本物の入力）
+// Version 28 §4.3：第一章の冒頭は 1 つの短い場面（4 秒前後）になったので、冒頭はスキップ（クリック）だけを見て、一時停止・再開・←・→ は
+// 操作の途中の町の急報（ch1_report。15 秒前後の 1 つの場面。本物の W で北へ歩いて線を越える）で見る。1 つの場面なので ← は場面の頭（始め）へ、
+// → は終わりへ（前の版の「→ で次の場面の頭へ」「← で前の場面へ」は、場面が 3 つあった冒頭の物）
 async function partControls() {
   const tag = 'controls';
-  console.log('=== controls：第一章の冒頭で一時停止（クリック）・再開（Space）・次の場面（→）・前の場面（←）・スキップ（クリック）→ 城下 → J → 「図解を見る」（情勢の図解）→ Esc → 「閉じる」（844×390・描画あり）');
+  console.log('=== controls：第一章の冒頭をスキップ（クリック）→ 城下 → W で北へ → 町の急報で一時停止（クリック）・再開（Space）・←（場面の頭へ）・→（終わりへ）→ J → 「図解を見る」（情勢の図解）→ Esc → 「閉じる」（844×390・描画あり）');
   const { ctx, page } = await open();
   await sleep(600);
   const rec = await startRec(page, tag);
@@ -848,11 +870,29 @@ async function partControls() {
   await waitUi(page, 'cine');
   const S0 = await st(page);
   const spec = await specOf(page, 'ch1_open');
+  const specR = await specOf(page, 'ch1_report');
   const diagram = await specOf(page, 'ch1_intro');
   const h0 = await pose(page);
-  await sleep(2500);
+  await sleep(1500);
   const cl = async (id) => { await page.locator(`.g-layer[data-kind="cine"] .g-cine-btn[data-id="${id}"]`).click(); };
   const cine = () => page.evaluate(() => window.__game.cine);
+  // スキップ（クリック）：冒頭
+  mark(rec, 'before-skip', 0);
+  await cl('skip');
+  await waitExplore(page);
+  mark(rec, 'after-skip');
+  const S1 = await st(page);
+  const h1 = await pose(page);
+  const E = await entryPose(page);
+  check('[controls] 本物のクリック「スキップ」→ 城下（状態は始めのまま・主人公は町の入口・見回しは始める前のまま・出来事を片付け）', J(norm(S1)) === J(norm(S0)) && Math.abs(h1.x - E.x) < 1e-6 && Math.abs(h1.z - E.z) < 1e-6 && Math.abs(h1.yaw - h0.yaw) < 1e-6 && !h1.stage.active && h1.shot === null, J({ hero: [h1.x, h1.z, h1.yaw], h0: [h0.x, h0.z, h0.yaw] }));
+  await sleep(1500);
+  // 町の急報（本物の W で北へ歩いて線を越える）
+  mark(rec, 'walk-north', 0);
+  await walkToStreetReport(page);
+  await waitUi(page, 'cine');
+  const r00 = await cine();
+  check('[controls] 本物の W で通りを北へ歩くと、町の急報（1 つの 3D の場面）が始まる', r00?.id === 'ch1_report' && r00.count === 1, J({ id: r00?.id, count: r00?.count, t: r00?.t }));
+  await sleep(2500);
   // 一時停止（クリック）→ 3 秒
   await cl('pause');
   mark(rec, 'paused');
@@ -865,28 +905,21 @@ async function partControls() {
   await sleep(1500);
   const c = await cine();
   check('[controls] 本物のキー Space：再開して進む', !c.paused && c.t > b.t + 1.0, `${b.t} → ${c.t}`);
-  // 次の場面（→）
-  await page.keyboard.press('ArrowRight');
-  await sleep(300);
-  const d = await cine();
-  check('[controls] 本物のキー →：次の場面の頭へ', d.beat === c.beat + 1 && Math.abs(d.t - spec.beats.slice().sort((x, y) => x.start - y.start)[d.beat].start) < 0.5, J({ from: c.beat, to: d.beat, t: d.t, mode: d.mode }));
-  mark(rec, 'next', 0.4);
-  await sleep(700);
-  // 前の場面（←。場面の頭から 1.5 秒以内なら 1 つ前の場面へ）
+  // ←：1 つの場面なので、今の場面の頭（始め）へ
   await page.keyboard.press('ArrowLeft');
   await sleep(300);
   const e = await cine();
-  check('[controls] 本物のキー ←：前の場面へ戻る', e.beat === d.beat - 1, J({ from: d.beat, to: e.beat, t: e.t }));
+  check('[controls] 本物のキー ←：今の場面の頭へ（急報は 1 つの場面なので始めから）', e.beat === 0 && c.t > 1.0 && e.t < c.t - 0.8, J({ from: c.t, to: e.t, beat: e.beat }));
+  mark(rec, 'prev', 0.4);
   await sleep(2500);
-  // スキップ（クリック）
-  mark(rec, 'before-skip', 0);
-  await cl('skip');
+  // →：1 つの場面なので終わりへ（層が閉じて城下）
+  const SR0 = await st(page);
+  mark(rec, 'before-next', 0);
+  await page.keyboard.press('ArrowRight');
   await waitExplore(page);
-  mark(rec, 'after-skip');
-  const S1 = await st(page);
-  const h1 = await pose(page);
-  const E = await entryPose(page);
-  check('[controls] 本物のクリック「スキップ」→ 城下（状態は始めのまま・主人公は町の入口・見回しは始める前のまま・出来事を片付け）', J(norm(S1)) === J(norm(S0)) && Math.abs(h1.x - E.x) < 1e-6 && Math.abs(h1.z - E.z) < 1e-6 && Math.abs(h1.yaw - h0.yaw) < 1e-6 && !h1.stage.active && h1.shot === null, J({ hero: [h1.x, h1.z, h1.yaw], h0: [h0.x, h0.z, h0.yaw] }));
+  mark(rec, 'after-next');
+  const hR = await pose(page);
+  check('[controls] 本物のキー →：急報は 1 つの場面なので終わりへ（層が閉じて城下・状態は同じ・出来事を片付け・見回しは急報の前のまま）', J(norm(await st(page))) === J(norm(SR0)) && !hR.stage.active && hR.shot === null && Math.abs(hR.yaw - h0.yaw) < 1e-6, J({ hero: [hR.x, hR.z, hR.yaw] }));
   await sleep(2500);
   // 情勢（J）→ 見直す（クリック）→ Esc でスキップ → 閉じる（クリック）
   await page.keyboard.press('KeyJ');
@@ -912,12 +945,12 @@ async function partControls() {
   Object.assign(rec, await stopRec(rec));
   const S2 = await st(page);
   const w = await writes(page);
-  const h2 = await checkRestored(page, tag, { x: E.x, z: E.z, yaw: h0.yaw, what: '町の入口（ENTRY_POSE）' });
-  check('[controls] 図解・スキップの後も状態は始めのまま・保存は書かない', J(norm(S2)) === J(norm(S0)) && Object.keys(w).length === 0, J(w));
+  const h2 = await checkRestored(page, tag, { x: hR.x, z: hR.z, yaw: h0.yaw, what: '急報の後に立っていた所（位置は動かさない）' });
+  check('[controls] 図解・スキップ・急報の後も状態は始めのまま・保存は書かない', J(norm(S2)) === J(norm(S0)) && Object.keys(w).length === 0, J(w));
   await checkWalk(page, tag);
   await ctx.close();
   const video = await encode(rec);
-  const runs = analyze(rec, { [spec.id]: spec, [diagram.id]: diagram });
+  const runs = analyze(rec, { [spec.id]: spec, [specR.id]: specR, [diagram.id]: diagram });
   await report(rec, video, runs);
   // 一時停止の間は時計が止まる（ページの記録で）
   const paused = rec.log.filter((r) => r.paused);

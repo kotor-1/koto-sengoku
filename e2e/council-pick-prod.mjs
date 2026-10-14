@@ -19,7 +19,7 @@
 // WALK_VIEW：忠勝の所まではこの窓の大きさで歩く（ソフトウェアの描画は 2560×1440 では 1 フレームに数秒かかる）。
 //   話しかける前に VIEW へ窓の大きさを変える（ブラウザの窓の操作。ゲームの状態は変えない）。会話・軍議・選択はすべて VIEW で行う。
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { launchBrowser, serveDist, skipCinematic } from './lib.mjs';
+import { launchBrowser, passStreetReport, serveDist, skipCinematic } from './lib.mjs';
 
 const DIST = process.env.DIST;
 if (!DIST) throw new Error('DIST（本番の dist）を指定する');
@@ -140,6 +140,9 @@ try {
     steps.push('real: 歴史分岐をはじめから');
     await skipCinematic(page, { tap: TOUCH, what: 'ch1', log });
     await page.locator('.g-hud').waitFor({ state: 'visible' });
+    // Version 28 §4.3：通りを北へ線を越えると町の急報が 1 回始まる。本物の W で越えて飛ばす（Esc／タッチの端末は「スキップ」をタップ。
+    // 急報の無い前の版の dist では、忠勝の「話す」で止まる）
+    if ((await passStreetReport(page, { tap: TOUCH, optional: true, log })).id) steps.push('real: 町の急報（W で北へ歩いて線を越え、飛ばした）');
     // 忠勝の所まで本物のキーで歩く（W＋Shift。「話す」が忠勝に向いて出たら止める。行き過ぎたら S・W で少しずつ戻す）
     const talkShown = () => page.evaluate(() => {
         const b = document.querySelector('.g-talk');

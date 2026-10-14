@@ -16,7 +16,7 @@
 import { createServer } from 'node:http';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
-import { keysToward, launchBrowser, measureYaw, outDir, skipCinematic } from './lib.mjs';
+import { keysToward, launchBrowser, measureYaw, outDir, passStreetReport, skipCinematic } from './lib.mjs';
 
 const OUT = outDir(process.argv[2] || 'e2e-out/ieyasu/prod');
 const DIST = resolve(process.env.DIST || 'dist-proto3d');
@@ -141,6 +141,9 @@ try {
   check('ページの題：元亀元年・家康（仮シナリオとは出さない）', (await page.title()).includes('元亀元年・家康') && !(await page.title()).includes('仮シナリオ'), await page.title());
   await sleep(1500);
   await shot('I02-explore');
+  // Version 28 §4.3：通りを北へ線（z≈6）を越えると町の急報が 1 回始まる。本物の W で越えて Esc で飛ばす（使者・忠勝はすぐ話せる位置。
+  // 急報の無い前の版のビルドでは、忠勝の「話す」が出た所で止まる：optional）
+  await passStreetReport(page, { optional: true, log: (t) => console.log(`   ${t}`) });
   let ok = await holdUntil(['Shift', 'KeyW'], () => talkShown('tadakatsu'), 420000);
   check('W と Shift で歩くと本多忠勝の「話す」が出る', ok);
   await page.keyboard.press('KeyE');

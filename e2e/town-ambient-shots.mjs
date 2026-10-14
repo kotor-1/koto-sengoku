@@ -22,7 +22,7 @@
 //   (PORT=8413 setsid nohup npx vite --config proto3d/blender/tools/vite.nohmr.mjs > /tmp/vite-8413.log 2>&1 &)
 //   BASE=http://localhost:8413 node e2e/town-ambient-shots.mjs [出力先（既定 e2e-out/town-ambient）]
 import { readFileSync, writeFileSync } from 'node:fs';
-import { launchBrowser, outDir, skipCinematic } from './lib.mjs';
+import { launchBrowser, outDir, passStreetReport, skipCinematic } from './lib.mjs';
 
 const OUT = outDir(process.argv[2] || 'e2e-out/town-ambient');
 const BASE = process.env.BASE3D || process.env.BASE || 'http://localhost:8413';
@@ -276,6 +276,8 @@ async function one(name) {
   note(`[${name}] 着いた時の町の人々：${J(a0)}`);
   await page.screenshot({ path: `${OUT}/${name}-arrive.png`, timeout: 600000 });
   note(`[${name}] 撮影 ${name}-arrive.png（開始の位置）`);
+  // 第一章の始め（Version 28 §4.3）：通りを北へ線（z≈6）を越えると町の急報が 1 回始まる。詰所の前への道で始まらないよう、先に本物の W で越えて飛ばす
+  if (isStart) await passStreetReport(page, { log: note });
   // 本物のキーで詰所の前へ歩く
   const t0 = Date.now();
   const p = await walkTo(page, STAND.x, STAND.z, 0.45);
