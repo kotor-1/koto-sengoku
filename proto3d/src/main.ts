@@ -500,29 +500,34 @@ const frameHooks: ((dt: number) => void)[] = [];
 async function start(): Promise<void> {
     const t0 = performance.now();
     // 城門前の一場面（Blender で作った素材）。地面・城門・土塀・遠景の天守・町家は配置どおりの位置で作ってあるので、そのまま置く
-    const [placed, [pine, sakura, pineFar], firstHero] = await Promise.all([
+    const [placed, [pine, sakura, pineFar, willow], props, firstHero] = await Promise.all([
         Promise.all(SCENE_MODELS.map(load)),
-        Promise.all(['tree_pine', 'tree_sakura', 'tree_pine_far'].map(load)),
+        Promise.all(['tree_pine', 'tree_sakura', 'tree_pine_far', 'tree_willow28'].map(load)),
+        load('props28'),
         loadHeroView(heroKey),
     ]);
     placed.forEach((g, i) => {
         prepare(g.scene);
         scene.add(g.scene);
         // 隠れたら半透明にするのは見下ろしのときだけ（肩越しではカメラが壁の手前に来るので、建物は薄くしない）
-        if (!tps && SCENE_MODELS[i] !== 'ground_v2' && SCENE_MODELS[i] !== 'keep' && SCENE_MODELS[i] !== 'inner') addOccluder(g.scene);
+        if (!tps && !GROUND_MODELS.has(SCENE_MODELS[i]!)) addOccluder(g.scene);
     });
-    // 小さな城下町で足した小物（木戸・物見櫓・荷置き場・詰所・軍議所。town/plan.ts）
-    town = buildTown(low);
+    // 小さな城下町で足した小物（木戸・柵・物見櫓・荷置き場・詰所・休み場・軍議所。置き方は town/plan.ts、形は Blender で作った props28.glb）
+    town = buildTown(low, props.scene);
     scene.add(town.root);
     // 木：配置（street28.json の trees）の幹の位置へ。同じ素材の 2 本目からは複製（向きと大きさは表のとおり。
     // pine_back は枝の張り出しを西（左）へ：開始の画面で、門越しの天守を隠さない）
     prepare(pine.scene);
     prepare(sakura.scene);
-    const treeSrc: Record<string, THREE.Object3D> = { tree_pine: pine.scene, tree_sakura: sakura.scene };
+    prepare(pineFar.scene);
+    prepare(willow.scene);
+    // Version 28 の通りの木：柳（tree_willow28）と、軽い松（tree_pine_far）を小さくした松。遠景の松の置き場所の元（pineFar.scene）は複製して使う
+    const treeSrc: Record<string, THREE.Object3D> = { tree_pine: pine.scene, tree_sakura: sakura.scene, tree_pine_far: pineFar.scene, tree_willow28: willow.scene };
+    const treeShared = new Set(['tree_pine_far']);
     const treeUsed = new Set<string>();
     for (const t of TREES) {
         const src = treeSrc[t.model]!;
-        const obj = treeUsed.has(t.model) ? src.clone() : src;
+        const obj = treeUsed.has(t.model) || treeShared.has(t.model) ? src.clone() : src;
         treeUsed.add(t.model);
         obj.position.set(t.x, 0, t.z);
         obj.rotation.y = t.rotY;
@@ -531,7 +536,6 @@ async function start(): Promise<void> {
         addOccluder(obj);
     }
     // 城内・空き地の奥の松（軽い遠景用。置き場所は trees.meta.json）
-    prepare(pineFar.scene);
     for (const f of treesMeta.tree_pine_far.placements) {
         const t = pineFar.scene.clone();
         t.position.set(f.x, 0, f.z);
@@ -560,7 +564,9 @@ async function start(): Promise<void> {
  * 場面の素材（配置どおりの位置で作ってある）。通りの建物は Version 28 の作り直し（street28.json の buildings：
  * 町家 A・B・D・土蔵造りの店・西の小屋と板塀。旧の machiya_a・b・d の GLB はリポジトリに残すが読まない）
  */
-const SCENE_MODELS = ['ground_v2', 'gate_v2', 'walls_v2', 'keep', 'inner', ...STREET_BUILDINGS.map((b) => b.id)];
+const SCENE_MODELS = ['ground_v3', 'ground_plants28', 'gate_v2', 'walls_v2', 'keep', 'inner', ...STREET_BUILDINGS.map((b) => b.id)];
+/** 地面と草むら（隠れても半透明にしない） */
+const GROUND_MODELS = new Set(['ground_v3', 'ground_plants28', 'keep', 'inner']);
 
 // ---- 毎フレーム ----
 const camTarget = new THREE.Vector3(hero.x, 1.0, hero.z);

@@ -21,6 +21,7 @@ import { GROUND_SITS, KIDO, LOOKOUT_EYE, MATS, REST, TOWER, TOWN_PROPS, townBloc
 import { COUNCIL_HALL, ENTRY_POSE, GUARDPOST, GUARD_REST, HIGHWAY_MOUTH, LOOKOUT } from '../proto3d/src/town/spots';
 import scene from '../proto3d/blender/scene.json';
 import street from '../proto3d/blender/street28/street28.json';
+import ground3 from '../proto3d/blender/scene/ground_v3.meta.json';
 import oldA from '../proto3d/blender/machiya/machiya_a.meta.json';
 import oldB from '../proto3d/blender/machiya/machiya_b.meta.json';
 import oldD from '../proto3d/blender/machiya/machiya_d.meta.json';
@@ -305,10 +306,38 @@ describe('Version 28 の通りの建物（street28.json・形から作った当�
         expect(canReach(2.9, GUARD_REST.z), '休み場の前').toBe(true);
     }, 60_000);
 
-    it('表（street28.json）の木・側溝は、Version 27 の地面の制作が読む scene.json の値と同じ（地面を作り直すまで 2 か所の値がずれない）', () => {
-        expect(street.trees.map((t) => [t.name, t.x, t.z])).toEqual(scene.trees.map((t) => [t.name, t.pos[0], t.pos[1]]));
-        expect(street.edges.ditches.map((d) => [d.name, d.x, d.z])).toEqual(scene.ditches.map((d) => [d.name, d.x, d.z]));
+    it('通りの木（柳・松）：歩ける範囲にある木はどれも幹の当たり判定とカメラ除けを持つ。形の違う木が 2 種以上、人の置き場所・道すじから離れている', () => {
+        const blockers = cameraBlockers();
+        const inBounds = street.trees.filter((t) => t.x > BOUNDS.x0 && t.x < BOUNDS.x1 && t.z > BOUNDS.z0 && t.z < BOUNDS.z1);
+        expect(inBounds.length).toBeGreaterThanOrEqual(5);
+        for (const t of inBounds) {
+            expect(ALL.some((r) => inside(r, t.x, t.z)), t.name).toBe(true);
+            expect(blockers.some((b) => inside(b, t.x, t.z) && b.y0 <= 0.5 && b.y1 >= 2.5), t.name).toBe(true);
+        }
+        const v28 = street.trees.filter((t) => t.note.startsWith('Version 28'));
+        expect(new Set(v28.map((t) => t.model)).size).toBeGreaterThanOrEqual(2);
+        for (const t of v28) {
+            for (const [x, z] of SPOT_LIST) expect(Math.hypot(t.x - x, t.z - z), `${t.name} と置き場所 (${x}, ${z})`).toBeGreaterThan(2.0);
+            for (const route of ENTRY_ROUTES) expect(distToRoute(route, t.x, t.z), t.name).toBeGreaterThan(1.5);
+        }
+    });
+
+    it('Version 28 の地面（ground_v3）は今の表（street28.json）の建物・木・側溝・道・木戸・小物の置き方から作ってある（表を変えたら地面を作り直す）', () => {
+        const bf = ground3.built_from;
+        expect(bf.buildings).toEqual(street.buildings.map((b) => ({ id: b.id, footprint: b.footprint })));
+        expect(bf.trees).toEqual(street.trees.map((t) => ({ name: t.name, x: t.x, z: t.z })));
+        expect(bf.ditches).toEqual(street.edges.ditches.map((d) => ({ name: d.name, x: d.x, z: d.z })));
+        expect(bf.road_half_width).toBe(street.edges.road.half_width);
+        expect(bf.kido_z).toBe(KIDO.z);
+        expect(bf.props_placed).toBe(TOWN_PROPS.reduce((n, p) => n + p.parts.length, 0));
+        // 地面の三角形は目安 6 万まで（草むら・低木は ground_plants28 に分けた）。Version 27 の地面の値（scene.json の木・側溝・道）と道の幅は同じ
+        expect(ground3.triangles).toBeLessThanOrEqual(scene.budgets.ground_triangles);
         expect(street.edges.road.half_width).toBe(scene.road.half_width);
+        // 東の側溝は z 11 で途切れず、町家 D の南の路地の口を越えて土蔵造りの店の北の角まで（その先は店の下の暗渠）
+        const east = street.edges.ditches.find((d) => d.name === 'east')!;
+        expect(east.z[1]).toBeGreaterThan(11.0 + 1.0);
+        const kura = street.buildings.find((b) => b.id === 'kura28')!;
+        expect(east.z[1]).toBeLessThanOrEqual(kura.footprint.z0);
         // 表の小物の置き場所は、物語の目印（spots.ts）と合う：木戸の柱の線＝街道口、軍議所の陣幕＝軍議所の 0.3 m 南、物見櫓の北に物見
         expect(KIDO.z).toBe(HIGHWAY_MOUTH.z);
         expect(street.props.find((p) => p.id === 'council_tent')).toMatchObject({ x: COUNCIL_HALL.x, z: COUNCIL_HALL.z + 0.3 });

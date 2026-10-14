@@ -22,8 +22,16 @@ export const GATE_POSTS = { z: GATE.z + scene.gate.control_pillars.z_offset, siz
 export const HOUSE = scene.houses[0].footprint;
 /** 通りの建物（Version 28。素材の名前・足元・表の向き。当たり判定は素材の meta から） */
 export const STREET_BUILDINGS: readonly { id: string; footprint: Rect; front: string }[] = street.buildings.map((b) => ({ id: b.id, footprint: b.footprint, front: b.front }));
-/** 木（幹の位置・素材・向き・大きさ。幹に当たり判定） */
-export const TREES: readonly { name: string; model: string; x: number; z: number; rotY: number; scale: number }[] = street.trees.map((t) => ({ name: t.name, model: t.model, x: t.x, z: t.z, rotY: t.rotY, scale: t.scale }));
+/** 木（幹の位置・素材・向き・大きさ・幹の当たり判定の箱の半分の幅（表に無ければ 0.35 m）。幹に当たり判定） */
+export const TREES: readonly { name: string; model: string; x: number; z: number; rotY: number; scale: number; trunk: number }[] = street.trees.map((t) => ({
+    name: t.name,
+    model: t.model,
+    x: t.x,
+    z: t.z,
+    rotY: t.rotY,
+    scale: t.scale,
+    trunk: 'trunk' in t && typeof t.trunk === 'number' ? t.trunk : 0.35,
+}));
 /** 町の外側の木立（歩ける範囲の外。当たり判定なし） */
 export const BACK_TREES: readonly { model: string; x: number; z: number; rotY: number; scale: number }[] = street.back_trees;
 const tree = (name: string) => TREES.find((t) => t.name === name)!;
@@ -54,8 +62,11 @@ interface AssetMeta {
     colliders?: Rect[];
     camera_blockers?: Box[];
 }
-// 旧の町家（machiya/ の A・B・D。Version 27 まで）の meta は読まない（旧の GLB はリポジトリに残すが、Version 28 からは street28/ の建物を置く）
-const METAS = Object.values(import.meta.glob(['../blender/**/*.meta.json', '!../blender/build/**', '!../blender/machiya/**'], { eager: true, import: 'default' }) as Record<string, unknown>);
+// 旧の町家（machiya/ の A・B・D。Version 27 まで）と旧の地面（scene/ground.meta.json＝ground_v2）の meta は読まない
+// （旧の GLB はリポジトリに残すが、Version 28 からは street28/ の建物と ground_v3 を置く）
+const METAS = Object.values(
+    import.meta.glob(['../blender/**/*.meta.json', '!../blender/build/**', '!../blender/machiya/**', '!../blender/scene/ground.meta.json'], { eager: true, import: 'default' }) as Record<string, unknown>,
+);
 const isRect = (r: unknown): r is Rect => !!r && ['x0', 'x1', 'z0', 'z1'].every((k) => typeof (r as Record<string, unknown>)[k] === 'number');
 const isBox = (b: unknown): b is Box => isRect(b) && typeof (b as Box).y0 === 'number' && typeof (b as Box).y1 === 'number';
 const metaColliders = METAS.flatMap((m) => ((m as AssetMeta).colliders ?? []).filter(isRect));
@@ -96,7 +107,7 @@ export function colliders(): Rect[] {
     }
     r.push(...doorRects());
     // 木の幹
-    for (const t of TREES) r.push(rectOf(t.x - 0.35, t.x + 0.35, t.z - 0.35, t.z + 0.35));
+    for (const t of TREES) r.push(rectOf(t.x - t.trunk, t.x + t.trunk, t.z - t.trunk, t.z + t.trunk));
     // 素材ごとの当たり判定（通りの建物は形の中の固い物の部品の箱：壁・出格子・柱・縁台・樽・板塀など。地面の垣と大きな石）
     r.push(...metaColliders);
     // 小さな城下町で足した小物（木戸と柵・物見櫓・荷置き場・詰所・軍議所。town/plan.ts）
@@ -126,7 +137,7 @@ export function cameraBlockers(): Box[] {
     box(rectOf(-gt.kabuki_x_half, gt.kabuki_x_half, g.z - 0.3, g.z + 0.3), gt.kabuki_y[0], gt.kabuki_y[1]);
     box(rectOf(-gt.roof.x_half, gt.roof.x_half, g.z - gt.roof.z_half, g.z + gt.roof.z_half), gt.roof.eave_y - 0.3, gt.roof.ridge_y);
     // 木の幹
-    for (const t of TREES) box(rectOf(t.x - 0.4, t.x + 0.4, t.z - 0.4, t.z + 0.4), 0, 3);
+    for (const t of TREES) box(rectOf(t.x - t.trunk - 0.05, t.x + t.trunk + 0.05, t.z - t.trunk - 0.05, t.z + t.trunk + 0.05), 0, 3);
     b.push(...metaBlockers);
     // 小さな城下町で足した物（town/plan.ts）
     b.push(...townBlockers());

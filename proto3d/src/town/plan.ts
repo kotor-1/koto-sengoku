@@ -3,23 +3,27 @@
  * 座標は探索の座標（x 東、y 上、z 南。北の城門は z −12）。
  *
  * - Version 28：置き場所の数字は proto3d/blender/street28/street28.json（通りの配置の唯一の元。Blender の建物の制作も同じ表を読む）。
- *   ここは小物の形（箱・円柱・円すいの組み合わせ）の作り方と、表の数字から小物を組む所。
  * - 通りの建物（町家 A・B・D の作り直し・土蔵造りの店・西の空き地の小屋と板塀）は Blender で作った素材（street28.json の buildings）。
  *   その当たり判定・カメラ除けは素材と一緒に書き出した meta（形の中の固い物の部品の箱）から layout.ts が読む。
  *   Version 27 までの「町家 D の鏡写し」（木戸の柵の線にまたがっていた）は、土蔵造りの店（kura28）に置き換えてやめた。
+ * - 小物（木戸・柵・物見櫓・詰所の小屋・荷車・俵・籠・槍立て・筵・桶・床几）も Version 28 から Blender で形から作った素材
+ *   （proto3d/public/models/props28.glb、制作は street28/build_props28.py）。ここは表の 1 行から「どの種類の形を、小物の中のどこへ・
+ *   どの向きで置くか」（parts）を組む所。描く側（town/view.ts）が種類ごとの形を写して、場所（まとまり）× 材質ごとに 1 つの形へまとめる。
+ *   Version 27 までの色だけの箱・円柱・円すいの小物はやめた（残るのは軍議所の陣幕の囲いと机だけ：布の縞の画像をコードで描く）。
+ * - 小物の当たり判定・カメラ除けは、制作が形の中の固い物の部品から作った種類ごとの箱（street28/props28.types.json）を、
+ *   置き場所・向きへ写したもの（手で別に書かない）。layout.ts の colliders()・cameraBlockers() がここから足す（歩き・カメラ・確かめの 4 か所のキャッシュに入る）。
  * - 今の城門・塀・木・地面・人物の置き場所・開始の位置・道の真ん中（x −1.5〜2.5、z −12〜3）・城門への道すじは動かさない・塞がない。
- * - 小物は箱・円柱・円すいの組み合わせ（新しい素材は読み込まない）。描く側（town/view.ts）が材質ごと・場所ごとに 1 つの形へまとめる。
- * - 当たり判定・カメラ除けは layout.ts の colliders()・cameraBlockers() がここから足す（歩き・カメラ・確かめの 4 か所のキャッシュに入る）。
  */
 import street from '../../blender/street28/street28.json';
+import propTypes from '../../blender/street28/props28.types.json';
 import type { Box, Rect } from '../layout';
 import { HIGHWAY_MOUTH } from './spots';
 
-/** 材質（描く側が 1 つずつ作る。同じ材質はまとめて 1 回で描く） */
-export type TownMat = 'wood' | 'plank' | 'straw' | 'mat' | 'basket' | 'cloth' | 'metal' | 'paper' | 'roof' | 'dark';
+/** コードで作る形の材質（軍議所の陣幕の囲いと机だけ。描く側が 1 つずつ作る） */
+export type TownMat = 'wood' | 'plank' | 'cloth' | 'paper';
 
 /**
- * 小物の部品（小物の中の座標。y は地面から）。
+ * コードで作る形の部品（小物の中の座標。y は地面から）。軍議所の陣幕の囲いと机だけ（布の縞の画像をコードで描く）。
  * - box：size = [幅 x, 高さ y, 奥行き z]
  * - cyl：size = [上の半径, 下の半径, 高さ, 分割]（軸は y。rot で倒す）。open は筒（上下の蓋なし）
  * - cone：size = [半径, 高さ, 分割]
@@ -34,10 +38,44 @@ export interface Piece {
     open?: boolean;
 }
 
+/** Blender で作った小物の種類（props28.glb の中の prop_<種類> の形。street28/build_props28.py） */
+export type PropType = 'kido' | 'fence_bay' | 'fence_post' | 'tower' | 'tower_top' | 'hut' | 'cart' | 'tawara' | 'basket' | 'tub' | 'stool' | 'spear_rack' | 'kosatsu' | 'mat';
+
+/** 種類ごとの形の情報（制作が書き出す。小物の中の座標） */
+export interface PropTypeInfo {
+    /** 歩きの当たり判定（高さ 1.9 m より下の固い部品の頂点の箱） */
+    walk: Rect[];
+    /** カメラ除け（固い部品の頂点の箱。1.9 m の上下で分けた箱） */
+    camera: Box[];
+    /** 形の全体の箱 */
+    bounds: Box;
+    triangles: number;
+    /** 影を落とすか（平らな筵は落とさない） */
+    cast: boolean;
+}
+const TYPES = propTypes.types as unknown as Record<PropType, PropTypeInfo>;
+/** 種類ごとの形の情報（制作が書き出した street28/props28.types.json） */
+export const PROP_TYPES: Readonly<Record<PropType, PropTypeInfo>> = TYPES;
+/** 制作の寸法（柵の 1 間・俵・筵） */
+export const PROP_DIMS: { readonly fence_bay: number; readonly fence_h: number; readonly bale: { readonly L: number; readonly r: number }; readonly mat: { readonly w: number; readonly l: number; readonly t: number } } = propTypes.dims;
+
+/**
+ * 小物の中に置く 1 つの形（種類・小物の中の位置（y は小物の地面から）・向き・x の伸び縮み（柵の間だけ））。
+ * 形の座標 (px, pz) → 小物の中 (x + (px·sx)·cos r + pz·sin r, z − (px·sx)·sin r + pz·cos r)（three の rotation.y と同じ回し方）
+ */
+export interface PropPart {
+    type: PropType;
+    x: number;
+    y: number;
+    z: number;
+    rotY: number;
+    sx?: number;
+}
+
 /**
  * 町のまとまり（描く側はまとまりごとに形をまとめる：画面の外・塀の陰で見えないまとまりは描かない。town/view.ts の updateTownView）。
- * south：木戸と東の柵・物見櫓・荷置き場、fence_w：木戸の西の長い柵、fence_e：町家の写しの東の柵、shop_e：町家の写しのまわり、
- * guardpost：詰所（東の囲いの小屋・桶）、rest：詰所の前の休み場（通りの東、土塀の手前。筵・床几・槍立て）、council：軍議所、
+ * south：木戸と東の柵・物見櫓・荷置き場、fence_w：木戸の西の長い柵、fence_e：土蔵造りの店の東の柵、shop_e：土蔵造りの店のまわり、
+ * guardpost：詰所（東の囲いの小屋・桶・床几）、rest：詰所の前の休み場（通りの東、土塀の手前。筵・槍立て）、council：軍議所、
  * towertop：物見櫓の屋根（物見の眺めの間は描かない）
  */
 export type TownCluster = 'south' | 'fence_w' | 'fence_e' | 'shop_e' | 'guardpost' | 'rest' | 'council' | 'towertop';
@@ -49,6 +87,11 @@ export interface TownProp {
     x: number;
     z: number;
     rotY: number;
+    /** 散らばった小物（籠・筵・床几）：形ごとに、その形の所の地面の高さに置く（ほかは小物の原点の地面の高さ） */
+    scatter?: boolean;
+    /** Blender で作った形の置き方 */
+    parts: PropPart[];
+    /** コードで作る形（軍議所の陣幕の囲いと机だけ） */
     pieces: Piece[];
     /** 当たり判定・カメラ除け（小物の中の座標。y は地面から） */
     colliders: Rect[];
@@ -72,14 +115,7 @@ export interface TownBanner {
 const rectOf = (x0: number, x1: number, z0: number, z1: number): Rect => ({ x0: Math.min(x0, x1), x1: Math.max(x0, x1), z0: Math.min(z0, z1), z1: Math.max(z0, z1) });
 const boxOf = (r: Rect, y0: number, y1: number): Box => ({ ...r, y0, y1 });
 const B = (mat: TownMat, w: number, h: number, d: number, x: number, y: number, z: number, rot?: readonly [number, number, number]): Piece => ({ shape: 'box', mat, size: [w, h, d], pos: [x, y, z], ...(rot ? { rot } : {}) });
-const C = (mat: TownMat, rt: number, rb: number, h: number, seg: number, x: number, y: number, z: number, rot?: readonly [number, number, number], open?: boolean): Piece => ({
-    shape: 'cyl',
-    mat,
-    size: [rt, rb, h, seg],
-    pos: [x, y, z],
-    ...(rot ? { rot } : {}),
-    ...(open ? { open } : {}),
-});
+const r6 = (v: number) => Math.round(v * 1e6) / 1e6;
 
 /** 小物の中の点 → ゲームの座標（three の rotation.y と同じ回し方） */
 export function propToWorld(p: Pick<TownProp, 'x' | 'z' | 'rotY'>, lx: number, lz: number): { x: number; z: number } {
@@ -96,7 +132,6 @@ export function propRect(p: Pick<TownProp, 'x' | 'z' | 'rotY'>, r: Rect): Rect {
         propToWorld(p, r.x0, r.z1),
         propToWorld(p, r.x1, r.z1),
     ];
-    const r6 = (v: number) => Math.round(v * 1e6) / 1e6;
     return {
         x0: r6(Math.min(...pts.map((q) => q.x))),
         x1: r6(Math.max(...pts.map((q) => q.x))),
@@ -105,227 +140,70 @@ export function propRect(p: Pick<TownProp, 'x' | 'z' | 'rotY'>, r: Rect): Rect {
     };
 }
 
-// ================================================================ 小物の作り方（小物の中の座標）
+// ================================================================ 形の置き方 → 当たり判定（小物の中の座標）
 
-/** 柵（長さ len を小物の +x へ。杭と横木 2 本）。当たり判定は細い帯、カメラ除けは杭の高さまで */
-function fence(name: string, cluster: TownCluster, x: number, z: number, rotY: number, len: number): TownProp {
-    const pieces: Piece[] = [];
-    const n = Math.max(1, Math.round(len / 1.8));
-    for (let i = 0; i <= n; i++) pieces.push(B('wood', 0.12, 1.3, 0.12, (len * i) / n, 0.65, 0));
-    for (const y of [0.45, 1.05]) pieces.push(B('wood', len, 0.07, 0.06, len / 2, y, 0));
-    const r = rectOf(-0.08, len + 0.08, -0.12, 0.12);
-    return { name, cluster, x, z, rotY, pieces, colliders: [r], blockers: [boxOf(rectOf(-0.08, len + 0.08, -0.1, 0.1), 0, 1.35)] };
+/** 形の中の点 → 小物の中の点 */
+export function partToProp(q: Pick<PropPart, 'x' | 'z' | 'rotY' | 'sx'>, px: number, pz: number): { x: number; z: number } {
+    const c = Math.cos(q.rotY);
+    const s = Math.sin(q.rotY);
+    const x = px * (q.sx ?? 1);
+    return { x: q.x + x * c + pz * s, z: q.z - x * s + pz * c };
 }
 
-/** 街道口の木戸（道をまたぐ 2 本の柱・冠木・小さな板屋根・外へ開いた 2 枚の扉）。小物の原点は道の真ん中 */
-function kido(z: number): TownProp {
-    const P = KIDO.postX;
-    const pieces: Piece[] = [];
-    for (const s of [-1, 1]) {
-        pieces.push(B('wood', 0.3, 3.4, 0.3, s * P, 1.7, 0));
-        // 外（南）へ開いた扉（柵に沿わず、道の端へ斜めに）
-        pieces.push(B('plank', 0.07, 2.6, 2.4, s * (P + 0.12), 1.4, 1.35, [0, s * 0.12, 0]));
-        for (const y of [0.5, 1.4, 2.3]) pieces.push(B('wood', 0.1, 0.1, 2.4, s * (P + 0.06), y, 1.35, [0, s * 0.12, 0]));
-    }
-    pieces.push(B('wood', 2 * P + 0.7, 0.28, 0.3, 0, 3.12, 0));
-    // 板屋根（切妻を 2 枚の板で）
-    for (const s of [-1, 1]) pieces.push(B('roof', 2 * P + 1.4, 0.08, 0.85, 0, 3.62, s * 0.36, [s * 0.38, 0, 0]));
-    pieces.push(B('wood', 2 * P + 1.4, 0.12, 0.12, 0, 3.78, 0));
+/** 形の中の四角形 → 小物の中の四角形（回した四隅を囲む） */
+function partRect(q: PropPart, r: Rect): Rect {
+    const pts = [partToProp(q, r.x0, r.z0), partToProp(q, r.x1, r.z0), partToProp(q, r.x0, r.z1), partToProp(q, r.x1, r.z1)];
+    return {
+        x0: r6(Math.min(...pts.map((v) => v.x))),
+        x1: r6(Math.max(...pts.map((v) => v.x))),
+        z0: r6(Math.min(...pts.map((v) => v.z))),
+        z1: r6(Math.max(...pts.map((v) => v.z))),
+    };
+}
+
+/** Blender で作った形を置いた小物（当たり判定・カメラ除けは、種類ごとの固い部品の箱を置き場所へ写したもの） */
+function partsProp(name: string, cluster: TownCluster, x: number, z: number, rotY: number, parts: PropPart[], scatter = false): TownProp {
     const colliders: Rect[] = [];
     const blockers: Box[] = [];
-    for (const s of [-1, 1]) {
-        const post = rectOf(s * P - 0.2, s * P + 0.2, -0.2, 0.2);
-        colliders.push(post);
-        blockers.push(boxOf(post, 0, 3.3));
-        const door = rectOf(s * (P + 0.02), s * (P + 0.45), 0.1, 2.6);
-        colliders.push(door);
-        blockers.push(boxOf(door, 0, 2.75));
+    for (const q of parts) {
+        const t = PROP_TYPES[q.type];
+        for (const r of t.walk) colliders.push(partRect(q, r));
+        for (const b of t.camera) blockers.push({ ...partRect(q, b), y0: r6(b.y0 + q.y), y1: r6(b.y1 + q.y) });
     }
-    blockers.push(boxOf(rectOf(-P - 0.75, P + 0.75, -0.75, 0.75), 2.95, 3.95));
-    return { name: 'kido', cluster: 'south', x: HIGHWAY_MOUTH.x, z, rotY: 0, pieces, colliders, blockers };
+    return { name, cluster, x, z, rotY, ...(scatter ? { scatter } : {}), parts, pieces: [], colliders, blockers };
 }
 
-/** 物見櫓（4 本の脚・筋交い・床・手すり・屋根・北の梯子）。原点は櫓の真ん中の地面 */
-function lookoutTower(x: number, z: number): TownProp[] {
-    const L = TOWER.half;
-    const H = TOWER.floorY;
-    const pieces: Piece[] = [];
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) pieces.push(B('wood', 0.22, H, 0.22, sx * L, H / 2, sz * L));
-    // 横の繋ぎと筋交い（各面）
-    for (const y of [0.5, 3.1]) {
-        for (const s of [-1, 1]) {
-            pieces.push(B('wood', 2 * L, 0.12, 0.1, 0, y, s * L));
-            pieces.push(B('wood', 0.1, 0.12, 2 * L, s * L, y, 0));
-        }
-    }
-    const diag = Math.hypot(2 * L, 2.5);
-    const ang = Math.atan2(2.5, 2 * L);
-    for (const yc of [1.8, 4.4]) {
-        for (const s of [-1, 1]) {
-            pieces.push(B('wood', diag, 0.09, 0.08, 0, yc, s * L, [0, 0, s * ang]));
-            pieces.push(B('wood', 0.08, 0.09, diag, s * L, yc, 0, [s * ang, 0, 0]));
-        }
-    }
-    // 床と手すりの板（北の梯子の口だけ開ける）
-    pieces.push(B('plank', 2 * L + 0.5, 0.16, 2 * L + 0.5, 0, H + 0.02, 0));
-    const R = L + 0.22;
-    pieces.push(B('plank', 2 * R, 0.8, 0.06, 0, H + 0.5, R));
-    pieces.push(B('plank', 0.06, 0.8, 2 * R, -R, H + 0.5, 0));
-    pieces.push(B('plank', 0.06, 0.8, 2 * R, R, H + 0.5, 0));
-    pieces.push(B('plank', R - 0.45, 0.8, 0.06, -(R + 0.45) / 2, H + 0.5, -R));
-    pieces.push(B('plank', R - 0.45, 0.8, 0.06, (R + 0.45) / 2, H + 0.5, -R));
-    // 屋根の柱と屋根（四角すい）は別の小物（物見の眺めの間は描かない：目の前をふさがないように。town/view.ts の setTowerTopVisible）
-    const top: Piece[] = [];
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) top.push(B('wood', 0.1, 2.3, 0.1, sx * R, H + 1.25, sz * R));
-    top.push({ shape: 'cone', mat: 'roof', size: [R * Math.SQRT2 + 0.55, 1.15, 4], pos: [0, H + 2.95, 0], rot: [0, Math.PI / 4, 0] });
-    // 梯子（北の面に立てかける）
-    const lad = TOWER.ladder;
-    const lean = Math.atan2(lad.footOut, H);
-    const lz = -(L + lad.footOut / 2 + 0.1);
-    const llen = Math.hypot(H + 0.3, lad.footOut);
-    for (const s of [-1, 1]) pieces.push(B('wood', 0.07, llen, 0.07, s * 0.3, (H + 0.3) / 2, lz, [-lean, 0, 0]));
-    const rungs = Math.floor(H / 0.4);
-    for (let i = 1; i < rungs; i++) {
-        const y = i * 0.4;
-        const zz = -(L + 0.1) - lad.footOut * (1 - y / H);
-        pieces.push(B('wood', 0.62, 0.05, 0.05, 0, y, zz));
-    }
-    const base = rectOf(-L - 0.15, L + 0.15, -L - 0.15, L + 0.15);
-    const ladder = rectOf(-0.42, 0.42, -(L + lad.footOut + 0.3), -L);
-    return [
-        {
-            name: 'lookout_tower',
-            cluster: 'south',
-            x,
-            z,
-            rotY: 0,
-            pieces,
-            colliders: [base, ladder],
-            blockers: [
-                boxOf(rectOf(-L - 0.2, L + 0.2, -L - 0.2, L + 0.2), 0, H - 0.1),
-                boxOf(ladder, 0, H),
-                boxOf(rectOf(-R - 0.1, R + 0.1, -R - 0.1, R + 0.1), H - 0.1, H + 0.95),
-            ],
-        },
-        { name: 'lookout_tower_top', cluster: 'towertop', x, z, rotY: 0, pieces: top, colliders: [], blockers: [boxOf(rectOf(-R - 0.6, R + 0.6, -R - 0.6, R + 0.6), H + 2.35, H + 3.55)] },
-    ];
+const part = (type: PropType, x = 0, z = 0, rotY = 0, y = 0, sx?: number): PropPart => ({ type, x, y, z, rotY, ...(sx !== undefined ? { sx } : {}) });
+
+// ================================================================ 小物の組み方（表の 1 行 → 形の置き方）
+
+/** 柵（長さ len を小物の +x へ）：1 間（PROP_DIMS.fence_bay）ごとの形を、長さに合わせて少し伸び縮みさせて並べ、終わりに柱 */
+function fence(name: string, cluster: TownCluster, x: number, z: number, rotY: number, len: number): TownProp {
+    const bay = PROP_DIMS.fence_bay;
+    const n = Math.max(1, Math.round(len / bay));
+    const sx = len / (n * bay);
+    const parts: PropPart[] = [];
+    for (let i = 0; i < n; i++) parts.push(part('fence_bay', (len * i) / n, 0, 0, 0, sx));
+    parts.push(part('fence_post', len, 0));
+    return partsProp(name, cluster, x, z, rotY, parts);
 }
 
-/** 荷車（大八車）。小物の +z が梶棒の先 */
-function cart(name: string, x: number, z: number, rotY: number): TownProp {
-    const pieces: Piece[] = [
-        B('plank', 1.0, 0.1, 1.9, 0, 0.62, -0.1),
-        B('wood', 0.06, 0.18, 1.9, -0.5, 0.75, -0.1),
-        B('wood', 0.06, 0.18, 1.9, 0.5, 0.75, -0.1),
-        C('wood', 0.55, 0.55, 0.1, 16, -0.62, 0.55, -0.1, [0, 0, Math.PI / 2]),
-        C('wood', 0.55, 0.55, 0.1, 16, 0.62, 0.55, -0.1, [0, 0, Math.PI / 2]),
-        C('dark', 0.08, 0.08, 1.4, 6, 0, 0.55, -0.1, [0, 0, Math.PI / 2]),
-        B('wood', 0.07, 0.07, 1.62, -0.36, 0.35, 1.68, [0.345, 0, 0]),
-        B('wood', 0.07, 0.07, 1.62, 0.36, 0.35, 1.68, [0.345, 0, 0]),
-        B('wood', 0.86, 0.06, 0.06, 0, 0.1, 2.42),
-        // 積み荷（俵 2 つと籠）
-        C('straw', 0.3, 0.3, 0.82, 10, 0, 0.98, -0.55, [0, 0, Math.PI / 2]),
-        C('straw', 0.3, 0.3, 0.82, 10, 0, 0.98, 0.1, [0, 0, Math.PI / 2]),
-        C('basket', 0.26, 0.21, 0.36, 10, 0.18, 0.85, 0.62, undefined, true),
-    ];
-    const r = rectOf(-0.72, 0.72, -1.1, 2.5);
-    return { name, cluster: 'south', x, z, rotY, pieces, colliders: [r], blockers: [boxOf(rectOf(-0.72, 0.72, -1.1, 0.95), 0, 1.3)] };
-}
-
-/** 俵の山（下 n 個・上 n−1 個。俵の軸は小物の x） */
+/** 俵の山（下 n 個・上 n−1 個。俵の軸は小物の x）。下の俵の間は俵の直径の 1.04 倍、上の俵は下の 2 つの間の溝に載る */
 function bales(name: string, cluster: TownCluster, x: number, z: number, rotY: number, n: number): TownProp {
-    const pieces: Piece[] = [];
-    const w = 0.6;
-    for (let i = 0; i < n; i++) pieces.push(C('straw', 0.3, 0.3, 0.84, 10, 0, 0.3, (i - (n - 1) / 2) * w, [0, 0, Math.PI / 2]));
-    for (let i = 0; i < n - 1; i++) pieces.push(C('straw', 0.3, 0.3, 0.84, 10, 0, 0.82, (i - (n - 2) / 2) * w, [0, 0, Math.PI / 2]));
-    // 縄の帯（濃い色の細い輪の代わりに薄い箱）
-    const half = (n * w) / 2;
-    const r = rectOf(-0.5, 0.5, -half - 0.05, half + 0.05);
-    return { name, cluster, x, z, rotY, pieces, colliders: [r], blockers: [boxOf(r, 0, n > 1 ? 1.15 : 0.62)] };
-}
-
-/** 籠（上の開いた筒）。いくつかまとめて */
-function baskets(name: string, cluster: TownCluster, pts: readonly [number, number][]): TownProp {
-    const pieces: Piece[] = [];
-    const colliders: Rect[] = [];
-    for (const [x, z] of pts) {
-        pieces.push(C('basket', 0.3, 0.24, 0.42, 12, x, 0.21, z, undefined, true));
-        pieces.push(C('dark', 0.23, 0.23, 0.03, 12, x, 0.03, z));
-        colliders.push(rectOf(x - 0.3, x + 0.3, z - 0.3, z + 0.3));
-    }
-    return { name, cluster, x: 0, z: 0, rotY: 0, pieces, colliders, blockers: [] };
-}
-
-/** 床几（腰掛け）。いくつかまとめて。[x, z, 向き]（向きは座る人の向き。座面の長い辺は向きに直交） */
-function stools(name: string, cluster: TownCluster, pts: readonly [number, number, number][]): TownProp {
-    const pieces: Piece[] = [];
-    const colliders: Rect[] = [];
-    for (const [x, z, h] of pts) {
-        const along = Math.abs(Math.sin(h)) > 0.5;
-        const w = along ? 0.36 : 0.46;
-        const d = along ? 0.46 : 0.36;
-        pieces.push(B('cloth', w, 0.05, d, x, 0.42, z));
-        for (const s of [-1, 1]) {
-            if (along) pieces.push(B('wood', 0.3, 0.42, 0.05, x, 0.21, z + s * 0.19, [0, 0, 0]));
-            else pieces.push(B('wood', 0.05, 0.42, 0.3, x + s * 0.19, 0.21, z));
-        }
-        colliders.push(rectOf(x - w / 2 - 0.02, x + w / 2 + 0.02, z - d / 2 - 0.02, z + d / 2 + 0.02));
-    }
-    return { name, cluster, x: 0, z: 0, rotY: 0, pieces, colliders, blockers: [] };
-}
-
-/** 詰所の小屋（板壁の箱・片流れの板屋根・西の戸口）。原点は小屋の真ん中の地面 */
-function hut(x: number, z: number): TownProp {
-    const W = 4.0;
-    const D = 4.0;
-    const pieces: Piece[] = [
-        B('plank', W, 2.3, D, 0, 1.15, 0),
-        // 片流れの屋根（東へ下がる）
-        B('roof', W + 0.7, 0.12, D + 0.6, 0, 2.62, 0, [0, 0, -0.14]),
-        // 西の戸口（暗い面）と柱
-        B('dark', 0.04, 1.85, 1.05, -W / 2 - 0.02, 0.93, 0.2),
-        B('wood', 0.1, 2.3, 0.1, -W / 2 - 0.03, 1.15, -0.4),
-        B('wood', 0.1, 2.3, 0.1, -W / 2 - 0.03, 1.15, 0.8),
-        // 腰板の帯と縦の桟（板壁に見えるように）
-        B('wood', W + 0.04, 0.12, D + 0.04, 0, 0.55, 0),
-        ...[-1.5, -0.5, 0.5, 1.5].flatMap((u) => [B('wood', 0.07, 2.3, D + 0.05, u, 1.15, 0), B('wood', W + 0.05, 2.3, 0.07, 0, 1.15, u)]),
-        B('wood', W + 0.04, 0.1, D + 0.04, 0, 2.25, 0),
-    ];
-    const r = rectOf(-W / 2 - 0.1, W / 2 + 0.1, -D / 2 - 0.1, D / 2 + 0.1);
-    return { name: 'guard_hut', cluster: 'guardpost', x, z, rotY: 0, pieces, colliders: [r], blockers: [boxOf(r, 0, 2.4), boxOf(rectOf(-W / 2 - 0.4, W / 2 + 0.4, -D / 2 - 0.35, D / 2 + 0.35), 2.25, 3.0)] };
-}
-
-/** 槍立て（2 本の柱と 2 本の横木に、槍を立てかける）。小物の +x が並び、槍の先は小物の −z へ傾く */
-function spearRack(cluster: TownCluster, x: number, z: number, rotY: number): TownProp {
-    const pieces: Piece[] = [];
-    for (const s of [-1, 1]) pieces.push(B('wood', 0.1, 1.7, 0.1, s * 1.1, 0.85, 0));
-    pieces.push(B('wood', 2.4, 0.08, 0.08, 0, 1.55, 0));
-    pieces.push(B('wood', 2.4, 0.08, 0.08, 0, 0.45, 0.08));
-    for (let i = 0; i < 6; i++) {
-        const sx = -0.9 + i * 0.36;
-        pieces.push(B('wood', 0.04, 3.3, 0.04, sx, 1.65, 0.12, [-0.1, 0, 0]));
-        pieces.push({ shape: 'cone', mat: 'metal', size: [0.045, 0.26, 4], pos: [sx, 3.42, -0.05], rot: [-0.1, 0, 0] });
-    }
-    const r = rectOf(-1.25, 1.25, -0.25, 0.32);
-    return { name: 'spear_rack', cluster, x, z, rotY, pieces, colliders: [r], blockers: [boxOf(r, 0, 1.7)] };
-}
-
-/** 筵（負傷兵の休む敷物。平らなので当たり判定は無し） */
-function mats(cluster: TownCluster, pts: readonly [number, number][]): TownProp {
-    const pieces: Piece[] = pts.map(([x, z]) => B('mat', 0.95, 0.03, 1.95, x, 0.016, z));
-    return { name: 'mats', cluster, x: 0, z: 0, rotY: 0, pieces, colliders: [], blockers: [] };
-}
-
-/** 桶 */
-function tub(name: string, cluster: TownCluster, x: number, z: number): TownProp {
-    const pieces: Piece[] = [C('plank', 0.34, 0.3, 0.46, 12, 0, 0.23, 0), C('dark', 0.35, 0.35, 0.04, 12, 0, 0.12, 0), C('dark', 0.36, 0.36, 0.04, 12, 0, 0.38, 0)];
-    const r = rectOf(-0.36, 0.36, -0.36, 0.36);
-    return { name, cluster, x, z, rotY: 0, pieces, colliders: [r], blockers: [] };
+    const r = PROP_DIMS.bale.r;
+    const w = 2 * r * 1.04;
+    const up = Math.sqrt((2 * r) ** 2 - (w / 2) ** 2);
+    const parts: PropPart[] = [];
+    // 置き方の小さなむら（同じ表なら同じ形：番号から決める）
+    const jit = (i: number, k: number) => Math.sin(i * 12.9898 + k * 78.233) * 0.5;
+    for (let i = 0; i < n; i++) parts.push(part('tawara', 0.04 * jit(i, 1), (i - (n - 1) / 2) * w, 0.06 * jit(i, 2)));
+    for (let i = 0; i < n - 1; i++) parts.push(part('tawara', 0.05 * jit(i, 3), (i - (n - 2) / 2) * w, 0.08 * jit(i, 4), up));
+    return partsProp(name, cluster, x, z, rotY, parts);
 }
 
 /**
  * 軍議所の陣幕（柱と幕で囲み、西に口を開ける）・机と絵図・床几。原点は囲いの真ん中。
- * 囲いは x ±W/2、z ±D/2（小物の中）。口は西の面の z −G/2〜G/2。
+ * 囲いは x ±W/2、z ±D/2（小物の中）。口は西の面の z −G/2〜G/2。陣幕・机はコードで作る形（布の縞の画像をコードで描く）、床几は Blender の形。
  */
 function councilTent(x: number, z: number): TownProp[] {
     const { w: W, d: D, gate: G } = TENT;
@@ -357,7 +235,7 @@ function councilTent(x: number, z: number): TownProp[] {
     for (const s of [-1, 1]) pieces.push(B('wood', 0.07, 0.52, 0.78, 0.2 + s * 0.75, 0.26, 0));
     pieces.push(B('paper', 1.45, 0.012, 0.66, 0.2, 0.6, 0));
     colliders.push(rectOf(-0.75, 1.15, -0.5, 0.5));
-    const tent: TownProp = { name: 'council_tent', cluster: 'council', x, z, rotY: 0, pieces, colliders, blockers };
+    const tent: TownProp = { name: 'council_tent', cluster: 'council', x, z, rotY: 0, parts: [], pieces, colliders, blockers };
     // 床几：北と南の 2 列（向き合う）と、奥（東）の 1 つ（西向き）
     const seats: [number, number, number][] = [];
     for (const sx of [-1.4, -0.2, 1.0]) {
@@ -366,6 +244,11 @@ function councilTent(x: number, z: number): TownProp[] {
     }
     seats.push([x + 2.3, z, -Math.PI / 2]);
     return [tent, stools('council_stools', 'council', seats)];
+}
+
+/** 床几。いくつかまとめて。[x, z, 向き]（向きは座る人の向き。座面の長い辺は向きに直交） */
+function stools(name: string, cluster: TownCluster, pts: readonly (readonly [number, number, number])[]): TownProp {
+    return partsProp(name, cluster, 0, 0, 0, pts.map(([x, z, h]) => part('stool', x, z, h)), true);
 }
 
 // ================================================================ 置き場所の数字（street28.json から）
@@ -419,7 +302,7 @@ interface PropSpec {
     pts?: number[][];
 }
 
-/** 表の 1 行から小物を組む（type ごとに形の作り方を選ぶ） */
+/** 表の 1 行から小物を組む（type ごとに、Blender で作った形の置き方を選ぶ） */
 function propsOf(p: PropSpec): TownProp[] {
     const c = p.cluster as TownCluster;
     const x = p.x ?? 0;
@@ -427,25 +310,27 @@ function propsOf(p: PropSpec): TownProp[] {
     const r = p.rotY ?? 0;
     switch (p.type) {
         case 'kido':
-            return [kido(KIDO.z)];
+            return [partsProp('kido', c, HIGHWAY_MOUTH.x, KIDO.z, 0, [part('kido')])];
         case 'fence':
             return [fence(p.id, c, x, z, r, p.len ?? 1)];
         case 'lookout_tower':
-            return lookoutTower(TOWER.x, TOWER.z);
+            // 屋根の柱と屋根は別の小物（物見の眺めの間は描かない：目の前をふさがないように。town/view.ts の setTowerTopVisible）
+            return [partsProp('lookout_tower', c, TOWER.x, TOWER.z, 0, [part('tower')]), partsProp('lookout_tower_top', 'towertop', TOWER.x, TOWER.z, 0, [part('tower_top')])];
         case 'cart':
-            return [cart(p.id, x, z, r)];
+            return [partsProp(p.id, c, x, z, r, [part('cart')])];
         case 'bales':
             return [bales(p.id, c, x, z, r, p.n ?? 2)];
         case 'baskets':
-            return [baskets(p.id, c, (p.pts ?? []) as Pt2[])];
+            return [partsProp(p.id, c, 0, 0, 0, ((p.pts ?? []) as Pt2[]).map(([bx, bz], i) => part('basket', bx, bz, i * 1.7)), true)];
         case 'hut':
-            return [hut(HUT.x, HUT.z)];
+            return [partsProp('guard_hut', c, HUT.x, HUT.z, 0, [part('hut')])];
         case 'tub':
-            return [tub(p.id, c, x, z)];
+            return [partsProp(p.id, c, x, z, r, [part('tub')])];
         case 'spear_rack':
-            return [spearRack(c, REST_RACK.x, REST_RACK.z, REST_RACK.rotY)];
+            return [partsProp('spear_rack', c, REST_RACK.x, REST_RACK.z, REST_RACK.rotY, [part('spear_rack')])];
         case 'mats':
-            return [mats(c, MATS)];
+            // 筵（負傷兵の休む敷物。平らなので当たり判定は無し）。少しずつ向きをずらして敷く
+            return [partsProp('mats', c, 0, 0, 0, MATS.map(([mx, mz], i) => part('mat', mx, mz, ((i * 37) % 7) * 0.012 - 0.036)), true)];
         case 'stools':
             return [stools(p.id, c, GUARD_STOOLS)];
         case 'council_tent':

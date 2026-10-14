@@ -35,7 +35,10 @@ export class ActorLayer {
     private readonly people = new Map<string, ActorPerson>();
     private readonly frustum = new THREE.Frustum();
     private readonly pv = new THREE.Matrix4();
-    private readonly baleGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.62, 10);
+    /**
+     * 肩に担ぐ俵（Version 28：肩に載る大きさ。半径 0.17 m・長さ 0.6 m。前は半径 0.2 m で頭の高さの真横に付き、後ろから見ると頭を隠した）
+     */
+    private readonly baleGeo = new THREE.CylinderGeometry(0.17, 0.17, 0.6, 12);
     private readonly baleMat = new THREE.MeshStandardMaterial({ color: '#9c8656', roughness: 0.95 });
     /** 確かめ用：直前に描いた人の数 */
     peopleDrawn = 0;
@@ -150,17 +153,18 @@ export class ActorLayer {
         const body = this.factory.make(p.look, { walk: true, idlePhase: (hashOf(p.key) % 1000) / 1000 });
         let bale: THREE.Mesh | null = null;
         if (p.carrying !== undefined) {
-            // 肩に担ぐ俵（右肩の骨に付ける：休みの形では骨は回っていないので、骨の中の向きは人物の向きと同じ。人物の前後に長い）
+            // 肩に担ぐ俵（右肩の骨に付ける：休みの形では骨は回っていないので、骨の中の向きは人物の向きと同じ。人物の前後に長い）。
+            // 俵の下の面が肩の上に載り、頭の側の面が頭の外（体の真ん中から 0.13 m 外）に来るように、肩の先の上へ置く
             bale = new THREE.Mesh(this.baleGeo, this.baleMat);
             bale.rotation.x = Math.PI / 2;
             bale.castShadow = !this.low;
             bale.visible = false;
             const shoulder = body.bones.get('RightShoulder');
             if (shoulder) {
-                bale.position.set(-0.04, 0.2, 0.02);
+                bale.position.set(-0.13, 0.17, 0.0);
                 shoulder.add(bale);
             } else {
-                bale.position.set(-0.2, 1.62, 0.02);
+                bale.position.set(-0.3, 1.5, 0.0);
                 body.root.add(bale);
             }
         }

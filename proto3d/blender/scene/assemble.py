@@ -78,6 +78,69 @@ def place_copy(name: str, objs, loc_game, rot=0.0, scale=1.0):
     return r
 
 
+def assemble28(*, trees=True, props=True, buildings=True, far_pines=True) -> dict:
+    """
+    Version 28 の場面（地面なし）：城門・土塀・天守・城内、通りの建物 5 棟（street28.json の buildings）、
+    小物（props28.glb の形を street28/props28.placed.json の置き方どおりに）、木（street28.json の trees・back_trees と遠景の松）。
+    地面の制作（build_ground.py）が、これを置いたまま接地の陰を焼く。返り値 {名前: (親, 物体の一覧)}
+    """
+    import json
+    sd = pathlib.Path(__file__).resolve().parents[1] / 'street28'
+    street = json.loads((sd / 'street28.json').read_text())
+    out = {}
+    if buildings:
+        for nm in ['gate_v2', 'walls_v2', 'keep', 'inner'] + [b['id'] for b in street['buildings']]:
+            out[nm] = load_glb(nm)
+    if props:
+        root, objs = load_glb('props28')
+        types = {}
+        for o in objs:
+            if o.type != 'MESH':
+                continue
+            q = o.parent
+            while q is not None and not q.name.startswith('prop_'):
+                q = q.parent
+            if q is not None:
+                types.setdefault(q.name[len('prop_'):].split('.')[0], []).append((o, q))
+        placed = json.loads((sd / 'props28.placed.json').read_text())['placed']
+        for i, it in enumerate(placed):
+            r = bpy.data.objects.new(f'prop28_{i}', None)
+            bpy.context.scene.collection.objects.link(r)
+            kids = []
+            for o, q in types[it['type']]:
+                c = o.copy()
+                bpy.context.scene.collection.objects.link(c)
+                rel = q.matrix_world.inverted() @ o.matrix_world
+                c.parent = r
+                c.matrix_parent_inverse = mathutils.Matrix.Identity(4)
+                c.matrix_basis = rel
+                kids.append(c)
+            r.location = g2b(it['x'], it['y'], it['z'])
+            r.rotation_euler = (0, 0, it['rotY'])
+            r.scale = (it['sx'], 1.0, 1.0)
+            out[r.name] = (r, kids)
+        root.location = (0, 0, -300)          # 読み込んだ元（原点に全種類が重なっている）は使わない
+        out['props28'] = (root, objs)
+    if trees:
+        srcs = {}
+        for t in street['trees'] + [dict(name=f'back{i}', **b) for i, b in enumerate(street['back_trees'])]:
+            if t['model'] not in srcs:
+                srcs[t['model']] = load_glb(t['model'])
+                srcs[t['model']][0].location = (0, 0, -300)
+                out['src_' + t['model']] = srcs[t['model']]
+            r = place_copy(t['name'], srcs[t['model']][1], (t['x'], 0, t['z']), t['rotY'], t['scale'])
+            out[r.name] = (r, list(r.children))
+        if far_pines and (MODELS_DIR / 'tree_pine_far.glb').exists():
+            src = srcs.get('tree_pine_far') or load_glb('tree_pine_far')
+            src[0].location = (0, 0, -300)
+            out.setdefault('src_tree_pine_far', src)
+            for i, (x, z, rot, sc) in enumerate(far_pine_places()):
+                r = place_copy(f'pine_farp{i}', src[1], (x, 0, z), rot, sc)
+                out[r.name] = (r, list(r.children))
+    bpy.context.view_layer.update()
+    return out
+
+
 def far_pine_places() -> list:
     """遠景の松の置き場所 [(x, z, 向き, 大きさ)]（trees.meta.json）"""
     import json

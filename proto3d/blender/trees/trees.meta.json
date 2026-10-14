@@ -297,5 +297,17 @@
       "z0": -29.16,
       "z1": -28.44
     }
-  ]
+  ],
+  "tree_willow28": {
+    "glb": "models/tree_willow28.glb",
+    "trunk_radius_at_1m": 0.214,
+    "height": 5.24,
+    "canopy_y": [
+      1.15,
+      5.24
+    ],
+    "canopy_radius": 4.08,
+    "triangles": 5812,
+    "note": "Version 28 の通りの柳。置き場所・幹の当たり判定は street28.json の trees（layout.ts）。葉は plants と同じ画像（草の区画）。"
+  }
 }
