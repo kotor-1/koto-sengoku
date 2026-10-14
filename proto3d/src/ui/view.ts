@@ -229,6 +229,9 @@ export class DomView implements GameView, LayerHost {
     }
 
     private push(m: Modal): void {
+        // 会話・演出の上にメニュー・情勢・確認などを重ねた：今の声を止める（閉じて戻っても、前の行の声を流し直さない）。
+        // 演出を重ねたときは、演出の最初の字幕が声を決める（積む前に字幕を出しているので、ここでは止めない）
+        if (m.kind !== 'cine' && this.modals.length > 0) audio()?.stopVoice();
         this.modals.push(m);
         this.updateCover();
         this.syncMenuBtn();
@@ -687,7 +690,7 @@ export class DomView implements GameView, LayerHost {
                 face?.set(line.speaker);
                 // 人物画：この行の話し手に絵があれば出す。絵の無い話し手（使者・村の使い）・地の文・高札の行は下げる（選択肢が出た後の空きで大きさを決める）
                 portrait?.set(line.speaker);
-                // 声：表にある短い台詞だけ読む（前の行の声は止める。docs/audio.md）
+                // 声：表にある台詞だけ流す（前の行の声は止める。音声ファイルの無い行は無音。docs/audio.md・docs/v28-town-motion-voice.md §5.4）
                 audio()?.line(line.speaker, line.name, line.text);
             };
             const advance = () => {
@@ -766,6 +769,8 @@ export class DomView implements GameView, LayerHost {
             this.push(m);
             backdrop?.start();
             face?.start();
+            // 声：この会話の声のある行を先に読んでおく（新しい声のとき。最初の行の声を待たせない）
+            audio()?.prefetchLines(lines);
             render();
         });
     }

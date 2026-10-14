@@ -9,7 +9,8 @@
  *   それまでは AudioContext を作らない（作れない・始められない端末でも、進行は止めない：state は 'unavailable' のまま）。
  * - アプリの切り替え（visibilitychange・pagehide・blur）では AudioContext を一時停止（suspend）する。戻ったら（見えていて窓が前）再開する。
  *   一時停止の間は AudioContext の時計が止まるので、曲の先読みの予約（music.ts）はたまらない。止めた知らせ（onPause）で声を止める。
- * - 声（端末の読み上げ）は AudioContext を通らない（speechSynthesis）。声のバスは音量の値を持つだけで、voice.ts が読む。
+ * - 声：Version 28 からは台詞ごとの音声ファイル（voiceFiles.ts）を声のバスに流す（既定）。端末の読み上げ（旧。voice.ts・speechSynthesis）は
+ *   AudioContext を通らないので、声のバスの音量の値を読み上げの volume に使う。
  * - 時計は AudioContext の currentTime（描画のコマに比例しない）。
  */
 import { AudioSettingsStore, type AudioSettings } from './settings';

@@ -38,11 +38,27 @@
 
 ## 音（BGM・環境音・効果音・声）
 
-第三者の素材は使っていない（Version 21。docs/audio.md）。
+BGM・環境音・効果音は第三者の素材を使っていない（Version 21。docs/audio.md）。台詞の声は Version 28 から VOICEVOX で事前に作った音声ファイル（下の節）。
 
 - BGM 3 種・環境音・効果音：すべてこのリポジトリのコード（`proto3d/src/audio/`）で合成したオリジナル。音源のファイル・既存の曲や録音・購入・外注・有料 API は無い。
-- 声：端末の読み上げ（Web Speech API。OS・ブラウザの音声）を使う。声のデータはゲームに入れていない。
+- 声（Version 27 まで・Version 28 の「端末の読み上げ（旧）」）：端末の読み上げ（Web Speech API。OS・ブラウザの音声）を使う。声のデータはゲームに入れていない。
 - 取得できなかったもの：VOICEVOX Nemo（配布元 voicevox.hiroshiba.jp・github.com がこの環境の通信制限で拒否（403））。使っていない。
+
+## 台詞の音声：VOICEVOX（Version 28）
+
+台詞ごとの音声ファイル（`proto3d/public/voice/*.mp3`。一覧 `proto3d/src/audio/voiceManifest.gen.json`）は、手元で動かした VOICEVOX CORE 0.17.0 で、
+音声の台本 `proto3d/voice/script.json` から `proto3d/tools/voice-build.py` で作った（記録は docs/v28-town-motion-voice.md の 7）。
+
+| 項目 | 内容 |
+|---|---|
+| 入手元 | VOICEVOX の公式の配布（GitHub の VOICEVOX/voicevox_core・voicevox_vvm・onnxruntime-builder、r9y9/open_jtalk の辞書）。VOICEVOX CORE 0.17.0（Python）、ONNX Runtime（voicevox_onnxruntime 1.17.3）、Open JTalk の辞書 1.11、音声モデル VVM（voicevox_vvm。利用規約の写しのコミット dd3e6a09） |
+| リポジトリ・配信に入れた物 | 出来た台詞の音声（MP3）だけ。音声合成の本体・ONNX Runtime・辞書・音声モデル（VVM）は入れていない（`.gitignore`） |
+| 利用規約（TERMS.txt・README の記載） | 音声モデル：商用・非商用で利用でき、アプリに組み込んで再配布もできる。作った音声は各音声ライブラリの規約に従う。VOICEVOX を利用したことがわかるクレジット表記が必要。各声：「VOICEVOX:<名前>」とクレジットを記載すれば、商用・非商用で利用可能 |
+| **必要なクレジット（配信する音声に使った声）** | **VOICEVOX:玄野武宏**（織田家の使者）・**VOICEVOX:剣崎雌雄**（浅井家の使者）・**VOICEVOX:離途**（本多忠勝）・**VOICEVOX:雀松朱司**（徳川家康）。ゲームの中では、メニューの「音」の欄（音の設定）に「音声：VOICEVOX:玄野武宏、VOICEVOX:剣崎雌雄、VOICEVOX:離途、VOICEVOX:雀松朱司」と出す（一覧 `voiceManifest.gen.json` の声から作る。声の種類に関わらず出す。Version 28 V2） |
+| サンプルだけに使った声（配信しない） | 黒沢冴白（同じ条件）・青山龍星（「企業が携わる形で利用する場合は事前確認」が要るので第一案にしない） |
+| 使わない声 | もち子さん（ゲーム作品を除く）・No.7（非商用だけ）・ユーレイちゃん（制限あり） |
+| 開けなかった規約のページ | 各声の詳しい規約（virvoxproject.com：玄野武宏・雀松朱司・黒沢冴白・青山龍星／litmus9.com：離途／frontier.creatia.cc：剣崎雌雄）と voicevox.hiroshiba.jp/term/ は、この環境の通信制限で開けなかった（403。2026-10-14）。上の要約は TERMS.txt の記載による。公開の前に利用者が確かめる |
+| 人物との関係 | 声は架空の配役（ゲーム用の創作）。実在の人物・俳優の声の再現ではない |
 
 ## 生成イラスト素材パック sengoku_art_pack_v1（人物・風景画像 第1版。Version 22）
 

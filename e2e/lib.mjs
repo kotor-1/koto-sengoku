@@ -88,8 +88,23 @@ export function keysToward(yaw, p, tx, tz) {
 /** 公開先に近い決まり（すべての本番の e2e と同じ CSP） */
 export const PROD_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'";
 
-/** 本番の簡易サーバーの種類の表（生成イラスト素材の .webp を足した） */
-export const PROD_MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.glb': 'model/gltf-binary' };
+/** 本番の簡易サーバーの種類の表（生成イラスト素材の .webp を足した。Version 28：台詞の音声ファイルの音の種類を足した） */
+export const PROD_MIME = {
+    '.html': 'text/html; charset=utf-8',
+    '.js': 'text/javascript',
+    '.css': 'text/css',
+    '.json': 'application/json',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml',
+    '.glb': 'model/gltf-binary',
+    '.mp3': 'audio/mpeg',
+    '.ogg': 'audio/ogg',
+    '.opus': 'audio/ogg',
+    '.m4a': 'audio/mp4',
+    '.wav': 'audio/wav',
+};
 
 /**
  * dist を CSP のヘッダー付きで出す簡易サーバー（ほかの本番の e2e と同じ作り）。返り：{ served, missing, close }。

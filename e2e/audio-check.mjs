@@ -149,7 +149,9 @@ async function openPage({ width = 1000, height = 560, query = '?q=low&render=man
     if (m.type() === 'error') note(`   ！console ${m.text().slice(0, 200)}`);
   });
   if (fakeSpeech) await page.addInitScript(FAKE_SPEECH);
-  await page.goto(BASE + '/' + query);
+  // 偽の speechSynthesis で確かめる部は、端末の読み上げ（旧）の道筋（Version 28 から既定は台詞の音声ファイル。?voice=tts でその回だけ旧に）。
+  // 音声ファイルの声の確かめは e2e/voice-play.mjs
+  await page.goto(BASE + '/' + query + (fakeSpeech ? '&voice=tts' : ''));
   await page.waitForFunction(() => window.__game?.ui?.kind === 'title' && window.__audio, null, POLL);
   await page.waitForFunction(() => document.getElementById('loading')?.hidden === true, null, POLL);
   await page.evaluate(METER);

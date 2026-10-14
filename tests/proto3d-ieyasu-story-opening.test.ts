@@ -24,7 +24,7 @@ import {
 import { ieyasuCastFor, ieyasuScenario, ieyasuStartPose, IEYASU_LOOKS } from '../proto3d/src/campaign/ieyasu1570/scenario';
 import { ieyasuCinematic, ieyasuReplays, CINE_CAPTION_MAX } from '../proto3d/src/campaign/ieyasu1570/story/cinematics';
 import { ieyasuSituation } from '../proto3d/src/campaign/ieyasu1570/story/situation';
-import { VOICE_LINES, VOICE_SPEAKER_NAMES, findVoiceLine, moraCount, voiceLine, voiceSecFor } from '../proto3d/src/campaign/ieyasu1570/story/voiceLines';
+import { VOICE_LINES, VOICE_SPEAKER_NAMES, findVoiceLine, moraCount, voiceEstimateSec, voiceLine, voiceSecFor } from '../proto3d/src/campaign/ieyasu1570/story/voiceLines';
 import { VISUAL_MAX, outcomeTroops, visualCount } from '../proto3d/src/campaign/ieyasu1570/story/counts';
 import { ieyasu2CastFor } from '../proto3d/src/campaign/ieyasu1570/chapter2/scenario';
 import { ieyasu2Objective } from '../proto3d/src/campaign/ieyasu1570/chapter2/story';
@@ -285,8 +285,8 @@ describe('操作を始める位置（保存に位置が無いとき：町の入�
     });
 });
 
-describe('声の付いた字幕は、読み上げの見積もりより短くない（字幕が替わると前の声を止めるので、声を途中で切らない）', () => {
-    it('冒頭・図解・出陣・帰還のすべての組み合わせ：声の付いた字幕の秒 ≥ 読み（audio/readings.ts）の拍 ÷（7 × 話し手の速さ）＋ 0.8', () => {
+describe('声の付いた字幕は、声の長さより短くない（字幕が替わると前の声を止めるので、声を途中で切らない）', () => {
+    it('冒頭・図解・出陣・帰還のすべての組み合わせ：声の付いた字幕の秒 ≥ 声の長さ（音声ファイルがあればその長さ＋余白、無ければ読み（audio/readings.ts）の拍 ÷（7 × 話し手の速さ）＋ 0.8）', () => {
         const specs: CineSpec[] = [ieyasuCinematic(newIeyasuGame(), 'ch1_open')!, ieyasuCinematic(newIeyasuGame(), 'ch1_intro')!];
         for (const c of CH1) for (const m of ['departure', 'return'] as const) { const x = ieyasuCinematic(c.state, m); if (x) specs.push(x); }
         for (const c of CH2_STARTS) for (const m of ['ch2_open', 'ch2_intro'] as const) specs.push(ieyasuCinematic(c.state, m)!);
@@ -309,11 +309,14 @@ describe('声の付いた字幕は、読み上げの見積もりより短くな�
         // 冒頭と出陣の声の台詞はすべて現れる
         for (const v of VOICE_LINES.filter((x) => x.where !== 'talk' && x.where !== 'battle')) expect(ids.has(v.id), v.id).toBe(true);
     });
-    it('見積もりの例：忠勝の「殿、軍議を開きましょう。…」は 4 秒を超え、拍の数は読みのかなから数える', () => {
+    it('見積もりの例（音声ファイルの無い台詞と、端末の読み上げの長さ）：忠勝の「殿、軍議を開きましょう。…」は 4 秒を超え、拍の数は読みのかなから数える', () => {
         expect(moraCount('との、ぐんぎを')).toBe(6);
         expect(moraCount('じょうもん')).toBe(4);
+        expect(voiceEstimateSec('ch1.tadakatsu.council')).toBeGreaterThan(4);
+        expect(voiceEstimateSec('ch2.asai_envoy.first.broken')).toBeGreaterThan(5);
+        // 音声ファイルのある台詞（Version 28）は実際の長さから（tests/proto3d-voice-files.test.ts）。ファイルの無い台詞は見積もりのまま
         expect(voiceSecFor('ch1.tadakatsu.council')).toBeGreaterThan(4);
-        expect(voiceSecFor('ch2.asai_envoy.first.broken')).toBeGreaterThan(5);
+        expect(voiceSecFor('ch2.asai_envoy.first.broken')).toBe(voiceEstimateSec('ch2.asai_envoy.first.broken'));
     });
 });
 

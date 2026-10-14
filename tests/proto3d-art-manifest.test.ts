@@ -423,7 +423,10 @@ describe('素材パック第 2 版（sengoku_individual_art_v2。Version 25）�
             'art/battle/plains_road.webp',
         ].sort();
         expect(files).toEqual(want);
-        const all = walk(PUBLIC).map((p) => p.slice(PUBLIC.length));
+        // 台詞の音声ファイル（voice/*.mp3。Version 28）は話し手の id（oda_envoy など）を名前に含むので除く（画像ではない。tests/proto3d-voice-files.test.ts）
+        const all = walk(PUBLIC)
+            .map((p) => p.slice(PUBLIC.length))
+            .filter((p) => !/^voice\/[^/]+\.mp3$/.test(p));
         expect(all.filter((p) => /nobunaga|yoshikage|oda_|asakura|castle_town|plains_vista|forest_floor|sengoku_individual/i.test(p))).toEqual([]);
         expect(all.filter((p) => p.startsWith('art/') && !p.endsWith('.webp'))).toEqual([]);
         // 話さない 2 人の立ち絵は、公開の置き場にも一覧にも無い（顔だけ）

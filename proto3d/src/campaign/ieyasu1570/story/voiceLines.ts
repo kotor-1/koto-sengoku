@@ -11,6 +11,7 @@
  */
 import { generalById } from '../../../battle/generals';
 import { profileOf, readingFor } from '../../../audio/readings';
+import { voiceFileFor } from '../../../audio/voiceManifest';
 
 /** 話し手の id（会話の行の speaker と同じ id：hero は家康。村の使いは village） */
 export type VoiceSpeaker = 'hero' | 'tadakatsu' | 'sakai' | 'ishikawa' | 'sakakibara' | 'nagamasa' | 'oda_envoy' | 'asai_envoy' | 'village';
@@ -62,6 +63,7 @@ export const VOICE_LINES: readonly VoiceLine[] = [
     L('ch2.village.mission', 'village', 'ch2_open', '村の者だけでは守れませぬ。どうかお助けを。'),
     L('ch2.tadakatsu.council', 'tadakatsu', 'ch2_open', '軍議を開きましょう。城門の前でお待ちします。'),
     // ---- 会話の短い返答（両章の会話の行と同じ文） ----
+    L('talk.tadakatsu.envoys', 'tadakatsu', 'talk', '織田家から使者が参っております。浅井家からも、別の使者が。'),
     L('talk.hero.same_day', 'hero', 'talk', '両家から、同じ日にか。'),
     L('talk.tadakatsu.again', 'tadakatsu', 'talk', '皆、陣幕の内に控えております。軍議を開かれますか。'),
     // ---- 出陣（出陣の演出の最初の字幕） ----
@@ -103,11 +105,16 @@ export function voiceCap(id: string): { speaker: string; text: string; voice: st
     return { speaker: VOICE_SPEAKER_NAMES[v.speaker], text: v.text, voice: v.id };
 }
 
-// ---------------------------------------------------------------- 読み上げの長さの見積もり（字幕を声より先に替えないため）
+// ---------------------------------------------------------------- 声の長さ（字幕を声より先に替えないため）
 
-/** 1 秒に読む拍の数（端末の読み上げの速さ 1 のとき）と、言い始め・言い終わりの余白（秒） */
+/** 1 秒に読む拍の数（端末の読み上げの速さ 1 のとき）と、言い始め・言い終わりの余白（秒）。音声ファイルの無い台詞の見積もりに使う */
 export const VOICE_MORA_PER_SEC = 7;
 export const VOICE_PAD_SEC = 0.8;
+/**
+ * 音声ファイルのある台詞（Version 28）：ファイルのほどいた長さ（前後の無音を含む）に足す余白（秒）。
+ * 再生の始まりの遅れ（出力の遅れ・読み込みの待ち）を見込み、聞き終えてから次の字幕へ移る間（ファイルの後ろの無音 0.2〜0.25 秒の後）。
+ */
+export const VOICE_FILE_TAIL_SEC = 0.2;
 const SMALL_KANA = /[ゃゅょぁぃぅぇぉゎャュョァィゥェォヮ]/;
 const KANA = /[ぁ-ゖァ-ヺー]/;
 const KANJI = /[\u4e00-\u9fff々]/;
@@ -125,11 +132,22 @@ export function moraCount(reading: string): number {
 }
 
 /**
- * 声の台詞を読み終えるまでの見積もり（秒）：拍の数 ÷（7 × 話し手の読み上げの速さ）＋ 0.8。
+ * 端末の読み上げで読み終えるまでの見積もり（秒）：拍の数 ÷（7 × 話し手の読み上げの速さ）＋ 0.8。
  * 読みは音の側（audio/readings.ts）の物（表の文に対して書いた読みが無ければ辞書で開いた文）。速さは話し手ごとの rate。
  */
-export function voiceSecFor(id: string): number {
+export function voiceEstimateSec(id: string): number {
     const v = voiceLine(id);
     const rate = Math.max(0.5, profileOf(v.speaker).rate);
     return moraCount(readingFor(v)) / (VOICE_MORA_PER_SEC * rate) + VOICE_PAD_SEC;
+}
+
+/**
+ * 声の台詞の長さ（秒。演出の字幕をこれより短くしない）。
+ * 音声ファイルがあれば（audio/voiceManifest.gen.json）そのほどいた長さ ＋ VOICE_FILE_TAIL_SEC、
+ * 無ければ端末の読み上げの見積もり（voiceEstimateSec）。
+ */
+export function voiceSecFor(id: string): number {
+    const f = voiceFileFor(voiceLine(id).id);
+    if (f) return f.sec + VOICE_FILE_TAIL_SEC;
+    return voiceEstimateSec(id);
 }

@@ -41,3 +41,10 @@ proto3d/assets-src/**/_work/
 
 # 素材パック第 2 版（sengoku_individual_art_v2。Version 25 から）の原画の手元の写し。公開リポジトリに入れない（art-build.py ingest-pack が写す）
 proto3d/assets-src/art-v25/originals/
+
+# 台詞の音声の作業用（Version 28）：音声合成の本体・モデル・辞書と作業用の WAV はリポジトリに入れない（公開リポジトリ。配信するのは MP3 だけ）
+*.vvm
+**/voicevox_onnxruntime*/
+**/open_jtalk_dic*/
+proto3d/voice/**/*.wav
+proto3d/public/voice/*.wav
