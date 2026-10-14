@@ -426,7 +426,7 @@ async function partTts() {
     credit: document.querySelector('.g-sound [data-id="voiceCredit"]')?.textContent,
     stored: localStorage.getItem('koto-sengoku/3d-audio'),
   }));
-  check('tts 音の設定の欄：端末の読み上げ（旧）を選んだまま選べない・URL の指定と書く・保存しない', ui.select === 'tts' && ui.disabled === true && ui.note.includes('?voice=tts') && ui.stored === null, JSON.stringify(ui));
+  check('tts 音の設定の欄：端末の読み上げ（旧）を選んだまま選べない・URL の指定と書く・字幕の長さは新しい声のままで読み上げが途中で止まりうると書く・保存しない', ui.select === 'tts' && ui.disabled === true && ui.note.includes('?voice=tts') && ui.note.includes('読み上げが途中で止まる') && ui.note.includes('Version 27') && ui.stored === null, JSON.stringify(ui));
   await page.locator('.g-layer[data-kind="menu"]').first().screenshot({ path: `${OUT}/menu-sound-panel-tts.png` });
   note(`   画像：${OUT}/menu-sound-panel-tts.png`);
   check('tts ページの誤りが無い', errors.length === 0, errors.slice(0, 3).join(' | '));

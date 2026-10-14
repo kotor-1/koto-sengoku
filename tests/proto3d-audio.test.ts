@@ -12,8 +12,11 @@ import { AUDIO_KEY, AudioSettingsStore, DEFAULT_AUDIO, loadAudioSettings } from 
 import { FootstepTracker, Sfx, VoiceLimiter } from '../proto3d/src/audio/sfx';
 import { BEATS_PER_BAR, SONGS, barAt, barEvents, parseMelody, type SongId } from '../proto3d/src/audio/songs';
 import { MUST_KANA, READINGS, readingFor, PROFILES } from '../proto3d/src/audio/readings';
-import { cineMusic, sceneFor } from '../proto3d/src/audio/director';
+import { cineMusic, creakDelay, sceneFor } from '../proto3d/src/audio/director';
 import { VOICE_LINES, VOICE_SPEAKER_NAMES, findVoiceLine } from '../proto3d/src/campaign/ieyasu1570/story/voiceLines';
+import { ieyasuCinematic } from '../proto3d/src/campaign/ieyasu1570/story/cinematics';
+import { newIeyasuGame } from '../proto3d/src/campaign/ieyasu1570/flow';
+import type { StageEvent } from '../proto3d/src/story/types';
 import { FakePage, FakeSynth, FakeTimers, FakeUtterance, fakeContext, memoryStorage, type FakeAudioContext } from './proto3d-audio-fakes';
 
 const TABLE: VoiceTable = {
@@ -684,6 +687,41 @@ describe('画面と曲（director）', () => {
         expect(sys.music.wanted).toBe('crisis');
         expect(cineMusic({ moment: 'ch1_intro', kind: 'map' }).music).toBe('crisis');
         expect(sceneFor({ screen: 'practice', battle: false, cine: null }).music).toBeNull();
+    });
+    it('第一章の町の急報（Version 28：ch1_report の street_report）：Version 27 の使者の到着と同じく危機の曲へ。木戸は通らないのできしみなし。終われば探索の城下の曲', async () => {
+        // 今の第一章の台本が出す出来事の id で確かめる（古い ch1_open の envoys_arrive だけを見ていて、急報の曲が抜けたのに気づかなかった）
+        const report = ieyasuCinematic(newIeyasuGame(), 'ch1_report')!;
+        const events = report.beats.flatMap((b) => (b.kind === 'stage' ? [b.event.id] : []));
+        expect(events).toEqual(['street_report']);
+        const { sys } = makeSystem();
+        sys.unlock();
+        await settle();
+        sys.setScreen('explore', false);
+        expect(sys.music.wanted).toBe('town');
+        const creaks = sys.sfx.stats.creaks;
+        sys.cineBeat({ moment: report.moment, kind: 'stage', event: events[0] });
+        expect(sys.music.wanted).toBe('crisis');
+        expect(sys.sfx.stats.creaks).toBe(creaks);
+        sys.cineEnd();
+        sys.setScreen('explore', false);
+        expect(sys.music.wanted).toBe('town');
+        expect(cineMusic({ moment: 'ch1_report', kind: 'stage', event: 'street_report' })).toEqual({ music: 'crisis', wind: 0.3, town: true });
+        expect(creakDelay('street_report')).toBeNull();
+    });
+    it('3D の出来事はどれも曲の表にある（前の曲のまま（keep）に落ちる出来事が無い）', () => {
+        // 出来事の種類（StageEvent）が増えたら、ここで型の誤りになる：曲の表（director.ts の cineMusic）にも足すこと
+        const ids: Record<StageEvent['id'], true> = {
+            town_life: true,
+            envoys_arrive: true,
+            retainer_report: true,
+            messenger_arrive: true,
+            street_report: true,
+            wounded_rest: true,
+            reinforcement_arrive: true,
+            column_depart: true,
+            column_return: true,
+        };
+        for (const id of Object.keys(ids)) expect(cineMusic({ moment: 'ch1_open', kind: 'stage', event: id }).music, id).not.toBe('keep');
     });
     it('前の合戦で勝てなかった後の結果確認・結末・第二章の冒頭の町の場面は、明るい城下の曲にしない', async () => {
         const { sys } = makeSystem();
