@@ -61,6 +61,9 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
         cap.setAttribute('aria-live', 'polite');
         const who = el('b', 'who');
         const txt = el('span', 'txt');
+        // 字幕の無い始め（町の急報は最初の台詞まで 1.55 秒）に、話す人の「：」だけが出ないように、空で始める
+        who.hidden = true;
+        cap.classList.add('empty');
         cap.append(who, txt);
         const hint = el('p', 'g-cine-hint');
         hint.hidden = true;

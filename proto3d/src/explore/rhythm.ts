@@ -102,6 +102,10 @@ export interface PersonAct {
     /** 見る所（世界の x・z と地面からの高さ y。null は正面）と向ける強さ（0〜1） */
     look: { x: number; y: number; z: number } | null;
     lookWeight: number;
+    /** 片膝をつく（0〜1。急報の使者。骨の形で：腰を下げ、前の脚は膝を立て、後ろの脚は膝を地面へ。縮めない） */
+    kneel?: number;
+    /** 礼（0〜1。家臣の軽い礼。会釈と同じ形） */
+    bow?: number;
 }
 
 export const NO_ACT: PersonAct = { lean: 0, hands: 0, handPhase: 0, look: null, lookWeight: 0 };

@@ -198,6 +198,8 @@ export interface GameWorld {
     showCouncilHall?(on: boolean): void;
     /** 今の町を 1 コマ描き直す（演出の後：最後の 3D の画の上に、案内や HUD が出ないように） */
     redraw?(): void;
+    /** 出来事が動かしている会話の相手（町の急報の後、話せる位置へ歩いている間）。着くまでは「話す」を出さない（省ける） */
+    castArriving?(): string[];
 }
 
 /** 合戦を 1 回（hooks.onDecided：勝ち負けが決まった時＝結果の画面の前に呼ぶ。ここで結果を反映して保存する） */
@@ -262,6 +264,13 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
     private portraitsAsked = false;
     /** 確認用：再生した演出の台本の id（古い順。状態・保存には入らない） */
     readonly cineLog: string[] = [];
+    /**
+     * 町の出来事（Version 28 §4.3：第一章の町の急報）の待ち。「はじめから」で始めた回の中だけで 1 回（保存しない・状態に書かない）。
+     * 流した・飛ばした・見直した・段階が変わった・タイトルへ戻ったら null（もう起こさない）。待つ間は arrive の会話の相手を置かない
+     */
+    private townEvent: { moment: CineMoment; arrive: readonly string[]; zone(x: number, z: number): boolean } | null = null;
+    /** 次の begin で町の出来事を待つ（タイトルの「はじめから」の道だけ） */
+    private armTownEvent = false;
     /** 並べるシナリオ（タイトルの順） */
     readonly scenarios: readonly AnyScenario[];
     /** 確認用：最後に起きた誤り */
@@ -289,6 +298,10 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
     get promptTarget(): string | null {
         return this.prompted?.id ?? null;
     }
+    /** 確認用：待っている町の出来事（演出の moment。無ければ null。状態・保存には入らない） */
+    get townEventPending(): CineMoment | null {
+        return this.townEvent?.moment ?? null;
+    }
 
     /** 遊んでいるシナリオ（無ければ投げる。画面の流れの中だけで使う） */
     private get sc(): AnyScenario {
@@ -303,6 +316,8 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
     private set st(s: ScenarioStateCore) {
         if (!this.run) throw new Error('シナリオが始まっていません');
         this.run.state = s;
+        // 探索の段階でなくなった（軍議へ進んだ等）：町の出来事はもう起こさない
+        if (this.townEvent && s.phase !== 'explore') this.townEvent = null;
     }
 
     private scenarioOf(id: ScenarioId | undefined): AnyScenario {
@@ -329,6 +344,8 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
     async title(): Promise<void> {
         const { view, world } = this.deps;
         this.run = null;
+        this.townEvent = null;
+        this.armTownEvent = false;
         this._screen = 'title';
         this.setPrompt(null);
         view.hud(null);
@@ -413,6 +430,8 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
             } else if (loaded.status === 'unavailable') {
                 view.toast(`${loaded.message}このまま遊べますが、保存はできません。`, 'error');
             }
+            // 町の出来事（第一章の町の急報）は、この「はじめから」の回の中だけで待つ（つづきから・第二章への移行・確認用では起こさない）
+            this.armTownEvent = true;
             this.begin(sc.newGame(), sc.id);
             // 第一章の冒頭（3D の場面だけ。タイトルの「はじめから」の道だけ。つづきから・第二章への移行・確認用では流さない）。
             // 情勢の図解（ch1_intro）は自動では流さない（情勢の画面・軍議の「詳しく見る」から任意で見る）
@@ -428,6 +447,8 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         const sc = this.scenarioOf(scenario ?? (this.scenarios.some((x) => x.id === 'fictional') ? 'fictional' : undefined));
         this.run = { scenario: sc, state };
         this.playAcc = 0;
+        this.townEvent = this.armTownEvent ? (sc.townEvent?.(state) ?? null) : null;
+        this.armTownEvent = false;
         if (state.phase === 'ending') {
             void this.showEnding();
             return;
@@ -449,7 +470,7 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
     private enterField(pose: ExplorePose | null | 'keep'): void {
         const s = this.st;
         const { view, world } = this.deps;
-        this.cast = this.sc.cast(s);
+        this.cast = this.castOf(s);
         world.setCast(this.cast);
         if (pose !== 'keep') world.setHeroPose(safePose(pose ?? this.startPose(), this.cast, world.walls()));
         const p = world.heroPose();
@@ -463,6 +484,21 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         const intro = this.sc.phaseIntro(s);
         view.intro(intro.title, intro.text);
         world.setControl(!this.busy);
+    }
+
+    /**
+     * 城下に置く相手（シナリオの配役）。町の出来事を待つ間（探索の段階）は、その出来事で町へ来る相手（第一章の使者）を置かない。
+     * 段階が探索でなくなったら、待ちをやめる（軍議の後などに出来事を起こさない）
+     */
+    private castOf(s: ScenarioStateCore): CastMember<string>[] {
+        const all = this.sc.cast(s);
+        const ev = this.townEvent;
+        if (!ev) return all;
+        if (s.phase !== 'explore') {
+            this.townEvent = null;
+            return all;
+        }
+        return all.filter((c) => !ev.arrive.includes(c.id));
     }
 
     /** 町の人々（見た目だけ。状態を読むだけ） */
@@ -491,7 +527,7 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
     }
 
     private refreshField(): void {
-        this.cast = this.sc.cast(this.st);
+        this.cast = this.castOf(this.st);
         this.deps.world.setCast(this.cast);
         this.deps.view.hud(this.hudInfo());
         this.applyAmbient();
@@ -512,6 +548,17 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
             this.preloadFaces(speakers);
         }
         const p = this.deps.world.heroPose();
+        // 町の出来事（第一章の町の急報）：主人公が決めた所へ入ったら 1 回だけ流す
+        const ev = this.townEvent;
+        if (ev) {
+            if (this.st.phase !== 'explore') {
+                this.townEvent = null;
+                this.refreshField();
+            } else if (ev.zone(p.x, p.z)) {
+                void this.runTownEvent();
+                return;
+            }
+        }
         const gate = inGateZone(this.cast, p.x, p.z);
         if (gate && !this.inGate) {
             this.inGate = true;
@@ -520,7 +567,28 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
             return;
         }
         if (!gate) this.inGate = false;
-        this.setPrompt(nearestInteractable(this.cast, p.x, p.z));
+        // 町の急報の後、話せる位置へ歩いている相手には、着くまで「話す」を出さない
+        const arriving = this.deps.world.castArriving?.() ?? [];
+        this.setPrompt(nearestInteractable(arriving.length ? this.cast.filter((c) => !arriving.includes(c.id)) : this.cast, p.x, p.z));
+    }
+
+    /**
+     * 町の出来事（Version 28 §4.3：第一章の町の急報）を流す。1 回だけ（流し始めたら待ちをやめる。失敗しても繰り返さない）。
+     * 見ても飛ばしても状態・保存は変えない。主人公はその場で振り向いただけなので位置は戻さない（見回しのカメラは出来事の前へ戻る）。
+     * 終われば、出来事で来た相手（使者）を城下に置く（出来事の後に話せる位置へ歩いて着く。飛ばせばすぐその位置）
+     */
+    private async runTownEvent(): Promise<void> {
+        const ev = this.townEvent;
+        if (!ev || this.busy || !this.run) return;
+        this.townEvent = null;
+        const spec = this.cineSpec(ev.moment);
+        await this.exclusive(async () => {
+            try {
+                if (spec) await this.playCinematic(spec, { restoreHero: false });
+            } finally {
+                if (this.run && this._screen === 'explore') this.refreshField();
+            }
+        });
     }
 
     private setPrompt(c: CastMember<string> | null): void {
@@ -1058,7 +1126,7 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
     /** 演出の前に、今の状態の町を整える（人物・主人公の位置・町の人々。案内は出さない） */
     private stageField(pose: ExplorePose | null): void {
         const { world } = this.deps;
-        this.cast = this.sc.cast(this.st);
+        this.cast = this.castOf(this.st);
         world.setCast(this.cast);
         world.setHeroPose(safePose(pose ?? this.startPose(), this.cast, world.walls()));
         this.applyAmbient();
@@ -1068,7 +1136,7 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
      * 演出を再生する（状態は読むだけ。保存しない・反映しない）。探索の操作は止めたまま（呼ぶ側が exclusive の中か、操作の無い画面）。
      * 終われば 3D の出来事を片付け、主人公の位置・向き・カメラを始める前に戻し、城門の輪の判定を今の位置で付け直す。
      */
-    private async playCinematic(spec: CineSpec): Promise<void> {
+    private async playCinematic(spec: CineSpec, opts: { restoreHero?: boolean } = {}): Promise<void> {
         const { view, world } = this.deps;
         if (!view.cinematic) return;
         const epoch = this.epoch;
@@ -1087,8 +1155,9 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         } finally {
             if (epoch === this.epoch) {
                 world.stage?.(null, 0, this.reduced());
-                // 位置・向きだけ戻す。見回しのカメラは stage(null) が出来事の前の向きへ戻したまま（Version 28：真後ろへ戻さない）
-                world.setHeroPose(before, { keepCamera: true });
+                // 位置・向きだけ戻す。見回しのカメラは stage(null) が出来事の前の向きへ戻したまま（Version 28：真後ろへ戻さない）。
+                // 町の急報（restoreHero: false）は、主人公がその場で振り向いただけなので戻さない
+                if (opts.restoreHero !== false) world.setHeroPose(before, { keepCamera: true });
                 // 最後の場面が 3D のとき、次のコマまで最後の 3D の画が残り、その上に案内や HUD が出る。すぐ町を描き直す
                 world.redraw?.();
                 const p = world.heroPose();
@@ -1152,7 +1221,11 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
                 // 見直し：状態は変えない・保存しない。終われば情勢の画面へ戻る
                 const spec = this.cineSpec(r.replay, { replay: true });
                 if (spec) {
+                    // まだ起きていない町の出来事を見直した：この回ではもう起こさない（使者は出来事の後と同じに町に居る）
+                    const consumed = this.townEvent?.moment === r.replay;
+                    if (consumed) this.townEvent = null;
                     await this.playCinematic(spec);
+                    if (consumed && this.run) this.refreshField();
                     this._screen = 'situation';
                     if (from === 'council' && this.councilHall) world.showCouncilHall?.(true);
                 }

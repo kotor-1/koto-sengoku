@@ -15,6 +15,8 @@ import { blockersForTest } from '../proto3d/src/game/follow';
 import { createHero } from '../proto3d/src/game/motion';
 import { START, cameraBlockers, colliders, type Rect } from '../proto3d/src/layout';
 import type { StageEvent } from '../proto3d/src/story/types';
+import { ieyasuCinematic } from '../proto3d/src/campaign/ieyasu1570/story/cinematics';
+import { newIeyasuGame } from '../proto3d/src/campaign/ieyasu1570/flow';
 
 const ALL = colliders();
 const inside = (r: Rect, x: number, z: number) => x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1;
@@ -48,7 +50,13 @@ const EVENTS: StageEvent[] = [
     { id: 'town_life', hero: false },
     { id: 'envoys_arrive', envoys: [{ look: 'tashiro_envoy', name: '織田家の使者' }, { look: 'omori_envoy', name: '浅井家の使者' }], showHero: true },
     { id: 'retainer_report', look: 'genzo', name: '本多忠勝', castId: 'tadakatsu' },
+    // Version 28 §4.3：第一章の冒頭の短い始め（町の入口の主人公へ寄る 1 つのカメラの動き）と、操作の途中の町の急報（決めた所で始めたとき）
+    { id: 'town_life', hero: true, establish: true },
+    (ieyasuCinematic(newIeyasuGame(), 'ch1_report')!.beats[0] as { event: StageEvent }).event,
 ];
+/** Version 28 の出来事（EVENTS の中の位置） */
+const ESTABLISH = EVENTS[14]!;
+const REPORT = EVENTS[15]!;
 /** 冒頭の出来事（EVENTS の中の位置） */
 const LIFE = EVENTS[10]!;
 const LIFE_NO_HERO = EVENTS[11]!;
@@ -98,25 +106,32 @@ describe('演出の 3D の出来事：時刻 t の純粋な関数', () => {
         }
     });
 
-    it('カメラの動きはゆっくり：向きは毎秒 12° まで、位置は毎秒 0.5 m まで（使者の場面の切り替え 1 回を除く）', () => {
+    it('カメラの動きはゆっくり：向きは毎秒 12° まで、位置は毎秒 0.5 m まで（使者の場面の切り替え 1 回・町の急報の画の切り替え 2 回までを除く。冒頭の短い始めは 1 つの寄りで毎秒 2.5 m まで）', () => {
         const dir = (s: { px: number; py: number; pz: number; tx: number; ty: number; tz: number }) => new THREE.Vector3(s.tx - s.px, s.ty - s.py, s.tz - s.pz).normalize();
         for (const ev of EVENTS) {
             const step = 0.05;
             const list = shotsOver(ev, false, 30, step, CAST_EXPLORE);
             let maxAng = 0;
             let maxMove = 0;
+            let reportCuts = 0;
             for (let i = 1; i < list.length; i++) {
                 const a = list[i - 1]!;
                 const b = list[i]!;
+                const jump = Math.hypot(b.shot.px - a.shot.px, b.shot.py - a.shot.py, b.shot.pz - a.shot.pz);
                 const cut =
                     ((ev.id === 'envoys_arrive' || ev.id === 'messenger_arrive') && a.t < ARRIVAL_CUT && b.t >= ARRIVAL_CUT) ||
-                    (ev.id === 'retainer_report' && a.t < RETAINER_CUT && b.t >= RETAINER_CUT);
-                if (cut) continue;
+                    (ev.id === 'retainer_report' && a.t < RETAINER_CUT && b.t >= RETAINER_CUT) ||
+                    (ev === REPORT && (jump > 0.2 || (dir(a.shot).angleTo(dir(b.shot)) * 180) / Math.PI > 5));
+                if (cut) {
+                    if (ev === REPORT) reportCuts++;
+                    continue;
+                }
                 maxAng = Math.max(maxAng, (dir(a.shot).angleTo(dir(b.shot)) * 180) / Math.PI / step);
-                maxMove = Math.max(maxMove, Math.hypot(b.shot.px - a.shot.px, b.shot.py - a.shot.py, b.shot.pz - a.shot.pz) / step);
+                maxMove = Math.max(maxMove, jump / step);
             }
             expect(maxAng, `${ev.id} の向きの速さ（°/秒）`).toBeLessThan(12);
-            expect(maxMove, `${ev.id} の位置の速さ（m/秒）`).toBeLessThan(0.5);
+            expect(maxMove, `${ev.id} の位置の速さ（m/秒）`).toBeLessThan(ev === ESTABLISH ? 2.5 : 0.5);
+            if (ev === REPORT) expect(reportCuts).toBeLessThanOrEqual(2);
         }
     });
 

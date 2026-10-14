@@ -165,8 +165,8 @@ describe('声の長さ（voiceSecFor）：音声ファイルの実際の長さ�
         expect(without.length).toBeGreaterThan(0);
         for (const v of without) expect(voiceSecFor(v.id), v.id).toBe(voiceEstimateSec(v.id));
     });
-    it('第一章の冒頭の字幕：声の付いた字幕は実際の音の長さ ＋ 余白より短くなく、冒頭の長さは決まり（12〜19 秒）の内', () => {
-        const spec = ieyasuCinematic(newIeyasuGame(), 'ch1_open')!;
+    it('第一章の町の急報の字幕（Version 28 §4.3：冒頭の 4 台詞は操作の途中の急報 ch1_report へ移した）：声の付いた字幕は実際の音の長さ ＋ 余白より短くなく、長さは決まり（10〜16 秒）の内', () => {
+        const spec = ieyasuCinematic(newIeyasuGame(), 'ch1_report')!;
         let n = 0;
         for (const c of spec.captions) {
             if (!c.voice) continue;
@@ -176,7 +176,7 @@ describe('声の長さ（voiceSecFor）：音声ファイルの実際の長さ�
             n++;
         }
         expect(n).toBe(4);
-        const [lo, hi] = CINE_LENGTH_RANGE.ch1_open;
+        const [lo, hi] = CINE_LENGTH_RANGE.ch1_report;
         expect(spec.duration).toBeGreaterThanOrEqual(lo);
         expect(spec.duration).toBeLessThanOrEqual(hi);
     });

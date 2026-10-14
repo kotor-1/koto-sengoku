@@ -10,11 +10,16 @@
  * - 主人公は出来事の間は描かない（動かさない）。ただし冒頭の出来事（town_life の hero・envoys_arrive の showHero・retainer_report）は、
  *   主人公を町の入口（town/spots.ts の ENTRY_POSE）に立たせて見せる（StageFrame.hero。向きも t の関数。片付けで始める前の位置・向きへ戻す）。
  * - 会話の相手の人物と出来事の人が同じ人なら、着くまでその人物を隠し、着いたら人物に替わる。
+ * - Version 28 §4.3：第一章の冒頭は町の入口の主人公へ寄る 1 つのカメラの動き（town_life の establish）。終わりの画は操作の肩越しのカメラと同じ。
+ *   町の急報（street_report）は操作の途中に、出来事を始めた時の主人公（StageOrigin）の所で起きる。出来事の人は会話の相手そのもの
+ *  （StagePerson.cast。描く側は同じ人物として描き、入れ替えない）で、出来事の後も同じ関数（t が場面の長さより後）で話せる位置まで歩く。
  */
+import { GAIT, runBlendFor, strideFor } from '../game/gait';
+import { START, cameraBlockers, colliders, type Box, type Rect } from '../layout';
 import type { AmbientGroup, StageEvent } from '../story/types';
 import { GROUND_SITS, GUARD_STOOLS, KIDO, MATS } from '../town/plan';
 import { ENTRY_POSE } from '../town/spots';
-import { merchantAct, rhythmOf, seeded, type PersonAct } from './rhythm';
+import { NO_ACT, bowWeight, merchantAct, rhythmOf, seeded, type PersonAct } from './rhythm';
 
 // ================================================================ 形
 
@@ -85,6 +90,15 @@ export interface StagePerson {
     act?: PersonAct;
     /** 近くを主人公が通ると軽く会釈する（店の人。描く側 explore/actors.ts が主人公の位置で決める） */
     greet?: boolean;
+    /**
+     * 会話の相手の id（町の急報の使者・家臣）：この人は出来事の間も後も、その会話の相手の人物そのもの（描く側は同じ人物として描き、
+     * 着いた所で入れ替えない。名前の鍵 key も同じ id）
+     */
+    cast?: string;
+    /** 走りの重み（0 歩き〜1 走り。省けば 0） */
+    run?: number;
+    /** 歩き・走りの周期の数（1 周期の距離で割って足した物。省けば walked と歩きの 1 周期の距離から。走りから止まるとき位相が飛ばない） */
+    cycle?: number;
 }
 
 /** 出来事の間の主人公（立たせる位置と向き。無ければ主人公を描かない） */
@@ -116,6 +130,26 @@ export interface StageFrame {
     hideAmbient: AmbientGroup['kind'][];
     /** 主人公を見せる（町の入口に立たせる）。null なら描かない */
     hero: StageHero | null;
+    /** 出来事の後、主人公を始める前の位置・向きへ戻さず、そのまま（町の急報：主人公はその場で振り向いただけ） */
+    heroStays?: boolean;
+    /** 主人公の顔と目線を向ける所（世界。null は正面。省けば変えない） */
+    heroGaze?: { x: number; y: number; z: number } | null;
+    /** 出来事の後の歩き（StagePerson.cast の人）が、みな置き場所に着いて向き直った（町の急報。これより後は会話の相手の人物のまま） */
+    settled?: boolean;
+}
+
+/**
+ * 出来事を始めた時の主人公（位置・向き・進む向き・速さ）と、肩越しのカメラの見回しの向き（game/follow.ts の Orbit.yaw。0 = 北を見る）。
+ * 操作の途中に始める出来事（町の急報）の人とカメラは、ここから決める（同じ origin・同じ t なら同じ形）
+ */
+export interface StageOrigin {
+    x: number;
+    z: number;
+    heading: number;
+    dirX: number;
+    dirZ: number;
+    speed: number;
+    yaw: number;
 }
 
 /** 置いている会話の相手（見た目の鍵と場所。使者の行き先を決める） */
@@ -370,10 +404,12 @@ const DEFAULT_MARK = '徳';
 /** 兵の並び：横の人数・列の間 */
 const ROW_GAP = 1.25;
 
-/** 出来事の形（純粋。同じ引数なら同じ形） */
-export function stageFrame(ev: StageEvent, t: number, reduced: boolean, cast: readonly StageCastInfo[] = []): StageFrame {
+/** 出来事の形（純粋。同じ引数なら同じ形）。origin は操作の途中に始める出来事（町の急報）の、始めた時の主人公（省けば決めた所） */
+export function stageFrame(ev: StageEvent, t: number, reduced: boolean, cast: readonly StageCastInfo[] = [], origin: StageOrigin = REPORT_DEFAULT_ORIGIN): StageFrame {
     const tt = Math.max(0, t);
     switch (ev.id) {
+        case 'street_report':
+            return streetReport(ev, tt, reduced, origin);
         case 'envoys_arrive':
             return arrivals(
                 ev.envoys.map((e, i) => ({ key: `envoy${i}`, look: e.look, name: e.name })),
@@ -385,7 +421,7 @@ export function stageFrame(ev: StageEvent, t: number, reduced: boolean, cast: re
         case 'messenger_arrive':
             return arrivals([{ key: 'messenger', look: ev.look, name: ev.name }], tt, reduced, cast, false);
         case 'town_life':
-            return townLife(ev.hero, tt, reduced);
+            return ev.establish ? establish(tt, reduced) : townLife(ev.hero, tt, reduced);
         case 'retainer_report':
             return retainerReport(ev.look, ev.name, ev.castId, tt, reduced);
         case 'wounded_rest':
@@ -540,6 +576,584 @@ function townLife(withHero: boolean, t: number, reduced: boolean): StageFrame {
     const s = reduced ? TOWN_LIFE_SHOT_0 : lerpShot(TOWN_LIFE_SHOT_0, TOWN_LIFE_SHOT_1, ease(t / TOWN_LIFE_SEC));
     const hero = withHero ? { x: ENTRY_POSE.x, z: ENTRY_POSE.z, heading: ENTRY_POSE.heading } : null;
     return { people, figures: [], banners: [], litters: [], shot: s, hideCast: [], hideAmbient: ['porter', 'merchant'], hero };
+}
+
+// ---------------- 第一章の冒頭の短い始め（Version 28 §4.3）
+
+/** 冒頭のカメラの動きの長さ（秒。台本の最初の字幕の長さと同じ：cinematics.ts の ch1Open） */
+export const ESTABLISH_SEC = 4.1;
+/** 動きの始め：木戸の内の高い所（主人公の右うしろの上）から、北の城門へ向かう通りを見下ろす */
+const ESTABLISH_SHOT_0 = shot(1.4, 4.4, 14.6, -0.6, 1.2, 4.0);
+/** 肩越しのカメラの決まり（game/follow.ts の FOLLOW と同じ値：見る中心は頭の高さ・右へずらす量・距離。tests/proto3d-street-report.test.ts が照らし合わせる） */
+export const FOLLOW_GEOM = { height: 1.5, shoulder: 0.38, distance: 2.1 } as const;
+
+/** 壁の無い所での肩越しのカメラ（game/follow.ts の placeFollow と同じ置き方。見る点は見る中心から 10 m 先） */
+export function followShotAt(x: number, z: number, yaw: number, pitch: number): StageShot {
+    const px = x + Math.cos(yaw) * FOLLOW_GEOM.shoulder;
+    const pz = z - Math.sin(yaw) * FOLLOW_GEOM.shoulder;
+    const py = FOLLOW_GEOM.height;
+    const cp = Math.cos(pitch);
+    const dx = -Math.sin(yaw) * cp;
+    const dy = -Math.sin(pitch);
+    const dz = -Math.cos(yaw) * cp;
+    const D = FOLLOW_GEOM.distance;
+    return shot(px - dx * D, py - dy * D, pz - dz * D, px + dx * 10, py + dy * 10, pz + dz * 10);
+}
+
+/**
+ * 町の入口の主人公の肩越しのカメラ（操作の始めのカメラ：game/follow.ts の placeFollow に、見回し yaw 0（北を見る）・pitch START.pitch・距離 2.1。
+ * main.ts の setHeroPose が町の入口で決める見回しと同じ）。冒頭の動きはここで終わるので、切らずに操作へ渡せる
+ */
+export const ENTRY_FOLLOW_SHOT: StageShot = followShotAt(ENTRY_POSE.x, ENTRY_POSE.z, 0, START.pitch);
+
+/**
+ * 第一章の冒頭（establish）：高い所から町の入口の主人公の肩越しへ、1 つのなめらかな動きで寄る（始めと終わりで速さ 0）。
+ * 町の人々（荷運び・店の人）は隠さず、出来事の人も出さない（操作へ移っても人が入れ替わらない）。動きを減らすときは終わりの画のまま
+ */
+function establish(t: number, reduced: boolean): StageFrame {
+    const s = reduced ? ENTRY_FOLLOW_SHOT : lerpShot(ESTABLISH_SHOT_0, ENTRY_FOLLOW_SHOT, ease(t / ESTABLISH_SEC));
+    return { people: [], figures: [], banners: [], litters: [], shot: s, hideCast: [], hideAmbient: [], hero: { x: ENTRY_POSE.x, z: ENTRY_POSE.z, heading: ENTRY_POSE.heading } };
+}
+
+// ---------------- 町の急報（Version 28 §4.3：操作の途中の短い出来事）
+
+/**
+ * 急報を始める所：通りを北へ、この線（z）より北へ入ったとき。城門へ行くどの道も、この線（通りの中）を越えるか、町家の裏の道から
+ * 城門の前の広場で通りへ入る（その時に始める）。通りの幅は町家の表から表まで（x）、城門の内（z < −11.6）では始めない。
+ * tests/proto3d-street-report.test.ts が当たり判定の地図で、町の入口から忠勝の所までのどの道もここを通ることを確かめる
+ */
+export const REPORT_LINE_Z = 6.0;
+export const REPORT_STREET = { x0: -4.2, x1: 4.6, z0: -11.6 } as const;
+export function inReportZone(x: number, z: number): boolean {
+    return z < REPORT_LINE_Z && z > REPORT_STREET.z0 && x > REPORT_STREET.x0 && x < REPORT_STREET.x1;
+}
+
+/** 決めた所（確かめ・見直しで origin を省いたとき）：通りの真ん中を北へ歩いて線を越えたところ。見回しは北 */
+export const REPORT_DEFAULT_ORIGIN: StageOrigin = { x: 0.3, z: REPORT_LINE_Z - 0.05, heading: Math.PI, dirX: 0, dirZ: -1, speed: GAIT.walk.speed, yaw: 0 };
+
+/** 集まる所（主人公の止まる所を通りの中へ収めた点）の範囲。カメラはここからの相対で決める（人の止まる所は主人公からの相対） */
+const REPORT_ANCHOR = { x0: -1.6, x1: 1.8, z0: -9.6, z1: REPORT_LINE_Z } as const;
+/** 主人公の止まりの減速（game/motion.ts の DECEL と同じ 12 m/秒²：操作で手を離したときと同じ止まり方） */
+const HERO_DECEL = 12;
+/** 最初の台詞（織田の使者）の時刻（秒）。使者はその少し前に止まり、片膝をつきながら言う（cinematics.ts が字幕の時刻に使う） */
+export const REPORT_LEAD = 1.55;
+/** 織田の使者：走る速さ・走り始める所（集まる所から南へ）・止まるのにかける秒 */
+const ODA_RUN = 3.6;
+const ODA_FROM = 5.6;
+const ODA_DECEL = 0.9;
+/** 浅井の使者：急ぎ足の速さ・止まるのにかける秒・言い始める何秒前に止まるか */
+const ASAI_WALK = 1.9;
+const ASAI_DECEL = 0.8;
+const ASAI_EARLY = 0.5;
+/** 忠勝：止まってから言い始めるまで（秒）・歩く速さの範囲 */
+const RET_EARLY = 0.45;
+const RET_SPEED = [1.1, 1.85] as const;
+/** 止まる所（主人公の止まった所からの相対 [x, z]。南が +z）。浅井の使者は通りの東の端（荷運びの道 x 3.2）に寄りすぎない */
+const ODA_AT: Pt = [0.25, 2.0];
+const ASAI_AT: Pt = [1.15, 1.55];
+const ASAI_X_MAX = 2.35;
+const RET_AT: Pt = [-0.5, -1.85];
+/** 忠勝が北に止まれる所の南の限り（これより北は城門の柱・塀） */
+const RET_Z_MIN = -10.9;
+/** 出来事の後の歩き：速さと、歩き出し（場面の終わりからの秒） */
+const AFTER = { oda: { speed: 1.3, start: 0.95 }, asai: { speed: 1.25, start: 0.3 }, ret: { speed: 1.35, start: 0.25 } } as const;
+/** 着いてから置き場所の向きへ向き直る秒・歩き出しで道の向きへ向く秒 */
+const FACE_SEC = 0.7;
+const SET_OFF_SEC = 0.5;
+/** 片膝をつく・立つ秒 */
+const KNEEL_SEC = 0.55;
+/** 頭の高さ（立つ・片膝） */
+const HEAD_Y = 1.5;
+const KNEEL_HEAD_Y = 1.05;
+/** 人が主人公の脇を通るときに空ける間（m） */
+const BERTH = 0.95;
+
+const clampN = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+const headingTo = (a: { x: number; z: number } | Pt, b: { x: number; z: number } | Pt): number => {
+    const ax = Array.isArray(a) ? a[0] : (a as { x: number }).x;
+    const az = Array.isArray(a) ? a[1] : (a as { z: number }).z;
+    const bx = Array.isArray(b) ? b[0] : (b as { x: number }).x;
+    const bz = Array.isArray(b) ? b[1] : (b as { z: number }).z;
+    return Math.atan2(bx - ax, bz - az);
+};
+const wrapA = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+
+/** 人が立てる所か（家・塀・小物の当たり判定から、人の大きさ 0.3 m 離れている） */
+const WALK_RECTS: readonly Rect[] = colliders();
+function standable(x: number, z: number, pad = 0.3): boolean {
+    return WALK_RECTS.every((r) => x < r.x0 - pad || x > r.x1 + pad || z < r.z0 - pad || z > r.z1 + pad);
+}
+
+/** 主人公の止まる所：始めた時の速さで、進む向きへ減速して止まる（当たり判定にかかるなら、その場） */
+function heroStop(o: StageOrigin): { x: number; z: number; T: number; d: number } {
+    const v = Math.max(0, o.speed);
+    const d = (v * v) / (2 * HERO_DECEL);
+    const len = Math.hypot(o.dirX, o.dirZ) || 1;
+    const x = o.x + (o.dirX / len) * d;
+    const z = o.z + (o.dirZ / len) * d;
+    if (d < 1e-4 || !standable(x, z)) return { x: o.x, z: o.z, T: 0, d: 0 };
+    return { x, z, T: v / HERO_DECEL, d };
+}
+
+/** 速さ V のまま来た人が、最後の D 秒でなめらかに止まる（距離 L。始めから速さ V。返り：s 進んだ距離・v 今の速さ・T 止まる秒） */
+export function arriveProfile(t: number, V: number, L: number, D: number): { s: number; v: number; T: number } {
+    if (L <= 0 || V <= 0) return { s: 0, v: 0, T: 0 };
+    const T = L / V + D / 2;
+    if (t <= 0) return { s: 0, v: V, T };
+    if (t >= T) return { s: L, v: 0, T };
+    const left = T - t;
+    if (left > D) return { s: V * t, v: V, T };
+    return { s: L - V * D * easeInt(left / D), v: V * ease(left / D), T };
+}
+
+/**
+ * 歩くだけの人（急報の使者・家臣）の周期の数：歩いた距離 ÷ 動きの元の歩きの 1 周期の距離。人ごとの歩幅の倍率（rhythm.stride）で
+ * 歩きの重みを下げて待機の形と混ぜない（足が低く上がり、持ち上がりきる前に横へ動き出して地面をこすった）。急ぎ足・ゆっくりは歩く拍子の速さで
+ */
+const walkCycles = (walked: number) => Math.round((walked / GAIT.walk.stride) * 1e5) / 1e5;
+
+/** 走りの重み（実際の速さから。主人公と同じ決まり：game/gait.ts の runBlendFor） */
+const runOf = (v: number) => runBlendFor(v, GAIT.walk.speed, GAIT.run.speed);
+/** 止まりの間の周期の数の表（1/240 秒ごとの足し合わせ。V・L・D ごと） */
+const cycleTables = new Map<string, number[]>();
+const CYCLE_STEP = 1 / 240;
+/** 速さ V のまま走って来て止まる人の、歩き・走りの周期の数（∫ 速さ ÷ その速さの 1 周期の距離。止まりかけで位相が飛ばない。t とともに増えるだけ） */
+function arriveCycles(t: number, V: number, L: number, D: number): number {
+    const T = L / V + D / 2;
+    const t1 = clampN(t, 0, T - D);
+    let c = (V * t1) / strideFor(runOf(V));
+    if (t > T - D) {
+        const key = `${V}|${L}|${D}`;
+        let tab = cycleTables.get(key);
+        if (!tab) {
+            // 止まり始め（T − D）から止まる（T）までを決まった刻みで足した表（刻みの間は直線で）
+            tab = [0];
+            const a = T - D;
+            const n = Math.ceil(D / CYCLE_STEP);
+            for (let i = 0; i < n; i++) {
+                const v = arriveProfile(a + (i + 0.5) * CYCLE_STEP, V, L, D).v;
+                tab.push(tab[i]! + (v * CYCLE_STEP) / strideFor(runOf(v)));
+            }
+            cycleTables.set(key, tab);
+            if (cycleTables.size > 32) cycleTables.delete(cycleTables.keys().next().value!);
+        }
+        const u = (Math.min(t, T) - (T - D)) / CYCLE_STEP;
+        const i = Math.min(tab.length - 2, Math.floor(u));
+        const k = Math.min(1, u - i);
+        c += tab[i]! + (tab[i + 1]! - tab[i]!) * k;
+    }
+    return Math.round(c * 1e5) / 1e5;
+}
+
+/**
+ * 道すじが点 p（主人公）の近くを通るなら、脇へよける点を足す（間 berth。家の側へ寄りすぎない方の脇）。両端はそのまま
+ */
+function detour(path: readonly Pt[], p: Pt, berth = BERTH): Pt[] {
+    const out: Pt[] = [path[0]!];
+    for (let i = 1; i < path.length; i++) {
+        const a = path[i - 1]!;
+        const b = path[i]!;
+        const dx = b[0] - a[0];
+        const dz = b[1] - a[1];
+        const L2 = dx * dx + dz * dz;
+        const k = L2 > 1e-9 ? clampN(((p[0] - a[0]) * dx + (p[1] - a[1]) * dz) / L2, 0, 1) : 0;
+        const cx = a[0] + dx * k;
+        const cz = a[1] + dz * k;
+        const d = Math.hypot(p[0] - cx, p[1] - cz);
+        if (k > 0.05 && k < 0.95 && d < berth) {
+            // 線に直角な向き（2 通り）のうち、立てる方（通りの真ん中 x 0.3 に近い方を先に）
+            const L = Math.sqrt(L2);
+            const nx = -dz / L;
+            const nz = dx / L;
+            const cands: Pt[] = [
+                [p[0] + nx * berth, p[1] + nz * berth],
+                [p[0] - nx * berth, p[1] - nz * berth],
+            ];
+            cands.sort((u, v) => Math.abs(u[0] - 0.3) - Math.abs(v[0] - 0.3));
+            const via = cands.find((c) => standable(c[0], c[1])) ?? cands[0]!;
+            out.push(via);
+        }
+        out.push(b);
+    }
+    return out;
+}
+
+/** カメラを、カメラ除けの箱（カメラの大きさ 0.25 m を足す）の外へ：見る点の方へ少しずつ寄せる */
+const CAM_BOXES: readonly Box[] = cameraBlockers();
+function insideBox(x: number, y: number, z: number, r = 0.25): boolean {
+    return CAM_BOXES.some((b) => x > b.x0 - r && x < b.x1 + r && y > b.y0 - r && y < b.y1 + r && z > b.z0 - r && z < b.z1 + r);
+}
+function safeShot(s: StageShot): StageShot {
+    let { px, py, pz } = s;
+    for (let i = 0; i < 40 && insideBox(px, py, pz); i++) {
+        const dx = s.tx - px;
+        const dy = s.ty - py;
+        const dz = s.tz - pz;
+        const d = Math.hypot(dx, dy, dz) || 1;
+        px += (dx / d) * 0.1;
+        py += (dy / d) * 0.1;
+        pz += (dz / d) * 0.1;
+    }
+    return { ...s, px: round3(px), py: round3(py), pz: round3(pz) };
+}
+
+/** 急報の配置（origin と台詞の時刻から。同じ引数なら同じ物） */
+interface ReportPlan {
+    hero: { x: number; z: number; T: number; d: number };
+    A: Pt;
+    odaStop: Pt;
+    odaFrom: Pt;
+    asaiStop: Pt;
+    asaiFrom: Pt;
+    retStop: Pt;
+    /** 浅井の使者が止まる時刻・忠勝の歩き（道・速さ・歩き出し・着く時刻） */
+    asaiT: number;
+    retPath: Pt[];
+    retV: number;
+    retStart: number;
+    retArrive: number;
+    /** 出来事の後の道（止まった所 → 置き場所） */
+    after: { oda: Pt[]; asai: Pt[]; ret: Pt[] };
+    shots: { s1: [StageShot, StageShot]; s2: [StageShot, StageShot]; s3: [StageShot, StageShot]; cut1: number; cut2: number; still: StageShot };
+}
+
+const planCache = new Map<string, ReportPlan>();
+
+function reportPlan(ev: Extract<StageEvent, { id: 'street_report' }>, o0: StageOrigin): ReportPlan {
+    // 始める所の外（見直しを物見の所などから開いた）：決めた所（通りの真ん中）で起こす。主人公もそこに立たせる（見直しの後は元へ戻る）
+    const o = inReportZone(o0.x, o0.z) ? o0 : { ...REPORT_DEFAULT_ORIGIN, yaw: o0.yaw };
+    const key = JSON.stringify([ev, o]);
+    const hit = planCache.get(key);
+    if (hit) return hit;
+    const say = ev.cue.say;
+    const s2 = say[1]?.[0] ?? REPORT_LEAD + 2.5;
+    const s3t = say[2]?.[0] ?? s2 + 3.5;
+    const s4 = say[3]?.[0] ?? s3t + 5;
+    const hero = heroStop(o);
+    const A: Pt = [round3(clampN(hero.x, REPORT_ANCHOR.x0, REPORT_ANCHOR.x1)), round3(clampN(hero.z, REPORT_ANCHOR.z0, REPORT_ANCHOR.z1))];
+    const H: Pt = [hero.x, hero.z];
+    // 止まる所は、主人公が実際に止まった所からの相対（通りの中へ収める）。城門の前の広場で始めたとき（脇の道から来た）は、
+    // 忠勝は北でなく東寄りに止まる（北は城門の柱と塀）
+    const odaStop: Pt = [round3(clampN(H[0] + ODA_AT[0], -2.6, 2.6)), round3(H[1] + ODA_AT[1])];
+    const odaFrom: Pt = [odaStop[0], round3(odaStop[1] + ODA_FROM - ODA_AT[1])];
+    let asaiX = clampN(H[0] + ASAI_AT[0], -1.75, ASAI_X_MAX);
+    if (Math.abs(asaiX - odaStop[0]) < 0.8) asaiX = odaStop[0] + 0.9 <= ASAI_X_MAX ? odaStop[0] + 0.9 : odaStop[0] - 0.9;
+    const asaiStop: Pt = [round3(asaiX), round3(H[1] + ASAI_AT[1])];
+    const asaiT = s2 - ASAI_EARLY;
+    const asaiL = Math.max(1, ASAI_WALK * (asaiT - ASAI_DECEL / 2));
+    const asaiFrom: Pt = [asaiStop[0], asaiStop[1] + asaiL];
+    let retStop: Pt =
+        H[1] + RET_AT[1] < RET_Z_MIN ? [round3(clampN(H[0] + 1.4, -1.5, 2.6)), round3(H[1] - 0.5)] : [round3(clampN(H[0] + RET_AT[0], -2.4, 2.4)), round3(H[1] + RET_AT[1])];
+    const rs = ev.retainer.spot;
+    let retPath = roundPath(detour([[rs[0], rs[1]], retStop], H));
+    const retArrive = s3t - RET_EARLY;
+    // 速く歩いても言い始める前に着けない遠さなら、手前（城門の側）で止まる
+    const retMaxL = RET_SPEED[1] * Math.max(0.5, retArrive - 0.15 - (WALK_ACCEL + WALK_DECEL) / 2);
+    if (pathLength(retPath) > retMaxL) {
+        const p = alongPath(retPath, retMaxL);
+        retStop = [round3(p.x), round3(p.z)];
+        retPath = roundPath(detour([[rs[0], rs[1]], retStop], H));
+    }
+    const retL = pathLength(retPath);
+    // 歩き出しと止まりの加減速（walkProfile）を入れて、言い始める前に止まる速さ（遅すぎず速すぎない）
+    const retV = clampN(retL / Math.max(0.5, retArrive - 0.15 - (WALK_ACCEL + WALK_DECEL) / 2), RET_SPEED[0], RET_SPEED[1]);
+    const retStart = Math.max(0.15, retArrive - walkProfile(0, retV, retL).T);
+    const sp = (x: { spot: [number, number, number] }): Pt => [x.spot[0], x.spot[1]];
+    const e0 = ev.envoys[0];
+    const e1 = ev.envoys[1];
+    // 出来事の後：織田の使者は主人公の脇を通って置き場所へ。浅井の使者は通りを東の空き地へ（町家 D の角をよける）。忠勝は城門の前へ
+    const odaAfter = e0 ? roundPath(detour([odaStop, sp(e0)], H)) : [odaStop];
+    const asaiVia: Pt[] = asaiStop[1] > 3.2 ? [[2.4, 2.4]] : [];
+    const asaiAfter = e1 ? roundPath(detour([asaiStop, ...asaiVia, [4.7, -0.9], sp(e1)], H)) : [asaiStop];
+    const retAfter = roundPath(detour([retStop, [rs[0], rs[1]]], H));
+    // 出来事の間の人の位置（カメラが人に重ならないように。止まる所・忠勝の歩く道を時刻で）
+    const retL0 = pathLength(retPath);
+    const peopleAt = (t: number): Pt[] => {
+        const oda = arriveProfile(t, ODA_RUN, odaFrom[1] - odaStop[1], ODA_DECEL).s;
+        const asai = arriveProfile(t, ASAI_WALK, asaiFrom[1] - asaiStop[1], ASAI_DECEL).s;
+        const ret = alongPath(retPath, walkProfile(t - retStart, retV, retL0).s);
+        return [H, [odaStop[0], odaFrom[1] - oda], [asaiStop[0], asaiFrom[1] - asai], [ret.x, ret.z]];
+    };
+    /** t0〜t1 の間、人から keep m 離れるまで、カメラを見る点の方（だめなら後ろ）へずらす */
+    const clearOfPeople = (sh: StageShot, t0: number, t1: number, keep = 0.75): StageShot => {
+        const pts: Pt[] = [];
+        for (let t = t0; t <= t1 + 1e-9; t += 0.1) pts.push(...peopleAt(t));
+        const near = (x: number, z: number) => pts.some((p) => Math.hypot(p[0] - x, p[1] - z) < keep);
+        if (!near(sh.px, sh.pz)) return sh;
+        const dx = sh.tx - sh.px;
+        const dz = sh.tz - sh.pz;
+        const d = Math.hypot(dx, dz) || 1;
+        for (let k = 1; k <= 30; k++) {
+            for (const sgn of [-1, 1]) {
+                const x = sh.px + (dx / d) * 0.1 * k * sgn;
+                const z = sh.pz + (dz / d) * 0.1 * k * sgn;
+                if (!near(x, z) && !insideBox(x, sh.py, z)) return { ...sh, px: round3(x), pz: round3(z) };
+            }
+        }
+        return sh;
+    };
+    // カメラ（集まる所からの相対。カメラ除けの箱の外へ）
+    const rel = (px: number, py: number, pz: number, tx: number, ty: number, tz: number) =>
+        safeShot(shot(round3(clampN(A[0] + px, -2.9, 3.1)), py, round3(Math.max(-11, A[1] + pz)), round3(A[0] + tx), ty, round3(A[1] + tz)));
+    // 1：主人公の肩越しに南（走って来る使者）を見る（振り向く主人公の背と、話す使者の顔）。
+    // 2：南西から、忠勝と主人公を横から見る（歩いて来て止まる忠勝・聞く主人公。家康の返事もこの画のまま）。
+    // 3：出来事の前の見回しの向きが 2 の画と違う側（南西でない）とき、家康の返事だけ、その見回しの側から主人公と忠勝を見る
+    //   （操作の肩越しのカメラへ短く・主人公を突き抜けずに戻れる）。同じ側なら 2 の画のまま（画は 2 つ）
+    const cut1 = s2 + 1.6;
+    const cut2Want = s4 - 0.4;
+    const end = ev.cue.end;
+    // 1 は南を向く主人公の左の肩越し（カメラを東へ 0.9 m。主人公の背が使者に重ならず、主人公は画の右・膝をつく織田の使者は中ほど・浅井の使者は左）
+    const s1a = clearOfPeople(rel(0.9, 2.0, -2.4, -0.2, 1.1, 3.0), 0, cut1);
+    const s1: [StageShot, StageShot] = [s1a, clearOfPeople({ ...rel(0.75, 1.95, -2.15, -0.2, 1.05, 3.0), px: round3(s1a.px - 0.15), pz: round3(s1a.pz + 0.25) }, 0, cut1)];
+    const S2_AT: Pt = [-2.1, 1.9];
+    const s2a = clearOfPeople(rel(S2_AT[0], 1.75, S2_AT[1], 0.0, 1.4, -1.0), cut1, end);
+    const s2s: [StageShot, StageShot] = [s2a, { ...s2a, px: round3(s2a.px + 0.1), pz: round3(s2a.pz - 0.2) }];
+    const yaw = o.yaw;
+    const back: Pt = [Math.sin(yaw), Math.cos(yaw)];
+    const right: Pt = [Math.cos(yaw), -Math.sin(yaw)];
+    const mid: Pt = [(H[0] + retStop[0]) / 2, (H[1] + retStop[1]) / 2];
+    const s3At = (d: number): StageShot => {
+        // 主人公から見回しの向きの後ろへ d m（左へ 0.6 m。箱・家にかかるなら短く）
+        let dd = d;
+        let x = H[0] - right[0] * 0.6 + back[0] * dd;
+        let z = H[1] - right[1] * 0.6 + back[1] * dd;
+        while (dd > 1.4 && (insideBox(x, 1.8, z) || !standable(x, z, 0.1))) {
+            dd -= 0.1;
+            x = H[0] - right[0] * 0.6 + back[0] * dd;
+            z = H[1] - right[1] * 0.6 + back[1] * dd;
+        }
+        return clearOfPeople(safeShot(shot(round3(x), 1.8, round3(z), round3(mid[0]), 1.4, round3(mid[1]))), cut2Want, end);
+    };
+    const s2Len = Math.hypot(S2_AT[0], S2_AT[1]);
+    const sameSide = (back[0] * S2_AT[0] + back[1] * S2_AT[1]) / s2Len > Math.cos((70 * Math.PI) / 180);
+    const s3: [StageShot, StageShot] = sameSide ? s2s : [s3At(3.3), s3At(3.0)];
+    const plan: ReportPlan = {
+        hero,
+        A,
+        odaStop,
+        odaFrom,
+        asaiStop,
+        asaiFrom,
+        retStop,
+        asaiT,
+        retPath,
+        retV,
+        retStart,
+        retArrive,
+        after: { oda: odaAfter, asai: asaiAfter, ret: retAfter },
+        shots: { s1, s2: s2s, s3, cut1, cut2: sameSide ? Infinity : cut2Want, still: s2s[0] },
+    };
+    planCache.set(key, plan);
+    if (planCache.size > 64) planCache.delete(planCache.keys().next().value!);
+    return plan;
+}
+
+/** 出来事の後の歩き（置き場所へ）：歩き出しで道の向きへ、着いたら置き場所の向きへ向き直る。返りは人の位置・向き・歩き */
+function walkHome(path: Pt[], from: number, startT: number, speed: number, t: number, endHeading: number, spotHeading: number): { x: number; z: number; heading: number; walked: number; moving: number; done: number } {
+    const L = pathLength(path);
+    const w = walkProfile(t - startT, speed, L);
+    const p = alongPath(path, w.s);
+    const T = startT + w.T;
+    let h = p.heading;
+    if (t < startT + SET_OFF_SEC) h = lerpAngle(from, p.heading, ease((t - startT) / SET_OFF_SEC));
+    if (t >= T) h = lerpAngle(p.heading, spotHeading, ease((t - T) / FACE_SEC));
+    void endHeading;
+    return { x: p.x, z: p.z, heading: wrapA(h), walked: w.s, moving: movingFor(w.v), done: T + FACE_SEC };
+}
+
+/**
+ * 町の急報（Version 28 §4.3）。t は場面の始めからの秒（場面の長さ cue.end より後は、出来事の後の歩き：会話の相手の人物として描く）。
+ * 主人公は始めた所で減速して止まり、足を踏み替えて話し手の方へ向く（体は要るときだけ回し、顔と目線は話し手へ）。
+ * カメラは 2〜3 の画（使者の到着と急報・忠勝の報告と家康の返事。出来事の前の見回しが別の側なら返事だけその側から）。
+ * 動きを減らすときは、人は止まる所に現れ、カメラは 2 の画のまま動かない。
+ */
+function streetReport(ev: Extract<StageEvent, { id: 'street_report' }>, t: number, reduced: boolean, o0: StageOrigin): StageFrame {
+    const P = reportPlan(ev, o0);
+    const o = inReportZone(o0.x, o0.z) ? o0 : { ...REPORT_DEFAULT_ORIGIN, yaw: o0.yaw };
+    const E = ev.cue.end;
+    const say = ev.cue.say;
+    const s2 = say[1]?.[0] ?? E;
+    const s4 = say[3]?.[0] ?? E;
+    const H: Pt = [P.hero.x, P.hero.z];
+    const people: StagePerson[] = [];
+    const inEvent = t <= E + 1e-9;
+    const headAt = (x: number, z: number, y = HEAD_Y) => ({ x: round3(x), y, z: round3(z) });
+    const look = (w: number): PersonAct => ({ ...NO_ACT, look: { x: H[0], y: HEAD_Y - 0.05, z: H[1] }, lookWeight: w });
+    let settledAt = E;
+    // ---- 織田の使者：走って来て止まり、片膝をつく。出来事の後は立って置き場所へ
+    const e0 = ev.envoys[0];
+    if (e0) {
+        const L = P.odaFrom[1] - P.odaStop[1];
+        const Tstop = arriveProfile(0, ODA_RUN, L, ODA_DECEL).T;
+        const spotH = e0.spot[2];
+        if (reduced) {
+            people.push({ key: e0.cast, cast: e0.cast, look: e0.look, name: e0.name, x: P.odaStop[0], z: P.odaStop[1], heading: roundH(headingTo(P.odaStop, H)), walked: 0, moving: 0, label: inEvent, act: { ...look(0.9), kneel: inEvent ? 1 : 0 } });
+        } else if (inEvent || t < E + AFTER.oda.start) {
+            const w = arriveProfile(t, ODA_RUN, L, ODA_DECEL);
+            const z = P.odaFrom[1] - w.s;
+            const kneel = ease((t - Tstop) / KNEEL_SEC) * (1 - ease((t - E) / KNEEL_SEC));
+            const arrivedH = headingTo(P.odaStop, H);
+            const heading = t < Tstop ? Math.PI : lerpAngle(Math.PI, arrivedH, ease((t - Tstop) / 0.5));
+            people.push({
+                key: e0.cast,
+                cast: e0.cast,
+                look: e0.look,
+                name: e0.name,
+                x: round3(P.odaStop[0]),
+                z: round3(z),
+                heading: roundH(heading),
+                walked: round3(w.s),
+                moving: movingFor(w.v),
+                run: round3(runOf(w.v)),
+                cycle: arriveCycles(t, ODA_RUN, L, ODA_DECEL),
+                label: inEvent,
+                act: { ...look(t > Tstop - 0.3 ? 0.9 : 0), kneel: round3(kneel) },
+            });
+        } else {
+            const from = lerpAngle(Math.PI, headingTo(P.odaStop, H), 1);
+            const w = walkHome(P.after.oda, from, E + AFTER.oda.start, AFTER.oda.speed, t, spotH, spotH);
+            settledAt = Math.max(settledAt, w.done);
+            people.push({ key: e0.cast, cast: e0.cast, look: e0.look, name: e0.name, x: round3(w.x), z: round3(w.z), heading: roundH(w.heading), walked: round3(w.walked), moving: w.moving, cycle: walkCycles(w.walked), label: false });
+        }
+        if (!reduced) settledAt = Math.max(settledAt, E + AFTER.oda.start + walkProfile(0, AFTER.oda.speed, pathLength(P.after.oda)).T + FACE_SEC);
+    }
+    // ---- 浅井の使者：少し遅れて急ぎ足で来て止まり、主人公の方へ向く。出来事の後は東の空き地へ
+    const e1 = ev.envoys[1];
+    if (e1) {
+        const L = P.asaiFrom[1] - P.asaiStop[1];
+        const spotH = e1.spot[2];
+        const faceH = headingTo(P.asaiStop, H);
+        if (reduced) {
+            people.push({ key: e1.cast, cast: e1.cast, look: e1.look, name: e1.name, x: P.asaiStop[0], z: P.asaiStop[1], heading: roundH(faceH), walked: 0, moving: 0, label: inEvent, act: look(0.9) });
+        } else if (inEvent || t < E + AFTER.asai.start) {
+            const w = arriveProfile(t, ASAI_WALK, L, ASAI_DECEL);
+            const heading = t < P.asaiT ? Math.PI : lerpAngle(Math.PI, faceH, ease((t - P.asaiT) / 0.6));
+            people.push({
+                key: e1.cast,
+                cast: e1.cast,
+                look: e1.look,
+                name: e1.name,
+                x: round3(P.asaiStop[0]),
+                z: round3(P.asaiFrom[1] - w.s),
+                heading: roundH(heading),
+                walked: round3(w.s),
+                moving: movingFor(w.v),
+                cycle: walkCycles(w.s),
+                label: inEvent,
+                act: look(t > P.asaiT - 0.4 ? 0.85 : 0),
+            });
+        } else {
+            const w = walkHome(P.after.asai, faceH, E + AFTER.asai.start, AFTER.asai.speed, t, spotH, spotH);
+            settledAt = Math.max(settledAt, w.done);
+            people.push({ key: e1.cast, cast: e1.cast, look: e1.look, name: e1.name, x: round3(w.x), z: round3(w.z), heading: roundH(w.heading), walked: round3(L + w.walked), moving: w.moving, cycle: walkCycles(L + w.walked), label: false });
+        }
+        if (!reduced) settledAt = Math.max(settledAt, E + AFTER.asai.start + walkProfile(0, AFTER.asai.speed, pathLength(P.after.asai)).T + FACE_SEC);
+    }
+    // ---- 忠勝：城門の前から歩いて来て、止まってから言う。家康の命に軽く礼をして、城門の前へ歩いて戻る
+    const r = ev.retainer;
+    const rSpotH = r.spot[2];
+    const rFace = headingTo(P.retStop, H);
+    if (reduced) {
+        people.push({ key: r.cast, cast: r.cast, look: r.look, name: r.name, x: P.retStop[0], z: P.retStop[1], heading: roundH(rFace), walked: 0, moving: 0, label: inEvent, act: look(0.9) });
+    } else if (inEvent || t < E + AFTER.ret.start) {
+        const L = pathLength(P.retPath);
+        const w = walkProfile(t - P.retStart, P.retV, L);
+        const p = alongPath(P.retPath, w.s);
+        let heading = p.heading;
+        if (t < P.retStart) heading = rSpotH;
+        else if (t < P.retStart + SET_OFF_SEC) heading = lerpAngle(rSpotH, p.heading, ease((t - P.retStart) / SET_OFF_SEC));
+        if (t >= P.retArrive) heading = lerpAngle(p.heading, rFace, ease((t - P.retArrive) / 0.5));
+        const bow = bowWeight(t - (s4 + 0.9));
+        people.push({
+            key: r.cast,
+            cast: r.cast,
+            look: r.look,
+            name: r.name,
+            x: round3(p.x),
+            z: round3(p.z),
+            heading: roundH(heading),
+            walked: round3(w.s),
+            moving: movingFor(w.v),
+            cycle: walkCycles(w.s),
+            label: inEvent,
+            act: { ...look(t > P.retArrive - 0.8 ? 0.9 * (1 - bow) : 0), bow: round3(bow) },
+        });
+    } else {
+        const w = walkHome(P.after.ret, rFace, E + AFTER.ret.start, AFTER.ret.speed, t, rSpotH, rSpotH);
+        settledAt = Math.max(settledAt, w.done);
+        people.push({ key: r.cast, cast: r.cast, look: r.look, name: r.name, x: round3(w.x), z: round3(w.z), heading: roundH(w.heading), walked: round3(pathLength(P.retPath) + w.walked), moving: w.moving, cycle: walkCycles(pathLength(P.retPath) + w.walked), label: false });
+    }
+    if (!reduced) settledAt = Math.max(settledAt, E + AFTER.ret.start + walkProfile(0, AFTER.ret.speed, pathLength(P.after.ret)).T + FACE_SEC);
+    const settled = reduced ? t > E + 1e-9 : t >= settledAt;
+    // 動きを減らすときは、出来事の後も止まる所のまま（t によらない。置き場所へは描く側が出来事の終わりに置き直す）
+    if (settled && !reduced) {
+        // 着いた：置き場所・置き場所の向き（会話の相手の人物と同じ所・同じ向き。これより後は人物のまま）
+        people.length = 0;
+        for (const x of [...ev.envoys, ev.retainer]) people.push({ key: x.cast, cast: x.cast, look: x.look, name: x.name, x: x.spot[0], z: x.spot[1], heading: roundH(x.spot[2]), walked: 0, moving: 0, label: false });
+    }
+    // ---- 主人公：減速して止まり、走って来る足音に振り向く（足を踏み替えて）。忠勝が来ると、そちらへ向き直る
+    let hero: StageHero | null = null;
+    let heroGaze: StageFrame['heroGaze'] = undefined;
+    if (inEvent) {
+        const k = P.hero.T > 0 ? clampN(t / P.hero.T, 0, 1) : 1;
+        const along = P.hero.d * (1 - (1 - k) * (1 - k));
+        const len = Math.hypot(o.dirX, o.dirZ) || 1;
+        const hx = o.x + (o.dirX / len) * along;
+        const hz = o.z + (o.dirZ / len) * along;
+        const hOda = headingTo(H, P.odaStop);
+        const hRet = headingTo(H, P.retStop);
+        const turn = (from: number, to: number, start: number) => {
+            const dur = 0.35 + 0.25 * (Math.abs(wrapA(to - from)) / Math.PI);
+            return lerpAngle(from, to, ease((t - start) / dur));
+        };
+        let h = o.heading;
+        if (reduced) h = t < P.retArrive - 1.0 ? hOda : hRet;
+        else {
+            h = turn(o.heading, hOda, 0.2);
+            if (t >= P.retArrive - 1.0) h = turn(hOda, hRet, P.retArrive - 1.0);
+        }
+        hero = { x: round3(hx), z: round3(hz), heading: roundH(h) };
+        // 顔と目線：走って来る使者 → 浅井の使者 → 忠勝
+        const kneelHead = (p: StagePerson | undefined) => (p ? headAt(p.x, p.z, p.act?.kneel ? HEAD_Y - (HEAD_Y - KNEEL_HEAD_Y) * p.act.kneel : HEAD_Y) : null);
+        const odaP = people.find((p) => p.cast === e0?.cast);
+        const asaiP = people.find((p) => p.cast === e1?.cast);
+        const retP = people.find((p) => p.cast === r.cast);
+        if (t < s2 - 0.3) heroGaze = kneelHead(odaP);
+        else if (t < P.retArrive - 0.9) heroGaze = kneelHead(asaiP);
+        else heroGaze = kneelHead(retP);
+    }
+    // ---- カメラ
+    const sh = P.shots;
+    let s: StageShot;
+    if (reduced) s = sh.still;
+    else if (t < sh.cut1) s = lerpShot(sh.s1[0], sh.s1[1], ease(t / sh.cut1));
+    else if (t < sh.cut2) s = lerpShot(sh.s2[0], sh.s2[1], ease((t - sh.cut1) / Math.max(0.1, Math.min(E, sh.cut2) - sh.cut1)));
+    else s = lerpShot(sh.s3[0], sh.s3[1], ease((t - sh.cut2) / Math.max(0.1, E - sh.cut2)));
+    return {
+        people,
+        figures: [],
+        banners: [],
+        litters: [],
+        shot: s,
+        hideCast: [],
+        hideAmbient: [],
+        hero,
+        heroStays: true,
+        ...(heroGaze !== undefined ? { heroGaze } : {}),
+        settled,
+    };
+}
+
+/** 確かめ用：急報の配置（集まる所・止まる所・主人公の止まる所・カメラの切り替えの時刻） */
+export function reportLayout(ev: Extract<StageEvent, { id: 'street_report' }>, origin: StageOrigin = REPORT_DEFAULT_ORIGIN): {
+    anchor: Pt;
+    hero: Pt;
+    stops: { oda: Pt; asai: Pt; retainer: Pt };
+    cuts: [number, number];
+    retArrive: number;
+} {
+    const P = reportPlan(ev, origin);
+    return { anchor: P.A, hero: [P.hero.x, P.hero.z], stops: { oda: P.odaStop, asai: P.asaiStop, retainer: P.retStop }, cuts: [P.shots.cut1, P.shots.cut2], retArrive: P.retArrive };
 }
 
 // ---------------- 家臣の報告（主人公と家臣の短いやり取り）
@@ -844,12 +1458,14 @@ function columnReturn(count: number, wounded: number, mark: string, victory: boo
 }
 
 /** 確かめ用：出来事の id ごとの、カメラが通る所を t の列で返す（カメラ除けの確かめ・ゆっくりの確かめ） */
-export function shotsOver(ev: StageEvent, reduced: boolean, until = 20, step = 0.1, cast: readonly StageCastInfo[] = []): { t: number; shot: StageShot }[] {
+export function shotsOver(ev: StageEvent, reduced: boolean, until = 20, step = 0.1, cast: readonly StageCastInfo[] = [], origin: StageOrigin = REPORT_DEFAULT_ORIGIN): { t: number; shot: StageShot }[] {
     const out: { t: number; shot: StageShot }[] = [];
-    const n = Math.round(until / step);
+    // 町の急報は場面の長さまで（その後は操作。カメラは肩越しへ戻る）
+    const end = ev.id === 'street_report' ? Math.min(until, ev.cue.end) : until;
+    const n = Math.round(end / step);
     for (let i = 0; i <= n; i++) {
         const t = Math.round(i * step * 1000) / 1000;
-        out.push({ t, shot: stageFrame(ev, t, reduced, cast).shot });
+        out.push({ t, shot: stageFrame(ev, t, reduced, cast, origin).shot });
     }
     return out;
 }

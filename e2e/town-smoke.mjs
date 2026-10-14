@@ -404,7 +404,8 @@ if (PARTS.includes('intro3d')) {
   const wall0 = Date.now();
   await page.click('.g-scn[data-scenario="ieyasu1570"] .g-btn[data-id="new:ieyasu1570"]');
   await page.waitForFunction(() => window.__game.ui?.kind === 'cine', null, POLL);
-  // 第一章の冒頭（Version 21）：町の様子 → 使者の到着 → 家臣の報告。どれも主人公を町の入口に立たせて描く（記録から確かめる）
+  // 第一章の冒頭（Version 28 §4.3）：短い始め（町の様子の字幕 1 行と、町の入口の主人公へ寄る 1 つのカメラの動き）だけ。
+  // 使者の急報・家臣の報告は、操作の途中の町の急報（ch1_report。e2e/v28-envoy-event.mjs が確かめる）
   const ENTRY = await page.evaluate(async () => (await import('/src/town/spots.ts')).ENTRY_POSE);
   await page.waitForFunction(() => window.__game.screen === 'explore' && !window.__game.ui, null, POLL);
   const wall = (Date.now() - wall0) / 1000;
@@ -415,12 +416,10 @@ if (PARTS.includes('intro3d')) {
   note(`導入の時計の終わり t=${last?.t}・実時間 ${wall.toFixed(0)} 秒・記録したコマ ${log.length}`);
   check('3D の場面は時計どおりに進んだ（場面の時刻 t が単調に増え、出来事の t も同じ）', stages.length >= 1 && stages.every((s) => s.t1 > s.t0), J(stages.map((s) => ({ beat: s.beat, t0: s.t0, t1: s.t1, n: s.n }))));
   const evs = [...new Set(log.filter((r) => r.mode === 'stage' && r.ev).map((r) => r.ev))];
-  check('冒頭の 3D の場面の順：町の様子 → 使者の到着 → 家臣の報告', J(evs) === J(['town_life', 'envoys_arrive', 'retainer_report']), J(evs));
+  check('冒頭の 3D の場面：町の様子（短い始め）だけ', J(evs) === J(['town_life']), J(evs));
   const atEntry = (r) => Math.abs(r.hx - ENTRY.x) < 1e-6 && Math.abs(r.hz - ENTRY.z) < 1e-6;
   const inEv = (id) => log.filter((r) => r.mode === 'stage' && r.ev === id);
-  check('町の様子・使者の到着・家臣の報告：主人公を描くカメラ（hideHero でない）で、主人公は町の入口に立つ', ['town_life', 'envoys_arrive', 'retainer_report'].every((id) => inEv(id).length > 0 && inEv(id).every((r) => r.heroShown === true && atEntry(r))), J(['town_life', 'envoys_arrive', 'retainer_report'].map((id) => [id, inEv(id).length, inEv(id).filter((r) => r.heroShown).length])));
-  check('使者の到着：使者 2 人が歩き、会話の相手の使者は着くまで隠す', inEv('envoys_arrive').some((r) => r.people === 2 && r.hide === 2), J(inEv('envoys_arrive').map((r) => [r.people, r.hide]).slice(0, 4)));
-  check('家臣の報告：家臣 1 人が来て、城門の前の忠勝はその間だけ隠す', inEv('retainer_report').every((r) => r.people === 1 && r.hidden === 'tadakatsu'), J(inEv('retainer_report').map((r) => [r.people, r.hidden]).slice(0, 3)));
+  check('町の様子：主人公を描くカメラ（hideHero でない）で、主人公は町の入口に立つ。出来事の人は出さない（町の人々のまま）', inEv('town_life').length > 0 && inEv('town_life').every((r) => r.heroShown === true && atEntry(r) && r.people === 0), J([inEv('town_life').length, inEv('town_life').filter((r) => r.heroShown).length]));
   const end = await page.evaluate(() => ({ probe: window.__game.world.stageProbe(), shot: window.__game.world.cameraShot, hero: { x: window.__p3.hero.x, z: window.__p3.hero.z, h: window.__p3.hero.heading }, orbit: { yaw: window.__p3.orbit.yaw, pitch: window.__p3.orbit.pitch }, cast: window.__game.cast.filter((c) => c.id === 'tadakatsu') }));
   check('演出の後：出来事を片付け・カメラの差し替えを外し・主人公は町の入口で北向き（見回しは真後ろ yaw 0）・忠勝は城門の前の置き場所', !end.probe.active && end.probe.people === 0 && end.shot === null && Math.abs(end.hero.x - ENTRY.x) < 1e-6 && Math.abs(end.hero.z - ENTRY.z) < 1e-6 && Math.abs(end.hero.h - Math.PI) < 1e-6 && Math.abs(end.orbit.yaw) < 1e-6 && end.cast[0]?.z < -5, J(end));
   await ctx.close();

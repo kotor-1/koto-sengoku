@@ -2,7 +2,9 @@
  * 歴史分岐「元亀元年・家康」の演出の台本（章の冒頭・情勢の図解・出陣・帰還）。状態から作る純粋な関数（状態を読むだけ）。
  * 設計：docs/story-rpg-design.md §2。型：story/types.ts（CineSpec）。再生は ui の共通の再生器（story/timeline.ts）、3D の出来事は町の側。
  *
- * - 章の冒頭（ch1_open・ch2_open）：3D の場面だけ。町の様子（第二章は負傷兵・援兵）→ 急報（使者・使い）→ 主人公と家臣の短いやり取り → 操作。
+ * - 第一章の冒頭（ch1_open。Version 28 §4.3）：町の入口の主人公へ寄る 1 つのカメラの動きと字幕 1 行（4 秒前後）だけ。切らずに操作へ渡す。
+ *   急報（使者 2 人・忠勝・家康の返事）は、操作の途中に主人公が通りを北へ進んだときの町の急報（ch1_report）で流す（同じ台詞・同じ順）。
+ * - 第二章の冒頭（ch2_open）：3D の場面だけ。町の様子（負傷兵・援兵）→ 急報（使い）→ 主人公と家臣の短いやり取り → 操作。
  *   章の始めに自動で流す（docs/v20-feedback-request.md【1】：冒頭から図解にしない。ロード完了から操作まで 15〜20 秒の目安）。
  * - 情勢の図解（ch1_intro・ch2_intro）：地図の台本。自動では流さない。情勢の画面・軍議の「詳しく見る」から任意で見る（見ることを進行の条件にしない）。
  * - 声を付ける字幕の文は voiceLines.ts の表から取り、字幕に voice（id）を付ける。
@@ -21,7 +23,11 @@
  * - 字幕は短く（1 つ 30 字まで）、場面ごとに十分な時間（文字数 ÷ 8 秒と 2.5 秒の大きい方以上）。長文の自動送りにしない。
  */
 import type { CineCaption, CineMapBeat, CineMoment, CineSpec, CineStageBeat, MapScene, StageEvent } from '../../../story/types';
-import { CAPTION_CHARS_PER_SEC, CAPTION_MIN_SEC } from '../../../story/timeline';
+import { CAPTION_CHARS_PER_SEC, CAPTION_MIN_SEC, captionNeedSec } from '../../../story/timeline';
+import { SPOTS, headingToward, type Spot } from '../../../explore/cast';
+import { ESTABLISH_SEC, REPORT_LEAD } from '../../../explore/stage';
+import { START } from '../../../layout';
+import { voiceFileFor } from '../../../audio/voiceManifest';
 import { availableCh2Plans } from '../chapter2/rules';
 import { isChapter2, type Chapter1Record, type Ieyasu2State, type IeyasuAnyState } from '../chapter2/state';
 import { CH2_MISSION_TITLES, CH2_PLAN_LABELS, CH2_SUPPORT_NAMES } from '../chapter2/story';
@@ -228,37 +234,100 @@ function retainerEvent(): StageEvent {
 }
 
 /**
- * 第一章の冒頭（docs/v20-feedback-request.md【1】）：町の様子（時代と主人公の字幕）→ 急報（使者 2 人が木戸から入る）
- * → 主人公と家臣の短いやり取り（目前の目的：城門の前の本多忠勝と話し、軍議を開く）→ 操作。地図の場面は無い。
- * 使者の言葉は今の台本（情勢の図解・会話）と同じ文。声の付いた字幕は声の長さ（voiceLines.ts の voiceSecFor。Version 28 から、音声ファイルの
- * ある台詞は実際の音の長さ＋余白）より短くしないので、地の文は 1 つにまとめる（時代・主人公・急報）。長さは 18.4 秒（CINE_LENGTH_RANGE の 12〜19 秒）。
+ * 第一章の冒頭（Version 28 §4.3 の 1）：町の様子の字幕 1 行（時代・主人公・急報：同じ日に両家の使者）を、町の入口の主人公へ寄っていく
+ * 1 つのカメラの動き（explore/stage.ts の town_life の establish）で見せ、切らずに肩越しのカメラへつないで操作を渡す（4.1 秒）。
+ * 使者の急報・忠勝・家康の返事は、操作の途中の町の急報（ch1Report）で同じ台詞・同じ順に流す（新しい出来事は足さない）。
  */
 function ch1Open(): CineSpec {
     return build('ch1_open', 'ch1_open', CH1_HEADING, [
         {
             kind: 'stage',
-            event: { id: 'town_life', hero: true },
+            event: { id: 'town_life', hero: true, establish: true },
+            min: ESTABLISH_SEC,
             // 時代と、自分が徳川家康だと分かるように（城・町の名前は出さない。1570年・三河は見出しに出す）。急報（同じ日に両家の使者）も同じ 1 行で
             caps: [{ text: CH1_OPEN_FIRST, info: ['when', 'where', 'crisis'] }],
         },
-        {
-            kind: 'stage',
-            event: {
-                id: 'envoys_arrive',
-                envoys: [
-                    { look: IEYASU_LOOKS.oda_envoy, name: '織田家の使者' },
-                    { look: IEYASU_LOOKS.asai_envoy, name: '浅井家の使者' },
-                ],
-                showHero: true,
-            },
-            caps: [voiceCap('ch1.oda_envoy.ask'), voiceCap('ch1.asai_envoy.ask')],
-        },
-        {
-            kind: 'stage',
-            event: retainerEvent(),
-            caps: [{ ...voiceCap('ch1.tadakatsu.council'), info: ['decide'] }, voiceCap('ch1.hero.gather')],
-        },
     ]);
+}
+
+/** 町の急報の話し手の順（声の台詞の id）：織田の使者 → 浅井の使者 → 忠勝 → 家康 */
+export const CH1_REPORT_LINES = ['ch1.oda_envoy.ask', 'ch1.asai_envoy.ask', 'ch1.tadakatsu.council', 'ch1.hero.gather'] as const;
+/** 返答の間（秒。前の話し手の声の終わりから次の声の始めまで）の、音声ファイルの台本に無いときの値 */
+const REPLY_GAP_SEC = 0.5;
+
+/** 第一章の探索の置き場所（scenario.ts の ieyasuCastFor と同じ所・同じ向き：向きの無い所は開始の位置の方を向く） */
+function exploreSpot(s: Spot): [number, number, number] {
+    return [s[0], s[1], s[2] ?? headingToward(s[0], s[1], START.x, START.z)];
+}
+
+/**
+ * 台詞の時刻（町の急報。秒）：最初の台詞は REPORT_LEAD（使者が走って来て止まる）。次の台詞の始めは、
+ * 前の声の終わり（音声ファイルの長さ − 後ろの無音）＋ 返答の間（台本の gapBefore）− 次の声の前の無音、ただし
+ * 前の字幕が声の長さ（voiceSecFor：音声ファイルの長さ＋余白）と字幕の最短（captionNeedSec）より短くならない所。
+ * 返り：台詞ごとの [字幕の始め, 声の終わり]・字幕の終わり（次の字幕の始め。最後は声の長さ）・場面の終わり
+ */
+export function reportCues(ids: readonly string[] = CH1_REPORT_LINES): { say: [number, number][]; capEnd: number[]; end: number } {
+    const say: [number, number][] = [];
+    const capEnd: number[] = [];
+    let t = REPORT_LEAD;
+    for (let i = 0; i < ids.length; i++) {
+        const id = ids[i]!;
+        const f = voiceFileFor(id);
+        const sec = voiceSecFor(id);
+        const text = voiceCap(id).text;
+        const speechEnd = f ? f.sec - f.tail : sec - VOICE_PAD_GUESS;
+        say.push([r1(t), r1(t + speechEnd)]);
+        const need = Math.max(sec, captionNeedSec({ start: 0, end: 0, text }));
+        const next = ids[i + 1];
+        if (!next) {
+            t = t + need;
+            capEnd.push(r1(t));
+            break;
+        }
+        const nf = voiceFileFor(next);
+        const gap = nf?.gapBefore ?? REPLY_GAP_SEC;
+        const nt = Math.max(t + need, t + speechEnd + gap - (nf?.lead ?? 0));
+        capEnd.push(r1(nt));
+        t = nt;
+    }
+    return { say, capEnd, end: r1(t) };
+}
+/** 音声ファイルの無い台詞の、声の長さの見積もりから声の終わりを決めるときに引く余白（秒。voiceLines.ts の VOICE_PAD_SEC の半分） */
+const VOICE_PAD_GUESS = 0.4;
+
+/**
+ * 第一章の町の急報（Version 28 §4.3 の 3）：操作の途中、主人公が通りを北へ進んで決めた所へ入ったとき（「はじめから」の回の中で 1 回だけ）。
+ * 織田の使者が走って来て止まり、片膝をついて急報 → 浅井の使者が少し遅れて急ぎ足で来て止まり → 忠勝が城門の方から歩いて来て、止まってから
+ * 軍議を勧める → 家康は短い間の後に答える。台詞は今の台本と同じ文・同じ順（新しい出来事は足さない）。終わると忠勝は城門の前へ、使者 2 人は
+ * 話せる位置へ歩いて行く（会話の相手の人物そのもの。入れ替えない）。長さは声の長さ（音声ファイルの実際の長さ）と返答の間から（15 秒前後）。
+ */
+function ch1Report(): CineSpec {
+    const ids = CH1_REPORT_LINES;
+    const cue = reportCues(ids);
+    const spot = SPOTS;
+    const event: StageEvent = {
+        id: 'street_report',
+        envoys: [
+            { look: IEYASU_LOOKS.oda_envoy, name: '織田家の使者', cast: 'oda_envoy', spot: exploreSpot(spot.muster.envoy!) },
+            { look: IEYASU_LOOKS.asai_envoy, name: '浅井家の使者', cast: 'asai_envoy', spot: exploreSpot(spot.explore.shinpachi!) },
+        ],
+        retainer: { look: IEYASU_LOOKS.tadakatsu, name: IEYASU_TALK_NAMES.tadakatsu, cast: 'tadakatsu', spot: exploreSpot(spot.explore.genzo!) },
+        cue: { say: cue.say, end: cue.end },
+    };
+    const captions: CineCaption[] = ids.map((id, i) => ({ start: cue.say[i]![0], end: cue.capEnd[i]!, ...voiceCap(id) }));
+    const spec: CineSpec = {
+        id: 'ch1_report',
+        moment: 'ch1_report',
+        title: CH1_HEADING,
+        duration: cue.end,
+        beats: [{ kind: 'stage', start: 0, end: cue.end, event }],
+        captions,
+        // 危機（両家の使者の急報）・判断（城門の前の忠勝と軍議を開く）
+        info: { crisis: cue.say[0]![0], decide: cue.say[2]![0] },
+    };
+    // 地図の場面は無い（現れる物は無い）
+    FIRST_SHOWN.set(spec, new Map());
+    return spec;
 }
 
 /** 第一章の冒頭の最初の字幕（時代・主人公・急報） */
@@ -704,6 +773,7 @@ function woundedOf(t: { lost: number; left: number }): number {
 /**
  * 演出の台本（状態を読むだけ。同じ状態なら同じ台本）。その時に流す物が無ければ null。
  * - ch1_open・ch1_intro：いつでも作れる（第一章の冒頭・第一章の始めの情勢の図解。第二章からの見直しでも同じ）。
+ * - ch1_report：第一章の状態だけ（町の急報。第二章では null）。
  * - ch2_open・ch2_intro：第二章の状態だけ。
  * - departure：出陣の後（出陣中・戦後・結末）。帰還：戦後・結末（直前の合戦）。
  */
@@ -711,6 +781,9 @@ export function ieyasuCinematic(s: IeyasuAnyState, moment: CineMoment): CineSpec
     switch (moment) {
         case 'ch1_open':
             return ch1Open();
+        case 'ch1_report':
+            // 第一章の町の急報（第二章では起こさない・見直しにも出さない）
+            return isChapter2(s) ? null : ch1Report();
         case 'ch2_open':
             return isChapter2(s) ? ch2Open(s) : null;
         case 'ch1_intro':
@@ -727,6 +800,7 @@ export function ieyasuCinematic(s: IeyasuAnyState, moment: CineMoment): CineSpec
 /** 見直しの一覧に出す名前（冒頭は場面、図解は地図の台本） */
 const REPLAY_TITLES: Readonly<Partial<Record<CineMoment, string>>> = {
     ch1_open: '第一章の冒頭（城下）',
+    ch1_report: '使者の急報（城下）',
     ch2_open: '第二章の冒頭（城下）',
     ch1_intro: '情勢の図解（第一章の始め）',
     ch2_intro: '情勢の図解（第二章の始め）',
@@ -749,6 +823,7 @@ export function ieyasuReplays(s: IeyasuAnyState): { moment: CineMoment; title: s
     } else {
         add('ch1_intro');
         add('ch1_open');
+        add('ch1_report');
     }
     if (s.phase === 'aftermath' || s.phase === 'ending') {
         add('departure');

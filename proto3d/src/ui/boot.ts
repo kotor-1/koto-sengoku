@@ -227,6 +227,14 @@ export function bootChapter(host: ExploreHost): ChapterGame<any> {
                 get cineLog() {
                     return [...game.cineLog];
                 },
+                /** 待っている町の出来事（Version 28 §4.3。'ch1_report'。無ければ null。「はじめから」の回の中だけ。保存には入らない） */
+                get townEvent() {
+                    return game.townEventPending;
+                },
+                /** 町の急報の人物（出来事が動かしている会話の相手・出来事の後に歩いている相手・主人公の向き直り・話している相手） */
+                get event() {
+                    return world.eventProbe();
+                },
                 /** 情勢の画面を開く（探索中・軍議の途中。HUD の「情勢」・J と同じ守り） */
                 situation() {
                     void game.openSituation();

@@ -19,6 +19,11 @@ import { TownTroops } from './troops';
 
 /** 描く距離の上限（m） */
 const PEOPLE_FAR = 42;
+/**
+ * カメラがこれより近い（横の距離 m。カメラが頭より低い所にあるとき）人は描かない（カメラが人の中に入って、体の内側や大写しが見えないように。
+ * 町の急報の後、肩越しのカメラへ戻る所に使者が片膝をついている・町の人がカメラの脇を通るとき）
+ */
+const NEAR_HIDE = 0.6;
 /** 店の人が会釈する、主人公との距離（m）と、続けて会釈しない間（秒）・主人公の方を見る距離 */
 const GREET_DIST = 3;
 const GREET_AGAIN = 8;
@@ -113,10 +118,12 @@ export class ActorLayer {
             const root = a.body.root;
             root.position.set(p.x, gy, p.z);
             root.rotation.y = p.heading;
-            // 画面の外（影の分を足す）・遠い人は描かない
+            // 画面の外（影の分を足す）・遠い人・カメラが中に入る人は描かない
             sphere.center.set(p.x, gy + 1, p.z);
             sphere.radius = 3.0;
-            const vis = this.frustum.intersectsSphere(sphere) && Math.hypot(p.x - camera.position.x, p.z - camera.position.z) < PEOPLE_FAR;
+            const dCam = Math.hypot(p.x - camera.position.x, p.z - camera.position.z);
+            const inside = dCam < NEAR_HIDE && camera.position.y < gy + 2.1;
+            const vis = this.frustum.intersectsSphere(sphere) && dCam < PEOPLE_FAR && !inside;
             root.visible = vis;
             if (vis) {
                 drawn++;
@@ -232,7 +239,7 @@ export class ActorLayer {
      * 足と首は前のコマからの続き。時刻が戻った・飛んだ・1 m 以上動いた・前のコマで見えていなかったときは、その場で合わせ直す
      */
     private pose(a: ActorPerson, p: ActorPersonState, time: number, hero: { x: number; z: number } | null): void {
-        posePerson(a.body, time, p.walked, p.moving, rhythmOf(p.key));
+        posePerson(a.body, time, p.walked, p.moving, rhythmOf(p.key), p.run ?? 0, p.cycle);
         let dt = a.lastT === null ? -1 : time - a.lastT;
         const fresh = !a.shown || !(dt >= 0 && dt < RESET_DT) || Math.hypot(p.x - a.lastX, p.z - a.lastZ) > RESET_MOVE;
         if (fresh) dt = 0;
@@ -245,13 +252,15 @@ export class ActorLayer {
             if (fresh) a.legs.reset();
             a.legs.update({ dt, move: p.moving, ground: groundY });
         }
-        const bow = this.greet(a, p, time, hero);
+        const bow = Math.max(this.greet(a, p, time, hero), p.act?.bow ?? 0);
         const bones = a.body.bones;
         applyAct(bones, p.act, bow);
         if (p.carrying && a.bale) {
             a.body.root.updateMatrixWorld(true);
             holdBale(bones);
         }
+        // 片膝（急報の使者）：足の IK の後に、骨の形で（腰を下げて前の脚の膝を立て、後ろの脚の膝を地面へ）
+        if ((p.act?.kneel ?? 0) > 0) applyKneel(bones, p.act!.kneel!);
         // 首と頭：会釈の相手（近くを通る主人公）・通りを見る所（仕事）。無ければ正面
         if (a.gaze) {
             const near = hero && p.greet && Math.hypot(hero.x - p.x, hero.z - p.z) < GREET_LOOK && facing(p, hero) && !((p.act?.lean ?? 0) > 0.15);
@@ -364,6 +373,37 @@ function applyAct(bones: Map<string, THREE.Bone>, act: PersonAct | undefined, bo
         turnBone(bones, `${side}UpperArm`, Z, -s * 0.16 * hands);
         turnBone(bones, `${side}ForeArm`, X, -(0.55 + 0.18 * Math.sin(ph * 1.3 + s)) * hands);
     }
+}
+
+const kq = (x: number, z = 0) => new THREE.Quaternion().setFromAxisAngle(X, x).multiply(new THREE.Quaternion().setFromAxisAngle(Z, z));
+/**
+ * 片膝をつく形（hero_v2 の骨：休みの形では骨はすべて回転なし、脚は下向き。world.ts の腰掛けた形と同じ考え方）。
+ * 腰を 0.5 m へ下げ、左の脚は太ももを前へ・すねを下へ（膝を立てる）、右の脚は太ももを下へ・すねを後ろへ（膝を地面へ。足先を立てる）。
+ * 上体は少し前へ、頭を下げ（顔と目線は後で game/gaze.ts が話し相手へ向ける）、左手は左の膝へ、右の拳は体の脇へ下ろす。縮めない（骨の形だけ）
+ */
+export const KNEEL = {
+    hipsY: 0.5,
+    bones: {
+        LeftUpperLeg: kq(-1.42),
+        LeftLowerLeg: kq(1.48),
+        LeftFoot: kq(0),
+        RightUpperLeg: kq(0.12),
+        RightLowerLeg: kq(1.52),
+        RightFoot: kq(0.1),
+        Spine: kq(0.22),
+        Chest: kq(0.06),
+        Neck: kq(0.3),
+        LeftUpperArm: kq(-0.6, -0.2),
+        LeftForeArm: kq(-0.7),
+        RightUpperArm: kq(-0.12, 0.18),
+        RightForeArm: kq(-0.35),
+    } as Record<string, THREE.Quaternion>,
+};
+function applyKneel(bones: Map<string, THREE.Bone>, w: number): void {
+    const k = Math.max(0, Math.min(1, w));
+    const hips = bones.get('Hips');
+    if (hips) hips.position.y += (KNEEL.hipsY - hips.position.y) * k;
+    for (const [name, q] of Object.entries(KNEEL.bones)) bones.get(name)?.quaternion.slerp(q, k);
 }
 
 /** 俵を支える右手：右腕の 2 本の骨（上腕・前腕）を、手首が俵の前の下（BALE_HAND）へ届くように回す。肘は外・下・少し後ろへ */

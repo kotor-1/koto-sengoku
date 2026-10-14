@@ -57,12 +57,15 @@ export interface MapScene {
 
 /**
  * 演出の時（どこで流すか）。
- * - ch1_open・ch2_open：章の冒頭（3D の場面だけ。町の様子 → 急報・使い → 主人公と家臣のやり取り → 操作。自動で流す）。
+ * - ch1_open：第一章の冒頭（Version 28 §4.3：町の入口の主人公へ寄る 1 つのカメラの動きと字幕 1 行だけ。そのまま操作へ。自動で流す）。
+ * - ch1_report：第一章の町の急報（Version 28 §4.3：操作中に主人公が通りを北へ進み、決めた所へ入ったとき「はじめから」の回の中で 1 回だけ。
+ *   使者 2 人の急報 → 忠勝 → 家康の返事 → 操作。情勢の画面から見直せる）。
+ * - ch2_open：第二章の冒頭（3D の場面だけ。町の様子 → 急報・使い → 主人公と家臣のやり取り → 操作。自動で流す）。
  * - ch1_intro・ch2_intro：情勢の図解（地図の台本。自動では流さない。情勢の画面・軍議の「詳しく見る」から任意で見る）。
  * - departure・return：出陣・帰還。
- * docs/v20-feedback-request.md【1】。
+ * docs/v20-feedback-request.md【1】・docs/v28-town-motion-voice.md §4.3。
  */
-export type CineMoment = 'ch1_open' | 'ch2_open' | 'ch1_intro' | 'ch2_intro' | 'departure' | 'return';
+export type CineMoment = 'ch1_open' | 'ch1_report' | 'ch2_open' | 'ch1_intro' | 'ch2_intro' | 'departure' | 'return';
 
 /** 字幕 1 行 */
 export interface CineCaption {
@@ -110,7 +113,15 @@ export type StageEvent =
      * 町の様子（章の冒頭の最初の画。docs/v20-feedback-request.md【1】【2】）：街道口の木戸のあたりから北の城門へ向かう通りを見る。
      * 荷を運ぶ人・店の人・門番・（あれば）詰所の負傷兵・援兵が働いている。hero：主人公を入口の位置（town/spots.ts の ENTRY_POSE）に立たせて見せる
      */
-    | { id: 'town_life'; hero: boolean }
+    | {
+          id: 'town_life';
+          hero: boolean;
+          /**
+           * 第一章の冒頭（Version 28 §4.3）：町の入口の主人公へ寄っていく 1 つのカメラの動き（高い所から、肩越しのカメラの位置へ）。
+           * 終わりの画は操作の肩越しのカメラと同じなので、切らずに操作へ渡す。町の人々は隠さない（出来事の人を出さない：操作へ移っても人が入れ替わらない）
+           */
+          establish?: boolean;
+      }
     /** 使者が街道口から城門の前へ。showHero：主人公（入口に立つ）を画に入れる（冒頭）。省けば前どおり描かない */
     | { id: 'envoys_arrive'; envoys: { look: string; name: string }[]; showHero?: boolean }
     /**
@@ -119,6 +130,19 @@ export type StageEvent =
      */
     | { id: 'retainer_report'; look: string; name: string; castId: string }
     | { id: 'messenger_arrive'; look: string; name: string }
+    /**
+     * 町の急報（Version 28 §4.3。第一章）：操作中の主人公の所（出来事を始めた時の主人公の位置から決める）へ、織田の使者が南の木戸の方から
+     * 走って来て止まり、片膝をついて言う → 浅井の使者が少し遅れて急ぎ足で来て止まり、言う → 忠勝が城門の方から歩いて来て止まってから言う
+     * → 家康が短い間の後に答える。終わると忠勝は城門の前へ、使者 2 人は話せる位置へ歩いて行き、会話の相手の人物になる（同じ人のまま。入れ替えない）。
+     * envoys・retainer の cast は会話の相手の id、spot はその置き場所 [x, z, 向き]。cue は台詞の時刻（字幕と同じ。場面の始めからの秒）：
+     * say は使者 2 人・家臣・家康の順の [声の始め, 声の終わり]、end は場面の終わり。
+     */
+    | {
+          id: 'street_report';
+          envoys: { look: string; name: string; cast: string; spot: [number, number, number] }[];
+          retainer: { look: string; name: string; cast: string; spot: [number, number, number] };
+          cue: { say: [number, number][]; end: number };
+      }
     | { id: 'wounded_rest'; count: number }
     | { id: 'reinforcement_arrive'; count: number; mark: string; name: string }
     | { id: 'column_depart'; count: number; mark: string }

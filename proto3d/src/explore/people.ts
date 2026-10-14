@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { GAIT } from '../game/gait';
+import { GAIT, strideFor } from '../game/gait';
 import { idleClipTime, type PersonRhythm } from './rhythm';
 
 export { hashOf } from './rhythm';
@@ -44,6 +44,8 @@ export interface PersonBody {
     bones: Map<string, THREE.Bone>;
     idle: THREE.AnimationAction | null;
     walk: THREE.AnimationAction | null;
+    /** 走り（演出の人だけ。急報の使者が走って来る） */
+    run: THREE.AnimationAction | null;
     /** 素材が読めなかったときの代わりの形 */
     standIn: boolean;
 }
@@ -77,6 +79,7 @@ export class PersonFactory {
         let mixer: THREE.AnimationMixer | null = null;
         let idle: THREE.AnimationAction | null = null;
         let walk: THREE.AnimationAction | null = null;
+        let run: THREE.AnimationAction | null = null;
         let body: THREE.Object3D;
         if (this.base) {
             body = cloneSkinned(this.base.scene);
@@ -107,16 +110,23 @@ export class PersonFactory {
                     walk.play();
                     walk.setEffectiveWeight(0);
                 }
+                const runClip = THREE.AnimationClip.findByName(this.base.animations, 'Run');
+                if (runClip) {
+                    run = mixer.clipAction(runClip);
+                    run.play();
+                    run.setEffectiveWeight(0);
+                }
                 // 動きの位置は呼ぶ側が決める（自分では進めない）
                 if (idle) idle.timeScale = 0;
                 if (walk) walk.timeScale = 0;
+                if (run) run.timeScale = 0;
             }
         } else {
             body = makeStandIn();
         }
         body.scale.setScalar(look.scale);
         root.add(body);
-        return { root, mixer, bones, idle, walk, standIn: !this.base };
+        return { root, mixer, bones, idle, walk, run, standIn: !this.base };
     }
 
     /** 人物ごとの色を掛けた素材（同じ見た目の人物で共用） */
@@ -157,9 +167,13 @@ const PLAIN: PersonRhythm = { speed: GAIT.walk.speed, stride: 1, idleRate: 1, id
  * - 歩幅が動きの元より狭い人（rhythm.stride < 1）は、1 周期で進む距離をその分短くし、歩きの動きの重みを stride 倍にして待機の形と混ぜる
  *  （足の前後の振れが歩幅に合うので、着いた足は地面の上で止まったまま。残りの小さなずれは explore/actors.ts の足の IK が止める）。
  */
-export function posePerson(p: PersonBody, time: number, walked: number, moving: number, rhythm: PersonRhythm = PLAIN): void {
+export function posePerson(p: PersonBody, time: number, walked: number, moving: number, rhythm: PersonRhythm = PLAIN, run = 0, cycle?: number): void {
     if (!p.mixer) return;
-    const m = Math.max(0, Math.min(1, moving)) * Math.max(0.5, Math.min(1, rhythm.stride));
+    // 走り（run > 0）・周期の数（cycle）を渡された人（急報の使者）：歩きと走りを、位相をそろえた 2 つの動きとして混ぜる（主人公と同じ決まり）。
+    // 歩幅は動きの元のまま（人ごとの歩幅の倍率は使わない）。渡されなければ前と同じ（歩きだけ）
+    const r = p.run ? Math.max(0, Math.min(1, run)) : 0;
+    const both = r > 0 || cycle !== undefined;
+    const m = Math.max(0, Math.min(1, moving)) * (both ? 1 : Math.max(0.5, Math.min(1, rhythm.stride)));
     if (p.idle) {
         const d = p.idle.getClip().duration;
         p.idle.time = idleClipTime(rhythm, time, d);
@@ -168,9 +182,14 @@ export function posePerson(p: PersonBody, time: number, walked: number, moving: 
     if (p.walk) {
         const d = p.walk.getClip().duration;
         const scale = p.root.children[0]?.scale.x || 1;
-        const ph = (((rhythm.walkPhase + walked / (STRIDE_M * scale * rhythm.stride)) % 1) + 1) % 1;
+        const cyc = both ? (cycle ?? walked / strideFor(r)) / scale : walked / (STRIDE_M * scale * rhythm.stride);
+        const ph = (((rhythm.walkPhase + cyc) % 1) + 1) % 1;
         p.walk.time = ph * d;
-        p.walk.setEffectiveWeight(m);
+        p.walk.setEffectiveWeight(m * (1 - r));
+        if (p.run) {
+            p.run.time = ph * p.run.getClip().duration;
+            p.run.setEffectiveWeight(m * r);
+        }
     }
     p.mixer.update(0);
 }

@@ -228,12 +228,15 @@ export class CineClock {
 
 /**
  * 台本の長さの目安（秒。moment ごと）。
- * - 章の冒頭（ch1_open・ch2_open）：ロード完了から操作の開始まで 15〜20 秒の目安（docs/v20-feedback-request.md【1】）に収める。
- *   声の付いた字幕は読み上げの見積もりより短くしない。第二章は前章の結果・約束・援兵・使いの言葉（声）が入るので長めまで許す。
+ * - 第一章の冒頭（ch1_open）：Version 28 §4.3 の短い始め（字幕 1 行と 1 つのカメラの動き。4 秒前後）。
+ * - 第一章の町の急報（ch1_report）：操作の途中の短い出来事（15 秒前後まで。声の長さ（音声ファイルの実際の長さ）と返答の間から決める）。
+ * - 第二章の冒頭（ch2_open）：ロード完了から操作の開始まで 15〜20 秒の目安（docs/v20-feedback-request.md【1】）。
+ *   声の付いた字幕は声の長さより短くしない。前章の結果・約束・援兵・使いの言葉（声）が入るので長めまで許す。
  * - 情勢の図解（ch1_intro・ch2_intro）：30〜45 秒（任意で見る物）。出陣・帰還：8〜15 秒。
  */
 export const CINE_LENGTH_RANGE: Readonly<Record<CineSpec['moment'], readonly [number, number]>> = {
-    ch1_open: [12, 19],
+    ch1_open: [3.5, 6],
+    ch1_report: [10, 16],
     ch2_open: [12, 26],
     ch1_intro: [30, 45],
     ch2_intro: [30, 45],
@@ -248,7 +251,7 @@ export function captionNeedSec(c: CineCaption): number {
 
 /**
  * 台本の決まりを点検する（問題の文の並び。空なら良い）：長さ・場面の並びと隙間・字幕の時間と長さ・情報の札の時刻。
- * 長さの目安は moment で見る（CINE_LENGTH_RANGE）：章の冒頭（3D の場面だけ）第一章 12〜19 秒・第二章 12〜26 秒、情勢の図解 30〜45 秒、出陣と帰還 8〜15 秒。
+ * 長さの目安は moment で見る（CINE_LENGTH_RANGE）：第一章の冒頭 3.5〜6 秒・町の急報 10〜16 秒・第二章の冒頭 12〜26 秒、情勢の図解 30〜45 秒、出陣と帰還 8〜15 秒。
  */
 export function specProblems(spec: CineSpec): string[] {
     const out: string[] = [];
