@@ -316,6 +316,18 @@ describe('第二章の冒頭の使い・家臣・主人公の動き', () => {
 });
 
 describe('第二章の冒頭のカメラ：3 つの画（話す人と聞く人）。最後は操作の肩越しのカメラで終わる', () => {
+    it('荷運びを隠すのは 1 の画の間だけ（2 の画への切り替えで戻す）。最後の画（操作の肩越しのカメラ）と場面の終わりでは隠さない（操作へ戻った時に急に現れない）。動きを減らすときは隠さない', () => {
+        for (const { c, spec } of SAMPLES) {
+            const ev = msgEvent(spec);
+            const E = ev.report.cue.end;
+            const [cut1] = messengerLayout(ev).cuts;
+            expect(stageFrame(ev, 0, false).hideAmbient, c.name).toEqual(['porter']);
+            expect(stageFrame(ev, cut1 - DT, false).hideAmbient, c.name).toEqual(['porter']);
+            for (let t = cut1; t <= E + 1e-9; t += 0.1) expect(stageFrame(ev, t, false).hideAmbient, `${c.name} t=${t.toFixed(2)}`).toEqual([]);
+            expect(stageFrame(ev, E, false).hideAmbient, c.name).toEqual([]);
+            for (const t of [0, cut1 - DT, E]) expect(stageFrame(ev, t, true).hideAmbient, c.name).toEqual([]);
+        }
+    });
     it('切り替えは 2 回、画の中の動きはゆっくり（毎秒 0.5 m・12° まで）、カメラ除けの箱に入らない、人に 0.75 m より近づかない。主人公はいつも画の中（見る向きから 35° 以内）', () => {
         for (const { c, spec } of SAMPLES) {
             const ev = msgEvent(spec);

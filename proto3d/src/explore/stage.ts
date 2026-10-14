@@ -849,15 +849,32 @@ function reportPlan(ev: Extract<StageEvent, { id: 'street_report' }>, o0: StageO
     const asaiT = s2 - ASAI_EARLY;
     const asaiL = Math.max(1, ASAI_WALK * (asaiT - ASAI_DECEL / 2));
     const asaiFrom: Pt = [asaiStop[0], asaiStop[1] + asaiL];
-    let retStop: Pt =
-        H[1] + RET_AT[1] < RET_Z_MIN ? [round3(clampN(H[0] + 1.4, -1.5, 2.6)), round3(H[1] - 0.5)] : [round3(clampN(H[0] + RET_AT[0], -2.4, 2.4)), round3(H[1] + RET_AT[1])];
+    // 忠勝の止まる所：決めた所が城門の柱・扉・塀（当たり判定から人の大きさ 0.35 m）にかかる、または主人公から近すぎる・遠すぎるときは、
+    // 次の候補へ（城門の前の広場の北東の隅で始めた見直しで、東の柱の中に止まっていた）
+    const retFree = (p: Pt) => {
+        const d = Math.hypot(p[0] - H[0], p[1] - H[1]);
+        return standable(p[0], p[1], 0.35) && d >= 1.35 && d <= 3.3;
+    };
+    const zIn = Math.max(H[1] - 0.5, -10.95);
+    const retCands: Pt[] = [
+        H[1] + RET_AT[1] < RET_Z_MIN ? [clampN(H[0] + 1.4, -1.5, 2.6), H[1] - 0.5] : [clampN(H[0] + RET_AT[0], -2.4, 2.4), H[1] + RET_AT[1]],
+        [clampN(H[0] - 1.4, -2.6, 1.5), H[1] - 0.5],
+        [H[0] - 1.4, zIn],
+        [H[0] + 1.4, zIn],
+        [H[0] - 1.4, H[1] + 0.3],
+        [H[0] + 1.4, H[1] + 0.3],
+    ];
+    const retPick = retCands.find(retFree) ?? retCands[0]!;
+    let retStop: Pt = [round3(retPick[0]), round3(retPick[1])];
     const rs = ev.retainer.spot;
     let retPath = roundPath(detour([[rs[0], rs[1]], retStop], H));
     const retArrive = s3t - RET_EARLY;
-    // 速く歩いても言い始める前に着けない遠さなら、手前（城門の側）で止まる
+    // 速く歩いても言い始める前に着けない遠さなら、手前（城門の側）で止まる（その所が当たり判定にかかるなら、かからない所まで手前へ）
     const retMaxL = RET_SPEED[1] * Math.max(0.5, retArrive - 0.15 - (WALK_ACCEL + WALK_DECEL) / 2);
     if (pathLength(retPath) > retMaxL) {
-        const p = alongPath(retPath, retMaxL);
+        let l = retMaxL;
+        let p = alongPath(retPath, l);
+        while (l > 0.1 && !standable(p.x, p.z, 0.35)) p = alongPath(retPath, (l -= 0.1));
         retStop = [round3(p.x), round3(p.z)];
         retPath = roundPath(detour([[rs[0], rs[1]], retStop], H));
     }
@@ -1424,8 +1441,9 @@ function messengerReport(ev: MessengerReportEvent, t: number, reduced: boolean):
         litters: [],
         shot: s,
         hideCast: [],
-        // 荷運び（町家 D の店先へ運ぶ人）は、1 の画のカメラのすぐ前を通るので、この場面の間だけ隠す（今までの家臣の報告と同じ）
-        hideAmbient: inEvent ? ['porter'] : [],
+        // 荷運び（町家 D の店先へ運ぶ人）は、1 の画のカメラのすぐ前を通るので、1 の画の間だけ隠す（2 の画への切り替えで戻す。
+        // 最後の画は操作の肩越しのカメラへ切らずに渡すので、操作へ戻った時に荷運びが急に現れないように）。動きを減らすときの静止の画は通りの東から
+        hideAmbient: inEvent && !reduced && t < sh.cut1 ? ['porter'] : [],
         hero,
         ...(heroGaze !== undefined ? { heroGaze } : {}),
         settled,

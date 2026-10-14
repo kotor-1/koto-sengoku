@@ -64,7 +64,9 @@ const J = (v: unknown) => JSON.stringify(v);
 const deg = (r: number) => (Math.abs(r) * 180) / Math.PI;
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const ALL = colliders();
-const inside = (r: Rect, x: number, z: number) => x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1;
+/** 人の大きさ（半径 m）を足した当たり判定の中か */
+const PERSON_R = 0.25;
+const touches = (r: Rect, x: number, z: number, pad = PERSON_R) => x > r.x0 - pad && x < r.x1 + pad && z > r.z0 - pad && z < r.z1 + pad;
 
 const SPEC = ieyasuCinematic(newIeyasuGame(), 'ch1_report')!;
 const EV = (SPEC.beats[0] as { event: StageEvent }).event as Extract<StageEvent, { id: 'street_report' }>;
@@ -83,6 +85,16 @@ ORIGINS.push({ name: '脇の道から広場へ（西から）', o: { x: -4.1, z:
 ORIGINS.push({ name: '城内から城門をくぐる', o: { x: 0.2, z: -11.5, heading: 0, dirX: 0, dirZ: 1, speed: 1.55, yaw: Math.PI } });
 ORIGINS.push({ name: '止まっていた（見直し：城門の前）', o: { x: -0.5, z: -5.0, heading: Math.PI, dirX: 0, dirZ: -1, speed: 0, yaw: 0 } });
 ORIGINS.push({ name: '止まっていた（見直し：物見の所）', o: { x: LOOKOUT.x, z: LOOKOUT.z, heading: 0, dirX: 0, dirZ: 1, speed: 0, yaw: 0.3 } });
+// 見直し（止まっていた）：城門の前の広場の北東・北西の隅（城門の柱・扉のすぐ南。忠勝が東の柱の中に止まっていた所）
+for (const [x, z] of [
+    [1.1, -11.35],
+    [3.5, -11.1],
+    [1.5, -11.55],
+    [0.62, -11.0],
+    [-1.1, -11.35],
+    [-3.5, -11.1],
+] as const)
+    ORIGINS.push({ name: `止まっていた（見直し：広場の隅 ${x}, ${z}）`, o: { x, z, heading: Math.PI, dirX: 0, dirZ: -1, speed: 0, yaw: 0 } });
 
 /** 出来事の後の歩きが終わる時刻（settled）。60 秒までに終わる */
 function settleT(o: StageOrigin): number {
@@ -292,6 +304,8 @@ describe('急報の人：走って来て止まり、言う前に止まる。向�
                 const d = Math.hypot(s[0] - L.hero[0], s[1] - L.hero[1]);
                 expect(d, `${name}：止まる所 ${s} と主人公 ${L.hero}`).toBeGreaterThan(1.3);
                 expect(d, `${name}：止まる所 ${s} と主人公 ${L.hero}`).toBeLessThan(3.4);
+                // 止まる所（台詞を言う所）は、人の大きさを足しても当たり判定（城門の柱・礎石・扉・塀）にかからない
+                for (const r of ALL) expect(touches(r, s[0], s[1]), `${name}：止まる所 ${s} が当たり判定 ${J(r)} にかかる`).toBe(false);
             }
             const T = settleT(o);
             expect(T, name).toBeLessThan(EV.cue.end + 25);
@@ -327,7 +341,7 @@ describe('急報の人：走って来て止まり、言う前に止まる。向�
                     maxPerson = Math.max(maxPerson, d);
                     expect(d, `${name} t=${b.t.toFixed(2)} ${p.key}`).toBeLessThanOrEqual(12);
                     expect(Math.hypot(p.x - q.x, p.z - q.z), `${name} t=${b.t.toFixed(2)} ${p.key} が飛ぶ`).toBeLessThan(0.1);
-                    for (const r of ALL) if (inside(r, p.x, p.z)) throw new Error(`${name} t=${b.t.toFixed(2)}：${p.key} (${p.x.toFixed(2)}, ${p.z.toFixed(2)}) が当たり判定 ${J(r)} の中`);
+                    for (const r of ALL) if (touches(r, p.x, p.z)) throw new Error(`${name} t=${b.t.toFixed(2)}：${p.key} (${p.x.toFixed(2)}, ${p.z.toFixed(2)}) が当たり判定 ${J(r)} にかかる（人の大きさ ${PERSON_R} m）`);
                 }
                 if (a.hero && b.hero) {
                     const d = deg(wrap(b.hero.heading - a.hero.heading));
