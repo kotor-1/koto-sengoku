@@ -156,10 +156,13 @@ describe('第二章の冒頭（ch2_open）：前章の結果に合った人物�
             expect(spec.beats.every((b) => b.kind === 'stage'), c.name).toBe(true);
             const ev = events(spec);
             const last = ev[ev.length - 1]!;
-            expect(last.id, c.name).toBe('retainer_report');
-            if (last.id === 'retainer_report') {
-                expect(last.castId).toBe('tadakatsu');
-                expect(ieyasu2CastFor(c.state).some((m) => m.id === last.castId && m.key), c.name).toBe(true);
+            // Version 28 §4.3 の最後の項：使いの急報と家臣の一言は 1 つの場面（使いが走って来て止まってから言い、その間に家臣が歩いて来て止まってから言う）
+            expect(last.id, c.name).toBe('messenger_arrive');
+            if (last.id === 'messenger_arrive') {
+                expect(last.report, c.name).toBeDefined();
+                expect(last.report!.retainer.cast).toBe('tadakatsu');
+                expect(ieyasu2CastFor(c.state).some((m) => m.id === last.report!.retainer.cast && m.key), c.name).toBe(true);
+                expect(ieyasu2CastFor(c.state).some((m) => m.id === last.report!.messenger.cast && m.look === last.look), c.name).toBe(true);
             }
             const lastCap = spec.captions[spec.captions.length - 1]!;
             expect(lastCap.speaker).toBe('忠勝');

@@ -16,6 +16,7 @@
  */
 import type { BattleOutcome, BattleResultKind, BattleRunHooks, BattleSetup } from '../battle/types';
 import { inGateZone, nearestInteractable, safePose, type CastMember } from '../explore/cast';
+import { arrivingCast } from '../explore/stage';
 import { applyBattleOutcome, battleSetupFor, finishTalk, newGame, outcomeFromSetup } from './flow';
 import { fictionalScenario } from './fictional';
 import { CampaignSaveStore, SAVE_POINT_LABELS, saveFailureMessage, type SavePoint } from './save';
@@ -945,9 +946,11 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
             this.run = { scenario: sc, state: next };
             this.playAcc = 0;
             // 保存の後：前の章の結果確認の画面 → 第二章の冒頭（3D の場面だけ：負傷兵・援兵・使い・家臣の一言）→ 操作。
-            // 冒頭は次の章の町を整えてから流し、終われば家臣の一言からそのまま操作へ。情勢の図解（ch2_intro）は自動では流さない
+            // 冒頭は次の章の町を整えてから流し、終われば家臣の一言からそのまま操作へ。情勢の図解（ch2_intro）は自動では流さない。
+            // 冒頭の中で町へ来る使い（Version 28：木戸から走って来る）は、来るまで城下に置かない（来る前から城門の前に立っていない）。
+            // 冒頭の後は配役に戻り、使いと家臣は同じ人物のまま話せる位置へ歩いて行く（探索の場面が動かす。着くまで「話す」を出さない）
             const cine = this.cineSpec('ch2_open');
-            if (cine) this.stageField(next.explore);
+            if (cine) this.stageField(next.explore, arrivingCast(cine.beats.flatMap((b) => (b.kind === 'stage' ? [b.event] : []))));
             const rec = sc.chapterStartView?.(next) ?? null;
             if (rec && view.record) {
                 this._screen = 'record';
@@ -1123,10 +1126,10 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         }
     }
 
-    /** 演出の前に、今の状態の町を整える（人物・主人公の位置・町の人々。案内は出さない） */
-    private stageField(pose: ExplorePose | null): void {
+    /** 演出の前に、今の状態の町を整える（人物・主人公の位置・町の人々。案内は出さない）。absent：演出の中で町へ来る相手（まだ置かない） */
+    private stageField(pose: ExplorePose | null, absent: readonly string[] = []): void {
         const { world } = this.deps;
-        this.cast = this.castOf(this.st);
+        this.cast = this.castOf(this.st).filter((c) => !absent.includes(c.id));
         world.setCast(this.cast);
         world.setHeroPose(safePose(pose ?? this.startPose(), this.cast, world.walls()));
         this.applyAmbient();

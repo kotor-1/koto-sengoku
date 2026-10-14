@@ -9,8 +9,9 @@
  * 出来事・町の人々の置き方は純粋な関数（explore/stage.ts・explore/ambient.ts）、描くのは explore/actors.ts。
  * Version 28：立つ会話の相手も、出来事・町の人々と同じ描き方（explore/actors.ts の ActorLayer：足の IK・踏み替え・顔の向き）で描く。
  * 話しかけたときは、主人公も相手も 1 コマで回さず、0.3〜0.5 秒で向き直る（足を踏み替えて。相手は主人公の顔を見る）。
- * 町の急報（stage.ts の street_report）の使者・家臣は会話の相手そのもの（StagePerson.cast）：出来事の間も、出来事の後に話せる位置へ
- * 歩く間も、同じ人物（同じ見た目・同じ拍子・続く足）として描き、着いた所で入れ替えない。
+ * 町の急報（stage.ts の street_report）・第二章の冒頭の使いの急報（messenger_arrive の report）の使者・使い・家臣は会話の相手そのもの
+ * （StagePerson.cast）：出来事の間も、出来事の後に話せる位置へ歩く間も、同じ人物（同じ見た目・同じ拍子・続く足）として描き、着いた所で
+ * 入れ替えない。出陣（column_depart の order）の見送りの人も同じ（置き場所のまま隊列の方を向く。隠さない）。
  */
 import * as THREE from 'three';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -26,7 +27,7 @@ import { castColliders, headingToward, type CastMember } from './cast';
 import { LookoutSession, type LookoutProbe } from './lookout';
 import { PersonFactory } from './people';
 import { NO_ACT, rhythmOf as rhythmOfId } from './rhythm';
-import { stageFrame, type StageCastInfo, type StageHero, type StageOrigin, type StagePerson, type StageShot } from './stage';
+import { afterWalkEnd, stageFrame, type StageCastInfo, type StageHero, type StageOrigin, type StagePerson, type StageShot } from './stage';
 import { setTowerTopVisible } from '../town/view';
 import './town.css';
 
@@ -371,7 +372,9 @@ export class ExploreWorld implements GameWorld {
         this.stageT = t;
         this.stageReduced = reduced;
         const f = stageFrame(ev, t, reduced, this.castInfo(), this.stageOrigin ?? undefined);
-        this.setHiddenCast(f.hideCast);
+        // 出来事が動かす会話の相手が、置き場所に座っている人物（立つ人物として描かない）なら、その間は座った人物を隠す（同じ人を二人描かない：見直し）
+        const seated = f.people.filter((p) => p.cast && this.views.get(p.cast) && !this.views.get(p.cast)!.stander).map((p) => p.cast!);
+        this.setHiddenCast(seated.length ? [...f.hideCast, ...seated] : f.hideCast);
         this.hiddenAmbient = new Set(f.hideAmbient);
         this.stageShot = { ...f.shot, hideHero: !f.hero };
         this.stageHeroStays = !!f.heroStays;
@@ -426,8 +429,11 @@ export class ExploreWorld implements GameWorld {
         // 町の急報を終わりまで見た（飛ばしていない・動きを減らしていない）：使者と忠勝は、同じ人物のまま話せる位置へ歩いて行く（操作の間に）。
         // 飛ばした・動きを減らした：みな置き場所に置く（使者は話せる位置、忠勝は城門の前）
         const ev = this.stageKey ? (JSON.parse(this.stageKey) as StageEvent) : null;
-        if (ev?.id === 'street_report' && this.stageOrigin && !this.stageReduced && this.stageT >= ev.cue.end - 0.05) {
-            this.epilogue = { ev, origin: this.stageOrigin, t0: this.time, end: ev.cue.end, done: new Set() };
+        const end = ev ? afterWalkEnd(ev) : null;
+        // 置き場所に座っている人物を出来事が立たせて動かしていた（見直し）ときは、後の歩きをせず置き場所へ戻す（座った人物と二人にしない）
+        const seatedLinked = [...this.stageLinked.keys()].some((id) => this.views.get(id)?.stander === false);
+        if (ev && end !== null && this.stageOrigin && !this.stageReduced && !seatedLinked && this.stageT >= end - 0.05) {
+            this.epilogue = { ev, origin: this.stageOrigin, t0: this.time, end, done: new Set() };
         }
         // 出来事が動かしていた会話の相手は、最後の形の所から続ける（後の歩き・置き場所へ戻すのは updateCast）
         for (const [id, o] of this.stageLinked) {
@@ -691,7 +697,7 @@ export class ExploreWorld implements GameWorld {
 
     /** 出来事の行き先を決めるための、置いている相手の見た目と場所 */
     private castInfo(): StageCastInfo[] {
-        return this.cast.map((c) => ({ id: c.id, kind: c.kind, ...(c.look ? { look: c.look } : {}), x: c.x, z: c.z, heading: c.heading }));
+        return this.cast.map((c) => ({ id: c.id, kind: c.kind, ...(c.look ? { look: c.look } : {}), x: c.x, z: c.z, heading: c.heading, ...(c.pose === 'sit' ? { pose: 'sit' as const } : {}) }));
     }
 
     // ---------------- 毎フレーム ----------------
@@ -855,9 +861,14 @@ export class ExploreWorld implements GameWorld {
         }));
     }
 
-    /** 確認用：町の急報の後の歩き（歩いている会話の相手の id）・出来事が動かしている会話の相手・主人公の向き直りの途中か */
-    eventProbe(): { epilogue: string[]; linked: string[]; heroTurning: boolean; talkWith: string | null } {
-        return { epilogue: [...(this.epilogue ? (this.epilogueFrame()?.keys() ?? []) : [])], linked: [...this.stageLinked.keys()], heroTurning: !!this.heroTurn, talkWith: this.talkWith };
+    /**
+     * 確認用：町の急報の後の歩き（歩いている会話の相手の id）・出来事が動かしている会話の相手・主人公の向き直りの途中か。
+     * linkedAt：出来事が動かしている会話の相手の今の形（位置・向き・歩きの重み・片膝。まだ配役に居ない人も）
+     */
+    eventProbe(): { epilogue: string[]; linked: string[]; linkedAt: Record<string, { x: number; z: number; heading: number; moving: number; kneel: number }>; heroTurning: boolean; talkWith: string | null } {
+        const r = (v: number) => Math.round(v * 1000) / 1000;
+        const linkedAt = Object.fromEntries([...this.stageLinked].map(([id, p]) => [id, { x: r(p.x), z: r(p.z), heading: r(p.heading), moving: p.moving, kneel: p.act?.kneel ?? 0 }]));
+        return { epilogue: [...(this.epilogue ? (this.epilogueFrame()?.keys() ?? []) : [])], linked: [...this.stageLinked.keys()], linkedAt, heroTurning: !!this.heroTurn, talkWith: this.talkWith };
     }
 
     /** 確認用：演出の出来事（今の時刻・人・兵・隠している人物・カメラ） */

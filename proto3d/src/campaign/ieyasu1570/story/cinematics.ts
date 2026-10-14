@@ -5,6 +5,9 @@
  * - 第一章の冒頭（ch1_open。Version 28 §4.3）：町の入口の主人公へ寄る 1 つのカメラの動きと字幕 1 行（4 秒前後）だけ。切らずに操作へ渡す。
  *   急報（使者 2 人・忠勝・家康の返事）は、操作の途中に主人公が通りを北へ進んだときの町の急報（ch1_report）で流す（同じ台詞・同じ順）。
  * - 第二章の冒頭（ch2_open）：3D の場面だけ。町の様子（負傷兵・援兵）→ 急報（使い）→ 主人公と家臣の短いやり取り → 操作。
+ *   Version 28 §4.3 の最後の項：使いの急報と家臣の一言は 1 つの場面（messenger_arrive の report）。使いは木戸から走って来て止まってから言い、
+ *   家臣は城門の前の置き場所から歩いて来て止まってから言う（同じ字幕・同じ順）。
+ * - 出陣（departure）：主人公の号令の声の終わり（column_depart の order）。主人公は号令して隊列の道を空け、会話の相手と見送る。
  *   章の始めに自動で流す（docs/v20-feedback-request.md【1】：冒頭から図解にしない。ロード完了から操作まで 15〜20 秒の目安）。
  * - 情勢の図解（ch1_intro・ch2_intro）：地図の台本。自動では流さない。情勢の画面・軍議の「詳しく見る」から任意で見る（見ることを進行の条件にしない）。
  * - 声を付ける字幕の文は voiceLines.ts の表から取り、字幕に voice（id）を付ける。
@@ -23,15 +26,15 @@
  * - 字幕は短く（1 つ 30 字まで）、場面ごとに十分な時間（文字数 ÷ 8 秒と 2.5 秒の大きい方以上）。長文の自動送りにしない。
  */
 import type { CineCaption, CineMapBeat, CineMoment, CineSpec, CineStageBeat, MapScene, StageEvent } from '../../../story/types';
-import { CAPTION_CHARS_PER_SEC, CAPTION_MIN_SEC, captionNeedSec } from '../../../story/timeline';
+import { CAPTION_CHARS_PER_SEC, CAPTION_MIN_SEC, CINE_LENGTH_RANGE, captionNeedSec } from '../../../story/timeline';
 import { SPOTS, headingToward, type Spot } from '../../../explore/cast';
-import { ESTABLISH_SEC, REPORT_LEAD } from '../../../explore/stage';
+import { ESTABLISH_SEC, MESSENGER_LEAD, REPORT_LEAD, messengerRetainerEarliest } from '../../../explore/stage';
 import { START } from '../../../layout';
 import { voiceFileFor } from '../../../audio/voiceManifest';
 import { availableCh2Plans } from '../chapter2/rules';
 import { isChapter2, type Chapter1Record, type Ieyasu2State, type IeyasuAnyState } from '../chapter2/state';
 import { CH2_MISSION_TITLES, CH2_PLAN_LABELS, CH2_SUPPORT_NAMES } from '../chapter2/story';
-import { ieyasu2LookOf } from '../chapter2/scenario';
+import { ieyasu2CastFor, ieyasu2LookOf } from '../chapter2/scenario';
 import { IEYASU_LOOKS } from '../looks';
 import { IEYASU_PLEDGE_MIN_RATIO } from '../../../battle/maps';
 import { PLEDGE_SPECS, type PledgeResult, type PledgeState, type Policy } from '../state';
@@ -74,7 +77,21 @@ interface CapPlan {
     show?: string[];
     focus?: string[];
 }
-type BeatPlan = { kind: 'map'; scene: MapScene; caps: CapPlan[]; min?: number } | { kind: 'stage'; event: StageEvent; caps: CapPlan[]; min?: number };
+type BeatPlan =
+    | { kind: 'map'; scene: MapScene; caps: CapPlan[]; min?: number }
+    | {
+          kind: 'stage';
+          event: StageEvent;
+          caps: CapPlan[];
+          min?: number;
+          /**
+           * 字幕の始めの時刻（場面の始めからの秒。決めてあるとき：使いが走って来て止まってから言う・家臣が歩いて来る間を置く）。
+           * 字幕は次の字幕の始めまで（最後は場面の終わりまで）。場面の長さは min。最初の字幕の前（使いが来る間）は、前の場面の最後の字幕のまま
+           */
+          at?: number[];
+          /** 場面を前の場面の終わりより early 秒早く始める（前の場面の画が短くなる。最初の字幕の前の間（at[0]）より長くしない） */
+          early?: number;
+      };
 
 const len = (t: string) => [...t].length;
 /** 字幕を出す時間（文字数 ÷ 8 秒と 2.5 秒の大きい方に、読み終える余白） */
@@ -106,6 +123,13 @@ export function cineFirstShown(spec: CineSpec): ReadonlyMap<string, number> | un
 function build(id: string, moment: CineMoment, title: string, plans: BeatPlan[]): CineSpec {
     // 1) 場面と字幕の時刻
     const timed = plans.map((p) => {
+        // 字幕の始めを決めてある場面（使いの急報）：字幕は次の字幕の始めまで、最後は場面の終わり（min）まで
+        const at = p.kind === 'stage' ? p.at : undefined;
+        if (at && at.length === p.caps.length) {
+            const dur = p.min ?? at[at.length - 1]! + captionSec(p.caps[p.caps.length - 1]!.text);
+            const caps = p.caps.map((c, i) => ({ c, local: at[i]!, d: (i + 1 < at.length ? at[i + 1]! : dur) - at[i]! }));
+            return { p, dur, caps };
+        }
         // 声の付いた字幕は、声の長さ（音声ファイルの長さ＋余白、無ければ読み上げの見積もり）より短くしない（次の字幕で前の声が止まるので、声を途中で切らない）
         const secs = p.caps.map((c) => Math.max(captionSec(c.text), c.voice ? Math.ceil(voiceSecFor(c.voice) * 10) / 10 : 0));
         const sum = secs.reduce((a, b) => a + b, 0);
@@ -120,19 +144,30 @@ function build(id: string, moment: CineMoment, title: string, plans: BeatPlan[])
         });
         return { p, dur, caps };
     });
-    // 2) 台本全体で、場所・線が最初に現れる時刻（その字幕のある地図の場面の中にある物だけ）
-    const first = new Map<string, number>();
+    // 場面の始め：前の場面の終わり（early の場面は、その分だけ早く。最初の字幕の前の間より長くせず、前の場面を 1 秒より短くしない）
+    const starts: number[] = [];
     {
         let t = 0;
-        for (const b of timed) {
-            if (b.p.kind === 'map') {
-                const sc = b.p.scene;
-                const has = new Set([...sc.places.map((x) => x.id), ...sc.routes.map((x) => x.id)]);
-                for (const x of b.caps) for (const s of x.c.show ?? []) if (has.has(s) && !first.has(s)) first.set(s, t + Math.max(FIRST_APPEAR_SEC, x.local));
-            }
+        timed.forEach((b, k) => {
+            const p = b.p;
+            let early = 0;
+            if (k > 0 && p.kind === 'stage' && p.early && p.early > 0) early = Math.max(0, Math.min(p.early, b.caps[0]?.local ?? 0, timed[k - 1]!.dur - 1));
+            t -= early;
+            starts.push(t);
             t += b.dur;
-        }
+        });
     }
+    const total = timed.length ? starts[timed.length - 1]! + timed[timed.length - 1]!.dur : 0;
+    // 2) 台本全体で、場所・線が最初に現れる時刻（その字幕のある地図の場面の中にある物だけ）
+    const first = new Map<string, number>();
+    timed.forEach((b, k) => {
+        const t = starts[k]!;
+        if (b.p.kind === 'map') {
+            const sc = b.p.scene;
+            const has = new Set([...sc.places.map((x) => x.id), ...sc.routes.map((x) => x.id)]);
+            for (const x of b.caps) for (const s of x.c.show ?? []) if (has.has(s) && !first.has(s)) first.set(s, t + Math.max(FIRST_APPEAR_SEC, x.local));
+        }
+    });
     // 線は、両端の場所が現れてから（背景の場所は始めからある）
     const shownAt = (sc: MapScene, id: string): number | undefined => {
         const r = sc.routes.find((x) => x.id === id);
@@ -145,8 +180,9 @@ function build(id: string, moment: CineMoment, title: string, plans: BeatPlan[])
     const captions: CineCaption[] = [];
     const info: CineSpec['info'] = {};
     const firstShown = new Map<string, number>();
-    let t = 0;
-    for (const { p, dur, caps } of timed) {
+    timed.forEach(({ p, dur, caps }, k) => {
+        const t = starts[k]!;
+        const next = k + 1 < timed.length ? starts[k + 1]! : t + dur;
         const highlights: { at: number; ids: string[] }[] = [];
         for (const { c, local, d } of caps) {
             const start = r1(t + local);
@@ -156,7 +192,8 @@ function build(id: string, moment: CineMoment, title: string, plans: BeatPlan[])
             if (c.focus) highlights.push({ at: r1(local), ids: [...c.focus] });
         }
         const start = r1(t);
-        const end = r1(t + dur);
+        // 場面は次の場面の始めまで（次の場面が早く始めるときは、この場面の画が短くなる）
+        const end = r1(Math.min(t + dur, next));
         if (p.kind === 'map') {
             const appear: Record<string, number> = {};
             for (const id of [...p.scene.places.map((x) => x.id), ...p.scene.routes.map((x) => x.id)]) {
@@ -174,9 +211,10 @@ function build(id: string, moment: CineMoment, title: string, plans: BeatPlan[])
         } else {
             beats.push({ kind: 'stage', start, end, event: p.event });
         }
-        t += dur;
-    }
-    const spec: CineSpec = { id, moment, title, duration: r1(t), beats, captions, info };
+    });
+    // 字幕は切れ目なく：最初の字幕の前に間を置く場面（使いが走って来る間）は、前の字幕をその間も出したまま
+    for (let i = 1; i < captions.length; i++) if (captions[i]!.start > captions[i - 1]!.end + 1e-9) captions[i - 1]!.end = captions[i]!.start;
+    const spec: CineSpec = { id, moment, title, duration: r1(total), beats, captions, info };
     FIRST_SHOWN.set(spec, firstShown);
     return spec;
 }
@@ -227,11 +265,6 @@ function relationLine(policy: Policy): string {
 // ================================================================ 章の冒頭（3D の場面だけ。自動で流す）
 
 const CH1_HEADING = '元亀元年（1570年）・徳川の城下（三河）';
-
-/** 家臣（本多忠勝）が主人公のもとへ来る場面（castId は城下で軍議を開く相手の id：両章とも 'tadakatsu'） */
-function retainerEvent(): StageEvent {
-    return { id: 'retainer_report', look: IEYASU_LOOKS.tadakatsu, name: IEYASU_TALK_NAMES.tadakatsu, castId: 'tadakatsu' };
-}
 
 /**
  * 第一章の冒頭（Version 28 §4.3 の 1）：町の様子の字幕 1 行（時代・主人公・急報：同じ日に両家の使者）を、町の入口の主人公へ寄っていく
@@ -375,9 +408,65 @@ function ch2Open(s: Ieyasu2State): CineSpec {
     // A：撤収のわけ（第一章の勝敗によらず同じ文）。B：丘の上で囲まれた隊
     if (p === 'oda') caps.push({ text: CH2A_REASON, info: ['ally'] });
     else if (p === 'asai') caps.push({ text: crisisLines(s).crisis });
-    plans.push({ kind: 'stage', event: { id: 'messenger_arrive', look: ieyasu2LookOf(s, 'envoy'), name: m.speaker }, caps });
-    plans.push({ kind: 'stage', event: retainerEvent(), caps: [{ ...voiceCap('ch2.tadakatsu.council'), info: ['decide'] }] });
-    return build(`ch2_open.${POLICY_TAG[p]}.${r}.${pl}`, 'ch2_open', `第二章　${CH2_MISSION_TITLES[p]}`, plans);
+    const mb = messengerBeat(s, m.speaker, caps, { ...voiceCap('ch2.tadakatsu.council'), info: ['decide'] });
+    plans.push(mb);
+    const id = `ch2_open.${POLICY_TAG[p]}.${r}.${pl}`;
+    const title = `第二章　${CH2_MISSION_TITLES[p]}`;
+    const spec = build(id, 'ch2_open', title, plans);
+    // 長さの決まり（CINE_LENGTH_RANGE）を超えるときだけ、使いの場面を前の場面の終わりより早く始める（使いが走って来る間も、前の字幕は出したまま）
+    const hi = CINE_LENGTH_RANGE.ch2_open[1];
+    if (spec.duration <= hi + 1e-9) return spec;
+    mb.early = Math.ceil((spec.duration - hi) * 10) / 10;
+    return build(id, 'ch2_open', title, plans);
+}
+
+/** 字幕を出す時間（build と同じ：文字数からの秒と、声の付いた字幕は声の長さ） */
+function capSecOf(c: CapPlan): number {
+    return Math.max(captionSec(c.text), c.voice ? Math.ceil(voiceSecFor(c.voice) * 10) / 10 : 0);
+}
+
+/** 声の終わり（字幕の始めから。音声ファイルがあれば、その長さ − 後ろの無音。無ければ見積もりから余白を引く） */
+function speechEndOf(id: string): number {
+    const f = voiceFileFor(id);
+    return f ? f.sec - f.tail : voiceSecFor(id) - VOICE_PAD_GUESS;
+}
+
+/**
+ * 第二章の冒頭の使いの急報（Version 28 §4.3 の最後の項。explore/stage.ts の messenger_arrive の report）：使いが木戸から走って来て止まり、
+ * 片膝をついてから言う（最初の台詞は MESSENGER_LEAD 秒）。その間に家臣（忠勝）が城門の前から歩いて来て、止まってから言う
+ * （家臣の台詞は、使いの台詞・地の文の後、家臣が着ける時刻 messengerRetainerEarliest より前にしない。足りなければ間を置く）。
+ * 字幕は今の台本と同じ文・同じ順（使い 2 つ → 地の文（A・B）→ 家臣）。使い・家臣は会話の相手そのもの（終われば置き場所へ歩いて行く）
+ */
+function messengerBeat(s: Ieyasu2State, speaker: string, caps: CapPlan[], retCap: CapPlan): Extract<BeatPlan, { kind: 'stage' }> {
+    // 置き場所：今の段階の城下の配役（第二章の探索なら、忠勝は城門の前・使いは城門へ向かう道の東）。配役が無い段階（見直し）は探索の置き場所
+    const cast = ieyasu2CastFor(s);
+    const exploreCast = s.phase === 'explore' ? cast : ieyasu2CastFor({ ...s, phase: 'explore' });
+    const spotOf = (id: 'envoy' | 'tadakatsu'): [number, number, number] => {
+        const c = cast.find((x) => x.id === id && x.pose === 'stand') ?? exploreCast.find((x) => x.id === id)!;
+        return [c.x, c.z, c.heading];
+    };
+    const retSpot = spotOf('tadakatsu');
+    const at: number[] = [];
+    let t = MESSENGER_LEAD;
+    for (const c of caps) {
+        at.push(r1(t));
+        t += capSecOf(c);
+    }
+    const retAt = r1(Math.max(t, messengerRetainerEarliest(retSpot)));
+    at.push(retAt);
+    const end = r1(retAt + capSecOf(retCap));
+    const say = (c: CapPlan, start: number): [number, number] => [start, r1(start + (c.voice ? speechEndOf(c.voice) : capSecOf(c)))];
+    const event: StageEvent = {
+        id: 'messenger_arrive',
+        look: ieyasu2LookOf(s, 'envoy'),
+        name: speaker,
+        report: {
+            messenger: { cast: 'envoy', spot: spotOf('envoy') },
+            retainer: { look: IEYASU_LOOKS.tadakatsu, name: IEYASU_TALK_NAMES.tadakatsu, cast: 'tadakatsu', spot: retSpot },
+            cue: { messenger: [say(caps[0]!, at[0]!), say(caps[1]!, at[1]!)], retainer: say(retCap, retAt), end },
+        },
+    };
+    return { kind: 'stage', event, caps: [...caps, retCap], at, min: end };
 }
 
 /** 第二章 A の撤収のわけの 1 行（docs/ch2a-reason.md。冒頭と情勢の図解で同じ文） */
@@ -626,6 +715,11 @@ function decideCaps(s: Ieyasu2State, site: string, compact: boolean): CapPlan[] 
 
 // ================================================================ 出陣
 
+/** 出陣の主人公の号令（最初の字幕「皆の者、出陣じゃ。」）の声の終わり（秒）。隊列はこの後に歩き出す（explore/stage.ts の column_depart の order） */
+function departOrder(): number {
+    return r1(speechEndOf('depart.hero'));
+}
+
 function departure(s: IeyasuAnyState): CineSpec | null {
     if (isChapter2(s)) {
         if (s.phase !== 'battle' && s.phase !== 'aftermath' && s.phase !== 'ending') return null;
@@ -639,7 +733,7 @@ function departure(s: IeyasuAnyState): CineSpec | null {
         else if (!so.units.includes('reserve') && s.plan === 'hold') caps.push({ text: '岡崎の守備隊は、城に残る。' });
         const sc = scene([homePlace(), ch2SitePlace(p)], [marchRoute(site)], { heading: `出陣：徳川の城下 → ${ch2SitePlace(p).name}` });
         return build(`departure.ch2.${POLICY_TAG[p]}.${s.plan ?? 'none'}`, 'departure', `出陣（${CH2_MISSION_TITLES[p]}）`, [
-            { kind: 'stage', event: { id: 'column_depart', count: visualCount(so.troops, VISUAL_MAX.column), mark: '徳' }, min: 6, caps },
+            { kind: 'stage', event: { id: 'column_depart', count: visualCount(so.troops, VISUAL_MAX.column), mark: '徳', order: departOrder() }, min: 6, caps },
             {
                 kind: 'map',
                 scene: sc,
@@ -661,7 +755,7 @@ function departure(s: IeyasuAnyState): CineSpec | null {
     const second = p === 'oda' ? '織田援軍は、先に戦場の右前へ出ている。' : p === 'asai' ? '浅井長政隊は、先に戦場の左前へ出ている。' : '岡崎の守備隊は、国境の砦で囲まれかけている。';
     const sc = scene([homePlace(), field1Place(null)], [marchRoute('field1')], { heading: '出陣：徳川の城下 → 国境の原' });
     return build(`departure.ch1.${POLICY_TAG[p]}`, 'departure', '出陣（国境の原へ）', [
-        { kind: 'stage', event: { id: 'column_depart', count: visualCount(troops, VISUAL_MAX.column), mark: '徳' }, min: 6, caps: [voiceCap('depart.hero'), { text: '城門から、徳川の兵が出陣する。' }, { text: second }] },
+        { kind: 'stage', event: { id: 'column_depart', count: visualCount(troops, VISUAL_MAX.column), mark: '徳', order: departOrder() }, min: 6, caps: [voiceCap('depart.hero'), { text: '城門から、徳川の兵が出陣する。' }, { text: second }] },
         { kind: 'map', scene: sc, min: 3.5, caps: [{ text: '行き先：国境の原（架空の局地戦）。', info: ['where'], show: ['march.field1'], focus: ['march.field1', 'field1'] }] },
     ]);
 }

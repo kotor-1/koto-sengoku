@@ -129,7 +129,24 @@ export type StageEvent =
      * 字幕（話し手つき）は台本が出す。終わると家臣は自分の置き場所（城門の前）へ戻る（演出の外で、会話の相手の人物に替わる）
      */
     | { id: 'retainer_report'; look: string; name: string; castId: string }
-    | { id: 'messenger_arrive'; look: string; name: string }
+    /**
+     * 使いの到着。report の無いもの（情勢の図解の中の場面）は今までどおり：街道口の画 → 城門の前の画で、使いは同じ見た目の人物の所へ歩く。
+     * report（Version 28 §4.3 の最後の項。第二章の冒頭）：町の入口の主人公のもとへ、使いが南の木戸から走って来て、減速して止まり、片膝をついて言う
+     * （主人公は足を踏み替えて振り向く）。その間に家臣が城門の前から歩いて来て、止まってから言う（主人公は家臣へ向き直る）。
+     * 使い・家臣の cast は会話の相手の id（出来事の間も後も、その人物そのもの。入れ替えない）、spot はその置き場所 [x, z, 向き]（出来事の後、
+     * そこへ歩いて行く）。cue は台詞の時刻（場面の始めからの秒）：messenger は使いの台詞の [字幕の始め, 声の終わり]、retainer は家臣の台詞、
+     * end は場面の終わり。
+     */
+    | {
+          id: 'messenger_arrive';
+          look: string;
+          name: string;
+          report?: {
+              messenger: { cast: string; spot: [number, number, number] };
+              retainer: { look: string; name: string; cast: string; spot: [number, number, number] };
+              cue: { messenger: [number, number][]; retainer: [number, number]; end: number };
+          };
+      }
     /**
      * 町の急報（Version 28 §4.3。第一章）：操作中の主人公の所（出来事を始めた時の主人公の位置から決める）へ、織田の使者が南の木戸の方から
      * 走って来て止まり、片膝をついて言う → 浅井の使者が少し遅れて急ぎ足で来て止まり、言う → 忠勝が城門の方から歩いて来て止まってから言う
@@ -145,7 +162,12 @@ export type StageEvent =
       }
     | { id: 'wounded_rest'; count: number }
     | { id: 'reinforcement_arrive'; count: number; mark: string; name: string }
-    | { id: 'column_depart'; count: number; mark: string }
+    /**
+     * 出陣。order（Version 28 §4.3 の最後の項）：主人公の号令の声の終わり（場面の始めからの秒）。主人公は城門の前で号令し、隊列の道を
+     * 空けて脇に立ち、出て行く隊列を見送る（会話の相手の人物も置き場所で隊列の方を向いて見送る。隠さない）。隊列は号令の後に歩き出す。
+     * 省けば今までどおり（主人公を描かず、隊列は整ってすぐ歩き出す）
+     */
+    | { id: 'column_depart'; count: number; mark: string; order?: number }
     | { id: 'column_return'; count: number; wounded: number; mark: string; victory: boolean };
 
 /** 演出の台本 */

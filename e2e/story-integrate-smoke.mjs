@@ -773,7 +773,8 @@ async function ch2() {
   note(`町の人々：勝ち ${J(win.ambient?.groups)}／損害大 ${J(heavy.ambient?.groups)}`);
   check('第二章の冒頭：勝ち・約束を守った保存は援兵の到着（旗 織）、損害大・約束を破った保存は援兵なし', ev(win, 'reinforcement_arrive')?.mark === '織' && !ev(heavy, 'reinforcement_arrive'), J({ win: ev(win, 'reinforcement_arrive'), heavy: ev(heavy, 'reinforcement_arrive') }));
   check('第二章の冒頭：損害大の保存は負傷兵の場面が多い（見た目の人数）', (ev(heavy, 'wounded_rest')?.count ?? 0) > (ev(win, 'wounded_rest')?.count ?? 0), `${ev(win, 'wounded_rest')?.count ?? 0} → ${ev(heavy, 'wounded_rest')?.count ?? 0}`);
-  check('第二章の冒頭：どちらも使いの到着と家臣の一言、いつ・どこ・協力（A の撤収のわけ）・前の結果・危機・判断の札', [win, heavy].every((a) => !!ev(a, 'messenger_arrive') && !!ev(a, 'retainer_report') && ['when', 'where', 'ally', 'prev', 'crisis', 'decide'].every((k) => a.infos.includes(k))), J([win.infos, heavy.infos]));
+  // Version 28 §4.3 の最後の項：使いの到着と家臣の一言は 1 つの場面（messenger_arrive の report。家臣は城門の前から歩いて来る）
+  check('第二章の冒頭：どちらも使いの到着と家臣の一言、いつ・どこ・協力（A の撤収のわけ）・前の結果・危機・判断の札', [win, heavy].every((a) => ev(a, 'messenger_arrive')?.report?.retainer?.cast === 'tadakatsu' && ['when', 'where', 'ally', 'prev', 'crisis', 'decide'].every((k) => a.infos.includes(k))), J([win.infos, heavy.infos]));
   check('第二章の町の人々：損害大の保存は詰所の負傷兵が多い。援兵（旗 織）は勝ち・約束を守った保存だけ', (g(heavy, 'wounded')?.count ?? 0) > (g(win, 'wounded')?.count ?? 0) && g(win, 'reinforcement')?.mark === '織' && !g(heavy, 'reinforcement'), `負傷 ${g(win, 'wounded')?.count ?? 0} → ${g(heavy, 'wounded')?.count ?? 0}・援兵 ${J(g(win, 'reinforcement'))} / ${J(g(heavy, 'reinforcement'))}`);
 }
 
