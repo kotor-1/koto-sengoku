@@ -15,7 +15,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { FOLLOW, createOrbit, look, placeFollow, segmentClear } from './game/follow';
 import { CAMERA_YAW, createHero, stepHero, type HeroState } from './game/motion';
 import { HeroAnimator } from './game/heroAnim';
-import { BACK_TREES, GATE, START, STREET_BUILDINGS, TREES, cameraBlockers, colliders, groundY, type Rect } from './layout';
+import { BACK_TREES, GATE, START, STREET_BUILDINGS, TREES, cameraBlockers, colliders, groundY, treeMeshCasts, type Rect } from './layout';
 import treesMeta from '../blender/trees/trees.meta.json';
 import { SKY, TOWN_LIGHT, makeHills, makeSky, makeSurroundings } from './scenery';
 import { addContactShadow, isCharacter } from './explore/contactShadow';
@@ -564,7 +564,10 @@ async function start(): Promise<void> {
         obj.position.set(t.x, 0, t.z);
         obj.rotation.y = t.rotY;
         obj.scale.setScalar(t.scale);
-        castShadows(obj, t.shadow);
+        // 影の落とし方は表のとおり（城内の桜・松は落とさない。東の土塀の内側の大きな黒松は、通りの上に張り出す葉だけ落とす）
+        obj.traverse((o) => {
+            if ((o as THREE.Mesh).isMesh) o.castShadow = treeMeshCasts(t.shadow, o.name);
+        });
         scene.add(obj);
         addOccluder(obj);
     }

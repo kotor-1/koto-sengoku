@@ -5,14 +5,15 @@
  * - 中景：歩ける範囲の外だけに置く（歩ける範囲は広げない。当たり判定は足さない）。範囲の端の竹垣はカメラ除けにもなる（カメラが垣の向こうへ出ない）。
  *   形は軽く（まとまりごとの三角形の数の上限）。遠い木は冠の絵の板（Version 28 T4）、遠くの林は田畑・村の外で山並みの手前。田畑の下に土の板。
  * - 遠景：山並みは 3 段で、奥ほど遠く・空の色に近い（空気の遠近）。手前の段の裾は地面の端（200 m）より内側（地面の切れ目を隠す）。
- * - 影：影を落とさない木（street28.json の shadow: false）は、通りから見えない所（城の土塀の線より北・東の土塀の向こう）の木だけ。
+ * - 影：影を落とさない木（street28.json の shadow: false）は、葉の冠ごと城の土塀の線より北の木だけ（影は通りに落ちない）。
+ *   通りの上に枝の張り出す東の土塀の内側の大きな黒松は、葉だけ影を落とす（shadow: "needles"）。
  * - 接地の影：人物の根に 1 枚だけ付き、影を落とさない（人物の影の設定をまとめて変えても）。
  */
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { CROWN_CLUSTERS, FIELD_UNDERLAY, RANGES, TOWN_LIGHT, makeHills, surroundGeometry } from '../proto3d/src/scenery';
 import { surroundPlan } from '../proto3d/src/town/surround';
-import { BACK_TREES, BOUNDS, EDGE_FENCE, GATE, TREES, cameraBlockers, colliders, type Rect } from '../proto3d/src/layout';
+import { BACK_TREES, BOUNDS, EDGE_FENCE, GATE, TREES, WALL, cameraBlockers, colliders, treeMeshCasts, type Rect } from '../proto3d/src/layout';
 import { createOrbit, placeFollow } from '../proto3d/src/game/follow';
 import { CONTACT_SHADOW, addContactShadow, isCharacter } from '../proto3d/src/explore/contactShadow';
 import scene from '../proto3d/blender/scene.json';
@@ -227,13 +228,31 @@ describe('遠景（山並み 3 段）', () => {
 });
 
 describe('影を落とす物の選び方', () => {
-    it('影を落とさない木は、城の土塀の線より北か東の土塀の向こう（通りから影の落ちる所が見えない）', () => {
-        const eastWall = scene.walls.find((w) => w.name === 'east_ns')!;
-        const noShadow = TREES.filter((t) => !t.shadow);
-        expect(noShadow.map((t) => t.name).sort()).toEqual(['pine_back', 'pine_big', 'sakura']);
-        for (const t of noShadow) expect(t.z < GATE.z || (t.x > eastWall.from[0] + 1 && t.z < eastWall.to[1]), t.name).toBe(true);
-        // 通りの木（Version 28 の柳・松）は影を落とす
-        for (const t of TREES.filter((x) => x.model === 'tree_willow28' || x.model === 'tree_pine_far')) expect(t.shadow, t.name).toBe(true);
+    it('影を落とさない木は、葉の冠ごと城の土塀の線より北（日は南の側なので影はさらに北の城内へ落ち、通りに落ちない）', () => {
+        // 日は南の側：影は北（−z）へ伸びる。冠が土塀の線より北なら、影の落ちる所も土塀の線より北
+        expect(TOWN_LIGHT.sunOffset[2]).toBeGreaterThan(0);
+        const meta = treesMeta as unknown as Record<string, { canopy_extent_xz?: { x: number[]; z: number[] } }>;
+        const noShadow = TREES.filter((t) => t.shadow === false);
+        expect(noShadow.map((t) => t.name).sort()).toEqual(['pine_back', 'sakura']);
+        for (const t of noShadow) {
+            const c = meta[t.model]!.canopy_extent_xz!;
+            // 冠の箱の 4 隅を木の向き・大きさで写した z の最大（three の rotation.y：z' = −x sin + z cos）
+            const zs = c.x.flatMap((x) => c.z.map((z) => t.z + t.scale * (-x * Math.sin(t.rotY) + z * Math.cos(t.rotY))));
+            expect(Math.max(...zs), t.name).toBeLessThan(GATE.z - WALL.thick / 2);
+        }
+        // 東の土塀の内側の大きな黒松は枝が通りの上（城門の東の壁の前）に張り出すので、葉の影を落とす（幹の影は東の土塀の影の中なので落とさない）
+        const big = TREES.find((t) => t.name === 'pine_big')!;
+        expect(big.shadow).toBe('needles');
+        expect(treeMeshCasts(big.shadow, 'pine_needles')).toBe(true);
+        expect(treeMeshCasts(big.shadow, 'pine_trunk')).toBe(false);
+        const c = treesMeta.tree_pine.canopy_extent_xz;
+        expect(big.z + Math.max(...c.z) * big.scale).toBeGreaterThan(GATE.z);
+        expect(big.x + Math.min(...c.x) * big.scale).toBeLessThan(scene.walls.find((w) => w.name === 'east_ns')!.from[0]);
+        // 通りの木（Version 28 の柳・松）は全部が影を落とす
+        for (const t of TREES.filter((x) => x.model === 'tree_willow28' || x.model === 'tree_pine_far')) {
+            expect(t.shadow, t.name).toBe(true);
+            expect(treeMeshCasts(t.shadow, 'pine_trunk'), t.name).toBe(true);
+        }
     });
 });
 

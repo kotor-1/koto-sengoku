@@ -22,10 +22,12 @@ export const GATE_POSTS = { z: GATE.z + scene.gate.control_pillars.z_offset, siz
 export const HOUSE = scene.houses[0].footprint;
 /** 通りの建物（Version 28。素材の名前・足元・表の向き。当たり判定は素材の meta から） */
 export const STREET_BUILDINGS: readonly { id: string; footprint: Rect; front: string }[] = street.buildings.map((b) => ({ id: b.id, footprint: b.footprint, front: b.front }));
+/** 木の影の落とし方：true＝全部、false＝落とさない、'needles'＝葉の形（名前が _needles で終わる）だけ */
+export type TreeShadow = boolean | 'needles';
 /**
- * 木（幹の位置・素材・向き・大きさ・幹の当たり判定の箱の半分の幅（表に無ければ 0.35 m）・影を落とすか（表の shadow。無ければ落とす））。幹に当たり判定
+ * 木（幹の位置・素材・向き・大きさ・幹の当たり判定の箱の半分の幅（表に無ければ 0.35 m）・影の落とし方（表の shadow。無ければ全部落とす））。幹に当たり判定
  */
-export const TREES: readonly { name: string; model: string; x: number; z: number; rotY: number; scale: number; trunk: number; shadow: boolean }[] = street.trees.map((t) => ({
+export const TREES: readonly { name: string; model: string; x: number; z: number; rotY: number; scale: number; trunk: number; shadow: TreeShadow }[] = street.trees.map((t) => ({
     name: t.name,
     model: t.model,
     x: t.x,
@@ -33,8 +35,12 @@ export const TREES: readonly { name: string; model: string; x: number; z: number
     rotY: t.rotY,
     scale: t.scale,
     trunk: 'trunk' in t && typeof t.trunk === 'number' ? t.trunk : 0.35,
-    shadow: !('shadow' in t && t.shadow === false),
+    shadow: !('shadow' in t) ? true : t.shadow === 'needles' ? 'needles' : t.shadow !== false,
 }));
+/** 木の素材の中の形（GLB の中の名前）が影を落とすか */
+export function treeMeshCasts(shadow: TreeShadow, meshName: string): boolean {
+    return shadow === 'needles' ? meshName.endsWith('_needles') : shadow;
+}
 /** 町の外側の木立（歩ける範囲の外。当たり判定なし） */
 export const BACK_TREES: readonly { model: string; x: number; z: number; rotY: number; scale: number }[] = street.back_trees;
 const tree = (name: string) => TREES.find((t) => t.name === name)!;
