@@ -32,6 +32,14 @@ const GREET_LOOK = 4.5;
 /** 足を合わせ直す：前のコマとの時刻の差（秒）・動いた距離（m） */
 const RESET_DT = 0.25;
 const RESET_MOVE = 1;
+/**
+ * 名札の高さ：描いた頭の骨（首の付け根の上。休みの形で足もとから 1.54 m）から上へ（m。人の大きさ Look.scale を掛ける）。
+ * 頭の上（髷の先 1.76 m）から約 12 cm 上。Version 28 の直しの前は足もとから決まった 2.05 m で、近い人では頭から 100〜170 px 上に浮き、
+ * 片膝の使者ではさらに高かった
+ */
+export const LABEL_ABOVE_HEAD = 0.34;
+/** 素材が読めなかった代わりの形の名札の高さ（足もとから m） */
+const LABEL_STANDIN_Y = 2.05;
 
 /**
  * 担ぐ俵（Version 28 §4.2：頭を隠さない大きさ・位置）：半径・長さ（m）と、右肩の骨の中での置き場所（肩の上・少し外。骨の中の向きは
@@ -142,6 +150,17 @@ export class ActorLayer {
     }
 
     /**
+     * 名札を置く所（世界）：この人の描いた頭の上（頭の骨 + LABEL_ABOVE_HEAD。会釈・片膝・前かがみで下がった頭にも付いて行く）。
+     * このコマに描いていない人（いない・画面の外・遠い・カメラが中に入る）は false
+     */
+    labelAnchor(key: string, out: THREE.Vector3): boolean {
+        const a = this.people.get(key);
+        if (!a || !a.body.root.visible) return false;
+        anchorOf(a.body, out);
+        return true;
+    }
+
+    /**
      * 名札を頭の上へ（描く直前に呼ぶ：演出の時計は探索の描画と別の時に進むので、描いた画と名札がずれないように、描く前にもう一度置く）。
      * 名札どうしが重なるときは、カメラに近い人の名札をそのままにし、遠い人の名札を上へずらす（互い違い。2 人の使者が並んで来る画）。
      */
@@ -154,8 +173,7 @@ export class ActorLayer {
                 a.label.hidden = true;
                 continue;
             }
-            const r = a.body.root.position;
-            tmpV.set(r.x, r.y + 2.05, r.z).project(camera);
+            anchorOf(a.body, tmpV).project(camera);
             const on = tmpV.z > -1 && tmpV.z < 1 && Math.abs(tmpV.x) < 1.05 && Math.abs(tmpV.y) < 1.05;
             a.label.hidden = !on;
             if (on) shown.push({ el: a.label, x: (tmpV.x * 0.5 + 0.5) * w, y: (-tmpV.y * 0.5 + 0.5) * h, depth: tmpV.z });
@@ -330,6 +348,17 @@ export class ActorLayer {
         this.pv.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
         this.frustum.setFromProjectionMatrix(this.pv);
     }
+}
+
+/** 名札を置く所（世界）：描いた頭の骨の上（代わりの形は足もとから決まった高さ）。out を返す */
+function anchorOf(body: PersonBody, out: THREE.Vector3): THREE.Vector3 {
+    const head = body.standIn ? undefined : body.bones.get('Head');
+    const scale = body.root.children[0]?.scale.y || 1;
+    if (!head) return out.copy(body.root.position).setY(body.root.position.y + LABEL_STANDIN_Y * scale);
+    // 根から頭の骨までの世界の行列を今の形で（足・会釈・片膝・首の向きを当てた後）
+    head.getWorldPosition(out);
+    out.y += LABEL_ABOVE_HEAD * scale;
+    return out;
 }
 
 /** 名札の幅（描かれていれば実際の幅。無ければ字数からの見積もり：12px の字・字の間・左右の余白） */
