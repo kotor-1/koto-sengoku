@@ -661,6 +661,8 @@ export class ExploreWorld implements GameWorld {
         l.className = labelClass(m);
         l.textContent = m.label;
         l.dataset.id = m.id;
+        // 置き場所を決めるまで出さない（updateCast が位置を書くときに出す。作った直後のコマに左上へ出ていた）
+        l.hidden = true;
         this.labels.appendChild(l);
         return l;
     }

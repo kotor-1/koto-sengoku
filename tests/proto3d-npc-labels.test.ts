@@ -158,6 +158,22 @@ describe('演出の 3D の出来事の間は、誰にも名札を出さない（
     });
 });
 
+describe('名札は置き場所が決まるまで出さない', () => {
+    it('人物を置いた直後（まだ 1 コマも進めていない）の名札はみな隠れていて、次のコマで位置を書いてから出る（作った直後のコマに左上へ出ていた）', async () => {
+        const { world, overlay, full } = await makeWorld();
+        world.setCast(full as never);
+        const fresh = labelsIn(overlay);
+        expect(fresh.length).toBeGreaterThan(0);
+        expect(fresh.filter((l) => !l.hidden).map((l) => l.textContent)).toEqual([]);
+        world.frame(DT);
+        for (const l of labelsIn(overlay)) {
+            if (l.hidden) continue;
+            // 出た名札は、出るのと同じコマで置き所が書かれている
+            expect(() => labelAt(l), String(l.textContent)).not.toThrow();
+        }
+    });
+});
+
 describe('出来事の後、置き場所へ歩いて行く会話の相手の名札は、描いた人の頭の上に付いて行く', () => {
     it('町の急報の後の歩き：名札は描いた位置（置き場所ではない）の頭の骨の上。近い人の名札は高さも合う（足もとから決まった 2.05 m ではない）', async () => {
         const { world, hero, camera, overlay, full, pending } = await makeWorld();
