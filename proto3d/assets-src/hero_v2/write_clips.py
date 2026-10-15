@@ -2,15 +2,17 @@
 """人物の GLB の動き（Idle / Walk / Run）だけを、hero_motion.py の動きに差し替えた写しを書く（Version 28）。
 形・重み・材質・画像のデータは 1 バイトも変えない（並べ直すだけ。画像の中身は同じバイト列のまま）。元の GLB は消さない・上書きしない。
 
-    python3 proto3d/assets-src/hero_v2/write_clips.py <元の GLB> <書き出す GLB> [--relax-arms] [--check]
+    python3 proto3d/assets-src/hero_v2/write_clips.py <元の GLB> <書き出す GLB> [--relax-arms | --npc-arms] [--check]
 
 --relax-arms：第 3 版の主人公（blender/hero/build_hero_v3.py の relax_arms）と同じく、どの動きでも上腕を体の側へ 13°、肘を 8° 曲げる。
   元の hero_v3_mpfb.glb の動きは、hero_v2.glb の動きの上腕・前腕の回転に一定の回転を左から掛けたものだった（全コマで差の標準偏差 0 を確かめた：
   上腕 Rz(∓0.2269)、前腕 Rx(−0.1396)）。ここでも同じ回転を掛ける。
+--npc-arms：町の人物（第 2 版の形）の腕を下ろす（hero_motion.py の NPC_ARMS：待機・歩きは上腕を 10° 下ろして 5° 前へ、肘を 16° 曲げ、
+  前腕を 18° 外へ戻す。走りは控えめ。第 2 版の広い袴と腰の刀に手が入らない形。Version 28 の直し）。
 --check：書いた後に読み直し、形・画像のデータが元と同じバイト列であることを確かめる。
 
 使い方（Version 28 で作った物）：
-    python3 proto3d/assets-src/hero_v2/write_clips.py proto3d/public/models/hero_v2.glb proto3d/public/models/hero_v2b.glb --check
+    python3 proto3d/assets-src/hero_v2/write_clips.py proto3d/public/models/hero_v2.glb proto3d/public/models/hero_v2b.glb --npc-arms --check
     python3 proto3d/assets-src/hero_v2/write_clips.py proto3d/public/models/hero_v3_mpfb.glb proto3d/public/models/hero_v3b_mpfb.glb --relax-arms --check
 """
 from __future__ import annotations
@@ -138,7 +140,11 @@ def replace_animations(j, binary, relax):
             if bn == 'Root':
                 continue
             rs = np.array(clip['rots'][bn], dtype=float)
-            if relax and bn in RELAX:
+            if relax == 'npc':
+                off = HM.npc_arm_offsets(clip['name']).get(bn)
+                if off is not None:
+                    rs = (off * Rotation.from_quat(rs)).as_quat()
+            elif relax and bn in RELAX:
                 rs = (RELAX[bn] * Rotation.from_quat(rs)).as_quat()
             for i in range(1, len(rs)):
                 if rs[i] @ rs[i - 1] < 0:
@@ -154,6 +160,8 @@ def replace_animations(j, binary, relax):
     j['buffers'] = [{'byteLength': len(out)}]
     extras = dict(j.get('extras') or {})
     info = HM.info()
+    if relax == 'npc':
+        extras['npc_arms'] = HM.NPC_ARMS
     extras.update({
         'motion': 'v28 (proto3d/assets-src/hero_v2/hero_motion.py)',
         'walk_reference_speed_mps': info['Walk']['speed'], 'walk_stride_m': info['Walk']['stride'], 'walk_duty': info['Walk']['duty'],
@@ -200,7 +208,9 @@ def main():
     j, binary = read_glb(src)
     h0, i0 = content_hashes(j, binary)
     j2 = json.loads(json.dumps(j))
-    out = replace_animations(j2, binary, '--relax-arms' in sys.argv)
+    if '--relax-arms' in sys.argv and '--npc-arms' in sys.argv:
+        raise SystemExit('--relax-arms と --npc-arms は一緒に使わない')
+    out = replace_animations(j2, binary, 'npc' if '--npc-arms' in sys.argv else '--relax-arms' in sys.argv)
     write_glb(dst, j2, out)
     print(f'{dst}: {dst.stat().st_size} bytes（元 {src.stat().st_size}）、動き {[a["name"] for a in j2["animations"]]}')
     if '--check' in sys.argv:

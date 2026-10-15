@@ -423,6 +423,32 @@ def idle_pose(t):
     return (pos, rot), None, feet, U
 
 
+# ---------------- 町の人物（hero_v2b）の腕（Version 28 の直し） ----------------
+# 第 2 版の形（hero_v2.glb）は腕を開いた休みの形（上腕は真下から 19°・前腕は 7.5° 外へ）で作ってあり、上の動きのままでは、町の人物
+# （忠勝・使者・町の人）が待機・話す間も腕を体から離して張って見えた。第 3 版の主人公（blender/hero/build_hero_v3.py の relax_arms・
+# write_clips.py の --relax-arms：上腕を体の側へ 13° 下ろし、肘を 8° 曲げる）に当たる形を、町の人物の動きにだけ足す（write_clips.py の --npc-arms）。
+# ただし第 2 版の袴は手の高さで広く、腰の左に刀の柄と鞘があるので、上腕だけを 13° 下ろすと、待機・歩きで手が袴に 8〜11 cm 入り、左手が
+# 刀に当たる（形の点で数えた。docs/v28-town-motion-voice.md）。そこで上腕を下ろして少し前へ出し、肘を曲げ、前腕を外へ戻して、手は袴の外・
+# 刀から 2 cm 以上に置く（肘は体の軸へ約 4 cm 寄る）。走りは後ろへ振った手が鞘に近いので控えめにする。
+# 値は度：drop 上腕を体の側へ（骨の z 軸まわり）・forward 上腕を前へ（x 軸）・elbow 肘を曲げる（前腕の x 軸）・forearm_out 前腕を外へ戻す（前腕の z 軸）。
+# どれも骨の局所の回りの左から掛ける（write_clips.py の RELAX と同じ掛け方）。
+NPC_ARMS = {
+    'Idle': dict(drop=10., forward=5., elbow=16., forearm_out=18.),
+    'Walk': dict(drop=10., forward=5., elbow=16., forearm_out=18.),
+    'Run': dict(drop=6., forward=5., elbow=0., forearm_out=10.),
+}
+
+
+def npc_arm_offsets(kind):
+    """町の人物の腕の足し（骨の名前 → 左から掛ける回転）"""
+    a = NPC_ARMS[kind]
+    out = {}
+    for side, s in (('Left', 1), ('Right', -1)):
+        out[side + 'UpperArm'] = rz(-s * math.radians(a['drop'])) * rx(-math.radians(a['forward']))
+        out[side + 'ForeArm'] = rz(s * math.radians(a['forearm_out'])) * rx(-math.radians(a['elbow']))
+    return out
+
+
 # ---------------- 書き出す動き ----------------
 CLIP_SPECS = [('Idle', IDLE_CYCLE), ('Walk', GAITS['Walk']['cycle']), ('Run', GAITS['Run']['cycle'])]
 
