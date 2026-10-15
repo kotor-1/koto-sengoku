@@ -74,6 +74,12 @@ export interface ExploreHost {
      * 会話の相手・演出の話し手を見るのに使う（Version 28 §4.4）
      */
     setHeroGaze?(p: { x: number; y: number; z: number } | null, weight?: number): void;
+    /**
+     * 主人公の見た目の動き（足・体の向き）の時計（省ける。main.ts の HeroClock：game/heroAnim.ts）。演出の出来事が主人公を立たせて動かしている間は、
+     * 演出の時計の進み（秒。1 コマ 1 秒まで）を渡す。null で探索の時計（1 コマ 0.1 秒まで）へ戻す。位置・向きを演出の時計で決めるので、
+     * 足・体の向きも同じ時計で動かす（探索の時計のままだと、遅いコマで着いた足を遠くに残して脚が横へ伸びた）
+     */
+    heroStageClock?(advance: number | null): void;
 }
 
 const NPC_MODEL = 'hero_v2b';
@@ -372,6 +378,7 @@ export class ExploreWorld implements GameWorld {
         this.lookout?.cancel();
         const key = JSON.stringify(ev);
         const fresh = key !== this.stageKey;
+        const prevT = this.stageT;
         if (fresh) {
             if (this.stageKey) this.stageActors.clear();
             this.stageKey = key;
@@ -391,7 +398,11 @@ export class ExploreWorld implements GameWorld {
         this.hiddenAmbient = new Set(f.hideAmbient);
         this.stageShot = { ...f.shot, hideHero: !f.hero };
         this.stageHeroStays = !!f.heroStays;
-        if (f.hero) this.placeStageHero(f.hero);
+        if (f.hero) {
+            this.placeStageHero(f.hero);
+            // 主人公の足・体の向きも演出の時計で（前の stage から演出が進めた分。始めの 1 コマ・巻き戻しは 0）
+            this.host.heroStageClock?.(fresh ? 0 : Math.max(0, t - prevT));
+        } else this.host.heroStageClock?.(null);
         if (f.heroGaze !== undefined) this.host.setHeroGaze?.(f.heroGaze);
         this.applyShot();
         const cam = this.host.camera;
@@ -459,6 +470,7 @@ export class ExploreWorld implements GameWorld {
         }
         this.stageLinked = new Map();
         this.stageActors.clear();
+        this.host.heroStageClock?.(null);
         this.stageKey = null;
         this.stageFirstPending = false;
         this.setHiddenCast([]);

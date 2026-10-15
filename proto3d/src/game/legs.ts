@@ -6,6 +6,8 @@
  * - 脚の 2 本の骨の IK：足首を地面の高さ（ground_height.json）に合わせ、膝は動きの元の向きへ曲げる。届かないときは腰を下げる（急に下げ、ゆっくり戻す）。
  * - 足の踏み替え：止まっている間（待機）に、足が立つ位置から離れた・体の向きに対してねじれたときは、片足ずつ短く踏み替える
  *  （止まった後の 1 歩、その場で向きを変えるときの小さな足踏み）。ねじれ・伸びすぎが大きいときは、歩きの途中でも踏み替える。
+ * - 脚の向きの限り（LEG_LIMIT）：股関節から足首の狙いへの線が、体から見て横・後ろ・前へ極端に傾く狙い（大きな 1 コマで着いた足を遠くに
+ *   残した）は、限りの所へ寄せる（着いた足はそこに止め直す）。ふだんの歩き・走り・切り返しの形は限りの内なので変わらない。
  * 角度はラジアン、長さは m。足の骨の休みの姿勢は世界の軸にそろう（第 2 版の骨組み）。
  * 町の人・演出の人（explore/actors.ts。同じ骨組みを人ごとの大きさ Look.scale で縮めて置く）にも使う：scale にその大きさを渡す
  *（脚の長さ・足の裏の点・腰を下げる量をその大きさに合わせる。主人公は 1）。
@@ -50,6 +52,12 @@ const MAX_DROP = 0.05;
 const DROP_RATE = 0.25;
 /** 着いた足に届かせるのに腰をこれより下げる必要があれば、腰を下げ続けずにその足を踏み替える（m） */
 const OVERREACH = 0.025;
+/**
+ * 脚の向きの限り（ラジアン）：股関節 → 足首の狙いの線の、体の向きから見た横・後ろ・前への傾き（真下から）。ふだんの形（ゲームの仕組みで
+ * 60 コマ/秒：歩き・走り・90°／180° の切り返し・壁に沿う・その場の向き替え）の最大は横 28°・後ろ 53°・前 40°（走りながらの 180° の切り返し）。
+ * これを超える狙いは、この限りの所へ寄せる（太ももが横へ 45° 開いて袴の板が腰の高さに突き出た：町の急報の振り向き、演出の 1 秒のコマ）
+ */
+export const LEG_LIMIT = { side: (32 * Math.PI) / 180, back: (56 * Math.PI) / 180, front: (50 * Math.PI) / 180 } as const;
 
 export interface LegBones {
     hips: THREE.Bone;
@@ -148,6 +156,30 @@ const smoothstep = (x: number, a: number, b: number) => {
     return t * t * (3 - 2 * t);
 };
 
+/**
+ * 足首の狙い t（世界。書き換える）を、股関節 hip から見た傾きの限り（LEG_LIMIT）の内へ水平に寄せる。fx・fz は体の前の向き。
+ * 返りは寄せた量（x・z。限りの内なら 0, 0）
+ */
+export function limitLeg(hip: THREE.Vector3, t: THREE.Vector3, fx: number, fz: number): [number, number] {
+    const ex = t.x - hip.x;
+    const ez = t.z - hip.z;
+    const down = Math.max(0.05, hip.y - t.y);
+    // 前（fx, fz）と右（fz, −fx）に分ける
+    const f = ex * fx + ez * fz;
+    const s = ex * fz - ez * fx;
+    const sMax = down * Math.tan(LEG_LIMIT.side);
+    const f1 = Math.max(-down * Math.tan(LEG_LIMIT.back), Math.min(down * Math.tan(LEG_LIMIT.front), f));
+    const s1 = Math.max(-sMax, Math.min(sMax, s));
+    if (f1 === f && s1 === s) return [0, 0];
+    const nx = hip.x + f1 * fx + s1 * fz;
+    const nz = hip.z + f1 * fz - s1 * fx;
+    const dx = nx - t.x;
+    const dz = nz - t.z;
+    t.x = nx;
+    t.z = nz;
+    return [dx, dz];
+}
+
 const tmpV = new THREE.Vector3();
 const tmpV2 = new THREE.Vector3();
 const tmpV3 = new THREE.Vector3();
@@ -169,7 +201,7 @@ export class HeroLegs {
     private readonly l1: number;
     private readonly l2: number;
     /** 確かめ用の数 */
-    readonly stats = { steps: 0, forced: 0, early: 0, drop: 0 };
+    readonly stats = { steps: 0, forced: 0, early: 0, drop: 0, limited: 0 };
 
     /** 足の裏の点（この人の大きさに合わせた世界の長さ） */
     private readonly sole: THREE.Vector3[];
@@ -460,6 +492,23 @@ export class HeroLegs {
         if (this.drop > 1e-5) {
             b.hips.position.y -= this.drop / this.scale;
             b.hips.updateMatrixWorld(true);
+        }
+        // 脚の向きの限り：極端な狙いは限りの所へ寄せる。着いた足・振り出した足の今の位置も同じだけ寄せる（次のコマも同じ所から続ける）
+        const yaw = root.rotation.y;
+        for (let i = 0; i < 2; i++) {
+            const hip = tmpV.setFromMatrixPosition(b.upper[i]!.matrixWorld);
+            const [dx, dz] = limitLeg(hip, targets[i]!, Math.sin(yaw), Math.cos(yaw));
+            if (dx === 0 && dz === 0) continue;
+            this.stats.limited++;
+            const f = this.feet[i]!;
+            f.target.x += dx;
+            f.target.z += dz;
+            f.pos.x += dx;
+            f.pos.z += dz;
+            if (f.planted) {
+                f.heel.x += dx;
+                f.heel.z += dz;
+            }
         }
         for (let i = 0; i < 2; i++) this.solve(i, targets[i]!, rots[i]!);
     }

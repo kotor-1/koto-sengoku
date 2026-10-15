@@ -14,7 +14,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { FOLLOW, createOrbit, look, placeFollow, segmentClear } from './game/follow';
 import { CAMERA_YAW, createHero, stepHero, type HeroState } from './game/motion';
-import { HeroAnimator } from './game/heroAnim';
+import { HeroAnimator, HeroClock } from './game/heroAnim';
 import { BACK_TREES, GATE, START, STREET_BUILDINGS, TREES, cameraBlockers, colliders, groundY, treeMeshCasts, type Rect } from './layout';
 import treesMeta from '../blender/trees/trees.meta.json';
 import { SKY, TOWN_LIGHT, makeHills, makeSky, makeSurroundings } from './scenery';
@@ -677,6 +677,11 @@ function placeCamera(k: number, dt = 0): void {
 }
 
 const clock = new THREE.Clock();
+/**
+ * 主人公の見た目の動き（足・体の向き）の時計（game/heroAnim.ts の HeroClock）：ふだんは探索の 1 コマ（0.1 秒まで）。演出の出来事が主人公を
+ * 立たせて動かしている間は、演出の時計の進み（explore/world.ts の stage が heroStageClock で渡す。1 コマ 1 秒まで）
+ */
+const heroClock = new HeroClock();
 const stats = { readyMs: 0, loadMs: 0, frames: 0 };
 const fpsEl = document.getElementById('fps')!;
 fpsEl.hidden = !showFps;
@@ -702,7 +707,7 @@ function advance(dt: number, raw: number, ix: number, iy: number): void {
     stepHero(hero, ix, iy, tps ? orbit.yaw : CAMERA.yaw, dt, running(), walkRects);
     // 見た目の動き：位相・混ぜ方は実際に進んだ距離から。体の向き・着いた足を止める・脚の IK（地面の起伏に合わせる。動き・当たり判定は平面のまま）・顔の向き
     const a = heroView!.anim;
-    a.update(hero, dt, groundY);
+    a.update(hero, heroClock.take(dt), groundY);
     // 足音：歩き・走りの位相の半周ごとに 1 歩（踵の着く所）。止まっている間は鳴らさない（audio/sfx.ts の FootstepTracker）
     audio()?.step(a.strideTotal, a.speed, a.runBlend > 0.5);
     placeCamera(1 - Math.exp(-6 * dt), dt);
@@ -828,6 +833,9 @@ const exploreHost: ExploreHost = {
     setHeroGaze(p, weight) {
         heroView?.anim.gaze?.lookAt(p, weight);
     },
+    heroStageClock(advance) {
+        heroClock.stageAdvance(advance);
+    },
     viewSize: () => ({ w: view.clientWidth || window.innerWidth, h: view.clientHeight || window.innerHeight }),
 };
 
@@ -859,7 +867,7 @@ if (import.meta.env.DEV) {
             light: { sun, hemi, bounce, sunOffset: SUN_OFFSET, sky },
             get anim() {
                 const a = heroView?.anim;
-                return { walkBlend: a?.walkBlend ?? 0, runBlend: a?.runBlend ?? 0, stride: a?.stride ?? 0, strideTotal: a?.strideTotal ?? 0, walkTime: heroView?.walk.time ?? 0, running: running(), runMode, yaw: a?.yaw ?? 0, speed: a?.speed ?? 0, legs: a?.legs?.stats ?? null };
+                return { walkBlend: a?.walkBlend ?? 0, runBlend: a?.runBlend ?? 0, stride: a?.stride ?? 0, strideTotal: a?.strideTotal ?? 0, walkTime: heroView?.walk.time ?? 0, running: running(), runMode, yaw: a?.yaw ?? 0, speed: a?.speed ?? 0, legs: a?.legs?.stats ?? null, resnaps: a?.resnaps ?? 0, stageClock: heroClock.staged };
             },
             /** 確認用：足・体の向きを今の位置に合わせ直す（e2e/motion-probe.mjs が主人公を置き直した後） */
             resetLegs() { if (heroView) heroView.anim.snap(hero); },
