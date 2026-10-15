@@ -7,7 +7,8 @@
  *   BASE3D=http://localhost:8781 [Q=low] [FPS=24] [EVFPS=12] [W=1280 H=720] [MAXF=<コマ数の上限>] node e2e/motion-video.mjs <出力先>
  *   EVFPS：急報の間だけ 1 コマで進める時間を 1/EVFPS 秒にする（描くのが遅すぎるとき。既定は FPS と同じ）。映像は FPS のままで、
  *   急報の 1 コマを FPS/EVFPS 回くり返して並べる（frames.txt）。焼き込む文字に「1 コマ = ゲームの 1/EVFPS 秒」と書く。
- * 出力：<出力先>/frames/f00000.jpg …・frames.json（コマごとの主人公・演出の時刻・字幕・描く／撮るのにかかった時間。24 コマごとに書き直す）・
+ * 出力：<出力先>/frames/f00000.jpg …・frames.json（コマごとの主人公・演出の時刻・字幕（話し手・文・声を待っているか・層の地の色）・
+ *   画に出ている名札・主人公の足の合わせ直しの数・描く／撮るのにかかった時間。24 コマごとに書き直す）・
  *   frames.txt（映像の順のコマのファイル。くり返しを含む）。映像にまとめるのは別（ffmpeg の image2pipe → VP8・webm）：
  *   xargs cat < <出力先>/frames.txt | /opt/pw-browsers/ffmpeg-1011/ffmpeg-linux -f image2pipe -framerate 24 -c:v mjpeg -i pipe:0 -an -c:v libvpx -pix_fmt yuv420p -b:v 6M -crf 8 -g 24 out.webm
  * 場面：町の入口で待機 → 北へ歩く → 180° 振り返って歩く → 止まる → 北へ走る（線 z 6 を越えて急報）→ 急報を最後まで → 操作へ戻る → 数歩 歩く。
@@ -119,7 +120,35 @@ async function frame(seg, step = FPS) {
                 `コマ撮り（実時間ではない）\n${seg}  ${vt.toFixed(2)} 秒\n1 コマ = ゲームの 1/${step} 秒・映像 ${fps} コマ/秒・${window.__mv.low ? '画質 低（?q=low）' : '画質 ふつう'}`,
             );
             window.__p3.renderNow();
-            return { n, t: vt, seg, step, x: h.x, z: h.z, heading: h.heading, speed: h.speed, cine: c ? { id: c.id, t: c.t, speaker: c.caption?.speaker ?? null } : null, ui: g.ui?.kind ?? null, townEvent: g.townEvent };
+            // 画に出ている名札（隠れていない・画面の中。文字と下の真ん中の位置）・演出の層（字幕の声を待っているか data-voice-wait・地の色）・
+            // 主人公の足の合わせ直しの数（大きな 1 コマの守り）。見るだけで、ゲームの状態は変えない
+            const tags = [];
+            for (const el of document.querySelectorAll('.npc-label')) {
+                if (el.hidden || el.closest('[hidden]')) continue;
+                const cs = getComputedStyle(el);
+                if (cs.visibility === 'hidden' || cs.display === 'none' || Number(cs.opacity) === 0) continue;
+                const r = el.getBoundingClientRect();
+                if (!r.width || r.right < 0 || r.bottom < 0 || r.left > innerWidth || r.top > innerHeight) continue;
+                tags.push({ text: el.textContent, x: Math.round(r.left + r.width / 2), y: Math.round(r.bottom) });
+            }
+            const layer = document.querySelector('.g-layer[data-kind="cine"]');
+            const a = window.__p3.anim;
+            return {
+                n,
+                t: vt,
+                seg,
+                step,
+                x: h.x,
+                z: h.z,
+                heading: h.heading,
+                speed: h.speed,
+                cine: c ? { id: c.id, t: c.t, mode: c.mode, speaker: c.caption?.speaker ?? null, text: c.caption?.text ?? null, vw: layer?.dataset.voiceWait === '1', bg: layer ? getComputedStyle(layer).backgroundColor : null } : null,
+                ui: g.ui?.kind ?? null,
+                townEvent: g.townEvent,
+                tags,
+                resnaps: a?.resnaps ?? null,
+                stageClock: a?.stageClock ?? null,
+            };
         },
         { ms: 1000 / step, seg, n, vt, fps: FPS, step },
     );
