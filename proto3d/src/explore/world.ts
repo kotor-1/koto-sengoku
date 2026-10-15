@@ -12,6 +12,8 @@
  * 町の急報（stage.ts の street_report）・第二章の冒頭の使いの急報（messenger_arrive の report）の使者・使い・家臣は会話の相手そのもの
  * （StagePerson.cast）：出来事の間も、出来事の後に話せる位置へ歩く間も、同じ人物（同じ見た目・同じ拍子・続く足）として描き、着いた所で
  * 入れ替えない。出陣（column_depart の order）の見送りの人も同じ（置き場所のまま隊列の方を向く。隠さない）。
+ * 名札（Version 28 の直し）：立つ人物の名札は、描いた人の頭の上（出来事の後に置き場所へ歩く間も付いて行く）。演出の 3D の出来事の間は、
+ * 誰にも名札を出さない（字幕が話し手の名前を出す）。
  */
 import * as THREE from 'three';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -74,6 +76,12 @@ export interface ExploreHost {
      * 会話の相手・演出の話し手を見るのに使う（Version 28 §4.4）
      */
     setHeroGaze?(p: { x: number; y: number; z: number } | null, weight?: number): void;
+    /**
+     * 主人公の見た目の動き（足・体の向き）の時計（省ける。main.ts の HeroClock：game/heroAnim.ts）。演出の出来事が主人公を立たせて動かしている間は、
+     * 演出の時計の進み（秒。1 コマ 1 秒まで）を渡す。null で探索の時計（1 コマ 0.1 秒まで）へ戻す。位置・向きを演出の時計で決めるので、
+     * 足・体の向きも同じ時計で動かす（探索の時計のままだと、遅いコマで着いた足を遠くに残して脚が横へ伸びた）
+     */
+    heroStageClock?(advance: number | null): void;
 }
 
 const NPC_MODEL = 'hero_v2b';
@@ -97,7 +105,10 @@ interface NpcView {
     /** 出来事が動かしている（前のコマ）。外れたら置き場所へ戻す（飛ばしたとき） */
     driven: boolean;
     label: HTMLElement;
+    /** 名札の高さ（足もとから m）：座った人物・高札・城門（立つ人物は描いた頭の上：anchor） */
     labelY: number;
+    /** 名札を置く所（世界。毎フレーム frame が決める：立つ人物は描いた頭の上） */
+    anchor: THREE.Vector3;
 }
 
 /** 町の急報の後の歩き（会話の相手の人物として、置き場所まで）：出来事・始めた時の主人公・始めた時刻（this.time）・場面の長さ */
@@ -148,7 +159,6 @@ export class ExploreWorld implements GameWorld {
     private readonly views = new Map<string, NpcView>();
     private readonly group = new THREE.Group();
     private readonly labels: HTMLElement;
-    private readonly stageLabels: HTMLElement;
     private readonly wallRects = colliders();
     private readonly people: PersonFactory;
     private readonly stageActors: ActorLayer;
@@ -216,15 +226,13 @@ export class ExploreWorld implements GameWorld {
         this.guideName.className = 'npc-guide-name';
         this.guide.append(this.guideArrow, this.guideName);
         this.labels.appendChild(this.guide);
-        // 演出の人の名札（演出の 3D の場面の間だけ見える：body.g-cine-stage）
-        this.stageLabels = document.createElement('div');
-        this.stageLabels.id = 'stage-labels';
-        host.overlay.appendChild(this.stageLabels);
+        // 演出の 3D の出来事の間は、どの人にも名札を出さない（話し手は字幕が名前を出す。Version 28 の直し：名札が足もとから決まった
+        // 高さに浮いて木戸・城門の梁の辺りに見え、片膝の使者・大写しの忠勝の上に残っていた）。演出の人の層は名札を作らない
         this.people = new PersonFactory((o) => host.prepare(o), host.low);
-        this.stageActors = new ActorLayer('stage', this.people, this.stageLabels, () => host.viewSize(), 40, host.low);
+        this.stageActors = new ActorLayer('stage', this.people, null, () => host.viewSize(), 40, host.low);
         this.ambientActors = new ActorLayer('ambient', this.people, null, () => host.viewSize(), AMBIENT_FIGURES_MAX, host.low);
-        // 立つ会話の相手：名札は出来事の間だけ演出の名札の入れ物に（ふだんの名札は npc-labels。world が置く）
-        this.castActors = new ActorLayer('cast-people', this.people, this.stageLabels, () => host.viewSize(), 1, host.low);
+        // 立つ会話の相手：名札は world が npc-labels に置く（描いた頭の上。出来事の間は出さない）
+        this.castActors = new ActorLayer('cast-people', this.people, null, () => host.viewSize(), 1, host.low);
         host.scene.add(this.stageActors.group, this.ambientActors.group, this.castActors.group);
         // 物見の眺めで「出る前から押さえていたキー」を見分けるため、押しているキーを覚えておく
         window.addEventListener('keydown', (e) => this.keys.down(e.code, e.repeat), true);
@@ -372,6 +380,7 @@ export class ExploreWorld implements GameWorld {
         this.lookout?.cancel();
         const key = JSON.stringify(ev);
         const fresh = key !== this.stageKey;
+        const prevT = this.stageT;
         if (fresh) {
             if (this.stageKey) this.stageActors.clear();
             this.stageKey = key;
@@ -391,19 +400,22 @@ export class ExploreWorld implements GameWorld {
         this.hiddenAmbient = new Set(f.hideAmbient);
         this.stageShot = { ...f.shot, hideHero: !f.hero };
         this.stageHeroStays = !!f.heroStays;
-        if (f.hero) this.placeStageHero(f.hero);
+        if (f.hero) {
+            this.placeStageHero(f.hero);
+            // 主人公の足・体の向きも演出の時計で（前の stage から演出が進めた分。始めの 1 コマ・巻き戻しは 0）
+            this.host.heroStageClock?.(fresh ? 0 : Math.max(0, t - prevT));
+        } else this.host.heroStageClock?.(null);
         if (f.heroGaze !== undefined) this.host.setHeroGaze?.(f.heroGaze);
         this.applyShot();
         const cam = this.host.camera;
         // 会話の相手そのもの（StagePerson.cast）は castActors で描く（毎フレームの frame で。同じ人物のまま）。ほかの人は演出の人
         this.stageLinked = new Map(f.people.filter((p) => p.cast).map((p) => [p.cast!, p]));
         const plain = f.people.filter((p) => !p.cast);
-        // 名札はここでは動かさない：演出の時計（ここ）は探索の描画の後に進むので、ここで動かすと、まだ前の形の画の上で名札だけが
-        // 先へ進んで見える（毎秒 1 コマほどの画では人 1〜2 m 分ずれた）。名札は描く直前（frame）に、描く人の位置とカメラで置く
+        // 演出の人に名札は出さない（字幕が話し手の名前を出す）
         this.stageActors.setPeople(plain, t, cam, false);
         this.stageActors.setFigures(f.figures, f.banners, f.litters, t, cam);
         // 出来事の最初の画はすぐ描く（地図の覆いが外れた所に、前の画や暗い画面を出さない。初めて描く重さは演出の時計に数えない）。
-        // 名札も、その描いた画に合わせて置く。ただし探索の描画を止めている間（演出の層が字幕を先に見せている間）は描かず、
+        // ただし探索の描画を止めている間（演出の層が字幕を先に見せている間）は描かず、
         // 覆いが外れた後の次の stage で描く（重い最初の画の前に、字幕の層を画面に出すため：ui/cinePlayer.ts の stageWait）
         if (fresh) this.stageFirstPending = true;
         if (this.stageFirstPending && !this.host.renderPaused?.()) {
@@ -411,15 +423,14 @@ export class ExploreWorld implements GameWorld {
             // 最初の画は frame（毎フレームの隠す・町の人々の置き直し）を通らずに描くので、隠す人物・町の人々をここで当ててから描く
             //（当てないと、最初の 1 コマだけ、隠すはずの人物（出陣の手前の会話の相手など）・支度の兵が映った）
             for (const v of this.views.values()) {
+                // 出来事の間は名札を出さない（最初の画の前に隠す）
+                v.label.hidden = true;
                 if (!this.hiddenCast.has(v.member.id)) continue;
                 v.root.visible = false;
-                v.label.hidden = true;
             }
             if (this.ambient) this.updateAmbient(cam);
             this.updateCast(cam);
             this.host.renderOnce();
-            this.stageActors.placeLabels(cam);
-            this.castActors.placeLabels(cam);
         }
     }
 
@@ -459,6 +470,7 @@ export class ExploreWorld implements GameWorld {
         }
         this.stageLinked = new Map();
         this.stageActors.clear();
+        this.host.heroStageClock?.(null);
         this.stageKey = null;
         this.stageFirstPending = false;
         this.setHiddenCast([]);
@@ -657,7 +669,7 @@ export class ExploreWorld implements GameWorld {
         obj.position.set(m.x, groundY(m.x, m.z), m.z);
         obj.rotation.y = m.heading;
         this.group.add(obj);
-        return { member: m, root: obj, mixer: null, bones: new Map(), stander: false, heading: m.heading, targetHeading: m.heading, turn: null, x: m.x, z: m.z, driven: false, label: this.makeLabel(m), labelY };
+        return { member: m, root: obj, mixer: null, bones: new Map(), stander: false, heading: m.heading, targetHeading: m.heading, turn: null, x: m.x, z: m.z, driven: false, label: this.makeLabel(m), labelY, anchor: new THREE.Vector3(m.x, groundY(m.x, m.z) + labelY, m.z) };
     }
 
     private makePerson(m: CastMember<string>): NpcView | null {
@@ -682,6 +694,7 @@ export class ExploreWorld implements GameWorld {
                 driven: !!o,
                 label: this.makeLabel(m),
                 labelY: 2.05,
+                anchor: new THREE.Vector3(o?.x ?? m.x, groundY(o?.x ?? m.x, o?.z ?? m.z) + 2.05, o?.z ?? m.z),
             };
         }
         if (!this.ready) {
@@ -696,7 +709,7 @@ export class ExploreWorld implements GameWorld {
         root.position.set(m.x, groundY(m.x, m.z), m.z);
         root.rotation.y = m.heading;
         this.group.add(root);
-        const v: NpcView = { member: m, root, mixer: p.mixer, bones: p.bones, stander: false, heading: m.heading, targetHeading: m.heading, turn: null, x: m.x, z: m.z, driven: false, label: this.makeLabel(m), labelY: 1.65 };
+        const v: NpcView = { member: m, root, mixer: p.mixer, bones: p.bones, stander: false, heading: m.heading, targetHeading: m.heading, turn: null, x: m.x, z: m.z, driven: false, label: this.makeLabel(m), labelY: 1.65, anchor: new THREE.Vector3(m.x, groundY(m.x, m.z) + 1.65, m.z) };
         if (p.mixer) {
             p.mixer.update(0);
             sitPose(p.bones);
@@ -767,10 +780,14 @@ export class ExploreWorld implements GameWorld {
                 const ring = v.root.getObjectByName('gate-ring') as THREE.Mesh | undefined;
                 if (ring) (ring.material as THREE.MeshBasicMaterial).opacity = 0.35 + 0.2 * Math.sin(this.time * 3);
             }
-            // 名前の札：頭の上（今の位置）。遠い・画面の外・カメラの後ろでは出さない
-            tmp.set(v.x, groundY(v.x, v.z) + v.labelY, v.z).project(cam);
+            // 名前の札：描いた人の頭の上（立つ人物は castActors が描いた今の位置・頭の高さ。出来事の後に置き場所へ歩く間も付いて行く。
+            // 描いていない立つ人物には出さない）。座った人物・高札・城門は置き場所の決めた高さ。
+            // 演出の出来事の間は出さない（字幕が話し手の名前を出す）。遠い・画面の外・カメラの後ろでも出さない
+            const drawn = v.stander ? this.castActors.labelAnchor(m.id, v.anchor) : (v.anchor.set(v.x, groundY(v.x, v.z) + v.labelY, v.z), true);
+            if (!drawn) v.anchor.set(v.x, groundY(v.x, v.z) + v.labelY, v.z);
+            tmp.copy(v.anchor).project(cam);
             const dist = Math.hypot(v.x - h.x, v.z - h.z);
-            const show = !hidden && tmp.z > -1 && tmp.z < 1 && Math.abs(tmp.x) < 1.1 && Math.abs(tmp.y) < 1.1 && dist < (m.key ? LABEL_FAR.key : LABEL_FAR.other);
+            const show = !hidden && !this.stageKey && drawn && tmp.z > -1 && tmp.z < 1 && Math.abs(tmp.x) < 1.1 && Math.abs(tmp.y) < 1.1 && dist < (m.key ? LABEL_FAR.key : LABEL_FAR.other);
             if (!show) {
                 if (!v.label.hidden) v.label.hidden = true;
                 continue;
@@ -791,11 +808,6 @@ export class ExploreWorld implements GameWorld {
         });
         this.updateGuide(cam, w, vh, keyAt);
         if (this.ambient) this.updateAmbient(cam);
-        // 演出の人の名札：描く直前のカメラで置き直す（演出の時計は探索の描画と別の時に進む）
-        if (this.stageKey) {
-            this.stageActors.placeLabels(cam);
-            this.castActors.placeLabels(cam);
-        }
     }
 
     /**
@@ -814,8 +826,8 @@ export class ExploreWorld implements GameWorld {
         const m = v.member;
         const hero = this.host.hero;
         if (Math.hypot(v.x - hero.x, v.z - hero.z) <= m.reach + 0.4) return off();
-        const gy = groundY(v.x, v.z) + v.labelY;
-        tmp.set(v.x, gy, v.z).project(cam);
+        // 名札を置く所（frame が決めた、描いた頭の上）
+        tmp.copy(v.anchor).project(cam);
         const onScreen = tmp.z > -1 && tmp.z < 1 && Math.abs(tmp.x) < 0.92 && Math.abs(tmp.y) < 0.9;
         this.guide.hidden = false;
         if (this.guideName.textContent !== m.label) this.guideName.textContent = m.label;
@@ -831,7 +843,7 @@ export class ExploreWorld implements GameWorld {
             return;
         }
         // 画面の外・後ろ：カメラから見て左右どちらか（カメラの中の座標の x）
-        tmp.set(v.x, gy, v.z).applyMatrix4(cam.matrixWorldInverse);
+        tmp.copy(v.anchor).applyMatrix4(cam.matrixWorldInverse);
         const right = tmp.x >= 0;
         this.guide.className = `npc-guide edge ${right ? 'right' : 'left'}`;
         const arrow = right ? '▶' : '◀';

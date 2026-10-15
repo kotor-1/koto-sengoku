@@ -85,7 +85,10 @@ export interface StagePerson {
     walked: number;
     /** 歩いているか（0〜1。歩きと立ちの混ぜ方） */
     moving: number;
-    /** 名札を出すか（画の中にいる間） */
+    /**
+     * 名札を付けてよい人か（名前の分かる出来事の人。画の中にいる間）。Version 28 の直しから、描く側（explore/world.ts）は演出の
+     * 出来事の間は誰にも名札を出さない（字幕が話し手の名前を出す）。出来事の後の歩きの間は会話の相手の名札（描いた頭の上）
+     */
     label: boolean;
     /** 肩に荷（俵）を担ぐか（町の人。省けば荷を持たない） */
     carrying?: boolean;

@@ -7,6 +7,11 @@
  * - 体の向き（描く向き）は、移動の向き（hero.heading）を 1 コマ 11.5° まで（止まっているときは 7°）で追う。
  *   移動の側も同じ上限で回すので、ふだんは同じ値。会話・演出が向きを一度に変えたときだけ、ここで回して見せる（足は legs.ts が踏み替える）。
  * - 1 コマで 1 m 以上動いた（置き直し・場面の切り替え）ときは、向き・足をその場に合わせ直す（歩いて見せない）。
+ * - 1 コマで 0.5 m 以上動いた・描く体の向きが 45° 以上変わった・1 コマが 0.25 秒以上（演出の時計で動かす遅いコマ。町の人・演出の人の
+ *   explore/actors.ts と同じ）のときは、足だけその場の動きの元の形に合わせ直す（着いた足を遠くに残して脚を引き伸ばさない。
+ *   Version 28 の直し：町の急報で振り向くコマに、袴の太ももが横へ突き出ていた）。
+ * - 時計（HeroClock）：ふだんは探索の 1 コマ（0.1 秒までに切り詰めた時間）。演出の出来事が主人公を立たせて動かしている間は、演出の時計の
+ *   進み（1 コマ 1 秒まで）で進める（位置・向きは演出の時計で決まるので、足・体の向きも同じ時計で動かす）。
  */
 import * as THREE from 'three';
 import { GAIT, runBlendFor, strideFor } from './gait';
@@ -29,6 +34,11 @@ const YAW_RATE_IDLE = 7.5;
 const START_STANCE = 0.24;
 /** これより長く 1 コマで動いたら置き直しとみなす（m） */
 const TELEPORT = 1;
+/** 1 コマでこれより動いた（m）・描く体の向きが変わった（ラジアン）ら、足をその場の動きの元の形に合わせ直す */
+export const RESNAP_MOVE = 0.5;
+export const RESNAP_TURN = (45 * Math.PI) / 180;
+/** 1 コマの時間がこれ以上（秒）なら、足をその場の動きの元の形に合わせ直す（足の続きの動きは、このコマの長さでは見えない） */
+export const RESNAP_DT = 0.25;
 
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const smoothstep = (x: number, a: number, b: number) => {
@@ -48,6 +58,8 @@ export class HeroAnimator {
     yaw = 0;
     /** 実際に進んだ速さ（m/秒） */
     speed = 0;
+    /** 確かめ用：足を合わせ直した回数（大きな 1 コマ） */
+    resnaps = 0;
     readonly legs: HeroLegs | null;
     readonly gaze: Gaze | null;
     private last: { x: number; z: number } | null = null;
@@ -95,9 +107,12 @@ export class HeroAnimator {
         const v = dt > 0 ? dist / dt : 0;
         this.speed = v;
         // 体の向き
+        const yaw0 = this.yaw;
         const cap = (v > 0.05 ? YAW_RATE_MOVING : YAW_RATE_IDLE) * dt;
         const dy = wrap(hero.heading - this.yaw);
         this.yaw = wrap(this.yaw + Math.max(-cap, Math.min(cap, dy)));
+        // 大きな 1 コマ（演出の 1 秒のコマ・遅い端末）：足を後ろに残して脚を引き伸ばさない。足はこのコマの動きの元の形から始め直す
+        const resnap = dt >= RESNAP_DT || dist > RESNAP_MOVE || Math.abs(wrap(this.yaw - yaw0)) > RESNAP_TURN;
         // 止まっていた所から動き出すとき：進む向きに対して後ろにある足から踏み出し、前の足で体を支える位相から始める
         //（足音の数え合わせも同じだけ進める）
         if (this.walkBlend < 0.05 && v > 0.05) {
@@ -125,8 +140,40 @@ export class HeroAnimator {
         rig.root.position.set(hero.x, ground(hero.x, hero.z), hero.z);
         rig.root.rotation.y = this.yaw;
         // 足（着いた足を地面に止める・IK・腰を下げる・踏み替え）
+        if (resnap && this.legs) {
+            this.legs.reset();
+            this.resnaps++;
+        }
         this.legs?.update({ dt, move: this.walkBlend, ground });
         this.gaze?.update(dt);
+    }
+}
+
+/**
+ * 主人公の見た目の動きの時計。ふだんは探索の 1 コマの時間（main.ts が 0.1 秒までに切り詰めた dt）をそのまま使う。
+ * 演出の出来事が主人公を立たせて動かしている間（explore/world.ts の stage が stageAdvance で演出の時計の進みを渡す）は、前のコマから
+ * 演出の時計が進めた分で動かす（演出の時計は 1 コマ 1 秒まで進む。探索の 0.1 秒で動かすと、演出が 1 コマで動かした位置・向きに
+ * 体と足が追いつかず、着いた足を遠くに残して脚が横へ伸びた）。演出が止まっている間（一時停止）は 0（主人公も止まる）。
+ */
+export class HeroClock {
+    private stage: number | null = null;
+
+    /** 演出が主人公を動かした：演出の時計の進み（秒）を足す。null で探索の時計へ戻す（演出の片付け） */
+    stageAdvance(sec: number | null): void {
+        this.stage = sec === null ? null : (this.stage ?? 0) + Math.max(0, Number.isFinite(sec) ? sec : 0);
+    }
+
+    /** 演出が主人公を動かしている間か */
+    get staged(): boolean {
+        return this.stage !== null;
+    }
+
+    /** このコマの見た目の動きの時間：探索の dt。演出の間は前に取った時から演出が進めた分（取ったら 0 に戻す） */
+    take(dt: number): number {
+        if (this.stage === null) return dt;
+        const s = this.stage;
+        this.stage = 0;
+        return s;
     }
 }
 
