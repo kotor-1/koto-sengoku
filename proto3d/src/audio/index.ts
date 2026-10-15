@@ -4,7 +4,8 @@
  * 取り付け（どこも短く。音が無い・失敗しても進行は止めない）：
  * - ui/boot.ts：作って登録する（installAudio）。最初の利用者の操作で有効にする。画面から曲を決める見張り（200 ms ごと）。
  * - ui/view.ts：会話の行（line）・会話の先読み（prefetchLines）・会話を閉じた・上に画面を重ねた（stopVoice）・メニューの音の設定。
- * - ui/cinePlayer.ts：演出の先読み（prefetchVoices）・場面（cineBeat）・字幕（caption）・一時停止（cinePaused）・終わり（cineEnd）。
+ * - ui/cinePlayer.ts：演出の先読み（prefetchVoices）・場面（cineBeat）・字幕（caption）・一時停止（cinePaused）・終わり（cineEnd）・
+ *   字幕の声を待つか（cineVoiceReady）・これから流す演出の声の取り置き（prepareVoices。ui/view.ts の prepareCinematic から）。
  * - main.ts：足音（step）・聞く位置（listener）。
  * - battle/entry.ts：合戦の毎フレーム（battleFrame）・始まり・能力・撤退・終わり。
  *
@@ -54,6 +55,13 @@ export interface AudioSystemOptions {
  * それより遅れて始めると、次の字幕で言い終える前に切られる）。演出を始めたときに台詞を先に読むので、ふつうは遅れない
  */
 export const CINE_VOICE_LATE_SEC = 0.25;
+
+/**
+ * 演出の次の声の字幕の時刻が来ても、その声がまだほどけていないときは、演出の時計をその字幕の境目で待たせる（ui/cinePlayer.ts）。
+ * その待ちの最長（秒。実時間）。過ぎたら字幕を出して進める（声はこれまでどおり：遅れすぎた声は流さない）。
+ * 端末の読み上げ（旧）・ミュート・声の音量 0・音を始めていないときは待たない（cineVoiceReady が true）
+ */
+export const CINE_VOICE_WAIT_SEC = 2.5;
 
 /** この画面へ移ったら声を止める（会話・軍議・演出の上に重ねる画面と、タイトル） */
 const VOICE_STOP_SCREENS: ReadonlySet<string> = new Set(['menu', 'situation', 'title']);
@@ -188,9 +196,12 @@ export class AudioSystem {
             this.apply(b ? `cine:${b.moment}:${b.kind}${b.event ? `:${b.event}` : ''}` : 'cine:end');
         }, undefined);
     }
-    /** 演出を閉じた（終わり・スキップ・タイトルへ）：声を止め、演出の曲の決めを外す */
+    /** 演出を閉じた（終わり・スキップ・タイトルへ）：声を止め、演出の曲の決めを外す（字幕の声を捨てないのもやめる） */
     cineEnd(): void {
-        guard(() => this.stopAllVoices(), undefined);
+        guard(() => {
+            this.stopAllVoices();
+            this.voiceFiles.keepScene([]);
+        }, undefined);
         this.cineBeat(null);
     }
     /** 演出の一時停止（自動の一時停止も）：声を止める（再開しても読み直さない） */
@@ -229,11 +240,26 @@ export class AudioSystem {
     /** 演出の字幕が替わった（null で字幕なし）。声の id があれば読む（前の声は止める） */
     caption(c: { speaker?: string; text: string; voice?: string } | null): void {
         guard(() => {
-            const line = c?.voice ? this.voices.byId(c.voice) : c?.speaker ? this.voices.find(c.speaker, c.text) : undefined;
+            const line = this.cineLine(c);
             if (!line || line.text !== c!.text) this.stopAllVoices();
             else if (this.useTts) this.voice.say(line);
             else this.voiceFiles.say(line, { lateLimitSec: CINE_VOICE_LATE_SEC });
         }, undefined);
+    }
+    private cineLine(c: { speaker?: string; text: string; voice?: string } | null): VoiceLineLike | undefined {
+        return c?.voice ? this.voices.byId(c.voice) : c?.speaker ? this.voices.find(c.speaker, c.text) : undefined;
+    }
+    /**
+     * 演出の字幕の声を今すぐ鳴らせるか（演出の再生器が、字幕の境目で時計を待たせるかを決める：CINE_VOICE_WAIT_SEC）。
+     * 待つ要が無いときも true：声の無い字幕・端末の読み上げ（旧）・ミュート・声の音量 0・音を始めていない・音声ファイルが無い・
+     * 読めなかった直後。まだほどけていなければ、読み込みとほどきを始めて false
+     */
+    cineVoiceReady(c: { speaker?: string; text: string; voice?: string }): boolean {
+        return guard(() => {
+            if (this.useTts) return true;
+            const line = this.cineLine(c);
+            return !line || line.text !== c.text || this.voiceFiles.ready(line);
+        }, true);
     }
     /** 会話の行が出た（表にある文なら読む。無ければ前の声を止める） */
     line(speaker: string, name: string, text: string): void {
@@ -261,11 +287,20 @@ export class AudioSystem {
             this.voiceFiles.prefetch(ids);
         }, undefined);
     }
-    /** 演出を始めた：字幕の声の id（出る順）を先に読んでおく（新しい声のときだけ） */
+    /** 演出を始めた：字幕の声の id（出る順）を先に読んでおく（新しい声のときだけ）。演出の間は、ほどいた音を捨てない */
     prefetchVoices(ids: readonly string[]): void {
         guard(() => {
-            if (!this.useTts) this.voiceFiles.prefetch(ids);
+            if (this.useTts) return;
+            this.voiceFiles.keepScene(ids);
+            this.voiceFiles.prefetch(ids);
         }, undefined);
+    }
+    /**
+     * これから流す演出（待っている町の出来事）の字幕の声を、今のうちに全部読んでほどき、取っておく（新しい声のときだけ。
+     * 前の取り置きと替える。空で取り置きをやめる）。状態・保存には触れない
+     */
+    prepareVoices(ids: readonly string[]): void {
+        guard(() => this.voiceFiles.reserve(this.useTts ? [] : ids), undefined);
     }
     /**
      * 表の id の台詞を読む（合戦の掛け声）。読めるときは、読む前に before（字幕を出す）を呼ぶ。返りは読んだ台詞（読めなければ null）

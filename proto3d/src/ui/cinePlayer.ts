@@ -8,19 +8,38 @@
  *   見せる（最初の画は重く、押した直後に画面が何秒も変わらないことがあった）。出来事は場面に入ったときに置く（onStage）が、その間は探索を
  *   覆うので、探索の側（explore/world.ts）は最初の画を覆いが外れるまで描かない。待ちの間と、最初の画を描いた次のコマは時計を進めない。
  *   層の data-wait="1" が待ちの間（mode・data-mode は場面に入ったときから 'stage'。出来事も置かれている）。
+ * - 声を待つ：次の声の字幕の時刻が来ても、その声がまだほどけていなければ（audio の cineVoiceReady）、時計をその字幕の境目の手前で止め
+ *   （場面・字幕を先へ進めない）、ほどけるか CINE_VOICE_WAIT_SEC 秒（実時間）たつまで待つ。過ぎたら字幕を出して進める（声は今までどおり：
+ *   遅れすぎた声は流さない）。始めの字幕・前後の場面へ動かした所の字幕なら、その字幕を出さずに待つ。端末の読み上げ（旧）・ミュート・
+ *   声の音量 0・音を始めていないときは待たない。一時停止（自動の一時停止も）・前後の場面・スキップで待ちをやめる。層の data-voice-wait="1"。
  * - 終わり・スキップ・abandon（dispose）では必ず onStage(null, 0, …) を 1 回呼んで片付ける。
  * - ボタン：一時停止／再開・前の場面・次の場面・スキップ・動きを減らす。キー：Space／K 一時停止、←→ 場面、Esc スキップ。
  *   押し始めの守り（InputGate・CHOICE_GUARD_MS）：演出を始めたタップ・キーでは何も起きない。背景を押しても飛ばない。
  * - 確かめ用：層に data-cine（台本の id）・data-beat・data-state（playing／paused／done）・data-t・data-info・data-mode。
  */
 import type { CinematicOptions } from '../campaign/game';
-import type { CineSpec } from '../story/types';
+import type { CineCaption, CineSpec } from '../story/types';
 import { CineClock, type CineFrame } from '../story/timeline';
 import { el, nowMs, onPress } from './dom';
 import { CHOICE_GUARD_MS, InputGate } from './guard';
 import { createMap, type MapDom } from './mapDom';
 import { dropLayer, startedAt, type LayerHost, type Modal } from './modal';
-import { audio } from '../audio';
+import { CINE_VOICE_WAIT_SEC, audio } from '../audio';
+
+/** 声を待つときに時計を止める所：その字幕の始めのこの秒数だけ手前（字幕・場面の始めの判定の許し 1e-9 秒より大きく、目に見えない短さ） */
+const VOICE_WAIT_EDGE_SEC = 0.001;
+
+/** 台本の字幕の声の id（出る順） */
+function voiceIdsOf(spec: CineSpec): string[] {
+    return spec.captions.flatMap((c) => (c.voice ? [c.voice] : []));
+}
+
+/**
+ * これから流す演出（待っている町の出来事）の字幕の声を、今のうちに読んでほどいておく（GameView.prepareCinematic。null でやめる）
+ */
+export function prepareCinematicVoices(spec: CineSpec | null): void {
+    audio()?.prepareVoices(spec ? voiceIdsOf(spec) : []);
+}
 
 type CineButton = 'pause' | 'prev' | 'next' | 'skip' | 'reduce';
 
@@ -101,11 +120,19 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
         let raf = 0;
         let last = -1;
         let beatShown = -1;
+        /**
+         * 声を待っている字幕（その声がまだほどけていない。時計を止める）と、待ち始めたコマの時刻（ms。まだコマが来ていなければ -1）。
+         * waived：待ちが時間切れになった字幕（もう待たない。字幕が替われば戻す）
+         */
+        let voiceWait: { cap: CineCaption; since: number } | null = null;
+        let waived: CineCaption | null = null;
         let map: MapDom | null = null;
         let stageActive = false;
         let mode: 'map' | 'stage' = 'map';
         let frame: CineFrame = clock.frame(reduced);
         let capKey = '';
+        /** 出している字幕（声を待つ間は、待っている字幕をまだ出していない） */
+        let shownCap: CineCaption | null = null;
         let autoPaused = false;
         /** 場面が替わった：次のコマは時計を進めない（替わり目の重い描画の時間を、次の場面に数えない） */
         let holdTick = false;
@@ -116,8 +143,43 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
         /** 待ちの字幕を出したコマが画面に出た（次のコマで 3D を始める） */
         let waitPainted = false;
 
+        /** 字幕 c の声がまだ鳴らせない（ほどけていない）か。止めている・終わった・声の無い字幕・音が無い（audio() が無い）なら待たない */
+        const voiceNotReady = (c: CineCaption): boolean => {
+            if (done || clock.paused || clock.ended || (!c.voice && !c.speaker)) return false;
+            const a = audio();
+            return !!a && !a.cineVoiceReady(c);
+        };
+        /** 字幕 c を出す前に声を待つか（時間切れにした字幕は、もう待たない） */
+        const mustWait = (c: CineCaption | null): c is CineCaption => !!c && c !== waived && voiceNotReady(c);
+        /** 声の待ちをやめる（一時停止・前後の場面・スキップ）。時間切れにした覚えも消す */
+        const dropVoiceWait = () => {
+            voiceWait = null;
+            waived = null;
+        };
+        /**
+         * 時計を dt 秒進める。進めた間に始まる声の字幕のうち、声がまだほどけていない最初の物があれば、その字幕の始めの手前へ戻して待つ
+         * （場面・字幕を先へ進めない。声の無い字幕・ほどけている字幕は待たない）
+         */
+        const advance = (dt: number, now: number) => {
+            const from = clock.t;
+            clock.tick(dt);
+            const to = clock.t;
+            if (!(to > from)) return;
+            let next: CineCaption | null = null;
+            for (const c of spec.captions) {
+                if (c.start > from + 1e-9 && c.start <= to + 1e-9 && (!next || c.start < next.start)) {
+                    if (c.voice || c.speaker) next = c;
+                }
+            }
+            if (next && mustWait(next)) {
+                clock.seek(Math.max(from, next.start - VOICE_WAIT_EDGE_SEC));
+                voiceWait = { cap: next, since: now };
+            }
+        };
+
         const setPaused = (on: boolean, auto = false) => {
             if (done || clock.ended) return;
+            dropVoiceWait();
             clock.setPaused(on);
             // 声：止めたら今の声を止める（再開しても読み直さない。たまった声を鳴らさない）
             audio()?.cinePaused(on);
@@ -137,12 +199,14 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
                     setPaused(false);
                     break;
                 case 'prev':
+                    dropVoiceWait();
                     clock.prev();
                     render();
                     break;
                 case 'next':
                     // 最後の場面の「次の場面」（→ キー）はスキップと同じ：終わりの画を描かずに終える（描くと、探索の側は最後まで見たとして、
                     // 町の急報の人を止まる所へ飛ばしてから置き場所へ歩かせた。スキップは置き場所に置く）
+                    dropVoiceWait();
                     if (!clock.beats[clock.beatIndex + 1]) {
                         clock.skip();
                         finish('skipped');
@@ -153,6 +217,7 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
                     if (clock.ended) finish('done');
                     break;
                 case 'skip':
+                    dropVoiceWait();
                     clock.skip();
                     finish('skipped');
                     break;
@@ -170,8 +235,13 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
             // 見出し・字幕を先に（場面が替わったときの地図の枠の大きさは、見出し・字幕の行が入った後の高さで測る）
             heading.textContent = f.heading;
             const ck = f.caption ? `${f.caption.speaker ?? ''}\u0000${f.caption.text}` : '';
-            if (ck !== capKey) {
+            if (ck !== capKey && f.caption !== voiceWait?.cap && f.caption !== waived) waived = null;
+            if (ck !== capKey && mustWait(f.caption)) {
+                // 新しく出る声の字幕（始め・前後の場面へ動かした所）の声がまだほどけていない：字幕を出さずに待つ（時計は loop が止める）
+                if (voiceWait?.cap !== f.caption) voiceWait = { cap: f.caption, since: -1 };
+            } else if (ck !== capKey) {
                 capKey = ck;
+                shownCap = f.caption;
                 who.textContent = f.caption?.speaker ?? '';
                 who.hidden = !f.caption?.speaker;
                 txt.textContent = f.caption?.text ?? '';
@@ -228,6 +298,7 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
             layer.dataset.t = f.t.toFixed(1);
             layer.dataset.info = f.info.join(',');
             layer.dataset.reduced = reduced ? '1' : '0';
+            layer.dataset.voiceWait = voiceWait ? '1' : '0';
             btn.pause.textContent = clock.paused ? '再開' : '一時停止';
             btn.pause.classList.toggle('on', clock.paused);
             btn.pause.setAttribute('aria-pressed', clock.paused ? 'true' : 'false');
@@ -282,11 +353,22 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
                 raf = requestAnimationFrame(loop);
                 return;
             }
+            // 声を待っている：ほどけたか、待ち始めてから CINE_VOICE_WAIT_SEC 秒たったらやめる（時間切れなら、その字幕はもう待たない）。
+            // 待つ間は時計を進めない（待った時間を次の字幕・場面に数えない）
+            let waiting = false;
+            if (voiceWait) {
+                if (voiceWait.since < 0) voiceWait.since = now;
+                const ready = !voiceNotReady(voiceWait.cap);
+                if (ready || now - voiceWait.since >= CINE_VOICE_WAIT_SEC * 1000) {
+                    if (!ready) waived = voiceWait.cap;
+                    voiceWait = null;
+                } else waiting = true;
+            }
             // 場面が替わった次のコマは進めない：替わり目の重い描画（3D の場面の最初の画・最後の画の仕上げ・地図の組み立て）は、
             // コマとコマの間（描画の仕上げ）にかかるので、その時間を次の場面に数えると、場面の頭とその字幕が出ないまま進む
             if (last >= 0) {
                 if (holdTick) holdTick = false;
-                else clock.tick((now - last) / 1000);
+                else if (!waiting) advance((now - last) / 1000, now);
             }
             last = now;
             try {
@@ -345,7 +427,7 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
                 count: frame.beatCount,
                 t: Math.round(frame.t * 1000) / 1000,
                 paused: clock.paused,
-                caption: frame.caption ? { ...(frame.caption.speaker ? { speaker: frame.caption.speaker } : {}), text: frame.caption.text } : null,
+                caption: shownCap ? { ...(shownCap.speaker ? { speaker: shownCap.speaker } : {}), text: shownCap.text } : null,
                 state: done || frame.ended ? 'done' : clock.paused ? 'paused' : 'playing',
                 info: [...frame.info],
                 mode,
@@ -378,7 +460,7 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
             },
         };
         // 声：字幕の声（出る順）を先に読んでおく（新しい声のとき。字幕が出た時に読み込みを待たない）
-        audio()?.prefetchVoices(spec.captions.flatMap((c) => (c.voice ? [c.voice] : [])));
+        audio()?.prefetchVoices(voiceIdsOf(spec));
         try {
             render();
         } catch (e) {

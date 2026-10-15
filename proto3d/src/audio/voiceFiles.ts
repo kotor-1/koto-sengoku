@@ -5,6 +5,9 @@
  *   CSP は変えない（connect-src 'self' の fetch。data: URL・blob: の音・WASM は使わない）。
  * - 台詞ごとに、要るときに読む（一覧の全部を最初に読まない）。ほどいた音は少しだけ取っておく（新しく使った順に CACHE_SIZE 個）。
  *   今の場面（会話・演出）の次に来そうな台詞は先に読んでおく（prefetch：先の DECODE_AHEAD 個はほどくまで、残りは通信だけ）。
+ * - 取り置き（reserve）：待っている町の出来事（第一章の町の急報）の台詞は、出来事を待ち始めた時（はじめから・主人公が歩いている間）に
+ *   全部を読んでほどき、取り置きをやめるまで捨てない（CACHE_SIZE に数えない）。今の演出の字幕の声（keepScene）も、演出の間は捨てない。
+ * - ready：演出の字幕の声が今すぐ鳴らせるか（演出の再生器が、まだほどけていない声の字幕の境目で時計を待たせるため。ui/cinePlayer.ts）。
  * - 1 度に 1 つだけ：新しい台詞の前に必ず今の声を止める。読み込み・ほどきが、後から始めた台詞より遅れて終わったら捨てる
  *   （世代の数 gen。古い台詞を後から鳴らさない・2 つの声を同時に鳴らさない）。
  * - 止める（stop）：行を送った・選択肢を選んだ・会話を閉じた・演出の字幕が替わった／飛ばした／終わった／一時停止・メニューや情勢を重ねた・
@@ -74,6 +77,10 @@ export class VoiceFilePlayer {
     private readonly failedAt = new Map<string, number>();
     /** 今の場面で次に来そうな台詞（会話の行・演出の字幕の順） */
     private upcoming: string[] = [];
+    /** 取り置いた台詞（待っている町の出来事。ほどいた音・読んだファイルを、取り置きをやめるまで捨てない） */
+    private readonly reserved = new Set<string>();
+    /** 今の演出の字幕の声（演出の間は、ほどいた音を捨てない） */
+    private readonly scene = new Set<string>();
     private readonly timers: TimerLike;
     private readonly fileFor: (id: string) => VoiceFileEntry | undefined;
     private readonly fetchBytes: FetchBytes;
@@ -100,8 +107,11 @@ export class VoiceFilePlayer {
         engine.store.onChange((s) => {
             if (s.muted || s.voice <= 0) this.stop();
         });
-        // 鳴らせるようになった（最初の操作・再開）：次に来そうな台詞を先にほどいておく
-        engine.onReady(() => this.prefetch(this.upcoming));
+        // 鳴らせるようになった（最初の操作・再開）：次に来そうな台詞と、取り置いた台詞を先にほどいておく
+        engine.onReady(() => {
+            this.prefetch(this.upcoming);
+            this.loadReserved();
+        });
     }
 
     /** id の台詞に音声ファイルがあるか（文も表と同じ） */
@@ -206,6 +216,47 @@ export class VoiceFilePlayer {
         }
     }
 
+    /**
+     * 取り置く（待っている町の出来事の台詞：主人公が歩いている間に、全部を読んでほどいておく）。前の取り置きと替える（空でやめる）。
+     * ほどいた音は取り置きの間は捨てない（CACHE_SIZE に数えない）。AudioContext がまだ無ければ通信だけして、有効になった時にほどく。
+     * ファイルの無い台詞は飛ばす。失敗しても何もしない（流すときに読み直す）
+     */
+    reserve(ids: readonly string[]): void {
+        this.reserved.clear();
+        for (const id of ids) if (this.fileFor(id)) this.reserved.add(id);
+        this.loadReserved();
+    }
+
+    private loadReserved(): void {
+        for (const id of this.reserved) {
+            const e = this.fileFor(id);
+            if (!e) continue;
+            if (this.engine.ctx) void this.load(e).catch(() => {});
+            else void this.bytesOf(e).catch(() => {});
+        }
+    }
+
+    /** 今の演出の字幕の声（出る順）。演出の間は、ほどいた音を捨てない（空で外す：演出の終わり） */
+    keepScene(ids: readonly string[]): void {
+        this.scene.clear();
+        for (const id of ids) this.scene.add(id);
+    }
+
+    /**
+     * 台詞を今すぐ鳴らせるか（ほどいた音がある）。待つ要が無いときも true：音声ファイルが無い・文が表と違う・鳴らせない
+     * （音を始めていない・ミュート・声の音量 0）・読み込みかほどきに失敗した直後（RETRY_AFTER_MS の間）。
+     * まだほどけていなければ、読み込みとほどきを始めて（もう始めていればそのまま）false
+     */
+    ready(line: VoiceFileLine): boolean {
+        const e = this.fileFor(line.id);
+        if (!e || e.text !== line.text || !this.canPlay()) return true;
+        if (this.buffers.has(e.id)) return true;
+        const failed = this.failedAt.get(e.id);
+        if (failed !== undefined && Date.now() - failed < RETRY_AFTER_MS) return true;
+        void this.load(e).catch(() => {});
+        return false;
+    }
+
     /** 流し始めた台詞の後に来そうな台詞を、先にほどいておく */
     private aheadOf(id: string): void {
         const i = this.upcoming.indexOf(id);
@@ -302,7 +353,13 @@ export class VoiceFilePlayer {
         const ctx = this.engine.ctx;
         if (!ctx) return Promise.reject(new Error('音がまだ有効になっていない'));
         const p = this.bytesOf(e)
-            .then((b) => decodeBytes(ctx, b.slice(0)))
+            .then((b) =>
+                decodeBytes(ctx, b.slice(0)).catch((err: unknown) => {
+                    // ほどけなかった：しばらくは待たない（ready が true を返す。流すときは読み直す）
+                    this.failedAt.set(e.id, Date.now());
+                    throw err;
+                }),
+            )
             .then((buf) => {
                 this.stats.decoded++;
                 this.touch(e.id, buf);
@@ -336,14 +393,15 @@ export class VoiceFilePlayer {
             if (this.bytes.get(e.id) === p) this.bytes.delete(e.id);
             this.failedAt.set(e.id, Date.now());
         });
-        while (this.bytes.size > BYTES_CACHE_SIZE) this.bytes.delete(this.bytes.keys().next().value!);
+        trimOldest(this.bytes, BYTES_CACHE_SIZE, (k) => this.reserved.has(k));
         return p;
     }
 
     private touch(id: string, buf: AudioBuffer): void {
         this.buffers.delete(id);
         this.buffers.set(id, buf);
-        while (this.buffers.size > CACHE_SIZE) this.buffers.delete(this.buffers.keys().next().value!);
+        // 取り置いた台詞・今の演出の字幕の声は捨てない（数にも入れない）
+        trimOldest(this.buffers, CACHE_SIZE, (k) => this.reserved.has(k) || this.scene.has(k));
     }
 
     private note(id: string, event: Event, why?: string, sec?: number): void {
@@ -351,9 +409,21 @@ export class VoiceFilePlayer {
         if (this.log.length > 30) this.log.pop();
     }
 
-    /** 確かめ用：取ってある台詞（ほどいた音・読んだファイル） */
-    cached(): { decoded: string[]; bytes: string[] } {
-        return { decoded: [...this.buffers.keys()], bytes: [...this.bytes.keys()] };
+    /** 確かめ用：取ってある台詞（ほどいた音・読んだファイル）と、取り置いた台詞 */
+    cached(): { decoded: string[]; bytes: string[]; reserved: string[] } {
+        return { decoded: [...this.buffers.keys()], bytes: [...this.bytes.keys()], reserved: [...this.reserved] };
+    }
+}
+
+/** Map（古く使った順）から、keep でない物を古い順に捨てて、keep でない物を max 個までにする */
+function trimOldest<V>(m: Map<string, V>, max: number, keep: (k: string) => boolean): void {
+    let free = 0;
+    for (const k of m.keys()) if (!keep(k)) free++;
+    for (const k of [...m.keys()]) {
+        if (free <= max) break;
+        if (keep(k)) continue;
+        m.delete(k);
+        free--;
     }
 }
 

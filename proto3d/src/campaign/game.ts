@@ -153,6 +153,11 @@ export interface GameView {
      */
     cinematic?(spec: CineSpec, opts: CinematicOptions): Promise<'done' | 'skipped'>;
     /**
+     * これから流す演出（待っている町の出来事）の声を、今のうちに読んでほどいておく（省ける。待たない。状態・保存には触れない）。
+     * 前の物と替える。null でやめる（流し始めた・起こさなくなった）
+     */
+    prepareCinematic?(spec: CineSpec | null): void;
+    /**
      * 情勢の画面（省ける）。閉じれば void。「演出を見直す」を押せば { replay }（ChapterGame が再生して、また開く）。
      * opts.option：軍議から開いたとき、いま選ばれている選択肢の id（そのタブを選んでおく。返りに選択肢の id は返さない）。
      */
@@ -269,7 +274,16 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
      * 町の出来事（Version 28 §4.3：第一章の町の急報）の待ち。「はじめから」で始めた回の中だけで 1 回（保存しない・状態に書かない）。
      * 流した・飛ばした・見直した・段階が変わった・タイトルへ戻ったら null（もう起こさない）。待つ間は arrive の会話の相手を置かない
      */
-    private townEvent: { moment: CineMoment; arrive: readonly string[]; zone(x: number, z: number): boolean } | null = null;
+    private pendingTown: { moment: CineMoment; arrive: readonly string[]; zone(x: number, z: number): boolean } | null = null;
+    private get townEvent() {
+        return this.pendingTown;
+    }
+    /** 待ち始めた：その演出の声を今のうちに読んでほどいておく（主人公が歩いている間に）。流し始めた・起こさなくなった：やめる */
+    private set townEvent(ev: { moment: CineMoment; arrive: readonly string[]; zone(x: number, z: number): boolean } | null) {
+        if (ev === this.pendingTown) return;
+        this.pendingTown = ev;
+        this.deps.view.prepareCinematic?.(ev ? this.cineSpec(ev.moment) : null);
+    }
     /** 次の begin で町の出来事を待つ（タイトルの「はじめから」の道だけ） */
     private armTownEvent = false;
     /** 並べるシナリオ（タイトルの順） */

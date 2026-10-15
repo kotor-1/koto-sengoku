@@ -19,7 +19,7 @@ import { PRACTICE_TITLE_TEXT, SCENARIO_TITLE_TEXT } from './scenarioTitles';
 import { el, nowMs, onPress } from './dom';
 import { ADVANCE_GUARD_MS, CHOICE_GUARD_MS, HeldKeys, InputGate } from './guard';
 import type { LayerHost, Modal, ModalKind, ModalProbe } from './modal';
-import { playCinematic } from './cinePlayer';
+import { playCinematic, prepareCinematicVoices } from './cinePlayer';
 import { openSituation } from './situationView';
 import { soundPanel } from './soundPanel';
 import { audio } from '../audio';
@@ -943,6 +943,11 @@ export class DomView implements GameView, LayerHost {
                 this.cineModal = m;
             },
         });
+    }
+
+    /** これから流す演出（待っている町の出来事）の声を、今のうちに読んでほどいておく（null でやめる。ui/cinePlayer.ts） */
+    prepareCinematic(spec: CineSpec | null): void {
+        prepareCinematicVoices(spec);
     }
 
     /**
