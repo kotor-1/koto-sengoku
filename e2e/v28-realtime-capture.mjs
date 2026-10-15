@@ -12,7 +12,8 @@
 //   急報の線までの残り（約 6 m）は、歩くと 1 コマ 0.155 m（町の時計は 1 コマ 0.1 秒まで）で約 40 コマ・走ると約 18 コマ。録画の長さの
 //   目安（約 6 分）のため既定は走る。引きずりは、押したままの動き 1 つの返事に 1 コマ以上かかるので、左・右・真ん中の 3 つの動きだけにする。
 // - 本番ビルドには開発用の口（__game など）が無い。ページの中の記録は見るだけ：requestAnimationFrame の時刻（コマの速さ）・
-//   字幕を書いた時刻（textContent）・画面の層の様子（MutationObserver）・声の音源（AudioBufferSourceNode の start／stop／ended と
+//   字幕を書いた時刻（textContent）・画面の層の様子（MutationObserver。演出の再生器が字幕の声のほどけを待って時計を止めている間＝層の
+//   data-voice-wait も）・声の音源（AudioBufferSourceNode の start／stop／ended と
 //   getOutputTimestamp。decodeAudioData でほどいた音を長さで見分ける）・押した時刻・CSP の違反。
 // - 録った後の分析（別の Chromium。音は出さない）：webm の中のブロックを読み（コマの時刻・音のかたまりの時刻と途切れ）、
 //   WebCodecs で映像のコマ（字幕の帯の画が替わったコマ・代表の 6 コマを JPEG に）と音（16 kHz に）をほどき、台詞の音声ファイル
@@ -84,11 +85,13 @@ const INIT = ({ durs }) => {
   const dec = B.decodeAudioData;
   B.decodeAudioData = function (data, ok, bad) {
     const t = now();
+    let logged = false; // 呼び返しと Promise の両方で受け取る呼び方でも 1 回だけ書く
     const mark = (b) => {
       if (b) {
         const id = name(b);
         if (id) idOf.set(b, id);
-        L.dec.push({ id, sec: b.duration, t0: rd(t), t: rd(now()) });
+        if (!logged) L.dec.push({ id, sec: b.duration, t0: rd(t), t: rd(now()) });
+        logged = true;
       }
       return b;
     };
@@ -165,6 +168,8 @@ const INIT = ({ durs }) => {
       hud: !!hud && !hud.hidden && hud.getClientRects().length > 0 && !document.body.classList.contains('g-cine'),
       talk: talk && !talk.hidden ? (talk.dataset.target ?? '?') : null,
       title: !!document.querySelector('.g-btn[data-id="new:ieyasu1570"]'),
+      // 演出の再生器が字幕の声を待って時計を止めている間（層の data-voice-wait="1"。Version 28 の 2caa33f から）
+      vw: c ? c.dataset.voiceWait === '1' : null,
     };
     const k = JSON.stringify(s);
     if (k !== lastDom) {
@@ -172,7 +177,7 @@ const INIT = ({ durs }) => {
       L.dom.push({ t: rd(now()), ...s });
     }
   };
-  new MutationObserver(snap).observe(document, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['hidden', 'class', 'data-cine', 'data-beat', 'data-target'] });
+  new MutationObserver(snap).observe(document, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['hidden', 'class', 'data-cine', 'data-beat', 'data-target', 'data-voice-wait'] });
   // ---- 入力・ページの知らせ・CSP の違反
   window.addEventListener('keydown', (e) => !e.repeat && L.input.push({ k: e.code, ev: 'down', t: rd(now()) }), true);
   window.addEventListener('keyup', (e) => L.input.push({ k: e.code, ev: 'up', t: rd(now()) }), true);
@@ -1059,6 +1064,29 @@ async function analyze(run) {
   }
   const toRec = (pageMs) => (pageMs === null ? null : pageMs - off);
   A.timeline = env.marks.filter((m) => m.t !== null).map((m) => ({ recSec: r1((m.t - off) / 1000), what: m.what }));
+  // 演出の層が出た・閉じた時刻（ページの中の記録。上の印は Node がページを見に行った時刻で、1 コマに数秒かかるこの環境では数秒遅れる）
+  {
+    let prev = null;
+    for (const d of log.dom) {
+      if (d.cine !== prev) A.timeline.push({ recSec: r1((d.t - off) / 1000), what: d.cine ? `（ページの記録）演出の層が出た：${d.cine}` : `（ページの記録）演出の層が閉じた：${prev}` });
+      prev = d.cine;
+    }
+    A.timeline = A.timeline.filter((x) => !(x.what.includes('閉じた：null'))).sort((a, b) => a.recSec - b.recSec);
+  }
+  // ---- 声の待ち（演出の再生器が字幕の声のほどけを待って時計を止めた間：層の data-voice-wait="1"）
+  A.voiceWaits = [];
+  {
+    let open = null;
+    for (const d of log.dom) {
+      if (d.vw && !open) open = { fromMs: d.t, cine: d.cine, capBefore: d.cap };
+      else if (!d.vw && open) {
+        A.voiceWaits.push({ ...open, toMs: d.t, ms: r0(d.t - open.fromMs), capAfter: d.cap });
+        open = null;
+      }
+    }
+    if (open) A.voiceWaits.push({ ...open, toMs: null, ms: null, capAfter: null });
+  }
+  A.voiceWaitObserved = log.dom.some((d) => d.vw !== undefined);
   // ---- 字幕：ページで書いた時刻・次のコマ・録画の中で字幕の帯の画が替わったコマ・声
   const capFrames = frames.filter((f) => f.cap);
   A.captions = [];
@@ -1100,6 +1128,21 @@ async function analyze(run) {
         row.voice.corr = v.corr;
       }
     } else if (id) row.voice = { missing: true };
+    if (id) {
+      // 音声ファイルの返事・ほどき（decodeAudioData）の終わりが、字幕を書いた時刻の何 ms 前か（負は後）。字幕を書く前に止めた声の待ち
+      const resp = env.voiceResp.find((r) => r.path.endsWith(`/${id}.mp3`));
+      const decs = log.dec.filter((d) => d.id === id);
+      const decBefore = decs.filter((d) => d.t <= e.t).at(-1) ?? null;
+      const decAny = decBefore ?? decs[0] ?? null;
+      const wait = A.voiceWaits.find((w) => w.toMs !== null && w.toMs >= e.t - 100 && w.toMs <= e.t + 100) ?? null;
+      row.prep = {
+        responseBeforeCaptionMs: resp && resp.t !== null ? r0(e.t - resp.t) : null,
+        decodeStartBeforeCaptionMs: decAny ? r0(e.t - decAny.t0) : null,
+        decodedBeforeCaptionMs: decAny ? r0(e.t - decAny.t) : null,
+        decodes: decs.length,
+        heldMs: wait ? wait.ms : 0,
+      };
+    }
     A.captions.push(row);
   }
   // ---- 代表の 6 コマ（webm の時刻）
@@ -1145,7 +1188,7 @@ function readme(run, A) {
   const big = Object.entries(A.video.framesBySize).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '?';
   const other = Object.entries(A.video.framesBySize).filter(([k]) => k !== big);
   L.push(`- ファイル：\`${NAME}.webm\`（${mm(A.webm.durationSec)}・${(A.webm.bytes / 1e6).toFixed(1)} MB。映像 VP8 ${big.replace('x', '×')}${other.length ? `（録り始めの ${other.map(([k, n]) => `${n} コマだけ ${k.replace('x', '×')}`).join('・')}：「共有中」の帯が出る前）` : ''}・音 Opus ${A.webm.tracks.find((t) => t.type === 'audio')?.rate ?? '?'} Hz ステレオ）、記録 \`${NAME}.json\`、録画から取り出したコマ 6 つ（JPEG。録画をほどいたコマをそのまま JPEG にした）。`);
-  L.push(`- 長さ：急報を最後まで入れるため、目安の約 6 分を超えた。急報の後の歩きは短くした（W を約 ${((env.holds?.W3?.ms ?? 0) / 1000).toFixed(0)} 秒・${env.holds?.W3?.frames ?? '?'} コマ）。`);
+  L.push(`- 長さ：${A.webm.durationSec > BUDGET_SEC ? `急報を最後まで入れるため、目安の約 ${Math.round(BUDGET_SEC / 60)} 分を超えた。` : ''}急報の後の歩きは W を約 ${((env.holds?.W3?.ms ?? 0) / 1000).toFixed(0)} 秒・${env.holds?.W3?.frames ?? '?'} コマ${env.marks.find((m) => m.what.startsWith('W を押す（忠勝'))?.short ? '（目安を超えそうなので短くした）' : ''}。`);
   L.push('', '## どう作ったか', '');
   L.push('- **実時間の録画**。ページの中の 1 回の録画で、画と音を同時に録った（Chromium の `getDisplayMedia`（今のタブ・音つき）→ `MediaRecorder`（webm・vp8＋opus））。');
   L.push('- **音はゲーム自身の出力**（曲・効果音・台詞の声）をその場で録ったもの。**後から音を足していない・差し替えていない**。映像も切り貼り・速さの変更をしていない。');
@@ -1169,7 +1212,14 @@ function readme(run, A) {
       const vv = c.voice;
       L.push(`| ${c.text} | ${vv.missing ? '**鳴らなかった**' : `${vv.startCallAfterCaptionMs} ms`} | ${c.nextFrameStartMs ?? '—'} ms | ${c.videoDelayMs ?? '—'} ms | ${vv.speechMinusCaptionShownMs ?? '—'} ms | ${vv.playedSec ?? '—'}／${vv.voicedSec ?? '—'} 秒 |`);
     }
-    L.push('', `- ページの中では、声の音源は字幕を書いたのと同じ処理の中で始まる（1 ms 未満）。録音の中の声の始まり（音声ファイルの頭の無音の後）は、字幕を書いた時刻の約 ${(() => { const v = A.captions.filter((c) => c.voice?.speechMinusCaptionSetMs != null).map((c) => c.voice.speechMinusCaptionSetMs); return v.length ? `${Math.min(...v)}〜${Math.max(...v)}` : '—'; })()} ms 後。`);
+    L.push('', '声の用意（ページの時刻。字幕を書いた時刻からどれだけ前か）と、演出の再生器が字幕の声を待って時計を止めた長さ（層の `data-voice-wait="1"` の間。字幕はその後に書かれる）：');
+    L.push('', '| 台詞 | 音声ファイルの返事 | ほどき（decodeAudioData）の始め | ほどきの終わり | 時計を止めて待った長さ |', '|---|---|---|---|---|');
+    for (const c of A.captions.filter((x) => x.voice && x.prep)) {
+      const p = c.prep;
+      const ms = (v) => (v === null ? '—' : Math.abs(v) >= 10000 ? `${(v / 1000).toFixed(1)} 秒${v < 0 ? '後' : '前'}` : `${v} ms ${v < 0 ? '後' : '前'}`);
+      L.push(`| ${c.text} | ${ms(p.responseBeforeCaptionMs)} | ${ms(p.decodeStartBeforeCaptionMs)} | ${ms(p.decodedBeforeCaptionMs)} | ${p.heldMs ? `**${p.heldMs} ms**` : '待たなかった（0）'} |`);
+    }
+    L.push('', `- ページの中では、声の音源は字幕を書いたのと同じ処理の中で始まる（字幕を書いてから ${(() => { const v = A.captions.filter((c) => c.voice?.startCallAfterCaptionMs != null).map((c) => c.voice.startCallAfterCaptionMs); return v.length ? `${Math.min(...v)}〜${Math.max(...v)}` : '—'; })()} ms）。録音の中の声の始まり（音声ファイルの頭の無音の後）は、字幕を書いた時刻の約 ${(() => { const v = A.captions.filter((c) => c.voice?.speechMinusCaptionSetMs != null).map((c) => c.voice.speechMinusCaptionSetMs); return v.length ? `${Math.min(...v)}〜${Math.max(...v)}` : '—'; })()} ms 後。`);
     L.push('- 録画の画に字幕が出るのは、その字幕を書いたコマが描き終わった時（この環境では 1 コマに数秒）。このため**録画では声が字幕より数秒先に聞こえる**（表の負の値）。これはこの環境の描画の遅さによるもので、1 コマが 16〜33 ms の端末ではずれは 1 コマほどのはず（実機では確かめていない）。');
     L.push(`- 録音の時刻とページの時刻は、鳴った ${A.pageToRec.fromVoices} つの声の予定（getOutputTimestamp）と録音の中の位置から合わせた（ずれの幅 ${A.pageToRec.spreadMs ?? '—'} ms）。`);
   }
@@ -1207,6 +1257,7 @@ function findingsOf(run, A) {
     const stopped = log.src.filter((e) => e.ev === 'stop').map((e) => e.id);
     if (stopped.length) F.push(`止めた声：${stopped.join(',')}`);
   }
+  if (!PROBE && A.voiceWaitObserved) F.push(A.voiceWaits.length ? `演出の再生器が字幕の声を待って時計を止めた：${A.voiceWaits.map((w) => `${w.cine ?? '?'} ${w.ms ?? '終わらない'} ms（後の字幕「${w.capAfter ?? '—'}」）`).join('・')}` : '演出の再生器が字幕の声を待って時計を止めたことは無い（data-voice-wait="1" が一度も出ていない。声は字幕より先にほどけていた）');
   if (A.webm.audio?.gaps) F.push(`タブの音の取り込みの小さな時刻の跳び ${A.webm.audio.gaps} か所（音は続いている。${A.webm.audio.gapList.slice(0, 5).map((g) => `${(g.atMs / 1000).toFixed(1)} 秒に ${g.ms} ms`).join('・')}）`);
   return F;
 }
