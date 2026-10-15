@@ -179,6 +179,11 @@ export interface CinematicOptions {
     onStage(ev: StageEvent | null, t: number, reduced: boolean): void;
     /** 動きを減らす（利用者の設定か端末の prefers-reduced-motion。再生中に切り替えられる） */
     reduced: boolean;
+    /**
+     * 探索の画が見えている、その所から始まる演出（町の急報・出陣）。最初の場面が 3D なら、今の画を不透明な層で覆わずに始める
+     * （最初の 3D の画を描くまで今の画を見せたまま）。省けば今までどおり（別の画面・地図の場面から始まる演出）
+     */
+    inPlace?: boolean;
 }
 
 /** 探索の場面（explore/world.ts） */
@@ -599,7 +604,7 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         const spec = this.cineSpec(ev.moment);
         await this.exclusive(async () => {
             try {
-                if (spec) await this.playCinematic(spec, { restoreHero: false });
+                if (spec) await this.playCinematic(spec, { restoreHero: false, inPlace: true });
             } finally {
                 if (this.run && this._screen === 'explore') this.refreshField();
             }
@@ -792,8 +797,9 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         this.st = next;
         // 出陣の演出（出陣前の保存の後、合戦の前。状態は読むだけ）。保存の知らせは演出の後に出す（帰還と同じ。隊列の画に重ねない）。
         // 演出が閉じてから合戦の画面が出るまでは、覆いと「（戦場）へ…」の表示（fight）。知らせはその覆いの上に出る
+        // 城門の会話の後、同じ城門の画から始める（不透明な層で覆わない）
         const cine = this.cineSpec('departure');
-        if (cine) await this.playCinematic(cine);
+        if (cine) await this.playCinematic(cine, { inPlace: true });
         if (r.ok) view.toast(`保存しました：${SAVE_POINT_LABELS.departure}`, 'ok');
         await this.runBattle();
     }
@@ -1153,7 +1159,7 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
      * 演出を再生する（状態は読むだけ。保存しない・反映しない）。探索の操作は止めたまま（呼ぶ側が exclusive の中か、操作の無い画面）。
      * 終われば 3D の出来事を片付け、主人公の位置・向き・カメラを始める前に戻し、城門の輪の判定を今の位置で付け直す。
      */
-    private async playCinematic(spec: CineSpec, opts: { restoreHero?: boolean } = {}): Promise<void> {
+    private async playCinematic(spec: CineSpec, opts: { restoreHero?: boolean; inPlace?: boolean } = {}): Promise<void> {
         const { view, world } = this.deps;
         if (!view.cinematic) return;
         const epoch = this.epoch;
@@ -1164,7 +1170,7 @@ export class ChapterGame<S extends ScenarioStateCore = CampaignState> {
         world.setControl(false);
         this.cineLog.push(spec.id);
         try {
-            await view.cinematic(spec, { reduced: this.reduced(), onStage: (ev, t, r) => world.stage?.(ev, t, r) });
+            await view.cinematic(spec, { reduced: this.reduced(), onStage: (ev, t, r) => world.stage?.(ev, t, r), ...(opts.inPlace ? { inPlace: true } : {}) });
         } catch (e) {
             // 再生できなくても進める（同じ情報は情勢の画面で見られる）
             this.lastError = errorText(e);

@@ -8,6 +8,9 @@
  *   見せる（最初の画は重く、押した直後に画面が何秒も変わらないことがあった）。出来事は場面に入ったときに置く（onStage）が、その間は探索を
  *   覆うので、探索の側（explore/world.ts）は最初の画を覆いが外れるまで描かない。待ちの間と、最初の画を描いた次のコマは時計を進めない。
  *   層の data-wait="1" が待ちの間（mode・data-mode は場面に入ったときから 'stage'。出来事も置かれている）。
+ *   探索の画が見えている所から始まる演出（opts.inPlace：町の急報・出陣）で最初の場面が 3D なら、その待ちの間も層は透明（今の画を
+ *   不透明な地の色で覆わない。暗い画を挟まない）。待ちの間は探索の描画を止め、3D の出来事もまだ置かない（今の町の画が見えたまま。
+ *   その間の data-mode は 'stage' だが出来事は待ちを終えてから置く）。待ちを終えたら出来事を置き、探索の側がすぐ最初の画を描く。
  * - 声を待つ：次の声の字幕の時刻が来ても、その声がまだほどけていなければ（audio の cineVoiceReady）、時計をその字幕の境目の手前で止め
  *   （場面・字幕を先へ進めない）、ほどけるか CINE_VOICE_WAIT_SEC 秒（実時間）たつまで待つ。過ぎたら字幕を出して進める（声は今までどおり：
  *   遅れすぎた声は流さない）。始めの字幕・前後の場面へ動かした所の字幕なら、その字幕を出さずに待つ。端末の読み上げ（旧）・ミュート・
@@ -120,6 +123,8 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
         let raf = 0;
         let last = -1;
         let beatShown = -1;
+        /** 探索の画が見えている所から始まる（最初の場面が 3D のとき）：始めの待ちの間も層を透明にしておく（今の画を覆わない） */
+        const inPlace = !!opts.inPlace && clock.beats[0]!.kind === 'stage';
         /**
          * 声を待っている字幕（その声がまだほどけていない。時計を止める）と、待ち始めたコマの時刻（ms。まだコマが来ていなければ -1）。
          * waived：待ちが時間切れになった字幕（もう待たない。字幕が替われば戻す）
@@ -142,6 +147,11 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
         let pushed = false;
         /** 待ちの字幕を出したコマが画面に出た（次のコマで 3D を始める） */
         let waitPainted = false;
+        /**
+         * 探索の所から始まる演出（inPlace）の始めの待ちの間は、3D の出来事をまだ置かない（探索の場面は今の町のまま：探索の描画を止めて
+         * 今の画を見せている間に、カメラや人物だけが出来事の形に替わらないように）。待ちを終えたら置く（beginStage。置いた所で最初の画を描く）
+         */
+        let stageDeferred = inPlace;
 
         /** 字幕 c の声がまだ鳴らせない（ほどけていない）か。止めている・終わった・声の無い字幕・音が無い（audio() が無い）なら待たない */
         const voiceNotReady = (c: CineCaption): boolean => {
@@ -252,6 +262,7 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
             }
             // 場面が変わった：地図を作り直す・覆いを切り替える
             if (f.beatIndex !== beatShown) {
+                const first = beatShown === -1;
                 beatShown = f.beatIndex;
                 holdTick = true;
                 layer.dataset.beat = String(f.beatIndex);
@@ -269,6 +280,13 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
                 if (f.beat.kind === 'map' || !stageActive) {
                     layer.classList.remove('stage');
                     document.body.classList.remove('g-cine-stage');
+                }
+                // 探索の画の見えている所から始まる（opts.inPlace）：始めの待ちの間も層を透明に（今の画を不透明な地の色で覆わない。
+                // 待ちの間は探索の描画を止め、3D の出来事もまだ置かないので、今の町の画が見えたまま）。出来事と演出の人の名札は 3D を
+                // 始めてから（beginStage。置いた所で探索の側が最初の画を描く）
+                if (first && inPlace && stageWait) {
+                    layer.classList.add('stage');
+                    mapBox.hidden = true;
                 }
                 if (f.beat.kind === 'map') {
                     // 3D の場面から地図の場面へ：出来事を片付ける（地図が覆う間に）
@@ -288,7 +306,7 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
                 host.refreshCover();
             }
             if (f.map && map) map.apply(f.map);
-            if (f.stage && pushed) {
+            if (f.stage && pushed && !stageDeferred) {
                 stageActive = true;
                 safeStage(f.stage.event, f.stage.local);
             }
@@ -314,6 +332,7 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
          */
         const beginStage = () => {
             stageWait = false;
+            stageDeferred = false;
             layer.dataset.wait = '0';
             map = null;
             mapBox.replaceChildren();
@@ -442,8 +461,9 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
                 return true;
             },
             reexpose: () => gate.reset(nowMs()),
-            // 地図の場面と、3D の場面の始めの待ち（前が地図・始めのとき。層は不透明）は探索を覆う
-            covers: () => mode === 'map' || (stageWait && !layer.classList.contains('stage')),
+            // 地図の場面と、3D の場面の始めの待ち（前が地図・始めのとき。層は不透明。探索の画の見えている所から始まるときは層は透明で、
+            // 探索の描画だけを止めて今の画を見せたまま）は探索を覆う
+            covers: () => mode === 'map' || stageWait,
             dispose: () => {
                 done = true;
                 cancelAnimationFrame(raf);
@@ -477,9 +497,10 @@ export function playCinematic(host: LayerHost, spec: CineSpec, opts: CinematicOp
         window.addEventListener('blur', onBlur);
         window.addEventListener('pagehide', onHide);
         host.pushModal(m);
-        // 積んだ（3D の場面で始まるなら、ここで探索を覆った）：最初の場面の 3D の出来事を置く（最初の画は覆いが外れてから描かれる）
+        // 積んだ（3D の場面で始まるなら、ここで探索を覆った）：最初の場面の 3D の出来事を置く（最初の画は覆いが外れてから描かれる）。
+        // 探索の所から始まる演出（inPlace）は、始めの待ちを終えてから置く（beginStage）
         pushed = true;
-        if (frame.stage) {
+        if (frame.stage && !stageDeferred) {
             stageActive = true;
             safeStage(frame.stage.event, frame.stage.local);
         }
